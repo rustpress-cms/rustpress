@@ -81,7 +81,7 @@ impl Params {
                 Some(max) => format!("{key} must be between {min} (inclusive) and {max} (inclusive)"),
                 None => format!("{key} must be greater than or equal to {min}"),
             };
-            return Err(RestError::invalid_param(key, &message, if max.is_some() { "rest_out_of_bounds" } else { "rest_out_of_bounds" }));
+            return Err(RestError::invalid_param(key, &message, "rest_out_of_bounds"));
         }
         if let Some(max) = max.filter(|max| number > *max as i64) {
             return Err(RestError::invalid_param(key, &format!("{key} must be between {min} (inclusive) and {max} (inclusive)"), "rest_out_of_bounds"));

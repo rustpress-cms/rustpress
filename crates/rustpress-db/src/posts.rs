@@ -48,7 +48,7 @@ pub struct PostQuery {
     /// post_parent__in / post_parent__not_in.
     pub parent_in: Vec<u64>,
     pub parent_not_in: Vec<u64>,
-    /// Posts that have none of these 	erm_taxonomy_ids (NOT IN tax queries).
+    /// Posts that have none of these `term_taxonomy_id`s (`NOT IN` tax queries).
     pub tax_not: Vec<u64>,
     /// MySQL datetimes (post_date / post_modified, local time).
     pub date_after: Option<String>,
