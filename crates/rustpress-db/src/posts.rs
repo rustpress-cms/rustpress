@@ -220,6 +220,53 @@ impl Db {
         Ok(self.posts(&query).await?.pop())
     }
 
+    /// `redirect_guess_404_permalink()`: the first publicly viewable post whose
+    /// slug starts with `name` (`LIKE 'name%'`), optionally narrowed by type and date.
+    pub async fn guess_post_by_name(&self, name: &str, post_type: Option<&str>, year: Option<u32>, month: Option<u32>, day: Option<u32>) -> Result<Option<u64>> {
+        let escaped: String = name.chars().flat_map(|c| if matches!(c, '\\' | '%' | '_') { vec!['\\', c] } else { vec![c] }).collect();
+        let mut qb = QueryBuilder::<MySql>::new(format!("SELECT ID FROM {} WHERE post_name LIKE ", self.prefix.table("posts")));
+        qb.push_bind(format!("{escaped}%"));
+        match post_type {
+            Some(t) => {
+                qb.push(" AND post_type = ").push_bind(t.to_owned());
+            }
+            None => {
+                qb.push(" AND post_type NOT IN ('revision','nav_menu_item','customize_changeset','oembed_cache','user_request') AND post_type NOT LIKE 'wp\\_%'");
+            }
+        }
+        if let Some(y) = year {
+            qb.push(" AND YEAR(post_date) = ").push_bind(y);
+        }
+        if let Some(m) = month {
+            qb.push(" AND MONTH(post_date) = ").push_bind(m);
+        }
+        if let Some(d) = day {
+            qb.push(" AND DAYOFMONTH(post_date) = ").push_bind(d);
+        }
+        qb.push(" AND post_status = 'publish' ORDER BY post_name, ID LIMIT 1");
+        Ok(qb.build_query_scalar::<u64>().fetch_optional(&self.pool).await?)
+    }
+
+    /// `wp_old_slug_redirect()` lookup: a post that once had this slug (`_wp_old_slug`).
+    pub async fn post_by_old_slug(&self, name: &str, post_type: &str, year: Option<u32>, month: Option<u32>, day: Option<u32>) -> Result<Option<u64>> {
+        let mut qb = QueryBuilder::<MySql>::new(format!(
+            "SELECT post_id FROM {} AS m INNER JOIN {} AS p ON p.ID = m.post_id WHERE m.meta_key = '_wp_old_slug' AND m.meta_value = ",
+            self.prefix.table("postmeta"),
+            self.prefix.table("posts")
+        ));
+        qb.push_bind(name.to_owned()).push(" AND p.post_type = ").push_bind(post_type.to_owned());
+        if let Some(y) = year {
+            qb.push(" AND YEAR(p.post_date) = ").push_bind(y);
+        }
+        if let Some(m) = month {
+            qb.push(" AND MONTH(p.post_date) = ").push_bind(m);
+        }
+        if let Some(d) = day {
+            qb.push(" AND DAYOFMONTH(p.post_date) = ").push_bind(d);
+        }
+        qb.push(" AND p.post_status = 'publish' ORDER BY m.meta_id LIMIT 1");
+        Ok(qb.build_query_scalar::<u64>().fetch_optional(&self.pool).await?)
+    }
     pub async fn post_meta(&self, post_id: u64) -> Result<Vec<PostMeta>> {
         let sql = format!(
             "SELECT meta_id, post_id, meta_key, meta_value FROM {} WHERE post_id = ? ORDER BY meta_id",

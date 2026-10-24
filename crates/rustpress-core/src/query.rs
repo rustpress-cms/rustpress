@@ -361,8 +361,23 @@ impl Site {
             queried = Queried::Post(Box::new(post));
         }
 
-        // A `page` beyond the last `<!--nextpage-->` is not a 404 here; WordPress
-        // redirects to the post's base URL (`redirect_canonical`).
+        // `WP::handle_404`: paged content that exceeds the last `<!--nextpage-->`
+        // (or has none) is a 404 whose post stays in the query, so that
+        // `redirect_canonical` can send the visitor to the post's base URL.
+        let page_var = v.get("page").map(|p| p.trim_matches('/')).filter(|p| !p.is_empty() && *p != "0");
+        if let Some(page_var) = page_var {
+            let content_found = match posts.first() {
+                Some(post) if f.is_singular() => {
+                    post.post_content.contains("<!--nextpage-->") && page_var.parse::<u64>().unwrap_or(0) <= post.post_content.matches("<!--nextpage-->").count() as u64 + 1
+                }
+                _ => !f.is_posts_page,
+            };
+            if !content_found {
+                let mut kept = r.into_404();
+                kept.posts = posts;
+                return Ok(kept);
+            }
+        }
         if !f.is_singular() {
             r.paged = paged;
             if f.is_search {

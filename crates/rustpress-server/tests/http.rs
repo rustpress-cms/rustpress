@@ -107,3 +107,16 @@ async fn writes_are_rejected() {
     assert_eq!(response.status(), StatusCode::METHOD_NOT_ALLOWED);
     assert_eq!(response.headers()[header::ALLOW], "GET, HEAD");
 }
+
+#[tokio::test]
+async fn canonical_redirects_are_relative_301s() {
+    let Some(app) = app().await else { return };
+    for (from, to) in [("/testbeitrag-1", "/testbeitrag-1/"), ("/?p=5", "/testbeitrag-1/"), ("/hello-wor", "/hello-world/"), ("/?page_id=20", "/ueber-uns/"), ("/?cat=1&x=1", "/category/uncategorized/?x=1")] {
+        let (status, headers, _) = get(&app, Method::GET, from).await;
+        assert_eq!(status, StatusCode::MOVED_PERMANENTLY, "{from}");
+        assert_eq!(headers[header::LOCATION], to, "{from}");
+    }
+    let (status, headers, _) = get(&app, Method::GET, "/ueber-uns/").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(!headers.contains_key(header::LOCATION));
+}

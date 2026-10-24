@@ -4,6 +4,7 @@
 //! WordPress' conditional flags and the posts of the main query, which
 //! [`hierarchy::template_candidates`] turns into a list of template names.
 
+pub mod canonical;
 pub mod datetime;
 pub mod formatting;
 pub mod hierarchy;

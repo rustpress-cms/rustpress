@@ -18,8 +18,6 @@ struct Response {
     status: u16,
     location: Option<String>,
     body: String,
-    /// True if WordPress redirected before answering (canonical redirects).
-    redirected: bool,
 }
 
 /// Minimal HTTP/1.0 GET so the test needs no HTTP client dependency.
@@ -33,21 +31,19 @@ fn get(path: &str) -> std::io::Result<Response> {
     let (head, body) = text.split_once("\r\n\r\n").unwrap_or((&text, ""));
     let status = head.split_whitespace().nth(1).and_then(|s| s.parse().ok()).unwrap_or(0);
     let location = head.lines().find_map(|l| l.strip_prefix("Location: ").map(str::to_owned));
-    Ok(Response { status, location, body: body.to_owned(), redirected: false })
+    Ok(Response { status, location, body: body.to_owned() })
 }
 
 /// Follows redirects (canonical URLs) and returns the final response.
 fn fetch(path: &str) -> std::io::Result<Response> {
     let mut path = path.to_owned();
-    let mut redirected = false;
     for _ in 0..5 {
         let response = get(&path)?;
         match (response.status, &response.location) {
             (301 | 302, Some(location)) => {
                 path = location.strip_prefix("http://localhost:8080").unwrap_or(location).to_owned();
-                redirected = true;
             }
-            _ => return Ok(Response { redirected, ..response }),
+            _ => return Ok(response),
         }
     }
     panic!("too many redirects for {path}");
@@ -174,20 +170,18 @@ async fn main_query_matches_wordpress() {
     .collect();
 
     let mut mismatches = Vec::new();
-    let mut pending_redirects = Vec::new();
     for url in &urls {
         let (path, query) = url.split_once('?').unwrap_or((url, ""));
-        let ours = site.query(path, query).await.unwrap();
+        // Follow canonical redirects like the HTTP client does for WordPress.
+        let (mut path, mut query) = (path.to_owned(), query.to_owned());
+        let mut ours = site.query(&path, &query).await.unwrap();
+        for _ in 0..5 {
+            let Some(target) = site.canonical_redirect(&path, &query, &ours).await.unwrap() else { break };
+            (path, query) = target.split_once('?').map_or((target.clone(), String::new()), |(p, q)| (p.to_owned(), q.to_owned()));
+            ours = site.query(&path, &query).await.unwrap();
+        }
         let theirs = fetch(url).unwrap();
         let mut problems = Vec::new();
-
-        // WordPress turned a request our query treats as 404 into a redirect
-        // (`redirect_guess_404_permalink`, invalid month/day, ...). That is the
-        // canonical-redirect feature, tracked separately.
-        if theirs.redirected && ours.status() == 404 {
-            pending_redirects.push(url.clone());
-            continue;
-        }
 
         if ours.status() != theirs.status {
             problems.push(format!("status {} != WordPress {}", ours.status(), theirs.status));
@@ -219,6 +213,5 @@ async fn main_query_matches_wordpress() {
             mismatches.push(format!("{url}\n    {}", short.join("\n    ")));
         }
     }
-    eprintln!("{} URLs need canonical redirects (not implemented yet): {}", pending_redirects.len(), pending_redirects.join(" "));
     assert!(mismatches.is_empty(), "{} of {} URLs differ:\n{}", mismatches.len(), urls.len(), mismatches.join("\n"));
 }

@@ -99,6 +99,15 @@ async fn handle(axum::extract::State(app): axum::extract::State<Arc<App>>, reque
 async fn page(app: &App, path: &str, query: &str) -> Result<Response<Body>> {
     let loaded = app.current().await;
     let result = loaded.site.query(path, query).await?;
+    // Physical PHP endpoints (wp-login.php, xmlrpc.php, ...) do not exist here; they get the
+    // 404 page rather than a canonical redirect. Only `/index.php` is WordPress' own alias for `/`.
+    let php_endpoint = path.ends_with(".php") && path != "/index.php";
+    let canonical = if php_endpoint { None } else { loaded.site.canonical_redirect(path, query, &result).await? };
+    if let Some(target) = canonical {
+        // A relative `Location` (RFC 9110) keeps the client's own scheme and host, and
+        // never trusts the `Host` header.
+        return Ok(redirect(&target));
+    }
     if result.flags.is_feed {
         return Ok(text(StatusCode::NOT_IMPLEMENTED, "Feeds are not implemented yet.\n"));
     }
@@ -107,6 +116,15 @@ async fn page(app: &App, path: &str, query: &str) -> Result<Response<Body>> {
     *response.status_mut() = StatusCode::from_u16(document.status).unwrap_or(StatusCode::OK);
     response.headers_mut().insert(header::CONTENT_TYPE, HeaderValue::from_static("text/html; charset=UTF-8"));
     Ok(response)
+}
+
+fn redirect(location: &str) -> Response<Body> {
+    let mut response = Response::new(Body::empty());
+    *response.status_mut() = StatusCode::MOVED_PERMANENTLY;
+    if let Ok(value) = HeaderValue::from_str(location) {
+        response.headers_mut().insert(header::LOCATION, value);
+    }
+    response
 }
 
 fn text(status: StatusCode, body: &'static str) -> Response<Body> {
