@@ -6,6 +6,8 @@ version.workspace = true
 license.workspace = true
 
 [dependencies]
+chrono.workspace = true
+md5.workspace = true
 rustpress-blocks.workspace = true
 rustpress-core.workspace = true
 rustpress-db.workspace = true

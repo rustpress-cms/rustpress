@@ -29,6 +29,14 @@ pub fn the_title(post: &Post) -> String {
     capital_p_dangit(&title, true)
 }
 
+/// The `comment_text` filter chain for the standard filters.
+pub fn comment_text(raw: &str) -> String {
+    let mut text = wptexturize(raw);
+    text = convert_chars(&text);
+    text = wpautop(&text);
+    capital_p_dangit(&text, false)
+}
+
 /// `has_blocks()`.
 pub fn has_blocks(content: &str) -> bool {
     content.contains("<!-- wp:")

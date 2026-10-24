@@ -188,7 +188,7 @@ impl Site {
     async fn run_main_query(&self, mut r: QueryResult) -> Result<QueryResult> {
         let s = &self.settings;
         let v = r.vars.clone();
-        let mut f = Flags::default();
+        let mut f = Flags { is_feed: v.get("feed").is_some_and(|feed| !feed.is_empty()), ..Flags::default() };
         let mut queried = Queried::None;
         let mut posts: Vec<Post> = Vec::new();
         let mut found = 0;
@@ -317,7 +317,6 @@ impl Site {
                 }
             }
 
-            f.is_feed = v.get("feed").is_some();
             f.is_archive = f.is_date || f.is_author || f.is_category || f.is_tag || f.is_tax;
             if !(f.is_archive || f.is_search || f.is_feed) {
                 f.is_home = true;

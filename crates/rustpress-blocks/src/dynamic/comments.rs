@@ -2,13 +2,13 @@
 //! `comment-author-name`, `comment-content`, `comment-date`,
 //! `comment-reply-link`, `avatar` and `post-comments-form`.
 
-use rustpress_core::formatting::{capital_p_dangit, convert_chars, esc_attr, esc_html, esc_url, wpautop, wptexturize};
+use rustpress_core::formatting::{esc_attr, esc_html, esc_url};
 use rustpress_core::urls::{add_query_arg, remove_query_arg};
 use rustpress_db::{Comment, Post};
 use serde_json::Value;
 
 use crate::Result;
-use crate::content::post_password_required;
+use crate::content::{comment_text, post_password_required};
 use crate::env::Context;
 use crate::parser::Content;
 use crate::render::BlockCtx;
@@ -213,14 +213,6 @@ pub(super) async fn comment_content(bc: &BlockCtx<'_>) -> Result<String> {
     let text = comment_text(&comment.comment_content);
     let wrapper = bc.wrapper_attributes(&[("class", align_and_link_classes(bc))]);
     Ok(format!("<div {wrapper}>{text}</div>"))
-}
-
-/// The `comment_text` filter chain for the standard filters.
-fn comment_text(raw: &str) -> String {
-    let mut text = wptexturize(raw);
-    text = convert_chars(&text);
-    text = wpautop(&text);
-    capital_p_dangit(&text, false)
 }
 
 pub(super) async fn comment_date(bc: &BlockCtx<'_>) -> Result<String> {

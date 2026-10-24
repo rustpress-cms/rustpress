@@ -1,6 +1,7 @@
 //! Block theme support: theme.json, templates, patterns and rendering.
 
 pub mod document;
+pub mod feed;
 pub mod global_styles;
 pub mod page;
 pub mod phpt;
@@ -8,6 +9,7 @@ pub mod theme;
 pub mod theme_json;
 
 pub use document::{Document, render_document};
+pub use feed::{Feed, render_feed};
 pub use page::{RenderedBody, render_body};
 pub use theme::Theme;
 

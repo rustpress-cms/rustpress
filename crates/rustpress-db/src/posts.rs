@@ -192,8 +192,10 @@ impl Db {
             push_relevance(&mut qb, query);
             qb.push(", p.post_date DESC, p.ID ASC");
         } else {
-            // `ID` as tie-breaker keeps pagination stable (WordPress shows equal dates newest ID first).
-            qb.push(format!(" ORDER BY {column} {direction}, p.ID {direction}"));
+            // `ID` as tie-breaker keeps pagination stable. WordPress shows equal dates newest
+            // ID first, except for term queries: their `GROUP BY ID` feeds the sort oldest first.
+            let tie = if query.tax_groups.is_empty() { direction } else { "ASC" };
+            qb.push(format!(" ORDER BY {column} {direction}, p.ID {tie}"));
         }
         if let Some(limit) = query.limit {
             qb.push(" LIMIT ").push_bind(limit).push(" OFFSET ").push_bind(query.offset);
@@ -266,6 +268,14 @@ impl Db {
         }
         qb.push(" AND p.post_status = 'publish' ORDER BY m.meta_id LIMIT 1");
         Ok(qb.build_query_scalar::<u64>().fetch_optional(&self.pool).await?)
+    }
+    /// `get_lastpostmodified( 'GMT' )`: the newest `post_modified_gmt` of published content.
+    pub async fn last_post_modified_gmt(&self) -> Result<Option<String>> {
+        let sql = format!(
+            "SELECT CAST(post_modified_gmt AS CHAR) FROM {} WHERE post_status = 'publish' AND post_type IN ('post', 'page', 'attachment') ORDER BY post_modified_gmt DESC LIMIT 1",
+            self.prefix.table("posts")
+        );
+        Ok(sqlx::query_scalar(AssertSqlSafe(sql)).fetch_optional(&self.pool).await?)
     }
     pub async fn post_meta(&self, post_id: u64) -> Result<Vec<PostMeta>> {
         let sql = format!(

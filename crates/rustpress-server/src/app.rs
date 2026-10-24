@@ -9,7 +9,7 @@ use axum::http::{HeaderValue, Method, Request, Response, StatusCode, header};
 use rustpress_blocks::Registry;
 use rustpress_core::Site;
 use rustpress_db::Db;
-use rustpress_theme::{Theme, render_document};
+use rustpress_theme::{Feed, Theme, render_document, render_feed};
 use tokio::sync::{Mutex, RwLock};
 use tower_http::trace::TraceLayer;
 
@@ -84,10 +84,11 @@ async fn handle(axum::extract::State(app): axum::extract::State<Arc<App>>, reque
         return response;
     }
     let uri = request.uri().clone();
+    let headers = request.headers().clone();
     if let Some(response) = app.statics.serve(request).await {
         return response;
     }
-    match page(&app, uri.path(), uri.query().unwrap_or("")).await {
+    match page(&app, &uri, &headers).await {
         Ok(response) => response,
         Err(e) => {
             tracing::error!(error = %e, path = uri.path(), "request failed");
@@ -96,7 +97,8 @@ async fn handle(axum::extract::State(app): axum::extract::State<Arc<App>>, reque
     }
 }
 
-async fn page(app: &App, path: &str, query: &str) -> Result<Response<Body>> {
+async fn page(app: &App, uri: &axum::http::Uri, request_headers: &axum::http::HeaderMap) -> Result<Response<Body>> {
+    let (path, query) = (uri.path(), uri.query().unwrap_or(""));
     let loaded = app.current().await;
     let result = loaded.site.query(path, query).await?;
     // Physical PHP endpoints (wp-login.php, xmlrpc.php, ...) do not exist here; they get the
@@ -109,7 +111,11 @@ async fn page(app: &App, path: &str, query: &str) -> Result<Response<Body>> {
         return Ok(redirect(&target));
     }
     if result.flags.is_feed {
-        return Ok(text(StatusCode::NOT_IMPLEMENTED, "Feeds are not implemented yet.\n"));
+        let request_uri = uri.path_and_query().map_or(path, |p| p.as_str());
+        let Some(feed) = render_feed(&loaded.theme, &loaded.site, &result, &loaded.registry, request_uri).await? else {
+            return Ok(text(StatusCode::NOT_FOUND, "This feed is not available.\n"));
+        };
+        return Ok(feed_response(&feed, request_headers));
     }
     let document = render_document(&loaded.theme, &loaded.site, &result, &loaded.registry).await?;
     let mut response = Response::new(Body::from(document.html));
@@ -123,6 +129,31 @@ fn redirect(location: &str) -> Response<Body> {
     *response.status_mut() = StatusCode::MOVED_PERMANENTLY;
     if let Ok(value) = HeaderValue::from_str(location) {
         response.headers_mut().insert(header::LOCATION, value);
+    }
+    response
+}
+
+/// The feed with the headers `WP::send_headers()` sets, or a bare 304.
+fn feed_response(feed: &Feed, request: &axum::http::HeaderMap) -> Response<Body> {
+    let header_str = |name: header::HeaderName| request.get(name).and_then(|v| v.to_str().ok());
+    let not_modified = feed.not_modified(header_str(header::IF_NONE_MATCH), header_str(header::IF_MODIFIED_SINCE));
+    let mut response = Response::new(if not_modified { Body::empty() } else { Body::from(feed.body.clone()) });
+    if not_modified {
+        *response.status_mut() = StatusCode::NOT_MODIFIED;
+    }
+    let headers = response.headers_mut();
+    if let Ok(value) = HeaderValue::from_str(&feed.content_type) {
+        headers.insert(header::CONTENT_TYPE, value);
+    }
+    if let Some(value) = feed.last_modified.as_deref().and_then(|v| HeaderValue::from_str(v).ok()) {
+        headers.insert(header::LAST_MODIFIED, value);
+    }
+    if let Ok(value) = HeaderValue::from_str(&feed.etag) {
+        headers.insert(header::ETAG, value);
+    }
+    if feed.nocache {
+        headers.insert(header::EXPIRES, HeaderValue::from_static("Wed, 11 Jan 1984 05:00:00 GMT"));
+        headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-cache, must-revalidate, max-age=0, no-store, private"));
     }
     response
 }

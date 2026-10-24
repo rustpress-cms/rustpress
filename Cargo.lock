@@ -1308,6 +1308,8 @@ dependencies = [
 name = "rustpress-theme"
 version = "0.1.0"
 dependencies = [
+ "chrono",
+ "md5",
  "rustpress-blocks",
  "rustpress-core",
  "rustpress-db",

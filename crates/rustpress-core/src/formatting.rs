@@ -553,3 +553,120 @@ mod tests {
         assert!(out.starts_with("<p>a</p>"), "{out}");
     }
 }
+
+
+/// PHP's `strip_tags()` without an allow-list: removes `<...>` tags, comments and
+/// processing instructions; a `<` not followed by a tag-like character stays.
+pub fn strip_tags(text: &str) -> String {
+    let bytes = text.as_bytes();
+    let mut out = String::with_capacity(text.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'<' {
+            let next = bytes.get(i + 1).copied().unwrap_or(b' ');
+            if text[i..].starts_with("<!--") {
+                match text[i + 4..].find("-->") {
+                    Some(end) => i += 4 + end + 3,
+                    None => i = bytes.len(),
+                }
+                continue;
+            }
+            if next.is_ascii_alphabetic() || matches!(next, b'/' | b'!' | b'?') {
+                let mut quote: Option<u8> = None;
+                let mut j = i + 1;
+                while j < bytes.len() {
+                    match (quote, bytes[j]) {
+                        (None, b'"' | b'\'') => quote = Some(bytes[j]),
+                        (Some(q), c) if c == q => quote = None,
+                        (None, b'>') => break,
+                        _ => {}
+                    }
+                    j += 1;
+                }
+                i = (j + 1).min(bytes.len());
+                continue;
+            }
+        }
+        let ch = text[i..].chars().next().unwrap_or(' ');
+        out.push(ch);
+        i += ch.len_utf8();
+    }
+    out
+}
+
+/// `wp_strip_all_tags( $text )`: script/style blocks go with their content.
+pub fn wp_strip_all_tags(text: &str) -> String {
+    static SCRIPT: std::sync::OnceLock<fancy_regex::Regex> = std::sync::OnceLock::new();
+    let re = SCRIPT.get_or_init(|| fancy_regex::Regex::new(r"(?is)<(script|style)[^>]*?>.*?</\1>").expect("valid regex"));
+    strip_tags(&re.replace_all(text, "")).trim().to_owned()
+}
+
+/// `ent2ncr()`: named entities become numeric character references.
+pub fn ent2ncr(text: &str) -> String {
+    static ENTITY: std::sync::OnceLock<fancy_regex::Regex> = std::sync::OnceLock::new();
+    let re = ENTITY.get_or_init(|| fancy_regex::Regex::new(r"&(\w+);").expect("valid regex"));
+    re.replace_all(text, |caps: &fancy_regex::Captures<'_, str>| {
+        let name = &caps[1];
+        match crate::entities::ENTITIES.iter().find(|(n, _)| *n == name) {
+            Some((_, code)) => format!("&#{code};"),
+            None => caps[0].to_owned(),
+        }
+    })
+    .into_owned()
+}
+
+/// `html_entity_decode( $text, ENT_COMPAT )`: double quotes and `&amp;` are decoded, single quotes are not.
+pub fn html_entity_decode(text: &str) -> String {
+    static ENTITY: std::sync::OnceLock<fancy_regex::Regex> = std::sync::OnceLock::new();
+    let re = ENTITY.get_or_init(|| fancy_regex::Regex::new(r"&(#[0-9]+|#[xX][0-9a-fA-F]+|\w+);").expect("valid regex"));
+    re.replace_all(text, |caps: &fancy_regex::Captures<'_, str>| {
+        let body = &caps[1];
+        let code = if let Some(hex) = body.strip_prefix("#x").or_else(|| body.strip_prefix("#X")) {
+            u32::from_str_radix(hex, 16).ok()
+        } else if let Some(dec) = body.strip_prefix('#') {
+            dec.parse().ok()
+        } else {
+            crate::entities::ENTITIES.iter().find(|(n, _)| *n == body).map(|(_, c)| *c)
+        };
+        match code.filter(|c| *c != 39).and_then(char::from_u32) {
+            Some(c) => c.to_string(),
+            None => caps[0].to_owned(),
+        }
+    })
+    .into_owned()
+}
+
+/// `wp_trim_words( $text, $num_words, $more )` for space-separated languages.
+pub fn wp_trim_words(text: &str, num_words: usize, more: &str) -> String {
+    let stripped = wp_strip_all_tags(text);
+    let words: Vec<&str> = stripped.split(['\n', '\r', '\t', ' ']).filter(|w| !w.is_empty()).collect();
+    if words.len() > num_words {
+        format!("{}{more}", words[..num_words].join(" "))
+    } else {
+        words.join(" ")
+    }
+}
+
+#[cfg(test)]
+mod feed_helper_tests {
+    use super::*;
+
+    #[test]
+    fn strip_tags_like_php() {
+        assert_eq!(strip_tags("a <b>bold</b> and <a href=\"x>y\">link</a>"), "a bold and link");
+        assert_eq!(strip_tags("1 < 2 and 3 > 2"), "1 < 2 and 3 > 2");
+        assert_eq!(strip_tags("x<!-- hidden -->y"), "xy");
+    }
+
+    #[test]
+    fn entities() {
+        assert_eq!(ent2ncr("Caf&eacute; &amp; &unknown; &#8211;"), "Caf&#233; &#38; &unknown; &#8211;");
+        assert_eq!(html_entity_decode("&quot;a&quot; &amp; &#8211; &#039; &eacute;"), "\"a\" & \u{2013} &#039; \u{e9}");
+    }
+
+    #[test]
+    fn trim_words() {
+        assert_eq!(wp_trim_words("<p>one two  three\nfour</p>", 3, "..."), "one two three...");
+        assert_eq!(wp_trim_words("one two", 3, "..."), "one two");
+    }
+}

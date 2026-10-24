@@ -120,3 +120,37 @@ async fn canonical_redirects_are_relative_301s() {
     assert_eq!(status, StatusCode::OK);
     assert!(!headers.contains_key(header::LOCATION));
 }
+
+#[tokio::test]
+async fn feeds_are_served_like_wordpress() {
+    let Some(app) = app().await else { return };
+    for (path, content_type) in [("/feed/", "application/rss+xml; charset=UTF-8"), ("/testbeitrag-1/feed/atom/", "application/atom+xml; charset=UTF-8")] {
+        let (status, headers, body) = get(&app, Method::GET, path).await;
+        assert_eq!(status, StatusCode::OK, "{path}");
+        assert_eq!(headers[header::CONTENT_TYPE], content_type, "{path}");
+        assert_eq!(body, fetch(path).unwrap().body, "{path}");
+        assert!(headers.contains_key(header::ETAG) && headers.contains_key(header::LAST_MODIFIED), "{path}");
+    }
+}
+
+#[tokio::test]
+async fn feeds_support_conditional_get() {
+    let Some(app) = app().await else { return };
+    let (_, headers, _) = get(&app, Method::GET, "/feed/").await;
+    let (etag, modified) = (headers[header::ETAG].clone(), headers[header::LAST_MODIFIED].clone());
+    for (name, value) in [(header::IF_NONE_MATCH, etag), (header::IF_MODIFIED_SINCE, modified)] {
+        let request = Request::builder().uri("/feed/").header(name, value).body(Body::empty()).unwrap();
+        let response = app.router().oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_MODIFIED);
+        assert!(response.into_body().collect().await.unwrap().to_bytes().is_empty());
+    }
+    let request = Request::builder().uri("/feed/").header(header::IF_NONE_MATCH, "\"nope\"").body(Body::empty()).unwrap();
+    assert_eq!(app.router().oneshot(request).await.unwrap().status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn unsupported_feed_types_are_not_found() {
+    let Some(app) = app().await else { return };
+    let (status, _, _) = get(&app, Method::GET, "/feed/rdf/").await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}

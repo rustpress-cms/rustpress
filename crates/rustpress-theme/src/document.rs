@@ -226,7 +226,7 @@ fn read(path: &Path) -> Option<String> {
     std::fs::read_to_string(path).ok()
 }
 
-fn wp_version(wp_root: &Path) -> String {
+pub(crate) fn wp_version(wp_root: &Path) -> String {
     read(&wp_root.join("wp-includes").join("version.php"))
         .and_then(|t| t.lines().find_map(|l| l.strip_prefix("$wp_version = '").and_then(|r| r.split('\'').next().map(str::to_owned))))
         .unwrap_or_default()

@@ -6,6 +6,7 @@
 
 pub mod canonical;
 pub mod datetime;
+mod entities;
 pub mod formatting;
 pub mod hierarchy;
 pub mod options;
