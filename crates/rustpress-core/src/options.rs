@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use rustpress_db::Db;
 use rustpress_phpser::{Value, unserialize};
+use serde_json::Value as Value2;
 
 use crate::Result;
 
@@ -59,6 +60,38 @@ impl Options {
         match self.get(name) {
             Some(value) => Ok(Some(value.to_owned())),
             None => Ok(db.option(name).await?),
+        }
+    }
+}
+
+/// A PHP value as JSON: lists (keys `0..n`) become arrays, other arrays objects
+/// with their keys as strings; key order is kept.
+pub fn php_to_json(value: &rustpress_phpser::Value) -> Value2 {
+    use rustpress_phpser::{Key, Value as Php};
+    match value {
+        Php::Null | Php::Reference(_) | Php::ObjectRef(_) => Value2::Null,
+        Php::Bool(b) => Value2::Bool(*b),
+        Php::Int(i) => Value2::from(*i),
+        Php::Float(f) => serde_json::Number::from_f64(*f).map_or(Value2::Null, Value2::Number),
+        Php::Str(s) => Value2::String(String::from_utf8_lossy(s).into_owned()),
+        Php::Array(items) | Php::Object { props: items, .. } => {
+            let is_list = items.iter().enumerate().all(|(i, (k, _))| matches!(k, Key::Int(n) if *n == i as i64));
+            if is_list {
+                Value2::Array(items.iter().map(|(_, v)| php_to_json(v)).collect())
+            } else {
+                Value2::Object(
+                    items
+                        .iter()
+                        .map(|(k, v)| {
+                            let key = match k {
+                                Key::Int(n) => n.to_string(),
+                                Key::Str(s) => String::from_utf8_lossy(s).into_owned(),
+                            };
+                            (key, php_to_json(v))
+                        })
+                        .collect(),
+                )
+            }
         }
     }
 }

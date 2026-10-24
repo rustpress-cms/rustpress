@@ -118,3 +118,10 @@ podman exec rustpress-db mariadb -uroot -prustpress wordpress \
 
 wp option update rustpress_seeded 1 >/dev/null
 echo "seeded"
+
+# Two attachments for the media endpoint: an unattached PNG (a single size) and a WebP
+# attached to the first post (several sizes, so that srcset has something to choose from).
+if [ -z "$(wp post list --post_type=attachment --name=test-logo --field=ID)" ]; then
+  wp media import /var/www/html/wp-admin/images/wordpress-logo.png --title="Test Logo" --caption="Eine Bildunterschrift" --alt="Logo Alt" >/dev/null
+  wp media import /var/www/html/wp-content/themes/twentytwentyfour/assets/images/building-exterior.webp --post_id=1 --title="Gebäude außen" --caption="Ein Gebäude & mehr" --alt="Fassade" --desc="Beschreibung des Bildes" >/dev/null
+fi

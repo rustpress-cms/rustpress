@@ -19,15 +19,27 @@ fn filter_value(value: &mut Value, prefix: &str, fields: &[String]) {
     }
 }
 
+/// The attachments controller adds these with `in_array( $field, $fields )`, so only an
+/// exact mention keeps them; `media_details.width` or `description.rendered` do not.
+const MEDIA_EXACT_ONLY: &[&str] = &["description", "caption", "alt_text", "media_type", "mime_type", "media_details", "post", "source_url", "missing_image_sizes"];
+
+fn filter_item(item: &mut Value, fields: &[String]) {
+    if item.get("type") == Some(&Value::from("attachment"))
+        && let Value::Object(map) = item {
+            map.retain(|key, _| !MEDIA_EXACT_ONLY.contains(&key.as_str()) || fields.iter().any(|f| f == key));
+        }
+    filter_value(item, "", fields);
+}
+
 /// Filters one item or each item of a collection.
 pub fn filter(data: &mut Value, fields: &[String]) {
     match data {
         Value::Array(items) => {
             for item in items {
-                filter_value(item, "", fields);
+                filter_item(item, fields);
             }
         }
-        other => filter_value(other, "", fields),
+        other => filter_item(other, fields),
     }
 }
 

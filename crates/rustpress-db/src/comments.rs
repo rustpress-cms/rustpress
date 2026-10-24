@@ -123,7 +123,7 @@ impl Default for CommentQuery {
 impl CommentQuery {
     fn push_filters(&self, qb: &mut sqlx::QueryBuilder<sqlx::MySql>, db: &Db) {
         qb.push(" FROM ").push(db.prefix.table("comments")).push(" c JOIN ").push(db.prefix.table("posts")).push(" p ON p.ID = c.comment_post_ID");
-        qb.push(" WHERE c.comment_approved = '1' AND p.post_status = 'publish' AND p.post_password = ''");
+        qb.push(" WHERE c.comment_approved = '1' AND (p.post_status = 'publish' OR (p.post_type = 'attachment' AND p.post_status = 'inherit')) AND p.post_password = ''");
         push_ids(qb, "c.comment_type", &self.types, false);
         push_numbers(qb, "c.comment_ID", &self.ids, false);
         push_numbers(qb, "c.comment_ID", &self.exclude_ids, true);

@@ -56,6 +56,11 @@ pub struct PostQuery {
     pub modified_after: Option<String>,
     pub modified_before: Option<String>,
     pub menu_order: Option<i32>,
+    /// post_mime_type LIKE 'image/%' style filter and an exact mime type.
+    pub mime_prefix: Option<String>,
+    pub mime_type: Option<String>,
+    /// Only attachments whose parent is published (or that have none).
+    pub public_parent: bool,
     /// Taxonomy filters: a post must match every group (AND), and a group
     /// matches if the post has any of its `term_taxonomy_id`s (OR).
     pub tax_groups: Vec<Vec<u64>>,
@@ -94,6 +99,9 @@ impl Default for PostQuery {
             modified_after: None,
             modified_before: None,
             menu_order: None,
+            mime_prefix: None,
+            mime_type: None,
+            public_parent: false,
             tax_groups: Vec::new(),
             search: Vec::new(),
             search_phrase: None,
@@ -133,6 +141,15 @@ impl PostQuery {
         push_in(qb, "p.post_author NOT", &self.author_not_in);
         push_in(qb, "p.post_parent", &self.parent_in);
         push_in(qb, "p.post_parent NOT", &self.parent_not_in);
+        if let Some(prefix) = &self.mime_prefix {
+            qb.push(" AND p.post_mime_type LIKE ").push_bind(format!("{}/%", prefix.replace('%', "\\%").replace('_', "\\_")));
+        }
+        if let Some(mime) = &self.mime_type {
+            qb.push(" AND p.post_mime_type = ").push_bind(mime.clone());
+        }
+        if self.public_parent {
+            qb.push(" AND (p.post_parent = 0 OR p.post_parent IN (SELECT parent.ID FROM ").push(db.prefix.table("posts")).push(" parent WHERE parent.post_status = 'publish'))");
+        }
         if let Some(menu_order) = self.menu_order {
             qb.push(" AND p.menu_order = ").push_bind(menu_order);
         }

@@ -12,6 +12,7 @@ pub mod elements;
 pub mod excerpt;
 pub mod env;
 pub mod html;
+pub mod images;
 pub mod interactivity;
 pub mod layout;
 pub mod parser;

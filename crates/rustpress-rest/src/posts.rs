@@ -16,6 +16,7 @@ use crate::{Outcome, Resp, Rest, Result};
 pub enum Kind {
     Post,
     Page,
+    Attachment,
 }
 
 impl Kind {
@@ -23,13 +24,20 @@ impl Kind {
         match self {
             Kind::Post => "post",
             Kind::Page => "page",
+            Kind::Attachment => "attachment",
         }
+    }
+
+    /// The only status an anonymous visitor may list.
+    pub fn public_status(self) -> &'static str {
+        if self == Kind::Attachment { "inherit" } else { "publish" }
     }
 
     pub fn base(self) -> &'static str {
         match self {
             Kind::Post => "posts",
             Kind::Page => "pages",
+            Kind::Attachment => "media",
         }
     }
 }
@@ -69,7 +77,7 @@ impl Rest<'_> {
         let context = params.get("context").unwrap_or("view");
         let mut items = Vec::with_capacity(posts.len());
         for post in &posts {
-            items.push(self.prepare_post(post, kind, context, params).await?);
+            items.push(if kind == Kind::Attachment { self.prepare_media(post, context).await? } else { self.prepare_post(post, kind, context, params).await? });
         }
         let mut resp = Resp::item(Value::Array(items));
         resp.total = Some(total);
@@ -97,12 +105,13 @@ impl Rest<'_> {
             orderby_values.push("menu_order");
         }
         let orderby = try_param!(params.one_of("orderby", &orderby_values, "date"));
-        let status = params.list("status").unwrap_or_else(|| vec!["publish".to_owned()]);
-        if status.iter().any(|s| s != "publish") {
+        let public_status = kind.public_status();
+        let status = params.list("status").unwrap_or_else(|| vec![public_status.to_owned()]);
+        if status.iter().any(|s| s != public_status) {
             return Ok(Err(RestError::invalid_param_with_data("status", "Status is forbidden.", "rest_forbidden_status", json!({"status": 401}))));
         }
 
-        let mut query = PostQuery { post_types: vec![kind.name().into()], statuses: vec!["publish".into()], limit: Some(per_page), offset, ..Default::default() };
+        let mut query = PostQuery { post_types: vec![kind.name().into()], statuses: vec![public_status.into()], limit: Some(per_page), offset, public_parent: kind == Kind::Attachment, ..Default::default() };
         query.order = if order == "asc" { Order::Asc } else { Order::Desc };
         let include = params.id_list("include").unwrap_or_default();
         let search = params.get("search").filter(|s| !s.is_empty());
@@ -133,9 +142,15 @@ impl Rest<'_> {
         query.names = params.list("slug").unwrap_or_default();
         query.author_in = params.id_list("author").unwrap_or_default();
         query.author_not_in = params.id_list("author_exclude").unwrap_or_default();
-        if kind == Kind::Page {
+        if kind == Kind::Attachment {
+            query.mime_prefix = params.get("media_type").filter(|t| matches!(*t, "image" | "video" | "audio" | "application")).map(str::to_owned);
+            query.mime_type = params.get("mime_type").map(str::to_owned);
+        }
+        if kind != Kind::Post {
             query.parent_in = params.id_list("parent").unwrap_or_default();
             query.parent_not_in = params.id_list("parent_exclude").unwrap_or_default();
+        }
+        if kind == Kind::Page {
             query.menu_order = params.get("menu_order").and_then(|v| v.parse().ok());
         }
         if let Some(search) = search {
@@ -192,15 +207,22 @@ impl Rest<'_> {
             return Ok(Err(RestError::new("rest_forbidden_context", "Sorry, you are not allowed to edit this post.", 401)));
         }
         let post = self.site.db.post(id).await?;
-        let Some(post) = post.filter(|p| p.post_type == kind.name() && p.post_status == "publish") else {
+        let Some(post) = post.filter(|p| p.post_type == kind.name() && p.post_status == kind.public_status()) else {
             return Ok(Err(RestError::new("rest_post_invalid_id", "Invalid post ID.", 404)));
         };
         if let Some(given) = params.get("password").filter(|p| !p.is_empty())
             && !post.post_password.is_empty() && given != post.post_password {
                 return Ok(Err(RestError::new("rest_post_incorrect_password", "Incorrect post password.", 403)));
             }
+        if kind == Kind::Attachment && post.post_parent != 0 {
+            let parent = self.site.db.post(post.post_parent).await?;
+            if parent.is_none_or(|p| p.post_status != "publish") {
+                return Ok(Err(RestError::new("rest_post_invalid_id", "Invalid post ID.", 404)));
+            }
+        }
         let context = params.get("context").unwrap_or("view");
-        let mut resp = Resp::item(self.prepare_post(&post, kind, context, params).await?);
+        let data = if kind == Kind::Attachment { self.prepare_media(&post, context).await? } else { self.prepare_post(&post, kind, context, params).await? };
+        let mut resp = Resp::item(data);
         resp.alternate = Some(self.site.permalink(&post).await?);
         Ok(Ok(resp))
     }

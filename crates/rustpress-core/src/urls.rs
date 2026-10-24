@@ -123,19 +123,29 @@ impl Site {
         Ok(self.user_trailingslashit(&self.home_url(&uri)))
     }
 
+    /// `get_attachment_link()`.
     async fn attachment_link(&self, attachment: &Post) -> Result<String> {
-        if self.settings.permalink_structure.is_empty() || attachment.post_parent == 0 {
-            return Ok(self.home_url(&format!("?attachment_id={}", attachment.id)));
+        let plain = self.home_url(&format!("/?attachment_id={}", attachment.id));
+        if self.settings.permalink_structure.is_empty() {
+            return Ok(plain);
         }
-        match self.db.post(attachment.post_parent).await? {
+        let parent = if attachment.post_parent != 0 { self.db.post(attachment.post_parent).await? } else { None };
+        if attachment.post_parent != 0 && (attachment.post_parent == attachment.id || parent.as_ref().is_none_or(|p| matches!(p.post_type.as_str(), "revision" | "nav_menu_item"))) {
+            return Ok(plain);
+        }
+        match parent {
             Some(parent) => {
-                let base = Box::pin(self.permalink(&parent)).await?;
-                Ok(self.user_trailingslashit(&format!("{}/{}", untrailingslashit(&base), attachment.post_name)))
+                let parent_link = Box::pin(self.permalink(&parent)).await?;
+                if parent_link.contains('?') {
+                    return Ok(plain);
+                }
+                let numeric = !attachment.post_name.is_empty() && attachment.post_name.bytes().all(|b| b.is_ascii_digit());
+                let name = if numeric || self.settings.permalink_structure.contains("%category%") { format!("attachment/{}", attachment.post_name) } else { attachment.post_name.clone() };
+                Ok(self.user_trailingslashit(&format!("{}/{name}", untrailingslashit(&parent_link))))
             }
-            None => Ok(self.home_url(&format!("?attachment_id={}", attachment.id))),
+            None => Ok(self.home_url(&self.user_trailingslashit(&attachment.post_name))),
         }
     }
-
     /// Slugs of a hierarchical term and its ancestors, `parent/child`.
     async fn term_path(&self, term: &Term) -> Result<String> {
         let all = self.db.terms(&term.taxonomy).await?;

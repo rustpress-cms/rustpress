@@ -43,7 +43,7 @@ impl Rest<'_> {
         let post_in = params.id_list("post").unwrap_or_default();
         for id in &post_in {
             if let Some(post) = self.site.db.post(*id).await?
-                && (post.post_status != "publish" || !post.post_password.is_empty()) {
+                && (!(post.post_status == "publish" || (post.post_type == "attachment" && post.post_status == "inherit")) || !post.post_password.is_empty()) {
                     return Ok(Err(RestError::new("rest_cannot_read_post", "Sorry, you are not allowed to read the post for this comment.", 401)));
                 }
         }
