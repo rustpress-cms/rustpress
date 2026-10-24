@@ -3,6 +3,7 @@
 //! `WP_Theme_JSON::get_stylesheet`).
 
 use rustpress_blocks::Registry;
+use rustpress_blocks::fluid::fluid_font_size;
 use rustpress_blocks::style_engine::to_kebab_case;
 use serde_json::{Map, Value};
 
@@ -115,7 +116,7 @@ const ELEMENTS: &[(&str, &str)] = &[
     ("cite", "cite"),
 ];
 
-const PSEUDO_ORDER: &[&str] = &[":hover", ":focus", ":active", ":link", ":any-link", ":visited"];
+const PSEUDO_ORDER: &[&str] = &[":link", ":any-link", ":visited", ":hover", ":focus", ":focus-visible", ":active"];
 
 const LAYOUT_TYPES: &[(&str, &str)] = &[("default", "is-layout-flow"), ("constrained", "is-layout-constrained"), ("flex", "is-layout-flex"), ("grid", "is-layout-grid")];
 
@@ -155,6 +156,10 @@ impl<'a> GlobalStyles<'a> {
         main.push_str(&self.root_rules(&settings, &styles));
         main.push_str(&self.root_styles(&settings, &styles));
         main.push_str(&self.preset_classes(&settings));
+        // The theme's custom CSS comes last.
+        if let Some(extra) = styles.get("css").and_then(Value::as_str) {
+            main.push_str(extra);
+        }
         let mut chunks = vec![main];
         chunks.extend(self.block_chunks(&settings, &styles, handles));
         chunks.retain(|c| !c.is_empty());
@@ -329,10 +334,6 @@ impl<'a> GlobalStyles<'a> {
                 css.push_str(&self.element_rules(node, selector, settings, name_is_plain(name), None));
             }
         }
-        // Custom CSS at the root.
-        if let Some(extra) = styles.get("css").and_then(Value::as_str) {
-            css.push_str(extra);
-        }
         css
     }
 
@@ -440,12 +441,13 @@ impl<'a> GlobalStyles<'a> {
         let declarations = self.declarations_with_features(node, settings);
         let mut groups: Vec<(String, Vec<(String, String)>)> = Vec::new();
         for (feature, property, value) in declarations {
-            let target = scope.map(str::to_owned).unwrap_or_else(|| {
-                feature_selectors
-                    .get(&feature)
-                    .and_then(|s| s.as_str().map(str::to_owned).or_else(|| s.get("root").and_then(Value::as_str).map(str::to_owned)))
-                    .unwrap_or_else(|| selector.clone())
-            });
+            let own = feature_selectors.get(&feature).and_then(|s| s.as_str().map(str::to_owned).or_else(|| s.get("root").and_then(Value::as_str).map(str::to_owned)));
+            let target = match (scope, own) {
+                // A variation's instance class goes right behind the first compound of each feature selector.
+                (Some(scope), Some(own)) => variation_selector(scope, &own),
+                (Some(scope), None) => scope.to_owned(),
+                (None, own) => own.unwrap_or_else(|| selector.clone()),
+            };
             match groups.iter_mut().find(|(s, _)| *s == target) {
                 Some((_, list)) => list.push((property, value)),
                 None => groups.push((target, vec![(property, value)])),
@@ -559,6 +561,20 @@ fn block_class(name: &str) -> String {
     format!(".wp-block-{short}")
 }
 
+/// `WP_Theme_JSON::get_block_style_variation_selector()`: `class` is appended to the first
+/// compound selector (up to a space or `:`) of each part of a selector list.
+fn variation_selector(class: &str, selector: &str) -> String {
+    selector
+        .split(',')
+        .map(|part| {
+            let part = part.trim();
+            let start = part.find(|c: char| !(c.is_whitespace() || c == ':')).unwrap_or(part.len());
+            let end = part[start..].find(|c: char| c.is_whitespace() || c == ':').map_or(part.len(), |i| start + i);
+            format!("{}{class}{}", &part[..end], &part[end..])
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
 /// `prop: value;prop: value;`
 fn ruleset(declarations: &[(String, String)]) -> String {
     declarations.iter().map(|(p, v)| format!("{p}: {v};")).collect()
@@ -609,131 +625,39 @@ fn base_layout_styles() -> String {
 /// `process_blocks_custom_css`: nested rules with `&` become scoped rules.
 fn process_custom_css(css: &str, selector: &str) -> String {
     let mut out = String::new();
-    for (index, part) in css.split('&').enumerate() {
+    for part in css.split('&') {
+        if part.is_empty() || part == "0" {
+            continue;
+        }
         if !part.contains('{') {
-            if index == 0 || !part.trim().is_empty() {
-                out.push_str(part.trim());
-            }
+            // Plain declarations apply to the block itself.
+            out.push_str(&format!(":root :where({}){{{}}}", selector.trim(), part.trim()));
             continue;
         }
         let cleaned = part.replace('}', "");
-        let Some((nested, value)) = cleaned.split_once('{') else { continue };
-        let scoped = nested
-            .split(',')
-            .map(|s| if s.starts_with(char::is_whitespace) { format!("{selector} {}", s.trim()) } else { format!("{selector}{s}") })
-            .collect::<Vec<_>>()
-            .join(", ");
-        out.push_str(&format!(":root :where({scoped}){{{}}}", value.trim()));
+        let pieces: Vec<&str> = cleaned.split('{').collect();
+        let [nested, value] = pieces[..] else { continue };
+        // A pseudo-element (`::before`, with the combinators in front of it) goes behind the `:where()`.
+        let (nested, pseudo) = match nested.find("::") {
+            Some(at) => {
+                let start = nested[..at].trim_end_matches(|c: char| matches!(c, '>' | '+' | '~') || c.is_whitespace()).len();
+                let tail = &nested[at + 2..];
+                let end = at + 2 + tail.find(|c: char| !(c.is_ascii_alphabetic() || c == '-')).unwrap_or(tail.len());
+                (format!("{}{}", &nested[..start], &nested[end..]), nested[start..end].to_owned())
+            }
+            None => (nested.to_owned(), String::new()),
+        };
+        // A nested selector that starts with a space is a descendant of the block (each comma part);
+        // otherwise it is appended to the block selector as a whole.
+        let scoped = if nested.starts_with(' ') {
+            nested.split(',').map(|s| format!("{selector} {}", s.trim())).collect::<Vec<_>>().join(", ")
+        } else {
+            format!("{selector}{nested}")
+        };
+        out.push_str(&format!(":root :where({scoped}){pseudo}{{{}}}", value.trim()));
     }
     out
 }
-
-// ------------------------------------------------------- fluid typography
-
-struct SizeUnit {
-    value: f64,
-    unit: String,
-}
-
-fn round3(v: f64) -> f64 {
-    (v * 1000.0).round() / 1000.0
-}
-
-/// Number as PHP prints it after `round( $n, 3 )`.
-fn num(v: f64) -> String {
-    let r = round3(v);
-    if r == r.trunc() { format!("{}", r as i64) } else { format!("{r}").trim_end_matches('0').to_owned() }
-}
-
-/// `wp_get_typography_value_and_unit`.
-fn value_and_unit(raw: &str, coerce_to: &str) -> Option<SizeUnit> {
-    let raw = raw.trim();
-    if raw.is_empty() {
-        return None;
-    }
-    let raw = if raw.parse::<f64>().is_ok() { format!("{raw}px") } else { raw.to_owned() };
-    let split = raw.find(|c: char| !(c.is_ascii_digit() || c == '.'))?;
-    let (number, unit) = raw.split_at(split);
-    let mut value: f64 = number.parse().ok()?;
-    if !matches!(unit, "rem" | "px" | "em") {
-        return None;
-    }
-    let mut unit = unit.to_owned();
-    if coerce_to == "px" && (unit == "em" || unit == "rem") {
-        value *= 16.0;
-        unit = "px".to_owned();
-    }
-    if unit == "px" && (coerce_to == "em" || coerce_to == "rem") {
-        value /= 16.0;
-        unit = coerce_to.to_owned();
-    }
-    if (coerce_to == "em" || coerce_to == "rem") && (unit == "em" || unit == "rem") {
-        unit = coerce_to.to_owned();
-    }
-    Some(SizeUnit { value: round3(value), unit })
-}
-
-/// `wp_get_computed_fluid_typography_value`.
-fn computed_fluid(min_viewport: &str, max_viewport: &str, min_size: &str, max_size: &str) -> Option<String> {
-    let minimum = value_and_unit(min_size, "")?;
-    let unit = minimum.unit.clone();
-    let maximum = value_and_unit(max_size, &unit)?;
-    let minimum_rem = value_and_unit(min_size, "rem")?;
-    let max_vw = value_and_unit(max_viewport, &unit)?;
-    let min_vw = value_and_unit(min_viewport, &unit)?;
-    let denominator = max_vw.value - min_vw.value;
-    if denominator == 0.0 {
-        return None;
-    }
-    let offset = format!("{}{}", num(min_vw.value / 100.0), unit);
-    let factor = 100.0 * ((maximum.value - minimum.value) / denominator);
-    let scaled = round3(factor);
-    let scaled = if scaled == 0.0 { 1.0 } else { scaled };
-    Some(format!("clamp({min_size}, {}{} + ((1vw - {offset}) * {}), {max_size})", num(minimum_rem.value), minimum_rem.unit, num(scaled)))
-}
-
-/// `wp_get_typography_font_size_value` for a preset size.
-fn fluid_font_size(size: &str, fluid: Option<&Value>, settings: &Value) -> String {
-    if fluid == Some(&Value::Bool(false)) || size.is_empty() {
-        return size.to_owned();
-    }
-    let typography = settings.get("typography");
-    let global_fluid = typography.and_then(|t| t.get("fluid"));
-    let enabled = global_fluid.is_some_and(|f| !rustpress_blocks::style_engine::is_empty(f));
-    let preset_fluid = fluid.filter(|f| !rustpress_blocks::style_engine::is_empty(f));
-    if !enabled && preset_fluid.is_none() {
-        return size.to_owned();
-    }
-    let fluid_settings = global_fluid.and_then(Value::as_object);
-    let min_viewport = fluid_settings.and_then(|f| f.get("minViewportWidth")).and_then(Value::as_str).unwrap_or("320px").to_owned();
-    let wide = settings.get("layout").and_then(|l| l.get("wideSize")).and_then(Value::as_str).filter(|w| value_and_unit(w, "").is_some());
-    let mut max_viewport = wide.unwrap_or("1600px").to_owned();
-    if let Some(v) = fluid_settings.and_then(|f| f.get("maxViewportWidth")).and_then(Value::as_str) {
-        max_viewport = v.to_owned();
-    }
-    let min_font_limit = fluid_settings.and_then(|f| f.get("minFontSize")).and_then(Value::as_str).filter(|v| value_and_unit(v, "").is_some()).unwrap_or("14px").to_owned();
-
-    let explicit_min = preset_fluid.and_then(|f| f.get("min")).and_then(Value::as_str).map(str::to_owned);
-    let explicit_max = preset_fluid.and_then(|f| f.get("max")).and_then(Value::as_str).map(str::to_owned);
-    let Some(preferred) = value_and_unit(size, "") else { return size.to_owned() };
-    let Some(limit) = value_and_unit(&min_font_limit, &preferred.unit) else { return size.to_owned() };
-
-    if explicit_min.is_none() && explicit_max.is_none() && preferred.value <= limit.value {
-        return size.to_owned();
-    }
-    let max_raw = explicit_max.unwrap_or_else(|| format!("{}{}", num(preferred.value), preferred.unit));
-    let min_raw = match explicit_min {
-        Some(min) => min,
-        None => {
-            let in_px = if preferred.unit == "px" { preferred.value } else { preferred.value * 16.0 };
-            let factor = (1.0 - 0.075 * in_px.log2()).clamp(0.25, 0.75);
-            let calculated = round3(preferred.value * factor);
-            if calculated <= limit.value { format!("{}{}", num(limit.value), limit.unit) } else { format!("{}{}", num(calculated), preferred.unit) }
-        }
-    };
-    computed_fluid(&min_viewport, &max_viewport, &min_raw, &max_raw).unwrap_or_else(|| size.to_owned())
-}
-
 #[cfg(test)]
 mod tests {
     use serde_json::json;
@@ -792,4 +716,21 @@ mod tests {
         assert_eq!(block_class("core/post-title"), ".wp-block-post-title");
         assert_eq!(block_class("my/plugin"), ".wp-block-my-plugin");
     }
-}
+
+    #[test]
+    fn variation_classes_follow_the_first_compound_selector() {
+        assert_eq!(variation_selector(".is-style-r--2", ".wp-block-image img, .wp-block-image .crop"), ".wp-block-image.is-style-r--2 img, .wp-block-image.is-style-r--2 .crop");
+        assert_eq!(variation_selector(".is-style-x", ".wp-block-button:hover"), ".wp-block-button.is-style-x:hover");
+    }
+
+    #[test]
+    fn nested_custom_css_appends_or_scopes_and_handles_pseudo_elements() {
+        // A selector list that does not start with a space is appended as a whole.
+        assert_eq!(
+            process_custom_css("&.a, .b .c{x:y;}", ".q"),
+            ":root :where(.q.a, .b .c){x:y;}"
+        );
+        assert_eq!(process_custom_css("& li::before{a:b;}", ".l"), ":root :where(.l li)::before{a:b;}");
+        // Text without braces applies to the block itself, even when it is only whitespace.
+        assert_eq!(process_custom_css(" &:not(.w){width:1px}", ".s"), ":root :where(.s){}:root :where(.s:not(.w)){width:1px}");
+    }}

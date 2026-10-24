@@ -37,6 +37,7 @@ impl std::error::Error for PhpError {}
 
 /// Renders a PHP template file to its output.
 pub fn render(source: &str, host: &dyn PhpHost) -> Result<String, PhpError> {
+    let mut vars = std::collections::HashMap::new();
     let mut out = String::with_capacity(source.len());
     let mut rest = source;
     let mut base = 0usize;
@@ -54,10 +55,10 @@ pub fn render(source: &str, host: &dyn PhpHost) -> Result<String, PhpError> {
         let Some(close) = find_close_tag(code_area) else {
             // An unclosed trailing block runs to the end of the file.
             let code = code_area;
-            run_block(code, echo_tag, host, &mut out, base + code_start)?;
+            run_block(code, echo_tag, host, &mut vars, &mut out, base + code_start)?;
             return Ok(out);
         };
-        run_block(&code_area[..close], echo_tag, host, &mut out, base + code_start)?;
+        run_block(&code_area[..close], echo_tag, host, &mut vars, &mut out, base + code_start)?;
         let mut consumed = code_start + close + 2;
         // A newline directly after `?>` is swallowed, like PHP does.
         if rest[consumed..].starts_with("\r\n") {
@@ -111,8 +112,8 @@ fn find_close_tag(code: &str) -> Option<usize> {
     None
 }
 
-fn run_block(code: &str, echo_tag: bool, host: &dyn PhpHost, out: &mut String, offset: usize) -> Result<(), PhpError> {
-    let mut parser = Parser { src: code, pos: 0, base: offset, host };
+fn run_block(code: &str, echo_tag: bool, host: &dyn PhpHost, vars: &mut std::collections::HashMap<String, String>, out: &mut String, offset: usize) -> Result<(), PhpError> {
+    let mut parser = Parser { src: code, pos: 0, base: offset, host, vars };
     parser.skip_ws();
     if echo_tag {
         let value = parser.expression()?;
@@ -136,6 +137,8 @@ struct Parser<'a> {
     pos: usize,
     base: usize,
     host: &'a dyn PhpHost,
+    /// String variables, which live on from one `<?php ?>` island to the next.
+    vars: &'a mut std::collections::HashMap<String, String>,
 }
 
 impl Parser<'_> {
@@ -191,9 +194,32 @@ impl Parser<'_> {
         Some(name)
     }
 
+    /// `$name`, without the dollar sign.
+    fn variable_name(&mut self) -> Option<String> {
+        self.skip_ws();
+        let rest = self.rest().strip_prefix('$')?;
+        let end = rest.find(|c: char| !(c.is_ascii_alphanumeric() || c == '_')).unwrap_or(rest.len());
+        if end == 0 {
+            return None;
+        }
+        let name = rest[..end].to_owned();
+        self.pos += 1 + end;
+        Some(name)
+    }
+
     fn statement(&mut self, out: &mut String) -> Result<(), PhpError> {
         self.skip_ws();
         let start = self.pos;
+        if self.rest().starts_with('$') {
+            let Some(name) = self.variable_name() else { return self.err("unsupported variable") };
+            if !self.eat('=') {
+                return self.err("only assignments are supported for variables");
+            }
+            let value = self.expression()?;
+            self.eat(';');
+            self.vars.insert(name, value);
+            return Ok(());
+        }
         let Some(name) = self.identifier() else {
             if self.eat(';') {
                 return Ok(());
@@ -249,6 +275,13 @@ impl Parser<'_> {
         let rest = self.rest();
         if rest.starts_with('\'') || rest.starts_with('"') {
             return self.string_literal().map(Value::Str);
+        }
+        if rest.starts_with('$') {
+            let Some(name) = self.variable_name() else { return self.err("unsupported variable") };
+            return match self.vars.get(&name) {
+                Some(value) => Ok(Value::Str(value.clone())),
+                None => self.err(format!("undefined variable ${name}")),
+            };
         }
         if rest.starts_with('(') {
             self.pos += 1;
@@ -490,6 +523,12 @@ mod tests {
     }
 
     #[test]
+    fn variables_survive_between_islands() {
+        let src = "<?php $link = '<a>' . esc_html__( 'WP', 'td' ) . '</a>'; ?>x<?php echo sprintf( esc_html__( 'Designed with %1$s', 'td' ), $link ); ?>";
+        assert_eq!(run(src), "xDesigned with <a>WP</a>");
+    }
+
+    #[test]
     fn sprintf_positions() {
         assert_eq!(php_sprintf("%2$s-%1$s %% %s", &["a".into(), "b".into()]), "b-a % a");
     }
@@ -498,6 +537,7 @@ mod tests {
     fn unsupported_code_is_an_error() {
         assert!(render("<?php if ( $x ) : ?>a<?php endif; ?>", &Host).is_err());
         assert!(render("<?php echo $foo; ?>", &Host).is_err());
+        assert!(render("<?php $a += 1; ?>", &Host).is_err());
         assert!(render("<?php echo mystery(); ?>", &Host).is_err());
     }
 

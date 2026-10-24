@@ -63,6 +63,9 @@ pub struct CssStore {
 
 impl CssStore {
     pub fn add(&mut self, selector: &str, declarations: &[(String, String)], rules_group: Option<&str>) {
+        // The style engine drops properties `safecss_filter_attr()` does not know (e.g. `box-sizing`).
+        let declarations: Vec<(String, String)> = declarations.iter().filter(|(property, _)| crate::safe_css::is_safe_property(property)).cloned().collect();
+        let declarations = declarations.as_slice();
         if selector.is_empty() || declarations.is_empty() {
             return;
         }
@@ -143,6 +146,9 @@ pub struct State {
     pub nav_has_submenus: bool,
     /// Navigation names seen so far, to number duplicates (Menu 2).
     pub seen_menu_names: HashMap<String, u64>,
+    /// Names of the blocks that went through `render_block`, in first-render order (unlike `used_blocks`,
+    /// this leaves out blocks whose markup other code produces, like the button of the password form).
+    pub rendered_blocks: Vec<String>,
     /// Template-part areas rendered (for `<header>` / `<footer>` tag choice).
     pub rendered_parts: Vec<String>,
     /// What the image loading logic remembers between images.
@@ -242,11 +248,11 @@ mod tests {
     #[test]
     fn css_rules_merge_by_selector_and_group() {
         let mut store = CssStore::default();
-        store.add(".a", &[("x".into(), "1".into())], None);
-        store.add(".b", &[("y".into(), "2".into())], None);
-        store.add(".a", &[("x".into(), "3".into()), ("z".into(), "4".into())], None);
-        store.add(".a", &[("w".into(), "5".into())], Some("@media (min-width:600px)"));
-        assert_eq!(store.compile(), ".a{x:3;z:4;}.b{y:2;}@media (min-width:600px){.a{w:5;}}");
+        store.add(".a", &[("color".into(), "1".into())], None);
+        store.add(".b", &[("margin".into(), "2".into())], None);
+        store.add(".a", &[("color".into(), "3".into()), ("gap".into(), "4".into())], None);
+        store.add(".a", &[("padding".into(), "5".into())], Some("@media (min-width:600px)"));
+        assert_eq!(store.compile(), ".a{color:3;gap:4;}.b{margin:2;}@media (min-width:600px){.a{padding:5;}}");
     }
 
     #[test]

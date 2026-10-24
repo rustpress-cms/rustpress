@@ -60,6 +60,8 @@ pub struct Theme {
     db_templates: HashMap<String, String>,
     db_parts: HashMap<String, String>,
     block_style_inline: Vec<(String, String)>,
+    block_stylesheets: Vec<crate::functions_php::BlockStylesheet>,
+    theme_style_handle: Option<String>,
     pattern_cache: Mutex<HashMap<String, Option<String>>>,
 }
 
@@ -103,6 +105,8 @@ impl Theme {
 
         // `register_block_style()` calls with inline CSS; a child theme's `functions.php` runs first.
         let mut block_style_inline = Vec::new();
+        let mut block_stylesheets = Vec::new();
+        let mut theme_style_handle = None;
         let mut dirs = vec![&stylesheet_dir];
         if template_dir != stylesheet_dir {
             dirs.push(&template_dir);
@@ -110,6 +114,8 @@ impl Theme {
         for dir in dirs {
             if let Ok(php) = std::fs::read_to_string(dir.join("functions.php")) {
                 block_style_inline.extend(crate::functions_php::block_style_inline_styles(&php));
+                block_stylesheets.extend(crate::functions_php::block_stylesheets(&php));
+                theme_style_handle = theme_style_handle.or_else(|| crate::functions_php::theme_stylesheet_handle(&php));
             }
         }
 
@@ -137,6 +143,8 @@ impl Theme {
             db_templates,
             db_parts,
             block_style_inline,
+            block_stylesheets,
+            theme_style_handle,
             pattern_cache: Mutex::new(HashMap::new()),
         })
     }
@@ -173,6 +181,30 @@ impl Theme {
     /// `(block name, CSS)` of the `inline_style` of the theme's registered block styles.
     pub fn block_style_inline(&self) -> &[(String, String)] {
         &self.block_style_inline
+    }
+
+    /// Stylesheets the theme enqueues for single blocks (`wp_enqueue_block_style()`).
+    pub fn block_stylesheets(&self) -> &[crate::functions_php::BlockStylesheet] {
+        &self.block_stylesheets
+    }
+
+    /// The handle under which the theme enqueues its `style.css`, if its `functions.php` does.
+    pub fn theme_style_handle(&self) -> Option<&str> {
+        self.theme_style_handle.as_deref()
+    }
+
+    /// A file of the theme (the child theme's wins), if it exists.
+    pub fn theme_file(&self, relative: &str) -> Option<PathBuf> {
+        if relative.contains("..") {
+            return None;
+        }
+        [&self.stylesheet_dir, &self.template_dir].into_iter().map(|d| d.join(relative)).find(|p| p.is_file())
+    }
+
+    /// `Version:` of the theme's `style.css` header.
+    pub fn version(&self) -> String {
+        let text = std::fs::read_to_string(self.template_dir.join("style.css")).unwrap_or_default();
+        text.lines().find_map(|l| l.trim().strip_prefix("Version:").map(|v| v.trim().to_owned())).unwrap_or_default()
     }
 
     pub fn stylesheet_dir(&self) -> &Path {

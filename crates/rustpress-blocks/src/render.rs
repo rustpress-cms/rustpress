@@ -12,7 +12,7 @@ use crate::env::{Context, Env};
 use crate::layout;
 use crate::parser::{Block, Content, parse_blocks};
 use crate::registry::BlockType;
-use crate::supports::wrapper_attributes;
+use crate::supports::wrapper_attributes_with;
 
 /// Blocks that render their inner blocks themselves (`skip_inner_blocks`).
 fn skips_inner_blocks(name: &str) -> bool {
@@ -39,7 +39,7 @@ pub struct BlockCtx<'a> {
 impl BlockCtx<'_> {
     /// `get_block_wrapper_attributes( $extra )`.
     pub fn wrapper_attributes(&self, extra: &[(&str, String)]) -> String {
-        wrapper_attributes(self.block_type.as_deref(), &self.raw_attrs, extra)
+        wrapper_attributes_with(self.block_type.as_deref(), &self.raw_attrs, extra, Some(self.env.theme.global_settings()))
     }
 
     pub fn attr_str(&self, key: &str) -> Option<&str> {
@@ -76,6 +76,12 @@ impl<'a> Env<'a> {
         Box::pin(async move {
             let Some(name) = block.name.as_deref() else { return Ok(block.inner_html.clone()) };
             let block_type = self.registry.get(name);
+            let (blocks_before, modules_before) = self.with_state(|s| (s.used_blocks.len(), s.script_modules.clone()));
+            self.with_state(|s| {
+                if !s.rendered_blocks.iter().any(|b| b == name) {
+                    s.rendered_blocks.push(name.to_owned());
+                }
+            });
 
             // `render_block_data` filters.
             let mut raw_attrs = block.attrs.clone();
@@ -170,8 +176,14 @@ impl<'a> Env<'a> {
             }
             content = dynamic::name_filter(name, content);
             // Blocks that rendered nothing do not load their assets; parents come after their children.
-            if !content.trim().is_empty() {
-                self.with_state(|s| s.note_block(name));
+            // Assets enqueued while rendering a block that turns out empty are dequeued again,
+            // including those of its inner blocks (`WP_Block::render()`).
+            self.with_state(|s| s.note_block(name));
+            if content.trim().is_empty() {
+                self.with_state(|s| {
+                    s.used_blocks.truncate(blocks_before);
+                    s.script_modules = modules_before.clone();
+                });
             }
             if name == "core/navigation" {
                 content = crate::interactivity::process_directives(&content);

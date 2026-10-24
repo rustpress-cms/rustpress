@@ -285,7 +285,7 @@ fn sha256_hex(input: &str) -> String {
 }
 
 /// `get_avatar()` for an email address.
-fn avatar_img(bc: &BlockCtx<'_>, email: &str, size: u64, alt: &str, extra_class: &str, extra_attr: &str) -> String {
+pub(super) fn avatar_img(bc: &BlockCtx<'_>, email: &str, size: u64, alt: &str, extra_class: &str, extra_attr: &str) -> String {
     let options = &bc.env.site.options;
     let default = match options.string("avatar_default", "mystery").as_str() {
         "mm" | "mystery" | "mysteryman" => "mm".to_owned(),

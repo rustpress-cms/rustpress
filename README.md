@@ -48,7 +48,7 @@ Ohne den Stack überspringen sich die Golden-Tests. Unter Windows muss Cargo in 
 
 ```sh
 cargo run -p rustpress-compat -- --report compat/reports/twentytwentyfive.md
-dev/compat.ps1                      # mehrere Themes nacheinander auf der Referenz aktivieren
+dev/compat.ps1                      # TT25, TT24 und TT23 nacheinander auf der Referenz aktivieren und vergleichen
 cargo run -p rustpress-compat -- --dump /ueber-uns/   # beide Antworten nach compat/dump/ schreiben
 ```
 

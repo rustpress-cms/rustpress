@@ -315,8 +315,10 @@ fn font_faces(theme: &Theme) -> String {
         let Some(faces) = family.get("fontFace").and_then(Value::as_array) else { continue };
         for face in faces {
             let name = face.get("fontFamily").and_then(Value::as_str).unwrap_or_default();
+            // Names with spaces get quotes (`WP_Font_Face::maybe_add_quotes()`).
+            let name = if name.contains(' ') && !name.contains('"') && !name.contains('\'') { format!("\"{name}\"") } else { name.to_owned() };
             let mut rule = format!("font-family:{name};");
-            for (key, property) in [("fontStyle", "font-style"), ("fontWeight", "font-weight"), ("fontStretch", "font-stretch")] {
+            for (key, property) in [("fontStyle", "font-style"), ("fontWeight", "font-weight")] {
                 if let Some(v) = face.get(key).and_then(Value::as_str) {
                     rule.push_str(&format!("{property}:{v};"));
                 }
@@ -330,7 +332,11 @@ fn font_faces(theme: &Theme) -> String {
                         Some(rel) => format!("{base}/{rel}"),
                         None => s.to_owned(),
                     };
-                    let format = url.rsplit('.').next().unwrap_or("woff2");
+                    let format = match url.rsplit('.').next().unwrap_or("woff2") {
+                        "ttf" => "truetype",
+                        "otf" => "opentype",
+                        other => other,
+                    };
                     format!("url('{url}') format('{format}')")
                 }).collect())
                 .unwrap_or_default();
@@ -338,6 +344,10 @@ fn font_faces(theme: &Theme) -> String {
                 continue;
             }
             rule.push_str(&format!("src:{};", sources.join(", ")));
+            // ont-stretch follows the source in WordPress' output.
+            if let Some(v) = face.get("fontStretch").and_then(Value::as_str) {
+                rule.push_str(&format!("font-stretch:{v};"));
+            }
             css.push_str(&format!("@font-face{{{rule}}}\n"));
         }
     }
@@ -349,10 +359,8 @@ async fn discovery_links(site: &Site, q: &QueryResult, version: &str) -> Result<
     if let Some(route) = crate::head::queried_rest_route(q) {
         out.push_str(&format!("<link rel=\"alternate\" title=\"JSON\" type=\"application/json\" href=\"{}\" />", esc_url(&site.home_url(&format!("wp-json/{route}")))));
     }
-    out.push_str(&format!("<link rel=\"EditURI\" type=\"application/rsd+xml\" title=\"RSD\" href=\"{}\" />
-", esc_url(&site.site_url("xmlrpc.php?rsd"))));
-    out.push_str(&format!("<meta name=\"generator\" content=\"WordPress {version}\" />
-"));
+    out.push_str(&format!("<link rel=\"EditURI\" type=\"application/rsd+xml\" title=\"RSD\" href=\"{}\" />\n", esc_url(&site.site_url("xmlrpc.php?rsd"))));
+    out.push_str(&format!("<meta name=\"generator\" content=\"WordPress {version}\" />\n"));
     if q.flags.is_singular()
         && let Queried::Post(post) = &q.queried {
             out.push_str(&format!("<link rel=\"canonical\" href=\"{}\" />
@@ -501,6 +509,13 @@ pub async fn render_document(theme: &Theme, site: &Site, query: &QueryResult, re
         let path = registry.blocks_dir().join(slug).join("style.min.css");
         if path.is_file() {
             sheets.push(Sheet { id: handle.clone(), file: Some((path, format!("{includes_url}/blocks/{slug}/style.min.css?ver={version}"))), inline: None, extra: Vec::new() });
+            // Stylesheets the theme enqueues for this block (`wp_enqueue_block_style()`) follow it.
+            for extra in theme.block_stylesheets().iter().filter(|s| s.block.strip_prefix("core/") == Some(slug) && state.rendered_blocks.contains(&s.block)) {
+                if let Some(file) = theme.theme_file(&extra.path) {
+                    let url = format!("{}/{}?ver={}", theme.template_directory_uri(), extra.path, theme.version());
+                    sheets.push(Sheet { id: extra.handle.clone(), file: Some((file, url)), inline: None, extra: Vec::new() });
+                }
+            }
         }
     }
     // With block style variations WordPress queues the emoji style later.
@@ -523,6 +538,17 @@ pub async fn render_document(theme: &Theme, site: &Site, query: &QueryResult, re
     }
     // Smallest files first until the inline budget is used up.
     let mut by_size: Vec<(usize, u64)> = sheets.iter().enumerate().filter_map(|(i, s)| s.file.as_ref().and_then(|(p, _)| std::fs::metadata(p).ok()).map(|m| (i, m.len()))).collect();
+    // The skip link and the theme's own stylesheet are enqueued later but compete for the same budget.
+    const SKIP_LINK: usize = usize::MAX;
+    const THEME_STYLE: usize = usize::MAX - 1;
+    let skip_link_file = wp_root.join("wp-includes").join("css").join("wp-block-template-skip-link.min.css");
+    let theme_style_file = theme.theme_style_handle().and_then(|_| ["style.min.css", "style.css"].iter().map(|f| theme.template_dir().join(f)).find(|p| p.is_file()));
+    if let Ok(meta) = std::fs::metadata(&skip_link_file) {
+        by_size.push((SKIP_LINK, meta.len()));
+    }
+    if let Some(meta) = theme_style_file.as_ref().and_then(|p| std::fs::metadata(p).ok()) {
+        by_size.push((THEME_STYLE, meta.len()));
+    }
     by_size.sort_by_key(|(_, size)| *size);
     let mut budget = 0u64;
     let mut inline_ids: Vec<usize> = Vec::new();
@@ -533,6 +559,9 @@ pub async fn render_document(theme: &Theme, site: &Site, query: &QueryResult, re
         budget += size;
         inline_ids.push(i);
     }
+    let skip_link_inline = inline_ids.contains(&SKIP_LINK);
+    let theme_style_inline = inline_ids.contains(&THEME_STYLE);
+    inline_ids.retain(|i| *i < THEME_STYLE);
     for i in inline_ids {
         if let Some((path, _)) = &sheets[i].file {
             sheets[i].inline = read(path);
@@ -548,10 +577,10 @@ pub async fn render_document(theme: &Theme, site: &Site, query: &QueryResult, re
                 // The common block stylesheet is registered with a site-relative path, block styles with a URL.
                 let source = if sheet.id == "wp-block-library" { absolute.strip_prefix(includes_url.trim_end_matches("/wp-includes")).unwrap_or(absolute) } else { absolute };
                 if sheet.extra.is_empty() {
-                    styles.push_str(&format!("<style id=\"{}-inline-css\">\n{}\n/*# sourceURL={source} */\n</style>\n", sheet.id, css.trim_end()));
+                    styles.push_str(&format!("<style id=\"{}-inline-css\">\n{}\n/*# sourceURL={source} */\n</style>\n", sheet.id, css));
                 } else {
                     // With further inline styles the sourceURL names the handle instead of the file.
-                    styles.push_str(&format!("<style id=\"{id}-inline-css\">\n{}\n{}\n/*# sourceURL={id}-inline-css */\n</style>\n", css.trim_end(), sheet.extra.join("\n"), id = sheet.id));
+                    styles.push_str(&format!("<style id=\"{id}-inline-css\">\n{}\n{}\n/*# sourceURL={id}-inline-css */\n</style>\n", css, sheet.extra.join("\n"), id = sheet.id));
                 }
             }
             (Some(css), None) => styles.push_str(&format!("<style id=\"{}-inline-css\">\n{css}\n/*# sourceURL={}-inline-css */\n</style>\n", sheet.id, sheet.id)),
@@ -564,9 +593,26 @@ pub async fn render_document(theme: &Theme, site: &Site, query: &QueryResult, re
             _ => {}
         }
     }
-    let global = GlobalStyles::new(&theme.json, registry).stylesheet_chunks(Some(&handles)).join("\n");
+    let global = {
+        // Core blocks without a stylesheet are queued under their handle, too: global styles attach to it.
+        let mut queued = handles.clone();
+        for name in &state.used_blocks {
+            if let Some(short) = name.strip_prefix("core/") {
+                // `core/query` drops its style handle unless it is interactive (query.php).
+                if short == "query" && !state.script_modules.contains("@wordpress/block-library/query/view") {
+                    continue;
+                }
+                let handle = format!("wp-block-{short}");
+                if !queued.contains(&handle) {
+                    queued.push(handle);
+                }
+            }
+        }
+        GlobalStyles::new(&theme.json, registry).stylesheet_chunks(Some(&queued)).join("\n")
+    };
     styles.push_str(&format!("<style id=\"global-styles-inline-css\">\n{global}\n/*# sourceURL=global-styles-inline-css */\n</style>\n"));
-    let variation_css: String = state.inline_styles.iter().filter(|(handle, _)| handle == "block-style-variation-styles").map(|(_, css)| css.as_str()).collect();
+    // Each block instance adds its own inline style; they are printed one per line.
+    let variation_css: String = state.inline_styles.iter().filter(|(handle, _)| handle == "block-style-variation-styles").map(|(_, css)| css.as_str()).collect::<Vec<_>>().join("\n");
     if !variation_css.is_empty() {
         styles.push_str(&format!("<style id=\"block-style-variation-styles-inline-css\">\n{variation_css}\n/*# sourceURL=block-style-variation-styles-inline-css */\n</style>\n"));
     }
@@ -577,12 +623,18 @@ pub async fn render_document(theme: &Theme, site: &Site, query: &QueryResult, re
     if !supports.is_empty() {
         styles.push_str(&format!("<style id=\"core-block-supports-inline-css\">\n{supports}\n/*# sourceURL=core-block-supports-inline-css */\n</style>\n"));
     }
-    if let Some(css) = read(&wp_root.join("wp-includes").join("css").join("wp-block-template-skip-link.min.css")) {
+    if !skip_link_inline && skip_link_file.is_file() {
+        styles.push_str(&format!("<link rel='stylesheet' id='wp-block-template-skip-link-css' href='{includes_url}/css/wp-block-template-skip-link.min.css?ver={version}' media='all' />\n"));
+    } else if let Some(css) = read(&skip_link_file) {
         styles.push_str(&format!("<style id=\"wp-block-template-skip-link-inline-css\">\n{}\n/*# sourceURL=/wp-includes/css/wp-block-template-skip-link.min.css */\n</style>\n", css.trim_end()));
     }
-    let theme_css = ["style.min.css", "style.css"].iter().find_map(|f| read(&theme.template_dir().join(f)).map(|c| (*f, c)));
-    if let Some((file, css)) = theme_css {
-        styles.push_str(&format!("<style id=\"{}-style-inline-css\">\n{}\n/*# sourceURL={}/{file} */\n</style>\n", site.settings.template, css.trim_end(), theme.template_directory_uri()));
+    // The theme's style.css is only printed when its functions.php enqueues it.
+    let theme_css = theme.theme_style_handle().and_then(|handle| ["style.min.css", "style.css"].iter().find_map(|f| read(&theme.template_dir().join(f)).map(|c| (handle, *f, c))));
+    if !theme_style_inline && let Some(handle) = theme.theme_style_handle() && theme_style_file.is_some() {
+        let file = theme_style_file.as_ref().and_then(|p| p.file_name()).and_then(|n| n.to_str()).unwrap_or("style.css");
+        styles.push_str(&format!("<link rel='stylesheet' id='{handle}-css' href='{}/{file}?ver={}' media='all' />\n", theme.template_directory_uri(), theme.version()));
+    } else if let Some((handle, file, css)) = theme_css {
+        styles.push_str(&format!("<style id=\"{handle}-inline-css\">\n{}\n/*# sourceURL={}/{file} */\n</style>\n", css.trim_end(), theme.template_directory_uri()));
     }
     let fonts = font_faces(theme);
 

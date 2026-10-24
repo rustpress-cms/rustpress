@@ -73,6 +73,46 @@ impl<'a> Cursor<'a> {
         None
     }
 
+    /// A double-quoted PHP string without variables; `None` if it interpolates.
+    fn double_quoted(&mut self) -> Option<String> {
+        self.skip_space();
+        if !self.rest().starts_with('"') {
+            return None;
+        }
+        self.at += 1;
+        let mut out = String::new();
+        let mut chars = self.rest().char_indices();
+        while let Some((i, c)) = chars.next() {
+            if c == backslash() {
+                match chars.next() {
+                    Some((_, 'n')) => out.push('\n'),
+                    Some((_, 't')) => out.push('\t'),
+                    Some((_, 'r')) => out.push('\r'),
+                    Some((_, next)) if next == '"' || next == '$' || next == backslash() => out.push(next),
+                    Some((_, next)) => {
+                        out.push(c);
+                        out.push(next);
+                    }
+                    None => return None,
+                }
+            } else if c == '"' {
+                self.at += i + 1;
+                return Some(out);
+            } else if c == '$' {
+                return None;
+            } else {
+                out.push(c);
+            }
+        }
+        None
+    }
+
+    /// Any plain string literal.
+    fn string(&mut self) -> Option<String> {
+        self.skip_space();
+        if self.rest().starts_with('"') { self.double_quoted() } else { self.single_quoted() }
+    }
+
     /// Skips a value that is not a plain string: up to the next top-level `,` or closing bracket.
     fn skip_value(&mut self) {
         let mut depth = 0i32;
@@ -118,15 +158,99 @@ pub fn block_style_inline_styles(php: &str) -> Vec<(String, String)> {
                 break;
             }
             cursor.skip_space();
-            match cursor.single_quoted() {
+            let at = cursor.at;
+            match cursor.string() {
                 Some(value) if key == "inline_style" => out.push((block.clone(), value)),
                 Some(_) => {}
-                None => cursor.skip_value(),
+                None => {
+                    cursor.at = at;
+                    cursor.skip_value();
+                }
             }
         }
         from = cursor.at;
     }
     out
+}
+
+/// The argument text of every `name( ... )` call: from after the `(` to the matching `)`.
+fn call_arguments<'a>(php: &'a str, name: &str) -> Vec<&'a str> {
+    let needle = format!("{name}(");
+    let mut out = Vec::new();
+    let mut from = 0;
+    while let Some(found) = php[from..].find(&needle) {
+        let at = from + found;
+        let start = at + needle.len();
+        from = start;
+        // Not `my_wp_enqueue_style(`, a method call, or a function definition.
+        let before = php[..at].chars().next_back();
+        if before.is_some_and(|c| c.is_ascii_alphanumeric() || c == '_' || c == '>') || php[..at].trim_end().ends_with("function") {
+            continue;
+        }
+        let mut cursor = Cursor { text: php, at: start };
+        let mut depth = 0i32;
+        while let Some(c) = cursor.peek() {
+            match c {
+                '(' => depth += 1,
+                ')' if depth == 0 => break,
+                ')' => depth -= 1,
+                '\'' => {
+                    let _ = cursor.single_quoted();
+                    continue;
+                }
+                _ => {}
+            }
+            cursor.at += c.len_utf8();
+        }
+        out.push(&php[start..cursor.at.min(php.len())]);
+        from = cursor.at;
+    }
+    out
+}
+
+/// The quoted string after `key =>` in an argument list.
+fn string_after(arguments: &str, key: &str) -> Option<String> {
+    let at = arguments.find(key)? + key.len();
+    let mut cursor = Cursor { text: arguments, at };
+    if !cursor.eat("=>") {
+        return None;
+    }
+    cursor.string()
+}
+
+/// A block stylesheet from `wp_enqueue_block_style()`: loaded when the block is rendered.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BlockStylesheet {
+    pub block: String,
+    pub handle: String,
+    /// File below the theme directory (from `get_parent_theme_file_path()` / `get_theme_file_path()`).
+    pub path: String,
+}
+
+/// `wp_enqueue_block_style( $block, array( 'handle' => ..., 'path' => get_..._file_path( 'x.css' ) ) )`.
+pub fn block_stylesheets(php: &str) -> Vec<BlockStylesheet> {
+    let mut out = Vec::new();
+    for arguments in call_arguments(php, "wp_enqueue_block_style") {
+        let mut cursor = Cursor { text: arguments, at: 0 };
+        let Some(block) = cursor.single_quoted() else { continue };
+        let Some(handle) = string_after(arguments, "'handle'") else { continue };
+        let Some(at) = arguments.find("'path'") else { continue };
+        let rest = &arguments[at..];
+        let Some(open) = ["get_parent_theme_file_path(", "get_theme_file_path("].iter().find_map(|f| rest.find(f).map(|i| i + f.len())) else { continue };
+        let mut path_cursor = Cursor { text: rest, at: open };
+        let Some(path) = path_cursor.single_quoted() else { continue };
+        out.push(BlockStylesheet { block, handle, path });
+    }
+    out
+}
+
+/// The handle under which the theme's `style.css` is enqueued (`wp_enqueue_style( 'x', get_stylesheet_uri() )`).
+pub fn theme_stylesheet_handle(php: &str) -> Option<String> {
+    call_arguments(php, "wp_enqueue_style").into_iter().find_map(|arguments| {
+        let mut cursor = Cursor { text: arguments, at: 0 };
+        let handle = cursor.single_quoted()?;
+        (handle.ends_with("-style") || arguments.contains("style.css") || arguments.contains("get_stylesheet_uri(")).then_some(handle)
+    })
 }
 
 #[cfg(test)]
@@ -148,6 +272,21 @@ mod tests {
         let php = "register_block_style('core/quote', ['name' => 'x', 'inline_style' => 'a::before{content:\\'q\\'}']); register_block_style('core/code', array('name' => 'plain'));";
         let styles = block_style_inline_styles(php);
         assert_eq!(styles, vec![("core/quote".to_owned(), "a::before{content:'q'}".to_owned())]);
+    }
+
+    #[test]
+    fn double_quoted_inline_styles_are_read_unless_they_interpolate() {
+        let php = "register_block_style('core/heading', array('name' => 'a', 'inline_style' => \"x:before { content: ''; }\")); register_block_style('core/code', array('inline_style' => \"a { b: $c; }\"));";
+        assert_eq!(block_style_inline_styles(php), vec![("core/heading".to_owned(), "x:before { content: ''; }".to_owned())]);
+    }
+
+    #[test]
+    fn enqueued_block_and_theme_stylesheets() {
+        let php = "function s() { wp_enqueue_block_style( 'core/button', array( 'handle' => 'tt-outline', 'src' => get_parent_theme_file_uri( 'assets/css/b.css' ), 'path' => get_parent_theme_file_path( 'assets/css/b.css' ) ) ); wp_enqueue_style( 'tt-style', get_parent_theme_file_uri( 'style.css' ), array(), '1' ); }";
+        assert_eq!(block_stylesheets(php), vec![BlockStylesheet { block: "core/button".into(), handle: "tt-outline".into(), path: "assets/css/b.css".into() }]);
+        assert_eq!(theme_stylesheet_handle(php).as_deref(), Some("tt-style"));
+        assert_eq!(theme_stylesheet_handle("wp_enqueue_style( 'x', get_theme_file_uri( 'a.css' ) );"), None);
+        assert!(block_stylesheets("function wp_enqueue_block_style( $a ) {}").is_empty());
     }
 
     #[test]

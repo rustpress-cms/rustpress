@@ -105,6 +105,35 @@ pub fn opt_in_settings(theme_json: &mut Value) {
     }
 }
 
+/// `{ "ref": "styles.elements.button.border.radius" }` -> the value found at that path of the
+/// styles tree (`WP_Theme_JSON::resolve_value_references`); an unresolvable reference is removed.
+pub fn resolve_refs(styles: &mut Value) {
+    for _ in 0..3 {
+        let root = styles.clone();
+        replace_refs(styles, &root);
+    }
+}
+
+fn replace_refs(value: &mut Value, root: &Value) {
+    match value {
+        Value::Object(map) => {
+            if let Some(path) = map.get("ref").and_then(Value::as_str).filter(|_| map.len() == 1) {
+                let mut found = Some(root);
+                for key in path.strip_prefix("styles.").unwrap_or(path).split('.') {
+                    found = found.and_then(|v| v.get(key));
+                }
+                *value = found.filter(|v| !v.is_object() || v.get("ref").is_none()).cloned().unwrap_or(Value::Null);
+                return;
+            }
+            for child in map.values_mut() {
+                replace_refs(child, root);
+            }
+            map.retain(|_, v| !v.is_null());
+        }
+        Value::Array(items) => items.iter_mut().for_each(|v| replace_refs(v, root)),
+        _ => {}
+    }
+}
 /// `var:preset|spacing|50` -> `var(--wp--preset--spacing--50)` everywhere in a
 /// styles tree, as `wp_get_global_styles()` returns it.
 pub fn resolve_custom_vars(value: &mut Value) {
@@ -180,6 +209,7 @@ impl ThemeJson {
         for layer in [parent, child].into_iter().flatten() {
             let mut layer = layer;
             opt_in_settings(&mut layer);
+            set_spacing_sizes(&mut layer, "theme");
             deep_merge(&mut theme, &layer);
         }
         for partial in partials {
@@ -187,8 +217,10 @@ impl ThemeJson {
         }
         let mut core = core;
         opt_in_settings(&mut core);
+        set_spacing_sizes(&mut core, "default");
         let mut user = user.unwrap_or(Value::Object(Map::new()));
         opt_in_settings(&mut user);
+        set_spacing_sizes(&mut user, "custom");
 
         let mut merged = core.clone();
         if blocks.is_object() {
@@ -205,6 +237,7 @@ impl ThemeJson {
 
     pub fn styles(&self) -> Value {
         let mut styles = self.merged.get("styles").cloned().unwrap_or(Value::Object(Map::new()));
+        resolve_refs(&mut styles);
         resolve_custom_vars(&mut styles);
         styles
     }
@@ -216,6 +249,93 @@ impl ThemeJson {
     pub fn custom_templates(&self) -> Vec<Value> {
         self.theme.get("customTemplates").and_then(Value::as_array).cloned().unwrap_or_default()
     }
+}
+
+/// `WP_Theme_JSON::compute_spacing_sizes()`: the sizes a `spacingScale` stands for.
+fn compute_spacing_sizes(scale: &Value) -> Vec<Value> {
+    let number = |key: &str| scale.get(key).and_then(Value::as_f64);
+    let (Some(steps), Some(medium), Some(increment)) = (number("steps"), number("mediumStep"), number("increment")) else { return Vec::new() };
+    let (Some(unit), Some(operator)) = (scale.get("unit").and_then(Value::as_str), scale.get("operator").and_then(Value::as_str)) else { return Vec::new() };
+    if steps == 0.0 || !matches!(operator, "+" | "*") {
+        return Vec::new();
+    }
+    let unit = if unit == "%" { "%".to_owned() } else { unit.to_lowercase() };
+    let round2 = |v: f64| {
+        let r = (v * 100.0).round() / 100.0;
+        format!("{r}")
+    };
+    // PHP's `round()` rounds halves away from zero.
+    let mid = (steps / 2.0).round();
+    let mut sizes: Vec<(String, String)> = Vec::new();
+    let mut current = medium;
+    let mut slug = 40i64;
+    let mut remainder = 0.0;
+    let mut below_count = mid - 1.0;
+    let mut below: Vec<(String, String)> = Vec::new();
+    while steps > 1.0 && slug > 0 && below_count > 0.0 {
+        if operator == "+" {
+            current -= increment;
+        } else if increment > 1.0 {
+            current /= increment;
+        } else {
+            current *= increment;
+        }
+        if current <= 0.0 {
+            remainder = below_count;
+            break;
+        }
+        below.push((slug.to_string(), format!("{}{unit}", round2(current))));
+        slug -= 10;
+        below_count -= 1.0;
+    }
+    below.reverse();
+    sizes.extend(below);
+    sizes.push(("50".to_owned(), format!("{}{unit}", scale.get("mediumStep").map(|v| v.to_string()).unwrap_or_default())));
+    let mut current = medium;
+    let mut slug = 60i64;
+    let steps_above = (steps - mid) + remainder;
+    let mut index = 0.0;
+    while index < steps_above {
+        current = if operator == "+" {
+            current + increment
+        } else if increment >= 1.0 {
+            current * increment
+        } else {
+            current / increment
+        };
+        sizes.push((slug.to_string(), format!("{}{unit}", round2(current))));
+        slug += 10;
+        index += 1.0;
+    }
+    // With seven steps or fewer the names are numbers.
+    let numbered = steps <= 7.0;
+    sizes
+        .into_iter()
+        .enumerate()
+        .map(|(i, (slug, size))| serde_json::json!({"name": if numbered { (i + 1).to_string() } else { slug.clone() }, "slug": slug, "size": size}))
+        .collect()
+}
+
+/// `WP_Theme_JSON::set_spacing_sizes()`: sizes computed from the layer's own `spacingScale` are
+/// its `default` origin; sizes it lists itself stay in `origin`.
+fn set_spacing_sizes(layer: &mut Value, origin: &str) {
+    let Some(scale) = layer.get("settings").and_then(|s| s.get("spacing")).and_then(|s| s.get("spacingScale")).cloned() else { return };
+    let computed = compute_spacing_sizes(&scale);
+    if computed.is_empty() {
+        return;
+    }
+    let Some(spacing) = layer.get_mut("settings").and_then(|s| s.get_mut("spacing")).and_then(Value::as_object_mut) else { return };
+    let mut by_origin = match spacing.remove("spacingSizes") {
+        Some(Value::Array(items)) => {
+            let mut map = Map::new();
+            map.insert(origin.to_owned(), Value::Array(items));
+            map
+        }
+        Some(Value::Object(map)) => map,
+        _ => Map::new(),
+    };
+    by_origin.insert("default".to_owned(), Value::Array(computed));
+    spacing.insert("spacingSizes".to_owned(), Value::Object(by_origin));
 }
 
 #[cfg(test)]
@@ -261,4 +381,19 @@ mod tests {
         assert_eq!(tj.settings()["useRootPaddingAwareAlignments"], true);
         assert_eq!(tj.template_parts().len(), 1);
     }
-}
+
+    #[test]
+    fn the_default_spacing_scale_yields_seven_sizes() {
+        let sizes = compute_spacing_sizes(&serde_json::json!({"operator": "*", "increment": 1.5, "steps": 7, "mediumStep": 1.5, "unit": "rem"}));
+        let pairs: Vec<(String, String)> = sizes.iter().map(|s| (s["slug"].as_str().unwrap().to_owned(), s["size"].as_str().unwrap().to_owned())).collect();
+        let expected = [("20", "0.44rem"), ("30", "0.67rem"), ("40", "1rem"), ("50", "1.5rem"), ("60", "2.25rem"), ("70", "3.38rem"), ("80", "5.06rem")];
+        assert_eq!(pairs, expected.map(|(a, b)| (a.to_owned(), b.to_owned())));
+        assert!(compute_spacing_sizes(&serde_json::json!({"steps": 0})).is_empty());
+    }
+
+    #[test]
+    fn refs_point_to_other_style_values() {
+        let mut styles = serde_json::json!({"elements": {"button": {"border": {"radius": "4px"}}}, "blocks": {"core/search": {"elements": {"button": {"border": {"radius": {"ref": "styles.elements.button.border.radius"}}}}}}});
+        resolve_refs(&mut styles);
+        assert_eq!(styles["blocks"]["core/search"]["elements"]["button"]["border"]["radius"], "4px");
+    }}

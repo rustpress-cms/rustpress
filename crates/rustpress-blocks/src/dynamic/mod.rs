@@ -30,8 +30,10 @@ pub fn is_dynamic(name: &str) -> bool {
             | "core/post-content"
             | "core/post-title"
             | "core/post-date"
+            | "core/post-excerpt"
             | "core/post-terms"
             | "core/post-author-name"
+            | "core/post-author"
             | "core/site-title"
             | "core/site-tagline"
             | "core/site-logo"
@@ -77,8 +79,10 @@ pub fn render<'a>(bc: &'a BlockCtx<'a>) -> BoxFuture<'a, Result<String>> {
             "core/post-content" => post_content::render(bc).await,
             "core/post-title" => post_meta::post_title(bc).await,
             "core/post-date" => post_meta::post_date(bc).await,
+            "core/post-excerpt" => post_meta::post_excerpt(bc).await,
             "core/post-terms" => post_meta::post_terms(bc).await,
             "core/post-author-name" => post_meta::post_author_name(bc).await,
+            "core/post-author" => post_meta::post_author(bc).await,
             "core/site-title" => simple::site_title(bc),
             "core/site-tagline" => simple::site_tagline(bc),
             "core/site-logo" => media::site_logo(bc).await,

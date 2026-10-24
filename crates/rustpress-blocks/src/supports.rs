@@ -37,7 +37,7 @@ pub fn default_classname(block_name: &str) -> String {
 }
 
 /// All block supports of one block, merged by attribute name.
-pub fn apply_block_supports(bt: &BlockType, attrs: &Map<String, Value>) -> Attrs {
+pub fn apply_block_supports(bt: &BlockType, attrs: &Map<String, Value>, settings: Option<&Value>) -> Attrs {
     let mut out: Attrs = Vec::new();
 
     // align
@@ -56,7 +56,7 @@ pub fn apply_block_supports(bt: &BlockType, attrs: &Map<String, Value>) -> Attrs
         push(&mut out, "class", default_classname(&bt.name));
     }
 
-    for (name, value) in colors(bt, attrs).into_iter().chain(typography(bt, attrs)).chain(border(bt, attrs)) {
+    for (name, value) in colors(bt, attrs).into_iter().chain(typography(bt, attrs, settings)).chain(border(bt, attrs)) {
         push(&mut out, &name, value);
     }
     for (name, value) in spacing(bt, attrs).into_iter().chain(dimensions(bt, attrs)).chain(shadow(bt, attrs)) {
@@ -143,7 +143,7 @@ fn typography_preset_value(value: &Value, property: &str) -> Value {
     }
 }
 
-fn typography(bt: &BlockType, attrs: &Map<String, Value>) -> Attrs {
+fn typography(bt: &BlockType, attrs: &Map<String, Value>, settings: Option<&Value>) -> Attrs {
     let Some(support) = bt.support(&["typography"]).filter(|v| !crate::style_engine::is_empty(v)) else { return Vec::new() };
     if bt.skips_serialization("typography", None) {
         return Vec::new();
@@ -154,7 +154,13 @@ fn typography(bt: &BlockType, attrs: &Map<String, Value>) -> Attrs {
 
     let mut t = Map::new();
     if has("fontSize") && !skip("fontSize") {
-        let value = attr_str(attrs, "fontSize").map(|s| Value::from(format!("var:preset|font-size|{s}"))).or_else(|| typo("fontSize"));
+        let value = attr_str(attrs, "fontSize").map(|s| Value::from(format!("var:preset|font-size|{s}"))).or_else(|| {
+            // A custom size is made fluid like a preset one (`wp_get_typography_font_size_value()`).
+            typo("fontSize").map(|v| match (v.as_str(), settings) {
+                (Some(size), Some(settings)) => Value::from(crate::fluid::fluid_font_size(size, None, settings)),
+                _ => v,
+            })
+        });
         t.insert("fontSize".into(), value.unwrap_or(Value::Null));
     }
     if has("__experimentalFontFamily") && !skip("fontFamily") {
@@ -317,7 +323,12 @@ pub fn safecss_filter_attr(css: &str) -> String {
 /// to put into a start tag. `extra` takes precedence for `id`/`aria-label`,
 /// and its classes come first.
 pub fn wrapper_attributes(bt: Option<&BlockType>, attrs: &Map<String, Value>, extra: &[(&str, String)]) -> String {
-    let new = bt.map(|bt| apply_block_supports(bt, attrs)).unwrap_or_default();
+    wrapper_attributes_with(bt, attrs, extra, None)
+}
+
+/// [`wrapper_attributes`] with the global settings, which fluid typography needs.
+pub fn wrapper_attributes_with(bt: Option<&BlockType>, attrs: &Map<String, Value>, extra: &[(&str, String)], settings: Option<&Value>) -> String {
+    let new = bt.map(|bt| apply_block_supports(bt, attrs, settings)).unwrap_or_default();
     if new.is_empty() && extra.iter().all(|(_, v)| v.is_empty()) {
         return String::new();
     }

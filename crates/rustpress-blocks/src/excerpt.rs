@@ -16,6 +16,11 @@ const WRAPPERS: &[&str] = &["core/columns", "core/column", "core/group"];
 /// `get_the_excerpt()`: the explicit excerpt, else the first 55 words of the content.
 /// The result is plain text/HTML before any output filters (`the_excerpt`, `the_excerpt_rss`).
 pub async fn get_the_excerpt(env: &Env<'_>, post: &Arc<Post>) -> Result<String> {
+    get_the_excerpt_with(env, post, 55, " [&hellip;]").await
+}
+
+/// [`get_the_excerpt`] with the `excerpt_length` and `excerpt_more` filters applied.
+pub async fn get_the_excerpt_with(env: &Env<'_>, post: &Arc<Post>, length: usize, more: &str) -> Result<String> {
     if post_password_required(post) {
         return Ok("There is no excerpt because this is a protected post.".to_owned());
     }
@@ -25,7 +30,7 @@ pub async fn get_the_excerpt(env: &Env<'_>, post: &Arc<Post>) -> Result<String> 
     let content = get_the_content(env, post, 1, true);
     let content = excerpt_remove_blocks(env, post, &content).await?;
     let html = the_content_for_excerpt(env, post, &content).await?.replace("]]>", "]]&gt;");
-    Ok(wp_trim_words(&html, 55, " [&hellip;]"))
+    Ok(wp_trim_words(&html, length, more))
 }
 
 fn allowed(name: &Option<String>) -> bool {
