@@ -282,6 +282,11 @@ impl TagEditor {
         }
     }
 
+    /// `set_attribute( $name, true )`: a boolean attribute, written without a value.
+    pub fn set_boolean_attribute(&mut self, name: &str) {
+        self.set_attribute(name, "\u{1}");
+    }
+
     /// `add_class`: appends to an existing `class` attribute (once), or creates it.
     pub fn add_class(&mut self, class: &str) {
         match self.get_attribute("class").map(str::to_owned) {
@@ -313,7 +318,7 @@ impl TagEditor {
         let mut edits: Vec<(usize, usize, String)> = Vec::new();
         let mut inserts: Vec<String> = Vec::new();
         for (lower, name, value) in &self.set {
-            let text = format!("{name}=\"{}\"", esc_attr(value));
+            let text = if value == "\u{1}" { name.clone() } else { format!("{name}=\"{}\"", esc_attr(value)) };
             match self.tag.attrs.iter().find(|a| a.name == *lower) {
                 Some(attr) => edits.push((attr.range.start, attr.range.end, text)),
                 None => inserts.push(format!(" {text}")),

@@ -14,6 +14,22 @@ macro_rules! re {
 
 // ---------------------------------------------------------------- escaping
 
+/// `sanitize_html_class()`: percent-encoded octets and everything but `[A-Za-z0-9_-]` go.
+pub fn sanitize_html_class(class: &str) -> String {
+    let bytes = class.as_bytes();
+    let mut stripped = String::with_capacity(class.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() && bytes.get(i + 1).is_some_and(u8::is_ascii_hexdigit) && bytes.get(i + 2).is_some_and(u8::is_ascii_hexdigit) {
+            i += 3;
+            continue;
+        }
+        stripped.push(bytes[i] as char);
+        i += 1;
+    }
+    stripped.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '-').collect()
+}
+
 /// `&` that is not part of a valid entity (`&amp;`, `&#038;`, `&#x26;`).
 fn is_entity_at(s: &str) -> bool {
     let bytes = s.as_bytes();

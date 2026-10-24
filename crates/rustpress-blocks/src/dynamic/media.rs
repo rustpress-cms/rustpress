@@ -212,6 +212,31 @@ pub(super) async fn post_featured_image(bc: &BlockCtx<'_>) -> Result<String> {
     Ok(format!("<figure {wrapper}>{featured}</figure>"))
 }
 
+// ----------------------------------------------------------------------- core/file
+
+/// `render_block_core_file()`: the PDF preview of a file block is interactive.
+pub(super) fn file(bc: &BlockCtx<'_>) -> Result<String> {
+    let content = bc.content.clone();
+    if !bc.attr_bool("displayPreview") {
+        return Ok(content);
+    }
+    bc.env.with_state(|s| s.script_modules.insert("@wordpress/block-library/file/view".to_owned()));
+    let Some(mut editor) = TagEditor::first(&content) else { return Ok(content) };
+    editor.set_attribute("data-wp-interactive", "core/file");
+    let html = editor.finish();
+    let Some(object) = tags(&html, 0).into_iter().find(|t| !t.is_closer && t.name == "object") else { return Ok(html) };
+    let mut editor = TagEditor::from_tag(&html, object);
+    editor.set_attribute("data-wp-bind--hidden", "!state.hasPdfPreview");
+    editor.set_boolean_attribute("hidden");
+    let filename = editor.get_attribute("aria-label").map(rustpress_core::formatting::html_entity_decode).filter(|f| !f.is_empty() && f != "PDF embed");
+    let label = match filename {
+        Some(name) => rustpress_core::i18n::sprintf(&bc.env.site.tr("Embed of %s."), &[&name]),
+        None => bc.env.site.tr("PDF embed"),
+    };
+    editor.set_attribute("aria-label", &label);
+    Ok(editor.finish())
+}
+
 // ------------------------------------------------------------------ core/site-logo
 
 /// `get_custom_logo()`.

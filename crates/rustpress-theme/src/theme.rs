@@ -231,6 +231,22 @@ impl Theme {
 }
 
 impl ThemeAccess for Theme {
+    fn image_size(&self, name: &str) -> Option<(u64, u64)> {
+        crate::classic::image_size(&self.template, name)
+    }
+
+    fn filter_calculated_sizes(&self, site: &Site, query: &rustpress_core::QueryResult, sizes: Option<String>, width: u64) -> Option<String> {
+        if crate::classic::is_ported(self) { crate::classic::seventeen::calculated_sizes(site, query, &self.stylesheet, sizes, width) } else { sizes }
+    }
+
+    fn excerpt_more(&self) -> Option<String> {
+        crate::classic::is_ported(self).then(|| crate::classic::seventeen::excerpt_more_template(&self.host.i18n))
+    }
+
+    fn filter_attachment_sizes(&self, site: &Site, query: &rustpress_core::QueryResult, _current: Option<&str>) -> Option<String> {
+        crate::classic::is_ported(self).then(|| crate::classic::seventeen::attachment_sizes_attr(site, query))
+    }
+
     fn global_settings(&self) -> &Value {
         &self.settings
     }

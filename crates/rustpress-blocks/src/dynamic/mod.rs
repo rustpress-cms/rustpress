@@ -17,6 +17,7 @@ mod navigation;
 mod post_content;
 mod post_meta;
 mod query;
+mod latest_posts;
 mod search;
 mod simple;
 mod template;
@@ -38,6 +39,8 @@ pub fn is_dynamic(name: &str) -> bool {
             | "core/site-tagline"
             | "core/site-logo"
             | "core/image"
+            | "core/file"
+            | "core/latest-posts"
             | "core/gallery"
             | "core/post-featured-image"
             | "core/heading"
@@ -87,6 +90,8 @@ pub fn render<'a>(bc: &'a BlockCtx<'a>) -> BoxFuture<'a, Result<String>> {
             "core/site-tagline" => simple::site_tagline(bc),
             "core/site-logo" => media::site_logo(bc).await,
             "core/image" => media::image(bc),
+            "core/file" => media::file(bc),
+            "core/latest-posts" => latest_posts::latest_posts(bc).await,
             "core/gallery" => media::gallery(bc),
             "core/post-featured-image" => media::post_featured_image(bc).await,
             "core/heading" => Ok(simple::add_class_to_first(&bc.content, &["h1", "h2", "h3", "h4", "h5", "h6"], "wp-block-heading")),

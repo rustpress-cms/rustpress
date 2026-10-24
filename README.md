@@ -2,7 +2,7 @@
 
 Ein WordPress-Ersatz in Rust: Bestehende WordPress-Seiten laufen **ohne PHP** und **ohne Konvertierung der Datenbank**. RustPress liest die vorhandene MySQL/MariaDB (`wp_*`-Schema, nur lesend) und das vorhandene `wp-content/` und liefert dieselben Antworten wie WordPress.
 
-Unterstützt werden **Block-Themes** (`theme.json` + HTML-Templates). Klassische PHP-Themes und PHP-Plugins laufen bewusst nicht; wichtige Plugins sollen später als native Module nachgebaut werden. Der aktuelle Stand und die Planung stehen in [PLAN.md](PLAN.md).
+Unterstützt werden **Block-Themes** (`theme.json` + HTML-Templates) und als Rust-Nachbau das klassische Theme **Twenty Seventeen**. Andere klassische PHP-Themes und PHP-Plugins laufen bewusst nicht; wichtige Plugins sollen später als native Module nachgebaut werden. Der aktuelle Stand und die Planung stehen in [PLAN.md](PLAN.md).
 
 ## Was funktioniert (Meilenstein 1, lesend)
 

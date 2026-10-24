@@ -166,6 +166,36 @@ impl<'a> GlobalStyles<'a> {
         chunks
     }
 
+    /// `wp_get_global_stylesheet()` for a theme without `theme.json`: the variables, the layout
+    /// rules WordPress needs without block gap support, the root styles of the core defaults and
+    /// the preset classes, then the chunks of the blocks on the page.
+    pub fn classic_chunks(&self, handles: Option<&[String]>) -> Vec<String> {
+        let settings = self.settings();
+        let styles = self.json.styles();
+        let mut main = String::new();
+        main.push_str(&self.variables(&settings));
+        main.push_str(&self.block_variables(&settings));
+        main.push_str(":where(body) { margin: 0; }");
+        main.push_str(":where(.is-layout-flex){gap: 0.5em;}:where(.is-layout-grid){gap: 0.5em;}");
+        main.push_str("body .is-layout-flex{display: flex;}.is-layout-flex{flex-wrap: wrap;align-items: center;}.is-layout-flex > :is(*, div){margin: 0;}");
+        main.push_str("body .is-layout-grid{display: grid;}.is-layout-grid > :is(*, div){margin: 0;}");
+        main.push_str(&self.root_styles(&settings, &styles));
+        main.push_str(&self.preset_classes(&settings));
+        let mut chunks = vec![main];
+        chunks.extend(self.block_chunks(&settings, &styles, handles));
+        // Blocks with a default block gap of their own (the gallery) get layout rules for it.
+        for handle in handles.unwrap_or_default() {
+            let Some(short) = handle.strip_prefix("wp-block-") else { continue };
+            let Some(block) = self.registry.get(&format!("core/{short}")) else { continue };
+            let gap = block.supports.get("spacing").and_then(|s| s.get("blockGap")).and_then(|g| g.get("__experimentalDefault")).and_then(Value::as_str);
+            if let Some(gap) = gap {
+                chunks.push(format!(":where(.wp-block-{short}.is-layout-flex){{gap: {gap};}}:where(.wp-block-{short}.is-layout-grid){{gap: {gap};}}"));
+            }
+        }
+        chunks.retain(|c| !c.is_empty());
+        chunks
+    }
+
     // ----------------------------------------------------------- presets
 
     /// Preset items merged across origins by slug (core, theme, user).

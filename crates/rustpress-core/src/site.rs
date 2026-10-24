@@ -69,6 +69,25 @@ impl Site {
         }
     }
 
+    /// The name of a term as `get_term()` returns it: post formats have their translated name.
+    pub fn term_name(&self, term: &rustpress_db::Term) -> String {
+        if term.taxonomy != "post_format" {
+            return term.name.clone();
+        }
+        match term.slug.as_str() {
+            "post-format-aside" => self.trx("Aside", "Post format"),
+            "post-format-chat" => self.trx("Chat", "Post format"),
+            "post-format-gallery" => self.trx("Gallery", "Post format"),
+            "post-format-link" => self.trx("Link", "Post format"),
+            "post-format-image" => self.trx("Image", "Post format"),
+            "post-format-quote" => self.trx("Quote", "Post format"),
+            "post-format-status" => self.trx("Status", "Post format"),
+            "post-format-video" => self.trx("Video", "Post format"),
+            "post-format-audio" => self.trx("Audio", "Post format"),
+            _ => term.name.clone(),
+        }
+    }
+
     /// `get_bloginfo( 'language' )`: the translation of `html_lang_attribute`, else the locale with `-`.
     pub fn language_tag(&self) -> String {
         match self.i18n.get() {

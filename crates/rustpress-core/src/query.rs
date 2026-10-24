@@ -18,7 +18,7 @@ const PUBLIC_QUERY_VARS: &[&str] = &[
     "calendar", "page", "paged", "more", "tb", "pb", "author", "order", "orderby", "year", "monthnum", "day",
     "hour", "minute", "second", "name", "category_name", "tag", "feed", "author_name", "pagename", "page_id",
     "attachment", "attachment_id", "subpost", "subpost_id", "preview", "robots", "favicon", "taxonomy", "term",
-    "cpage", "post_type", "embed", "tag_id", "rest_route", "sitemap", "sitemap-stylesheet", "sitemap-subtype",
+    "cpage", "post_type", "embed", "tag_id", "post_format", "rest_route", "sitemap", "sitemap-stylesheet", "sitemap-subtype",
 ];
 
 const SEARCH_STOPWORDS: &[&str] = &[
@@ -301,8 +301,15 @@ impl Site {
                     queried = Queried::Term(term);
                 }
             }
-            if let (Some(taxonomy), Some(term)) = (v.get("taxonomy"), v.get("term")) {
-                let Some(term) = self.db.term_by_slug(taxonomy, &sanitize_title(term)).await? else {
+            // `post_format=link` is the taxonomy archive of `post-format-link` (`_post_format_request()`).
+            let tax_vars: Option<(String, String)> = match (v.get("taxonomy"), v.get("term"), v.get("post_format")) {
+                (Some(taxonomy), Some(term), _) => Some((taxonomy.to_owned(), term.to_owned())),
+                (_, _, Some(format)) if !format.is_empty() => Some(("post_format".to_owned(), format!("post-format-{}", sanitize_title(format)))),
+                _ => None,
+            };
+            if let Some((taxonomy, term)) = tax_vars {
+                let taxonomy = taxonomy.as_str();
+                let Some(term) = self.db.term_by_slug(taxonomy, &sanitize_title(&term)).await? else {
                     return Ok(r.into_404());
                 };
                 f.is_tax = true;

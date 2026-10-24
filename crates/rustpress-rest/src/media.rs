@@ -83,7 +83,7 @@ impl Rest<'_> {
             data.insert("filesize".into(), size);
         }
 
-        data.insert("_links".into(), self.media_links(post));
+        data.insert("_links".into(), self.media_links(post).await?);
         if context == "embed" {
             data.retain(|key, _| EMBED_FIELDS.contains(&key.as_str()));
             if let Some(Value::Object(caption)) = data.get_mut("caption") {
@@ -123,7 +123,7 @@ impl Rest<'_> {
         Value::Object(details)
     }
 
-    fn media_links(&self, post: &Post) -> Value {
+    async fn media_links(&self, post: &Post) -> Result<Value> {
         let mut links = Links::new();
         links.self_link(self.rest_url(&format!("wp/v2/media/{}", post.id)));
         links.add("collection", vec![], self.rest_url("wp/v2/media"));
@@ -133,8 +133,14 @@ impl Rest<'_> {
         }
         links.embeddable("replies", rustpress_core::urls::add_query_arg(&self.rest_url("wp/v2/comments"), "post", &post.id.to_string()));
         if post.post_parent != 0 {
-            links.add("wp:attached-to", vec![("embeddable", Value::Bool(true)), ("post_type", Value::from("post")), ("id", Value::from(post.post_parent))], self.rest_url(&format!("wp/v2/posts/{}", post.post_parent)));
+            let parent_type = self.site.db.post(post.post_parent).await?.map_or_else(|| "post".to_owned(), |p| p.post_type);
+            let base = match parent_type.as_str() {
+                "page" => "pages",
+                "post" => "posts",
+                other => other,
+            };
+            links.add("wp:attached-to", vec![("embeddable", Value::Bool(true)), ("post_type", Value::from(parent_type.clone())), ("id", Value::from(post.post_parent))], self.rest_url(&format!("wp/v2/{base}/{}", post.post_parent)));
         }
-        links.finish()
+        Ok(links.finish())
     }
 }

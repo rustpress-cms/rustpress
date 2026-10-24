@@ -20,11 +20,11 @@ pub struct Document {
 }
 
 /// Inline stylesheets up to this many bytes in total; larger files become `<link>`s.
-const INLINE_LIMIT: u64 = 40_000;
+pub(crate) const INLINE_LIMIT: u64 = 40_000;
 
 /// `sanitize_html_class`.
 fn html_class(class: &str) -> String {
-    class.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '-').collect()
+    rustpress_core::formatting::sanitize_html_class(class)
 }
 
 /// Term/slug class with the numeric fallback of `get_body_class`.
@@ -84,7 +84,11 @@ pub async fn body_classes(theme: &Theme, site: &Site, q: &QueryResult) -> Result
                 c.push(format!("single-{}", slug_class(&post.post_type, post.id)));
                 c.push(format!("postid-{}", post.id));
                 if post.post_type == "post" {
-                    c.push("single-format-standard".into());
+                    let formats = site.db.terms_for_post(post.id, Some("post_format")).await?;
+                    match formats.first().and_then(|t| t.slug.strip_prefix("post-format-")) {
+                        Some(format) => c.push(format!("single-format-{}", html_class(format))),
+                        None => c.push("single-format-standard".into()),
+                    }
                 }
             }
             if f.is_attachment {
@@ -180,6 +184,7 @@ pub async fn document_title(site: &Site, q: &QueryResult) -> Result<String> {
     let f = &q.flags;
     let s = &site.settings;
     let mut parts: Vec<String> = Vec::new();
+    let mut tagline: Option<String> = None;
     let mut site_name_last = true;
     if f.is_404 {
         parts.push(site.tr("Page not found"));
@@ -188,14 +193,14 @@ pub async fn document_title(site: &Site, q: &QueryResult) -> Result<String> {
     } else if f.is_front_page && !f.is_page {
         parts.push(s.blogname.clone());
         if !s.blogdescription.is_empty() {
-            parts.push(s.blogdescription.clone());
+            tagline = Some(s.blogdescription.clone());
         }
         site_name_last = false;
     } else if f.is_front_page {
         parts.push(s.blogname.clone());
         site_name_last = false;
         if !s.blogdescription.is_empty() {
-            parts.push(s.blogdescription.clone());
+            tagline = Some(s.blogdescription.clone());
         }
     } else if f.is_singular() || f.is_posts_page {
         if let Some(post) = q.queried_post() {
@@ -203,7 +208,7 @@ pub async fn document_title(site: &Site, q: &QueryResult) -> Result<String> {
         }
     } else if f.is_category || f.is_tag || f.is_tax {
         if let Queried::Term(term) = &q.queried {
-            parts.push(term.name.clone());
+            parts.push(site.term_name(term));
         }
     } else if f.is_author {
         if let Queried::User(user) = &q.queried {
@@ -220,6 +225,7 @@ pub async fn document_title(site: &Site, q: &QueryResult) -> Result<String> {
     if let Some(page) = page.filter(|_| !f.is_404) {
         parts.push(rustpress_core::i18n::sprintf(&site.tr("Page %s"), &[&page.to_string()]));
     }
+    parts.extend(tagline);
     if site_name_last && !(f.is_front_page && parts.is_empty()) {
         parts.push(s.blogname.clone());
     }
@@ -228,7 +234,7 @@ pub async fn document_title(site: &Site, q: &QueryResult) -> Result<String> {
     Ok(capital_p_dangit(&title, true))
 }
 
-fn read(path: &Path) -> Option<String> {
+pub(crate) fn read(path: &Path) -> Option<String> {
     std::fs::read_to_string(path).ok()
 }
 
@@ -238,9 +244,9 @@ pub(crate) fn wp_version(wp_root: &Path) -> String {
         .unwrap_or_default()
 }
 
-const EMOJI_CSS: &str = "\n\timg.wp-smiley, img.emoji {\n\t\tdisplay: inline !important;\n\t\tborder: none !important;\n\t\tbox-shadow: none !important;\n\t\theight: 1em !important;\n\t\twidth: 1em !important;\n\t\tmargin: 0 0.07em !important;\n\t\tvertical-align: -0.1em !important;\n\t\tbackground: none !important;\n\t\tpadding: 0 !important;\n\t}";
+pub(crate) const EMOJI_CSS: &str = "\n\timg.wp-smiley, img.emoji {\n\t\tdisplay: inline !important;\n\t\tborder: none !important;\n\t\tbox-shadow: none !important;\n\t\theight: 1em !important;\n\t\twidth: 1em !important;\n\t\tmargin: 0 0.07em !important;\n\t\tvertical-align: -0.1em !important;\n\t\tbackground: none !important;\n\t\tpadding: 0 !important;\n\t}";
 
-fn emoji_style() -> String {
+pub(crate) fn emoji_style() -> String {
     format!("<style id=\"wp-emoji-styles-inline-css\">\n{EMOJI_CSS}\n/*# sourceURL=wp-emoji-styles-inline-css */\n</style>\n")
 }
 
@@ -275,7 +281,7 @@ fn rtl_variant(rtl: bool, path: &std::path::Path, url: &str) -> Option<(std::pat
     };
     Some((candidate, swapped))
 }
-fn script_modules(wp_root: &Path, site: &Site, ids: &[String]) -> (String, String, String) {
+pub(crate) fn script_modules(wp_root: &Path, site: &Site, ids: &[String]) -> (String, String, String) {
     // Parse `script-modules-packages.php` (entries of a PHP array literal).
     let text = read(&wp_root.join("wp-includes").join("assets").join("script-modules-packages.php")).unwrap_or_default();
     let base = site.site_url("wp-includes/js/dist/script-modules");
@@ -378,10 +384,10 @@ fn font_faces(theme: &Theme) -> String {
     if css.is_empty() { String::new() } else { format!("<style class=\"wp-fonts-local\">\n{css}</style>\n") }
 }
 
-async fn discovery_links(site: &Site, q: &QueryResult, version: &str) -> Result<String> {
-    let mut out = format!("<link rel=\"https://api.w.org/\" href=\"{}\" />", esc_url(&site.home_url("wp-json/")));
+pub(crate) async fn discovery_links(site: &Site, q: &QueryResult, version: &str) -> Result<String> {
+    let mut out = format!("<link rel=\"https://api.w.org/\" href=\"{}\" />", esc_url(&site.rest_url("/")));
     if let Some(route) = crate::head::queried_rest_route(q) {
-        out.push_str(&format!("<link rel=\"alternate\" title=\"JSON\" type=\"application/json\" href=\"{}\" />", esc_url(&site.home_url(&format!("wp-json/{route}")))));
+        out.push_str(&format!("<link rel=\"alternate\" title=\"JSON\" type=\"application/json\" href=\"{}\" />", esc_url(&site.rest_url(&route))));
     }
     out.push_str(&format!("<link rel=\"EditURI\" type=\"application/rsd+xml\" title=\"RSD\" href=\"{}\" />\n", esc_url(&site.site_url("xmlrpc.php?rsd"))));
     out.push_str(&format!("<meta name=\"generator\" content=\"WordPress {version}\" />\n"));
@@ -398,13 +404,13 @@ async fn discovery_links(site: &Site, q: &QueryResult, version: &str) -> Result<
 }
 
 /// `wp_oembed_add_discovery_links()`: the oEmbed endpoints of a single post or page.
-async fn oembed_links(site: &Site, q: &QueryResult) -> Result<String> {
+pub(crate) async fn oembed_links(site: &Site, q: &QueryResult) -> Result<String> {
     if !q.flags.is_singular() {
         return Ok(String::new());
     }
     let Queried::Post(post) = &q.queried else { return Ok(String::new()) };
     let permalink = rustpress_core::canonical::php_urlencode(&site.permalink(post).await?);
-    let endpoint = if site.settings.permalink_structure.is_empty() { site.home_url("?rest_route=/oembed/1.0/embed&url=") } else { site.home_url("wp-json/oembed/1.0/embed?url=") };
+    let endpoint = if site.settings.permalink_structure.is_empty() { format!("{}?rest_route=%2Foembed%2F1.0%2Fembed&url=", site.home_url("index.php")) } else { format!("{}?url=", site.rest_url("oembed/1.0/embed")) };
     let json = format!("{endpoint}{permalink}");
     let xml = format!("{json}&format=xml");
     Ok(format!(
@@ -417,7 +423,7 @@ async fn oembed_links(site: &Site, q: &QueryResult) -> Result<String> {
 }
 
 /// The `robots` meta tag from `wp_robots()`.
-fn robots_meta(site: &Site, q: &QueryResult) -> String {
+pub(crate) fn robots_meta(site: &Site, q: &QueryResult) -> String {
     let public = site.options.get("blog_public").is_some_and(|v| !v.is_empty() && v != "0");
     let mut directives: Vec<&str> = Vec::new();
     if !public {
@@ -481,7 +487,7 @@ fn speculation_rules(site: &Site, theme: &Theme) -> String {
 }
 
 /// `_print_emoji_detection_script()`: the settings and the loader module.
-fn emoji_detection_script(site: &Site, wp_root: &Path, version: &str) -> String {
+pub(crate) fn emoji_detection_script(site: &Site, wp_root: &Path, version: &str) -> String {
     let loader_url = site.site_url("wp-includes/js/wp-emoji-loader.min.js");
     let Some(loader) = read(&wp_root.join("wp-includes").join("js").join("wp-emoji-loader.min.js")) else { return String::new() };
     // The CDN paths carry the Unicode emoji version, which WordPress keeps in formatting.php.
@@ -511,6 +517,9 @@ fn emoji_detection_script(site: &Site, wp_root: &Path, version: &str) -> String 
 
 /// Renders a request into a complete HTML document.
 pub async fn render_document(theme: &Theme, site: &Site, query: &QueryResult, registry: &Registry) -> Result<Document> {
+    if crate::classic::is_ported(theme) {
+        return crate::classic::render_document(theme, site, query, registry).await;
+    }
     let rendered = render_body(theme, site, query, registry).await?;
     let state = &rendered.state;
     let wp_root = &theme.wp_root;

@@ -111,6 +111,11 @@ pub fn link_header(rest: &Rest<'_>, route: &str, params: &Params, shape: &LinkPa
         }
         let query = build_qs(&all);
         let collection = rest.rest_url(route);
+        // `add_query_arg()` re-encodes the route of a plain-permalink URL.
+        let collection = match collection.split_once("?rest_route=") {
+            Some((base, route)) => format!("{base}?rest_route={}", rustpress_core::canonical::php_urlencode(route)),
+            None => collection,
+        };
         if collection.contains('?') { format!("{collection}&{query}") } else { format!("{collection}?{query}") }
     };
     let mut parts = Vec::new();

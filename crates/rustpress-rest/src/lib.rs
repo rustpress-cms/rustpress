@@ -156,12 +156,7 @@ impl<'a> Rest<'a> {
 
     /// `rest_url( $route )`.
     pub(crate) fn rest_url(&self, route: &str) -> String {
-        let route = route.trim_start_matches('/');
-        if self.site.uses_pretty_permalinks() {
-            self.site.home_url(&format!("wp-json/{route}"))
-        } else {
-            self.site.home_url(&format!("?rest_route=/{route}"))
-        }
+        self.site.rest_url(route)
     }
 
     /// `Link: <api root>; rel="https://api.w.org/"`.

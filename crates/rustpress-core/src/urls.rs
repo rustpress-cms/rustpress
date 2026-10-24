@@ -30,6 +30,16 @@ impl Site {
         if path.is_empty() { base.to_owned() } else { format!("{base}/{}", path.trim_start_matches('/')) }
     }
 
+    /// `rest_url( $path )`: below `wp-json` with pretty permalinks, else `index.php?rest_route=`.
+    pub fn rest_url(&self, path: &str) -> String {
+        let path = format!("/{}", path.trim_start_matches('/'));
+        if self.uses_pretty_permalinks() {
+            format!("{}{path}", self.home_url("wp-json"))
+        } else {
+            format!("{}?rest_route={path}", self.home_url("index.php"))
+        }
+    }
+
     pub fn uses_pretty_permalinks(&self) -> bool {
         !self.settings.permalink_structure.is_empty()
     }
@@ -167,9 +177,14 @@ impl Site {
             let query = match term.taxonomy.as_str() {
                 "category" => format!("cat={}", term.term_id),
                 "post_tag" => format!("tag={}", term.slug),
+                "post_format" => format!("post_format={}", term.slug.strip_prefix("post-format-").unwrap_or(&term.slug)),
                 other => format!("taxonomy={other}&term={}", term.slug),
             };
             return Ok(self.home_url(&format!("?{query}")));
+        }
+        if term.taxonomy == "post_format" {
+            let slug = term.slug.strip_prefix("post-format-").unwrap_or(&term.slug);
+            return Ok(self.user_trailingslashit(&self.home_url(&format!("{}type/{slug}", self.front()))));
         }
         let base = match term.taxonomy.as_str() {
             "category" => self.options.string("category_base", "").trim_matches('/').to_owned(),

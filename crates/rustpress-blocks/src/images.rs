@@ -105,7 +105,7 @@ pub fn constrain_dimensions(width: u64, height: u64, max_width: u64, max_height:
 }
 
 /// `image_constrain_size_for_editor()` for a named size in the front end.
-fn constrain_size_for_display(site: &Site, width: u64, height: u64, size: &str) -> (u64, u64) {
+fn constrain_size_for_display(site: &Site, theme: &dyn crate::env::ThemeAccess, width: u64, height: u64, size: &str) -> (u64, u64) {
     let option = |name: &str| site.options.u64(name, 0);
     let (max_width, max_height) = match size {
         "thumb" | "thumbnail" => {
@@ -115,7 +115,7 @@ fn constrain_size_for_display(site: &Site, width: u64, height: u64, size: &str) 
         "medium" => (option("medium_size_w"), option("medium_size_h")),
         "medium_large" => (option("medium_large_size_w"), option("medium_large_size_h")),
         "large" => (option("large_size_w"), option("large_size_h")),
-        _ => (width, height),
+        other => theme.image_size(other).unwrap_or((width, height)),
     };
     constrain_dimensions(width, height, max_width, max_height)
 }
@@ -166,6 +166,10 @@ pub fn image_downsize(full_url: &str, meta: &Metadata, size: &str) -> Downsized 
 
 /// `wp_calculate_image_srcset()`.
 pub fn srcset(site: &Site, width: u64, height: u64, image_src: &str, meta: &Metadata) -> Option<String> {
+    // The metadata of a PDF has no `file`, so no srcset (`get_attachment_image()` adds a marker).
+    if meta.0.get("_preview").is_some() {
+        return None;
+    }
     let file = meta.file()?;
     let sizes = meta.sizes()?;
     if width < 1 {
@@ -225,6 +229,8 @@ pub struct MediaState {
     pub high_priority_taken: bool,
     /// `in_the_loop() && is_main_query()`: singular templates render inside the loop.
     pub in_main_loop: bool,
+    /// Between `get_header()` and the loop of a classic theme: images there are in the viewport.
+    pub in_header: bool,
     /// Nesting depth of `apply_filters( 'the_content' )`.
     pub content_depth: u32,
     /// Decoded `_wp_attachment_metadata` by attachment ID.
@@ -290,7 +296,7 @@ pub fn loading_attributes(env: &Env<'_>, tag: &str, input: &LoadingInput, contex
     }
 
     if in_viewport.is_none() {
-        if matches!(context, "template_part_header" | "get_header_image_tag") {
+        if matches!(context, "template_part_header" | "get_header_image_tag") || env.with_state(|s| s.media.in_header) {
             in_viewport = Some(true);
             maybe_increase_count = true;
         } else if env.with_state(|s| s.media.in_main_loop) {
@@ -376,7 +382,7 @@ pub fn attachment_image(env: &Env<'_>, meta: Option<&Metadata>, attached_file: &
     let (src, mut width, mut height) = match meta {
         Some(meta) => {
             let down = image_downsize(&full_url, meta, size);
-            let (w, h) = constrain_size_for_display(site, down.width, down.height, size);
+            let (w, h) = constrain_size_for_display(site, env.theme, down.width, down.height, size);
             (down.url, w, h)
         }
         None => (full_url, 0, 0),
@@ -426,7 +432,7 @@ pub fn attachment_image(env: &Env<'_>, meta: Option<&Metadata>, attached_file: &
         && let Some(meta) = meta
     {
         let srcset = srcset(site, width, height, &src, meta);
-        let sizes = calculate_sizes(width);
+        let sizes = env.theme.filter_calculated_sizes(site, env.query, calculate_sizes(width), width);
         if let Some(srcset) = srcset
             && (sizes.is_some() || !empty(&attr, "sizes"))
         {
@@ -441,6 +447,9 @@ pub fn attachment_image(env: &Env<'_>, meta: Option<&Metadata>, attached_file: &
         && !sizes_include_auto(&sizes)
     {
         put_attr(&mut attr, "sizes", format!("auto, {sizes}"));
+    }
+    if let Some(sizes) = env.theme.filter_attachment_sizes(site, env.query, text(&attr, "sizes").as_deref()) {
+        put_attr(&mut attr, "sizes", sizes);
     }
     if args.post_thumbnail {
         let class = text(&attr, "class").unwrap_or_default();
@@ -479,10 +488,29 @@ fn sizes_include_auto(sizes: &str) -> bool {
 /// `wp_get_attachment_image( $id, $size, false, $attr )`: loads the attachment first.
 pub async fn get_attachment_image(env: &Env<'_>, attachment_id: u64, size: &str, args: &ImageArgs) -> Result<String> {
     let Some(post) = env.site.db.post(attachment_id).await? else { return Ok(String::new()) };
-    if post.post_type != "attachment" || !is_image(&post) {
+    if post.post_type != "attachment" {
         return Ok(String::new());
     }
     let (meta, attached) = load_metadata(env.site, &post).await?;
+    let (meta, attached) = if is_image(&post) {
+        (meta, attached)
+    } else {
+        // A PDF or video with a generated preview image: `image_downsize()` starts from its `full` size.
+        let Some(full) = meta.as_ref().and_then(|m| m.sizes()).and_then(|s| s.get("full")).and_then(Value::as_object) else { return Ok(String::new()) };
+        let (Some(file), Some(attached)) = (full.get("file").and_then(Value::as_str), attached.as_deref()) else { return Ok(String::new()) };
+        let path = match attached.rsplit_once('/') {
+            Some((dir, _)) => format!("{dir}/{file}"),
+            None => file.to_owned(),
+        };
+        let mut json = meta.as_ref().map(|m| m.0.clone()).unwrap_or_default();
+        if let Some(map) = json.as_object_mut() {
+            map.insert("file".into(), Value::from(path.clone()));
+            map.insert("_preview".into(), Value::Bool(true));
+            map.insert("width".into(), full.get("width").cloned().unwrap_or_default());
+            map.insert("height".into(), full.get("height").cloned().unwrap_or_default());
+        }
+        (Some(Metadata(json)), Some(path))
+    };
     let Some(attached) = attached else { return Ok(String::new()) };
     let rows = env.site.db.post_meta(attachment_id).await?;
     let alt = rows.iter().find(|m| m.meta_key.as_deref() == Some("_wp_attachment_image_alt")).and_then(|m| m.meta_value.clone()).unwrap_or_default();
@@ -663,7 +691,7 @@ fn add_srcset_and_sizes(env: &Env<'_>, image: String, meta: Option<&Metadata>) -
     let Some(srcset) = srcset(env.site, width, height, &src, meta) else { return image };
     let mut attr = format!(" srcset=\"{}\"", esc_attr(&srcset));
     if !image.contains(" sizes=") {
-        let Some(sizes) = calculate_sizes(width) else { return image };
+        let Some(sizes) = env.theme.filter_calculated_sizes(env.site, env.query, calculate_sizes(width), width) else { return image };
         attr.push_str(&format!(" sizes=\"{}\"", esc_attr(&sizes)));
     }
     // `preg_replace( '/<img ([^>]+?)[\/ ]*>/', '<img $1' . $attr . ' />', $image )`

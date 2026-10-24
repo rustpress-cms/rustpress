@@ -74,7 +74,7 @@ impl Site {
             let minimum = u64::from(post_type == "page" && self.settings.show_on_front == ShowOnFront::Posts);
             entries.push(Entry { provider: "posts", subtype: Some(post_type), pages: count.div_ceil(MAX_URLS).max(minimum) });
         }
-        for taxonomy in ["category", "post_tag"] {
+        for taxonomy in ["category", "post_tag", "post_format"] {
             let count = self.db.terms(taxonomy).await?.iter().filter(|t| t.count > 0).count() as u64;
             entries.push(Entry { provider: "taxonomies", subtype: Some(taxonomy), pages: count.div_ceil(MAX_URLS) });
         }
@@ -144,7 +144,7 @@ impl Site {
             let mut body = String::new();
             for entry in self.sitemap_entries().await? {
                 for page in 1..=entry.pages {
-                    body.push_str(&format!("<sitemap><loc>{}</loc></sitemap>", xml_text(&esc_url(&self.sitemap_url(entry.provider, entry.subtype, page)))));
+                    body.push_str(&format!("<sitemap><loc>{}</loc></sitemap>", xml_text(&self.sitemap_url(entry.provider, entry.subtype, page))));
                 }
             }
             let head = format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<?xml-stylesheet type=\"text/xsl\" href=\"{}\" ?>\n", esc_url(&stylesheet_url("wp-sitemap-index.xsl", "index")));
@@ -160,7 +160,7 @@ impl Site {
         let subtype = q.vars.get("sitemap-subtype").unwrap_or("");
         let urls = match (sitemap, subtype) {
             ("posts", t @ ("post" | "page")) => self.post_sitemap_urls(t, page).await?,
-            ("taxonomies", t @ ("category" | "post_tag")) => self.taxonomy_sitemap_urls(t, page).await?,
+            ("taxonomies", t @ ("category" | "post_tag" | "post_format")) => self.taxonomy_sitemap_urls(t, page).await?,
             ("users", _) => self.user_sitemap_urls(page).await?,
             _ => Vec::new(),
         };
@@ -169,7 +169,7 @@ impl Site {
         }
         let mut body = String::new();
         for (loc, lastmod) in urls {
-            body.push_str(&format!("<url><loc>{}</loc>", xml_text(&esc_url(&loc))));
+            body.push_str(&format!("<url><loc>{}</loc>", xml_text(&loc)));
             if let Some(lastmod) = lastmod {
                 body.push_str(&format!("<lastmod>{}</lastmod>", xml_text(&lastmod)));
             }

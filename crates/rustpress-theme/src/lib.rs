@@ -1,5 +1,6 @@
 //! Block theme support: theme.json, templates, patterns and rendering.
 
+pub mod classic;
 pub mod document;
 pub mod feed;
 pub mod functions_php;

@@ -36,3 +36,22 @@ reason = "Die 404-Seite eines fehlenden Sitemaps unterscheidet sich von WordPres
 path = '^/category/uncategorized/page/2/$'
 aspect = "body"
 reason = "Beiträge mit exakt gleichem Datum (hier gleich-a/gleich-b) haben in MariaDB keine definierte Reihenfolge; sie hängt vom Plan der Abfrage ab und kann sich zwischen WordPress und RustPress unterscheiden."
+
+# --- Seiten mit einfachen Permalinks (dev/up-soli.sh, die echte Seite) ---
+
+[[deviation]]
+path = '^/[?]rest_route=/$'
+aspect = "bytes"
+reason = "Der Routenindex listet nur die Routen, die RustPress selbst bedient (eine Teilmenge)."
+
+[[deviation]]
+path = '^/[?]rest_route=/wp/v2/(types|taxonomies|statuses|search|settings|block)'
+reason = "Diese REST-Routen sind noch nicht umgesetzt (siehe PLAN.md)."
+
+[[deviation]]
+path = '^/(robots[.]txt|favicon[.]ico)$'
+reason = "Ohne Permalink-Regeln kennt WordPress diese Dateien nicht und leitet /robots.txt auf /robots.txt/ um (Eigenheit einfacher Permalinks); RustPress liefert dafür 404."
+
+[[deviation]]
+path = '^/wp-content/uploads/'
+reason = "Die Referenz der echten Seite hat die hochgeladenen Dateien nicht (sie liegen beim Betreiber); beide Seiten antworten ohne Datei unterschiedlich."

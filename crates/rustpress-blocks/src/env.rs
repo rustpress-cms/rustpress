@@ -33,6 +33,23 @@ pub trait ThemeAccess: Send + Sync {
     fn variation_css(&self, _block_name: &str, _variation: &Value, _scope: &str) -> String {
         String::new()
     }
+    /// The `wp_calculate_image_sizes` filter of the theme.
+    fn filter_calculated_sizes(&self, _site: &Site, _query: &QueryResult, sizes: Option<String>, _width: u64) -> Option<String> {
+        sizes
+    }
+    /// The `wp_get_attachment_image_attributes` filter of the theme, for the `sizes` attribute:
+    /// the replacement, if the theme sets one.
+    fn filter_attachment_sizes(&self, _site: &Site, _query: &QueryResult, _current: Option<&str>) -> Option<String> {
+        None
+    }
+    /// The `excerpt_more` filter of the theme as a template: `%1$s` is the permalink, `%2$s` the title.
+    fn excerpt_more(&self) -> Option<String> {
+        None
+    }
+    /// A size registered with `add_image_size()`: width and height.
+    fn image_size(&self, _name: &str) -> Option<(u64, u64)> {
+        None
+    }
     /// Translation lookup for the theme's text domain; returns the text unchanged by default.
     fn translate(&self, text: &str, _context: Option<&str>) -> String {
         text.to_owned()

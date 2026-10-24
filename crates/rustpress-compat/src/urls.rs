@@ -43,7 +43,7 @@ pub fn classify(path: &str) -> Kind {
     let (p, query) = path.split_once('?').unwrap_or((path, ""));
     if p.starts_with("/wp-json") || query.contains("rest_route=") {
         Kind::Rest
-    } else if p.starts_with("/wp-sitemap") || p == "/sitemap.xml" {
+    } else if p.starts_with("/wp-sitemap") || p == "/sitemap.xml" || query.contains("sitemap=") || query.contains("sitemap-stylesheet=") {
         Kind::Sitemap
     } else if p.starts_with("/wp-content/") || p.starts_with("/wp-includes/") {
         Kind::Asset
@@ -63,7 +63,7 @@ pub fn extract_locs(xml: &str) -> Vec<String> {
     while let Some(i) = rest.find("<loc>") {
         let after = &rest[i + 5..];
         let Some(end) = after.find("</loc>") else { break };
-        out.push(after[..end].trim().to_owned());
+        out.push(after[..end].trim().replace("&amp;", "&"));
         rest = &after[end + 6..];
     }
     out
@@ -151,8 +151,106 @@ pub fn asset_links(html: &str) -> Vec<String> {
     out
 }
 
+/// The probes for a site with plain permalinks (`?p=1`, `?paged=2`, `?rest_route=`).
+const PLAIN_PROBES: &[&str] = &[
+    "/",
+    "/?s=",
+    "/?s=test",
+    "/?s=gibt-es-garantiert-nicht-xyz",
+    "/?paged=2",
+    "/?paged=9999",
+    "/?p=99999",
+    "/index.php",
+    "/?feed=rss2",
+    "/?feed=atom",
+    "/?feed=comments-rss2",
+    "/robots.txt",
+    "/favicon.ico",
+    "/?sitemap=index",
+    "/?sitemap-stylesheet=sitemap",
+    "/?sitemap-stylesheet=index",
+    "/?rest_route=/",
+    "/?rest_route=/wp/v2/types",
+    "/?rest_route=/wp/v2/search&search=test",
+    "/?rest_route=/wp/v2/posts",
+    "/?rest_route=/wp/v2/pages",
+    "/?rest_route=/wp/v2/media",
+    "/?rest_route=/wp/v2/categories",
+    "/?rest_route=/wp/v2/tags",
+    "/?rest_route=/wp/v2/users",
+    "/?rest_route=/wp/v2/comments",
+    "/?rest_route=/wp/v2/posts/99999",
+    "/?rest_route=/wp/v2/posts&context=bogus",
+    "/wp-login.php",
+    "/wp-admin/",
+    "/xmlrpc.php",
+    "/wp-cron.php",
+];
+
+/// IDs listed by a REST collection of a site with plain permalinks.
+fn rest_ids_plain(reference: &http::Reference, route: &str) -> Vec<u64> {
+    let path = format!("/?rest_route=/wp/v2/{route}&per_page=100&_fields=id");
+    let Ok(response) = reference.get(&path) else { return Vec::new() };
+    serde_json::from_slice::<serde_json::Value>(&response.body)
+        .ok()
+        .and_then(|v| v.as_array().map(|items| items.iter().filter_map(|i| i.get("id").and_then(serde_json::Value::as_u64)).collect()))
+        .unwrap_or_default()
+}
+
+/// The same discovery for a site with plain permalinks.
+fn discover_plain(reference: &http::Reference, limit: usize) -> Vec<Target> {
+    let mut paths: Vec<String> = PLAIN_PROBES.iter().map(|p| (*p).to_owned()).collect();
+    let mut pages: Vec<String> = Vec::new();
+    let mut newest: Option<(String, String, String)> = None;
+    if let Ok(index) = reference.get("/?sitemap=index") {
+        for sitemap in extract_locs(&index.text()).into_iter().filter_map(|l| to_path(&l)) {
+            paths.push(sitemap.clone());
+            if let Ok(response) = reference.get(&sitemap) {
+                let text = response.text();
+                if newest.is_none()
+                    && let Some(at) = text.find("<lastmod>")
+                    && let Some(date) = text.get(at + 9..at + 19)
+                    && let [y, m, d] = date.split('-').collect::<Vec<_>>()[..]
+                {
+                    newest = Some((y.to_owned(), m.to_owned(), d.to_owned()));
+                }
+                pages.extend(extract_locs(&text).into_iter().filter_map(|l| to_path(&l)));
+            }
+        }
+    }
+    if let Some((y, m, d)) = newest {
+        paths.extend([format!("/?m={y}"), format!("/?m={y}{m}"), format!("/?m={y}{m}{d}"), format!("/?m={y}13"), format!("/?m={y}{m}{d}&paged=2")]);
+    }
+    for page in &pages {
+        paths.push(page.clone());
+        if page.contains("cat=") || page.contains("tag=") || page.contains("author=") || page.contains("taxonomy") {
+            paths.push(format!("{page}&paged=2"));
+        } else if page != "/" {
+            paths.push(format!("{page}&feed=rss2"));
+        }
+    }
+    for (route, take) in [("posts", 40), ("pages", 20), ("media", 20), ("categories", 20), ("tags", 20), ("users", 10), ("comments", 20)] {
+        for id in rest_ids_plain(reference, route).into_iter().take(take) {
+            paths.push(format!("/?rest_route=/wp/v2/{route}/{id}"));
+        }
+    }
+    paths.push("/?rest_route=/wp/v2/posts&_embed&per_page=10".to_owned());
+    paths.push("/?rest_route=/wp/v2/pages&_embed&per_page=10".to_owned());
+    if let Ok(home) = reference.get("/") {
+        paths.extend(asset_links(&home.text()).into_iter().take(40));
+    }
+    let mut seen = std::collections::HashSet::new();
+    paths.retain(|p| seen.insert(p.clone()));
+    paths.truncate(limit);
+    paths.into_iter().map(|path| Target { kind: classify(&path), path }).collect()
+}
+
 /// Everything worth comparing, in a stable order, without duplicates.
 pub fn discover(reference: &http::Reference, limit: usize) -> Vec<Target> {
+    // Plain permalinks: the REST discovery link of the home page names `rest_route`.
+    if reference.get("/").is_ok_and(|r| r.text().contains("api.w.org/\" href=\"") && r.text().contains("?rest_route=")) {
+        return discover_plain(reference, limit);
+    }
     let mut paths: Vec<String> = PROBES.iter().map(|p| (*p).to_owned()).collect();
 
     // What the sitemaps list (posts, pages, term archives and authors).

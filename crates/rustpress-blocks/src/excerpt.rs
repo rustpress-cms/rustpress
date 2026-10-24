@@ -15,7 +15,14 @@ const WRAPPERS: &[&str] = &["core/columns", "core/column", "core/group"];
 /// `get_the_excerpt()`: the explicit excerpt, else the first 55 words of the content.
 /// The result is plain text/HTML before any output filters (`the_excerpt`, `the_excerpt_rss`).
 pub async fn get_the_excerpt(env: &Env<'_>, post: &Arc<Post>) -> Result<String> {
-    get_the_excerpt_with(env, post, env.site.excerpt_length(), " [&hellip;]").await
+    let more = match env.theme.excerpt_more() {
+        Some(template) => {
+            let permalink = rustpress_core::formatting::esc_url(&env.site.permalink(post).await?);
+            rustpress_core::i18n::sprintf(&template, &[&permalink, &crate::content::the_title_for(env.site, post)])
+        }
+        None => " [&hellip;]".to_owned(),
+    };
+    get_the_excerpt_with(env, post, env.site.excerpt_length(), &more).await
 }
 
 /// [`get_the_excerpt`] with the `excerpt_length` and `excerpt_more` filters applied.

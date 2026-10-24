@@ -1346,6 +1346,7 @@ dependencies = [
  "rustpress-blocks",
  "rustpress-core",
  "rustpress-db",
+ "rustpress-phpser",
  "serde",
  "serde_json",
  "thiserror",

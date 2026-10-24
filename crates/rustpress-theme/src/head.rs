@@ -24,8 +24,11 @@ pub async fn feed_links(site: &Site, q: &QueryResult) -> Result<String> {
         all.extend_from_slice(args);
         sprintf(&site.tr(template), &all)
     };
-    let mut out = link(&titled("%1$s %2$s Feed", &[]), &site.user_trailingslashit(&site.home_url("feed")));
-    out.push_str(&link(&titled("%1$s %2$s Comments Feed", &[]), &site.user_trailingslashit(&site.home_url("comments/feed"))));
+    let pretty_feeds = site.uses_pretty_permalinks();
+    let main_feed = if pretty_feeds { site.user_trailingslashit(&site.home_url("feed")) } else { site.home_url("?feed=rss2") };
+    let comments_feed = if pretty_feeds { site.user_trailingslashit(&site.home_url("comments/feed")) } else { site.home_url("?feed=comments-rss2") };
+    let mut out = link(&titled("%1$s %2$s Feed", &[]), &main_feed);
+    out.push_str(&link(&titled("%1$s %2$s Comments Feed", &[]), &comments_feed));
 
     let flags = &q.flags;
     let pretty = site.uses_pretty_permalinks();
@@ -37,25 +40,36 @@ pub async fn feed_links(site: &Site, q: &QueryResult) -> Result<String> {
             && (post.comment_status == "open" || post.ping_status == "open" || post.comment_count > 0)
         {
             let permalink = site.permalink(post).await?;
-            let href = if pretty { format!("{}feed/", trailingslashit(&permalink)) } else { rustpress_core::urls::add_query_arg(&permalink, "feed", "rss2") };
+            let href = if pretty { format!("{}feed/", trailingslashit(&permalink)) } else { format!("{}?feed=rss2&p={}", site.home_url("/"), post.id) };
             // `the_title_attribute()`: the filtered title without tags.
             let title = rustpress_core::formatting::strip_tags(&rustpress_blocks::content::the_title_for(site, post));
             out.push_str(&link(&titled("%1$s %2$s %3$s Comments Feed", &[&title]), &href));
         }
     } else if flags.is_category || flags.is_tag || flags.is_tax {
         if let Queried::Term(term) = &q.queried {
+            let name = site.term_name(term);
             let title = if flags.is_category {
-                titled("%1$s %2$s %3$s Category Feed", &[&term.name])
+                titled("%1$s %2$s %3$s Category Feed", &[&name])
             } else if flags.is_tag {
-                titled("%1$s %2$s %3$s Tag Feed", &[&term.name])
+                titled("%1$s %2$s %3$s Tag Feed", &[&name])
             } else {
-                titled("%1$s %2$s %3$s %4$s Feed", &[&term.name, &term.taxonomy])
+                titled("%1$s %2$s %3$s %4$s Feed", &[&name, &if term.taxonomy == "post_format" { site.trx("Format", "post format") } else { term.taxonomy.clone() }])
             };
-            out.push_str(&link(&title, &feed_of(&site.term_link(term).await?)));
+            let href = if pretty {
+                feed_of(&site.term_link(term).await?)
+            } else if flags.is_category {
+                site.home_url(&format!("?feed=rss2&cat={}", term.term_id))
+            } else if flags.is_tag {
+                site.home_url(&format!("?feed=rss2&tag={}", term.slug))
+            } else {
+                site.home_url(&format!("?feed=rss2&{}={}", term.taxonomy, term.slug))
+            };
+            out.push_str(&link(&title, &href));
         }
     } else if flags.is_author {
         if let Queried::User(user) = &q.queried {
-            out.push_str(&link(&titled("%1$s %2$s Posts by %3$s Feed", &[&user.display_name]), &feed_of(&site.author_url(user))));
+            let href = if pretty { feed_of(&site.author_url(user)) } else { site.home_url(&format!("?feed=rss2&author={}", user.id)) };
+            out.push_str(&link(&titled("%1$s %2$s Posts by %3$s Feed", &[&user.display_name]), &href));
         }
     } else if flags.is_search {
         let words = q.vars.get("s").unwrap_or_default();
@@ -79,7 +93,7 @@ pub fn queried_rest_route(q: &QueryResult) -> Option<String> {
             };
             Some(format!("wp/v2/{base}/{}", post.id))
         }
-        Queried::Term(term) if flags.is_category || flags.is_tag || flags.is_tax => {
+        Queried::Term(term) if (flags.is_category || flags.is_tag || flags.is_tax) && term.taxonomy != "post_format" => {
             let base = match term.taxonomy.as_str() {
                 "category" => "categories",
                 "post_tag" => "tags",

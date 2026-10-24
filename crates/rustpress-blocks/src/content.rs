@@ -35,7 +35,8 @@ fn title_with_prefixes(post: &Post, protected: &str, private: &str, texturize: i
     }
     let title = texturize(&title);
     let title = convert_chars(&title);
-    let title = title.trim().to_owned();
+    // PHP's `trim()` leaves non-ASCII spaces (a trailing no-break space) alone.
+    let title = title.trim_matches(|c| matches!(c, ' ' | '\t' | '\n' | '\r' | '\0' | '\x0B')).to_owned();
     capital_p_dangit(&title, true)
 }
 
@@ -201,7 +202,7 @@ async fn apply_the_content(env: &Env<'_>, post: &Arc<Post>, raw: &str, prefix: &
 
 /// `sanitize_html_class`.
 fn sanitize_html_class(class: &str) -> String {
-    class.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '-').collect()
+    rustpress_core::formatting::sanitize_html_class(class)
 }
 
 /// `get_post_class( $extra )`.
@@ -212,7 +213,11 @@ pub async fn post_class(env: &Env<'_>, post: &Post, extra: &[&str], is_home_unpa
     classes.push(format!("type-{}", post.post_type));
     classes.push(format!("status-{}", post.post_status));
     if post.post_type == "post" {
-        classes.push("format-standard".into());
+        let formats = env.site.db.terms_for_post(post.id, Some("post_format")).await?;
+        match formats.first().and_then(|t| t.slug.strip_prefix("post-format-")) {
+            Some(format) => classes.push(format!("format-{}", sanitize_html_class(format))),
+            None => classes.push("format-standard".into()),
+        }
     }
     if post_password_required(post) {
         classes.push("post-password-required".into());
@@ -225,10 +230,16 @@ pub async fn post_class(env: &Env<'_>, post: &Post, extra: &[&str], is_home_unpa
         classes.push("sticky".into());
     }
     classes.push("hentry".into());
-    for term in env.site.db.terms_for_post(post.id, None).await? {
-        if !matches!(term.taxonomy.as_str(), "category" | "post_tag") {
-            continue;
-        }
+    // `get_the_terms()` per taxonomy (categories, then tags), each ordered by name.
+    let mut terms = env.site.db.terms_for_post(post.id, None).await?;
+    terms.retain(|t| matches!(t.taxonomy.as_str(), "category" | "post_tag" | "post_format"));
+    let rank = |taxonomy: &str| match taxonomy {
+        "category" => 0,
+        "post_tag" => 1,
+        _ => 2,
+    };
+    terms.sort_by_key(|t| (rank(&t.taxonomy), t.name.to_lowercase()));
+    for term in terms {
         let mut term_class = sanitize_html_class(&term.slug);
         if term_class.is_empty() || term_class.chars().all(|c| c.is_ascii_digit()) || term_class.trim_matches('-').is_empty() {
             term_class = term.term_id.to_string();
