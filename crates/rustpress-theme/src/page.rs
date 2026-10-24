@@ -38,8 +38,13 @@ pub async fn render_body(theme: &Theme, site: &Site, query: &QueryResult, regist
 
     let env = Env::new(site, query, theme, registry);
     let root = env.root_context();
+    // A singular template renders inside the main loop, even when it has no query block.
+    let in_loop = query.flags.is_singular() && query.posts.len() == 1;
+    env.with_state(|s| s.media.in_main_loop = in_loop);
     let content = env.render_markup(&markup, &root).await?;
-    let content = wptexturize(&content).replace("]]>", "]]&gt;");
+    env.with_state(|s| s.media.in_main_loop = false);
+    let content = wptexturize(&content);
+    let content = rustpress_blocks::images::filter_content_tags(&env, &content, "template").await?.replace("]]>", "]]&gt;");
     let wrapped = format!("<div class=\"wp-site-blocks\">{content}</div>");
     let html = add_skip_link(&wrapped);
     Ok(RenderedBody { template_slug: slug, html, state: env.take_state() })

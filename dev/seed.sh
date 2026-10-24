@@ -5,10 +5,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 wp() { ./wp.sh "$@"; }
 
-if wp option get rustpress_seeded >/dev/null 2>&1; then
-  echo "already seeded"; exit 0
-fi
-
+seed_base() {
 wp rewrite structure '/%postname%/' >/dev/null
 wp option update posts_per_page 5 >/dev/null
 # Public, so that sitemaps and the indexing robots tag are exercised.
@@ -118,6 +115,13 @@ podman exec rustpress-db mariadb -uroot -prustpress wordpress \
 
 wp option update rustpress_seeded 1 >/dev/null
 echo "seeded"
+}
+
+if wp option get rustpress_seeded >/dev/null 2>&1; then
+  echo "base content already seeded"
+else
+  seed_base
+fi
 
 # Two attachments for the media endpoint: an unattached PNG (a single size) and a WebP
 # attached to the first post (several sizes, so that srcset has something to choose from).
@@ -125,3 +129,6 @@ if [ -z "$(wp post list --post_type=attachment --name=test-logo --field=ID)" ]; 
   wp media import /var/www/html/wp-admin/images/wordpress-logo.png --title="Test Logo" --caption="Eine Bildunterschrift" --alt="Logo Alt" >/dev/null
   wp media import /var/www/html/wp-content/themes/twentytwentyfour/assets/images/building-exterior.webp --post_id=1 --title="Gebäude außen" --caption="Ein Gebäude & mehr" --alt="Fassade" --desc="Beschreibung des Bildes" >/dev/null
 fi
+
+./seed_images.sh
+./seed_images2.sh

@@ -5,7 +5,7 @@ use std::sync::Arc;
 use rustpress_core::formatting::wp_trim_words;
 use rustpress_db::Post;
 
-use crate::content::{context_for_post, get_the_content, has_blocks, post_password_required, the_content};
+use crate::content::{context_for_post, get_the_content, has_blocks, post_password_required, the_content_for_excerpt};
 use crate::env::{Context, Env};
 use crate::parser::{Block, parse_blocks};
 use crate::Result;
@@ -24,7 +24,7 @@ pub async fn get_the_excerpt(env: &Env<'_>, post: &Arc<Post>) -> Result<String> 
     }
     let content = get_the_content(env, post, 1, true);
     let content = excerpt_remove_blocks(env, post, &content).await?;
-    let html = the_content(env, post, &content).await?.replace("]]>", "]]&gt;");
+    let html = the_content_for_excerpt(env, post, &content).await?.replace("]]>", "]]&gt;");
     Ok(wp_trim_words(&html, 55, " [&hellip;]"))
 }
 

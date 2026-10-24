@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use rustpress_blocks::content::{post_class, the_content, the_title};
+use rustpress_blocks::content::{post_class, the_content_prefixed, the_title};
 use rustpress_blocks::images::{self, Metadata};
 use rustpress_core::formatting::{convert_chars, wpautop, wptexturize};
 use rustpress_db::Post;
@@ -58,11 +58,14 @@ impl Rest<'_> {
         data.insert("class_list".into(), Value::from(post_class(&env, post, &[], false, false).await?));
 
         // `description`: the content filters plus `prepend_attachment()`.
-        let mut description = the_content(&env, &shared, &post.post_content).await?;
-        if let Some(file) = attached_file.as_deref() {
-            let link = images::attachment_link(self.site, post, metadata.as_ref(), file, "medium", &alt);
-            description = format!("<p class=\"attachment\">{link}</p>\n{description}");
-        }
+        let prefix = match attached_file.as_deref() {
+            Some(file) => {
+                let link = env.in_content_filter(|| images::attachment_link(&env, post, metadata.as_ref(), file, "medium", &alt));
+                format!("<p class=\"attachment\">{link}</p>\n")
+            }
+            None => String::new(),
+        };
+        let description = the_content_prefixed(&env, &shared, &post.post_content, &prefix).await?;
         data.insert("description".into(), json!({"rendered": description}));
         let caption = wpautop(&convert_chars(&wptexturize(&post.post_excerpt)));
         data.insert("caption".into(), json!({"rendered": caption}));

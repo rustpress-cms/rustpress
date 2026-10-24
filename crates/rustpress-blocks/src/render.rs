@@ -116,6 +116,18 @@ impl<'a> Env<'a> {
                         Content::Html(html) => content.push_str(html),
                         Content::InnerBlock => {
                             let inner = &block.inner_blocks[index];
+                            // `block_core_gallery_data_id_backcompatibility` (a `render_block_data` filter).
+                            let with_data_id;
+                            let inner = match inner.attrs.get("id") {
+                                Some(id) if name == "core/gallery" && inner.name.as_deref() == Some("core/image") && !inner.attrs.contains_key("data-id") => {
+                                    let text = id.as_str().map_or_else(|| id.to_string(), str::to_owned);
+                                    let mut copy = inner.clone();
+                                    copy.attrs.insert("data-id".into(), Value::String(rustpress_core::formatting::esc_attr(&text)));
+                                    with_data_id = copy;
+                                    &with_data_id
+                                }
+                                _ => inner,
+                            };
                             content.push_str(&self.render_block(inner, &child_ctx, Some(block)).await?);
                             index += 1;
                         }

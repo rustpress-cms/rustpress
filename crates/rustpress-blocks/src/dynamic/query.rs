@@ -198,6 +198,14 @@ pub(super) async fn post_template(bc: &BlockCtx<'_>) -> Result<String> {
     let enhanced = bc.context.get("enhancedPagination").and_then(Value::as_bool).unwrap_or(false);
     let flags = &bc.env.query.flags;
     let mut items = String::new();
+    // An inheriting block iterates the main query itself, so `in_the_loop()` is true meanwhile
+    // (a nested one clones it, which leaves the flag as it was).
+    let inherit = is_inherit(bc);
+    let was_in_loop = bc.env.with_state(|s| {
+        let before = s.media.in_main_loop;
+        s.media.in_main_loop = before || inherit;
+        before
+    });
     for post in &data.posts {
         let post = Arc::new(post.clone());
         let mut ctx = Context::default();
@@ -220,6 +228,7 @@ pub(super) async fn post_template(bc: &BlockCtx<'_>) -> Result<String> {
         let directives = if enhanced { format!(" data-wp-key=\"post-template-item-{}\"", post.id) } else { String::new() };
         items.push_str(&format!("<li{directives} class=\"{}\">{inner}</li>", esc_attr(&classes.join(" "))));
     }
+    bc.env.with_state(|s| s.media.in_main_loop = was_in_loop);
     Ok(format!("<ul {wrapper}>{items}</ul>"))
 }
 

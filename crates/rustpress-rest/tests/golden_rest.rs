@@ -71,6 +71,14 @@ const ROUTES: &[&str] = &[
     // pages
     "/wp/v2/pages",
     "/wp/v2/pages/20",
+    "/wp/v2/pages/20?_embed",
+    // Content with images: block markup, classic <img> tags, galleries, the site logo, covers.
+    "/wp/v2/posts?slug=bilder",
+    "/wp/v2/posts?slug=klassische-bilder",
+    "/wp/v2/posts?slug=viele-bilder",
+    "/wp/v2/posts?slug=cover-bilder",
+    "/wp/v2/posts?slug=logo",
+    "/wp/v2/posts?_embed&per_page=8",
     "/wp/v2/pages/21",
     "/wp/v2/pages/21?_embed",
     "/wp/v2/pages?parent=20",

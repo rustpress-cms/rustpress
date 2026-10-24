@@ -76,11 +76,6 @@ pub(super) fn site_tagline(bc: &BlockCtx<'_>) -> Result<String> {
     Ok(format!("<{tag} {wrapper}>{tagline}</{tag}>"))
 }
 
-pub(super) fn site_logo(_bc: &BlockCtx<'_>) -> Result<String> {
-    // No custom logo support yet: the block renders nothing without a logo.
-    Ok(String::new())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

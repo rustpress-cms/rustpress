@@ -98,10 +98,32 @@ async fn page_bodies_match_wordpress() {
     let Some((site, theme, registry)) = setup().await else { return };
     let urls: Vec<String> = match std::env::var("RUSTPRESS_ONLY") {
         Ok(one) => vec![one],
-        Err(_) => ["/ueber-uns/", "/ueber-uns/team/", "/gibt-es-nicht/", "/testbeitrag-1/", "/", "/category/news/", "/page/2/", "/?s=Beitrag", "/klassisch/", "/geschuetzt/"]
-            .into_iter()
-            .map(str::to_owned)
-            .collect(),
+        Err(_) => [
+            "/ueber-uns/",
+            "/ueber-uns/team/",
+            "/gibt-es-nicht/",
+            "/testbeitrag-1/",
+            "/",
+            "/category/news/",
+            "/page/2/",
+            "/?s=Beitrag",
+            "/klassisch/",
+            "/geschuetzt/",
+            // Images: featured images, image blocks, a gallery, classic <img> tags and the site logo.
+            "/testbeitrag-2/",
+            "/bilder/",
+            "/klassische-bilder/",
+            "/logo/",
+            "/viele-bilder/",
+            "/cover-bilder/",
+            "/bildliste/",
+            // The database `category` template with an inheriting query loop of featured images.
+            "/category/news/",
+            "/category/tech/rust/page/2/",
+        ]
+        .into_iter()
+        .map(str::to_owned)
+        .collect(),
     };
     let verbose = std::env::var("RUSTPRESS_ONLY").is_ok();
 

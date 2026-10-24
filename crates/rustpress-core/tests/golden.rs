@@ -204,7 +204,10 @@ async fn main_query_matches_wordpress() {
             let theirs_titles: Vec<String> =
                 post_titles(&theirs.body).into_iter().map(|t| t.trim_start_matches("Protected: ").to_owned()).collect();
             let n = if ours.flags.is_singular() { 1 } else { ours_titles.len() };
-            if theirs_titles.len() < n || theirs_titles[..n] != ours_titles[..n] {
+            // Post content can hold query loops of its own, whose titles show up in between.
+            let mut remaining = theirs_titles.iter();
+            let in_order = ours_titles[..n].iter().all(|title| remaining.any(|t| t == title));
+            if !in_order {
                 problems.push(format!("titles: ours {:?}, WordPress {:?}", &ours_titles[..n], &theirs_titles[..theirs_titles.len().min(n + 2)]));
             }
         }

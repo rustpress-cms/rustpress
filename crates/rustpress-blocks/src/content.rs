@@ -9,6 +9,7 @@ use serde_json::Value;
 
 use crate::Result;
 use crate::env::{Context, Env};
+use crate::images;
 
 /// `post_password_required()`: without cookie support every protected post requires the password.
 pub fn post_password_required(post: &Post) -> bool {
@@ -150,6 +151,30 @@ pub fn context_for_post(post: &Arc<Post>) -> Context {
 
 /// `apply_filters( 'the_content', $content )` for `post`.
 pub async fn the_content(env: &Env<'_>, post: &Arc<Post>, raw: &str) -> Result<String> {
+    the_content_prefixed(env, post, raw, "").await
+}
+
+/// [`the_content`] with markup that `prepend_attachment()` puts in front of the content.
+pub async fn the_content_prefixed(env: &Env<'_>, post: &Arc<Post>, raw: &str, prefix: &str) -> Result<String> {
+    // Everything below runs inside the filter: images made by nested blocks leave the
+    // loading attributes to the `wp_filter_content_tags` pass at the end.
+    env.with_state(|s| s.media.content_depth += 1);
+    let result = apply_the_content(env, post, raw, prefix, true).await;
+    env.with_state(|s| s.media.content_depth -= 1);
+    result
+}
+
+/// The `the_content` filters as `wp_trim_excerpt()` runs them on text that
+/// `excerpt_remove_blocks()` has already rendered: `wp_filter_content_tags()` is unhooked,
+/// since the tags are stripped anyway and would only disturb the image counting.
+pub async fn the_content_for_excerpt(env: &Env<'_>, post: &Arc<Post>, rendered: &str) -> Result<String> {
+    env.with_state(|s| s.media.content_depth += 1);
+    let result = apply_the_content(env, post, rendered, "", false).await;
+    env.with_state(|s| s.media.content_depth -= 1);
+    result
+}
+
+async fn apply_the_content(env: &Env<'_>, post: &Arc<Post>, raw: &str, prefix: &str, filter_tags: bool) -> Result<String> {
     let raw = raw.replace("]]>", "]]&gt;");
     let blocks = has_blocks(&raw);
     let mut out = env.render_markup(&raw, &context_for_post(post)).await?;
@@ -158,7 +183,8 @@ pub async fn the_content(env: &Env<'_>, post: &Arc<Post>, raw: &str) -> Result<S
         out = wpautop(&out);
     }
     out = capital_p_dangit(&out, false);
-    Ok(out)
+    out = format!("{prefix}{out}");
+    if filter_tags { images::filter_content_tags(env, &out, "the_content").await } else { Ok(out) }
 }
 
 /// `sanitize_html_class`.
@@ -178,6 +204,10 @@ pub async fn post_class(env: &Env<'_>, post: &Post, extra: &[&str], is_home_unpa
     }
     if post_password_required(post) {
         classes.push("post-password-required".into());
+    }
+    // Block themes always support post thumbnails.
+    if post.post_type != "attachment" && !post_password_required(post) && images::post_thumbnail_id(env, post.id).await? != 0 {
+        classes.push("has-post-thumbnail".into());
     }
     if env.site.settings.sticky_posts.contains(&post.id) && is_home_unpaged {
         classes.push("sticky".into());

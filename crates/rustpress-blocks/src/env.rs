@@ -145,6 +145,8 @@ pub struct State {
     pub seen_menu_names: HashMap<String, u64>,
     /// Template-part areas rendered (for `<header>` / `<footer>` tag choice).
     pub rendered_parts: Vec<String>,
+    /// What the image loading logic remembers between images.
+    pub media: crate::images::MediaState,
 }
 
 impl State {

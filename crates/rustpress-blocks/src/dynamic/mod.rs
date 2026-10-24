@@ -12,6 +12,7 @@ use crate::render::BlockCtx;
 
 mod adjacent;
 mod comments;
+mod media;
 mod navigation;
 mod post_content;
 mod post_meta;
@@ -34,6 +35,9 @@ pub fn is_dynamic(name: &str) -> bool {
             | "core/site-title"
             | "core/site-tagline"
             | "core/site-logo"
+            | "core/image"
+            | "core/gallery"
+            | "core/post-featured-image"
             | "core/heading"
             | "core/list"
             | "core/navigation"
@@ -73,7 +77,10 @@ pub fn render<'a>(bc: &'a BlockCtx<'a>) -> BoxFuture<'a, Result<String>> {
             "core/post-author-name" => post_meta::post_author_name(bc).await,
             "core/site-title" => simple::site_title(bc),
             "core/site-tagline" => simple::site_tagline(bc),
-            "core/site-logo" => simple::site_logo(bc),
+            "core/site-logo" => media::site_logo(bc).await,
+            "core/image" => media::image(bc),
+            "core/gallery" => media::gallery(bc),
+            "core/post-featured-image" => media::post_featured_image(bc).await,
             "core/heading" => Ok(simple::add_class_to_first(&bc.content, &["h1", "h2", "h3", "h4", "h5", "h6"], "wp-block-heading")),
             "core/list" => Ok(simple::add_class_to_first(&bc.content, &["ol", "ul"], "wp-block-list")),
             "core/navigation" => navigation::navigation(bc).await,

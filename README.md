@@ -6,7 +6,7 @@ Unterstützt werden **Block-Themes** (`theme.json` + HTML-Templates). Klassische
 
 ## Was funktioniert (Meilenstein 1, lesend)
 
-- Seiten, Beiträge, Archive, Suche, 404 mit dem Block-Theme der Seite, verglichen mit WordPress Body für Body
+- Seiten, Beiträge, Archive, Suche, 404 mit dem Block-Theme der Seite, verglichen mit WordPress Body für Body (inklusive Bildern: Beitragsbild, Logo, Bild-Blöcke, Galerien, `srcset` und Lazy-Loading)
 - Canonical-Redirects (`/beitrag` → `/beitrag/`, `?p=5` → Permalink, …)
 - Feeds (RSS2, Atom, Kommentar-Feeds), Sitemaps, `robots.txt`
 - REST-API `wp/v2` zum Lesen (Beiträge, Seiten, Medien, Kategorien, Schlagwörter, Benutzer, Kommentare)

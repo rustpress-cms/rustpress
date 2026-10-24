@@ -126,6 +126,9 @@ pub async fn body_classes(theme: &Theme, site: &Site, q: &QueryResult) -> Result
             _ => {}
         }
     }
+    if rustpress_blocks::images::custom_logo_id(site).await? != 0 {
+        c.push("wp-custom-logo".into());
+    }
     if theme.supports_responsive_embeds() {
         c.push("wp-embed-responsive".into());
     }

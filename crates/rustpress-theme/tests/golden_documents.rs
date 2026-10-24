@@ -14,7 +14,7 @@ use rustpress_db::Db;
 use rustpress_theme::{Theme, render_document};
 
 const DEFAULT_ROOT: &str = r"\\wsl.localhost\Debian\home\yoshi\.local\share\containers\storage\volumes\rustpress-wp\_data";
-const URLS: &[&str] = &["/", "/ueber-uns/", "/testbeitrag-1/", "/gibt-es-nicht/", "/category/uncategorized/", "/?s=test"];
+const URLS: &[&str] = &["/", "/ueber-uns/", "/testbeitrag-1/", "/gibt-es-nicht/", "/category/uncategorized/", "/?s=test", "/bilder/", "/cover-bilder/", "/bildliste/"];
 
 fn fetch(path: &str) -> std::io::Result<String> {
     let mut stream = TcpStream::connect("127.0.0.1:8080")?;
@@ -30,6 +30,14 @@ fn between(html: &str, open: &str, close: &str) -> Option<String> {
     let start = html.find(open)? + open.len();
     let end = html[start..].find(close)? + start;
     Some(html[start..end].to_owned())
+}
+
+/// The text of `<style id="...">` in the head.
+fn style_text(html: &str, id: &str) -> Option<String> {
+    let head = between(html, "<head>", "</head>")?;
+    let open = [format!("<style id='{id}'>"), format!("<style id=\"{id}\">")].into_iter().find(|o| head.contains(o.as_str()))?;
+    let start = head.find(&open)? + open.len();
+    Some(head[start..start + head[start..].find("</style>")?].to_owned())
 }
 
 /// Every `id="..."`/`id='...'` on style, link and script tags in the head, in order.
@@ -92,6 +100,13 @@ async fn documents_match_wordpress() {
             let missing: Vec<_> = i_ref.iter().filter(|i| !i_ours.contains(i)).collect();
             let extra: Vec<_> = i_ours.iter().filter(|i| !i_ref.contains(i)).collect();
             problems.push(format!("{path}: head ids\n  missing: {missing:?}\n  extra:   {extra:?}\n  wp:   {i_ref:?}\n  ours: {i_ours:?}"));
+        }
+        // The CSS the blocks of the page add (layout classes, gallery gaps).
+        let id = "core-block-supports-inline-css";
+        let (s_ref, s_ours) = (style_text(&reference, id), style_text(&doc.html, id));
+        assert!(s_ref.is_some(), "{path}: the reference has no {id}");
+        if s_ref != s_ours {
+            problems.push(format!("{path}: {id}\n  wp:   {s_ref:?}\n  ours: {s_ours:?}"));
         }
     }
     assert!(problems.is_empty(), "{}", problems.join("\n"));

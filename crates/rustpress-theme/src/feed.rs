@@ -217,6 +217,8 @@ pub async fn render_feed(theme: &Theme, site: &Site, q: &QueryResult, registry: 
     }
 
     let ctx = Ctx { site, env: Env::new(site, q, theme, registry), kind, version: wp_version(&theme.wp_root) };
+    // The feed templates run their `while ( have_posts() )` loop on the main query.
+    ctx.env.with_state(|s| s.media.in_main_loop = true);
     let self_url = format!("{}{}", site.settings.home.trim_end_matches('/').split("://").next().map_or(String::new(), |s| format!("{s}://")) + site.settings.home.trim_end_matches('/').split("://").nth(1).unwrap_or("").split('/').next().unwrap_or(""), request_uri);
     let self_url = esc_url(&self_url);
     let home = bloginfo_rss(site.settings.home.trim_end_matches('/'));

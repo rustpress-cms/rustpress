@@ -10,6 +10,7 @@ use serde_json::Value;
 use crate::Result;
 use crate::content::{comment_text, post_password_required};
 use crate::env::Context;
+use crate::images::{self, LoadingInput};
 use crate::parser::Content;
 use crate::render::BlockCtx;
 
@@ -310,8 +311,20 @@ fn avatar_img(bc: &BlockCtx<'_>, email: &str, size: u64, alt: &str, extra_class:
     if !extra_class.is_empty() {
         classes.push(extra_class.to_owned());
     }
+    // `loading`, `fetchpriority` and `decoding` follow the extra attributes, in this order.
+    let input = LoadingInput { width: Some(size), height: Some(size), ..Default::default() };
+    let optimization = images::loading_attributes(bc.env, "img", &input, "get_avatar");
+    let mut extra_attr = extra_attr.to_owned();
+    for (name, allowed) in [("loading", &["lazy", "eager"][..]), ("fetchpriority", &["high", "low", "auto"][..]), ("decoding", &["async", "sync", "auto"][..])] {
+        if let Some((_, value)) = optimization.iter().find(|(k, v)| k == name && allowed.contains(&v.as_str())) {
+            if !extra_attr.is_empty() {
+                extra_attr.push(' ');
+            }
+            extra_attr.push_str(&format!("{name}='{value}'"));
+        }
+    }
     format!(
-        "<img alt='{}' src='{}' srcset='{} 2x' class='{}' height='{size}' width='{size}' decoding='async'{extra_attr}/>",
+        "<img alt='{}' src='{}' srcset='{} 2x' class='{}' height='{size}' width='{size}' {extra_attr}/>",
         esc_attr(alt),
         esc_url(&url_for(size)),
         esc_url(&url_for(size * 2)),
