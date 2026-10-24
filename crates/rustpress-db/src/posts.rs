@@ -292,6 +292,41 @@ impl Db {
         Ok(count as u64)
     }
 
+    /// `(year, month, posts)` of the published posts, newest month first (`wp_get_archives()`).
+    pub async fn monthly_archives(&self) -> Result<Vec<(u32, u32, u64)>> {
+        let sql = format!(
+            "SELECT YEAR(post_date) AS y, MONTH(post_date) AS m, COUNT(ID) AS n FROM {} WHERE post_type = 'post' AND post_status = 'publish' GROUP BY y, m ORDER BY MAX(post_date) DESC",
+            self.prefix.table("posts")
+        );
+        let rows: Vec<(i32, i32, i64)> = sqlx::query_as(AssertSqlSafe(sql)).fetch_all(&self.pool).await?;
+        Ok(rows.into_iter().map(|(y, m, n)| (y as u32, m as u32, n as u64)).collect())
+    }
+
+    /// Days of a month with published posts (`get_calendar()`).
+    pub async fn calendar_days(&self, year: u32, month: u32, last_day: u32) -> Result<Vec<u32>> {
+        let sql = format!(
+            "SELECT DISTINCT DAYOFMONTH(post_date) FROM {} WHERE post_date >= ? AND post_type = 'post' AND post_status = 'publish' AND post_date <= ?",
+            self.prefix.table("posts")
+        );
+        let rows: Vec<(i32,)> = sqlx::query_as(AssertSqlSafe(sql)).bind(format!("{year:04}-{month:02}-01 00:00:00")).bind(format!("{year:04}-{month:02}-{last_day:02} 23:59:59")).fetch_all(&self.pool).await?;
+        Ok(rows.into_iter().map(|(d,)| d as u32).collect())
+    }
+
+    /// The month before or after `year`/`month` that has published posts (`get_calendar()`).
+    pub async fn calendar_neighbor(&self, year: u32, month: u32, last_day: u32, previous: bool) -> Result<Option<(u32, u32)>> {
+        let (cmp, order, bound) = if previous {
+            ("<", "DESC", format!("{year:04}-{month:02}-01"))
+        } else {
+            (">", "ASC", format!("{year:04}-{month:02}-{last_day:02} 23:59:59"))
+        };
+        let sql = format!(
+            "SELECT YEAR(post_date), MONTH(post_date) FROM {} WHERE post_date {cmp} ? AND post_type = 'post' AND post_status = 'publish' ORDER BY post_date {order} LIMIT 1",
+            self.prefix.table("posts")
+        );
+        let row: Option<(i32, i32)> = sqlx::query_as(AssertSqlSafe(sql)).bind(bound).fetch_optional(&self.pool).await?;
+        Ok(row.map(|(y, m)| (y as u32, m as u32)))
+    }
+
     pub async fn post(&self, id: u64) -> Result<Option<Post>> {
         let query = PostQuery {
             id: Some(id),

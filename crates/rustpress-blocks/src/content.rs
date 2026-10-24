@@ -9,7 +9,7 @@ use serde_json::Value;
 
 use crate::Result;
 use crate::env::{Context, Env};
-use crate::images;
+use crate::images::{self, LoadingInput};
 
 /// `post_password_required()`: without cookie support every protected post requires the password.
 pub fn post_password_required(post: &Post) -> bool {
@@ -46,6 +46,59 @@ pub fn comment_text(site: &rustpress_core::Site, raw: &str) -> String {
     text = convert_chars(&text);
     text = wpautop(&text);
     capital_p_dangit(&text, false)
+}
+
+fn sha256_hex(input: &str) -> String {
+    use sha2::{Digest, Sha256};
+    Sha256::digest(input.as_bytes()).iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// `get_avatar()` for an email address.
+pub fn get_avatar(env: &Env<'_>, email: &str, size: u64, alt: &str, extra_class: &str, extra_attr: &str) -> String {
+    let options = &env.site.options;
+    let default = match options.string("avatar_default", "mystery").as_str() {
+        "mm" | "mystery" | "mysteryman" => "mm".to_owned(),
+        "gravatar_default" => String::new(),
+        other => other.to_owned(),
+    };
+    let rating = options.string("avatar_rating", "G").to_lowercase();
+    let hash = if email.is_empty() { String::new() } else { sha256_hex(&email.trim().to_lowercase()) };
+    let url_for = |s: u64| {
+        let mut url = format!("https://secure.gravatar.com/avatar/{hash}?s={s}");
+        if !default.is_empty() {
+            url.push_str(&format!("&d={}", default));
+        }
+        if !rating.is_empty() {
+            url.push_str(&format!("&r={rating}"));
+        }
+        url
+    };
+    let mut classes = vec!["avatar".to_owned(), format!("avatar-{size}"), "photo".to_owned()];
+    if hash.is_empty() {
+        classes.push("avatar-default".to_owned());
+    }
+    if !extra_class.is_empty() {
+        classes.push(extra_class.to_owned());
+    }
+    // `loading`, `fetchpriority` and `decoding` follow the extra attributes, in this order.
+    let input = LoadingInput { width: Some(size), height: Some(size), ..Default::default() };
+    let optimization = images::loading_attributes(env, "img", &input, "get_avatar");
+    let mut extra_attr = extra_attr.to_owned();
+    for (name, allowed) in [("loading", &["lazy", "eager"][..]), ("fetchpriority", &["high", "low", "auto"][..]), ("decoding", &["async", "sync", "auto"][..])] {
+        if let Some((_, value)) = optimization.iter().find(|(k, v)| k == name && allowed.contains(&v.as_str())) {
+            if !extra_attr.is_empty() {
+                extra_attr.push(' ');
+            }
+            extra_attr.push_str(&format!("{name}='{value}'"));
+        }
+    }
+    format!(
+        "<img alt='{}' src='{}' srcset='{} 2x' class='{}' height='{size}' width='{size}' {extra_attr}/>",
+        esc_attr(alt),
+        esc_url(&url_for(size)),
+        esc_url(&url_for(size * 2)),
+        esc_attr(&classes.join(" "))
+    )
 }
 
 /// `get_avatar_url( $email, [ 'size' => $size ] )`: the Gravatar URL with the site's defaults.

@@ -15,6 +15,7 @@ use rustpress_core::{Queried, Site};
 use rustpress_db::Post;
 use rustpress_phpser::Value;
 
+use super::comments;
 use super::menu::{self, MenuItem, NavArgs};
 use super::tags::{self, Pagination};
 use super::widgets::{self, Sidebar};
@@ -29,6 +30,14 @@ const THEME: &str = "twentyseventeen";
 
 fn sidebar(id: &'static str) -> Sidebar {
     Sidebar { id, before_widget: "<section id=\"%1$s\" class=\"widget %2$s\">", after_widget: "</section>", before_title: "<h2 class=\"widget-title\">", after_title: "</h2>" }
+}
+
+/// `dynamic_sidebar()` for one of the theme's sidebars.
+async fn sidebar_widgets(ctx: &Ctx<'_>, id: &'static str) -> Result<String> {
+    let request_uri = ctx.request_uri();
+    let search = || search_form(ctx);
+    let services = widgets::Services { site: ctx.site, q: ctx.q, env: &ctx.env, stylesheet: &ctx.theme.stylesheet, request_uri: &request_uri, search_form: &search };
+    widgets::dynamic_sidebar(&services, &sidebar(id)).await
 }
 
 /// Translates with the theme's text domain.
@@ -243,10 +252,10 @@ async fn footer(ctx: &Ctx<'_>) -> Result<String> {
     if two || three {
         widgets_html = format!("\n\n\t<aside class=\"widget-area\" aria-label=\"{}\">\n\t\t", esc_attr(&t(ctx, "Footer")));
         if two {
-            widgets_html.push_str(&format!("\t\t\t<div class=\"widget-column footer-widget-1\">\n\t\t\t\t{}\t\t\t</div>\n\t\t\t", widgets::dynamic_sidebar(ctx.site, ctx.q, &sidebar("sidebar-2")).await?));
+            widgets_html.push_str(&format!("\t\t\t<div class=\"widget-column footer-widget-1\">\n\t\t\t\t{}\t\t\t</div>\n\t\t\t", sidebar_widgets(ctx, "sidebar-2").await?));
         }
         if three {
-            widgets_html.push_str(&format!("\t\t\t<div class=\"widget-column footer-widget-2\">\n\t\t\t\t{}\t\t\t</div>\n\t\t", widgets::dynamic_sidebar(ctx.site, ctx.q, &sidebar("sidebar-3")).await?));
+            widgets_html.push_str(&format!("\t\t\t<div class=\"widget-column footer-widget-2\">\n\t\t\t\t{}\t\t\t</div>\n\t\t", sidebar_widgets(ctx, "sidebar-3").await?));
         }
         widgets_html.push_str("\t</aside><!-- .widget-area -->\n\n\t");
     }
@@ -434,7 +443,7 @@ async fn get_sidebar(ctx: &Ctx<'_>) -> Result<String> {
     Ok(format!(
         "\n<aside id=\"secondary\" class=\"widget-area\" aria-label=\"{}\">\n\t{}</aside><!-- #secondary -->\n",
         esc_attr(&t(ctx, "Blog Sidebar")),
-        widgets::dynamic_sidebar(ctx.site, ctx.q, &sidebar("sidebar-1")).await?
+        sidebar_widgets(ctx, "sidebar-1").await?
     ))
 }
 
@@ -571,7 +580,6 @@ async fn main_template(ctx: &Ctx<'_>) -> Result<String> {
     let q = ctx.q;
     let f = &q.flags;
     ctx.env.with_state(|s| s.media.in_main_loop = true);
-    let sidebar_html = get_sidebar(ctx).await?;
     let mut loop_html = String::new();
     for post in &q.posts {
         let post = Arc::new(post.clone());
@@ -585,6 +593,12 @@ async fn main_template(ctx: &Ctx<'_>) -> Result<String> {
         } else {
             content_part(ctx, &post).await?
         });
+        if (f.is_single || f.is_page) && (comments::comments_open(&post) || post.comment_count > 0) {
+            let args = comments::ListArgs { avatar_size: 100, reply_text: format!("{}{}", svg("mail-reply", false), t(ctx, "Reply")), short_ping: true };
+            let text = |s: &str| t(ctx, s);
+            let text_x = |s: &str, c: &str| tx(ctx, s, c);
+            loop_html.push_str(&comments::comments_template(ctx.site, &ctx.env, &post, &args, &ctx.request_uri(), &text, &text_x).await?);
+        }
         if f.is_single {
             loop_html.push_str(&post_navigation(ctx, &post).await?);
         }
@@ -601,7 +615,7 @@ async fn main_template(ctx: &Ctx<'_>) -> Result<String> {
     }
     if f.is_singular() {
         let tail = if f.is_page { "</div><!-- #primary -->\n" } else { "</div><!-- #primary -->\n\t" };
-        let sidebar = if f.is_page { String::new() } else { sidebar_html };
+        let sidebar = if f.is_page { String::new() } else { get_sidebar(ctx).await? };
         return Ok(format!(
             "\n<div class=\"wrap\">\n\t<div id=\"primary\" class=\"content-area\">\n\t\t<main id=\"main\" class=\"site-main\">\n\n\t\t\t{loop_html}\n\t\t</main><!-- #main -->\n\t{tail}{sidebar}</div><!-- .wrap -->\n\n",
         ));
@@ -637,6 +651,8 @@ async fn main_template(ctx: &Ctx<'_>) -> Result<String> {
     } else {
         format!("{loop_html}{pagination_html}")
     };
+    // The sidebar comes after the content, so `wp_unique_id()` counts in WordPress order.
+    let sidebar_html = get_sidebar(ctx).await?;
     Ok(format!(
         "\n<div class=\"wrap\">\n{lead}{header}\n\t<div id=\"primary\" class=\"content-area\">\n\t\t<main id=\"main\" class=\"site-main\">\n\n{main_indent}{body}\n\t\t</main><!-- #main -->\n\t</div><!-- #primary -->\n\t{sidebar_html}</div><!-- .wrap -->\n\n"
     ))
@@ -779,9 +795,6 @@ async fn head(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State, registry: &Re
     if has_menu {
         out.push_str(&format!("<script data-wp-strategy=\"defer\" defer id=\"twentyseventeen-navigation-js\" src=\"{theme_uri}/assets/js/navigation.js?ver=20210122\"></script>\n"));
     }
-    if q.flags.is_singular() && state.scripts.iter().any(|s| s == "comment-reply") {
-        out.push_str(&format!("<script async data-wp-strategy=\"async\" fetchpriority=\"low\" id=\"comment-reply-js\" src=\"{includes_url}/js/comment-reply.min.js?ver={version}\"></script>\n"));
-    }
 
     out.push_str(&discovery_links(site, q, &version).await?);
     // `twentyseventeen_pingback_header()`.
@@ -789,6 +802,10 @@ async fn head(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State, registry: &Re
         && post.ping_status == "open"
     {
         out.push_str(&format!("<link rel=\"pingback\" href=\"{}\">\n", esc_url(&site.site_url("xmlrpc.php"))));
+    }
+    // `recent_comments_style()`: an active "Recent Comments" widget.
+    if widgets::sidebars_widgets(site).iter().any(|(name, ids)| name != "wp_inactive_widgets" && ids.iter().any(|id| id.starts_with("recent-comments-"))) {
+        out.push_str("<style>.recentcomments a{display:inline !important;padding:0 !important;margin:0 !important;}</style>");
     }
     out.push_str(&site_icon(ctx).await?);
     if let Some(css) = custom_css(ctx).await? {
@@ -856,6 +873,13 @@ async fn wp_footer(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State) -> Strin
     let (importmap, preloads, module_scripts) = script_modules(wp_root, site, &modules);
     let mut out = format!("{importmap}{module_scripts}{preloads}");
     out.push_str(&format!("<script data-wp-strategy=\"defer\" defer id=\"jquery-scrollto-js\" src=\"{}/assets/js/jquery.scrollTo.js?ver=2.1.3\"></script>\n", ctx.theme.template_directory_uri()));
+    // `comment-reply`, enqueued by `twentyseventeen_scripts()` for singular pages with open comments.
+    if let (true, Queried::Post(post)) = (ctx.q.flags.is_singular(), &ctx.q.queried)
+        && post.comment_status == "open"
+        && site.options.get("thread_comments") == Some("1")
+    {
+        out.push_str(&format!("<script async data-wp-strategy=\"async\" fetchpriority=\"low\" id=\"comment-reply-js\" src=\"{}/js/comment-reply.min.js?ver={version}\"></script>\n", site.site_url("wp-includes")));
+    }
     out.push_str(&emoji_detection_script(site, wp_root, &version));
     out.push_str(&read(&ctx.theme.template_dir().join("assets/images/svg-icons.svg")).unwrap_or_default());
     out

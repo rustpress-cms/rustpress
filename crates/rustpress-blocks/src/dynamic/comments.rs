@@ -10,7 +10,7 @@ use serde_json::Value;
 use crate::Result;
 use crate::content::{comment_text, post_password_required};
 use crate::env::Context;
-use crate::images::{self, LoadingInput};
+
 use crate::parser::Content;
 use crate::render::BlockCtx;
 
@@ -281,57 +281,9 @@ pub(super) async fn comment_reply_link(bc: &BlockCtx<'_>) -> Result<String> {
 
 // ---------------------------------------------------------------------- avatar
 
-fn sha256_hex(input: &str) -> String {
-    use sha2::{Digest, Sha256};
-    Sha256::digest(input.as_bytes()).iter().map(|b| format!("{b:02x}")).collect()
-}
-
 /// `get_avatar()` for an email address.
 pub(super) fn avatar_img(bc: &BlockCtx<'_>, email: &str, size: u64, alt: &str, extra_class: &str, extra_attr: &str) -> String {
-    let options = &bc.env.site.options;
-    let default = match options.string("avatar_default", "mystery").as_str() {
-        "mm" | "mystery" | "mysteryman" => "mm".to_owned(),
-        "gravatar_default" => String::new(),
-        other => other.to_owned(),
-    };
-    let rating = options.string("avatar_rating", "G").to_lowercase();
-    let hash = if email.is_empty() { String::new() } else { sha256_hex(&email.trim().to_lowercase()) };
-    let url_for = |s: u64| {
-        let mut url = format!("https://secure.gravatar.com/avatar/{hash}?s={s}");
-        if !default.is_empty() {
-            url.push_str(&format!("&d={}", default));
-        }
-        if !rating.is_empty() {
-            url.push_str(&format!("&r={rating}"));
-        }
-        url
-    };
-    let mut classes = vec!["avatar".to_owned(), format!("avatar-{size}"), "photo".to_owned()];
-    if hash.is_empty() {
-        classes.push("avatar-default".to_owned());
-    }
-    if !extra_class.is_empty() {
-        classes.push(extra_class.to_owned());
-    }
-    // `loading`, `fetchpriority` and `decoding` follow the extra attributes, in this order.
-    let input = LoadingInput { width: Some(size), height: Some(size), ..Default::default() };
-    let optimization = images::loading_attributes(bc.env, "img", &input, "get_avatar");
-    let mut extra_attr = extra_attr.to_owned();
-    for (name, allowed) in [("loading", &["lazy", "eager"][..]), ("fetchpriority", &["high", "low", "auto"][..]), ("decoding", &["async", "sync", "auto"][..])] {
-        if let Some((_, value)) = optimization.iter().find(|(k, v)| k == name && allowed.contains(&v.as_str())) {
-            if !extra_attr.is_empty() {
-                extra_attr.push(' ');
-            }
-            extra_attr.push_str(&format!("{name}='{value}'"));
-        }
-    }
-    format!(
-        "<img alt='{}' src='{}' srcset='{} 2x' class='{}' height='{size}' width='{size}' {extra_attr}/>",
-        esc_attr(alt),
-        esc_url(&url_for(size)),
-        esc_url(&url_for(size * 2)),
-        esc_attr(&classes.join(" "))
-    )
+    crate::content::get_avatar(bc.env, email, size, alt, extra_class, extra_attr)
 }
 
 pub(super) async fn avatar(bc: &BlockCtx<'_>) -> Result<String> {

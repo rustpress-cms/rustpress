@@ -3,6 +3,7 @@
 //! (see the "Klassische Themes" section of PLAN.md). Its stylesheets, scripts and images are
 //! served from its directory unchanged.
 
+pub mod comments;
 pub mod menu;
 pub mod seventeen;
 pub mod tags;

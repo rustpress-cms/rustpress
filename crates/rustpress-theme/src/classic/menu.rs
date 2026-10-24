@@ -373,11 +373,15 @@ pub struct NavArgs {
     pub depth: usize,
     pub link_before: String,
     pub link_after: String,
+    /// The container element (`div` by default) and, for `nav`, its `aria-label`.
+    pub container: Option<(String, Option<String>)>,
+    /// Whether the items get an `id="menu-item-N"` (the nav menu widget removes them).
+    pub item_ids: bool,
 }
 
 impl NavArgs {
     pub fn new(location: &str) -> Self {
-        Self { theme_location: location.to_owned(), menu_id: String::new(), menu_class: "menu".into(), depth: 0, link_before: String::new(), link_after: String::new() }
+        Self { theme_location: location.to_owned(), menu_id: String::new(), menu_class: "menu".into(), depth: 0, link_before: String::new(), link_after: String::new(), container: Some(("div".into(), None)), item_ids: true }
     }
 }
 
@@ -407,7 +411,17 @@ pub fn wp_nav_menu(
         return String::new();
     }
     let id = if args.menu_id.is_empty() { format!("menu-{}", menu.slug) } else { args.menu_id.clone() };
-    format!("<div class=\"menu-{}-container\"><ul id=\"{}\" class=\"{}\">{body}</ul></div>", menu.slug, esc_attr(&id), esc_attr(&args.menu_class))
+    let list = format!("<ul id=\"{}\" class=\"{}\">{body}</ul>", esc_attr(&id), esc_attr(&args.menu_class));
+    match &args.container {
+        Some((tag, label)) => {
+            let aria = match (tag.as_str(), label) {
+                ("nav", Some(label)) if !label.is_empty() => format!(" aria-label=\"{}\"", esc_attr(label)),
+                _ => String::new(),
+            };
+            format!("<{tag} class=\"menu-{}-container\"{aria}>{list}</{tag}>", menu.slug)
+        }
+        None => list,
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -426,7 +440,11 @@ fn walk(
         let indent = "\t".repeat(depth);
         let mut classes: Vec<String> = item.classes.iter().filter(|c| !c.is_empty()).cloned().collect();
         classes.push(format!("menu-item-{}", item.id));
-        out.push_str(&format!("{indent}<li id=\"menu-item-{}\" class=\"{}\">", item.id, esc_attr(&classes.join(" "))));
+        if args.item_ids {
+            out.push_str(&format!("{indent}<li id=\"menu-item-{}\" class=\"{}\">", item.id, esc_attr(&classes.join(" "))));
+        } else {
+            out.push_str(&format!("{indent}<li class=\"{}\">", esc_attr(&classes.join(" "))));
+        }
         let filtered = the_title_filters(site, &item.title);
         let title = title_hook(&filtered, item, depth);
         let mut atts = String::new();

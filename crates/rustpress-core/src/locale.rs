@@ -31,6 +31,8 @@ pub enum WordCountType {
 pub struct LocaleData {
     pub weekday: [String; 7],
     pub weekday_abbrev: [String; 7],
+    /// One-letter weekday names (`M` for Monday).
+    pub weekday_initial: [String; 7],
     pub month: [String; 12],
     pub month_genitive: [String; 12],
     pub month_abbrev: [String; 12],
@@ -72,6 +74,7 @@ impl LocaleData {
         };
         Self {
             weekday: WEEKDAYS.map(&tr),
+            weekday_initial: std::array::from_fn(|i| trx(&WEEKDAYS[i][..1], &format!("{} initial", WEEKDAYS[i]))),
             weekday_abbrev: std::array::from_fn(|i| trx(WEEKDAY_ABBREVIATIONS[i], &format!("{} abbreviation", WEEKDAYS[i]))),
             month: MONTHS.map(&tr),
             month_genitive: MONTHS.map(|m| trx(m, "genitive")),
