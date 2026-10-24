@@ -43,4 +43,130 @@ impl Db {
         }
         Ok(query.fetch_all(&self.pool).await?)
     }
+
+    /// Public (approved) comments matching `query`, newest/oldest first as asked.
+    pub async fn comments_query(&self, query: &CommentQuery) -> Result<Vec<Comment>> {
+        let mut qb = sqlx::QueryBuilder::<sqlx::MySql>::new(format!("SELECT {COMMENT_COLUMNS}"));
+        query.push_filters(&mut qb, self);
+        let column = match query.order_by {
+            CommentOrder::DateGmt => "c.comment_date_gmt",
+            CommentOrder::Date => "c.comment_date",
+            CommentOrder::Id => "c.comment_ID",
+            CommentOrder::Post => "c.comment_post_ID",
+            CommentOrder::Parent => "c.comment_parent",
+        };
+        let direction = if query.descending { "DESC" } else { "ASC" };
+        qb.push(format!(" ORDER BY {column} {direction}, c.comment_ID {direction}"));
+        if let Some(limit) = query.limit {
+            qb.push(" LIMIT ").push_bind(limit).push(" OFFSET ").push_bind(query.offset);
+        }
+        Ok(qb.build_query_as().fetch_all(&self.pool).await?)
+    }
+
+    pub async fn count_comments(&self, query: &CommentQuery) -> Result<u64> {
+        let mut qb = sqlx::QueryBuilder::<sqlx::MySql>::new("SELECT COUNT(*)");
+        query.push_filters(&mut qb, self);
+        let count: i64 = qb.build_query_scalar().fetch_one(&self.pool).await?;
+        Ok(count as u64)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CommentOrder {
+    DateGmt,
+    Date,
+    Id,
+    Post,
+    Parent,
+}
+
+/// What an anonymous visitor may list: approved comments of published,
+/// unprotected posts, narrowed by the given filters.
+#[derive(Debug, Clone)]
+pub struct CommentQuery {
+    pub ids: Vec<u64>,
+    pub exclude_ids: Vec<u64>,
+    pub post_in: Vec<u64>,
+    pub parent_in: Vec<u64>,
+    pub parent_not_in: Vec<u64>,
+    /// Comment types to include (`""` is the classic comment).
+    pub types: Vec<String>,
+    pub search: Option<String>,
+    pub after: Option<String>,
+    pub before: Option<String>,
+    pub order_by: CommentOrder,
+    pub descending: bool,
+    pub limit: Option<u64>,
+    pub offset: u64,
+}
+
+impl Default for CommentQuery {
+    fn default() -> Self {
+        Self {
+            ids: Vec::new(),
+            exclude_ids: Vec::new(),
+            post_in: Vec::new(),
+            parent_in: Vec::new(),
+            parent_not_in: Vec::new(),
+            types: vec![String::new(), "comment".into()],
+            search: None,
+            after: None,
+            before: None,
+            order_by: CommentOrder::DateGmt,
+            descending: true,
+            limit: None,
+            offset: 0,
+        }
+    }
+}
+
+impl CommentQuery {
+    fn push_filters(&self, qb: &mut sqlx::QueryBuilder<sqlx::MySql>, db: &Db) {
+        qb.push(" FROM ").push(db.prefix.table("comments")).push(" c JOIN ").push(db.prefix.table("posts")).push(" p ON p.ID = c.comment_post_ID");
+        qb.push(" WHERE c.comment_approved = '1' AND p.post_status = 'publish' AND p.post_password = ''");
+        push_ids(qb, "c.comment_type", &self.types, false);
+        push_numbers(qb, "c.comment_ID", &self.ids, false);
+        push_numbers(qb, "c.comment_ID", &self.exclude_ids, true);
+        push_numbers(qb, "c.comment_post_ID", &self.post_in, false);
+        push_numbers(qb, "c.comment_parent", &self.parent_in, false);
+        push_numbers(qb, "c.comment_parent", &self.parent_not_in, true);
+        if let Some(search) = &self.search {
+            let pattern = format!("%{}%", search.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_"));
+            qb.push(" AND (c.comment_author LIKE ").push_bind(pattern.clone());
+            qb.push(" OR c.comment_author_email LIKE ").push_bind(pattern.clone());
+            qb.push(" OR c.comment_author_url LIKE ").push_bind(pattern.clone());
+            qb.push(" OR c.comment_author_IP LIKE ").push_bind(pattern.clone());
+            qb.push(" OR c.comment_content LIKE ").push_bind(pattern).push(")");
+        }
+        if let Some(after) = &self.after {
+            qb.push(" AND c.comment_date > ").push_bind(after.clone());
+        }
+        if let Some(before) = &self.before {
+            qb.push(" AND c.comment_date < ").push_bind(before.clone());
+        }
+    }
+}
+
+fn push_numbers(qb: &mut sqlx::QueryBuilder<sqlx::MySql>, column: &str, values: &[u64], negate: bool) {
+    if values.is_empty() {
+        return;
+    }
+    qb.push(format!(" AND {column} {}IN (", if negate { "NOT " } else { "" }));
+    let mut list = qb.separated(", ");
+    for v in values {
+        list.push_bind(*v);
+    }
+    qb.push(")");
+}
+
+fn push_ids(qb: &mut sqlx::QueryBuilder<sqlx::MySql>, column: &str, values: &[String], negate: bool) {
+    if values.is_empty() {
+        return;
+    }
+    qb.push(format!(" AND {column} {}IN (", if negate { "NOT " } else { "" }));
+    let mut list = qb.separated(", ");
+    for v in values {
+        list.push_bind(v.clone());
+    }
+    qb.push(")");
 }

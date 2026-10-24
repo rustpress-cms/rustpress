@@ -198,3 +198,18 @@ async fn favicon_redirects_like_wordpress() {
     assert_eq!(status, StatusCode::FOUND);
     assert!(headers[header::LOCATION].to_str().unwrap().ends_with("/wp-includes/images/w-logo-gray-white-bg.png"));
 }
+
+#[tokio::test]
+async fn rest_api_is_served_like_wordpress() {
+    let Some(app) = app().await else { return };
+    for path in ["/wp-json/wp/v2/posts/5", "/wp-json/wp/v2/posts?per_page=2&page=2", "/wp-json/wp/v2/categories", "/?rest_route=/wp/v2/pages/20", "/wp-json/wp/v2/posts/9999"] {
+        let theirs = fetch(path).unwrap();
+        let (status, headers, body) = get(&app, Method::GET, path).await;
+        assert_eq!(status.as_u16(), theirs.status, "{path}");
+        assert_eq!(String::from_utf8_lossy(&body), String::from_utf8_lossy(&theirs.body), "{path}");
+        assert_eq!(headers[header::CONTENT_TYPE], "application/json; charset=UTF-8", "{path}");
+    }
+    let (_, headers, _) = get(&app, Method::GET, "/wp-json/wp/v2/posts?per_page=1").await;
+    assert_eq!(headers["x-wp-total"], "18");
+    assert_eq!(headers["x-wp-totalpages"], "18");
+}

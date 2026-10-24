@@ -8,6 +8,7 @@ use axum::body::Body;
 use axum::http::{HeaderValue, Method, Request, Response, StatusCode, header};
 use rustpress_blocks::Registry;
 use rustpress_core::{Site, SitemapOutput};
+use rustpress_rest::Rest;
 use rustpress_db::Db;
 use rustpress_theme::{Feed, Theme, render_document, render_feed};
 use tokio::sync::{Mutex, RwLock};
@@ -100,6 +101,11 @@ async fn handle(axum::extract::State(app): axum::extract::State<Arc<App>>, reque
 async fn page(app: &App, uri: &axum::http::Uri, request_headers: &axum::http::HeaderMap) -> Result<Response<Body>> {
     let (path, query) = (uri.path(), uri.query().unwrap_or(""));
     let loaded = app.current().await;
+    if let Some((route, rest_query)) = rest_route(&loaded.site.settings.home_path(), path, query) {
+        let rest = Rest::new(&loaded.site, &loaded.theme, &loaded.registry);
+        let reply = rest.handle(&route, &rest_query).await?;
+        return Ok(rest_response(reply));
+    }
     let result = loaded.site.query(path, query).await?;
     // Physical PHP endpoints (wp-login.php, xmlrpc.php, ...) do not exist here; they get the
     // 404 page rather than a canonical redirect. Only `/index.php` is WordPress' own alias for `/`.
@@ -164,6 +170,31 @@ fn redirect(location: &str) -> Response<Body> {
     *response.status_mut() = StatusCode::MOVED_PERMANENTLY;
     if let Ok(value) = HeaderValue::from_str(location) {
         response.headers_mut().insert(header::LOCATION, value);
+    }
+    response
+}
+
+/// `(route, query)` when the request addresses the REST API (`/wp-json/...` or `?rest_route=`).
+fn rest_route(home_path: &str, path: &str, query: &str) -> Option<(String, String)> {
+    let home = home_path.trim_end_matches('/');
+    let relative = path.strip_prefix(home).unwrap_or(path);
+    if relative == "/wp-json" || relative.starts_with("/wp-json/") {
+        return Some((relative["/wp-json".len()..].to_owned(), query.to_owned()));
+    }
+    let pairs: Vec<&str> = query.split('&').collect();
+    let route = pairs.iter().find_map(|p| p.strip_prefix("rest_route="))?;
+    let route = String::from_utf8_lossy(&rustpress_core::rewrite::urldecode(route.replace('+', " ").as_bytes())).into_owned();
+    let rest: Vec<&str> = pairs.into_iter().filter(|p| !p.starts_with("rest_route=")).collect();
+    Some((route, rest.join("&")))
+}
+
+fn rest_response(reply: rustpress_rest::Reply) -> Response<Body> {
+    let mut response = Response::new(Body::from(reply.body));
+    *response.status_mut() = StatusCode::from_u16(reply.status).unwrap_or(StatusCode::OK);
+    for (name, value) in reply.headers {
+        if let (Ok(name), Ok(value)) = (header::HeaderName::from_bytes(name.as_bytes()), HeaderValue::from_str(&value)) {
+            response.headers_mut().append(name, value);
+        }
     }
     response
 }

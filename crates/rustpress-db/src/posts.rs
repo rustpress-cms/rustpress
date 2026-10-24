@@ -11,6 +11,11 @@ pub enum OrderBy {
     Title,
     Id,
     MenuOrder,
+    Author,
+    Slug,
+    Parent,
+    /// The order of ids (orderby=include).
+    Include,
     /// Search relevance as in `WP_Query::parse_search_order`: title matches
     /// first, then excerpt/content phrase matches, then newest first.
     /// Needs `search` terms (and `search_phrase` for multi-word searches).
@@ -37,6 +42,20 @@ pub struct PostQuery {
     pub names: Vec<String>,
     pub parent: Option<u64>,
     pub author: Option<u64>,
+    /// uthor__in / uthor__not_in.
+    pub author_in: Vec<u64>,
+    pub author_not_in: Vec<u64>,
+    /// post_parent__in / post_parent__not_in.
+    pub parent_in: Vec<u64>,
+    pub parent_not_in: Vec<u64>,
+    /// Posts that have none of these 	erm_taxonomy_ids (NOT IN tax queries).
+    pub tax_not: Vec<u64>,
+    /// MySQL datetimes (post_date / post_modified, local time).
+    pub date_after: Option<String>,
+    pub date_before: Option<String>,
+    pub modified_after: Option<String>,
+    pub modified_before: Option<String>,
+    pub menu_order: Option<i32>,
     /// Taxonomy filters: a post must match every group (AND), and a group
     /// matches if the post has any of its `term_taxonomy_id`s (OR).
     pub tax_groups: Vec<Vec<u64>>,
@@ -65,6 +84,16 @@ impl Default for PostQuery {
             names: Vec::new(),
             parent: None,
             author: None,
+            author_in: Vec::new(),
+            author_not_in: Vec::new(),
+            parent_in: Vec::new(),
+            parent_not_in: Vec::new(),
+            tax_not: Vec::new(),
+            date_after: None,
+            date_before: None,
+            modified_after: None,
+            modified_before: None,
+            menu_order: None,
             tax_groups: Vec::new(),
             search: Vec::new(),
             search_phrase: None,
@@ -99,6 +128,31 @@ impl PostQuery {
         }
         if let Some(author) = self.author {
             qb.push(" AND p.post_author = ").push_bind(author);
+        }
+        push_in(qb, "p.post_author", &self.author_in);
+        push_in(qb, "p.post_author NOT", &self.author_not_in);
+        push_in(qb, "p.post_parent", &self.parent_in);
+        push_in(qb, "p.post_parent NOT", &self.parent_not_in);
+        if let Some(menu_order) = self.menu_order {
+            qb.push(" AND p.menu_order = ").push_bind(menu_order);
+        }
+        for (column, op, value) in [
+            ("p.post_date", ">", &self.date_after),
+            ("p.post_date", "<", &self.date_before),
+            ("p.post_modified", ">", &self.modified_after),
+            ("p.post_modified", "<", &self.modified_before),
+        ] {
+            if let Some(value) = value {
+                qb.push(format!(" AND {column} {op} ")).push_bind(value.clone());
+            }
+        }
+        if !self.tax_not.is_empty() {
+            qb.push(" AND p.ID NOT IN (SELECT object_id FROM ").push(db.prefix.table("term_relationships")).push(" WHERE term_taxonomy_id IN (");
+            let mut ids = qb.separated(", ");
+            for id in &self.tax_not {
+                ids.push_bind(*id);
+            }
+            qb.push("))");
         }
         for group in self.tax_groups.iter().filter(|g| !g.is_empty()) {
             qb.push(" AND p.ID IN (SELECT object_id FROM ").push(db.prefix.table("term_relationships")).push(" WHERE term_taxonomy_id IN (");
@@ -183,10 +237,20 @@ impl Db {
             OrderBy::Title => "p.post_title",
             OrderBy::Id => "p.ID",
             OrderBy::MenuOrder => "p.menu_order",
+            OrderBy::Author => "p.post_author",
+            OrderBy::Slug => "p.post_name",
+            OrderBy::Parent => "p.post_parent",
+            OrderBy::Include => "",
             OrderBy::Relevance => "",
         };
         let direction = if query.order == Order::Asc { "ASC" } else { "DESC" };
-        if query.order_by == OrderBy::Relevance {
+        if query.order_by == OrderBy::Include {
+            qb.push(" ORDER BY FIELD(p.ID");
+            for id in &query.ids {
+                qb.push(", ").push_bind(*id);
+            }
+            qb.push(")");
+        } else if query.order_by == OrderBy::Relevance {
             // Same rows in the same order as WordPress: rank, newest first, then oldest ID.
             qb.push(" ORDER BY ");
             push_relevance(&mut qb, query);

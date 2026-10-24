@@ -9,6 +9,7 @@ pub mod content;
 pub mod dimensions;
 pub mod dynamic;
 pub mod elements;
+pub mod excerpt;
 pub mod env;
 pub mod html;
 pub mod interactivity;

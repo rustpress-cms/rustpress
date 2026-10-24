@@ -111,6 +111,11 @@ impl QueryResult {
         }
     }
 
+    /// A query that matched nothing, for rendering outside of a page request (REST).
+    pub fn blank() -> Self {
+        Self::new(QueryVars::new(), None)
+    }
+
     /// `WP_Query::set_404()`: all conditionals off except `is_404`.
     pub fn into_404(mut self) -> Self {
         self.flags = Flags { is_404: true, ..Flags::default() };

@@ -17,6 +17,8 @@ pub enum Error {
     #[error(transparent)]
     Theme(#[from] rustpress_theme::Error),
     #[error(transparent)]
+    Rest(#[from] rustpress_rest::Error),
+    #[error(transparent)]
     Io(#[from] std::io::Error),
 }
 

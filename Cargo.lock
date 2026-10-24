@@ -1285,6 +1285,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "rustpress-rest"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "rustpress-blocks",
+ "rustpress-core",
+ "rustpress-db",
+ "rustpress-theme",
+ "serde_json",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "rustpress-server"
 version = "0.1.0"
 dependencies = [
@@ -1293,6 +1307,7 @@ dependencies = [
  "rustpress-blocks",
  "rustpress-core",
  "rustpress-db",
+ "rustpress-rest",
  "rustpress-theme",
  "serde",
  "thiserror",

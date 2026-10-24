@@ -10,8 +10,8 @@ use std::sync::Arc;
 
 use chrono::NaiveDateTime;
 use rustpress_blocks::content::{comment_text, get_the_content, post_password_required, the_content, the_title};
-use rustpress_blocks::{Context, Env, parse_blocks};
-use rustpress_core::formatting::{convert_chars, ent2ncr, esc_attr, esc_html, esc_url, html_entity_decode, strip_tags, wp_trim_words};
+use rustpress_blocks::Env;
+use rustpress_core::formatting::{convert_chars, ent2ncr, esc_attr, esc_html, esc_url, html_entity_decode, strip_tags};
 use rustpress_core::urls::trailingslashit;
 use rustpress_core::{Queried, QueryResult, Site};
 use rustpress_db::{Comment, Post};
@@ -136,66 +136,11 @@ impl Ctx<'_> {
         Ok(list)
     }
 
-    /// `get_the_excerpt()` through `wp_trim_excerpt()` and the `the_excerpt_rss` filters.
+    /// `get_the_excerpt()` and the `the_excerpt_rss` filters.
     async fn excerpt(&self, post: &Arc<Post>) -> Result<String> {
-        let text = if post_password_required(post) {
-            "There is no excerpt because this is a protected post.".to_owned()
-        } else if !post.post_excerpt.trim().is_empty() {
-            post.post_excerpt.clone()
-        } else {
-            let content = get_the_content(&self.env, post, 1, true);
-            let content = self.excerpt_remove_blocks(post, &content).await?;
-            let html = the_content(&self.env, post, &content).await?.replace("]]>", "]]&gt;");
-            wp_trim_words(&html, 55, " [&hellip;]")
-        };
+        let text = rustpress_blocks::excerpt::get_the_excerpt(&self.env, post).await?;
         Ok(convert_chars(&ent2ncr(&text)))
     }
-
-    /// `excerpt_remove_blocks()`: only text-like blocks survive.
-    async fn excerpt_remove_blocks(&self, post: &Arc<Post>, content: &str) -> Result<String> {
-        if !rustpress_blocks::content::has_blocks(content) {
-            return Ok(content.to_owned());
-        }
-        const INNER: &[&str] = &["core/freeform", "core/heading", "core/html", "core/list", "core/media-text", "core/paragraph", "core/preformatted", "core/pullquote", "core/quote", "core/table", "core/verse"];
-        const WRAPPERS: &[&str] = &["core/columns", "core/column", "core/group"];
-        let allowed = |name: &Option<String>| name.as_deref().is_none_or(|n| INNER.contains(&n) || WRAPPERS.contains(&n));
-        let hidden = |block: &rustpress_blocks::Block| block.attrs.get("metadata").and_then(|m| m.get("blockVisibility")) == Some(&serde_json::Value::Bool(false));
-        let context: Context = rustpress_blocks::content::context_for_post(post);
-
-        async fn inner<'b>(this: &Ctx<'b>, block: &rustpress_blocks::Block, allowed: &(dyn Fn(&Option<String>) -> bool + Sync), hidden: &(dyn Fn(&rustpress_blocks::Block) -> bool + Sync), context: &Context) -> Result<String> {
-            let mut out = String::new();
-            for child in &block.inner_blocks {
-                if hidden(child) || !allowed(&child.name) {
-                    continue;
-                }
-                if child.inner_blocks.is_empty() {
-                    out.push_str(&this.env.render_block(child, context, None).await?);
-                } else {
-                    out.push_str(&Box::pin(inner(this, child, allowed, hidden, context)).await?);
-                }
-            }
-            Ok(out)
-        }
-
-        let mut output = String::new();
-        for block in parse_blocks(content) {
-            if hidden(&block) || !allowed(&block.name) {
-                continue;
-            }
-            if !block.inner_blocks.is_empty() {
-                if block.name.as_deref().is_some_and(|n| WRAPPERS.contains(&n)) {
-                    output.push_str(&inner(self, &block, &allowed, &hidden, &context).await?);
-                    continue;
-                }
-                if block.inner_blocks.iter().any(|b| !b.name.as_deref().is_none_or(|n| INNER.contains(&n)) || !b.inner_blocks.is_empty()) {
-                    continue;
-                }
-            }
-            output.push_str(&self.env.render_block(&block, &context, None).await?);
-        }
-        Ok(output)
-    }
-
     /// `get_the_content_feed()`.
     async fn content(&self, post: &Arc<Post>) -> Result<String> {
         let raw = get_the_content(&self.env, post, 1, true);

@@ -37,6 +37,26 @@ pub fn comment_text(raw: &str) -> String {
     capital_p_dangit(&text, false)
 }
 
+/// `get_avatar_url( $email, [ 'size' => $size ] )`: the Gravatar URL with the site's defaults.
+pub fn avatar_url(options: &rustpress_core::options::Options, email: &str, size: u64) -> String {
+    use sha2::{Digest, Sha256};
+    let default = match options.string("avatar_default", "mystery").as_str() {
+        "mm" | "mystery" | "mysteryman" => "mm".to_owned(),
+        "gravatar_default" => String::new(),
+        other => other.to_owned(),
+    };
+    let rating = options.string("avatar_rating", "G").to_lowercase();
+    let hash = if email.is_empty() { String::new() } else { Sha256::digest(email.trim().to_lowercase().as_bytes()).iter().map(|b| format!("{b:02x}")).collect() };
+    let mut url = format!("https://secure.gravatar.com/avatar/{hash}?s={size}");
+    if !default.is_empty() {
+        url.push_str(&format!("&d={default}"));
+    }
+    if !rating.is_empty() {
+        url.push_str(&format!("&r={rating}"));
+    }
+    url
+}
+
 /// `has_blocks()`.
 pub fn has_blocks(content: &str) -> bool {
     content.contains("<!-- wp:")

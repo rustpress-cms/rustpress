@@ -1,0 +1,18 @@
+[package]
+name = "rustpress-rest"
+description = "Read-only WordPress REST API (wp/v2)"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[dependencies]
+rustpress-blocks.workspace = true
+rustpress-core.workspace = true
+rustpress-db.workspace = true
+rustpress-theme.workspace = true
+chrono.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true

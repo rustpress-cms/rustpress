@@ -18,6 +18,7 @@ mod users;
 use sqlx::Executor;
 use sqlx::mysql::{MySqlPool, MySqlPoolOptions};
 
+pub use comments::{CommentOrder, CommentQuery};
 pub use models::{Comment, Post, PostMeta, Term, User};
 pub use posts::{Order, OrderBy, PostQuery};
 

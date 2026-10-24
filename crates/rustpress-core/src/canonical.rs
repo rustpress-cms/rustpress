@@ -37,11 +37,11 @@ pub fn split_url(url: &str) -> (String, String) {
     }
 }
 
-fn join(path: &str, query: &str) -> String {
+pub fn join(path: &str, query: &str) -> String {
     if query.is_empty() { path.to_owned() } else { format!("{path}?{query}") }
 }
 
-fn php_urlencode(s: &str) -> String {
+pub fn php_urlencode(s: &str) -> String {
     let mut out = String::new();
     for b in s.bytes() {
         match b {
@@ -53,7 +53,7 @@ fn php_urlencode(s: &str) -> String {
     out
 }
 
-fn rawurlencode(s: &str) -> String {
+pub fn rawurlencode(s: &str) -> String {
     let mut out = String::new();
     for b in s.bytes() {
         match b {
@@ -65,7 +65,7 @@ fn rawurlencode(s: &str) -> String {
 }
 
 /// `parse_str` for flat queries: decoded pairs in order, later duplicates win in place.
-fn parse_qs(query: &str) -> Vec<(String, String)> {
+pub fn parse_qs(query: &str) -> Vec<(String, String)> {
     let mut pairs: Vec<(String, String)> = Vec::new();
     for part in query.split('&').filter(|p| !p.is_empty()) {
         let (k, v) = part.split_once('=').unwrap_or((part, ""));
@@ -80,7 +80,7 @@ fn parse_qs(query: &str) -> Vec<(String, String)> {
 }
 
 /// `build_query( urlencode_deep( $pairs ) )` as `add_query_arg` does it.
-fn build_qs(pairs: &[(String, String)]) -> String {
+pub fn build_qs(pairs: &[(String, String)]) -> String {
     let parts: Vec<String> = pairs
         .iter()
         .map(|(k, v)| {
@@ -92,7 +92,7 @@ fn build_qs(pairs: &[(String, String)]) -> String {
 }
 
 /// `remove_query_arg( $keys, $query )` on a bare query string.
-fn remove_args(query: &str, keys: &[&str]) -> String {
+pub fn remove_args(query: &str, keys: &[&str]) -> String {
     if !query.contains('=') {
         return query.to_owned();
     }
@@ -102,7 +102,7 @@ fn remove_args(query: &str, keys: &[&str]) -> String {
 }
 
 /// `add_query_arg( $args, $url )` for a `path?query` URL.
-fn add_args(url: &str, args: &[(String, String)]) -> String {
+pub fn add_args(url: &str, args: &[(String, String)]) -> String {
     let (path, query) = split_url(url);
     let mut pairs = parse_qs(&query);
     for (k, v) in args {

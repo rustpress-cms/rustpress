@@ -35,4 +35,10 @@ impl Db {
         let count: i64 = qb.build_query_scalar().fetch_one(&self.pool).await?;
         Ok(count as u64)
     }
+
+    /// One `wp_usermeta` value (`get_user_meta( $id, $key, true )`).
+    pub async fn user_meta(&self, user_id: u64, key: &str) -> Result<Option<String>> {
+        let sql = format!("SELECT meta_value FROM {} WHERE user_id = ? AND meta_key = ? ORDER BY umeta_id LIMIT 1", self.prefix.table("usermeta"));
+        Ok(sqlx::query_scalar::<_, Option<String>>(AssertSqlSafe(sql)).bind(user_id).bind(key).fetch_optional(&self.pool).await?.flatten())
+    }
 }
