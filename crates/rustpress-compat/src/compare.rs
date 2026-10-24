@@ -57,10 +57,11 @@ pub fn compare(kind: Kind, ours: &Response, theirs: &Response) -> Vec<Difference
     }
     match kind {
         Kind::Page if ours.media_type() == "text/html" && theirs.media_type() == "text/html" => {
-            compare_documents(&ours.text(), &theirs.text(), &mut out);
+            let (mine, theirs_text) = (unbrand(&ours.text()), unbrand(&theirs.text()));
+            compare_documents(&mine, &theirs_text, &mut out);
             // Equal in every respect that matters, but not byte for byte.
-            if out.iter().all(|d| d.aspect.starts_with("header:")) && ours.body != theirs.body {
-                out.push(Difference::new("whitespace", describe_difference(&ours.body, &theirs.body)));
+            if out.iter().all(|d| d.aspect.starts_with("header:")) && mine != theirs_text {
+                out.push(Difference::new("whitespace", describe_difference(mine.as_bytes(), theirs_text.as_bytes())));
             }
         }
         _ => {
@@ -70,6 +71,12 @@ pub fn compare(kind: Kind, ours: &Response, theirs: &Response) -> Vec<Difference
         }
     }
     out
+}
+
+/// The credit line of Twenty Seventeen names RustPress instead of WordPress on purpose.
+fn unbrand(html: &str) -> String {
+    static CREDIT: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| regex::Regex::new(r#"(?s)<a href="[^"]*" class="imprint">.*?</a>"#).unwrap());
+    CREDIT.replace_all(html, "<a class=\"imprint\"></a>").into_owned()
 }
 
 fn show(value: &Option<String>) -> String {

@@ -261,8 +261,9 @@ async fn footer(ctx: &Ctx<'_>) -> Result<String> {
     }
     // `the_privacy_policy_link()` is empty without a privacy policy page.
     let privacy = privacy_policy_link(ctx).await?;
-    let imprint_url = esc_url(&t(ctx, "https://wordpress.org/"));
-    let powered = rustpress_core::i18n::sprintf(&t(ctx, "Proudly powered by %s"), &["WordPress"]);
+    // The credit names RustPress (the compat run ignores this link); it points at the site itself.
+    let imprint_url = esc_url(&ctx.site.home_url("/"));
+    let powered = rustpress_core::i18n::sprintf(&t(ctx, "Proudly powered by %s"), &["RustPress"]);
     Ok(format!(
         "\n\t\t</div><!-- #content -->\n\n\t\t<footer id=\"colophon\" class=\"site-footer\">\n\t\t\t<div class=\"wrap\">\n\t\t\t\t{widgets_html}<div class=\"site-info\">\n\t{privacy}\t<a href=\"{imprint_url}\" class=\"imprint\">\n\t\t{powered}\t</a>\n</div><!-- .site-info -->\n\t\t\t</div><!-- .wrap -->\n\t\t</footer><!-- #colophon -->\n\t</div><!-- .site-content-contain -->\n</div><!-- #page -->\n"
     ))
