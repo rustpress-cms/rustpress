@@ -125,7 +125,7 @@ pub fn texturize_delimiter_len(s: &str, tags: &[&str]) -> Option<usize> {
         match bytes.get(i)? {
             b'<' => {
                 // `<[^\[\]>]*>`
-                let close = s[i + 1..].find(|c| matches!(c, '[' | ']' | '>'))?;
+                let close = s[i + 1..].find(['[', ']', '>'])?;
                 if bytes[i + 1 + close] != b'>' {
                     return None;
                 }
