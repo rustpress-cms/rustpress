@@ -7,7 +7,7 @@ use axum::Router;
 use axum::body::Body;
 use axum::http::{HeaderValue, Method, Request, Response, StatusCode, header};
 use rustpress_blocks::Registry;
-use rustpress_core::Site;
+use rustpress_core::{Site, SitemapOutput};
 use rustpress_db::Db;
 use rustpress_theme::{Feed, Theme, render_document, render_feed};
 use tokio::sync::{Mutex, RwLock};
@@ -117,11 +117,46 @@ async fn page(app: &App, uri: &axum::http::Uri, request_headers: &axum::http::He
         };
         return Ok(feed_response(&feed, request_headers));
     }
+    let mut result = result;
+    if result.flags.is_robots {
+        return Ok(typed(StatusCode::OK, "text/plain; charset=utf-8", loaded.site.robots_txt()));
+    }
+    if result.flags.is_favicon {
+        let icon = loaded.site.site_url("wp-includes/images/w-logo-gray-white-bg.png");
+        let mut response = redirect(&icon);
+        *response.status_mut() = StatusCode::FOUND;
+        return Ok(response);
+    }
+    if result.flags.is_sitemap {
+        match loaded.site.sitemap(&result).await? {
+            SitemapOutput::Xml(xml) => return Ok(typed(StatusCode::OK, "application/xml; charset=UTF-8", xml)),
+            SitemapOutput::Stylesheet(xsl) => return Ok(typed(StatusCode::OK, "application/xml; charset=UTF-8", xsl.to_owned())),
+            SitemapOutput::NotFound => result = result.into_404(),
+        }
+    }
     let document = render_document(&loaded.theme, &loaded.site, &result, &loaded.registry).await?;
     let mut response = Response::new(Body::from(document.html));
     *response.status_mut() = StatusCode::from_u16(document.status).unwrap_or(StatusCode::OK);
     response.headers_mut().insert(header::CONTENT_TYPE, HeaderValue::from_static("text/html; charset=UTF-8"));
+    if document.status == 404 {
+        no_cache(response.headers_mut());
+    }
     Ok(response)
+}
+
+/// `nocache_headers()` as WordPress sends them with a 404.
+fn no_cache(headers: &mut axum::http::HeaderMap) {
+    headers.insert(header::EXPIRES, HeaderValue::from_static("Wed, 11 Jan 1984 05:00:00 GMT"));
+    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-cache, must-revalidate, max-age=0, no-store, private"));
+}
+
+fn typed(status: StatusCode, content_type: &str, body: String) -> Response<Body> {
+    let mut response = Response::new(Body::from(body));
+    *response.status_mut() = status;
+    if let Ok(value) = HeaderValue::from_str(content_type) {
+        response.headers_mut().insert(header::CONTENT_TYPE, value);
+    }
+    response
 }
 
 fn redirect(location: &str) -> Response<Body> {
@@ -152,8 +187,7 @@ fn feed_response(feed: &Feed, request: &axum::http::HeaderMap) -> Response<Body>
         headers.insert(header::ETAG, value);
     }
     if feed.nocache {
-        headers.insert(header::EXPIRES, HeaderValue::from_static("Wed, 11 Jan 1984 05:00:00 GMT"));
-        headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-cache, must-revalidate, max-age=0, no-store, private"));
+        no_cache(headers);
     }
     response
 }

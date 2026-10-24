@@ -21,15 +21,13 @@ impl Site {
     /// `home_url( $path )`.
     pub fn home_url(&self, path: &str) -> String {
         let home = self.settings.home.trim_end_matches('/');
-        let path = path.trim_start_matches('/');
-        if path.is_empty() { home.to_owned() } else { format!("{home}/{path}") }
+        if path.is_empty() { home.to_owned() } else { format!("{home}/{}", path.trim_start_matches('/')) }
     }
 
     /// `site_url( $path )`.
     pub fn site_url(&self, path: &str) -> String {
         let base = self.settings.siteurl.trim_end_matches('/');
-        let path = path.trim_start_matches('/');
-        if path.is_empty() { base.to_owned() } else { format!("{base}/{path}") }
+        if path.is_empty() { base.to_owned() } else { format!("{base}/{}", path.trim_start_matches('/')) }
     }
 
     pub fn uses_pretty_permalinks(&self) -> bool {

@@ -71,6 +71,13 @@ impl Db {
         Ok(Self { pool, prefix })
     }
 
+    /// Like [Db::connect], but connects on first use. Handy for tests that never query.
+    pub fn connect_lazy(url: &str, prefix: &str) -> Result<Self> {
+        let prefix = Prefix::new(prefix)?;
+        let pool = MySqlPoolOptions::new().max_connections(8).connect_lazy(url)?;
+        Ok(Self { pool, prefix })
+    }
+
     pub fn prefix(&self) -> &Prefix {
         &self.prefix
     }

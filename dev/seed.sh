@@ -11,6 +11,8 @@ fi
 
 wp rewrite structure '/%postname%/' >/dev/null
 wp option update posts_per_page 5 >/dev/null
+# Public, so that sitemaps and the indexing robots tag are exercised.
+wp option update blog_public 1 >/dev/null
 
 # Taxonomies; `term` creates a term or returns the ID of the existing one.
 term() { # taxonomy name [extra args]

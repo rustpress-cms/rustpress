@@ -436,7 +436,11 @@ impl Site {
                 rquery = remove_args(&rquery, &["page"]);
             }
 
-            if qv("paged") != 0 || f.is_feed || qv("cpage") != 0 {
+            if let Some(sitemap) = q.vars.get("sitemap").filter(|s| !s.is_empty()) {
+                let url = self.sitemap_url_for(sitemap, q.vars.get("sitemap-subtype").filter(|s| !s.is_empty()), qv("paged"));
+                rquery = remove_args(&rquery, &["sitemap", "sitemap-subtype", "paged"]);
+                redirect_url = Some(join_pair(&url));
+            } else if qv("paged") != 0 || f.is_feed || qv("cpage") != 0 {
                 let paged = qv("paged");
                 let cpage = qv("cpage");
                 let feed = q.vars.get("feed").unwrap_or("");

@@ -103,3 +103,16 @@
 /gleich-b/
 /klassisch/?x=1&y=2
 /klassisch?x=1&y=2
+/wp-sitemap.xml
+/wp-sitemap.xml/
+/robots.txt
+/robots.txt/
+/wp-sitemap-posts-post-1.xml
+/wp-sitemap-posts-post-1.xml/
+/wp-sitemap-posts-post-9.xml
+/wp-sitemap.xsl
+/wp-sitemap.xsl/
+/wp-sitemap-users-1.xml
+/?sitemap=index
+/?sitemap=posts&sitemap-subtype=post&paged=1
+/favicon.ico

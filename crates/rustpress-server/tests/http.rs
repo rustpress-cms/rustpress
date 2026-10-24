@@ -154,3 +154,47 @@ async fn unsupported_feed_types_are_not_found() {
     let (status, _, _) = get(&app, Method::GET, "/feed/rdf/").await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
+
+#[tokio::test]
+async fn sitemaps_and_robots_are_byte_identical() {
+    let Some(app) = app().await else { return };
+    for path in [
+        "/wp-sitemap.xml",
+        "/wp-sitemap-posts-post-1.xml",
+        "/wp-sitemap-posts-page-1.xml",
+        "/wp-sitemap-taxonomies-category-1.xml",
+        "/wp-sitemap-taxonomies-post_tag-1.xml",
+        "/wp-sitemap-users-1.xml",
+        "/wp-sitemap.xsl",
+        "/wp-sitemap-index.xsl",
+        "/robots.txt",
+    ] {
+        let theirs = fetch(path).unwrap();
+        let (status, headers, body) = get(&app, Method::GET, path).await;
+        assert_eq!(status.as_u16(), theirs.status, "{path}");
+        assert_eq!(String::from_utf8_lossy(&body), String::from_utf8_lossy(&theirs.body), "{path}");
+        let expected = if path == "/robots.txt" { "text/plain; charset=utf-8" } else { "application/xml; charset=UTF-8" };
+        assert_eq!(headers[header::CONTENT_TYPE], expected, "{path}");
+    }
+}
+
+#[tokio::test]
+async fn missing_sitemaps_are_regular_404s() {
+    let Some(app) = app().await else { return };
+    for path in ["/wp-sitemap-posts-post-9.xml", "/wp-sitemap-posts-nope-1.xml", "/wp-sitemap-taxonomies-post_tag-2.xml"] {
+        let theirs = fetch(path).unwrap();
+        let (status, headers, body) = get(&app, Method::GET, path).await;
+        assert_eq!(status.as_u16(), theirs.status, "{path}");
+        assert_eq!(status, StatusCode::NOT_FOUND, "{path}");
+        assert!(String::from_utf8_lossy(&body).starts_with("<!DOCTYPE html>"), "{path}");
+        assert!(headers[header::CACHE_CONTROL].to_str().unwrap().contains("no-store"), "{path}");
+    }
+}
+
+#[tokio::test]
+async fn favicon_redirects_like_wordpress() {
+    let Some(app) = app().await else { return };
+    let (status, headers, _) = get(&app, Method::GET, "/favicon.ico").await;
+    assert_eq!(status, StatusCode::FOUND);
+    assert!(headers[header::LOCATION].to_str().unwrap().ends_with("/wp-includes/images/w-logo-gray-white-bg.png"));
+}

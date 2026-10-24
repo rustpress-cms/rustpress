@@ -54,6 +54,7 @@ pub struct Flags {
     pub is_feed: bool,
     pub is_paged: bool,
     pub is_robots: bool,
+    pub is_sitemap: bool,
     pub is_favicon: bool,
     pub is_404: bool,
 }
@@ -111,7 +112,7 @@ impl QueryResult {
     }
 
     /// `WP_Query::set_404()`: all conditionals off except `is_404`.
-    fn into_404(mut self) -> Self {
+    pub fn into_404(mut self) -> Self {
         self.flags = Flags { is_404: true, ..Flags::default() };
         self.posts.clear();
         self.queried = Queried::None;
@@ -200,6 +201,10 @@ impl Site {
 
         if v.get("robots").is_some() {
             r.flags.is_robots = true;
+            return Ok(r);
+        }
+        if v.get("sitemap").is_some_and(|s| !s.is_empty()) || v.get("sitemap-stylesheet").is_some_and(|s| !s.is_empty()) {
+            r.flags.is_sitemap = true;
             return Ok(r);
         }
         if v.get("favicon").is_some() {

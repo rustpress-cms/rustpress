@@ -14,6 +14,7 @@ pub mod query;
 pub mod rewrite;
 pub mod settings;
 pub mod site;
+pub mod sitemap;
 pub mod slug;
 pub mod urls;
 
@@ -21,6 +22,7 @@ pub use query::{Flags, Queried, QueryResult};
 pub use rewrite::QueryVars;
 pub use settings::{Settings, ShowOnFront};
 pub use site::Site;
+pub use sitemap::SitemapOutput;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
