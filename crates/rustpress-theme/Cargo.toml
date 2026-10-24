@@ -1,0 +1,18 @@
+[package]
+name = "rustpress-theme"
+description = "Block theme support: theme.json, templates and global styles"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[dependencies]
+rustpress-blocks.workspace = true
+rustpress-core.workspace = true
+rustpress-db.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true

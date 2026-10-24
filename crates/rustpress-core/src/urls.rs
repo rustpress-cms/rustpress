@@ -1,0 +1,367 @@
+//! URL generation: the inverse of the rewrite rules. Ports of
+//! `get_permalink()`, `get_page_link()`, `get_term_link()`,
+//! `get_author_posts_url()`, `get_year_link()` and `get_pagenum_link()` for
+//! the standard post types and taxonomies.
+
+use rustpress_db::{Post, Term, User};
+
+use crate::Result;
+use crate::site::Site;
+
+/// `trailingslashit` / `untrailingslashit` helpers.
+pub fn trailingslashit(url: &str) -> String {
+    format!("{}/", url.trim_end_matches(['/', '\\']))
+}
+
+pub fn untrailingslashit(url: &str) -> String {
+    url.trim_end_matches(['/', '\\']).to_owned()
+}
+
+impl Site {
+    /// `home_url( $path )`.
+    pub fn home_url(&self, path: &str) -> String {
+        let home = self.settings.home.trim_end_matches('/');
+        let path = path.trim_start_matches('/');
+        if path.is_empty() { home.to_owned() } else { format!("{home}/{path}") }
+    }
+
+    /// `site_url( $path )`.
+    pub fn site_url(&self, path: &str) -> String {
+        let base = self.settings.siteurl.trim_end_matches('/');
+        let path = path.trim_start_matches('/');
+        if path.is_empty() { base.to_owned() } else { format!("{base}/{path}") }
+    }
+
+    pub fn uses_pretty_permalinks(&self) -> bool {
+        !self.settings.permalink_structure.is_empty()
+    }
+
+    /// `user_trailingslashit()`: follows the permalink structure.
+    pub fn user_trailingslashit(&self, url: &str) -> String {
+        if self.settings.permalink_structure.ends_with('/') { trailingslashit(url) } else { untrailingslashit(url) }
+    }
+
+    /// The part of the permalink structure before the first rewrite tag
+    /// (`WP_Rewrite::$front`), without its leading slash.
+    fn front(&self) -> String {
+        let structure = &self.settings.permalink_structure;
+        let front = structure.find('%').map_or(structure.as_str(), |i| &structure[..i]);
+        front.trim_start_matches('/').to_owned()
+    }
+
+    /// `get_permalink( $post )`.
+    pub async fn permalink(&self, post: &Post) -> Result<String> {
+        match post.post_type.as_str() {
+            "page" => return self.page_link(post).await,
+            "attachment" => return self.attachment_link(post).await,
+            "post" => {}
+            // Custom post types need their registered rewrite slug; fall back to the plain URL.
+            other => return Ok(self.home_url(&format!("?post_type={other}&p={}", post.id))),
+        }
+        let structure = &self.settings.permalink_structure;
+        let unpublished = matches!(post.post_status.as_str(), "draft" | "pending" | "auto-draft" | "future");
+        if structure.is_empty() || unpublished {
+            return Ok(self.home_url(&format!("?p={}", post.id)));
+        }
+
+        let mut category = String::new();
+        if structure.contains("%category%") {
+            let mut cats = self.db.terms_for_post(post.id, Some("category")).await?;
+            cats.sort_by_key(|t| t.term_id);
+            if let Some(first) = cats.first() {
+                category = self.term_path(first).await?;
+            }
+        }
+        let author = if structure.contains("%author%") {
+            self.db.user(post.post_author).await?.map(|u| u.user_nicename).unwrap_or_default()
+        } else {
+            String::new()
+        };
+        let date = date_parts(&post.post_date);
+        let replacements = [
+            ("%year%", date.0.as_str()),
+            ("%monthnum%", date.1.as_str()),
+            ("%day%", date.2.as_str()),
+            ("%hour%", date.3.as_str()),
+            ("%minute%", date.4.as_str()),
+            ("%second%", date.5.as_str()),
+            ("%postname%", post.post_name.as_str()),
+            ("%post_id%", &post.id.to_string()),
+            ("%category%", category.as_str()),
+            ("%author%", author.as_str()),
+            ("%pagename%", post.post_name.as_str()),
+        ];
+        let mut path = structure.clone();
+        for (tag, value) in replacements {
+            path = path.replace(tag, value);
+        }
+        Ok(self.user_trailingslashit(&self.home_url(&path)))
+    }
+
+    /// `get_page_uri()`: `parent/child`.
+    pub async fn page_uri(&self, page: &Post) -> Result<String> {
+        let mut uri = page.post_name.clone();
+        let mut parent = page.post_parent;
+        let mut guard = 0;
+        while parent != 0 && guard < 50 {
+            let Some(p) = self.db.post(parent).await? else { break };
+            uri = format!("{}/{uri}", p.post_name);
+            parent = p.post_parent;
+            guard += 1;
+        }
+        Ok(uri)
+    }
+
+    /// `get_page_link()`.
+    pub async fn page_link(&self, page: &Post) -> Result<String> {
+        use crate::settings::ShowOnFront;
+        if self.settings.show_on_front == ShowOnFront::Page && self.settings.page_on_front == page.id {
+            return Ok(self.user_trailingslashit(&self.home_url("")));
+        }
+        if self.settings.permalink_structure.is_empty() || matches!(page.post_status.as_str(), "draft" | "pending" | "auto-draft") {
+            return Ok(self.home_url(&format!("?page_id={}", page.id)));
+        }
+        let uri = self.page_uri(page).await?;
+        Ok(self.user_trailingslashit(&self.home_url(&uri)))
+    }
+
+    async fn attachment_link(&self, attachment: &Post) -> Result<String> {
+        if self.settings.permalink_structure.is_empty() || attachment.post_parent == 0 {
+            return Ok(self.home_url(&format!("?attachment_id={}", attachment.id)));
+        }
+        match self.db.post(attachment.post_parent).await? {
+            Some(parent) => {
+                let base = Box::pin(self.permalink(&parent)).await?;
+                Ok(self.user_trailingslashit(&format!("{}/{}", untrailingslashit(&base), attachment.post_name)))
+            }
+            None => Ok(self.home_url(&format!("?attachment_id={}", attachment.id))),
+        }
+    }
+
+    /// Slugs of a hierarchical term and its ancestors, `parent/child`.
+    async fn term_path(&self, term: &Term) -> Result<String> {
+        let all = self.db.terms(&term.taxonomy).await?;
+        let mut path = term.slug.clone();
+        let mut parent = term.parent;
+        let mut guard = 0;
+        while parent != 0 && guard < 50 {
+            let Some(p) = all.iter().find(|t| t.term_id == parent) else { break };
+            path = format!("{}/{path}", p.slug);
+            parent = p.parent;
+            guard += 1;
+        }
+        Ok(path)
+    }
+
+    /// `get_term_link( $term )` for categories, tags and other taxonomies.
+    pub async fn term_link(&self, term: &Term) -> Result<String> {
+        if self.settings.permalink_structure.is_empty() {
+            let query = match term.taxonomy.as_str() {
+                "category" => format!("cat={}", term.term_id),
+                "post_tag" => format!("tag={}", term.slug),
+                other => format!("taxonomy={other}&term={}", term.slug),
+            };
+            return Ok(self.home_url(&format!("?{query}")));
+        }
+        let base = match term.taxonomy.as_str() {
+            "category" => self.options.string("category_base", "").trim_matches('/').to_owned(),
+            "post_tag" => self.options.string("tag_base", "").trim_matches('/').to_owned(),
+            _ => String::new(),
+        };
+        let default_base = match term.taxonomy.as_str() {
+            "category" => "category",
+            "post_tag" => "tag",
+            other => other,
+        };
+        let front = self.front();
+        let prefix = if base.is_empty() { format!("{front}{default_base}") } else { base };
+        let slug = if term.taxonomy == "category" { self.term_path(term).await? } else { term.slug.clone() };
+        Ok(self.user_trailingslashit(&self.home_url(&format!("{prefix}/{slug}"))))
+    }
+
+    /// `get_author_posts_url()`.
+    pub fn author_url(&self, user: &User) -> String {
+        if self.settings.permalink_structure.is_empty() {
+            return self.home_url(&format!("?author={}", user.id));
+        }
+        let base = self.options.string("author_base", "author");
+        let base = if base.is_empty() { "author".to_owned() } else { base };
+        self.user_trailingslashit(&self.home_url(&format!("{}{base}/{}", self.front(), user.user_nicename)))
+    }
+
+    /// `get_year_link()`, `get_month_link()`, `get_day_link()`; zero values are left out.
+    pub fn date_link(&self, year: u32, month: u32, day: u32) -> String {
+        if self.settings.permalink_structure.is_empty() {
+            let mut query = format!("m={year}");
+            if month != 0 {
+                query.push_str(&format!("{month:02}"));
+                if day != 0 {
+                    query.push_str(&format!("{day:02}"));
+                }
+            }
+            return self.home_url(&format!("?{query}"));
+        }
+        let mut path = format!("{}{year}", self.front());
+        if month != 0 {
+            path.push_str(&format!("/{month:02}"));
+            if day != 0 {
+                path.push_str(&format!("/{day:02}"));
+            }
+        }
+        self.user_trailingslashit(&self.home_url(&path))
+    }
+
+    /// `get_pagenum_link( $pagenum )` for a request (`path?query`): the home
+    /// path and an existing `/page/N/` are removed first.
+    pub fn pagenum_link(&self, request_uri: &str, pagenum: u64) -> String {
+        let request = remove_query_arg(request_uri, "paged");
+        let home_root = self.settings.home_path();
+        let home_root = home_root.trim_end_matches('/');
+        let mut request = if !home_root.is_empty() && request.len() >= home_root.len() && request[..home_root.len()].eq_ignore_ascii_case(home_root) {
+            request[home_root.len()..].to_owned()
+        } else {
+            request
+        };
+        request = request.trim_start_matches('/').to_owned();
+        let base = trailingslashit(&self.home_url(""));
+
+        if !self.uses_pretty_permalinks() {
+            let joined = format!("{base}{request}");
+            return if pagenum > 1 { add_query_arg(&joined, "paged", &pagenum.to_string()) } else { joined };
+        }
+        let (path, query_string) = match request.find('?') {
+            Some(i) => (request[..i].to_owned(), request[i..].to_owned()),
+            None => (request.clone(), String::new()),
+        };
+        let mut path = strip_page_suffix(&format!("/{path}")).trim_start_matches('/').to_owned();
+        if let Some(rest) = path.strip_prefix("index.php") {
+            path = rest.to_owned();
+        }
+        let mut path = path.trim_start_matches('/').to_owned();
+        if pagenum > 1 {
+            let page_part = self.user_trailingslashit(&format!("page/{pagenum}"));
+            path = if path.is_empty() { page_part } else { format!("{}{page_part}", trailingslashit(&path)) };
+        }
+        format!("{base}{path}{query_string}")
+    }
+    /// `get_pagenum_link()` for a base URL (without query string and page part).
+    pub fn paged_url(&self, base_url: &str, page: u64, query: &str) -> String {
+        let (path_part, mut existing_query) = match base_url.split_once('?') {
+            Some((p, q)) => (p.to_owned(), q.to_owned()),
+            None => (base_url.to_owned(), String::new()),
+        };
+        if !query.is_empty() {
+            if !existing_query.is_empty() {
+                existing_query.push('&');
+            }
+            existing_query.push_str(query);
+        }
+        let mut url = if self.settings.permalink_structure.is_empty() {
+            if page > 1 {
+                if !existing_query.is_empty() {
+                    existing_query.push('&');
+                }
+                existing_query.push_str(&format!("paged={page}"));
+            }
+            path_part
+        } else {
+            let stripped = strip_page_suffix(&path_part);
+            if page > 1 {
+                self.user_trailingslashit(&format!("{}/page/{page}", untrailingslashit(&stripped)))
+            } else {
+                stripped
+            }
+        };
+        if !existing_query.is_empty() {
+            url.push('?');
+            url.push_str(&existing_query);
+        }
+        url
+    }
+}
+
+/// `add_query_arg( $key, $value, $url )`: sets or replaces one query parameter.
+pub fn add_query_arg(url: &str, key: &str, value: &str) -> String {
+    let (before_fragment, fragment) = match url.split_once('#') {
+        Some((a, b)) => (a, Some(b)),
+        None => (url, None),
+    };
+    let (path, query) = before_fragment.split_once('?').unwrap_or((before_fragment, ""));
+    let mut pairs: Vec<(String, String)> = query
+        .split('&')
+        .filter(|p| !p.is_empty())
+        .map(|p| match p.split_once('=') {
+            Some((k, v)) => (k.to_owned(), v.to_owned()),
+            None => (p.to_owned(), String::new()),
+        })
+        .collect();
+    match pairs.iter_mut().find(|(k, _)| k == key) {
+        Some(pair) => pair.1 = value.to_owned(),
+        None => pairs.push((key.to_owned(), value.to_owned())),
+    }
+    let query = pairs.iter().map(|(k, v)| format!("{k}={v}")).collect::<Vec<_>>().join("&");
+    let mut out = format!("{path}?{query}");
+    if let Some(f) = fragment {
+        out.push('#');
+        out.push_str(f);
+    }
+    out
+}
+
+/// `remove_query_arg( $key, $url )`.
+pub fn remove_query_arg(url: &str, key: &str) -> String {
+    let Some((path, query)) = url.split_once('?') else { return url.to_owned() };
+    let kept: Vec<&str> = query.split('&').filter(|p| !p.is_empty() && p.split('=').next() != Some(key)).collect();
+    if kept.is_empty() { path.to_owned() } else { format!("{path}?{}", kept.join("&")) }
+}
+/// Removes a trailing `/page/N/`.
+fn strip_page_suffix(path: &str) -> String {
+    let trimmed = path.trim_end_matches('/');
+    if let Some(i) = trimmed.rfind("/page/")
+        && trimmed[i + 6..].bytes().all(|b| b.is_ascii_digit()) && i + 6 < trimmed.len() {
+            return format!("{}/", &trimmed[..i]);
+        }
+    path.to_owned()
+}
+
+fn date_parts(date: &str) -> (String, String, String, String, String, String) {
+    let part = |range: std::ops::Range<usize>| date.get(range).unwrap_or("00").to_owned();
+    (part(0..4), part(5..7), part(8..10), part(11..13), part(14..16), part(17..19))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn slash_helpers() {
+        assert_eq!(trailingslashit("http://a/b"), "http://a/b/");
+        assert_eq!(trailingslashit("http://a/b//"), "http://a/b/");
+        assert_eq!(untrailingslashit("http://a/b/"), "http://a/b");
+    }
+
+    #[test]
+    fn page_suffix_is_removed() {
+        assert_eq!(strip_page_suffix("http://a/category/x/page/2/"), "http://a/category/x/");
+        assert_eq!(strip_page_suffix("http://a/category/x/"), "http://a/category/x/");
+        assert_eq!(strip_page_suffix("http://a/page/12"), "http://a/");
+        assert_eq!(strip_page_suffix("http://a/pages/x/"), "http://a/pages/x/");
+    }
+
+    #[test]
+    fn query_args_are_set_and_removed() {
+        assert_eq!(add_query_arg("http://a/?x=1", "p", "2"), "http://a/?x=1&p=2");
+        assert_eq!(add_query_arg("http://a/?p=1", "p", "2"), "http://a/?p=2");
+        assert_eq!(add_query_arg("http://a/", "p", "2"), "http://a/?p=2");
+        assert_eq!(add_query_arg("http://a/#top", "p", "2"), "http://a/?p=2#top");
+        assert_eq!(remove_query_arg("http://a/?paged=2&x=1", "paged"), "http://a/?x=1");
+        assert_eq!(remove_query_arg("http://a/?paged=2", "paged"), "http://a/");
+        assert_eq!(remove_query_arg("http://a/", "paged"), "http://a/");
+    }
+
+    #[test]
+    fn date_is_split_from_the_mysql_format() {
+        let (y, mo, d, h, mi, s) = date_parts("2026-10-24 14:07:09");
+        assert_eq!((y.as_str(), mo.as_str(), d.as_str(), h.as_str(), mi.as_str(), s.as_str()), ("2026", "10", "24", "14", "07", "09"));
+    }
+}

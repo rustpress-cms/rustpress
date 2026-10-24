@@ -1,0 +1,18 @@
+[package]
+name = "rustpress-server"
+description = "HTTP server for RustPress"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[dependencies]
+rustpress-blocks.workspace = true
+rustpress-core.workspace = true
+rustpress-db.workspace = true
+rustpress-theme.workspace = true
+axum.workspace = true
+serde.workspace = true
+tokio.workspace = true
+toml.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true

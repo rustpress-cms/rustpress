@@ -1,0 +1,39 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/rustpress-phpser",
+    "crates/rustpress-db",
+    "crates/rustpress-core",
+    "crates/rustpress-blocks",
+    "crates/rustpress-theme",
+    "crates/rustpress-server",
+]
+
+[workspace.package]
+edition = "2024"
+version = "0.1.0"
+license = "GPL-2.0-or-later"
+
+[workspace.dependencies]
+rustpress-phpser = { path = "crates/rustpress-phpser" }
+rustpress-db = { path = "crates/rustpress-db" }
+rustpress-core = { path = "crates/rustpress-core" }
+rustpress-blocks = { path = "crates/rustpress-blocks" }
+rustpress-theme = { path = "crates/rustpress-theme" }
+
+axum = "0.8"
+chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
+chrono-tz = "0.10"
+fancy-regex = "0.20"
+futures = "0.3"
+md5 = "0.8"
+regex = "1"
+sha2 = "0.10"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+sqlx = { version = "0.9", default-features = false, features = ["mysql", "runtime-tokio", "tls-rustls", "derive"] }
+thiserror = "2"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "signal"] }
+toml = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
