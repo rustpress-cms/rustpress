@@ -1,8 +1,8 @@
 //! `wp/v2/posts` and `wp/v2/pages` (`WP_REST_Posts_Controller`).
 
-use rustpress_blocks::content::{post_class, the_content, the_title};
+use rustpress_blocks::content::{post_class, the_content, the_title_for};
 use rustpress_blocks::excerpt::get_the_excerpt;
-use rustpress_core::formatting::{convert_chars, wpautop, wptexturize};
+use rustpress_core::formatting::{convert_chars, wpautop};
 use rustpress_db::{OrderBy, Order, Post, PostQuery};
 use serde_json::{Map, Value, json};
 use std::sync::Arc;
@@ -263,7 +263,7 @@ impl Rest<'_> {
 
         // The REST API shows titles without the "Protected:" / "Private:" prefixes.
         let plain = Post { post_password: String::new(), post_status: "publish".into(), ..post.clone() };
-        data.insert("title".into(), json!({"rendered": the_title(&plain)}));
+        data.insert("title".into(), json!({"rendered": the_title_for(self.site, &plain)}));
 
         let hidden = protected && !unlocked;
         let content = if hidden { String::new() } else { the_content(&env, &shared, &post.post_content).await? };
@@ -272,7 +272,7 @@ impl Rest<'_> {
             String::new()
         } else {
             let raw = get_the_excerpt(&env, &shared).await?;
-            wpautop(&convert_chars(&wptexturize(&raw)))
+            wpautop(&convert_chars(&self.site.texturize(&raw)))
         };
         data.insert("excerpt".into(), json!({"rendered": excerpt, "protected": protected}));
         data.insert("author".into(), Value::from(post.post_author));

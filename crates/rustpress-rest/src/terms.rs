@@ -31,13 +31,7 @@ impl Rest<'_> {
         let order = try_param!(params.one_of("order", &["asc", "desc"], "asc"));
         let orderby = try_param!(params.one_of("orderby", &["id", "include", "name", "slug", "include_slugs", "term_group", "description", "count"], "name"));
         let include = params.id_list("include").unwrap_or_default();
-        if orderby == "include" && include.is_empty() {
-            return Ok(Err(RestError::new("rest_orderby_include_missing_include", "You need to define an include parameter to order by include.", 400)));
-        }
         let slugs = params.list("slug").unwrap_or_default();
-        if orderby == "include_slugs" && slugs.is_empty() {
-            return Ok(Err(RestError::new("rest_orderby_include_slugs_missing_slug", "You need to define a slug parameter to order by include_slugs.", 400)));
-        }
         let exclude = params.id_list("exclude").unwrap_or_default();
         let hide_empty = params.truthy("hide_empty");
         let search = params.get("search").filter(|s| !s.is_empty()).map(str::to_lowercase);

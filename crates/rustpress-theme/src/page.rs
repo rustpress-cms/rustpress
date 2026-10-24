@@ -4,7 +4,7 @@
 use rustpress_blocks::env::State;
 use rustpress_blocks::html::{TagEditor, first_start_tag, tags};
 use rustpress_blocks::{Env, Registry};
-use rustpress_core::formatting::{esc_html, esc_url, wptexturize};
+use rustpress_core::formatting::{esc_html, esc_url};
 use rustpress_core::hierarchy::template_candidates;
 use rustpress_core::{Queried, QueryResult, Site};
 
@@ -43,16 +43,16 @@ pub async fn render_body(theme: &Theme, site: &Site, query: &QueryResult, regist
     env.with_state(|s| s.media.in_main_loop = in_loop);
     let content = env.render_markup(&markup, &root).await?;
     env.with_state(|s| s.media.in_main_loop = false);
-    let content = wptexturize(&content);
+    let content = site.texturize(&content);
     let content = rustpress_blocks::images::filter_content_tags(&env, &content, "template").await?.replace("]]>", "]]&gt;");
     let wrapped = format!("<div class=\"wp-site-blocks\">{content}</div>");
-    let html = add_skip_link(&wrapped);
+    let html = add_skip_link(&wrapped, &site.tr("Skip to content"));
     Ok(RenderedBody { template_slug: slug, html, state: env.take_state() })
 }
 
 /// `_block_template_add_skip_link`: gives the first `<main>` an id and puts a
 /// link to it in front of `div.wp-site-blocks`.
-pub fn add_skip_link(template_html: &str) -> String {
+pub fn add_skip_link(template_html: &str, label: &str) -> String {
     let all = tags(template_html, 0);
     let Some(wrapper) = all.iter().find(|t| !t.is_closer && t.name == "div" && t.attr("class").is_some_and(|c| c.split_whitespace().any(|x| x == "wp-site-blocks"))) else {
         return template_html.to_owned();
@@ -70,7 +70,7 @@ pub fn add_skip_link(template_html: &str) -> String {
         target_id = Some("wp--skip-link--target".to_owned());
     }
     let id = target_id.unwrap_or_default();
-    let link = format!("<a class=\"skip-link screen-reader-text\" id=\"wp-skip-link\" href=\"{}\">{}</a>", esc_url(&format!("#{id}")), esc_html("Skip to content"));
+    let link = format!("<a class=\"skip-link screen-reader-text\" id=\"wp-skip-link\" href=\"{}\">{}</a>", esc_url(&format!("#{id}")), esc_html(label));
     html.insert_str(wrapper_start, &link);
     let _ = first_start_tag;
     html
@@ -84,7 +84,7 @@ mod tests {
     fn skip_link_targets_the_first_main() {
         let html = "<div class=\"wp-site-blocks\"><header>h</header><main class=\"m\">x</main></div>";
         assert_eq!(
-            add_skip_link(html),
+            add_skip_link(html, "Skip to content"),
             "<a class=\"skip-link screen-reader-text\" id=\"wp-skip-link\" href=\"#wp--skip-link--target\">Skip to content</a><div class=\"wp-site-blocks\"><header>h</header><main id=\"wp--skip-link--target\" class=\"m\">x</main></div>"
         );
     }
@@ -92,12 +92,12 @@ mod tests {
     #[test]
     fn an_existing_main_id_is_reused() {
         let html = "<div class=\"wp-site-blocks\"><main id=\"content\">x</main></div>";
-        assert!(add_skip_link(html).starts_with("<a class=\"skip-link screen-reader-text\" id=\"wp-skip-link\" href=\"#content\">"));
+        assert!(add_skip_link(html, "Skip to content").starts_with("<a class=\"skip-link screen-reader-text\" id=\"wp-skip-link\" href=\"#content\">"));
     }
 
     #[test]
     fn nothing_changes_without_a_main_element() {
         let html = "<div class=\"wp-site-blocks\"><p>x</p></div>";
-        assert_eq!(add_skip_link(html), html);
+        assert_eq!(add_skip_link(html, "Skip to content"), html);
     }
 }

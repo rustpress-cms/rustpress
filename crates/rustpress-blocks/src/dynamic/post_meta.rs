@@ -3,7 +3,7 @@
 use rustpress_core::formatting::{esc_attr, esc_html, esc_url};
 
 use crate::Result;
-use crate::content::{post_password_required, the_title};
+use crate::content::{post_password_required, the_title_for};
 use crate::render::BlockCtx;
 
 use super::{global_post, heading_tag};
@@ -15,7 +15,7 @@ fn has_link_color(bc: &BlockCtx<'_>) -> bool {
 pub(super) async fn post_title(bc: &BlockCtx<'_>) -> Result<String> {
     let Some(post_id) = bc.context.post_id() else { return Ok(String::new()) };
     let Some(post) = global_post(bc).await? else { return Ok(String::new()) };
-    let mut title = the_title(&post);
+    let mut title = the_title_for(bc.env.site, &post);
     if title.is_empty() {
         return Ok(String::new());
     }
@@ -51,10 +51,10 @@ pub(super) async fn post_date(bc: &BlockCtx<'_>) -> Result<String> {
     let site = &bc.env.site;
     let source = if modified { &post.post_modified } else { &post.post_date };
     let Some(timestamp) = site.timezone.local_timestamp(source) else { return Ok(String::new()) };
-    let datetime = bc.attr_str("datetime").map(str::to_owned).unwrap_or_else(|| site.timezone.format("c", timestamp));
+    let datetime = bc.attr_str("datetime").map(str::to_owned).unwrap_or_else(|| site.date("c", timestamp));
 
     let format = bc.attr_str("format").filter(|f| !f.is_empty()).map(str::to_owned).unwrap_or_else(|| site.options.string("date_format", "F j, Y"));
-    let formatted = site.timezone.format(&format, timestamp);
+    let formatted = site.date(&format, timestamp);
     if let Some(align) = bc.attr_str("textAlign") {
         classes.push(format!("has-text-align-{align}"));
     }
@@ -152,7 +152,7 @@ pub(super) async fn post_excerpt(bc: &BlockCtx<'_>) -> Result<String> {
     let more_default = if more_text.is_empty() { " [&hellip;]" } else { "" };
     let mut excerpt = crate::excerpt::get_the_excerpt_with(bc.env, &post, 101, more_default).await?;
     if let Some(length) = bc.attr_u64("excerptLength") {
-        excerpt = rustpress_core::formatting::wp_trim_words(&excerpt, length as usize, "&hellip;");
+        excerpt = rustpress_core::formatting::wp_trim_words_with(&excerpt, length as usize, &bc.env.site.tr("&hellip;"), bc.env.site.locale_data().word_count_type);
     }
     let mut classes = Vec::new();
     if let Some(align) = bc.attr_str("textAlign") {

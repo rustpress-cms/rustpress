@@ -21,6 +21,7 @@ struct Host {
     stylesheet_uri: String,
     home: String,
     siteurl: String,
+    i18n: std::sync::Arc<rustpress_core::i18n::I18n>,
 }
 
 impl PhpHost for Host {
@@ -35,6 +36,12 @@ impl PhpHost for Host {
     }
     fn site_url(&self, path: &str) -> String {
         join_url(&self.siteurl, path)
+    }
+    fn translate(&self, text: &str, context: Option<&str>, domain: &str) -> String {
+        match context {
+            Some(context) => self.i18n.pgettext(domain, context, text),
+            None => self.i18n.gettext(domain, text),
+        }
     }
 }
 
@@ -119,6 +126,12 @@ impl Theme {
             }
         }
 
+        // Translations: WordPress itself and the text domains of the active theme(s).
+        let mut domains = vec![(template.clone(), template_dir.clone())];
+        if stylesheet != template {
+            domains.push((stylesheet.clone(), stylesheet_dir.clone()));
+        }
+        site.init_i18n(&wp_root, &domains);
         let blocks_dir = wp_root.join("wp-includes").join("blocks");
         let content_url = join_url(&site.settings.siteurl, "wp-content");
         let host = Host {
@@ -126,6 +139,7 @@ impl Theme {
             stylesheet_uri: format!("{content_url}/themes/{stylesheet}"),
             home: site.settings.home.clone(),
             siteurl: site.settings.siteurl.clone(),
+            i18n: site.i18n(),
         };
         Ok(Self {
             wp_root,

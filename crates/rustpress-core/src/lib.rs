@@ -9,6 +9,8 @@ pub mod datetime;
 mod entities;
 pub mod formatting;
 pub mod hierarchy;
+pub mod i18n;
+pub mod locale;
 pub mod options;
 pub mod query;
 pub mod rewrite;

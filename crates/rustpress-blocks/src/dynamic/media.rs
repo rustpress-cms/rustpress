@@ -276,7 +276,7 @@ pub(super) async fn site_logo(bc: &BlockCtx<'_>) -> Result<String> {
         && anchor.attr("rel") == Some("home")
     {
         let mut editor = TagEditor::from_tag(&logo, anchor);
-        editor.set_attribute("aria-label", "(Home link, opens in a new tab)");
+        editor.set_attribute("aria-label", &bc.env.site.tr("(Home link, opens in a new tab)"));
         editor.set_attribute("target", target);
         logo = editor.finish();
     }

@@ -59,12 +59,44 @@ Reihenfolge bis zum ersten sichtbaren Ergebnis: Schritte 1 bis 4, danach Schritt
 - Byte-genaue HTML-Gleichheit ist unrealistisch, weil WordPress-Filter (`wptexturize`, `wpautop`, Emoji-Skripte) viel verändern. Deshalb wird nach der Normalisierung verglichen und die Filter werden gezielt nachgebaut.
 - Plugins, die Inhalte per Shortcode oder Filter erzeugen, fehlen in Meilenstein 1 und müssen einzeln als Rust-Module ergänzt werden.
 
+## Lokalisierungskonzept
+
+Ziel: Hunderte Sprachen, ohne dass für eine Sprache Code geschrieben wird. Das Konzept ist umgesetzt und mit vier Sprachen gegen das echte WordPress verglichen.
+
+**Grundsätze**
+
+1. **Die Sprachpakete von WordPress sind die einzige Quelle.** Geladen werden `wp-content/languages/<locale>.mo` (Domain `default`) und je Theme `wp-content/languages/themes/<slug>-<locale>.mo` (Fallback: `languages/<locale>.mo` des Themes). Die Sprache der Seite ist die Option `WPLANG`. Eine neue Sprache ist eine neue `.mo`-Datei; translate.wordpress.org liefert rund 200 davon.
+2. **Im Code stehen nur die englischen Message-IDs, genau wie in WordPress.** Zugriff ausschließlich über `Site::tr` / `trx` (Kontext) / `trn` (Plural) und `rustpress_core::i18n::sprintf` (`%s`, `%1$s`, `%d`). Theme- und Pattern-Texte laufen über `PhpHost::translate(text, context, domain)` mit der Text-Domain des Themes. REST-Fehler tragen ihre Message-ID und Argumente (`Msg`) und werden erst beim Serialisieren übersetzt, damit Endpunkt-Code nie eine Sprache sieht.
+3. **`LocaleData` ist `WP_Locale`** (`rustpress-core/src/locale.rs`): Wochentage und Monate samt Abkürzungen, Genitiv-Monate, Meridiem, Tausender- und Dezimaltrenner, Listentrenner, Textrichtung, `html_lang_attribute`, Wortzähltyp, „Monate deklinieren“. Gebaut wird sie einmal pro Katalog, nicht pro Aufruf.
+4. **Sprachabhängige Algorithmen hängen nur an Katalogwerten:** `wp_date` mit `wp_maybe_decline_date` (Russisch, Polnisch, Finnisch …), `wptexturize` mit den Anführungszeichen, Apostrophen, Strichen und der Cockney-Liste der Sprache (`TexturizeChars`), `wp_trim_words` nach Zeichen statt Wörtern (Chinesisch, Japanisch, Koreanisch), Pluralregeln als beliebiger GNU-gettext-Ausdruck (`Plural-Forms`, bis zu 6 Formen), `excerpt_length`, Rechts-nach-links (`dir="rtl"`, Body-Klasse `rtl`, `-rtl`-Stylesheets für Blöcke und `wp-block-library`, Sitemap-XSL).
+5. **Texte, die WordPress mit Platzhaltern übersetzt, bleiben Vorlagen** (`"%1$s Avatar"`, `"%s submenu"`, `"Comment on %1$s by %2$s"`), nie zusammengebaute Sätze; Listen („a, b und c“) nutzen die Trenner der Sprache (`wp_sprintf_l`).
+
+**Absicherung**
+
+- `crates/rustpress-core/tests/i18n_coverage.rs` liest den Quelltext aller Crates und prüft, dass jede Message-ID aus `tr`/`trx`/`trn`/`RestError`/`Msg` im deutschen Kernpaket von WordPress vorkommt. Das fängt Tippfehler und geänderte englische Texte, die kein Sprachpaket mehr übersetzen könnte (er hat bereits zwei REST-Fehlermeldungen gefunden, die WordPress gar nicht kennt). Ohne Sprachpaket überspringt er sich.
+- `dev/compat.ps1 -Locale <locale>` schaltet das Referenz-WordPress auf die Sprache (Kern- und Theme-Pakete werden installiert, danach geht es zurück auf `en_US`) und vergleicht den ganzen Compat-Lauf. Die vier Sprachen decken die Struktur der übrigen ab: **de_DE** (Anführungszeichen „ “, Datums- und Listenformate, Texte), **ru_RU** (drei Pluralformen, Genitiv-Monate, kyrillische Zeichen), **ar** (Rechts-nach-links, sechs Pluralformen, arabische Schrift) und **ja** (Wortzählung nach Zeichen, `※` als Pflichtfeld-Zeichen, CJK-Schrift).
+- **Ergebnis** (Referenz-WordPress 7.1.3 in der jeweiligen Sprache, alle drei mitgelieferten Block-Themes, 167 bis 171 URLs je Lauf): de_DE, ru_RU, ar und ja ergeben mit Twenty Twenty-Five, -Four und -Three **in allen zwölf Läufen 0 unerwartete Abweichungen** (154 bis 156 URLs identisch, der Rest sind die bekannten Abweichungen aus `compat/known.toml`). Die englische Regression bleibt bei 0. Berichte: `compat/reports/<theme>-<locale>.md`.
+- Gefundene Fehler: `esc_html()` schnitt bei `&` vor mehrbyteigen Zeichen mitten im Zeichen (Panic bei kyrillischem Text); Kommentarformular, Passwortformular, Pagination, Suchblock, Feed-Titel, Sitemap-XSL und viele weitere Stellen hatten feste englische Texte; die REST-Fehler für `orderby=include` bei Begriffen gab es in WordPress nicht.
+
+**Betrieb**
+
+- RustPress schreibt keine Sprachpakete. Installiert werden sie wie bei WordPress (WP-CLI `language core install`, ZIP aus translate.wordpress.org). Geplant: `rustpress i18n install <locale>` als ausdrücklicher Befehl, der die Pakete von `api.wordpress.org/translations` lädt.
+- Ein Kernkatalog ist rund 0,5 MB groß; geladen wird nur die Sprache der Seite, die Namen und Zeichen der Sprache (`LocaleData`, `Texturize`) werden beim ersten Zugriff einmal gebaut.
+
+**Offen**
+
+- Pro-Request-Sprache (Benutzersprache, mehrsprachige Plugins wie Polylang oder WPML): `Site` hält heute genau eine Sprache. Geplant ist eine `I18nRegistry` (Locale -> `Arc<I18n>`, lazy geladen), aus der `Env` pro Anfrage einen `Translator` bekommt; alle Aufrufe laufen schon über `Site::tr`, sodass nur diese Stelle wandert.
+- JavaScript-Übersetzungen (`<handle>-<locale>-<hash>.json`, `wp_set_script_translations`) für Interactivity-Texte.
+- Hot-Reload der Sprachpakete (heute: beim Neustart bzw. Theme-Reload) und Geschlechts-/Formularvarianten wie `de_DE_formal` (WordPress lädt dafür ein eigenes vollständiges Paket, daher kein Fallback nötig).
+- Twenty Twenty-Seven gibt es (noch) nicht auf wordpress.org; Block-Themes aus anderen Quellen laufen, sobald ihre Dateien unter `wp-content/themes/` liegen.
+
 ## Stand und nächste Schritte (nach Schritt 7)
 
 Reproduzierbar mit `dev/up.sh` und `dev/seed.sh`; `cargo test --workspace` vergleicht alles gegen das laufende Referenz-WordPress (ohne Stack überspringen sich die Golden-Tests).
 
 Bekannte Lücken, grob nach Nutzen sortiert:
 - ✅ **Bilder im Frontend** (nach Schritt 7 erledigt): `wp_filter_content_tags` (Breite/Höhe, `srcset`/`sizes`, `decoding`/`loading`/`fetchpriority` mit der Zählung der ersten Bilder im Hauptloop, `sizes="auto"`) für Beitragsinhalt, Template-Parts, das ganze Template und Feeds; `wp_get_attachment_image`, `core/post-featured-image`, `core/site-logo` (Theme-Mod `custom_logo`/Option `site_logo`), `core/image` (`data-id` aus Galerien, leere Bildunterschrift), `core/gallery` (eindeutige Klasse, `--wp--style--unstable-gallery-gap`), Avatare, die Body-/Post-Klassen `wp-custom-logo` und `has-post-thumbnail`. Verglichen mit WordPress (`golden_pages`, `golden_documents` inkl. Block-Supports-CSS, `golden_feeds`, `golden_rest`) mit Testinhalten aus `dev/seed_images*.sh`. Noch offen: Lightbox (`core/image` mit `lightbox.enabled`), `useFirstImageFromPost`, Galerien mit `dynamicContent`, viewportabhängige Galerie-Abstände, `randomOrder`, Smilies (`convert_smilies`).
+- ✅ **Lokalisierung** (nach Schritt 8 erledigt): siehe [Lokalisierungskonzept](#lokalisierungskonzept). Sprachpakete (`.mo`) statt Sprachcode, `LocaleData`/`wp_date`/`wptexturize`/`wp_trim_words`/RTL aus dem Katalog, Test der Message-IDs, Compat-Lauf pro Sprache (`dev/compat.ps1 -Locale`).
 - **Shortcodes** (`do_shortcode`, `strip_shortcodes`), `make_clickable` und Smilies in Kommentaren/Auszügen.
 - **Eigene Post Types/Taxonomien** (ohne PHP-Registry nur über Konfiguration möglich), `private`-Inhalte, Passwort-Cookies.
 - **REST:** `types`, `taxonomies`, `statuses`, `search`, `settings`, Block-Endpunkte; die Routenliste in `/wp-json/` ist nur die Teilmenge, die RustPress selbst bedient.

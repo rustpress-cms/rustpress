@@ -6,10 +6,11 @@
 //! is why the whitespace below looks odd. `tests/golden_feeds.rs` compares the
 //! result byte for byte with WordPress.
 
+use rustpress_core::i18n::sprintf;
 use std::sync::Arc;
 
 use chrono::NaiveDateTime;
-use rustpress_blocks::content::{comment_text, get_the_content, post_password_required, the_content, the_title};
+use rustpress_blocks::content::{comment_text, get_the_content, post_password_required, the_content, the_title_for};
 use rustpress_blocks::Env;
 use rustpress_core::formatting::{convert_chars, ent2ncr, esc_attr, esc_html, esc_url, html_entity_decode, strip_tags};
 use rustpress_core::urls::trailingslashit;
@@ -101,11 +102,11 @@ struct Ctx<'a> {
 
 impl Ctx<'_> {
     fn lang(&self) -> String {
-        self.site.options.get("WPLANG").filter(|l| !l.is_empty()).map(|l| l.replace('_', "-")).unwrap_or_else(|| "en-US".to_owned())
+        self.site.language_tag()
     }
 
     fn title_rss(&self, post: &Post) -> String {
-        esc_html(&strip_tags(&ent2ncr(&the_title(post))))
+        esc_html(&strip_tags(&ent2ncr(&the_title_for(self.site, post))))
     }
 
     async fn author(&self, post: &Post) -> Result<Option<rustpress_db::User>> {
@@ -178,8 +179,8 @@ impl Ctx<'_> {
     }
 }
 
-fn comment_author(c: &Comment) -> String {
-    if c.comment_author.is_empty() { "Anonymous".to_owned() } else { c.comment_author.clone() }
+fn comment_author(site: &Site, c: &Comment) -> String {
+    if c.comment_author.is_empty() { site.tr("Anonymous") } else { c.comment_author.clone() }
 }
 
 /// `get_feed_build_date()`.
@@ -370,8 +371,8 @@ async fn rss2_comments(c: &Ctx<'_>, q: &QueryResult, comments: &[Comment], self_
     let singular = q.flags.is_singular();
     let post = if singular { q.posts.first().cloned() } else { None };
     let heading = match &post {
-        Some(p) => ent2ncr(&format!("Comments on: {}", c.title_rss(p))),
-        None => ent2ncr(&format!("Comments for {title}")),
+        Some(p) => ent2ncr(&sprintf(&c.site.tr("Comments on: %s"), &[&c.title_rss(p)])),
+        None => ent2ncr(&sprintf(&c.site.tr("Comments for %s"), &[title])),
     };
     let link = match &post {
         Some(p) if q.flags.is_single => esc_url(&c.site.permalink(p).await?),
@@ -386,11 +387,11 @@ async fn rss2_comments(c: &Ctx<'_>, q: &QueryResult, comments: &[Comment], self_
         let Some(comment_post) = c.site.db.post(comment.comment_post_id).await? else { continue };
         let permalink = c.site.permalink(&comment_post).await?;
         let comment_link = esc_url(&format!("{permalink}#comment-{}", comment.comment_id));
-        let author = ent2ncr(&comment_author(comment));
+        let author = ent2ncr(&comment_author(c.site, comment));
         let item_title = if singular {
-            ent2ncr(&format!("By: {author}"))
+            ent2ncr(&sprintf(&c.site.tr("By: %s"), &[&author]))
         } else {
-            ent2ncr(&format!("Comment on {} by {author}", c.title_rss(&comment_post)))
+            ent2ncr(&sprintf(&c.site.tr("Comment on %1$s by %2$s"), &[&c.title_rss(&comment_post), &author]))
         };
         out.push_str(&format!(
             "\t<item>\n\t\t<title>\n\t\t{item_title}\t\t</title>\n\t\t<link>{comment_link}</link>\n\n\t\t<dc:creator><![CDATA[{author}]]></dc:creator>\n\t\t<pubDate>{}</pubDate>\n\t\t<guid isPermaLink=\"false\">{}</guid>\n\n\t\t",
@@ -400,14 +401,14 @@ async fn rss2_comments(c: &Ctx<'_>, q: &QueryResult, comments: &[Comment], self_
         if post_password_required(&comment_post) {
             out.push_str(&format!(
                 "\t\t\t<description>{}</description>\n\t\t\t<content:encoded><![CDATA[{}]]></content:encoded>\n\t\t",
-                ent2ncr("Protected Comments: Please enter your password to view comments."),
+                ent2ncr(&c.site.tr("Protected Comments: Please enter your password to view comments.")),
                 protected_form(c, &comment_post)
             ));
         } else {
             out.push_str(&format!(
                 "\t\t\t<description><![CDATA[{}]]></description>\n\t\t\t<content:encoded><![CDATA[{}]]></content:encoded>\n\t\t",
                 esc_html(&ent2ncr(&comment.comment_content)),
-                comment_text(&comment.comment_content)
+                comment_text(c.site, &comment.comment_content)
             ));
         }
         out.push_str("\n\t\t\t</item>\n\t");
@@ -421,8 +422,8 @@ async fn atom_comments(c: &Ctx<'_>, q: &QueryResult, comments: &[Comment], _self
     let singular = q.flags.is_singular();
     let post = if singular { q.posts.first().cloned() } else { None };
     let heading = match &post {
-        Some(p) => ent2ncr(&format!("Comments on {}", c.title_rss(p))),
-        None => ent2ncr(&format!("Comments for {title}")),
+        Some(p) => ent2ncr(&sprintf(&c.site.tr("Comments on %s"), &[&c.title_rss(p)])),
+        None => ent2ncr(&sprintf(&c.site.tr("Comments for %s"), &[title])),
     };
     let mut out = String::new();
     out.push_str(&format!(
@@ -449,11 +450,11 @@ async fn atom_comments(c: &Ctx<'_>, q: &QueryResult, comments: &[Comment], _self
         let Some(comment_post) = c.site.db.post(comment.comment_post_id).await? else { continue };
         let permalink = c.site.permalink(&comment_post).await?;
         let comment_link = esc_url(&format!("{permalink}#comment-{}", comment.comment_id));
-        let author = ent2ncr(&comment_author(comment));
+        let author = ent2ncr(&comment_author(c.site, comment));
         let item_title = if singular {
-            ent2ncr(&format!("By: {author}"))
+            ent2ncr(&sprintf(&c.site.tr("By: %s"), &[&author]))
         } else {
-            ent2ncr(&format!("Comment on {} by {author}", c.title_rss(&comment_post)))
+            ent2ncr(&sprintf(&c.site.tr("Comment on %1$s by %2$s"), &[&c.title_rss(&comment_post), &author]))
         };
         out.push_str(&format!("\t<entry>\n\t\t<title>\n\t\t{item_title}\t\t</title>\n\t\t<link rel=\"alternate\" href=\"{comment_link}\" type=\"text/html\" />\n\n\t\t<author>\n\t\t\t<name>{author}</name>\n\t\t\t"));
         if !comment.comment_author_url.is_empty() {
@@ -468,7 +469,7 @@ async fn atom_comments(c: &Ctx<'_>, q: &QueryResult, comments: &[Comment], _self
         if post_password_required(&comment_post) {
             out.push_str(&format!("\t\t\t<content type=\"html\" xml:base=\"{comment_link}\"><![CDATA[{}]]></content>\n\t\t", protected_form(c, &comment_post)));
         } else {
-            out.push_str(&format!("\t\t\t<content type=\"html\" xml:base=\"{comment_link}\"><![CDATA[{}]]></content>\n\t\t", comment_text(&comment.comment_content)));
+            out.push_str(&format!("\t\t\t<content type=\"html\" xml:base=\"{comment_link}\"><![CDATA[{}]]></content>\n\t\t", comment_text(c.site, &comment.comment_content)));
         }
         out.push_str("\n\t\t");
         if comment.comment_parent == 0 {

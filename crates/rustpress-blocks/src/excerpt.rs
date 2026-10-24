@@ -2,7 +2,6 @@
 
 use std::sync::Arc;
 
-use rustpress_core::formatting::wp_trim_words;
 use rustpress_db::Post;
 
 use crate::content::{context_for_post, get_the_content, has_blocks, post_password_required, the_content_for_excerpt};
@@ -16,13 +15,13 @@ const WRAPPERS: &[&str] = &["core/columns", "core/column", "core/group"];
 /// `get_the_excerpt()`: the explicit excerpt, else the first 55 words of the content.
 /// The result is plain text/HTML before any output filters (`the_excerpt`, `the_excerpt_rss`).
 pub async fn get_the_excerpt(env: &Env<'_>, post: &Arc<Post>) -> Result<String> {
-    get_the_excerpt_with(env, post, 55, " [&hellip;]").await
+    get_the_excerpt_with(env, post, env.site.excerpt_length(), " [&hellip;]").await
 }
 
 /// [`get_the_excerpt`] with the `excerpt_length` and `excerpt_more` filters applied.
 pub async fn get_the_excerpt_with(env: &Env<'_>, post: &Arc<Post>, length: usize, more: &str) -> Result<String> {
     if post_password_required(post) {
-        return Ok("There is no excerpt because this is a protected post.".to_owned());
+        return Ok(env.site.tr("There is no excerpt because this is a protected post."));
     }
     if !post.post_excerpt.trim().is_empty() {
         return Ok(post.post_excerpt.clone());
@@ -30,7 +29,7 @@ pub async fn get_the_excerpt_with(env: &Env<'_>, post: &Arc<Post>, length: usize
     let content = get_the_content(env, post, 1, true);
     let content = excerpt_remove_blocks(env, post, &content).await?;
     let html = the_content_for_excerpt(env, post, &content).await?.replace("]]>", "]]&gt;");
-    Ok(wp_trim_words(&html, length, more))
+    Ok(rustpress_core::formatting::wp_trim_words_with(&html, length, more, env.site.locale_data().word_count_type))
 }
 
 fn allowed(name: &Option<String>) -> bool {

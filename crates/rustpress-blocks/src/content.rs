@@ -16,23 +16,32 @@ pub fn post_password_required(post: &Post) -> bool {
     !post.post_password.is_empty()
 }
 
-/// `get_the_title()` including the `the_title` filters.
+/// `get_the_title()` including the `the_title` filters, in English.
 pub fn the_title(post: &Post) -> String {
+    title_with_prefixes(post, "Protected: %s", "Private: %s", wptexturize)
+}
+
+/// [`the_title`] with the "Protected: %s" / "Private: %s" formats translated for the site.
+pub fn the_title_for(site: &rustpress_core::Site, post: &Post) -> String {
+    title_with_prefixes(post, &site.tr("Protected: %s"), &site.tr("Private: %s"), |text| site.texturize(text))
+}
+
+fn title_with_prefixes(post: &Post, protected: &str, private: &str, texturize: impl Fn(&str) -> String) -> String {
     let mut title = post.post_title.clone();
     if !post.post_password.is_empty() {
-        title = format!("Protected: {title}");
+        title = rustpress_core::i18n::sprintf(protected, &[&title]);
     } else if post.post_status == "private" {
-        title = format!("Private: {title}");
+        title = rustpress_core::i18n::sprintf(private, &[&title]);
     }
-    let title = wptexturize(&title);
+    let title = texturize(&title);
     let title = convert_chars(&title);
     let title = title.trim().to_owned();
     capital_p_dangit(&title, true)
 }
 
 /// The `comment_text` filter chain for the standard filters.
-pub fn comment_text(raw: &str) -> String {
-    let mut text = wptexturize(raw);
+pub fn comment_text(site: &rustpress_core::Site, raw: &str) -> String {
+    let mut text = site.texturize(raw);
     text = convert_chars(&text);
     text = wpautop(&text);
     capital_p_dangit(&text, false)
@@ -115,9 +124,12 @@ pub fn password_form(env: &Env<'_>, post: &Post) -> String {
     let field_id = format!("pwbox-{}", post.id);
     let permalink = permalink_sync(env, post);
     format!(
-        "<form action=\"{}\" class=\"post-password-form\" method=\"post\"><input type=\"hidden\" name=\"redirect_to\" value=\"{}\" />\n\t<p>This content is password-protected. To view it, please enter the password below.</p>\n\t<p><label for=\"{field_id}\">Password: <input name=\"post_password\" id=\"{field_id}\" type=\"password\" spellcheck=\"false\" required size=\"20\" /></label> <span class=\"wp-block-button\"><input type=\"submit\" name=\"Submit\" class=\"wp-block-button__link wp-element-button\" value=\"Enter\" /></span></p></form>\n\t",
+        "<form action=\"{}\" class=\"post-password-form\" method=\"post\"><input type=\"hidden\" name=\"redirect_to\" value=\"{}\" />\n\t<p>{}</p>\n\t<p><label for=\"{field_id}\">{} <input name=\"post_password\" id=\"{field_id}\" type=\"password\" spellcheck=\"false\" required size=\"20\" /></label> <span class=\"wp-block-button\"><input type=\"submit\" name=\"Submit\" class=\"wp-block-button__link wp-element-button\" value=\"{}\" /></span></p></form>\n\t",
         esc_url(&env.site.site_url("wp-login.php?action=postpass")),
         esc_attr(&permalink),
+        env.site.tr("This content is password-protected. To view it, please enter the password below."),
+        env.site.tr("Password:"),
+        esc_attr(&env.site.trx("Enter", "post password form")),
     )
 }
 
@@ -178,7 +190,7 @@ async fn apply_the_content(env: &Env<'_>, post: &Arc<Post>, raw: &str, prefix: &
     let raw = raw.replace("]]>", "]]&gt;");
     let blocks = has_blocks(&raw);
     let mut out = env.render_markup(&raw, &context_for_post(post)).await?;
-    out = wptexturize(&out);
+    out = env.site.texturize(&out);
     if !blocks {
         out = wpautop(&out);
     }

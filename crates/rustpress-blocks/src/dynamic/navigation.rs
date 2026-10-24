@@ -278,7 +278,7 @@ pub(super) async fn navigation(bc: &BlockCtx<'_>) -> Result<String> {
     }
     let mut wrapper = bc.wrapper_attributes(&extra);
     if responsive && interactive {
-        let context = json!({"overlayOpenedBy": {"click": false, "hover": false, "focus": false}, "type": "overlay", "roleAttribute": "", "ariaLabel": "Menu"});
+        let context = json!({"overlayOpenedBy": {"click": false, "hover": false, "focus": false}, "type": "overlay", "roleAttribute": "", "ariaLabel": bc.env.site.tr("Menu")});
         wrapper.push_str(&format!(" \n\t\t data-wp-interactive=\"core/navigation\" data-wp-context='{}'", php_json::encode(&context)));
     }
     Ok(format!("<nav {wrapper}>{body}</nav>"))
@@ -322,10 +322,11 @@ fn responsive_container(bc: &BlockCtx<'_>, inner_html: &str, interactive: bool) 
         open_icon
     };
     let close_icon = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" width=\"24\" height=\"24\" aria-hidden=\"true\" focusable=\"false\"><path d=\"m13.06 12 6.47-6.47-1.06-1.06L12 10.94 5.53 4.47 4.47 5.53 10.94 12l-6.47 6.47 1.06 1.06L12 13.06l6.47 6.47 1.06-1.06L13.06 12Z\"></path></svg>";
-    let open_content = if has_icon { open_icon } else { "Menu" };
-    let close_content = if has_icon { close_icon } else { "Close" };
-    let aria_open = if has_icon { "aria-label=\"Open menu\"" } else { "" };
-    let aria_close = if has_icon { "aria-label=\"Close menu\"" } else { "" };
+    let site = bc.env.site;
+    let open_content = if has_icon { open_icon.to_owned() } else { site.tr("Menu") };
+    let close_content = if has_icon { close_icon.to_owned() } else { site.tr("Close") };
+    let aria_open = if has_icon { format!("aria-label=\"{}\"", site.tr("Open menu")) } else { String::new() };
+    let aria_close = if has_icon { format!("aria-label=\"{}\"", site.tr("Close menu")) } else { String::new() };
 
     let (open_directives, container_directives, dialog_directives, close_directives, content_directives) = if interactive {
         (
@@ -426,7 +427,8 @@ pub(super) async fn page_list(bc: &BlockCtx<'_>) -> Result<String> {
             }
         }
         let link = bc.env.site.permalink(page).await?;
-        items.push(Item { id: page.id, title: page.post_title.clone(), link, active, parent: page.post_parent });
+        let title = if page.post_title.is_empty() { bc.env.site.tr("(no title)") } else { page.post_title.clone() };
+        items.push(Item { id: page.id, title, link, active, parent: page.post_parent });
     }
 
     let colors = page_list_colors(&bc.attrs, &bc.context.values);
@@ -485,8 +487,8 @@ pub(super) async fn page_list(bc: &BlockCtx<'_>) -> Result<String> {
             if page.id == front_page_id {
                 css.push_str(" menu-item-home");
             }
-            let title = if page.title.is_empty() { "(no title)".to_owned() } else { page.title.clone() };
-            let aria_label = format!("{} submenu", rustpress_core::formatting::esc_html(&strip_tags(&title)).replace("&amp;", "&"));
+            let title = page.title.clone();
+            let aria_label = rustpress_core::i18n::sprintf(&ctx.submenu_label, &[&rustpress_core::formatting::esc_html(&strip_tags(&title)).replace("&amp;", "&")]);
             markup.push_str(&format!("<li class=\"wp-block-pages-list__item{}\"{style}>", esc_attr(&css)));
             if !children.is_empty() && ctx.is_navigation_child && ctx.visibility == "click" {
                 markup.push_str(&format!(
@@ -521,8 +523,10 @@ pub(super) async fn page_list(bc: &BlockCtx<'_>) -> Result<String> {
         ancestors: &'a [u64],
         overlay_classes: String,
         overlay_style: String,
+        submenu_label: String,
     }
     let level = Level {
+        submenu_label: bc.env.site.tr("%s submenu"),
         is_navigation_child,
         visibility: &visibility,
         show_icons,

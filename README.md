@@ -11,6 +11,7 @@ Unterstützt werden **Block-Themes** (`theme.json` + HTML-Templates). Klassische
 - Feeds (RSS2, Atom, Kommentar-Feeds), Sitemaps, `robots.txt`
 - REST-API `wp/v2` zum Lesen (Beiträge, Seiten, Medien, Kategorien, Schlagwörter, Benutzer, Kommentare)
 - Statische Dateien aus `wp-content/` und `wp-includes/`
+- Alle Sprachen, für die WordPress ein Sprachpaket hat (siehe [Sprachen](#sprachen))
 
 ## Starten
 
@@ -29,6 +30,10 @@ reload_secs  = 60                # Optionen und Theme werden so oft neu gelesen
 ```
 
 `RUSTPRESS_DATABASE_URL`, `RUSTPRESS_TABLE_PREFIX`, `RUSTPRESS_WP_ROOT`, `RUSTPRESS_LISTEN`, `RUSTPRESS_RELOAD_SECS` überschreiben die Datei. Die Datenbankverbindung läuft in einer `READ ONLY`-Session; Schreibzugriffe (Kommentare, Login, Admin) gibt es nicht. TLS übernimmt ein vorgeschalteter Proxy.
+
+## Sprachen
+
+RustPress kennt keine Sprache im Code. Texte, Monats- und Wochentagsnamen, Anführungszeichen, Zahlenformat, Textrichtung, Pluralregeln und Wortzählung kommen aus denselben Sprachpaketen wie bei WordPress (`wp-content/languages/<locale>.mo`, `languages/themes/<theme>-<locale>.mo`). Eine weitere Sprache braucht deshalb nur ihr Sprachpaket (zum Beispiel mit `wp language core install <locale>` oder aus translate.wordpress.org); die Sprache der Seite ist die Option `WPLANG`. Rechts-nach-links-Sprachen erhalten `dir="rtl"`, die Body-Klasse `rtl` und die `-rtl`-Stylesheets. Das Konzept steht in [PLAN.md](PLAN.md#lokalisierungskonzept).
 
 ## Entwickeln und testen
 

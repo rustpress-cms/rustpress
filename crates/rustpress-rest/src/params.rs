@@ -1,6 +1,6 @@
 //! Request parameters, parsed the way PHP's `parse_str` does.
 
-use crate::error::RestError;
+use crate::error::{Msg, RestError};
 
 #[derive(Debug, Clone, Default)]
 pub struct Params {
@@ -75,16 +75,16 @@ impl Params {
     /// An integer parameter with the bounds of the endpoint schema.
     pub fn integer(&self, key: &str, default: u64, min: u64, max: Option<u64>) -> Result<u64, RestError> {
         let Some(value) = self.get(key) else { return Ok(default) };
-        let number: i64 = value.parse().map_err(|_| RestError::invalid_param(key, &format!("{key} is not of type integer."), "rest_invalid_type"))?;
+        let number: i64 = value.parse().map_err(|_| RestError::invalid_param(key, Msg::new("%1$s is not of type %2$s.").with(&[key, "integer"]), "rest_invalid_type"))?;
         if number < min as i64 {
             let message = match max {
-                Some(max) => format!("{key} must be between {min} (inclusive) and {max} (inclusive)"),
-                None => format!("{key} must be greater than or equal to {min}"),
+                Some(max) => Msg::new("%1$s must be between %2$d (inclusive) and %3$d (inclusive)").with(&[key, &min.to_string(), &max.to_string()]),
+                None => Msg::new("%1$s must be greater than or equal to %2$d").with(&[key, &min.to_string()]),
             };
-            return Err(RestError::invalid_param(key, &message, "rest_out_of_bounds"));
+            return Err(RestError::invalid_param(key, message, "rest_out_of_bounds"));
         }
         if let Some(max) = max.filter(|max| number > *max as i64) {
-            return Err(RestError::invalid_param(key, &format!("{key} must be between {min} (inclusive) and {max} (inclusive)"), "rest_out_of_bounds"));
+            return Err(RestError::invalid_param(key, Msg::new("%1$s must be between %2$d (inclusive) and %3$d (inclusive)").with(&[key, &min.to_string(), &max.to_string()]), "rest_out_of_bounds"));
         }
         Ok(number as u64)
     }
@@ -94,18 +94,7 @@ impl Params {
         match self.get(key) {
             None => Ok(default),
             Some(v) if allowed.contains(&v) => Ok(v),
-            Some(_) => Err(RestError::invalid_param(key, &format!("{key} is not one of {}.", list_and(allowed)), "rest_not_in_enum")),
+            Some(_) => Err(RestError::invalid_param(key, Msg::new("%1$s is not one of %2$l.").with(&[key]).with_list(allowed), "rest_not_in_enum")),
         }
-    }
-}
-
-
-/// `wp_sprintf_l`: `a and b`, `a, b, and c`.
-pub fn list_and(items: &[&str]) -> String {
-    match items {
-        [] => String::new(),
-        [one] => (*one).to_owned(),
-        [a, b] => format!("{a} and {b}"),
-        [rest @ .., last] => format!("{}, and {last}", rest.join(", ")),
     }
 }

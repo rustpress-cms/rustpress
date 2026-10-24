@@ -2,9 +2,9 @@
 
 use std::sync::Arc;
 
-use rustpress_blocks::content::{post_class, the_content_prefixed, the_title};
+use rustpress_blocks::content::{post_class, the_content_prefixed, the_title_for};
 use rustpress_blocks::images::{self, Metadata};
-use rustpress_core::formatting::{convert_chars, wpautop, wptexturize};
+use rustpress_core::formatting::{convert_chars, wpautop};
 use rustpress_db::Post;
 use serde_json::{Map, Value, json};
 
@@ -47,7 +47,7 @@ impl Rest<'_> {
         data.insert("type".into(), Value::from("attachment"));
         data.insert("link".into(), Value::from(self.site.permalink(post).await?));
         let plain = Post { post_password: String::new(), post_status: "publish".into(), ..post.clone() };
-        data.insert("title".into(), json!({"rendered": the_title(&plain)}));
+        data.insert("title".into(), json!({"rendered": the_title_for(self.site, &plain)}));
         data.insert("author".into(), Value::from(post.post_author));
         data.insert("featured_media".into(), Value::from(0));
         data.insert("comment_status".into(), Value::from(post.comment_status.clone()));
@@ -67,7 +67,7 @@ impl Rest<'_> {
         };
         let description = the_content_prefixed(&env, &shared, &post.post_content, &prefix).await?;
         data.insert("description".into(), json!({"rendered": description}));
-        let caption = wpautop(&convert_chars(&wptexturize(&post.post_excerpt)));
+        let caption = wpautop(&convert_chars(&self.site.texturize(&post.post_excerpt)));
         data.insert("caption".into(), json!({"rendered": caption}));
         data.insert("alt_text".into(), Value::from(alt));
         data.insert("media_type".into(), Value::from(if images::is_image(post) { "image" } else { "file" }));

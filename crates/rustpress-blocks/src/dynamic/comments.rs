@@ -78,26 +78,28 @@ pub(super) async fn comments_title(bc: &BlockCtx<'_>) -> Result<String> {
     }
     let show_title = bc.attr_bool("showPostTitle");
     let show_count = bc.attr_bool("showCommentsCount");
-    let title = crate::content::the_title(&post);
-    let number = count.to_string();
+    let title = crate::content::the_title_for(bc.env.site, &post);
+    let site = bc.env.site;
+    let number = site.number_i18n(count as u64);
+    let quoted = |text: String| rustpress_core::i18n::sprintf(&text, &[&title]);
     let heading = if show_count {
         if show_title {
             if count == 1 {
-                format!("One response to &#8220;{title}&#8221;")
+                quoted(site.tr("One response to &#8220;%s&#8221;"))
             } else {
-                format!("{number} responses to &#8220;{title}&#8221;")
+                rustpress_core::i18n::sprintf(&site.trn("%1$s response to &#8220;%2$s&#8221;", "%1$s responses to &#8220;%2$s&#8221;", count), &[&number, &title])
             }
         } else if count == 1 {
-            "One response".to_owned()
+            site.tr("One response")
         } else {
-            format!("{number} responses")
+            rustpress_core::i18n::sprintf(&site.trn("%s response", "%s responses", count), &[&number])
         }
     } else if show_title {
-        if count == 1 { format!("Response to &#8220;{title}&#8221;") } else { format!("Responses to &#8220;{title}&#8221;") }
+        if count == 1 { quoted(site.tr("Response to &#8220;%s&#8221;")) } else { quoted(site.tr("Responses to &#8220;%s&#8221;")) }
     } else if count == 1 {
-        "Response".to_owned()
+        site.tr("Response")
     } else {
-        "Responses".to_owned()
+        site.tr("Responses")
     };
     let tag = format!("h{}", bc.attrs.get("level").and_then(Value::as_u64).unwrap_or(2));
     let wrapper = bc.wrapper_attributes(&[("class", bc.attr_str("textAlign").filter(|a| !a.is_empty()).map(|a| format!("has-text-align-{a}")).unwrap_or_default())]);
@@ -191,7 +193,7 @@ fn comment_class(comment: &Comment, depth: u64, state: &mut ListState) -> String
 pub(super) async fn comment_author_name(bc: &BlockCtx<'_>) -> Result<String> {
     let Some(comment) = current_comment(bc).await? else { return Ok(String::new()) };
     let wrapper = bc.wrapper_attributes(&[("class", align_and_link_classes(bc))]);
-    let mut author = comment_author(&comment);
+    let mut author = comment_author(bc.env.site, &comment);
     if !comment.comment_author_url.is_empty() && bc.attr_bool("isLink") && bc.attr_str("linkTarget").is_some_and(|t| !t.is_empty()) {
         author = format!(
             "<a rel=\"external nofollow ugc\" href=\"{}\" target=\"{}\" >{author}</a>",
@@ -202,8 +204,8 @@ pub(super) async fn comment_author_name(bc: &BlockCtx<'_>) -> Result<String> {
     Ok(format!("<div {wrapper}>{author}</div>"))
 }
 
-fn comment_author(comment: &Comment) -> String {
-    if comment.comment_author.is_empty() { "Anonymous".to_owned() } else { comment.comment_author.clone() }
+fn comment_author(site: &rustpress_core::Site, comment: &Comment) -> String {
+    if comment.comment_author.is_empty() { site.tr("Anonymous") } else { comment.comment_author.clone() }
 }
 
 pub(super) async fn comment_content(bc: &BlockCtx<'_>) -> Result<String> {
@@ -211,7 +213,7 @@ pub(super) async fn comment_content(bc: &BlockCtx<'_>) -> Result<String> {
     if comment.comment_content.is_empty() {
         return Ok(String::new());
     }
-    let text = comment_text(&comment.comment_content);
+    let text = comment_text(bc.env.site, &comment.comment_content);
     let wrapper = bc.wrapper_attributes(&[("class", align_and_link_classes(bc))]);
     Ok(format!("<div {wrapper}>{text}</div>"))
 }
@@ -222,13 +224,13 @@ pub(super) async fn comment_date(bc: &BlockCtx<'_>) -> Result<String> {
     let class = if has_link_color(bc) { "has-link-color" } else { "" };
     let wrapper = bc.wrapper_attributes(&[("class", class.to_owned())]);
     let Some(ts) = site.timezone.local_timestamp(&comment.comment_date) else { return Ok(String::new()) };
-    let format = bc.attr_str("format").filter(|f| !f.is_empty()).map(str::to_owned).unwrap_or_else(|| site.options.string("date_format", "F j, Y"));
-    let mut formatted = esc_html(&site.timezone.format(&format, ts));
+    let format = bc.attr_str("format").filter(|f| !f.is_empty()).map(str::to_owned).unwrap_or_else(|| site.options.string("date_format", &site.tr("F j, Y")));
+    let mut formatted = esc_html(&site.date(&format, ts));
     if bc.attr_bool("isLink") {
         let link = comment_link(bc, &comment).await?;
         formatted = format!("<a href=\"{}\">{formatted}</a>", esc_url(&link));
     }
-    Ok(format!("<div {wrapper}><time datetime=\"{}\">{formatted}</time></div>", esc_attr(&site.timezone.format("c", ts))))
+    Ok(format!("<div {wrapper}><time datetime=\"{}\">{formatted}</time></div>", esc_attr(&site.date("c", ts))))
 }
 
 async fn comment_link(bc: &BlockCtx<'_>, comment: &Comment) -> Result<String> {
@@ -262,8 +264,8 @@ pub(super) async fn comment_reply_link(bc: &BlockCtx<'_>) -> Result<String> {
         return Ok(String::new());
     }
     let permalink = bc.env.site.permalink(&post).await?;
-    let author = comment_author(&comment);
-    let reply_to = format!("Reply to {author}");
+    let author = comment_author(bc.env.site, &comment);
+    let reply_to = rustpress_core::i18n::sprintf(&bc.env.site.tr("Reply to %s"), &[&author]);
     let data = format!(
         "data-commentid=\"{}\" data-postid=\"{}\" data-belowelement=\"comment-{}\" data-respondelement=\"respond\" data-replyto=\"{}\"",
         comment.comment_id,
@@ -272,7 +274,7 @@ pub(super) async fn comment_reply_link(bc: &BlockCtx<'_>) -> Result<String> {
         esc_attr(&reply_to)
     );
     let href = format!("{}#respond", esc_url(&add_query_arg(&permalink, "replytocom", &comment.comment_id.to_string())));
-    let link = format!("<a rel=\"nofollow\" class=\"comment-reply-link\" href=\"{href}\" {data} aria-label=\"{}\">Reply</a>", esc_attr(&reply_to));
+    let link = format!("<a rel=\"nofollow\" class=\"comment-reply-link\" href=\"{href}\" {data} aria-label=\"{}\">{}</a>", esc_attr(&reply_to), bc.env.site.trx("Reply", "verb"));
     let wrapper = bc.wrapper_attributes(&[("class", align_and_link_classes(bc))]);
     Ok(format!("<div {wrapper}>{link}</div>"))
 }
@@ -356,10 +358,10 @@ pub(super) async fn avatar(bc: &BlockCtx<'_>) -> Result<String> {
             return Ok(String::new());
         }
         let Some(user) = bc.env.site.db.user(author_id).await? else { return Ok(String::new()) };
-        let alt = format!("{} Avatar", user.display_name);
+        let alt = rustpress_core::i18n::sprintf(&bc.env.site.tr("%s Avatar"), &[&user.display_name]);
         let mut avatar = avatar_img(bc, &user.user_email, size, &alt, &image_classes, &image_styles);
         if bc.attr_bool("isLink") {
-            let label = if bc.attr_str("linkTarget") == Some("_blank") { format!("aria-label=\"{}\"", esc_attr(&format!("({} author archive, opens in a new tab)", user.display_name))) } else { String::new() };
+            let label = if bc.attr_str("linkTarget") == Some("_blank") { format!("aria-label=\"{}\"", esc_attr(&rustpress_core::i18n::sprintf(&bc.env.site.tr("(%s author archive, opens in a new tab)"), &[&user.display_name]))) } else { String::new() };
             avatar = format!(
                 "<a href=\"{}\" target=\"{}\" {label} class=\"wp-block-avatar__link\">{avatar}</a>",
                 esc_url(&bc.env.site.author_url(&user)),
@@ -370,7 +372,7 @@ pub(super) async fn avatar(bc: &BlockCtx<'_>) -> Result<String> {
     }
 
     let Some(comment) = current_comment(bc).await? else { return Ok(String::new()) };
-    let alt = format!("{} Avatar", comment.comment_author);
+    let alt = rustpress_core::i18n::sprintf(&bc.env.site.tr("%s Avatar"), &[&comment.comment_author]);
     let email = if comment.user_id != 0 {
         bc.env.site.db.user(comment.user_id).await?.map(|u| u.user_email).unwrap_or(comment.comment_author_email.clone())
     } else {
@@ -378,7 +380,7 @@ pub(super) async fn avatar(bc: &BlockCtx<'_>) -> Result<String> {
     };
     let mut avatar = avatar_img(bc, &email, size, &alt, &image_classes, &image_styles);
     if bc.attr_bool("isLink") && !comment.comment_author_url.is_empty() {
-        let label = if bc.attr_str("linkTarget") == Some("_blank") { format!("aria-label=\"{}\"", esc_attr(&format!("({} website link, opens in a new tab)", comment.comment_author))) } else { String::new() };
+        let label = if bc.attr_str("linkTarget") == Some("_blank") { format!("aria-label=\"{}\"", esc_attr(&rustpress_core::i18n::sprintf(&bc.env.site.tr("(%s website link, opens in a new tab)"), &[&comment.comment_author]))) } else { String::new() };
         avatar = format!(
             "<a href=\"{}\" target=\"{}\" {label} class=\"wp-block-avatar__link\">{avatar}</a>",
             esc_url(&comment.comment_author_url),
@@ -401,7 +403,7 @@ pub(super) async fn comments_pagination(bc: &BlockCtx<'_>) -> Result<String> {
     }
     let has_link_color = bc.attrs.get("style").and_then(|s| s.get("elements")).and_then(|e| e.get("link")).and_then(|l| l.get("color")).and_then(|c| c.get("text")).is_some_and(|v| !v.is_null());
     let class = if has_link_color { "has-link-color" } else { "" };
-    let wrapper = bc.wrapper_attributes(&[("aria-label", "Comments pagination".to_owned()), ("class", class.to_owned())]);
+    let wrapper = bc.wrapper_attributes(&[("aria-label", bc.env.site.tr("Comments pagination")), ("class", class.to_owned())]);
     Ok(format!("<nav {wrapper}>{}</nav>", bc.content))
 }
 
@@ -427,51 +429,57 @@ pub(super) async fn post_comments_form(bc: &BlockCtx<'_>) -> Result<String> {
     let site = bc.env.site;
     let options = &site.options;
     let require = options.get("require_name_email") != Some("0");
-    let required_indicator = " <span class=\"required\">*</span>";
-    let required_text = " <span class=\"required-field-message\">Required fields are marked <span class=\"required\">*</span></span>";
+    let indicator = format!("<span class=\"required\">{}</span>", rustpress_core::formatting::esc_html(&site.tr("*")));
+    let required_indicator = format!(" {indicator}");
+    let required_indicator = required_indicator.as_str();
+    let required_text = format!(" <span class=\"required-field-message\">{}</span>", rustpress_core::i18n::sprintf(&site.tr("Required fields are marked %s"), &[&indicator]));
     let required_attr = " required";
 
     let author = format!(
-        "<p class=\"comment-form-author\"><label for=\"author\">Name{}</label> <input id=\"author\" name=\"author\" type=\"text\" value=\"\" size=\"30\" maxlength=\"245\" autocomplete=\"name\"{} /></p>",
+        "<p class=\"comment-form-author\"><label for=\"author\">{}{}</label> <input id=\"author\" name=\"author\" type=\"text\" value=\"\" size=\"30\" maxlength=\"245\" autocomplete=\"name\"{} /></p>",
+        site.tr("Name"),
         if require { required_indicator } else { "" },
         if require { required_attr } else { "" }
     );
     let email = format!(
-        "<p class=\"comment-form-email\"><label for=\"email\">Email{}</label> <input id=\"email\" name=\"email\" type=\"email\" value=\"\" size=\"30\" maxlength=\"100\" aria-describedby=\"email-notes\" autocomplete=\"email\"{} /></p>",
+        "<p class=\"comment-form-email\"><label for=\"email\">{}{}</label> <input id=\"email\" name=\"email\" type=\"email\" value=\"\" size=\"30\" maxlength=\"100\" aria-describedby=\"email-notes\" autocomplete=\"email\"{} /></p>",
+        site.tr("Email"),
         if require { required_indicator } else { "" },
         if require { required_attr } else { "" }
     );
-    let url = "<p class=\"comment-form-url\"><label for=\"url\">Website</label> <input id=\"url\" name=\"url\" type=\"url\" value=\"\" size=\"30\" maxlength=\"200\" autocomplete=\"url\" /></p>";
+    let url = format!("<p class=\"comment-form-url\"><label for=\"url\">{}</label> <input id=\"url\" name=\"url\" type=\"url\" value=\"\" size=\"30\" maxlength=\"200\" autocomplete=\"url\" /></p>", site.tr("Website"));
     let cookies = if options.get("show_comments_cookies_opt_in") == Some("1") {
-        "<p class=\"comment-form-cookies-consent\"><input id=\"wp-comment-cookies-consent\" name=\"wp-comment-cookies-consent\" type=\"checkbox\" value=\"yes\" /> <label for=\"wp-comment-cookies-consent\">Save my name, email, and website in this browser for the next time I comment.</label></p>"
+        format!("<p class=\"comment-form-cookies-consent\"><input id=\"wp-comment-cookies-consent\" name=\"wp-comment-cookies-consent\" type=\"checkbox\" value=\"yes\" /> <label for=\"wp-comment-cookies-consent\">{}</label></p>", site.tr("Save my name, email, and website in this browser for the next time I comment."))
     } else {
-        ""
+        String::new()
     };
+    let comment_label = site.trx("Comment", "noun");
     let comment_field = format!(
-        "<p class=\"comment-form-comment\"><label for=\"comment\">Comment{required_indicator}</label> <textarea id=\"comment\" name=\"comment\" cols=\"45\" rows=\"8\" maxlength=\"65525\"{required_attr}></textarea></p>"
+        "<p class=\"comment-form-comment\"><label for=\"comment\">{comment_label}{required_indicator}</label> <textarea id=\"comment\" name=\"comment\" cols=\"45\" rows=\"8\" maxlength=\"65525\"{required_attr}></textarea></p>"
     );
-    let notes = format!("<p class=\"comment-notes\"><span id=\"email-notes\">Your email address will not be published.</span>{required_text}</p>");
+    let notes = format!("<p class=\"comment-notes\"><span id=\"email-notes\">{}</span>{required_text}</p>", site.tr("Your email address will not be published."));
 
     let q = bc.env.query;
     let request = remove_query_arg(&format!("{}{}", q.url_path, if q.raw_query.is_empty() { String::new() } else { format!("?{}", q.raw_query) }), "replytocom");
     let threaded = options.get("thread_comments") == Some("1");
     let cancel = if threaded {
-        format!(" <small><a rel=\"nofollow\" id=\"cancel-comment-reply-link\" href=\"{}#respond\" style=\"display:none;\">Cancel reply</a></small>", esc_url(&request))
+        format!(" <small><a rel=\"nofollow\" id=\"cancel-comment-reply-link\" href=\"{}#respond\" style=\"display:none;\">{}</a></small>", esc_url(&request), site.tr("Cancel reply"))
     } else {
         String::new()
     };
     let mut fields = String::new();
-    for field in [&author, &email, url, cookies] {
+    for field in [&author, &email, &url, &cookies] {
         if !field.is_empty() {
             fields.push_str(field);
             fields.push('\n');
         }
     }
-    let submit = "<input name=\"submit\" type=\"submit\" id=\"submit\" class=\"wp-block-button__link wp-element-button\" value=\"Post Comment\" />";
+    let submit = format!("<input name=\"submit\" type=\"submit\" id=\"submit\" class=\"wp-block-button__link wp-element-button\" value=\"{}\" />", esc_attr(&site.tr("Post Comment")));
     let id_fields = format!("<input type='hidden' name='comment_post_ID' value='{post_id}' id='comment_post_ID' />\n<input type='hidden' name='comment_parent' id='comment_parent' value='0' />\n");
     let action = esc_url(&site.site_url("/wp-comments-post.php"));
     bc.env.with_state(|s| if !s.scripts.iter().any(|x| x == "comment-reply") { s.scripts.push("comment-reply".to_owned()) });
+    let reply_title = site.tr("Leave a Reply");
     Ok(format!(
-        "\t<div id=\"respond\" {wrapper}>\n\t\t<h3 id=\"reply-title\" class=\"comment-reply-title\">Leave a Reply{cancel}</h3><form action=\"{action}\" method=\"post\" id=\"commentform\" class=\"comment-form\">{notes}{comment_field}{fields}<p class=\"form-submit wp-block-button\">{submit} {id_fields}</p></form>\t</div><!-- #respond -->\n\t"
+        "\t<div id=\"respond\" {wrapper}>\n\t\t<h3 id=\"reply-title\" class=\"comment-reply-title\">{reply_title}{cancel}</h3><form action=\"{action}\" method=\"post\" id=\"commentform\" class=\"comment-form\">{notes}{comment_field}{fields}<p class=\"form-submit wp-block-button\">{submit} {id_fields}</p></form>\t</div><!-- #respond -->\n\t"
     ))
 }

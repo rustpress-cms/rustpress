@@ -5,7 +5,7 @@ use rustpress_db::Post;
 use serde_json::Value;
 
 use crate::Result;
-use crate::content::the_title;
+use crate::content::the_title_for;
 use crate::render::BlockCtx;
 
 use super::global_post;
@@ -35,7 +35,8 @@ pub(super) async fn render(bc: &BlockCtx<'_>) -> Result<String> {
     let wrapper = bc.wrapper_attributes(&[("class", classes)]);
 
     let mut format = "%link".to_owned();
-    let mut link = if kind == "next" { "Next".to_owned() } else { "Previous".to_owned() };
+    let site = bc.env.site;
+    let mut link = if kind == "next" { site.trx("Next", "label for next post link") } else { site.trx("Previous", "label for previous post link") };
     let mut label = String::new();
     if let Some(l) = bc.attr_str("label").filter(|l| !l.is_empty()) {
         label = l.to_owned();
@@ -52,7 +53,7 @@ pub(super) async fn render(bc: &BlockCtx<'_>) -> Result<String> {
         } else if !label.is_empty() {
             link = format!("<span class=\"post-navigation-link__label\">{label}</span> <span class=\"post-navigation-link__title\">%title</span>");
         } else {
-            let label = if kind == "next" { "Next:" } else { "Previous:" };
+            let label = if kind == "next" { site.trx("Next:", "label before the title of the next post") } else { site.trx("Previous:", "label before the title of the previous post") };
             link = format!("<span class=\"post-navigation-link__label\">{label}</span> <span class=\"post-navigation-link__title\">%title</span>");
         }
     }
@@ -78,9 +79,9 @@ pub(super) async fn render(bc: &BlockCtx<'_>) -> Result<String> {
         None => String::new(),
         Some(other) => {
             let title = if other.post_title.is_empty() {
-                if kind == "next" { "Next Post".to_owned() } else { "Previous Post".to_owned() }
+                if kind == "next" { site.tr("Next Post") } else { site.tr("Previous Post") }
             } else {
-                the_title(&Post { post_password: String::new(), ..other.clone() })
+                the_title_for(site, &Post { post_password: String::new(), ..other.clone() })
             };
             let inlink = link.replace("%title", &title);
             let permalink = bc.env.site.permalink(&other).await?;

@@ -20,7 +20,7 @@ fn is_entity_at(s: &str) -> bool {
     if bytes.first() != Some(&b'&') {
         return false;
     }
-    let Some(end) = s[..s.len().min(34)].find(';') else { return false };
+    let Some(end) = bytes[..bytes.len().min(34)].iter().position(|&b| b == b';') else { return false };
     let inner = &s[1..end];
     if let Some(num) = inner.strip_prefix('#') {
         return match num.strip_prefix(['x', 'X']) {
@@ -136,58 +136,117 @@ fn replace_in_html_tags(haystack: &str, pairs: &[(&str, &str)]) -> String {
 
 const SPACES: &str = "[\\r\\n\\t ]|\u{a0}|&nbsp;";
 
-struct Texturize {
-    apos: Vec<(Regex, &'static str)>,
-    quote: Vec<(Regex, &'static str)>,
-    dash: Vec<(Regex, &'static str)>,
-    static_chars: Vec<(&'static str, &'static str)>,
+/// The characters `wptexturize()` writes for quotes, dashes and the like. WordPress takes them
+/// from the language pack with `_x()`; [`TexturizeChars::english`] are the msgids.
+#[derive(Debug, Clone)]
+pub struct TexturizeChars {
+    pub opening_quote: String,
+    pub closing_quote: String,
+    pub apos: String,
+    pub prime: String,
+    pub double_prime: String,
+    pub opening_single_quote: String,
+    pub closing_single_quote: String,
+    pub en_dash: String,
+    pub em_dash: String,
+    /// Words that start with an apostrophe and what they become (`'cause`, `'em`, ...).
+    pub cockney: Vec<(String, String)>,
+}
+
+impl TexturizeChars {
+    pub fn english() -> Self {
+        let entity = |n: u32| format!("&#{n};");
+        Self {
+            opening_quote: entity(8220),
+            closing_quote: entity(8221),
+            apos: entity(8217),
+            prime: entity(8242),
+            double_prime: entity(8243),
+            opening_single_quote: entity(8216),
+            closing_single_quote: entity(8217),
+            en_dash: entity(8211),
+            em_dash: entity(8212),
+            cockney: Self::cockney_from(
+                "'tain't,'twere,'twas,'tis,'twill,'til,'bout,'nuff,'round,'cause,'em",
+                "&#8217;tain&#8217;t,&#8217;twere,&#8217;twas,&#8217;tis,&#8217;twill,&#8217;til,&#8217;bout,&#8217;nuff,&#8217;round,&#8217;cause,&#8217;em",
+            ),
+        }
+    }
+
+    /// Pairs the two comma-separated lists of the language pack; a missing replacement is empty.
+    pub fn cockney_from(words: &str, replacements: &str) -> Vec<(String, String)> {
+        let replacements: Vec<&str> = replacements.split(',').collect();
+        words.split(',').enumerate().map(|(i, w)| (w.to_owned(), replacements.get(i).copied().unwrap_or("").to_owned())).collect()
+    }
+}
+
+/// The rules of `wptexturize()` for one set of characters.
+#[derive(Debug)]
+pub struct Texturize {
+    chars: TexturizeChars,
+    apos: Vec<(Regex, String)>,
+    quote: Vec<(Regex, String)>,
+    dash: Vec<(Regex, String)>,
+    static_chars: Vec<(String, String)>,
+}
+
+impl Texturize {
+    pub fn new(chars: TexturizeChars) -> Self {
+        let r = |p: String| Regex::new(&p).expect("valid texturize regex");
+        let end = "\\n?\\z";
+        let (apos_flag, open_sq_flag, open_q_flag) = ("<!--apos-->", "<!--osq-->", "<!--oq-->");
+        let mut apos: Vec<(Regex, String)> = Vec::new();
+        // '99 and '99" are ambiguous among other patterns; assume an abbreviated year at the end of a quotation.
+        if chars.apos != "'" || chars.closing_single_quote != "'" {
+            apos.push((r(format!("'(\\d\\d)'(?={end}|[.,:;!?)}}\\-\\]]|&gt;|{SPACES})")), format!("{apos_flag}${{1}}{}", chars.closing_single_quote)));
+        }
+        if chars.apos != "'" || chars.closing_quote != "\"" {
+            apos.push((r(format!("'(\\d\\d)\"(?={end}|[.,:;!?)}}\\-\\]]|&gt;|{SPACES})")), format!("{apos_flag}${{1}}{}", chars.closing_quote)));
+        }
+        // '99 '99s '99's (apostrophe), but never '9 or '99% or '999 or '99.0.
+        if chars.apos != "'" {
+            apos.push((r(format!("'(?=\\d\\d(?:{end}|(?![%\\d]|[.,]\\d)))")), apos_flag.to_owned()));
+        }
+        // Quoted numbers like '0.42'.
+        if chars.opening_single_quote != "'" && chars.closing_single_quote != "'" {
+            apos.push((r(format!("(?<=\\A|{SPACES})'(\\d[.,\\d]*)'")), format!("{open_sq_flag}${{1}}{}", chars.closing_single_quote)));
+        }
+        // A single quote at the start, or after (, {, <, [, ", - or spaces.
+        if chars.opening_single_quote != "'" {
+            apos.push((r(format!("(?<=\\A|[(\\[{{\"\\-]|&lt;|{SPACES})'")), open_sq_flag.to_owned()));
+        }
+        // An apostrophe in a word: no spaces, double apostrophes or other punctuation around it.
+        if chars.apos != "'" {
+            apos.push((r(format!("(?<!{SPACES})'(?!{end}|[.,:;!?\"'(){{}}\\[\\]\\-]|&[lg]t;|{SPACES})")), apos_flag.to_owned()));
+        }
+        let mut quote: Vec<(Regex, String)> = Vec::new();
+        if chars.opening_quote != "\"" && chars.closing_quote != "\"" {
+            quote.push((r(format!("(?<=\\A|{SPACES})\"(\\d[.,\\d]*)\"")), format!("{open_q_flag}${{1}}{}", chars.closing_quote)));
+        }
+        if chars.opening_quote != "\"" {
+            quote.push((r(format!("(?<=\\A|[(\\[{{\\-]|&lt;|{SPACES})\"(?!{SPACES})")), open_q_flag.to_owned()));
+        }
+        let dash = vec![
+            (r("---".into()), chars.em_dash.clone()),
+            (r(format!("(?<=\\A|{SPACES})--(?={end}|{SPACES})")), chars.em_dash.clone()),
+            (r("(?<!xn)--".into()), chars.en_dash.clone()),
+            (r(format!("(?<=\\A|{SPACES})-(?={end}|{SPACES})")), chars.en_dash.clone()),
+        ];
+        let mut static_chars = vec![
+            ("...".to_owned(), "&#8230;".to_owned()),
+            ("``".to_owned(), chars.opening_quote.clone()),
+            ("''".to_owned(), chars.closing_quote.clone()),
+            (" (tm)".to_owned(), " &#8482;".to_owned()),
+        ];
+        static_chars.extend(chars.cockney.iter().cloned());
+        Self { chars, apos, quote, dash, static_chars }
+    }
 }
 
 fn texturize_rules() -> &'static Texturize {
     static RULES: OnceLock<Texturize> = OnceLock::new();
-    RULES.get_or_init(|| {
-        let r = |p: String| Regex::new(&p).expect("valid texturize regex");
-        let end = "\\n?\\z";
-        Texturize {
-            apos: vec![
-                (r(format!("'(\\d\\d)'(?={end}|[.,:;!?)}}\\-\\]]|&gt;|{SPACES})")), "<!--apos-->$1&#8217;"),
-                (r(format!("'(\\d\\d)\"(?={end}|[.,:;!?)}}\\-\\]]|&gt;|{SPACES})")), "<!--apos-->$1&#8221;"),
-                (r(format!("'(?=\\d\\d(?:{end}|(?![%\\d]|[.,]\\d)))")), "<!--apos-->"),
-                (r(format!("(?<=\\A|{SPACES})'(\\d[.,\\d]*)'")), "<!--osq-->$1&#8217;"),
-                (r(format!("(?<=\\A|[(\\[{{\"\\-]|&lt;|{SPACES})'")), "<!--osq-->"),
-                (r(format!("(?<!{SPACES})'(?!{end}|[.,:;!?\"'(){{}}\\[\\]\\-]|&[lg]t;|{SPACES})")), "<!--apos-->"),
-            ],
-            quote: vec![
-                (r(format!("(?<=\\A|{SPACES})\"(\\d[.,\\d]*)\"")), "<!--oq-->$1&#8221;"),
-                (r(format!("(?<=\\A|[(\\[{{\\-]|&lt;|{SPACES})\"(?!{SPACES})")), "<!--oq-->"),
-            ],
-            dash: vec![
-                (r("---".into()), "&#8212;"),
-                (r(format!("(?<=\\A|{SPACES})--(?={end}|{SPACES})")), "&#8212;"),
-                (r("(?<!xn)--".into()), "&#8211;"),
-                (r(format!("(?<=\\A|{SPACES})-(?={end}|{SPACES})")), "&#8211;"),
-            ],
-            static_chars: vec![
-                ("...", "&#8230;"),
-                ("``", "&#8220;"),
-                ("''", "&#8221;"),
-                (" (tm)", " &#8482;"),
-                ("'tain't", "&#8217;tain&#8217;t"),
-                ("'twere", "&#8217;twere"),
-                ("'twas", "&#8217;twas"),
-                ("'tis", "&#8217;tis"),
-                ("'twill", "&#8217;twill"),
-                ("'til", "&#8217;til"),
-                ("'bout", "&#8217;bout"),
-                ("'nuff", "&#8217;nuff"),
-                ("'round", "&#8217;round"),
-                ("'cause", "&#8217;cause"),
-                ("'em", "&#8217;em"),
-            ],
-        }
-    })
+    RULES.get_or_init(|| Texturize::new(TexturizeChars::english()))
 }
-
 fn replace_all_str(re: &Regex, text: &str, replacement: &str) -> String {
     re.replace_all(text, replacement).into_owned()
 }
@@ -276,12 +335,17 @@ fn fix_ampersands(text: &str) -> String {
     out
 }
 
-/// `wptexturize()`: curly quotes, dashes, ellipses and `x` multiplication.
+/// `wptexturize()` with the English characters.
 pub fn wptexturize(text: &str) -> String {
+    wptexturize_with(text, texturize_rules())
+}
+
+/// `wptexturize()`: curly quotes, dashes, ellipses and `x` multiplication, written with the
+/// characters of `rules` (which depend on the language).
+pub fn wptexturize_with(text: &str, rules: &Texturize) -> String {
     if text.is_empty() {
         return String::new();
     }
-    let rules = texturize_rules();
     let no_texturize_tags = ["pre", "code", "kbd", "style", "script", "tt"];
     let mut stack: Vec<String> = Vec::new();
     let mut out = String::with_capacity(text.len() + text.len() / 8);
@@ -327,16 +391,16 @@ fn texturize_text(piece: &str, rules: &Texturize) -> String {
         for (re, rep) in &rules.apos {
             curl = replace_all_str(re, &curl, rep);
         }
-        curl = texturize_primes(&curl, '\'', "&#8242;", "<!--osq-->", "&#8217;");
-        curl = curl.replace("<!--apos-->", "&#8217;");
-        curl = curl.replace("<!--osq-->", "&#8216;");
+        curl = texturize_primes(&curl, '\'', &rules.chars.prime, "<!--osq-->", &rules.chars.closing_single_quote);
+        curl = curl.replace("<!--apos-->", &rules.chars.apos);
+        curl = curl.replace("<!--osq-->", &rules.chars.opening_single_quote);
     }
     if curl.contains('"') {
         for (re, rep) in &rules.quote {
             curl = replace_all_str(re, &curl, rep);
         }
-        curl = texturize_primes(&curl, '"', "&#8243;", "<!--oq-->", "&#8221;");
-        curl = curl.replace("<!--oq-->", "&#8220;");
+        curl = texturize_primes(&curl, '"', &rules.chars.double_prime, "<!--oq-->", &rules.chars.closing_quote);
+        curl = curl.replace("<!--oq-->", &rules.chars.opening_quote);
     }
     if curl.contains('-') {
         for (re, rep) in &rules.dash {
@@ -502,6 +566,13 @@ mod tests {
     }
 
     #[test]
+    fn escaping_does_not_slice_inside_multibyte_characters() {
+        // The entity check looks at the next 34 bytes, which can end inside a character.
+        let text = "&ааааааааааааааааааааааааааааааааа";
+        assert_eq!(esc_html(text), format!("&amp;{}", &text[1..]));
+    }
+
+    #[test]
     fn texturize_quotes_dashes_and_ellipsis() {
         assert_eq!(wptexturize("\"Hello\" -- world..."), "&#8220;Hello&#8221; &#8212; world&#8230;");
         assert_eq!(wptexturize("Don't stop"), "Don&#8217;t stop");
@@ -638,7 +709,18 @@ pub fn html_entity_decode(text: &str) -> String {
 
 /// `wp_trim_words( $text, $num_words, $more )` for space-separated languages.
 pub fn wp_trim_words(text: &str, num_words: usize, more: &str) -> String {
+    wp_trim_words_with(text, num_words, more, crate::locale::WordCountType::Words)
+}
+
+/// `wp_trim_words()` for the word count type of the language: languages without spaces between
+/// words (Chinese, Japanese, Korean) count characters instead.
+pub fn wp_trim_words_with(text: &str, num_words: usize, more: &str, count: crate::locale::WordCountType) -> String {
     let stripped = wp_strip_all_tags(text);
+    if count != crate::locale::WordCountType::Words {
+        let collapsed = stripped.split(['\n', '\r', '\t', ' ']).filter(|w| !w.is_empty()).collect::<Vec<_>>().join(" ");
+        let chars: Vec<char> = collapsed.chars().collect();
+        return if chars.len() > num_words { format!("{}{more}", chars[..num_words].iter().collect::<String>()) } else { collapsed };
+    }
     let words: Vec<&str> = stripped.split(['\n', '\r', '\t', ' ']).filter(|w| !w.is_empty()).collect();
     if words.len() > num_words {
         format!("{}{more}", words[..num_words].join(" "))
@@ -662,6 +744,13 @@ mod feed_helper_tests {
     fn entities() {
         assert_eq!(ent2ncr("Caf&eacute; &amp; &unknown; &#8211;"), "Caf&#233; &#38; &unknown; &#8211;");
         assert_eq!(html_entity_decode("&quot;a&quot; &amp; &#8211; &#039; &eacute;"), "\"a\" & \u{2013} &#039; \u{e9}");
+    }
+
+    #[test]
+    fn languages_without_spaces_are_trimmed_by_characters() {
+        use crate::locale::WordCountType::CharactersExcludingSpaces;
+        assert_eq!(wp_trim_words_with("<p>日本語の　テキスト です</p>", 4, "…", CharactersExcludingSpaces), "日本語の…");
+        assert_eq!(wp_trim_words_with("短い", 4, "…", CharactersExcludingSpaces), "短い");
     }
 
     #[test]

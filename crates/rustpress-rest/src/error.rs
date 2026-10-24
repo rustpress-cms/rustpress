@@ -1,42 +1,149 @@
 //! `WP_Error` as the REST API serializes it.
+//!
+//! Messages are WordPress message ids (the English texts) with their arguments; they are
+//! translated into the site's language when the error is turned into JSON, so the endpoint code
+//! never deals with languages.
 
+use rustpress_core::Site;
 use serde_json::{Map, Value, json};
+
+/// One argument of a message: plain text, or a list for `wp_sprintf`'s `%l`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MsgArg {
+    Text(String),
+    List(Vec<String>),
+}
+
+/// A translatable message with its `sprintf` arguments.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Msg {
+    id: String,
+    args: Vec<MsgArg>,
+}
+
+impl Msg {
+    pub fn new(id: &str) -> Self {
+        Self { id: id.to_owned(), args: Vec::new() }
+    }
+
+    /// Adds plain text arguments (`%s`, `%d`, `%1$s`, ...).
+    pub fn with(mut self, args: &[&str]) -> Self {
+        self.args.extend(args.iter().map(|a| MsgArg::Text((*a).to_owned())));
+        self
+    }
+
+    /// Adds a list argument for `%l` (`a, b, and c`).
+    pub fn with_list(mut self, items: &[&str]) -> Self {
+        self.args.push(MsgArg::List(items.iter().map(|i| (*i).to_owned()).collect()));
+        self
+    }
+
+    /// The message in the site's language.
+    pub fn render(&self, site: &Site) -> String {
+        let template = site.tr(&self.id);
+        let args: Vec<String> = self
+            .args
+            .iter()
+            .map(|a| match a {
+                MsgArg::Text(t) => t.clone(),
+                MsgArg::List(items) => list_and(site, items),
+            })
+            .collect();
+        let template = template.replace("%2$l", "%2$s").replace("%1$l", "%1$s");
+        let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+        rustpress_core::i18n::sprintf(&template, &refs)
+    }
+}
+
+impl From<&str> for Msg {
+    fn from(id: &str) -> Self {
+        Msg::new(id)
+    }
+}
+
+impl From<&String> for Msg {
+    fn from(id: &String) -> Self {
+        Msg::new(id)
+    }
+}
+
+/// `wp_sprintf_l()`: `a and b`, `a, b, and c`, with the separators of the language.
+pub fn list_and(site: &Site, items: &[String]) -> String {
+    let separator = |template: &str| rustpress_core::i18n::sprintf(&site.tr(template), &["", ""]);
+    match items {
+        [] => String::new(),
+        [one] => one.clone(),
+        [a, b] => format!("{a}{}{b}", separator("%1$s and %2$s")),
+        [rest @ .., last] => {
+            let between = separator("%1$s, %2$s");
+            format!("{}{}{last}", rest.join(&between), separator("%1$s, and %2$s"))
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ParamError {
+    param: String,
+    message: Msg,
+    code: String,
+    /// The `WP_Error` data of the detail (the forbidden status case).
+    data: Value,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RestError {
     pub code: String,
-    pub message: String,
+    pub message: Msg,
     pub status: u16,
-    /// Extra members of `data` after `status` (`params`, `details`).
-    extra: Vec<(String, Value)>,
+    param: Option<Box<ParamError>>,
 }
 
 impl RestError {
-    pub fn new(code: &str, message: &str, status: u16) -> Self {
-        Self { code: code.to_owned(), message: message.to_owned(), status, extra: Vec::new() }
+    pub fn new(code: &str, message: impl Into<Msg>, status: u16) -> Self {
+        Self { code: code.to_owned(), message: message.into(), status, param: None }
     }
 
     /// `rest_invalid_param` for one parameter.
-    pub fn invalid_param(param: &str, message: &str, code: &str) -> Self {
-        let mut error = Self::new("rest_invalid_param", &format!("Invalid parameter(s): {param}"), 400);
-        error.extra.push(("params".into(), json!({ param: message })));
-        error.extra.push(("details".into(), json!({ param: {"code": code, "message": message, "data": null} })));
-        error
+    pub fn invalid_param(param: &str, message: impl Into<Msg>, code: &str) -> Self {
+        Self::invalid_param_with_data(param, message, code, Value::Null)
     }
 
     /// `rest_invalid_param` whose detail carries its own `WP_Error` data (the forbidden status case).
-    pub fn invalid_param_with_data(param: &str, message: &str, code: &str, data: Value) -> Self {
-        let mut error = Self::invalid_param(param, message, code);
-        error.extra[1] = ("details".into(), json!({ param: {"code": code, "message": message, "data": data} }));
+    pub fn invalid_param_with_data(param: &str, message: impl Into<Msg>, code: &str, data: Value) -> Self {
+        let mut error = Self::new("rest_invalid_param", Msg::new("Invalid parameter(s): %s").with(&[param]), 400);
+        error.param = Some(Box::new(ParamError { param: param.to_owned(), message: message.into(), code: code.to_owned(), data }));
         error
     }
 
-    pub fn to_value(&self) -> Value {
+    /// Whether the route''s permission check let the request through, i.e. the error comes from
+    /// validating parameters or from the endpoint itself. WordPress then still sends `Allow: GET`
+    /// (`rest_send_allow_header()`); errors of the permission check and unknown routes have none.
+    pub fn passed_permission_check(&self) -> bool {
+        !matches!(
+            self.code.as_str(),
+            "rest_no_route"
+                | "rest_forbidden_context"
+                | "rest_cannot_read"
+                | "rest_cannot_read_post"
+                | "rest_post_invalid_id"
+                | "rest_post_incorrect_password"
+                | "rest_post_invalid_parent"
+                | "rest_comment_invalid_id"
+                | "rest_term_invalid"
+                | "rest_user_invalid_id"
+                | "rest_user_cannot_view"
+                | "rest_not_logged_in"
+        )
+    }
+
+    pub fn to_value(&self, site: &Site) -> Value {
         let mut data = Map::new();
         data.insert("status".into(), Value::from(self.status));
-        for (key, value) in &self.extra {
-            data.insert(key.clone(), value.clone());
+        if let Some(p) = &self.param {
+            let message = p.message.render(site);
+            data.insert("params".into(), json!({ p.param.as_str(): message }));
+            data.insert("details".into(), json!({ p.param.as_str(): {"code": p.code, "message": message, "data": p.data} }));
         }
-        json!({"code": self.code, "message": self.message, "data": Value::Object(data)})
+        json!({"code": self.code, "message": self.message.render(site), "data": Value::Object(data)})
     }
 }

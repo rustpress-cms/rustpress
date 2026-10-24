@@ -1,6 +1,6 @@
 //! `core/template-part` and `core/pattern`.
 
-use rustpress_core::formatting::{esc_attr, wptexturize};
+use rustpress_core::formatting::esc_attr;
 
 use crate::Result;
 use crate::content::context_for_post;
@@ -40,7 +40,7 @@ pub(super) async fn template_part(bc: &BlockCtx<'_>) -> Result<String> {
     }
     let rendered = bc.env.render_markup(&part.content, &root_context(bc)).await;
     bc.env.with_state(|s| s.active_patterns.remove(&format!("part:{id}")));
-    let content = wptexturize(&rendered?);
+    let content = bc.env.site.texturize(&rendered?);
     let content = crate::images::filter_content_tags(bc.env, &content, &format!("template_part_{area}")).await?;
 
     let requested = bc.attr_str("tagName").filter(|t| !t.is_empty() && t.chars().all(|c| c.is_ascii_alphanumeric()));

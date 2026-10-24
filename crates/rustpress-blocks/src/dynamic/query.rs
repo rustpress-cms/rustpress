@@ -261,10 +261,10 @@ pub(super) async fn query_title(bc: &BlockCtx<'_>) -> Result<String> {
         title = archive_title(bc);
     }
     if is_search {
-        title = "Search results".to_owned();
+        title = bc.env.site.tr("Search results");
         if bc.attrs.get("showSearchTerm").is_some_and(|v| !crate::style_engine::is_empty(v)) {
             let term = q.vars.get("s").unwrap_or("");
-            title = format!("Search results for: &#8220;{}&#8221;", esc_attr(term));
+            title = rustpress_core::i18n::sprintf(&bc.env.site.tr("Search results for: &#8220;%s&#8221;"), &[&esc_attr(term)]);
         }
     }
     if kind == "post-type" {
@@ -285,9 +285,9 @@ fn archive_title(bc: &BlockCtx<'_>) -> String {
     let site = bc.env.site;
     let show_prefix = bc.attrs.get("showPrefix").and_then(Value::as_bool).unwrap_or(true);
     let (title, prefix) = match &q.queried {
-        Queried::Term(term) if f.is_category => (term.name.clone(), "Category:".to_owned()),
-        Queried::Term(term) if f.is_tag => (term.name.clone(), "Tag:".to_owned()),
-        Queried::User(user) if f.is_author => (user.display_name.clone(), "Author:".to_owned()),
+        Queried::Term(term) if f.is_category => (term.name.clone(), site.trx("Category:", "category archive title prefix")),
+        Queried::Term(term) if f.is_tag => (term.name.clone(), site.trx("Tag:", "tag archive title prefix")),
+        Queried::User(user) if f.is_author => (user.display_name.clone(), site.trx("Author:", "author archive title prefix")),
         Queried::Term(term) if f.is_tax => (term.name.clone(), format!("{}:", term.taxonomy)),
         _ if f.is_year || f.is_month || f.is_day => {
             let vars = &q.vars;
@@ -295,14 +295,14 @@ fn archive_title(bc: &BlockCtx<'_>) -> String {
             let month = vars.u64("monthnum").unwrap_or(0) as u32;
             let day = vars.u64("day").unwrap_or(0) as u32;
             let first = q.posts.first();
-            let date_format = if f.is_day { "F j, Y" } else if f.is_month { "F Y" } else { "Y" };
+            let date_format = if f.is_day { site.trx("F j, Y", "daily archives date format") } else if f.is_month { site.trx("F Y", "monthly archives date format") } else { site.trx("Y", "yearly archives date format") };
             let ts = first
                 .and_then(|p| site.timezone.local_timestamp(&p.post_date))
                 .or_else(|| site.timezone.local_timestamp(&format!("{year:04}-{:02}-{:02} 00:00:00", month.max(1), day.max(1))));
-            let title = ts.map(|ts| site.timezone.format(date_format, ts)).unwrap_or_default();
-            (title, if f.is_day { "Day:" } else if f.is_month { "Month:" } else { "Year:" }.to_owned())
+            let title = ts.map(|ts| site.date(&date_format, ts)).unwrap_or_default();
+            (title, site.trx(if f.is_day { "Day:" } else if f.is_month { "Month:" } else { "Year:" }, "date archive title prefix"))
         }
-        _ => ("Archives".to_owned(), String::new()),
+        _ => (site.tr("Archives"), String::new()),
     };
     if show_prefix && !prefix.is_empty() {
         format!("{prefix} <span>{}</span>", esc_html_title(&title))
@@ -324,7 +324,7 @@ pub(super) fn query_pagination(bc: &BlockCtx<'_>) -> Result<String> {
         return Ok(String::new());
     }
     let class = if bc.attrs.get("style").and_then(|s| s.get("elements")).and_then(|e| e.get("link")).and_then(|l| l.get("color")).and_then(|c| c.get("text")).is_some_and(|v| !v.is_null()) { "has-link-color" } else { "" };
-    let wrapper = bc.wrapper_attributes(&[("aria-label", "Pagination".to_owned()), ("class", class.to_owned())]);
+    let wrapper = bc.wrapper_attributes(&[("aria-label", bc.env.site.tr("Pagination")), ("class", class.to_owned())]);
     Ok(format!("<nav {wrapper}>{}</nav>", bc.content))
 }
 
@@ -357,7 +357,7 @@ pub(super) async fn pagination_link(bc: &BlockCtx<'_>, is_next: bool) -> Result<
     let key = page_key(bc);
     let direction = if is_next { "next" } else { "previous" };
     let mut wrapper = bc.wrapper_attributes(&[]);
-    let (mut label, text) = label_for(bc, if is_next { "Next Page" } else { "Previous Page" });
+    let (mut label, text) = label_for(bc, &bc.env.site.tr(if is_next { "Next Page" } else { "Previous Page" }));
     let arrow = pagination_arrow(bc, is_next);
     if label.is_empty() {
         wrapper.push_str(&format!(" aria-label=\"{text}\""));

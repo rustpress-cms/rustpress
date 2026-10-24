@@ -130,7 +130,7 @@ impl Rest<'_> {
         data.insert("author_url".into(), Value::from(comment.comment_author_url.clone()));
         data.insert("date".into(), Value::from(rfc3339(&comment.comment_date)));
         data.insert("date_gmt".into(), Value::from(rfc3339(&comment.comment_date_gmt)));
-        data.insert("content".into(), json!({"rendered": comment_text(&comment.comment_content)}));
+        data.insert("content".into(), json!({"rendered": comment_text(self.site, &comment.comment_content)}));
         data.insert("link".into(), Value::from(link));
         data.insert("status".into(), Value::from("approved"));
         let kind = if comment.comment_type.is_empty() { "comment" } else { comment.comment_type.as_str() };

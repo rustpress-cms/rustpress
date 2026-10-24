@@ -16,7 +16,7 @@ pub trait PhpHost {
     fn home_url(&self, path: &str) -> String;
     fn site_url(&self, path: &str) -> String;
     /// `__( $text, $domain )` and friends; the default is "no translation".
-    fn translate(&self, text: &str, _context: Option<&str>) -> String {
+    fn translate(&self, text: &str, _context: Option<&str>, _domain: &str) -> String {
         text.to_owned()
     }
 }
@@ -374,7 +374,7 @@ impl Parser<'_> {
         let string = |s: String| Ok(Value::Str(s));
         match name {
             "__" | "_e" | "esc_html__" | "esc_html_e" | "esc_attr__" | "esc_attr_e" => {
-                let text = host.translate(arg(0), None);
+                let text = host.translate(arg(0), None, arg(1));
                 let value = match name {
                     "esc_html__" | "esc_html_e" => esc_html(&text),
                     "esc_attr__" | "esc_attr_e" => esc_attr(&text),
@@ -383,7 +383,7 @@ impl Parser<'_> {
                 if name.ends_with("_e") { Ok(Value::Printed(value)) } else { string(value) }
             }
             "_x" | "_ex" | "esc_html_x" | "esc_attr_x" => {
-                let text = host.translate(arg(0), Some(arg(1)));
+                let text = host.translate(arg(0), Some(arg(1)), arg(2));
                 let value = match name {
                     "esc_html_x" => esc_html(&text),
                     "esc_attr_x" => esc_attr(&text),

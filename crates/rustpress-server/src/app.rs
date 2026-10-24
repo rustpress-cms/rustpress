@@ -145,7 +145,7 @@ async fn page(app: &App, uri: &axum::http::Uri, request_headers: &axum::http::He
     if result.flags.is_sitemap {
         match loaded.site.sitemap(&result).await? {
             SitemapOutput::Xml(xml) => return Ok(typed(StatusCode::OK, "application/xml; charset=UTF-8", xml)),
-            SitemapOutput::Stylesheet(xsl) => return Ok(typed(StatusCode::OK, "application/xml; charset=UTF-8", xsl.to_owned())),
+            SitemapOutput::Stylesheet(xsl) => return Ok(typed(StatusCode::OK, "application/xml; charset=UTF-8", xsl)),
             SitemapOutput::NotFound => result = result.into_404(),
         }
     }

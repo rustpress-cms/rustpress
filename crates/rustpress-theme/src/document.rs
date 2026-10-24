@@ -5,7 +5,7 @@
 use std::path::Path;
 
 use rustpress_blocks::{Registry, ThemeAccess};
-use rustpress_core::formatting::{capital_p_dangit, esc_attr, esc_html, esc_url, wptexturize};
+use rustpress_core::formatting::{capital_p_dangit, esc_attr, esc_html, esc_url};
 use rustpress_core::{Queried, QueryResult, Site};
 use serde_json::Value;
 
@@ -38,6 +38,9 @@ pub async fn body_classes(theme: &Theme, site: &Site, q: &QueryResult) -> Result
     let f = &q.flags;
     let mut c: Vec<String> = Vec::new();
     let mut push = |s: &str| c.push(s.to_owned());
+    if site.is_rtl() {
+        push("rtl");
+    }
     if f.is_front_page {
         push("home");
     }
@@ -179,9 +182,9 @@ pub async fn document_title(site: &Site, q: &QueryResult) -> Result<String> {
     let mut parts: Vec<String> = Vec::new();
     let mut site_name_last = true;
     if f.is_404 {
-        parts.push("Page not found".into());
+        parts.push(site.tr("Page not found"));
     } else if f.is_search {
-        parts.push(format!("Search Results for &#8220;{}&#8221;", esc_html(q.vars.get("s").unwrap_or(""))));
+        parts.push(rustpress_core::i18n::sprintf(&site.tr("Search Results for &#8220;%s&#8221;"), &[&esc_html(q.vars.get("s").unwrap_or(""))]));
     } else if f.is_front_page && !f.is_page {
         parts.push(s.blogname.clone());
         if !s.blogdescription.is_empty() {
@@ -208,20 +211,20 @@ pub async fn document_title(site: &Site, q: &QueryResult) -> Result<String> {
         }
     } else if f.is_date {
         let ts = q.posts.first().and_then(|p| site.timezone.local_timestamp(&p.post_date));
-        let format = if f.is_day { "F j, Y" } else if f.is_month { "F Y" } else { "Y" };
+        let format = if f.is_day { site.options.string("date_format", "F j, Y") } else if f.is_month { site.trx("F Y", "monthly archives date format") } else { site.trx("Y", "yearly archives date format") };
         if let Some(ts) = ts {
-            parts.push(site.timezone.format(format, ts));
+            parts.push(site.date(&format, ts));
         }
     }
     let page = q.vars.u64("page").filter(|p| *p >= 2).or_else(|| (q.paged >= 2).then_some(q.paged));
     if let Some(page) = page.filter(|_| !f.is_404) {
-        parts.push(format!("Page {page}"));
+        parts.push(rustpress_core::i18n::sprintf(&site.tr("Page %s"), &[&page.to_string()]));
     }
     if site_name_last && !(f.is_front_page && parts.is_empty()) {
         parts.push(s.blogname.clone());
     }
     let title = parts.join(" - ");
-    let title = wptexturize(&title);
+    let title = site.texturize(&title);
     Ok(capital_p_dangit(&title, true))
 }
 
@@ -249,8 +252,29 @@ struct Sheet {
     inline: Option<String>,
     /// Inline styles added to the handle (`wp_add_inline_style()`), e.g. by `register_block_style()`.
     extra: Vec<String>,
+    /// Right-to-left languages print `<handle>-rtl-css` with this URL instead of the stylesheet's own.
+    rtl_link: Option<String>,
 }
 
+/// The right-to-left variant of a stylesheet (`style.min.css` -> `style-rtl.min.css`): its file and URL,
+/// if the language is right-to-left and the file exists.
+fn rtl_variant(rtl: bool, path: &std::path::Path, url: &str) -> Option<(std::path::PathBuf, String)> {
+    if !rtl {
+        return None;
+    }
+    let with_rtl = |text: &str| -> String {
+        if let Some(stem) = text.strip_suffix(".min.css") { format!("{stem}-rtl.min.css") } else if let Some(stem) = text.strip_suffix(".css") { format!("{stem}-rtl.css") } else { text.to_owned() }
+    };
+    let candidate = std::path::PathBuf::from(with_rtl(&path.to_string_lossy()));
+    if !candidate.is_file() {
+        return None;
+    }
+    let swapped = match url.split_once('?') {
+        Some((base, query)) => format!("{}?{query}", with_rtl(base)),
+        None => with_rtl(url),
+    };
+    Some((candidate, swapped))
+}
 fn script_modules(wp_root: &Path, site: &Site, ids: &[String]) -> (String, String, String) {
     // Parse `script-modules-packages.php` (entries of a PHP array literal).
     let text = read(&wp_root.join("wp-includes").join("assets").join("script-modules-packages.php")).unwrap_or_default();
@@ -492,6 +516,7 @@ pub async fn render_document(theme: &Theme, site: &Site, query: &QueryResult, re
     let wp_root = &theme.wp_root;
     let version = wp_version(wp_root);
     let includes_url = site.site_url("wp-includes");
+    let rtl = site.is_rtl();
 
     // --- stylesheets, in the order WordPress prints them -------------------
     let mut sheets: Vec<Sheet> = Vec::new();
@@ -508,12 +533,19 @@ pub async fn render_document(theme: &Theme, site: &Site, query: &QueryResult, re
         let Some(slug) = handle.strip_prefix("wp-block-") else { continue };
         let path = registry.blocks_dir().join(slug).join("style.min.css");
         if path.is_file() {
-            sheets.push(Sheet { id: handle.clone(), file: Some((path, format!("{includes_url}/blocks/{slug}/style.min.css?ver={version}"))), inline: None, extra: Vec::new() });
+            // Block styles are read from the -rtl file, but name the usual URL as their source.
+            let url = format!("{includes_url}/blocks/{slug}/style.min.css?ver={version}");
+            let variant = rtl_variant(rtl, &path, &url);
+            let (path, rtl_link) = match variant {
+                Some((rtl_path, rtl_url)) => (rtl_path, Some(rtl_url)),
+                None => (path, None),
+            };
+            sheets.push(Sheet { id: handle.clone(), file: Some((path, url)), inline: None, extra: Vec::new(), rtl_link });
             // Stylesheets the theme enqueues for this block (`wp_enqueue_block_style()`) follow it.
             for extra in theme.block_stylesheets().iter().filter(|s| s.block.strip_prefix("core/") == Some(slug) && state.rendered_blocks.contains(&s.block)) {
                 if let Some(file) = theme.theme_file(&extra.path) {
                     let url = format!("{}/{}?ver={}", theme.template_directory_uri(), extra.path, theme.version());
-                    sheets.push(Sheet { id: extra.handle.clone(), file: Some((file, url)), inline: None, extra: Vec::new() });
+                    sheets.push(Sheet { id: extra.handle.clone(), file: Some((file, url)), inline: None, extra: Vec::new(), rtl_link: None });
                 }
             }
         }
@@ -521,11 +553,13 @@ pub async fn render_document(theme: &Theme, site: &Site, query: &QueryResult, re
     // With block style variations WordPress queues the emoji style later.
     let has_variations = state.inline_styles.iter().any(|(handle, _)| handle == "block-style-variation-styles");
     if !has_variations {
-        sheets.push(Sheet { id: "wp-emoji-styles".into(), file: None, inline: Some(EMOJI_CSS.into()), extra: Vec::new() });
+        sheets.push(Sheet { id: "wp-emoji-styles".into(), file: None, inline: Some(EMOJI_CSS.into()), extra: Vec::new(), rtl_link: None });
     }
     let common = wp_root.join("wp-includes").join("css").join("dist").join("block-library").join("common.min.css");
     if common.is_file() {
-        sheets.push(Sheet { id: "wp-block-library".into(), file: Some((common, format!("{includes_url}/css/dist/block-library/common.min.css?ver={version}"))), inline: None, extra: Vec::new() });
+        let url = format!("{includes_url}/css/dist/block-library/common.min.css?ver={version}");
+        let rtl_link = rtl_variant(rtl, &common, &url).map(|(_, rtl_url)| rtl_url);
+        sheets.push(Sheet { id: "wp-block-library".into(), file: Some((common, url)), inline: None, extra: Vec::new(), rtl_link });
     }
     // The inline CSS of the theme's block styles goes to the block's own stylesheet when it has one (and is
     // dropped if the block is not on the page), else to the common block stylesheet.
@@ -585,7 +619,7 @@ pub async fn render_document(theme: &Theme, site: &Site, query: &QueryResult, re
             }
             (Some(css), None) => styles.push_str(&format!("<style id=\"{}-inline-css\">\n{css}\n/*# sourceURL={}-inline-css */\n</style>\n", sheet.id, sheet.id)),
             (None, Some((_, url))) => {
-                styles.push_str(&format!("<link rel='stylesheet' id='{}-css' href='{}' media='all' />\n", sheet.id, url));
+                styles.push_str(&format!("<link rel='stylesheet' id='{}{}-css' href='{}' media='all' />\n", sheet.id, if sheet.rtl_link.is_some() { "-rtl" } else { "" }, sheet.rtl_link.as_deref().unwrap_or(url)));
                 if !sheet.extra.is_empty() {
                     styles.push_str(&format!("<style id=\"{id}-inline-css\">\n{}\n/*# sourceURL={id}-inline-css */\n</style>\n", sheet.extra.join("\n"), id = sheet.id));
                 }
@@ -650,7 +684,7 @@ pub async fn render_document(theme: &Theme, site: &Site, query: &QueryResult, re
     // --- head ------------------------------------------------------------
     let robots = robots_meta(site, query);
     let title = document_title(site, query).await?;
-    let lang = site.options.get("WPLANG").filter(|l| !l.is_empty()).map(|l| l.replace('_', "-")).unwrap_or_else(|| "en-US".to_owned());
+    let lang = site.language_tag();
     let classes = body_classes(theme, site, query).await?;
 
     let head = format!(
@@ -661,7 +695,8 @@ pub async fn render_document(theme: &Theme, site: &Site, query: &QueryResult, re
         discovery_links(site, query, &version).await?,
     );
     let html = format!(
-        "<!DOCTYPE html>\n<html lang=\"{}\">\n<head>\n\t{head}</head>\n\n<body class=\"{}\">\n\n{}\n{footer_scripts}</body>\n</html>\n",
+        "<!DOCTYPE html>\n<html {}lang=\"{}\">\n<head>\n\t{head}</head>\n\n<body class=\"{}\">\n\n{}\n{footer_scripts}</body>\n</html>\n",
+        if rtl { "dir=\"rtl\" " } else { "" },
         esc_attr(&lang),
         esc_attr(&classes.join(" ")),
         rendered.html

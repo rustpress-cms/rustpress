@@ -21,7 +21,7 @@ use rustpress_core::{QueryResult, Site};
 use rustpress_theme::Theme;
 use serde_json::{Map, Value};
 
-pub use error::RestError;
+pub use error::{Msg, RestError};
 pub use params::Params;
 
 #[derive(Debug, thiserror::Error)]
@@ -100,7 +100,10 @@ impl<'a> Rest<'a> {
             }
             Err(e) => {
                 headers.insert(1, ("Link".to_owned(), self.root_link()));
-                (e.status, e.to_value())
+                if e.passed_permission_check() {
+                    headers.push(("Allow".to_owned(), "GET".to_owned()));
+                }
+                (e.status, e.to_value(self.site))
             }
         };
         headers.push(("Vary".to_owned(), "Origin".to_owned()));
@@ -123,7 +126,7 @@ impl<'a> Rest<'a> {
         let segments: Vec<&str> = route.trim_start_matches('/').split('/').collect();
         let context = params.get("context").unwrap_or("view");
         if !matches!(context, "view" | "embed" | "edit") {
-            return Ok(Err(RestError::invalid_param("context", "context is not one of view, embed, and edit.", "rest_not_in_enum")));
+            return Ok(Err(RestError::invalid_param("context", Msg::new("%1$s is not one of %2$l.").with(&["context"]).with_list(&["view", "embed", "edit"]), "rest_not_in_enum")));
         }
         match segments.as_slice() {
             [""] => Ok(Ok(Resp::item(self.index()))),
@@ -213,7 +216,7 @@ impl<'a> Rest<'a> {
                 let href = entry.get("href").and_then(Value::as_str).unwrap_or_default();
                 results.push(match self.fetch_href(href).await? {
                     Ok(resp) => resp.data,
-                    Err(e) => e.to_value(),
+                    Err(e) => e.to_value(self.site),
                 });
             }
             // `count( array_filter( $embeds ) )`: empty collections do not count.

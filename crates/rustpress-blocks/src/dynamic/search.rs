@@ -184,8 +184,9 @@ fn color_classes(attrs: &Map<String, Value>) -> String {
 
 pub(super) fn search(bc: &BlockCtx<'_>) -> Result<String> {
     let mut attrs = bc.attrs.clone();
-    attrs.entry("label".to_owned()).or_insert_with(|| Value::from("Search"));
-    attrs.entry("buttonText".to_owned()).or_insert_with(|| Value::from("Search"));
+    let search_word = bc.env.site.tr("Search");
+    attrs.entry("label".to_owned()).or_insert_with(|| Value::from(search_word.clone()));
+    attrs.entry("buttonText".to_owned()).or_insert_with(|| Value::from(search_word.clone()));
     let attrs = &attrs;
 
     let input_id = bc.env.with_state(|s| s.unique_id("wp-block-search__input-"));
@@ -215,7 +216,7 @@ pub(super) fn search(bc: &BlockCtx<'_>) -> Result<String> {
     let border_classes = border_color_classes(attrs);
 
     // <label>
-    let label_html = non_empty(attrs, "label").unwrap_or("Search");
+    let label_html = non_empty(attrs, "label").unwrap_or(&search_word);
     let mut label = TagEditor::first(&format!("<label {}>{}</label>", inline.label, label_html)).expect("label tag");
     label.set_attribute("for", &input_id);
     label.add_class("wp-block-search__label");
@@ -290,7 +291,7 @@ pub(super) fn search(bc: &BlockCtx<'_>) -> Result<String> {
             editor.set_attribute("data-wp-bind--aria-expanded", "context.isSearchInputVisible");
             editor.set_attribute("data-wp-bind--type", "state.type");
             editor.set_attribute("data-wp-on--click", "actions.openSearchInput");
-            editor.set_attribute("aria-label", "Expand search field");
+            editor.set_attribute("aria-label", &bc.env.site.tr("Expand search field"));
             editor.set_attribute("aria-controls", &format!("wp-block-search__input-{input_id}"));
             editor.set_attribute("aria-expanded", "false");
             editor.set_attribute("type", "button");
@@ -312,8 +313,8 @@ pub(super) fn search(bc: &BlockCtx<'_>) -> Result<String> {
         let context = serde_json::json!({
             "isSearchInputVisible": false,
             "inputId": input_id,
-            "ariaLabelExpanded": "Submit Search",
-            "ariaLabelCollapsed": "Expand search field",
+            "ariaLabelExpanded": bc.env.site.tr("Submit Search"),
+            "ariaLabelCollapsed": bc.env.site.tr("Expand search field"),
         });
         directives = format!(
             "\n\t\t data-wp-interactive=\"core/search\"\n\t\t data-wp-context='{}'\n\t\t data-wp-class--wp-block-search__searchfield-hidden=\"!context.isSearchInputVisible\"\n\t\t data-wp-on--keydown=\"actions.handleSearchKeydown\"\n\t\t data-wp-on--focusout=\"actions.handleSearchFocusout\"\n\t\t",
