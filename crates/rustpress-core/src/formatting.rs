@@ -363,12 +363,24 @@ pub fn wptexturize_with(text: &str, rules: &Texturize) -> String {
         return String::new();
     }
     let no_texturize_tags = ["pre", "code", "kbd", "style", "script", "tt"];
+    let no_texturize_shortcodes = ["code"];
     let mut stack: Vec<String> = Vec::new();
+    let mut shortcode_stack: Vec<String> = Vec::new();
     let mut out = String::with_capacity(text.len() + text.len() / 8);
+    let tagnames = crate::shortcodes::tags_in_closing(text, crate::shortcodes::CORE_TAGS);
 
-    // Split into tags/comments and text, like the first regexp of wptexturize.
+    // Split into tags/comments, shortcodes and text, like the first regexp of wptexturize.
     let mut rest = text;
     while !rest.is_empty() {
+        if let Some(len) = (rest.starts_with('[') && !tagnames.is_empty()).then(|| crate::shortcodes::texturize_delimiter_len(rest, &tagnames)).flatten() {
+            let piece = &rest[..len];
+            rest = &rest[len..];
+            out.push_str(piece);
+            if !piece.starts_with("[[") && !piece.ends_with("]]") {
+                pushpop_element(piece, &mut shortcode_stack, &no_texturize_shortcodes);
+            }
+            continue;
+        }
         if rest.starts_with('<') {
             let len = if rest.starts_with("<!--") {
                 rest[2..].find("-->").map_or(rest.len(), |e| 2 + e + 3)
@@ -386,10 +398,21 @@ pub fn wptexturize_with(text: &str, rules: &Texturize) -> String {
             }
             continue;
         }
-        let len = rest.find('<').unwrap_or(rest.len());
+        let mut len = rest.find('<').unwrap_or(rest.len());
+        if !tagnames.is_empty() {
+            // Text ends where a shortcode begins.
+            let mut at = 1;
+            while let Some(i) = rest.get(at..len).and_then(|s| s.find('[')) {
+                if crate::shortcodes::texturize_delimiter_len(&rest[at + i..], &tagnames).is_some() {
+                    len = at + i;
+                    break;
+                }
+                at += i + 1;
+            }
+        }
         let piece = &rest[..len];
         rest = &rest[len..];
-        if piece.trim().is_empty() || !stack.is_empty() {
+        if piece.trim().is_empty() || !stack.is_empty() || !shortcode_stack.is_empty() {
             out.push_str(piece);
             continue;
         }

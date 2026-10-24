@@ -247,9 +247,11 @@ async fn apply_the_content(env: &Env<'_>, post: &Arc<Post>, raw: &str, prefix: &
     out = env.site.texturize(&out);
     if !blocks {
         out = wpautop(&out);
+        out = rustpress_core::shortcodes::shortcode_unautop(&out);
     }
     out = capital_p_dangit(&out, false);
     out = format!("{prefix}{out}");
+    out = crate::shortcodes::do_shortcode(env, Some(post), &out).await?;
     if filter_tags { images::filter_content_tags(env, &out, "the_content").await } else { Ok(out) }
 }
 

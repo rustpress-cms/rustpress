@@ -1,10 +1,11 @@
 # Dumps RustPress and the reference WordPress of the real site (dev/up-soli.sh) for one path and
-# prints the first differences line by line.  Usage: dev/dd.ps1 -Path /
-param([string]$Path = '/', [int]$Shown = 3, [string]$Reference = '127.0.0.1:8081')
+# prints the first differences line by line.  Usage: dev/dd.ps1 -Path /   (-Main: the block-theme stack on :8080)
+param([string]$Path = '/', [int]$Shown = 3, [string]$Reference = '127.0.0.1:8081', [switch]$Main)
 $repo = Split-Path -Parent $PSScriptRoot
 Set-Location $repo
 $root = '\\wsl.localhost\Debian\home\yoshi\.local\share\containers\storage\volumes\rustpress-wp-soli\_data'
-cargo run -q -p rustpress-compat -- --reference $Reference --host localhost:8081 --db mysql://wordpress:wordpress@127.0.0.1:3306/soli_ref --wp-root $root --dump $Path 2>&1 | Select-String 'RustPress \d+|error'
+if ($Main) { cargo run -q -p rustpress-compat -- --dump $Path 2>&1 | Select-String 'RustPress \d+|error' } else {
+cargo run -q -p rustpress-compat -- --reference $Reference --host localhost:8081 --db mysql://wordpress:wordpress@127.0.0.1:3306/soli_ref --wp-root $root --dump $Path 2>&1 | Select-String 'RustPress \d+|error' }
 $a = [IO.File]::ReadAllLines("$repo\compat\dump\ours.txt"); $b = [IO.File]::ReadAllLines("$repo\compat\dump\theirs.txt")
 "ours $($a.Count) lines, theirs $($b.Count)"
 $i = 0; $j = 0; $count = 0

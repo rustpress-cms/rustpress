@@ -14,6 +14,7 @@ pub mod locale;
 pub mod options;
 pub mod query;
 pub mod rewrite;
+pub mod shortcodes;
 pub mod settings;
 pub mod site;
 pub mod sitemap;

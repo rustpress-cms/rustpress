@@ -151,6 +151,8 @@ pub struct State {
     pub id_counters: HashMap<String, u64>,
     /// Counter behind wp_unique_id().
     pub unique_counter: u64,
+    /// `static $instance` of `gallery_shortcode()`.
+    pub gallery_instances: u64,
     /// Patterns being rendered right now (recursion guard).
     pub active_patterns: HashSet<String>,
     /// Script modules that must be loaded on the page.

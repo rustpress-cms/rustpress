@@ -21,6 +21,7 @@ pub mod php_json;
 pub mod registry;
 pub mod render;
 pub mod safe_css;
+pub mod shortcodes;
 pub mod style_engine;
 pub mod supports;
 pub mod variations;
