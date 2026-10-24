@@ -162,7 +162,7 @@ impl<'a> Rest<'a> {
     }
 
     /// `Link: <api root>; rel="https://api.w.org/"`.
-    fn root_link(&self) -> String {
+    pub fn root_link(&self) -> String {
         format!("<{}>; rel=\"https://api.w.org/\"", self.rest_url("/"))
     }
 

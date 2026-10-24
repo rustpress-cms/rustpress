@@ -137,16 +137,28 @@ impl<'a> GlobalStyles<'a> {
     /// Block rules are limited to `used_blocks` when given (WordPress only
     /// prints rules for blocks that appear on the page).
     pub fn stylesheet(&self, used_blocks: Option<&[String]>) -> String {
+        let handles: Option<Vec<String>> = used_blocks.map(|names| names.iter().map(|n| format!("wp-block-{}", n.trim_start_matches("core/"))).collect());
+        self.stylesheet_chunks(handles.as_deref()).join("
+")
+    }
+
+    /// The inline styles of the `global-styles` handle, in order: the main sheet, then one chunk
+    /// per block or element node whose style handle is on the page
+    /// (`wp_add_global_styles_for_blocks()`). Empty chunks are dropped; `print_inline_style()`
+    /// joins the rest with newlines.
+    pub fn stylesheet_chunks(&self, handles: Option<&[String]>) -> Vec<String> {
         let settings = self.settings();
         let styles = self.json.styles();
-        let mut css = String::new();
-        css.push_str(&self.variables(&settings));
-        css.push_str(&self.block_variables(&settings));
-        css.push_str(&self.root_rules(&settings, &styles));
-        css.push_str(&self.root_styles(&settings, &styles));
-        css.push_str(&self.preset_classes(&settings));
-        css.push_str(&self.block_styles(&settings, &styles, used_blocks));
-        css
+        let mut main = String::new();
+        main.push_str(&self.variables(&settings));
+        main.push_str(&self.block_variables(&settings));
+        main.push_str(&self.root_rules(&settings, &styles));
+        main.push_str(&self.root_styles(&settings, &styles));
+        main.push_str(&self.preset_classes(&settings));
+        let mut chunks = vec![main];
+        chunks.extend(self.block_chunks(&settings, &styles, handles));
+        chunks.retain(|c| !c.is_empty());
+        chunks
     }
 
     // ----------------------------------------------------------- presets
@@ -206,7 +218,7 @@ impl<'a> GlobalStyles<'a> {
         if let Some(custom) = settings.get("custom").and_then(Value::as_object) {
             flatten_custom(custom, "--wp--custom", &mut vars);
         }
-        if vars.is_empty() { String::new() } else { format!(":root{{{vars}}}\n") }
+        if vars.is_empty() { String::new() } else { format!(":root{{{vars}}}") }
     }
 
     fn block_variables(&self, settings: &Value) -> String {
@@ -222,7 +234,7 @@ impl<'a> GlobalStyles<'a> {
                 }
             }
             if !vars.is_empty() {
-                out.push_str(&format!("{}{{{vars}}}\n", block_class(name)));
+                out.push_str(&format!("{}{{{vars}}}", block_class(name)));
             }
         }
         out
@@ -259,29 +271,29 @@ impl<'a> GlobalStyles<'a> {
             if let Some(w) = wide {
                 css.push_str(&format!("--wp--style--global--wide-size: {w};"));
             }
-            css.push_str(" }\n");
+            css.push_str(" }");
         }
-        css.push_str(":where(body) { margin: 0; }\n");
+        css.push_str(":where(body) { margin: 0; }");
 
         let aware = settings.get("useRootPaddingAwareAlignments").and_then(Value::as_bool).unwrap_or(false);
         if aware {
-            css.push_str(".wp-site-blocks { padding-top: var(--wp--style--root--padding-top); padding-bottom: var(--wp--style--root--padding-bottom); }\n");
-            css.push_str(".has-global-padding { padding-right: var(--wp--style--root--padding-right); padding-left: var(--wp--style--root--padding-left); }\n");
-            css.push_str(".has-global-padding > .alignfull { margin-right: calc(var(--wp--style--root--padding-right) * -1); margin-left: calc(var(--wp--style--root--padding-left) * -1); }\n");
-            css.push_str(".has-global-padding :where(:not(.alignfull.is-layout-flow) > .has-global-padding:not(.wp-block-block, .alignfull)) { padding-right: 0; padding-left: 0; }\n");
-            css.push_str(".has-global-padding :where(:not(.alignfull.is-layout-flow) > .has-global-padding:not(.wp-block-block, .alignfull)) > .alignfull { margin-left: 0; margin-right: 0; }\n");
+            css.push_str(".wp-site-blocks { padding-top: var(--wp--style--root--padding-top); padding-bottom: var(--wp--style--root--padding-bottom); }");
+            css.push_str(".has-global-padding { padding-right: var(--wp--style--root--padding-right); padding-left: var(--wp--style--root--padding-left); }");
+            css.push_str(".has-global-padding > .alignfull { margin-right: calc(var(--wp--style--root--padding-right) * -1); margin-left: calc(var(--wp--style--root--padding-left) * -1); }");
+            css.push_str(".has-global-padding :where(:not(.alignfull.is-layout-flow) > .has-global-padding:not(.wp-block-block, .alignfull)) { padding-right: 0; padding-left: 0; }");
+            css.push_str(".has-global-padding :where(:not(.alignfull.is-layout-flow) > .has-global-padding:not(.wp-block-block, .alignfull)) > .alignfull { margin-left: 0; margin-right: 0; }");
         }
-        css.push_str(".wp-site-blocks > .alignleft { float: left; margin-right: 2em; }\n");
-        css.push_str(".wp-site-blocks > .alignright { float: right; margin-left: 2em; }\n");
-        css.push_str(".wp-site-blocks > .aligncenter { justify-content: center; margin-left: auto; margin-right: auto; }\n");
+        css.push_str(".wp-site-blocks > .alignleft { float: left; margin-right: 2em; }");
+        css.push_str(".wp-site-blocks > .alignright { float: right; margin-left: 2em; }");
+        css.push_str(".wp-site-blocks > .aligncenter { justify-content: center; margin-left: auto; margin-right: auto; }");
 
         let has_gap_support = settings.get("spacing").and_then(|s| s.get("blockGap")).is_some_and(|v| !v.is_null());
         let gap = styles.get("spacing").and_then(|s| s.get("blockGap")).and_then(Value::as_str);
         if let (true, Some(gap)) = (has_gap_support, gap) {
-            css.push_str(&format!(":where(.wp-site-blocks) > * {{ margin-block-start: {gap}; margin-block-end: 0; }}\n"));
-            css.push_str(":where(.wp-site-blocks) > :first-child { margin-block-start: 0; }\n");
-            css.push_str(":where(.wp-site-blocks) > :last-child { margin-block-end: 0; }\n");
-            css.push_str(&format!(":root {{ --wp--style--block-gap: {gap}; }}\n"));
+            css.push_str(&format!(":where(.wp-site-blocks) > * {{ margin-block-start: {gap}; margin-block-end: 0; }}"));
+            css.push_str(":where(.wp-site-blocks) > :first-child { margin-block-start: 0; }");
+            css.push_str(":where(.wp-site-blocks) > :last-child { margin-block-end: 0; }");
+            css.push_str(&format!(":root {{ --wp--style--block-gap: {gap}; }}"));
             for (kind, class) in LAYOUT_TYPES {
                 css.push_str(&layout_spacing_rules(kind, &format!(".{class}"), gap));
             }
@@ -363,21 +375,63 @@ impl<'a> GlobalStyles<'a> {
         (root, selectors)
     }
 
-    fn block_styles(&self, settings: &Value, styles: &Value, used_blocks: Option<&[String]>) -> String {
-        let mut css = String::new();
-        let Some(blocks) = styles.get("blocks").and_then(Value::as_object) else { return css };
+    /// The block nodes of `styles.blocks` as separate chunks: the block itself, then each element
+    /// and each pseudo-class of an element (`get_styles_block_nodes()`).
+    fn block_chunks(&self, settings: &Value, styles: &Value, handles: Option<&[String]>) -> Vec<String> {
+        let mut chunks = Vec::new();
+        let Some(blocks) = styles.get("blocks").and_then(Value::as_object) else { return chunks };
         for (name, node) in blocks {
-            if !node.is_object() || used_blocks.is_some_and(|used| !used.contains(name)) {
+            if !node.is_object() {
                 continue;
             }
-            css.push_str(&self.block_node(name, node, settings, None));
+            let on_page = match (handles, name.strip_prefix("core/")) {
+                (Some(handles), Some(short)) => handles.iter().any(|h| h.strip_prefix("wp-block-") == Some(short)),
+                _ => true,
+            };
+            if !on_page {
+                continue;
+            }
+            let (selector, _) = self.block_selector(name);
+            chunks.push(self.block_rules(name, node, settings, None));
+            let Some(elements) = node.get("elements").and_then(Value::as_object) else { continue };
+            for (element, element_node) in elements {
+                let Some((_, element_selector)) = ELEMENTS.iter().find(|(n, _)| n == element) else { continue };
+                if !element_node.is_object() {
+                    continue;
+                }
+                let combined = element_selector.split(',').map(|s| format!("{selector} {}", s.trim())).collect::<Vec<_>>().join(", ");
+                chunks.extend(self.element_chunks(element_node, &combined, settings));
+            }
         }
-        css
+        chunks
     }
 
-    /// All rules for one block node of `styles.blocks`. `scope` replaces the
-    /// block selector (used for style variations).
-    pub fn block_node(&self, name: &str, node: &Value, settings: &Value, scope: Option<&str>) -> String {
+    /// An element node followed by its pseudo-class nodes, one chunk each.
+    fn element_chunks(&self, node: &Value, selector: &str, settings: &Value) -> Vec<String> {
+        let mut chunks = Vec::new();
+        let mut base = String::new();
+        let declarations = self.declarations(node, settings, false);
+        if !declarations.is_empty() {
+            base.push_str(&format!(":root :where({selector}){{{}}}", ruleset(&declarations)));
+        }
+        if let Some(extra) = node.get("css").and_then(Value::as_str) {
+            base.push_str(&process_custom_css(extra, selector));
+        }
+        chunks.push(base);
+        for pseudo in PSEUDO_ORDER {
+            let Some(pseudo_node) = node.get(*pseudo) else { continue };
+            let declarations = self.declarations(pseudo_node, settings, false);
+            if declarations.is_empty() {
+                continue;
+            }
+            let with_pseudo = selector.split(',').map(|s| format!("{}{pseudo}", s.trim())).collect::<Vec<_>>().join(", ");
+            chunks.push(format!(":root :where({with_pseudo}){{{}}}", ruleset(&declarations)));
+        }
+        chunks
+    }
+
+    /// The rules of the block itself: declarations by feature selector, block gap layouts and custom CSS.
+    fn block_rules(&self, name: &str, node: &Value, settings: &Value, scope: Option<&str>) -> String {
         let mut css = String::new();
         let (root_selector, feature_selectors) = self.block_selector(name);
         let selector = scope.map(str::to_owned).unwrap_or(root_selector);
@@ -412,6 +466,15 @@ impl<'a> GlobalStyles<'a> {
         if let Some(extra) = node.get("css").and_then(Value::as_str) {
             css.push_str(&process_custom_css(extra, &selector));
         }
+        css
+    }
+
+    /// All rules for one block node of `styles.blocks`: the block and its elements. `scope` replaces the
+    /// block selector (used for style variations).
+    pub fn block_node(&self, name: &str, node: &Value, settings: &Value, scope: Option<&str>) -> String {
+        let mut css = self.block_rules(name, node, settings, scope);
+        let (root_selector, _) = self.block_selector(name);
+        let selector = scope.map(str::to_owned).unwrap_or(root_selector);
         if let Some(elements) = node.get("elements").and_then(Value::as_object) {
             for (element, element_selector) in ELEMENTS {
                 let Some(element_node) = elements.get(*element).filter(|n| n.is_object()) else { continue };
@@ -539,7 +602,7 @@ fn base_layout_styles() -> String {
         }
     }
     css.push_str("body .is-layout-flex{display: flex;}.is-layout-flex{flex-wrap: wrap;align-items: center;}.is-layout-flex > :is(*, div){margin: 0;}");
-    css.push_str("body .is-layout-grid{display: grid;}.is-layout-grid > :is(*, div){margin: 0;}\n");
+    css.push_str("body .is-layout-grid{display: grid;}.is-layout-grid > :is(*, div){margin: 0;}");
     css
 }
 

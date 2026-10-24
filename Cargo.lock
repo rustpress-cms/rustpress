@@ -1252,6 +1252,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "rustpress-compat"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "chrono",
+ "futures",
+ "http-body-util",
+ "regex",
+ "rustpress-server",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "toml",
+ "tower",
+]
+
+[[package]]
 name = "rustpress-core"
 version = "0.1.0"
 dependencies = [

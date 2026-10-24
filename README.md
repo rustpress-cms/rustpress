@@ -42,6 +42,18 @@ cargo test --workspace
 
 Ohne den Stack überspringen sich die Golden-Tests. Unter Windows muss Cargo in PowerShell laufen (Git-Bash's `link.exe` verdeckt den MSVC-Linker).
 
+### Kompatibilitätslauf
+
+`rustpress-compat` vergleicht RustPress mit dem Referenz-WordPress über viele URLs auf einmal (feste Proben, alles, was die Sitemaps und die REST-API der Referenz auflisten, die Dateien der Startseite) und schreibt einen Markdown-Bericht. Verglichen werden Status, Header und je nach Art Body (HTML-Dokumente: Titel, Body-Klassen, jedes Element des Heads, Body, Footer, zuletzt Byte für Byte), Feeds, Sitemaps und REST-Antworten.
+
+```sh
+cargo run -p rustpress-compat -- --report compat/reports/twentytwentyfive.md
+dev/compat.ps1                      # mehrere Themes nacheinander auf der Referenz aktivieren
+cargo run -p rustpress-compat -- --dump /ueber-uns/   # beide Antworten nach compat/dump/ schreiben
+```
+
+Abweichungen, die verstanden und bewusst akzeptiert sind, stehen mit Begründung in `compat/known.toml`; nur andere Abweichungen lassen den Lauf fehlschlagen. Die Berichte liegen unter `compat/reports/`.
+
 ## Crates
 
 | Crate | Aufgabe |
@@ -53,5 +65,6 @@ Ohne den Stack überspringen sich die Golden-Tests. Unter Windows muss Cargo in 
 | `rustpress-theme` | `theme.json`, Templates, Global Styles, Dokument und Feeds |
 | `rustpress-rest` | REST-API (lesend) |
 | `rustpress-server` | axum-Server |
+| `rustpress-compat` | Vergleichslauf gegen ein echtes WordPress mit Bericht |
 
 Lizenz: GPL-2.0-or-later.

@@ -388,6 +388,23 @@ pub(super) async fn avatar(bc: &BlockCtx<'_>) -> Result<String> {
     Ok(format!("<div {wrapper}>{avatar}</div>"))
 }
 
+// ------------------------------------------------------------ comments pagination
+
+/// `core/comments-pagination`: the wrapper around the previous/numbers/next blocks, which
+/// render nothing while all comments fit on one page (comments are not split into pages yet).
+pub(super) async fn comments_pagination(bc: &BlockCtx<'_>) -> Result<String> {
+    if bc.content.trim().is_empty() {
+        return Ok(String::new());
+    }
+    if global_post(bc).await?.is_some_and(|post| post_password_required(&post)) {
+        return Ok(String::new());
+    }
+    let has_link_color = bc.attrs.get("style").and_then(|s| s.get("elements")).and_then(|e| e.get("link")).and_then(|l| l.get("color")).and_then(|c| c.get("text")).is_some_and(|v| !v.is_null());
+    let class = if has_link_color { "has-link-color" } else { "" };
+    let wrapper = bc.wrapper_attributes(&[("aria-label", "Comments pagination".to_owned()), ("class", class.to_owned())]);
+    Ok(format!("<nav {wrapper}>{}</nav>", bc.content))
+}
+
 // --------------------------------------------------------------- comment form
 
 pub(super) async fn post_comments_form(bc: &BlockCtx<'_>) -> Result<String> {

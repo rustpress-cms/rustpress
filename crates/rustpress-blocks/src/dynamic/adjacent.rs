@@ -1,7 +1,7 @@
 //! `core/post-navigation-link`.
 
 use rustpress_core::formatting::esc_url;
-use rustpress_db::{Order, OrderBy, Post, PostQuery};
+use rustpress_db::Post;
 use serde_json::Value;
 
 use crate::Result;
@@ -10,19 +10,13 @@ use crate::render::BlockCtx;
 
 use super::global_post;
 
-/// `get_adjacent_post()` within the same post type, by publication date.
+/// `get_adjacent_post()` within the same post type, by publication date (then ID).
 async fn adjacent(bc: &BlockCtx<'_>, post: &Post, previous: bool) -> Result<Option<Post>> {
-    let site = bc.env.site;
-    // Compare against the stored local date; the DB layer has no "newer than" filter, so scan in date order.
-    let mut query = PostQuery {
-        post_types: vec![post.post_type.clone()],
-        order_by: OrderBy::Date,
-        order: if previous { Order::Desc } else { Order::Asc },
-        ..PostQuery::default()
-    };
-    query.exclude_ids.push(post.id);
-    let candidates = site.db.posts(&query).await?;
-    Ok(candidates.into_iter().find(|p| if previous { p.post_date < post.post_date } else { p.post_date > post.post_date }))
+    let db = &bc.env.site.db;
+    match db.adjacent_post_id(&post.post_type, &post.post_date, post.id, previous).await? {
+        Some(id) => Ok(db.post(id).await?),
+        None => Ok(None),
+    }
 }
 
 pub(super) async fn render(bc: &BlockCtx<'_>) -> Result<String> {

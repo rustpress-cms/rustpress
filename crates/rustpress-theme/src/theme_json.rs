@@ -171,6 +171,11 @@ impl ThemeJson {
     /// Like [`ThemeJson::new`], with block style variation partials
     /// (`styles/blocks/*.json`: `{"slug", "blockTypes": [...], "styles": {...}}`).
     pub fn with_partials(core: Value, parent: Option<Value>, child: Option<Value>, user: Option<Value>, partials: &[Value]) -> Self {
+        Self::with_layers(core, Value::Null, parent, child, user, partials)
+    }
+
+    /// Core defaults, then the styles blocks declare themselves (`blocks`), the theme and the user.
+    pub fn with_layers(core: Value, blocks: Value, parent: Option<Value>, child: Option<Value>, user: Option<Value>, partials: &[Value]) -> Self {
         let mut theme = Value::Object(Map::new());
         for layer in [parent, child].into_iter().flatten() {
             let mut layer = layer;
@@ -186,6 +191,9 @@ impl ThemeJson {
         opt_in_settings(&mut user);
 
         let mut merged = core.clone();
+        if blocks.is_object() {
+            deep_merge(&mut merged, &blocks);
+        }
         deep_merge(&mut merged, &theme);
         deep_merge(&mut merged, &user);
         Self { merged, core, theme, user }

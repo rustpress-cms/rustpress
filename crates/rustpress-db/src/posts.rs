@@ -330,6 +330,17 @@ impl Db {
         Ok(qb.build_query_scalar::<u64>().fetch_optional(&self.pool).await?)
     }
 
+    /// `get_adjacent_post()` without term filters: the published post of the same type that comes
+    /// directly before or after `(date, id)` in the order `post_date, ID`.
+    pub async fn adjacent_post_id(&self, post_type: &str, date: &str, id: u64, previous: bool) -> Result<Option<u64>> {
+        let (op, order) = if previous { ("<", "DESC") } else { (">", "ASC") };
+        let sql = format!(
+            "SELECT ID FROM {} WHERE (post_date {op} ? OR (post_date = ? AND ID {op} ?)) AND post_type = ? AND post_status = 'publish' ORDER BY post_date {order}, ID {order} LIMIT 1",
+            self.prefix.table("posts")
+        );
+        Ok(sqlx::query_scalar::<_, u64>(AssertSqlSafe(sql)).bind(date.to_owned()).bind(date.to_owned()).bind(id).bind(post_type.to_owned()).fetch_optional(&self.pool).await?)
+    }
+
     /// `wp_old_slug_redirect()` lookup: a post that once had this slug (`_wp_old_slug`).
     pub async fn post_by_old_slug(&self, name: &str, post_type: &str, year: Option<u32>, month: Option<u32>, day: Option<u32>) -> Result<Option<u64>> {
         let mut qb = QueryBuilder::<MySql>::new(format!(

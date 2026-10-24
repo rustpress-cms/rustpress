@@ -61,6 +61,10 @@ pub fn is_dynamic(name: &str) -> bool {
             | "core/comment-reply-link"
             | "core/avatar"
             | "core/post-comments-form"
+            | "core/comments-pagination"
+            | "core/comments-pagination-previous"
+            | "core/comments-pagination-next"
+            | "core/comments-pagination-numbers"
             | "core/post-navigation-link"
     )
 }
@@ -104,6 +108,8 @@ pub fn render<'a>(bc: &'a BlockCtx<'a>) -> BoxFuture<'a, Result<String>> {
             "core/comment-reply-link" => comments::comment_reply_link(bc).await,
             "core/avatar" => comments::avatar(bc).await,
             "core/post-comments-form" => comments::post_comments_form(bc).await,
+            "core/comments-pagination" => comments::comments_pagination(bc).await,
+            "core/comments-pagination-previous" | "core/comments-pagination-next" | "core/comments-pagination-numbers" => Ok(String::new()),
             "core/post-navigation-link" => adjacent::render(bc).await,
             _ => Ok(bc.content.clone()),
         }

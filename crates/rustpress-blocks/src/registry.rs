@@ -120,6 +120,56 @@ impl Registry {
         &self.blocks_dir
     }
 
+    /// The core blocks in registration order: the static blocks of `require-static-blocks.php`,
+    /// then the dynamic ones of `require-dynamic-blocks.php`.
+    pub fn registration_order(&self) -> Vec<String> {
+        let mut names = Vec::new();
+        if let Ok(text) = std::fs::read_to_string(self.blocks_dir.join("require-static-blocks.php")) {
+            for line in text.lines() {
+                if let Some(name) = line.trim().strip_prefix('\'').and_then(|l| l.split('\'').next()) {
+                    names.push(format!("core/{name}"));
+                }
+            }
+        }
+        if let Ok(text) = std::fs::read_to_string(self.blocks_dir.join("require-dynamic-blocks.php")) {
+            for line in text.lines() {
+                if let Some(file) = line.split("/blocks/").nth(1).and_then(|l| l.split(".php").next()) {
+                    names.push(format!("core/{file}"));
+                }
+            }
+        }
+        names
+    }
+
+    /// `WP_Theme_JSON_Resolver::get_block_data()`: the styles blocks declare themselves
+    /// (`supports.__experimentalStyle`), and an empty block gap for blocks with a default one.
+    pub fn block_data(&self) -> Value {
+        let mut blocks = Map::new();
+        for name in self.registration_order() {
+            let Some(block) = self.get(&name) else { continue };
+            if let Some(style) = block.support(&["__experimentalStyle"]) {
+                blocks.insert(name.clone(), style.clone());
+            }
+            if block.support(&["spacing", "blockGap", "__experimentalDefault"]).is_some() {
+                let entry = blocks.entry(name.clone()).or_insert_with(|| Value::Object(Map::new()));
+                if let Some(entry) = entry.as_object_mut() {
+                    let spacing = entry.entry("spacing").or_insert_with(|| Value::Object(Map::new()));
+                    if let Some(spacing) = spacing.as_object_mut() {
+                        spacing.entry("blockGap").or_insert(Value::Null);
+                    }
+                }
+            }
+        }
+        if blocks.is_empty() {
+            return Value::Object(Map::new());
+        }
+        let mut styles = Map::new();
+        styles.insert("blocks".to_owned(), Value::Object(blocks));
+        let mut root = Map::new();
+        root.insert("styles".to_owned(), Value::Object(styles));
+        Value::Object(root)
+    }
+
     pub fn get(&self, name: &str) -> Option<Arc<BlockType>> {
         let mut cache = self.cache.lock().expect("registry lock");
         if let Some(found) = cache.get(name) {

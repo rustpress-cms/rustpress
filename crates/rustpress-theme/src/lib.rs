@@ -2,7 +2,9 @@
 
 pub mod document;
 pub mod feed;
+pub mod functions_php;
 pub mod global_styles;
+pub mod head;
 pub mod page;
 pub mod phpt;
 pub mod theme;

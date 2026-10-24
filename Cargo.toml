@@ -8,6 +8,7 @@ members = [
     "crates/rustpress-theme",
     "crates/rustpress-rest",
     "crates/rustpress-server",
+    "crates/rustpress-compat",
 ]
 
 [workspace.package]
@@ -22,6 +23,7 @@ rustpress-core = { path = "crates/rustpress-core" }
 rustpress-blocks = { path = "crates/rustpress-blocks" }
 rustpress-theme = { path = "crates/rustpress-theme" }
 rustpress-rest = { path = "crates/rustpress-rest" }
+rustpress-server = { path = "crates/rustpress-server" }
 
 axum = "0.8"
 chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }

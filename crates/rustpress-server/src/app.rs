@@ -114,24 +114,33 @@ async fn page(app: &App, uri: &axum::http::Uri, request_headers: &axum::http::He
     if let Some(target) = canonical {
         // A relative `Location` (RFC 9110) keeps the client's own scheme and host, and
         // never trusts the `Host` header.
-        return Ok(redirect(&target));
+        // `WP::send_headers()` ran before the redirect and already set the content type.
+        let mut response = redirect(&target);
+        singular_headers(&mut response, &result, &loaded);
+        if !result.flags.is_feed {
+            response.headers_mut().insert(header::CONTENT_TYPE, HeaderValue::from_static("text/html; charset=UTF-8"));
+        }
+        return Ok(response);
     }
     if result.flags.is_feed {
         let request_uri = uri.path_and_query().map_or(path, |p| p.as_str());
         let Some(feed) = render_feed(&loaded.theme, &loaded.site, &result, &loaded.registry, request_uri).await? else {
             return Ok(text(StatusCode::NOT_FOUND, "This feed is not available.\n"));
         };
-        return Ok(feed_response(&feed, request_headers));
+        let mut response = feed_response(&feed, request_headers);
+        singular_headers(&mut response, &result, &loaded);
+        return Ok(with_api_link(response, &loaded));
     }
     let mut result = result;
     if result.flags.is_robots {
-        return Ok(typed(StatusCode::OK, "text/plain; charset=utf-8", loaded.site.robots_txt()));
+        return Ok(with_api_link(typed(StatusCode::OK, "text/plain; charset=utf-8", loaded.site.robots_txt()), &loaded));
     }
     if result.flags.is_favicon {
         let icon = loaded.site.site_url("wp-includes/images/w-logo-gray-white-bg.png");
         let mut response = redirect(&icon);
         *response.status_mut() = StatusCode::FOUND;
-        return Ok(response);
+        response.headers_mut().insert(header::CONTENT_TYPE, HeaderValue::from_static("text/html; charset=UTF-8"));
+        return Ok(with_api_link(response, &loaded));
     }
     if result.flags.is_sitemap {
         match loaded.site.sitemap(&result).await? {
@@ -147,7 +156,36 @@ async fn page(app: &App, uri: &axum::http::Uri, request_headers: &axum::http::He
     if document.status == 404 {
         no_cache(response.headers_mut());
     }
-    Ok(response)
+    singular_headers(&mut response, &result, &loaded);
+    Ok(with_api_link(response, &loaded))
+}
+
+/// `WP::send_headers()` for single posts: pingback discovery and no caching of protected posts.
+fn singular_headers(response: &mut Response<Body>, result: &rustpress_core::QueryResult, loaded: &Loaded) {
+    if !result.flags.is_singular() {
+        return;
+    }
+    let Some(post) = result.queried_post() else { return };
+    if post.ping_status == "open"
+        && let Ok(value) = HeaderValue::from_str(&loaded.site.site_url("xmlrpc.php"))
+    {
+        response.headers_mut().insert("x-pingback", value);
+    }
+    if !post.post_password.is_empty() {
+        no_cache(response.headers_mut());
+    }
+}
+
+/// `rest_output_link_header()`: front-end responses point to the REST API root.
+fn with_api_link(mut response: Response<Body>, loaded: &Loaded) -> Response<Body> {
+    if response.status() == StatusCode::NOT_MODIFIED {
+        return response;
+    }
+    let link = Rest::new(&loaded.site, &loaded.theme, &loaded.registry).root_link();
+    if let Ok(value) = HeaderValue::from_str(&link) {
+        response.headers_mut().insert(header::LINK, value);
+    }
+    response
 }
 
 /// `nocache_headers()` as WordPress sends them with a 404.

@@ -25,6 +25,8 @@ pub struct Feed {
     pub body: String,
     /// `Last-Modified` (`D, d M Y H:i:s GMT`); absent for password protected posts.
     pub last_modified: Option<String>,
+    /// The modification time conditional requests are compared with; set even when the response is not cacheable.
+    modified_at: String,
     pub etag: String,
     /// Password protected posts get `wp_get_nocache_headers()`.
     pub nocache: bool,
@@ -34,7 +36,7 @@ impl Feed {
     /// The conditional-GET decision of `WP::send_headers()`.
     pub fn not_modified(&self, if_none_match: Option<&str>, if_modified_since: Option<&str>) -> bool {
         let timestamp = |s: &str| chrono::DateTime::parse_from_rfc2822(s.trim()).map(|d| d.timestamp()).unwrap_or(0);
-        let ours = self.last_modified.as_deref().map_or(0, timestamp);
+        let ours = timestamp(&self.modified_at);
         let client = if_modified_since.map_or(0, timestamp);
         let etag_matches = if_none_match.is_some_and(|e| e == self.etag);
         if if_modified_since.is_some_and(|s| !s.trim().is_empty()) && if_none_match.is_some_and(|e| !e.is_empty()) {
@@ -263,7 +265,7 @@ pub async fn render_feed(theme: &Theme, site: &Site, q: &QueryResult, registry: 
         Kind::Atom => "application/atom+xml; charset=UTF-8",
     };
     let nocache = singular && q.posts.first().is_some_and(|p| !p.post_password.is_empty());
-    Ok(Some(Feed { content_type: content_type.to_owned(), body, last_modified: (!nocache).then_some(last_modified), etag, nocache }))
+    Ok(Some(Feed { content_type: content_type.to_owned(), body, modified_at: last_modified.clone(), last_modified: (!nocache).then_some(last_modified), etag, nocache }))
 }
 
 #[allow(clippy::too_many_arguments)]

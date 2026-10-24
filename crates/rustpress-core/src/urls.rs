@@ -288,27 +288,35 @@ impl Site {
     }
 }
 
-/// `add_query_arg( $key, $value, $url )`: sets or replaces one query parameter.
+/// `add_query_arg( $key, $value, $url )`: sets or replaces one query parameter. Like WordPress it
+/// parses and rebuilds the whole query: existing values are re-encoded (`%20` becomes `+`) and
+/// a parameter with an empty value loses its `=` (`?s=` becomes `?s`).
 pub fn add_query_arg(url: &str, key: &str, value: &str) -> String {
+    rebuild_query(url, key, Some(value))
+}
+
+/// `remove_query_arg( $key, $url )`.
+pub fn remove_query_arg(url: &str, key: &str) -> String {
+    rebuild_query(url, key, None)
+}
+
+fn rebuild_query(url: &str, key: &str, value: Option<&str>) -> String {
     let (before_fragment, fragment) = match url.split_once('#') {
         Some((a, b)) => (a, Some(b)),
         None => (url, None),
     };
     let (path, query) = before_fragment.split_once('?').unwrap_or((before_fragment, ""));
-    let mut pairs: Vec<(String, String)> = query
-        .split('&')
-        .filter(|p| !p.is_empty())
-        .map(|p| match p.split_once('=') {
-            Some((k, v)) => (k.to_owned(), v.to_owned()),
-            None => (p.to_owned(), String::new()),
-        })
-        .collect();
-    match pairs.iter_mut().find(|(k, _)| k == key) {
-        Some(pair) => pair.1 = value.to_owned(),
-        None => pairs.push((key.to_owned(), value.to_owned())),
+    let mut pairs: Vec<(String, String)> = crate::canonical::parse_qs(query).into_iter().map(|(k, v)| (k, crate::canonical::php_urlencode(&v))).collect();
+    match (pairs.iter().position(|(k, _)| k == key), value) {
+        (Some(at), Some(v)) => pairs[at].1 = v.to_owned(),
+        (Some(at), None) => {
+            pairs.remove(at);
+        }
+        (None, Some(v)) => pairs.push((key.to_owned(), v.to_owned())),
+        (None, None) => {}
     }
-    let query = pairs.iter().map(|(k, v)| format!("{k}={v}")).collect::<Vec<_>>().join("&");
-    let mut out = format!("{path}?{query}");
+    let query = pairs.iter().map(|(k, v)| if v.is_empty() { k.clone() } else { format!("{k}={v}") }).collect::<Vec<_>>().join("&");
+    let mut out = if query.is_empty() { path.to_owned() } else { format!("{path}?{query}") };
     if let Some(f) = fragment {
         out.push('#');
         out.push_str(f);
@@ -316,12 +324,6 @@ pub fn add_query_arg(url: &str, key: &str, value: &str) -> String {
     out
 }
 
-/// `remove_query_arg( $key, $url )`.
-pub fn remove_query_arg(url: &str, key: &str) -> String {
-    let Some((path, query)) = url.split_once('?') else { return url.to_owned() };
-    let kept: Vec<&str> = query.split('&').filter(|p| !p.is_empty() && p.split('=').next() != Some(key)).collect();
-    if kept.is_empty() { path.to_owned() } else { format!("{path}?{}", kept.join("&")) }
-}
 /// Removes a trailing `/page/N/`.
 fn strip_page_suffix(path: &str) -> String {
     let trimmed = path.trim_end_matches('/');

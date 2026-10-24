@@ -59,6 +59,7 @@ pub struct Theme {
     patterns: HashMap<String, PathBuf>,
     db_templates: HashMap<String, String>,
     db_parts: HashMap<String, String>,
+    block_style_inline: Vec<(String, String)>,
     pattern_cache: Mutex<HashMap<String, Option<String>>>,
 }
 
@@ -83,7 +84,8 @@ impl Theme {
         for dir in [&template_dir, &stylesheet_dir] {
             partials.extend(read_partials(&dir.join("styles").join("blocks")));
         }
-        let json = ThemeJson::with_partials(core, parent, child, user, &partials);
+        let blocks_data = Registry::new(wp_root.join("wp-includes").join("blocks")).block_data();
+        let json = ThemeJson::with_layers(core, blocks_data, parent, child, user, &partials);
 
         let mut part_areas = HashMap::new();
         for part in json.template_parts() {
@@ -98,6 +100,18 @@ impl Theme {
         }
 
         let (db_templates, db_parts) = load_db_templates(site, &stylesheet).await?;
+
+        // `register_block_style()` calls with inline CSS; a child theme's `functions.php` runs first.
+        let mut block_style_inline = Vec::new();
+        let mut dirs = vec![&stylesheet_dir];
+        if template_dir != stylesheet_dir {
+            dirs.push(&template_dir);
+        }
+        for dir in dirs {
+            if let Ok(php) = std::fs::read_to_string(dir.join("functions.php")) {
+                block_style_inline.extend(crate::functions_php::block_style_inline_styles(&php));
+            }
+        }
 
         let blocks_dir = wp_root.join("wp-includes").join("blocks");
         let content_url = join_url(&site.settings.siteurl, "wp-content");
@@ -122,6 +136,7 @@ impl Theme {
             patterns,
             db_templates,
             db_parts,
+            block_style_inline,
             pattern_cache: Mutex::new(HashMap::new()),
         })
     }
@@ -153,6 +168,11 @@ impl Theme {
     /// `theme.json` get `wp-embed-responsive` on `<body>`.
     pub fn supports_responsive_embeds(&self) -> bool {
         true
+    }
+
+    /// `(block name, CSS)` of the `inline_style` of the theme's registered block styles.
+    pub fn block_style_inline(&self) -> &[(String, String)] {
+        &self.block_style_inline
     }
 
     pub fn stylesheet_dir(&self) -> &Path {

@@ -51,12 +51,34 @@ impl Statics {
         if !is_static_candidate(&decoded) || !self.exists(&decoded) {
             return None;
         }
+        let etag = self.etag(&decoded);
+        if let Some(etag) = &etag
+            && request.headers().get(header::IF_NONE_MATCH).and_then(|v| v.to_str().ok()).is_some_and(|sent| sent.split(',').any(|candidate| candidate.trim().trim_start_matches("W/") == etag))
+        {
+            let mut response = Response::new(Body::empty());
+            *response.status_mut() = axum::http::StatusCode::NOT_MODIFIED;
+            if let Ok(value) = HeaderValue::from_str(etag) {
+                response.headers_mut().insert(header::ETAG, value);
+            }
+            return Some(response);
+        }
         let response = self.service.clone().oneshot(request).await.ok()?;
         let mut response = response.map(Body::new);
         if response.status().is_success() {
             response.headers_mut().entry(header::CACHE_CONTROL).or_insert(HeaderValue::from_static("public, max-age=86400"));
+            if let Some(value) = etag.as_deref().and_then(|e| HeaderValue::from_str(e).ok()) {
+                response.headers_mut().insert(header::ETAG, value);
+            }
         }
         Some(response)
+    }
+
+    /// Apache's default `ETag` (`FileETag MTime Size`): the size and the modification time in
+    /// microseconds, both in hex, so clients and caches see what the reference server sent.
+    fn etag(&self, decoded: &str) -> Option<String> {
+        let metadata = std::fs::metadata(self.root.join(decoded.trim_start_matches('/'))).ok()?;
+        let micros = metadata.modified().ok()?.duration_since(std::time::UNIX_EPOCH).ok()?.as_micros();
+        Some(format!("\"{:x}-{:x}\"", metadata.len(), micros))
     }
 
     fn exists(&self, decoded: &str) -> bool {

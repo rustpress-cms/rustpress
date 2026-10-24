@@ -1,0 +1,20 @@
+[package]
+name = "rustpress-compat"
+description = "Compares RustPress with a real WordPress over many URLs and reports the differences"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[dependencies]
+rustpress-server.workspace = true
+axum.workspace = true
+futures.workspace = true
+http-body-util.workspace = true
+regex.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+toml.workspace = true
+tower.workspace = true
+chrono.workspace = true
