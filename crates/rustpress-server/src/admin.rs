@@ -194,6 +194,7 @@ pub async fn login_page(loaded: &Loaded, writer: Option<&rustpress_db::Writer>, 
 }
 
 /// A file in `wp-admin` (`index.php`, `options-general.php`, ...).
+#[allow(clippy::too_many_arguments)]
 pub async fn admin_page(loaded: &Loaded, config: &Config, writer: Option<&rustpress_db::Writer>, file: &str, method_post: bool, request_uri: &str, query: &str, body: &str, headers: &HeaderMap) -> Response<Body> {
     let Some(parts) = &loaded.admin else { return plain(StatusCode::NOT_FOUND, "Not Found") };
     let themes = config.wp_root.join("wp-content").join("themes");

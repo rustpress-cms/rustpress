@@ -90,6 +90,7 @@ fn cookie(name: String, value: String, expires: Option<i64>, path: &str, secure:
 
 impl Auth {
     /// `wp_set_auth_cookie()`: the cookies of a new sign-in for `token`.
+    #[allow(clippy::too_many_arguments)]
     pub fn login_cookies(&self, user: &AuthUser, remember: bool, secure: bool, home_is_https: bool, token: &str, now: i64, expiration: i64, paths: &CookiePaths) -> Vec<SetCookie> {
         let expire = if remember { Some(expiration + 12 * 3600) } else { None };
         let secure_logged_in = secure && home_is_https;

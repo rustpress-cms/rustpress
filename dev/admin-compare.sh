@@ -3,6 +3,7 @@
 # diffs one wp-admin screen after normalizing nonces, times and ports.
 # Usage: dev/admin-compare.sh options-general.php [more screens]
 set -u
+export MSYS_NO_PATHCONV=1
 T="${TEMP:-/tmp}"
 login() { rm -f "$T/ac_$1.txt"; curl -s -c "$T/ac_$1.txt" -b "$T/ac_$1.txt" "http://localhost:$2/wp-login.php" -o /dev/null; curl -s -c "$T/ac_$1.txt" -b "$T/ac_$1.txt" -X POST "http://localhost:$2/wp-login.php" --data-urlencode log=rpadmin --data-urlencode pwd=rustpress-dev --data-urlencode testcookie=1 -o /dev/null; }
 # Only the frame and the content: from the wrapper to the footer (the head carries fonts and global styles RustPress leaves out).

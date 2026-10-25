@@ -74,12 +74,12 @@ fn screen_meta(help: &Help, label: &str) -> String {
 				<div id=\"contextual-help-columns\">
 					<div class=\"contextual-help-tabs\">
 						<ul>
-						{tabs}											</ul>
+						{tabs}													</ul>
 					</div>
 
 {sidebar}					
 					<div class=\"contextual-help-tabs-wrap\">
-						{panels}										</div>
+						{panels}												</div>
 				</div>
 			</div>
 				</div>

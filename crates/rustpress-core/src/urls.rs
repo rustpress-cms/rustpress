@@ -526,6 +526,18 @@ fn date_parts(date: &str) -> (String, String, String, String, String, String) {
     (part(0..4), part(5..7), part(8..10), part(11..13), part(14..16), part(17..19))
 }
 
+/// `http://host:port/path` -> `/path`: the part of a URL after its origin (`wp_parse_url( ..., PHP_URL_PATH )`
+/// kept for relative links such as the AJAX address).
+pub fn strip_origin(url: &str) -> String {
+    match url.split_once("://") {
+        Some((_, rest)) => match rest.find('/') {
+            Some(at) => rest[at..].trim_end_matches('/').to_owned(),
+            None => String::new(),
+        },
+        None => url.trim_end_matches('/').to_owned(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -560,17 +572,5 @@ mod tests {
     fn date_is_split_from_the_mysql_format() {
         let (y, mo, d, h, mi, s) = date_parts("2026-10-24 14:07:09");
         assert_eq!((y.as_str(), mo.as_str(), d.as_str(), h.as_str(), mi.as_str(), s.as_str()), ("2026", "10", "24", "14", "07", "09"));
-    }
-}
-
-/// `http://host:port/path` -> `/path`: the part of a URL after its origin (`wp_parse_url( ..., PHP_URL_PATH )`
-/// kept for relative links such as the AJAX address).
-pub fn strip_origin(url: &str) -> String {
-    match url.split_once("://") {
-        Some((_, rest)) => match rest.find('/') {
-            Some(at) => rest[at..].trim_end_matches('/').to_owned(),
-            None => String::new(),
-        },
-        None => url.trim_end_matches('/').to_owned(),
     }
 }

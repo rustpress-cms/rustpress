@@ -96,7 +96,8 @@ impl AdminMenu {
 
         // Posts, pages and the custom post types, in that order.
         let mut last_object_menu = 25u32;
-        let mut types: Vec<(String, String, String, Vec<(String, String)>, bool)> = Vec::new();
+        type TypeEntry = (String, String, String, Vec<(String, String)>, bool);
+        let mut types: Vec<TypeEntry> = Vec::new();
         types.push(("post".into(), site.post_type_label("post"), "dashicons-admin-post".into(), vec![("category".into(), site.taxonomy_label("category")), ("post_tag".into(), site.taxonomy_label("post_tag"))], false));
         types.push(("page".into(), site.post_type_label("page"), "dashicons-admin-page".into(), Vec::new(), true));
         for custom in &site.types.post_types {
@@ -104,7 +105,7 @@ impl AdminMenu {
                 continue;
             }
             let icon = custom.menu_icon.clone().unwrap_or_else(|| "dashicons-admin-post".to_owned());
-            let taxonomies = site.types.taxonomies.iter().filter(|t| t.object_types.iter().any(|o| *o == custom.name)).map(|t| (t.name.clone(), site.taxonomy_label(&t.name))).collect();
+            let taxonomies = site.types.taxonomies.iter().filter(|t| t.object_types.contains(&custom.name)).map(|t| (t.name.clone(), site.taxonomy_label(&t.name))).collect();
             types.push((custom.name.clone(), site.post_type_label(&custom.name), icon, taxonomies, custom.hierarchical));
         }
         for (name, label, icon, taxonomies, hierarchical) in types {

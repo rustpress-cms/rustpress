@@ -19,13 +19,13 @@ pub async fn role_names(ctx: &Ctx<'_>) -> Vec<(String, String)> {
     let Some(items) = value.as_array() else { return Vec::new() };
     items
         .iter()
-        .filter_map(|(slug, role)| {
+        .map(|(slug, role)| {
             let slug = match slug {
                 rustpress_phpser::Key::Str(s) => String::from_utf8_lossy(s).into_owned(),
                 rustpress_phpser::Key::Int(i) => i.to_string(),
             };
             let name = role.get("name").and_then(|n| n.as_str()).unwrap_or(&slug).to_owned();
-            Some((slug, name))
+            (slug, name)
         })
         .collect()
 }
@@ -213,9 +213,9 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         timezones::choice(site, &tzstring),
         rustpress_core::i18n::sprintf(&tr("Choose either a city in the same timezone as you or a %s (Coordinated Universal Time) time offset."), &["<abbr>UTC</abbr>"])
     ));
-    h.push_str(&format!("<p class=\"timezone-info\">\n\t<span id=\"utc-time\">\n\t{}\t</span>\n", rustpress_core::i18n::sprintf(&format!("{}\n", tr("Universal time is %s.")).trim_end_matches('\n').to_owned(), &[&format!("<code>{}</code>", site.date_utc(&format, ctx.env.now))])));
+    h.push_str(&format!("<p class=\"timezone-info\">\n\t<span id=\"utc-time\">\n\t{}\t</span>\n", rustpress_core::i18n::sprintf(&tr("Universal time is %s."), &[&format!("<code>{}</code>", site.date_utc(&format, ctx.env.now))])));
     if !site.options.string("timezone_string", "").is_empty() || !offset.is_empty() && offset.parse::<f64>().unwrap_or(0.0) != 0.0 {
-        h.push_str(&format!("<span id=\"local-time\">\n\t{}\t</span>\n", rustpress_core::i18n::sprintf(&tr("Local time is %s."), &[&format!("<code>{}</code>", site.date(&format, ctx.env.now))])));
+        h.push_str(&format!("	<span id=\"local-time\">\n\t{}\t</span>\n", rustpress_core::i18n::sprintf(&tr("Local time is %s."), &[&format!("<code>{}</code>", site.date(&format, ctx.env.now))])));
     }
     h.push_str("</p>\n\n");
     if check_zone_info && let Ok(zone) = tzstring.parse::<chrono_tz::Tz>() {
@@ -233,7 +233,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
             }
             None => tr("This timezone does not observe daylight saving time."),
         };
-        h.push_str(&format!("<p class=\"timezone-info\">\n<span>\n\t{status}\n\t<br />\n\t{next}\t</span>\n</p>\n"));
+        h.push_str(&format!("<p class=\"timezone-info\">\n<span>\n\t{status}\t<br />\n\t{next}\t</span>\n</p>\n"));
     }
     h.push_str("</td>\n</tr>\n\n");
 

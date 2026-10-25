@@ -117,6 +117,7 @@ async fn handle(axum::extract::State(app): axum::extract::State<Arc<App>>, reque
 }
 
 /// The routes of the administration area; the request comes back for everything else.
+#[allow(clippy::result_large_err)]
 async fn admin_route(app: &Arc<App>, request: Request<Body>) -> std::result::Result<Response<Body>, Request<Body>> {
     let path = request.uri().path().to_owned();
     let is_login = path.ends_with("/wp-login.php") || path == "/wp-login.php";

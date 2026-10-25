@@ -338,6 +338,6 @@ pub async fn handle(ctx: &Ctx<'_>) -> AdminResponse {
         errors.push(SettingsError { setting: "general".into(), code: "settings_updated".into(), message: ctx.tr("Settings saved."), kind: "success".into() });
     }
     let _ = writer.set_transient("settings_errors", &serialize_errors(&errors), 30, ctx.env.now).await;
-    let goback = with_settings_updated(&referer(ctx).unwrap_or_else(|| ctx.admin_url(&format!("options-{option_page}.php"))));
+    let goback = with_settings_updated(&referer(ctx).unwrap_or_else(|| ctx.request.request_uri.clone()));
     redirect(&goback)
 }
