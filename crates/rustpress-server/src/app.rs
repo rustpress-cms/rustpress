@@ -351,7 +351,7 @@ async fn rest_edit_route(app: &Arc<App>, request: Request<Body>) -> std::result:
         method = over.to_uppercase();
     }
     let is_read = matches!(method.as_str(), "GET" | "HEAD");
-    let has_nonce = parts.headers.contains_key("x-wp-nonce") || rest_query.contains("_wpnonce=");
+    let has_nonce = parts.headers.contains_key("x-wp-nonce") || parts.headers.contains_key("authorization") || rest_query.contains("_wpnonce=");
     if is_read && !has_nonce {
         return Err(Request::from_parts(parts, Body::empty()));
     }
@@ -376,8 +376,19 @@ async fn rest_edit_route(app: &Arc<App>, request: Request<Body>) -> std::result:
         _ => None,
     };
     let auth = crate::admin::rest_auth(&loaded, &parts.headers, &rest_query, form_nonce.as_deref()).await;
+    let mut app_password = None;
     let user = match auth {
         crate::admin::RestAuth::User(user) => Some(user),
+        crate::admin::RestAuth::AppPassword(user, uuid) => {
+            if let Some(writer) = app.writer.as_ref() {
+                let ip = parts.extensions.get::<axum::extract::ConnectInfo<std::net::SocketAddr>>().map(|c| c.0.ip().to_string());
+                rustpress_auth::app_passwords::record_usage(&loaded.site.db, writer, user.id, &uuid, ip.as_deref(), crate::admin::now()).await;
+            }
+            app_password = Some(uuid);
+            Some(user)
+        }
+        // WordPress answers as if nobody had signed in.
+        crate::admin::RestAuth::BadAppPassword => None,
         crate::admin::RestAuth::BadNonce => {
             let body = r#"{"code":"rest_cookie_invalid_nonce","message":"Cookie check failed","data":{"status":403}}"#;
             let mut response = Response::new(Body::from(body));
@@ -391,7 +402,7 @@ async fn rest_edit_route(app: &Arc<App>, request: Request<Body>) -> std::result:
         return Err(Request::from_parts(parts, Body::empty()));
     }
     let uploads = app.config.wp_root.join("wp-content").join("uploads");
-    let access = user.map(|user| rustpress_rest::edit::Access { user, writer: app.writer.as_ref(), now: crate::admin::now(), uploads });
+    let access = user.map(|user| rustpress_rest::edit::Access { user, app_password, writer: app.writer.as_ref(), now: crate::admin::now(), uploads });
     let rest = Rest::new(&loaded.site, &loaded.theme, &loaded.registry);
     let reply = rest.handle_as(&route, &rest_query, access, rustpress_rest::edit::Request { method, body: rest_body }).await;
     let response = match reply {

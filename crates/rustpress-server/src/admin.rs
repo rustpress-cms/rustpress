@@ -163,12 +163,48 @@ pub enum RestAuth {
     Anonymous,
     /// The cookie and the nonce are valid.
     User(rustpress_auth::CurrentUser),
+    /// An application password in a Basic authorization header: the user and the entry.
+    AppPassword(rustpress_auth::CurrentUser, String),
+    /// A Basic authorization header whose password is no application password.
+    BadAppPassword,
     /// A cookie with a nonce that does not match.
     BadNonce,
 }
 
+/// `Authorization: Basic base64( login:password )`.
+fn basic_credentials(headers: &HeaderMap) -> Option<(String, String)> {
+    use base64::Engine;
+    let value = headers.get("authorization")?.to_str().ok()?;
+    let encoded = value.strip_prefix("Basic ").or_else(|| value.strip_prefix("basic "))?;
+    let decoded = base64::engine::general_purpose::STANDARD.decode(encoded.trim()).ok()?;
+    let text = String::from_utf8(decoded).ok()?;
+    let (login, password) = text.split_once(':')?;
+    Some((login.to_owned(), password.to_owned()))
+}
+
 pub async fn rest_auth(loaded: &Loaded, headers: &HeaderMap, query: &str, body_nonce: Option<&str>) -> RestAuth {
     let Some(parts) = &loaded.admin else { return RestAuth::Anonymous };
+    // Application passwords work where WordPress offers them (HTTPS, or a local environment).
+    if loaded.site.app_passwords_available()
+        && let Some((login, password)) = basic_credentials(headers)
+    {
+        return match rustpress_auth::app_passwords::authenticate(&loaded.site.db, &login, &password).await {
+            Some((user_id, uuid)) => {
+                let account = match loaded.site.db.user(user_id).await.ok().flatten() {
+                    Some(user) => loaded.site.db.auth_user_by_login(&user.user_login).await.ok().flatten(),
+                    None => None,
+                };
+                match account {
+                    Some(account) => match rustpress_auth::CurrentUser::load(&loaded.site.db, &parts.roles, &account).await {
+                        Ok(current) => RestAuth::AppPassword(current, uuid),
+                        Err(_) => RestAuth::BadAppPassword,
+                    },
+                    None => RestAuth::BadAppPassword,
+                }
+            }
+            None => RestAuth::BadAppPassword,
+        };
+    }
     let scheme = rustpress_auth::Scheme::LoggedIn;
     let name = parts.auth.cookie_name(scheme);
     let cookies = cookies_of(headers);

@@ -12,5 +12,7 @@ $env:RUSTPRESS_LISTEN = '127.0.0.1:3001'
 $env:RUSTPRESS_SITE_URL = 'http://localhost:3001'
 $env:RUSTPRESS_ALLOW_WRITES = '1'
 $env:RUSTPRESS_RELOAD_SECS = '1'
+# Application passwords over plain HTTP, like the mu-plugin the reference gets for the comparison.
+$env:RUSTPRESS_ENVIRONMENT_TYPE = 'local'
 Set-Location (Split-Path -Parent $PSScriptRoot)
 cargo run -q -p rustpress-server

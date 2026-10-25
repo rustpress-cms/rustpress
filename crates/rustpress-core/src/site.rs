@@ -56,6 +56,12 @@ impl Site {
         Ok(site)
     }
 
+    /// `wp_is_application_passwords_available()`: HTTPS, or a local or development environment
+    /// (`RUSTPRESS_ENVIRONMENT_TYPE`, the counterpart of `WP_ENVIRONMENT_TYPE`).
+    pub fn app_passwords_available(&self) -> bool {
+        self.settings.siteurl.starts_with("https://") || self.settings.home.starts_with("https://") || matches!(std::env::var("RUSTPRESS_ENVIRONMENT_TYPE").as_deref(), Ok("local" | "development"))
+    }
+
     /// `get_option( 'show_avatars' )`: avatars are on unless the option is switched off.
     pub fn show_avatars(&self) -> bool {
         !matches!(self.options.get("show_avatars"), Some("0" | ""))

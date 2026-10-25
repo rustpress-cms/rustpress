@@ -1,6 +1,7 @@
 //! Signing in and out, sessions and permissions, the way WordPress does them, so that the
 //! cookies of a site keep working and the database needs no conversion.
 
+pub mod app_passwords;
 pub mod caps;
 pub mod cookie;
 pub mod password;

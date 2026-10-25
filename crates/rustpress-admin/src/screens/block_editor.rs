@@ -42,7 +42,7 @@ async fn preload_one(ctx: &Ctx<'_>, method: &str, path: &str) -> Option<Value> {
     let writer = env.writer?;
     let (route, query) = path.split_once('?').map_or((path, ""), |(r, q)| (r, q));
     let rest = rustpress_rest::Rest::new(ctx.site(), env.theme, env.registry);
-    let access = Access { user: ctx.user.clone(), writer: Some(writer), now: env.now, uploads: super::ajax_media::uploads_dir(env) };
+    let access = Access { user: ctx.user.clone(), app_password: None, writer: Some(writer), now: env.now, uploads: super::ajax_media::uploads_dir(env) };
     let reply = rest.handle_as(route, query, Some(access), Request { method: method.to_owned(), body: Body::None }).await.ok()?;
     if reply.status >= 400 {
         return None;

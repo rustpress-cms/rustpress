@@ -2,6 +2,7 @@
 //! `DELETE`). Cookie authentication with the `wp_rest` nonce is checked by the server; this module gets the
 //! result as [`Access`].
 
+mod app_passwords;
 mod block_renderer;
 mod caps;
 mod editor;
@@ -30,6 +31,8 @@ use crate::{Outcome, Rest, Result};
 /// The signed-in user of a request.
 pub struct Access<'a> {
     pub user: CurrentUser,
+    /// The application password the request was authenticated with.
+    pub app_password: Option<String>,
     pub writer: Option<&'a Writer>,
     pub now: i64,
     pub uploads: PathBuf,
@@ -223,6 +226,8 @@ impl Rest<'_> {
         }
         let edit_read = params.get("context") == Some("edit");
         match segments.as_slice() {
+            ["wp", "v2", "users", id, "application-passwords"] => self.app_passwords_route(id, None, &method, &args).await.map(Some),
+            ["wp", "v2", "users", id, "application-passwords", uuid] => self.app_passwords_route(id, Some(uuid), &method, &args).await.map(Some),
             ["wp", "v2", "users", "me"] => self.users_me(&method, &args).await.map(Some),
             ["wp", "v2", "users"] if get && (self.access.is_some()) => self.users_list(&args).await.map(Some),
             ["wp", "v2", "users", id] if get && self.access.is_some() && id.parse::<u64>().is_ok() => self.users_get(id, &args).await.map(Some),

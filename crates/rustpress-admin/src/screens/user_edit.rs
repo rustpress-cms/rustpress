@@ -24,6 +24,40 @@ const SCHEMES: [(&str, &str, [&str; 3], &[&str]); 9] = [
     ("sunrise", "Sunrise", ["#f3f1f1", "#fff", "#fff"], &["#6f2724", "#8a312d", "#ad631e", "#ccaf0b"]),
 ];
 
+const APP_PASSWORDS_SECTION: &str = include_str!("../data/app_passwords_section.tpl");
+const APP_PASSWORDS_TEMPLATES: &str = include_str!("../data/app_passwords_templates.tpl");
+
+/// The rows of `WP_Application_Passwords_List_Table`.
+async fn app_password_rows(ctx: &Ctx<'_>, user_id: u64) -> String {
+    let tr = |s: &str| ctx.tr(s);
+    let list = rustpress_auth::app_passwords::list(ctx.env.db, user_id).await;
+    if list.is_empty() {
+        return format!("<tr class=\"no-items\"><td class=\"colspanchange\" colspan=\"5\">{}</td></tr>", tr("No items found."));
+    }
+    let site = ctx.site();
+    let dash = "&mdash;";
+    list.iter()
+        .map(|item| {
+            let name = esc_html(&item.name);
+            let last_used = item.last_used.map_or_else(|| dash.to_owned(), |t| site.date(&tr("F j, Y"), t));
+            let last_ip = item.last_ip.as_deref().map_or_else(|| dash.to_owned(), esc_html);
+            format!(
+                "<tr data-uuid=\"{uuid}\"><th class='name column-name has-row-actions column-primary' data-colname=\"{}\" scope=\"row\">{name}<button type=\"button\" class=\"toggle-row\"><span class=\"screen-reader-text\">{}</span></button></th><td class='created column-created' data-colname=\"{}\">{}</td><td class='last_used column-last_used' data-colname=\"{}\">{last_used}</td><td class='last_ip column-last_ip' data-colname=\"{}\">{last_ip}</td><td class='revoke column-revoke' data-colname=\"{}\"><button type=\"button\" name=\"revoke-application-password-{uuid}\" id=\"revoke-application-password-{uuid}\" class=\"button delete\" aria-label=\"{}\">{}</button></td></tr>",
+                tr("Name"),
+                tr("Show more details"),
+                tr("Created"),
+                site.date(&tr("F j, Y"), item.created),
+                tr("Last Used"),
+                tr("Last IP"),
+                tr("Revoke"),
+                esc_attr(&rustpress_core::i18n::sprintf(&tr("Revoke \"%s\""), &[&item.name])),
+                tr("Revoke"),
+                uuid = item.uuid,
+            )
+        })
+        .collect()
+}
+
 fn color_picker(ctx: &Ctx<'_>, current: &str) -> String {
     let tr = |s: &str| ctx.tr(s);
     let mut out = format!("\t\t\t\t\t\t\t\t<fieldset id=\"color-picker\" class=\"scheme-list\">\n\t\t<legend class=\"screen-reader-text\"><span>{}</span></legend>\n\t\t<input type=\"hidden\" id=\"color-nonce\" name=\"color-nonce\" value=\"{}\" />", tr("Administration Color Scheme"), ctx.create_nonce("save-color-scheme"));
@@ -311,7 +345,12 @@ async fn form(ctx: &Ctx<'_>, user: &User, own: bool, errors: &[String]) -> Admin
     }
     h.push_str("\t\t\t\t\t\t\t\t\t\t\t\t\t</table>\n\n");
     // `wp_is_application_passwords_available_for_user()`: needs HTTPS (or a local environment), which RustPress cannot assume.
-    if ctx.can("create_app_password") || ctx.can("edit_user") || own {
+    let app_passwords = own || ctx.can("edit_users");
+    let app_available = app_passwords && ctx.site().app_passwords_available();
+    if app_available {
+        let rows = app_password_rows(ctx, id).await;
+        h.push_str(&super::pages::translate_html(ctx, APP_PASSWORDS_SECTION).replace("{{ROWS}}", &rows));
+    } else if app_passwords {
         h.push_str(&format!(
             "\t\t\t\t\t\t\t\t\t\t\t<div class=\"application-passwords hide-if-no-js\" id=\"application-passwords-section\">\n\t\t\t\t\t\t\t<h2>{}</h2>\n\t\t\t\t\t\t\t<p>{}</p>\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<p>{}</p>\n\t\t\t\t\t\t\t\t<p>\n\t\t\t\t\t\t\t\t\t{}\t\t\t\t\t\t\t\t</p>\n\t\t\t\t\t\t\t\t\t\t\t\t\t</div>\n\t\t\t\t\t\n\t\t\t\t\t\n\t\t\t\t\t\n\t\t\t\t\n",
             tr("Application Passwords"),
@@ -321,6 +360,9 @@ async fn form(ctx: &Ctx<'_>, user: &User, own: bool, errors: &[String]) -> Admin
         ));
     }
     h.push_str(&format!("\t\t\t\t<input type=\"hidden\" name=\"action\" value=\"update\" />\n\t\t\t\t<input type=\"hidden\" name=\"user_id\" id=\"user_id\" value=\"{id}\" />\n\n\t\t\t\t<p class=\"submit\"><input type=\"submit\" name=\"submit\" id=\"submit\" class=\"button button-primary\" value=\"{}\"  /></p>\n\t\t\t</form>\n\t\t</div>\n\t\t<script>\n\tif (window.location.hash == '#password') {{\n\t\tdocument.getElementById('pass1').focus();\n\t}}\n</script>\n\n<script>\n\tjQuery( function( $ ) {{\n\t\tvar languageSelect = $( '#locale' );\n\t\t$( 'form' ).on( 'submit', function() {{\n\t\t\t/*\n\t\t\t * Don't show a spinner for English and installed languages,\n\t\t\t * as there is nothing to download.\n\t\t\t */\n\t\t\tif ( ! languageSelect.find( 'option:selected' ).data( 'installed' ) ) {{\n\t\t\t\t$( '#submit', this ).after( '<span class=\"spinner language-install-spinner is-active\" />' );\n\t\t\t}}\n\t\t}});\n\t}} );\n</script>\n\n", if own { tr("Update Profile") } else { tr("Update User") }));
+    if app_available {
+        h.push_str(&super::pages::translate_html(ctx, APP_PASSWORDS_TEMPLATES).replace("{{SITE}}", ctx.site().settings.siteurl.trim_end_matches('/')));
+    }
     let (parent_file, submenu_file) = if ctx.can("list_users") { ("users.php", if own { "profile.php" } else { "users.php" }) } else { ("profile.php", "profile.php") };
     let view_item = (!own).then(|| {
         let url = if ctx.site().settings.permalink_structure.is_empty() { ctx.site().home_url(&format!("?author={id}")) } else { ctx.site().home_url(&format!("author/{}/", user.user_nicename)) };
@@ -335,7 +377,11 @@ async fn form(ctx: &Ctx<'_>, user: &User, own: bool, errors: &[String]) -> Admin
         view_item,
         ..Default::default()
     };
-    render(ctx, &screen, &h, &Assets { scripts: vec!["user-profile".into()], ..Default::default() }).await
+    let mut scripts = vec!["user-profile".to_owned()];
+    if app_available {
+        scripts.push("application-passwords".into());
+    }
+    render(ctx, &screen, &h, &Assets { scripts, ..Default::default() }).await
 }
 
 fn help(ctx: &Ctx<'_>) -> Help {

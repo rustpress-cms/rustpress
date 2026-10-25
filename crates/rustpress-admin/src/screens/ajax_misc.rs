@@ -416,6 +416,11 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUs
             }
             json(200, &json!({"success": true}))
         }
+        // Everything that needs WordPress.org: RustPress does not connect to it.
+        "query-themes" | "install-theme" | "install-plugin" | "update-theme" | "update-plugin" | "search-plugins" | "search-install-plugins" => {
+            let message = tr("An unexpected error occurred. Something may be wrong with WordPress.org or this server&#8217;s configuration. If you continue to have problems, please try the <a href=\"https://wordpress.org/support/forums/\">support forums</a>.");
+            json(200, &json!({"success": false, "data": {"slug": param("slug"), "errorCode": "plugins_api_failed", "errorMessage": message, "error": message}}))
+        }
         // Multisite only: single sites answer -1.
         "autocomplete-user" => text(200, "-1"),
         _ => text(400, "0"),
