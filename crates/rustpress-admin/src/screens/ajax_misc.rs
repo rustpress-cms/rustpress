@@ -55,6 +55,9 @@ fn natural_cmp(a: &str, b: &str) -> std::cmp::Ordering {
 }
 
 pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUser, token: &str, action: &str) -> AdminResponse {
+    if action == "edit-theme-plugin-file" {
+        return super::file_editor::ajax_edit(env, request, user, token).await;
+    }
     let ctx = Ctx { env, request, user: user.clone(), token: token.to_owned() };
     let site = env.site;
     let tr = |s: &str| site.tr(s);

@@ -19,6 +19,7 @@ pub mod ajax_comments;
 pub mod ajax_media;
 mod ajax_misc;
 pub mod ajax_terms;
+mod file_editor;
 mod attachment_edit;
 mod authorize_app;
 pub mod block_editor;
@@ -150,6 +151,15 @@ impl Ctx<'_> {
         self.env.auth.verify_nonce(nonce, action, self.user.id, &self.token, self.env.now).is_some()
     }
 
+    /// `wp_nonce_field( $action, $name )`.
+    pub fn nonce_field_named(&self, action: &str, name: &str) -> String {
+        format!(
+            "<input type=\"hidden\" id=\"{name}\" name=\"{name}\" value=\"{}\" /><input type=\"hidden\" name=\"_wp_http_referer\" value=\"{}\" />",
+            self.create_nonce(action),
+            rustpress_core::formatting::esc_url(&self.request.request_uri)
+        )
+    }
+
     /// `wp_nonce_field( $action )`.
     pub fn nonce_field(&self, action: &str) -> String {
         format!(
@@ -270,6 +280,8 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse
         "user-edit.php" => user_edit::user_edit(&ctx).await,
         "user-new.php" => user_edit::user_new(&ctx).await,
         "tools.php" => pages::tools(&ctx).await,
+        "theme-editor.php" => file_editor::theme_editor(&ctx).await,
+        "plugin-editor.php" => file_editor::plugin_editor(&ctx).await,
         "import.php" => pages::import(&ctx).await,
         "export.php" => export::page(&ctx).await,
         "options-permalink.php" => permalink::page(&ctx).await,

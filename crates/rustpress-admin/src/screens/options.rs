@@ -4,7 +4,8 @@ use rustpress_core::formatting::{esc_html, esc_url_raw, strip_tags};
 use rustpress_phpser::{Key, Value};
 
 use super::notices::SettingsError;
-use super::{AdminResponse, Ctx, die, redirect, timezones};
+use super::{AdminResponse, Ctx, die, redirect, render, timezones};
+use crate::chrome::{Assets, Screen};
 
 /// The options each settings page may save (`$allowed_options`).
 fn allowed_options(page: &str) -> Option<Vec<&'static str>> {
@@ -175,12 +176,90 @@ fn with_settings_updated(url: &str) -> String {
     out
 }
 
+/// `is_serialized_string()`.
+fn is_serialized_string(data: &str) -> bool {
+    let data = data.trim();
+    data.len() >= 4 && data.as_bytes()[1] == b':' && data.ends_with(';') && data.starts_with('s') && data.as_bytes()[data.len() - 2] == b'"'
+}
+
+/// `is_serialized()`.
+fn is_serialized(data: &str) -> bool {
+    let data = data.trim();
+    if data == "N;" {
+        return true;
+    }
+    if data.len() < 4 || data.as_bytes()[1] != b':' || !(data.ends_with(';') || data.ends_with('}')) {
+        return false;
+    }
+    match data.as_bytes()[0] {
+        b's' => data.as_bytes()[data.len() - 2] == b'"' && data[2..].starts_with(|c: char| c.is_ascii_digit()),
+        b'a' | b'O' | b'E' => data[2..].starts_with(|c: char| c.is_ascii_digit()),
+        b'b' | b'i' | b'd' => data.ends_with(';') && data[2..data.len() - 1].chars().all(|c| c.is_ascii_digit() || matches!(c, '.' | 'E' | '+' | '-')) && data.len() > 3,
+        _ => false,
+    }
+}
+
+/// `options.php` as a page: every option in a form ("All Settings").
+async fn all_settings(ctx: &Ctx<'_>) -> AdminResponse {
+    let tr = |s: &str| ctx.tr(s);
+    let mut h = format!(
+        "<div class=\"wrap\">\n\t<h1>{}</h1>\n\t<div class=\"notice notice-warning\">\n<p>\n<strong>{}</strong> {}</p>\n</div>\t<form name=\"form\" action=\"options.php\" method=\"post\" id=\"all-options\">\n\t\t{}\t\t<input type=\"hidden\" name=\"action\" value=\"update\" />\n\t\t<input type=\"hidden\" name=\"option_page\" value=\"options\" />\n\t\t<table class=\"form-table\" role=\"presentation\">\n",
+        esc_html(&tr("All Settings")),
+        tr("Warning:"),
+        tr("This page allows direct access to your site settings. You can break things here. Please be cautious!"),
+        ctx.nonce_field("options-options"),
+    );
+    let mut to_update: Vec<String> = Vec::new();
+    for (name, raw) in ctx.env.db.all_options().await.unwrap_or_default() {
+        if name.is_empty() {
+            continue;
+        }
+        let (value, disabled, class) = if is_serialized(&raw) {
+            if is_serialized_string(&raw) {
+                let value = match rustpress_phpser::unserialize(raw.as_bytes()) {
+                    Ok(Value::Str(bytes)) => String::from_utf8_lossy(&bytes).into_owned(),
+                    _ => raw.clone(),
+                };
+                to_update.push(name.clone());
+                (value, false, "all-options")
+            } else {
+                ("SERIALIZED DATA".to_owned(), true, "all-options disabled")
+            }
+        } else {
+            to_update.push(name.clone());
+            (raw.clone(), false, "all-options")
+        };
+        let attr = rustpress_core::formatting::esc_attr(&name);
+        h.push_str(&format!("<tr>\n\t<th scope=\"row\">\n<label for=\"{attr}\">{}</label>\n</th>\n<td>\n", esc_html(&name)));
+        if value.contains('\n') {
+            h.push_str(&format!("\t\t\t<textarea class=\"{class}\" name=\"{attr}\" id=\"{attr}\" cols=\"30\" rows=\"5\">{}</textarea>\n", super::post_edit::esc_textarea_pub(&value)));
+        } else {
+            h.push_str(&format!(
+                "\t\t\t<input class=\"regular-text {class}\" type=\"text\" name=\"{attr}\" id=\"{attr}\" value=\"{}\"{} />\n",
+                rustpress_core::formatting::esc_attr(&value),
+                if disabled { " disabled='disabled'" } else { "" }
+            ));
+        }
+        h.push_str("\t</td>\n</tr>\n");
+    }
+    h.push_str(&format!(
+        "</table>\n<input type=\"hidden\" name=\"page_options\" value=\"{}\" />\n<p class=\"submit\">\n{}\n</p>\n</form>\n</div>\n\n",
+        rustpress_core::formatting::esc_attr(&to_update.join(",")),
+        crate::list_table::submit_button(&tr("Save Changes"), "primary", "Update", "Update").trim_end_matches('\n')
+    ));
+    let screen = Screen { file: "options.php".into(), parent_file: "options-general.php".into(), submenu_file: None, title: tr("All Settings"), help: Some(crate::chrome::Help { tabs: Vec::new(), sidebar: String::new() }), ..Default::default() };
+    render(ctx, &screen, &h, &Assets::default()).await
+}
+
 pub async fn handle(ctx: &Ctx<'_>) -> AdminResponse {
     let request = ctx.request;
     let action = request.request("action").unwrap_or_default().to_owned();
     let option_page = request.request("option_page").filter(|p| !p.is_empty()).unwrap_or("options").to_owned();
     if !ctx.can("manage_options") {
         return die(ctx.env, 403, "WordPress &rsaquo; Error", &format!("<h1>{}</h1><p>{}</p>", ctx.tr("You need a higher level of permission."), ctx.tr("Sorry, you are not allowed to manage options for this site.")));
+    }
+    if !request.post && action.is_empty() && request.get("adminhash").is_none() && request.get("dismiss").is_none() {
+        return all_settings(ctx).await;
     }
     let Some(writer) = ctx.env.writer else {
         return die(ctx.env, 403, "WordPress &rsaquo; Error", "<p>RustPress was started without write access.</p>");
@@ -213,7 +292,10 @@ pub async fn handle(ctx: &Ctx<'_>) -> AdminResponse {
     if !ctx.verify_nonce(&format!("{option_page}-options")) {
         return nonce_ays(ctx);
     }
-    let Some(options) = allowed_options(&option_page) else {
+    // The page of all settings names the options it saves itself.
+    let all_options: Option<Vec<String>> = (option_page == "options").then(|| request.post_field("page_options").unwrap_or_default().split(',').map(|o| o.trim().to_owned()).filter(|o| !o.is_empty()).collect());
+    let allowed = if all_options.is_some() { Some(Vec::new()) } else { allowed_options(&option_page) };
+    let Some(options) = allowed else {
         return die(ctx.env, 200, "WordPress &rsaquo; Error", &rustpress_core::i18n::sprintf(&ctx.tr("<strong>Error:</strong> The %s options page is not in the allowed options list."), &[&format!("<code>{}</code>", esc_html(&option_page))]));
     };
 
@@ -253,6 +335,23 @@ pub async fn handle(ctx: &Ctx<'_>) -> AdminResponse {
     }
 
     let mut admin_email_changed: Option<String> = None;
+    if let Some(names) = &all_options {
+        // `update_option()` of every named option with what the form sent, or nothing.
+        for name in names {
+            let value = request.form.iter().rev().find(|(k, _)| k == name).map(|(_, v)| v.trim().to_owned()).unwrap_or_default();
+            let value = match sanitize(ctx, name, &value) {
+                Ok(value) => value,
+                Err(message) => {
+                    errors.push(SettingsError { setting: name.clone(), code: format!("invalid_{name}"), message, kind: "error".into() });
+                    continue;
+                }
+            };
+            if let Err(e) = writer.update_option(name, &value).await {
+                eprintln!("options: {name}: {e}");
+                errors.push(SettingsError { setting: name.clone(), code: "settings_failed".into(), message: ctx.tr("Settings save failed."), kind: "error".into() });
+            }
+        }
+    }
     for option in options {
         let supplied = field(&form, option);
         // `blog_public` is 1 when its checkbox is not sent.
