@@ -38,7 +38,8 @@ impl Site {
     /// REST settings of the custom post types and taxonomies.
     pub async fn load_at(db: Db, wp_root: &std::path::Path) -> Result<Self> {
         let mut site = Self::load(db).await?;
-        if !site.types.post_types.is_empty() || !site.types.taxonomies.is_empty() {
+        let plain = site.rewrite.is_empty();
+        if plain || !site.types.post_types.is_empty() || !site.types.taxonomies.is_empty() {
             let plugins: Vec<String> = site
                 .options
                 .value("active_plugins")
@@ -50,7 +51,7 @@ impl Site {
                 dirs.push(themes.join(&site.settings.template));
             }
             let registrations = crate::types::scan_registrations(wp_root, &plugins, &dirs);
-            site.types.apply(&registrations);
+            site.types.apply(&registrations, plain);
         }
         Ok(site)
     }

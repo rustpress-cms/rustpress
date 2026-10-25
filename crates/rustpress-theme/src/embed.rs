@@ -81,7 +81,7 @@ fn inline_script_tag(js: &str, source_url: &str) -> String {
 }
 
 /// `get_site_icon_url( $size, $fallback )`.
-async fn site_icon_url(env: &Env<'_>, size: u64, fallback: &str) -> Result<String> {
+pub(crate) async fn site_icon_url(env: &Env<'_>, size: u64, fallback: &str) -> Result<String> {
     let id = env.site.options.u64("site_icon", 0);
     if id != 0 {
         let rows = env.site.db.post_meta(id).await?;

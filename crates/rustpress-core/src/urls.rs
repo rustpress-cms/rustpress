@@ -200,7 +200,35 @@ impl Site {
             let tail = if info.hierarchical { self.page_uri(post).await? } else { post.post_name.clone() };
             return Ok(self.user_trailingslashit(&self.home_url(&format!("{}/{tail}", self.rooted(&info.slug)))));
         }
+        // Plain permalinks: the query variable of the type with the slug, when the post is published.
+        if let Some(var) = self.types.post_type(post_type).and_then(|info| info.query_var.clone().map(|var| (var, info.hierarchical))).filter(|_| !unpublished) {
+            let slug = if var.1 { self.page_uri(post).await? } else { post.post_name.clone() };
+            return Ok(self.home_url(&format!("?{}={slug}", var.0)));
+        }
         Ok(self.home_url(&format!("?post_type={post_type}&p={}", post.id)))
+    }
+
+    /// `get_post_comments_feed_link( $post_id, $feed )`: the address of the comment feed of one post.
+    pub async fn post_comments_feed_link(&self, post: &Post, feed: &str) -> Result<String> {
+        let unattached = post.post_type == "attachment" && post.post_parent == 0;
+        if self.uses_pretty_permalinks() {
+            let base = if self.settings.show_on_front == crate::ShowOnFront::Page && self.settings.page_on_front == post.id { self.page_link_of(post).await? } else { self.permalink(post).await? };
+            if unattached {
+                let mut url = self.home_url("/feed/");
+                if feed != "rss2" {
+                    url.push_str(&format!("{feed}/"));
+                }
+                return Ok(add_query_arg(&url, "attachment_id", &post.id.to_string()));
+            }
+            let mut url = format!("{}feed", trailingslashit(&base));
+            if feed != "rss2" {
+                url.push_str(&format!("/{feed}"));
+            }
+            return Ok(self.user_trailingslashit(&url));
+        }
+        let key = if unattached { "attachment_id" } else if post.post_type == "page" { "page_id" } else { "p" };
+        let url = add_query_arg(&self.home_url("/"), "feed", feed);
+        Ok(add_query_arg(&url, key, &post.id.to_string()))
     }
 
     /// `get_post_type_archive_link()`.
@@ -295,7 +323,10 @@ impl Site {
                 "category" => format!("cat={}", term.term_id),
                 "post_tag" => format!("tag={}", term.slug),
                 "post_format" => format!("post_format={}", term.slug.strip_prefix("post-format-").unwrap_or(&term.slug)),
-                other => format!("taxonomy={other}&term={}", term.slug),
+                other => match self.types.taxonomy(other).and_then(|t| t.query_var.as_deref()) {
+                    Some(var) => format!("{var}={}", term.slug),
+                    None => format!("taxonomy={other}&term={}", term.slug),
+                },
             };
             return Ok(self.home_url(&format!("?{query}")));
         }

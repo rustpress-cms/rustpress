@@ -123,6 +123,17 @@ async fn page(app: &App, uri: &axum::http::Uri, request_headers: &axum::http::He
         }
         if !result.flags.is_feed {
             response.headers_mut().insert(header::CONTENT_TYPE, HeaderValue::from_static("text/html; charset=UTF-8"));
+        } else if let Some(feed) = rustpress_theme::feed::redirect_headers(&loaded.site, &result).await? {
+            let headers = response.headers_mut();
+            if let Ok(value) = HeaderValue::from_str(&feed.content_type) {
+                headers.insert(header::CONTENT_TYPE, value);
+            }
+            if let Some(value) = feed.last_modified.as_deref().and_then(|v| HeaderValue::from_str(v).ok()) {
+                headers.insert(header::LAST_MODIFIED, value);
+            }
+            if let Ok(value) = HeaderValue::from_str(&feed.etag) {
+                headers.insert(header::ETAG, value);
+            }
         }
         return Ok(response);
     }

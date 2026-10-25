@@ -37,6 +37,8 @@ pub struct PostTypeInfo {
     /// The URL of the archive, if the type has one.
     pub archive_slug: Option<String>,
     pub hierarchical: bool,
+    /// `query_var`: `?book=slug` with plain permalinks; `None` when switched off.
+    pub query_var: Option<String>,
     /// `labels->name`; `None` until a registration says (WordPress then says "Posts" or "Pages").
     pub label: Option<String>,
     pub singular: Option<String>,
@@ -66,7 +68,7 @@ impl PostTypeInfo {
     }
 
     fn new(name: &str, slug: String, archive_slug: Option<String>, hierarchical: bool) -> Self {
-        Self { name: name.to_owned(), slug, archive_slug, hierarchical, label: None, singular: None, show_in_rest: false, rest_base: None, supports: None, registered: false, public: true, queryable: true, exclude_from_search: false, description: String::new(), menu_icon: None }
+        Self { name: name.to_owned(), query_var: Some(name.to_owned()), slug, archive_slug, hierarchical, label: None, singular: None, show_in_rest: false, rest_base: None, supports: None, registered: false, public: true, queryable: true, exclude_from_search: false, description: String::new(), menu_icon: None }
     }
 
     /// `$post_type_object->labels->name`.
@@ -103,6 +105,8 @@ pub struct TaxonomyInfo {
     pub hierarchical: bool,
     /// `rewrite['hierarchical']`: term links carry the path of the ancestors.
     pub rewrite_hierarchical: bool,
+    /// `query_var`: `?genre=slug` with plain permalinks; `None` when switched off.
+    pub query_var: Option<String>,
     /// Post types that have objects in the taxonomy.
     pub object_types: Vec<String>,
     pub label: Option<String>,
@@ -190,6 +194,7 @@ impl Types {
                     slug: literal_prefix(pattern).to_owned(),
                     hierarchical: with_parents.contains(name),
                     rewrite_hierarchical: pattern.contains("(.+?)"),
+                    query_var: Some(name.clone()),
                     object_types: relations.iter().filter(|(t, _)| t == name).map(|(_, p)| p.clone()).collect(),
                     label: None,
                     singular: None,
@@ -205,12 +210,47 @@ impl Types {
     }
 
     /// Adds what the `register_*()` calls say about the inferred types.
-    pub fn apply(&mut self, registrations: &[Registration]) {
+    pub fn apply(&mut self, registrations: &[Registration], create_missing: bool) {
         for reg in registrations {
             let args = &reg.args;
             // A computed argument list says nothing; the inferred defaults stay.
             if !matches!(args, Lit::Array(_)) {
                 continue;
+            }
+            // Without rewrite rules (plain permalinks) nothing could be inferred: the registration is all there is.
+            if create_missing {
+                let slug = match args.get("rewrite") {
+                    Some(rewrite) => rewrite.get("slug").and_then(Lit::as_str).map(str::to_owned).unwrap_or_else(|| reg.name.clone()),
+                    None => reg.name.clone(),
+                };
+                let hierarchical = args.get("hierarchical").and_then(Lit::truthy).unwrap_or(false);
+                if reg.taxonomy {
+                    if !self.taxonomies.iter().any(|t| t.name == reg.name) {
+                        self.taxonomies.push(TaxonomyInfo {
+                            name: reg.name.clone(),
+                            slug,
+                            hierarchical,
+                            rewrite_hierarchical: hierarchical,
+                            query_var: Some(reg.name.clone()),
+                            object_types: reg.object_types.clone(),
+                            label: None,
+                            singular: None,
+                            show_in_rest: false,
+                            rest_base: None,
+                            public: true,
+                            queryable: true,
+                            description: String::new(),
+                        });
+                    }
+                } else if !self.post_types.iter().any(|t| t.name == reg.name) && !BUILT_IN_POST_TYPES.contains(&reg.name.as_str()) && !is_internal_post_type(&reg.name) {
+                    let archive = match args.get("has_archive") {
+                        Some(Lit::Str(archive)) => Some(archive.clone()),
+                        Some(value) if value.truthy().unwrap_or(true) => Some(slug.clone()),
+                        _ => None,
+                    };
+                    self.hidden_post_types.retain(|h| h != &reg.name);
+                    self.post_types.push(PostTypeInfo::new(&reg.name, slug, archive, hierarchical));
+                }
             }
             // A flag that is set but computed counts as set.
             let flag = |key: &str, default: bool| match args.get(key) {
@@ -231,6 +271,7 @@ impl Types {
                     t.show_in_rest = show_in_rest;
                     t.rest_base = rest_base;
                     t.public = flag("public", true);
+                    t.query_var = query_var(args, &reg.name);
                     t.hierarchical = flag("hierarchical", t.hierarchical);
                     t.queryable = flag("publicly_queryable", t.public);
                     for object_type in &reg.object_types {
@@ -241,6 +282,7 @@ impl Types {
                 }
             } else if let Some(t) = self.post_types.iter_mut().find(|t| t.name == reg.name) {
                 t.registered = true;
+                t.query_var = query_var(args, &reg.name);
                 t.description = text("description").unwrap_or_default();
                 t.menu_icon = text("menu_icon");
                 t.label = label;
@@ -271,7 +313,7 @@ impl Types {
         match name {
             "post" | "page" | "attachment" => true,
             _ if is_internal_post_type(name) => false,
-            _ => !rules_known || self.post_type(name).is_some(),
+            _ => self.post_type(name).is_some() || (!rules_known && !self.hidden_post_types.iter().any(|h| h == name)),
         }
     }
 
@@ -293,6 +335,15 @@ impl Types {
     /// The types a search covers (`exclude_from_search` is false): everything public but attachments.
     pub fn searchable_post_types(&self) -> Vec<&str> {
         self.public_post_types().into_iter().filter(|t| *t != "attachment" && !self.post_types.iter().any(|p| p.name == *t && p.exclude_from_search)).collect()
+    }
+}
+
+/// The `query_var` argument: the name by default, a string as given, `None` for `false`.
+fn query_var(args: &Lit, name: &str) -> Option<String> {
+    match args.get("query_var") {
+        Some(Lit::Str(var)) if !var.is_empty() => Some(var.clone()),
+        Some(value) if value.truthy() == Some(false) => None,
+        _ => Some(name.to_owned()),
     }
 }
 
@@ -456,7 +507,7 @@ mod tests {
     fn registrations_fill_in_labels() {
         let r = rules(&[("buecher/([^/]+)(?:/([0-9]+))?/?$", "index.php?book=$matches[1]&page=$matches[2]")]);
         let mut types = Types::infer(&r, &["book".to_owned()], &[], &[], &[]);
-        types.apply(&scan_source("register_post_type( 'book', array( 'label' => 'Buecher', 'public' => true, 'show_in_rest' => true, 'supports' => array( 'title' ) ) );"));
+        types.apply(&scan_source("register_post_type( 'book', array( 'label' => 'Buecher', 'public' => true, 'show_in_rest' => true, 'supports' => array( 'title' ) ) );"), false);
         let book = types.post_type("book").unwrap();
         assert_eq!((book.plural_label().as_str(), book.singular_label().as_str()), ("Buecher", "Buecher"));
         assert!(book.show_in_rest && book.supports("title") && !book.supports("editor") && !book.exclude_from_search);

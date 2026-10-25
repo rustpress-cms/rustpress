@@ -161,7 +161,10 @@ impl Site {
     pub async fn canonical_redirect_for_request(&self, path: &str, query: &str, q: &QueryResult) -> Result<Option<String>> {
         let paging = (q.vars.u64("paged").unwrap_or(0) != 0 || q.flags.is_feed || q.vars.u64("cpage").unwrap_or(0) != 0) && q.vars.get("sitemap").is_none_or(str::is_empty);
         let has_port = self.settings.home.rsplit_once("://").is_some_and(|(_, rest)| rest.split('/').next().is_some_and(|host| host.contains(':')));
-        if paging && has_port {
+        // A comment feed of a single post with plain permalinks is redirected to `get_post_comments_feed_link()`,
+        // which carries the port.
+        let from_feed_link = q.flags.is_feed && q.flags.is_singular() && !self.uses_pretty_permalinks();
+        if paging && has_port && !from_feed_link {
             return Ok(None);
         }
         self.canonical_redirect(path, query, q).await
@@ -279,6 +282,28 @@ impl Site {
         let mut redirect_url: Option<String> = None;
         let mut redirect_obj: Option<Post> = None;
         let qv = |key: &str| q.vars.u64(key).unwrap_or(0);
+
+        // The comment feed of a post: `?p=ID&feed=...` goes to `get_post_comments_feed_link()`.
+        // `WP_Query::get_posts()` copies `attachment_id` and `page_id` into `p`.
+        let mut feed_post_id = qv("p");
+        if qv("attachment_id") != 0 {
+            feed_post_id = qv("attachment_id");
+        }
+        if qv("page_id") != 0 && !(settings.show_on_front == ShowOnFront::Page && settings.page_for_posts == qv("page_id")) {
+            feed_post_id = qv("page_id");
+        }
+        if f.is_feed && feed_post_id != 0 {
+            let feed = q.vars.get("feed").filter(|v| !v.is_empty()).unwrap_or("rss2").to_owned();
+            if let Some(post) = self.db.post(feed_post_id).await? {
+                let link = self.post_comments_feed_link(&post, &feed).await?;
+                if !link.is_empty() {
+                    let url = join_pair(&link);
+                    rquery = remove_args_if_not_in_url(&rquery, &["p", "page_id", "attachment_id", "pagename", "name", "post_type", "feed"], &url);
+                    redirect_url = Some(url);
+                    redirect_obj = Some(post);
+                }
+            }
+        }
 
         if f.is_404 {
             // ?page_id, ?p=, ?attachment_id= to their respective URLs.

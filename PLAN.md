@@ -142,3 +142,18 @@ Bekannte Lücken, grob nach Nutzen sortiert:
 - **Sprachen**: pro Anfrage (Benutzersprache, Polylang/WPML) und JavaScript-Übersetzungen.
 - **Multisite**, Caching der gerenderten Seiten, `private`-Inhalte und Passwort-Cookies.
 - **Compat**: Themes aus Drittquellen und ihre `functions.php` (nur Literale in `register_block_style()`/`wp_enqueue_block_style()`/`wp_enqueue_style()`), Vergleich im Release-Build (Zeiten im Bericht stammen aus dem Debug-Build), Beiträge mit exakt gleichem Datum (MariaDB-Reihenfolge undefiniert).
+## Verwaltung (wp-admin): Plan (Entscheidung vom 25.10.2026)
+
+Der Frontend-Vergleich ist weitgehend ausgeschöpft (Restliste oben). Der nächste große Block ist die Verwaltung, also das, was WordPress für Redakteure und Administratoren ausmacht. Sie braucht zum ersten Mal **Schreibzugriff** auf die Datenbank. Entschieden (ohne Rückfrage, weil „weiter mit der Admin-Seite“ verlangt war):
+
+1. **Schreiben ist ein ausdrücklicher Schalter.** Der bisherige Pool bleibt `READ ONLY`. Für die Verwaltung gibt es eine zweite Verbindung (`allow_writes = true` in der Konfiguration, sonst gar nicht geöffnet). Ohne den Schalter bleibt RustPress ein reiner Lese-Ersatz, und `wp-login.php`/`wp-admin` antworten wie bisher.
+2. **Der echte Block-Editor, nicht ein Nachbau.** WordPress liefert den Editor als JavaScript (`wp-includes/js/dist/*.js`, `wp-includes/css/dist/**`); er spricht nur die REST-API. RustPress liefert die HTML-Hülle (`post.php`, `post-new.php`: Skript-Lader mit den Abhängigkeiten aus den `*.asset.php`, vorab geladene REST-Antworten, Einstellungen des Editors) und die Schreib-API. Das ist deutlich weniger Arbeit als ein eigener Editor und sieht aus wie WordPress.
+3. **Reihenfolge**, jeweils gegen das Orakel (Referenz-WordPress) abgeglichen, soweit das Orakel es zeigt:
+   - **A. Sitzung und Rechte**: Passwortprüfung (`$P$` phpass, `$wp$2y$` und bcrypt), Cookies `wordpress_logged_in_*`/`wordpress_sec_*` mit `wp_hash()`, Sitzungen in `usermeta` (`session_tokens`), Rollen und Fähigkeiten (`wp_user_roles`, `capabilities` je Benutzer), Nonces; `wp-login.php` (Anmelden, Abmelden, Fehlermeldungen, „angemeldet bleiben“); Schlüssel und Salze aus `wp-config.php`, falls vorhanden, sonst eigene (vorhandene Sitzungen verfallen dann).
+   - **B. Das Frontend für angemeldete Benutzer**: Admin-Leiste, private und Entwurfs-Beiträge samt Vorschau, Passwort-Cookies, Kommentarformular mit Vorbelegung, „Bearbeiten“-Links, `core/comment-edit-link`, `current_user_can()` in allen Blöcken.
+   - **C. REST mit Anmeldung**: Cookie plus `X-WP-Nonce`, Anwendungspasswörter, dann die Schreib-Endpunkte (`posts`, `pages`, `media` mit Upload, `categories`/`tags`, `comments`, `users`, `settings`), Revisionen, Autosaves, Sperren.
+   - **D. wp-admin selbst**: Übersicht, Beitragslisten (`edit.php`), Editor (`post.php`), Medien (`upload.php`), Kommentare, Benutzer, Einstellungen, Themes (Site-Editor ist ebenfalls JavaScript über REST), Plugins (nur Anzeige; ohne PHP laufen keine Plugin-Seiten).
+   - **E. Kommentare abgeben** (`wp-comments-post.php`), Passwort-Seiten, Suche in der Verwaltung.
+4. **Nicht geplant**: PHP-Plugins ausführen, Multisite-Verwaltung, Updates über wordpress.org (ein ausdrücklicher Befehl später).
+
+**Stand der Verwaltung**: noch nichts umgesetzt (Anmeldung, `wp-admin` und `xmlrpc.php` sind in `compat/known.toml` als bekannte Abweichung geführt).

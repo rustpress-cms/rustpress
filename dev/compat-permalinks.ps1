@@ -27,7 +27,8 @@ $cases = @(
     @('/%postname%', '', ''),
     @('/index.php/%postname%/', '', ''),
     @('/blog/%postname%/', '', ''),
-    @('/%author%/%postname%.html', '', '')
+    @('/%author%/%postname%.html', '', ''),
+    @('', '', '')
 )
 
 $failed = $false

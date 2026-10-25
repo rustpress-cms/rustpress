@@ -13,7 +13,7 @@ use chrono::NaiveDateTime;
 use rustpress_blocks::content::{comment_text, get_the_content, post_password_required, the_content, the_title_for};
 use rustpress_blocks::Env;
 use rustpress_core::formatting::{convert_chars, ent2ncr, esc_attr, esc_html, esc_url, html_entity_decode, strip_tags};
-use rustpress_core::urls::trailingslashit;
+
 use rustpress_core::{Queried, QueryResult, Site};
 use rustpress_db::{Comment, Post};
 
@@ -82,19 +82,18 @@ fn has_comment_section(post: &Post) -> bool {
     post.comment_count != 0 || post.comment_status == "open"
 }
 
-async fn comment_feed_link(site: &Site, post: &Post, feed: Kind) -> Result<String> {
-    let permalink = site.permalink(post).await?;
+/// `get_feed_link( $feed )` and `get_feed_link( 'comments_' . $feed )`.
+fn main_feed_link(site: &Site, feed: &str, comments: bool) -> String {
     if site.uses_pretty_permalinks() {
-        let mut url = format!("{}feed", trailingslashit(&permalink));
-        if feed == Kind::Atom {
-            url.push_str("/atom");
-        }
-        Ok(site.user_trailingslashit(&url))
+        let suffix = if feed == "rss2" { String::new() } else { format!("/{feed}") };
+        site.user_trailingslashit(&site.home_url(&format!("{}{}feed{suffix}", site.root(), if comments { "comments/" } else { "" })))
     } else {
-        let mut url = rustpress_core::urls::add_query_arg(&site.home_url(""), "feed", if feed == Kind::Atom { "atom" } else { "rss2" });
-        url = rustpress_core::urls::add_query_arg(&url, "p", &post.id.to_string());
-        Ok(url)
+        site.home_url(&format!("?feed={}{feed}", if comments { "comments-" } else { "" }))
     }
+}
+
+async fn comment_feed_link(site: &Site, post: &Post, feed: Kind) -> Result<String> {
+    Ok(site.post_comments_feed_link(post, if feed == Kind::Atom { "atom" } else { "rss2" }).await?)
 }
 
 struct Ctx<'a> {
@@ -283,7 +282,13 @@ pub async fn render_feed(theme: &Theme, site: &Site, q: &QueryResult, registry: 
         (Kind::Atom, true) => atom_comments(&ctx, q, &comments, &self_url, &home, &description, &lang, &title, &built).await?,
     };
 
-    // WP::send_headers()
+    let (content_type, last_modified, etag, nocache) = send_headers(site, q, kind, comment_feed).await?;
+    Ok(Some(Feed { content_type: content_type.to_owned(), body, modified_at: last_modified.clone(), last_modified: (!nocache).then_some(last_modified), etag, nocache }))
+}
+
+/// The headers `WP::send_headers()` sets for a feed: content type, last modified, ETag and whether the
+/// feed must not be cached.
+async fn send_headers(site: &Site, q: &QueryResult, kind: Kind, comment_feed: bool) -> Result<(&'static str, String, String, bool)> {
     let with_comments = comment_feed
         || (q.vars.get("withoutcomments").is_none_or(|v| v.is_empty() || v == "0")
             && ["p", "name", "page_id", "pagename", "attachment", "attachment_id"].iter().any(|k| q.vars.get(k).is_some_and(|v| !v.is_empty() && v != "0")));
@@ -301,8 +306,25 @@ pub async fn render_feed(theme: &Theme, site: &Site, q: &QueryResult, registry: 
         Kind::Atom => "application/atom+xml; charset=UTF-8",
         Kind::Rdf => "application/rdf+xml; charset=UTF-8",
     };
-    let nocache = singular && q.posts.first().is_some_and(|p| !p.post_password.is_empty());
-    Ok(Some(Feed { content_type: content_type.to_owned(), body, modified_at: last_modified.clone(), last_modified: (!nocache).then_some(last_modified), etag, nocache }))
+    let nocache = q.flags.is_singular() && q.posts.first().is_some_and(|p| !p.post_password.is_empty());
+    Ok((content_type, last_modified, etag, nocache))
+}
+
+/// The feed headers of a request whose feed is not rendered because it is redirected (`?p=1&feed=rss2`).
+pub async fn redirect_headers(site: &Site, q: &QueryResult) -> Result<Option<Feed>> {
+    let feed_var = q.vars.get("feed").unwrap_or("feed");
+    let kind = match feed_var.trim_start_matches("comments-") {
+        "feed" | "rss2" => Kind::Rss2,
+        "rss" => Kind::Rss092,
+        "rdf" => Kind::Rdf,
+        "atom" => Kind::Atom,
+        _ => return Ok(None),
+    };
+    let comment_feed = q.vars.get("withcomments").is_some_and(|v| !v.is_empty() && v != "0")
+        || feed_var.contains("comments-")
+        || (!q.vars.get("withoutcomments").is_some_and(|v| !v.is_empty() && v != "0") && q.flags.is_singular());
+    let (content_type, last_modified, etag, nocache) = send_headers(site, q, kind, comment_feed).await?;
+    Ok(Some(Feed { content_type: content_type.to_owned(), body: String::new(), modified_at: last_modified.clone(), last_modified: (!nocache).then_some(last_modified), etag, nocache }))
 }
 
 /// `feed-rss.php`.
@@ -352,6 +374,11 @@ async fn rss2_posts(c: &Ctx<'_>, q: &QueryResult, self_url: &str, home: &str, de
     out.push_str(&format!("\t<title>{title}</title>\n\t<atom:link href=\"{self_url}\" rel=\"self\" type=\"application/rss+xml\" />\n\t<link>{home}</link>\n\t<description>{description}</description>\n\t<lastBuildDate>{}</lastBuildDate>\n\t<language>{lang}</language>\n\t<sy:updatePeriod>\n\thourly\t</sy:updatePeriod>\n\t<sy:updateFrequency>\n\t1\t</sy:updateFrequency>\n\t", rfc2822(built)));
     out.push_str(&c.generator());
     out.push('\n');
+    // `rss2_site_icon()`.
+    let icon = crate::embed::site_icon_url(&c.env, 32, "").await?;
+    if !icon.is_empty() {
+        out.push_str(&format!("\n<image>\n\t<url>{}</url>\n\t<title>{title}</title>\n\t<link>{home}</link>\n\t<width>32</width>\n\t<height>32</height>\n</image> \n", convert_chars(&icon)));
+    }
     for post in &q.posts {
         let post = Arc::new(post.clone());
         let permalink = c.site.permalink(&post).await?;
@@ -392,12 +419,16 @@ async fn rss2_posts(c: &Ctx<'_>, q: &QueryResult, self_url: &str, home: &str, de
 
 #[allow(clippy::too_many_arguments)]
 async fn atom_posts(c: &Ctx<'_>, q: &QueryResult, self_url: &str, home: &str, description: &str, lang: &str, title: &str, built: &str) -> Result<String> {
-    let atom_id = esc_url(&c.site.user_trailingslashit(&c.site.home_url(&format!("{}feed/atom", c.site.root()))));
-    let _ = atom_id;
+    let atom_id = bloginfo_rss(&main_feed_link(c.site, "atom", false));
     let mut out = String::new();
-    out.push_str(&format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?><feed\n\txmlns=\"http://www.w3.org/2005/Atom\"\n\txmlns:thr=\"http://purl.org/syndication/thread/1.0\"\n\txml:lang=\"{lang}\"\n\t>\n\t<title type=\"text\">{title}</title>\n\t<subtitle type=\"text\">{description}</subtitle>\n\n\t<updated>{}</updated>\n\n\t<link rel=\"alternate\" type=\"text/html\" href=\"{home}\" />\n\t<id>{}</id>\n\t<link rel=\"self\" type=\"application/atom+xml\" href=\"{self_url}\" />\n\n\t", atom_date(built), c.site.user_trailingslashit(&c.site.home_url(&format!("{}feed/atom", c.site.root())))));
+    out.push_str(&format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?><feed\n\txmlns=\"http://www.w3.org/2005/Atom\"\n\txmlns:thr=\"http://purl.org/syndication/thread/1.0\"\n\txml:lang=\"{lang}\"\n\t>\n\t<title type=\"text\">{title}</title>\n\t<subtitle type=\"text\">{description}</subtitle>\n\n\t<updated>{}</updated>\n\n\t<link rel=\"alternate\" type=\"text/html\" href=\"{home}\" />\n\t<id>{atom_id}</id>\n\t<link rel=\"self\" type=\"application/atom+xml\" href=\"{self_url}\" />\n\n\t", atom_date(built)));
     out.push_str(&c.generator());
     out.push('\n');
+    // `atom_site_icon()`.
+    let icon = crate::embed::site_icon_url(&c.env, 32, "").await?;
+    if !icon.is_empty() {
+        out.push_str(&format!("<icon>{}</icon>\n", convert_chars(&icon)));
+    }
     for post in &q.posts {
         let post = Arc::new(post.clone());
         let permalink = c.site.permalink(&post).await?;
@@ -517,7 +548,7 @@ async fn atom_comments(c: &Ctx<'_>, q: &QueryResult, comments: &[Comment], _self
             ));
         }
         None => {
-            let atom_url = bloginfo_rss(&c.site.user_trailingslashit(&c.site.home_url(&format!("{}comments/feed/atom", c.site.root()))));
+            let atom_url = bloginfo_rss(&main_feed_link(c.site, "atom", true));
             out.push_str(&format!("\t<link rel=\"alternate\" type=\"text/html\" href=\"{home}\" />\n\t<link rel=\"self\" type=\"application/atom+xml\" href=\"{atom_url}\" />\n\t<id>{atom_url}</id>\n"));
         }
     }
