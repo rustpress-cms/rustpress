@@ -1,6 +1,7 @@
 //! The RustPress HTTP server: static assets plus WordPress routing on top of
 //! the read-only database.
 
+pub mod admin;
 pub mod app;
 pub mod config;
 pub mod statics;

@@ -23,12 +23,15 @@ pub struct Loaded {
     pub site: Site,
     pub theme: Theme,
     pub registry: Registry,
+    /// Sign-in and the administration area, when writing is allowed.
+    pub admin: Option<crate::admin::AdminParts>,
     loaded_at: Instant,
 }
 
 pub struct App {
     config: Config,
     db: Db,
+    writer: Option<rustpress_db::Writer>,
     statics: Statics,
     loaded: RwLock<Arc<Loaded>>,
     reload: Mutex<()>,
@@ -37,15 +40,17 @@ pub struct App {
 impl App {
     pub async fn new(config: Config) -> Result<Arc<Self>> {
         let db = Db::connect(&config.database_url, &config.table_prefix).await?;
+        let writer = if config.allow_writes { Some(rustpress_db::Writer::connect(&config.database_url, &config.table_prefix).await?) } else { None };
         let loaded = Self::load(&config, &db).await?;
-        Ok(Arc::new(Self { statics: Statics::new(&config.wp_root), config, db, loaded: RwLock::new(Arc::new(loaded)), reload: Mutex::new(()) }))
+        Ok(Arc::new(Self { statics: Statics::new(&config.wp_root), config, db, writer, loaded: RwLock::new(Arc::new(loaded)), reload: Mutex::new(()) }))
     }
 
     async fn load(config: &Config, db: &Db) -> Result<Loaded> {
         let site = Site::load_at(db.clone(), &config.wp_root).await?;
         let theme = Theme::load(&site, &config.wp_root).await?;
         let registry = Registry::new(config.wp_root.join("wp-includes").join("blocks"));
-        Ok(Loaded { site, theme, registry, loaded_at: Instant::now() })
+        let admin = if config.allow_writes { Some(crate::admin::AdminParts::load(config, &site).await) } else { None };
+        Ok(Loaded { site, theme, registry, admin, loaded_at: Instant::now() })
     }
 
     /// The current snapshot; options and theme are re-read once it is older than `reload_secs`.
@@ -79,6 +84,10 @@ impl App {
 }
 
 async fn handle(axum::extract::State(app): axum::extract::State<Arc<App>>, request: Request<Body>) -> Response<Body> {
+    let request = match admin_route(&app, request).await {
+        Ok(response) => return response,
+        Err(request) => request,
+    };
     if !matches!(*request.method(), Method::GET | Method::HEAD) {
         let mut response = text(StatusCode::METHOD_NOT_ALLOWED, "RustPress is read-only: only GET and HEAD are supported.\n");
         response.headers_mut().insert(header::ALLOW, HeaderValue::from_static("GET, HEAD"));
@@ -96,6 +105,33 @@ async fn handle(axum::extract::State(app): axum::extract::State<Arc<App>>, reque
             text(StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error\n")
         }
     }
+}
+
+/// The routes of the administration area; the request comes back for everything else.
+async fn admin_route(app: &Arc<App>, request: Request<Body>) -> std::result::Result<Response<Body>, Request<Body>> {
+    let path = request.uri().path().to_owned();
+    let is_login = path.ends_with("/wp-login.php") || path == "/wp-login.php";
+    let is_styles = path.ends_with("/wp-admin/load-styles.php");
+    let is_scripts = path.ends_with("/wp-admin/load-scripts.php");
+    if !(is_login || is_styles || is_scripts) || app.writer.is_none() {
+        return Err(request);
+    }
+    let loaded = app.current().await;
+    let query = request.uri().query().unwrap_or("").to_owned();
+    if is_styles {
+        return Ok(crate::admin::load_styles(&loaded, &app.config, &query, request.headers()));
+    }
+    if is_scripts {
+        return Ok(crate::admin::load_scripts(&loaded, &app.config, &query, request.headers()));
+    }
+    let post = request.method() == Method::POST;
+    if !post && !matches!(*request.method(), Method::GET | Method::HEAD) {
+        return Err(request);
+    }
+    let (parts, body) = request.into_parts();
+    let bytes = axum::body::to_bytes(body, 64 * 1024).await.unwrap_or_default();
+    let body_text = String::from_utf8_lossy(&bytes).into_owned();
+    Ok(crate::admin::login_page(&loaded, app.writer.as_ref(), post, &query, &body_text, &parts.headers).await)
 }
 
 async fn page(app: &App, uri: &axum::http::Uri, request_headers: &axum::http::HeaderMap) -> Result<Response<Body>> {

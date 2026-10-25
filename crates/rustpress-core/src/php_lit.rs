@@ -74,6 +74,8 @@ pub struct Parser<'a> {
     pub at: usize,
     pub vars: &'a Vars,
     hooks: Option<&'a Hooks>,
+    /// Inside the middle part of `? :`, where a `:` ends the expression.
+    colon_stops: u32,
 }
 
 /// Functions whose first argument is the text they translate.
@@ -81,7 +83,7 @@ const TRANSLATION: [&str; 7] = ["__", "_x", "esc_html__", "esc_attr__", "esc_htm
 
 impl<'a> Parser<'a> {
     pub fn new(text: &'a str, at: usize, vars: &'a Vars) -> Self {
-        Self { text, at, vars, hooks: None }
+        Self { text, at, vars, hooks: None, colon_stops: 0 }
     }
 
     /// A parser that also evaluates the functions and properties of `hooks`.
@@ -160,17 +162,42 @@ impl<'a> Parser<'a> {
             if rest.starts_with('.') && !rest.starts_with("..") && !rest.starts_with(".=") {
                 self.at += 1;
                 let next = self.primary();
-                value = match (&value, &next) {
-                    (Lit::Str(a), Lit::Str(b)) => Lit::Str(format!("{a}{b}")),
+                // Numbers join as their PHP string form.
+                let text = |lit: &Lit| match lit {
+                    Lit::Str(s) => Some(s.clone()),
+                    Lit::Int(i) => Some(i.to_string()),
+                    Lit::Float(f) => Some(f.to_string()),
+                    _ => None,
+                };
+                value = match (text(&value), text(&next)) {
+                    (Some(a), Some(b)) => Lit::Str(format!("{a}{b}")),
                     _ => Lit::Unknown,
                 };
                 continue;
             }
             break;
         }
-        // Operators, ternaries and the like: the whole expression is unknown.
+        // `condition ? a : b` with a condition that is known.
         self.skip_space();
-        if !matches!(self.peek(), None | Some(',' | ')' | ']' | ';' | '}')) && !self.rest().starts_with("=>") {
+        if self.rest().starts_with('?') && !self.rest().starts_with("??") && !self.rest().starts_with("?->") {
+            self.at += 1;
+            self.colon_stops += 1;
+            let then = self.expr();
+            self.colon_stops -= 1;
+            self.skip_space();
+            if self.rest().starts_with(':') && !self.rest().starts_with("::") {
+                self.at += 1;
+            }
+            let otherwise = self.expr();
+            return match value.truthy() {
+                Some(true) => then,
+                Some(false) => otherwise,
+                None => Lit::Unknown,
+            };
+        }
+        // Other operators and the like: the whole expression is unknown.
+        let colon = self.colon_stops > 0 && self.rest().starts_with(':') && !self.rest().starts_with("::");
+        if !matches!(self.peek(), None | Some(',' | ')' | ']' | ';' | '}')) && !colon && !self.rest().starts_with("=>") {
             self.skip_value();
             return Lit::Unknown;
         }
@@ -365,6 +392,7 @@ impl<'a> Parser<'a> {
                 ')' | ']' | '}' if depth == 0 => return,
                 ')' | ']' | '}' => depth -= 1,
                 ',' | ';' if depth == 0 => return,
+                ':' if depth == 0 && self.colon_stops > 0 && !self.rest().starts_with("::") => return,
                 '\'' => {
                     let _ = self.single_quoted();
                     continue;

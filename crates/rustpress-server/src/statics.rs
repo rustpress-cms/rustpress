@@ -34,7 +34,7 @@ pub fn is_static_candidate(path: &str) -> bool {
     if !EXTENSIONS.contains(&extension.to_ascii_lowercase().as_str()) {
         return false;
     }
-    top_level || relative.starts_with("wp-content/") || relative.starts_with("wp-includes/")
+    top_level || relative.starts_with("wp-content/") || relative.starts_with("wp-includes/") || relative.starts_with("wp-admin/")
 }
 
 #[derive(Clone)]
@@ -118,6 +118,8 @@ mod tests {
         assert!(is_static_candidate("/wp-includes/js/dist/script-modules/interactivity/index.min.js"));
         assert!(is_static_candidate("/wp-content/uploads/2024/01/photo.JPG"));
         assert!(is_static_candidate("/favicon.ico"));
+        assert!(is_static_candidate("/wp-admin/css/login.min.css"));
+        assert!(!is_static_candidate("/wp-admin/admin.php"));
     }
 
     #[test]
@@ -129,7 +131,6 @@ mod tests {
             "/wp-content/themes/x/theme.json",
             "/wp-content/.htaccess",
             "/wp-content/uploads/.hidden/a.png",
-            "/wp-admin/css/common.css",
             "/wp-content/../wp-config.php",
             "/wp-content//uploads/a.png",
             "/",

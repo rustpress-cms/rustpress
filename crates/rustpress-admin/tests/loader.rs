@@ -12,7 +12,7 @@ fn env() -> Option<LoaderEnv> {
         eprintln!("no WordPress files at {root}, skipping");
         return None;
     }
-    Some(LoaderEnv { includes, site_url: "http://localhost:8080".into(), content_url: "http://localhost:8080/wp-content".into(), version: "7.1.3".into(), rtl: false, separate_block_assets: true, compressed_tinymce: false })
+    Some(LoaderEnv { includes, site_url: "http://localhost:8080".into(), content_url: "http://localhost:8080/wp-content".into(), version: "7.1.3".into(), rtl: false, separate_block_assets: true, compressed_tinymce: false, nonce: None })
 }
 
 fn fixture() -> Value {
@@ -45,6 +45,14 @@ fn args_matches(actual: &Option<Arg>, expected: &Value) -> bool {
     }
 }
 
+/// Inline code that depends on the user, the clock, the language or the site and is not registered by
+/// the default registry yet (`wp_default_packages_inline_scripts()` and the localizations that read
+/// settings): the admin screens that need them add them when they are built.
+const INLINE_GAPS: &[&str] = &[
+    "utils", "common", "editor", "heartbeat", "plupload-handlers", "wp-plupload", "mediaelement", "mediaelement-core", "wplink", "customize-controls", "moment", "wp-data",
+    "wp-date", "wp-editor", "wp-preferences", "wp-view-transitions-admin",
+];
+
 /// The extra data that does not depend on the site: when and how to load.
 fn extra_differences(actual: &Dependency, expected: &Value) -> Vec<String> {
     let mut out = Vec::new();
@@ -60,6 +68,36 @@ fn extra_differences(actual: &Dependency, expected: &Value) -> Vec<String> {
         };
         if !same {
             out.push(format!("extra.{key} {have:?} / {want:?}"));
+        }
+    }
+    // The inline code: compared when it does not hold something that changes from request to request.
+    for key in ["data", "before", "after"] {
+        if INLINE_GAPS.contains(&actual.handle.as_str()) {
+            break;
+        }
+        let Some(want) = expected["extra"].get(key) else {
+            if actual.extra.contains_key(key) {
+                out.push(format!("extra.{key} present but the reference has none"));
+            }
+            continue;
+        };
+        let want_text = want.to_string();
+        // The command line prints the AJAX address with its host, the browser gets it without.
+        if want_text.contains("nonce") || want_text.contains("localhost:8080/?") || want_text.contains("localhost:8080/wp-admin/admin-ajax.php") {
+            continue;
+        }
+        let want_items: Vec<String> = match want {
+            Value::String(text) => vec![text.clone()],
+            Value::Array(items) => items.iter().filter_map(|i| i.as_str().map(str::to_owned)).collect(),
+            _ => Vec::new(),
+        };
+        let have_items: Vec<String> = match actual.extra.get(key) {
+            Some(Extra::Text(text)) => vec![text.clone()],
+            Some(Extra::List(items)) => items.clone(),
+            _ => Vec::new(),
+        };
+        if want_items != have_items {
+            out.push(format!("extra.{key} {} / {}", have_items.join(" | ").chars().take(160).collect::<String>(), want_items.join(" | ").chars().take(160).collect::<String>()));
         }
     }
     out

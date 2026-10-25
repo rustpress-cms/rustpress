@@ -8,7 +8,8 @@
 //! reload_secs  = 60
 //! ```
 //!
-//! Environment: `RUSTPRESS_CONFIG` (path of the TOML file), `RUSTPRESS_DATABASE_URL`,
+//! Environment: `RUSTPRESS_CONFIG` (path of the TOML file), `RUSTPRESS_DATABASE_URL`, `RUSTPRESS_ALLOW_WRITES`,
+//! `RUSTPRESS_WP_CONFIG`,
 //! `RUSTPRESS_TABLE_PREFIX`, `RUSTPRESS_WP_ROOT`, `RUSTPRESS_LISTEN`, `RUSTPRESS_RELOAD_SECS`.
 
 use std::path::PathBuf;
@@ -25,6 +26,11 @@ pub struct Config {
     pub listen: String,
     /// Options and theme are re-read from the database after this many seconds.
     pub reload_secs: u64,
+    /// Signing in and changing the site need a connection that can write; without this switch RustPress
+    /// only reads and the administration area stays closed.
+    pub allow_writes: bool,
+    /// The `wp-config.php` whose keys and salts sign the cookies (default: the one in `wp_root`).
+    pub wp_config: Option<PathBuf>,
 }
 
 impl Default for Config {
@@ -35,6 +41,8 @@ impl Default for Config {
             wp_root: PathBuf::from("."),
             listen: "127.0.0.1:3000".to_owned(),
             reload_secs: 60,
+            allow_writes: false,
+            wp_config: None,
         }
     }
 }
@@ -75,6 +83,12 @@ impl Config {
         }
         if let Ok(v) = std::env::var("RUSTPRESS_RELOAD_SECS") {
             config.reload_secs = v.parse().map_err(|_| ConfigError::Number("RUSTPRESS_RELOAD_SECS"))?;
+        }
+        if let Ok(v) = std::env::var("RUSTPRESS_ALLOW_WRITES") {
+            config.allow_writes = matches!(v.as_str(), "1" | "true" | "yes" | "on");
+        }
+        if let Ok(v) = std::env::var("RUSTPRESS_WP_CONFIG") {
+            config.wp_config = Some(v.into());
         }
         if config.database_url.is_empty() {
             return Err(ConfigError::NoDatabase);

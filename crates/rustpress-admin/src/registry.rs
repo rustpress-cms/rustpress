@@ -13,8 +13,11 @@ use crate::deps::{Arg, Extra, Ver};
 use crate::scripts::Scripts;
 use crate::styles::Styles;
 
+/// `wp_create_nonce()` for the current user.
+pub type NonceFn = std::sync::Arc<dyn Fn(&str) -> String + Send + Sync>;
+
 /// What the registration code asks the site about.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct LoaderEnv {
     /// The `wp-includes` directory of the WordPress files.
     pub includes: PathBuf,
@@ -28,6 +31,8 @@ pub struct LoaderEnv {
     pub separate_block_assets: bool,
     /// `$concatenate_scripts && $compress_scripts`: TinyMCE comes as one compressed file then.
     pub compressed_tinymce: bool,
+    /// `wp_create_nonce()` for the current user; without one nonces are empty.
+    pub nonce: Option<NonceFn>,
 }
 
 /// Lit -> JSON the way PHP arrays encode: a list when the keys are 0..n, else an object.
@@ -151,7 +156,12 @@ fn hooks(env: &LoaderEnv) -> Hooks {
     }));
     h.functions.insert("admin_url".into(), Box::new({
         let site = site.clone();
-        move |args| Some(Lit::Str(format!("{site}/wp-admin/{}", args.first().and_then(Lit::as_str).unwrap_or_default())))
+        move |args| {
+            let path = args.first().and_then(Lit::as_str).unwrap_or_default();
+            // `admin_url( $path, 'relative' )` leaves the host out.
+            let base = if args.get(1).and_then(Lit::as_str) == Some("relative") { rustpress_core::urls::strip_origin(&site) } else { site.clone() };
+            Some(Lit::Str(format!("{base}/wp-admin/{path}")))
+        }
     }));
     h.functions.insert("includes_url".into(), Box::new({
         let site = site.clone();
@@ -167,6 +177,17 @@ fn hooks(env: &LoaderEnv) -> Hooks {
     }));
     h.functions.insert("wp_scripts_get_suffix".into(), Box::new(|_| Some(Lit::Str(".min".into()))));
     h.functions.insert("is_admin".into(), Box::new(|_| Some(Lit::Bool(false))));
+    h.functions.insert("wp_installing".into(), Box::new(|_| Some(Lit::Bool(false))));
+    // `empty()` and `isset()` of values this reader cannot know: not set.
+    h.functions.insert("empty".into(), Box::new(|args| Some(Lit::Bool(args.first().is_none_or(|a| matches!(a.truthy(), Some(false) | None))))));
+    h.functions.insert("isset".into(), Box::new(|_| Some(Lit::Bool(false))));
+    h.functions.insert("wp_create_nonce".into(), Box::new({
+        let nonce = env.nonce.clone();
+        move |args| {
+            let action = args.first().and_then(Lit::as_str)?;
+            Some(Lit::Str(nonce.as_ref().map(|n| n(action)).unwrap_or_default()))
+        }
+    }));
     h.functions.insert("urlencode".into(), Box::new(|args| args.first().and_then(Lit::as_str).map(|t| Lit::Str(rustpress_core::canonical::php_urlencode(t)))));
     h.props.insert("const::WPINC".into(), Lit::Str("wp-includes".into()));
     h.props.insert("const::ABSPATH".into(), Lit::Str("/var/www/html/".into()));
@@ -379,7 +400,7 @@ fn register_packages(scripts: &mut Scripts, env: &LoaderEnv) {
             scripts.set_translations(&handle, "default", "");
         }
         if handle == "wp-i18n" {
-            scripts.add_inline_script(&handle, "wp.i18n.setLocaleData( { 'text direction\u{4}ltr': [ 'ltr' ] } );", "after");
+            scripts.add_inline_script(&handle, r"wp.i18n.setLocaleData( { 'text direction\u0004ltr': [ 'ltr' ] } );", "after");
         }
     }
 }

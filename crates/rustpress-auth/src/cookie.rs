@@ -68,7 +68,7 @@ fn hmac_sha256_hex(key: &str, data: &str) -> String {
     mac.finalize().into_bytes().iter().map(|b| format!("{b:02x}")).collect()
 }
 
-fn sha256_hex(data: &str) -> String {
+pub(crate) fn sha256_hex(data: &str) -> String {
     sha2::Sha256::digest(data.as_bytes()).iter().map(|b| format!("{b:02x}")).collect()
 }
 
@@ -87,6 +87,10 @@ impl Auth {
     pub fn new(salts: Salts, siteurl: &str) -> Self {
         let cookie_hash = Md5::digest(siteurl.as_bytes()).iter().map(|b| format!("{b:02x}")).collect();
         Self { salts, cookie_hash }
+    }
+
+    pub(crate) fn hash(&self) -> &str {
+        &self.cookie_hash
     }
 
     pub fn salts(&self) -> &Salts {

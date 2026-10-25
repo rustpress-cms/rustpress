@@ -86,7 +86,20 @@ impl Scripts {
     /// `localize()` with the data already as JSON (`wp_json_encode( $l10n, JSON_HEX_TAG | JSON_UNESCAPED_SLASHES )`).
     pub fn localize(&mut self, handle: &str, object_name: &str, l10n: &Value) -> bool {
         let handle = if handle == "jquery" { "jquery-core" } else { handle };
-        let json = serde_json::to_string(l10n).unwrap_or_default().replace('<', "\\u003C").replace('>', "\\u003E");
+        // Scalar values lose their HTML entities before they are encoded (`html_entity_decode()`).
+        let mut l10n = l10n.clone();
+        if let Value::Object(map) = &mut l10n {
+            for value in map.values_mut() {
+                // Every scalar becomes a string: `(string) $value`.
+                match value {
+                    Value::String(text) => *text = rustpress_core::formatting::html_entity_decode(text),
+                    Value::Number(n) => *value = Value::String(n.to_string()),
+                    Value::Bool(b) => *value = Value::String(if *b { "1".into() } else { String::new() }),
+                    _ => {}
+                }
+            }
+        }
+        let json = serde_json::to_string(&l10n).unwrap_or_default().replace('<', "\\u003C").replace('>', "\\u003E");
         let mut script = format!("var {object_name} = {json};");
         if let Some(Extra::Text(data)) = self.deps.get_data(handle, "data")
             && !data.is_empty()

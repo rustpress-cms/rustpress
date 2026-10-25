@@ -562,3 +562,15 @@ mod tests {
         assert_eq!((y.as_str(), mo.as_str(), d.as_str(), h.as_str(), mi.as_str(), s.as_str()), ("2026", "10", "24", "14", "07", "09"));
     }
 }
+
+/// `http://host:port/path` -> `/path`: the part of a URL after its origin (`wp_parse_url( ..., PHP_URL_PATH )`
+/// kept for relative links such as the AJAX address).
+pub fn strip_origin(url: &str) -> String {
+    match url.split_once("://") {
+        Some((_, rest)) => match rest.find('/') {
+            Some(at) => rest[at..].trim_end_matches('/').to_owned(),
+            None => String::new(),
+        },
+        None => url.trim_end_matches('/').to_owned(),
+    }
+}

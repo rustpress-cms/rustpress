@@ -3,7 +3,7 @@
 //! capabilities of two users. The live part needs the reference database and its `wp-config.php`
 //! (`RUSTPRESS_TEST_DB`, `RUSTPRESS_TEST_WP_CONFIG`); without them it prints a note and passes.
 
-use rustpress_auth::{Auth, CurrentUser, Roles, Salts, Scheme, password};
+use rustpress_auth::{Auth, CurrentUser, Roles, Salts, Scheme, password, session};
 use rustpress_db::Db;
 use serde_json::Value;
 
@@ -115,4 +115,19 @@ async fn roles_give_the_capabilities_of_wordpress() {
     assert_eq!(editor.roles, ["editor"]);
     assert!(editor.can("edit_others_posts") && editor.can("publish_pages"));
     assert!(!editor.can("manage_options") && !editor.can("install_plugins") && !editor.can("nonsense"));
+}
+
+#[tokio::test]
+async fn a_new_session_is_valid_and_can_be_ended() {
+    let Some((db, auth)) = live().await else { return };
+    let url = std::env::var("RUSTPRESS_TEST_DB").unwrap_or_else(|_| "mysql://wordpress:wordpress@127.0.0.1:3306/wordpress".into());
+    let writer = rustpress_db::Writer::connect(&url, "wp_").await.unwrap();
+    let user = db.auth_user_by_login("rpeditor").await.unwrap().unwrap();
+    let now = 1_900_000_000;
+    let expiration = rustpress_auth::Auth::login_expiration(false, now);
+    let token = session::create_session(&db, &writer, user.id, expiration, Some("127.0.0.1"), Some("test agent"), now).await.unwrap();
+    let cookie = auth.generate_cookie(&user, expiration, Scheme::LoggedIn, &token).unwrap();
+    assert!(auth.validate_cookie(&db, &cookie, Scheme::LoggedIn, now, false).await.unwrap().is_some());
+    session::destroy_session(&db, &writer, user.id, &token, now).await.unwrap();
+    assert!(auth.validate_cookie(&db, &cookie, Scheme::LoggedIn, now, false).await.unwrap().is_none());
 }
