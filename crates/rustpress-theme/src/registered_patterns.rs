@@ -125,6 +125,54 @@ impl Theme {
     }
 }
 
+/// A style `register_block_style()` knows: `(block type, name, label, is default)`.
+pub type BlockStyle = (String, String, String, bool);
+
+impl Theme {
+    /// `WP_Block_Styles_Registry::get_all_registered()`: what the `functions.php` of the theme (and its parent) registers
+    /// with `register_block_style()`, then the variations of `styles/`, grouped by block in the order they were first seen.
+    pub fn registered_block_styles(&self) -> Vec<(String, Vec<BlockStyle>)> {
+        let mut flat: Vec<BlockStyle> = Vec::new();
+        let mut dirs = vec![self.stylesheet_dir().to_path_buf()];
+        if self.template_dir() != self.stylesheet_dir() {
+            dirs.push(self.template_dir().to_path_buf());
+        }
+        let domain = crate::theme_headers::text_domain(self.stylesheet_dir());
+        for dir in &dirs {
+            let Ok(source) = std::fs::read_to_string(dir.join("functions.php")) else { continue };
+            let domain = crate::theme_headers::text_domain(dir);
+            let mut rest = source.as_str();
+            while let Some(at) = rest.find("register_block_style(") {
+                rest = &rest[at + "register_block_style(".len()..];
+                let Some((block, after)) = php_literal(rest) else { continue };
+                let end = after.find("register_block_style(").unwrap_or(after.len());
+                let body = &after[..end];
+                let name = self.php_array_text(body, "name", &domain);
+                let label = self.php_array_text(body, "label", &domain);
+                if name.is_empty() {
+                    continue;
+                }
+                let is_default = body.find("'is_default'").is_some_and(|i| body[i..].split(',').next().is_some_and(|v| v.contains("true")));
+                flat.push((block, name, label, is_default));
+            }
+        }
+        for (block, name, label) in self.block_style_variations(&domain) {
+            flat.push((block, name, label, false));
+        }
+        let mut grouped: Vec<(String, Vec<BlockStyle>)> = Vec::new();
+        for style in flat {
+            match grouped.iter_mut().find(|(block, _)| *block == style.0) {
+                Some((_, list)) => match list.iter_mut().find(|s| s.1 == style.1) {
+                    Some(existing) => *existing = style,
+                    None => list.push(style),
+                },
+                None => grouped.push((style.0.clone(), vec![style])),
+            }
+        }
+        grouped
+    }
+}
+
 /// A block pattern category as `WP_Block_Pattern_Categories_Registry` holds it.
 #[derive(Debug, Clone)]
 pub struct PatternCategory {

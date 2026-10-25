@@ -376,6 +376,27 @@ pub(super) async fn editor_settings(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo)
 }
 
 /// The inline scripts both editors start with: the REST client, the data stores, preferences and the blocks.
+/// `enqueue_editor_block_styles_assets()`: the block styles of the theme for the editor.
+pub(super) fn block_styles_script(ctx: &Ctx<'_>) -> String {
+    let flags = rustpress_blocks::php_json::Flags { unescaped_slashes: true, unescaped_unicode: false };
+    let mut lines = vec!["( function() {".to_owned()];
+    for (block, styles) in ctx.env.theme.registered_block_styles() {
+        for (_, name, label, is_default) in styles {
+            let mut style = Map::new();
+            style.insert("name".into(), json!(name));
+            style.insert("label".into(), json!(label));
+            if is_default {
+                style.insert("isDefault".into(), json!(true));
+            }
+            let json = rustpress_blocks::php_json::encode_with(&Value::Object(style), flags).replace('<', &format!("{}u003C", char::from(92u8))).replace('>', &format!("{}u003E", char::from(92u8)));
+            lines.push(format!("	wp.blocks.registerBlockStyle( '{block}', {json} );"));
+        }
+    }
+    lines.push("} )();".to_owned());
+    lines.join("
+")
+}
+
 pub(super) async fn shared_inline(ctx: &Ctx<'_>, assets: &mut Assets, preloaded: &Value) {
     let site = ctx.site();
     let root = site.site_url("wp-json/");
@@ -447,12 +468,19 @@ pub async fn render_editor(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo) -> Admin
     };
 
     let mut assets = Assets {
-        scripts: ["wp-edit-post", "wp-format-library", "wp-block-directory", "media-editor", "media-audiovideo", "mce-view", "image-edit", "imgareaselect", "quicktags", "wplink", "jquery-ui-autocomplete", "thickbox", "media-upload"].iter().map(|s| (*s).to_owned()).collect(),
+        scripts: ["heartbeat", "wp-edit-post", "media-editor", "media-audiovideo", "mce-view", "image-edit", "imgareaselect", "quicktags", "wplink", "jquery-ui-autocomplete", "thickbox", "media-upload", "wp-block-styles", "wp-block-directory", "wp-format-library"].iter().map(|s| (*s).to_owned()).collect(),
         editor_modules: true,
-        styles: ["wp-edit-post", "wp-format-library", "wp-block-directory", "wp-edit-blocks", "wp-commands", "media-views"].iter().map(|s| (*s).to_owned()).collect(),
+        no_emoji: true,
+        styles: ["media-views", "editor-buttons", "wp-edit-post", "wp-format-library", "wp-block-directory", "wp-edit-blocks", "wp-commands"].iter().map(|s| (*s).to_owned()).collect(),
         ..Default::default()
     };
     super::media_ui::enqueue(ctx, &mut assets, post.id).await;
+    assets.inline.push(("wp-block-styles".into(), block_styles_script(ctx), "after".into()));
+    // Post locks: the heartbeat checks every ten seconds, and the meta box loader nonces are renewed.
+    assets.inline.push(("heartbeat".into(), "jQuery( function() {
+		wp.heartbeat.interval( 10 );
+	} );".into(), "after".into()));
+    assets.inline.push(("heartbeat".into(), include_str!("../data/heartbeat_nonces.js").replace(char::from(13u8), ""), "after".into()));
     // A new post starts with what the form is made of (`get_default_post_to_edit()` empties the title).
     let initial_edits = if is_new {
         let mut edits = Map::new();

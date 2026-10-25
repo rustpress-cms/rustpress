@@ -167,6 +167,8 @@ pub struct Assets {
     pub inline: Vec<(String, String, String)>,
     /// The screen runs the block editor: its script modules (math blocks, routing) are loaded too.
     pub editor_modules: bool,
+    /// The post editor prints no emoji detection script.
+    pub no_emoji: bool,
 }
 
 /// `print_emoji_detection_script()`: the settings and the detection script, inline.
@@ -305,6 +307,10 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
 
     // Scripts of the head (`utils` with `userSettings`).
     let mut scripts = default_scripts(&env.loader);
+    // `enqueue_editor_block_styles_assets()` registers a script without a file for the styles of the blocks.
+    if assets.scripts.iter().chain(&assets.early_scripts).any(|h| h == "wp-block-styles") {
+        scripts.add("wp-block-styles", None, &["wp-blocks"], crate::deps::Ver::Default, Some(crate::deps::Arg::Int(1)));
+    }
     scripts.localize(
         "utils",
         "userSettings",
@@ -452,7 +458,7 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
     out.push_str(&script_modules(env, assets.editor_modules));
     out.push_str(&footer_styles);
     out.push_str(&footer_scripts);
-    out.push_str(&emoji_scripts(env, assets.editor_modules));
+    out.push_str(&emoji_scripts(env, assets.no_emoji));
     out.push_str(&assets.footer);
     out.push_str("\n<div class=\"clear\"></div></div><!-- wpwrap -->\n<script>if(typeof wpOnload==='function')wpOnload();</script>\n</body>\n</html>\n");
     out

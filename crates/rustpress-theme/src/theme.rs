@@ -178,9 +178,8 @@ impl Theme {
         &self.host
     }
 
-    /// `WP_Theme_JSON_Resolver::get_style_variations()`: the whole-theme style variations of `styles/` (any depth),
-    /// by path, a child theme's file replacing the parent's of the same name.
-    pub fn style_variations(&self) -> Vec<Value> {
+    /// The JSON files of `styles/` of the theme and its parent, sorted by path (`ksort( $variation_files )`).
+    fn variation_files(&self) -> Vec<PathBuf> {
         let mut files: Vec<PathBuf> = Vec::new();
         let child = self.stylesheet_dir.join("styles");
         let parent = self.template_dir.join("styles");
@@ -192,6 +191,30 @@ impl Theme {
             files.extend(inherited.into_iter().filter(|p| !p.file_name().is_some_and(|n| own.iter().any(|o| o == n))));
         }
         files.sort();
+        files
+    }
+
+    /// The style variations of single blocks (`styles/**/*.json` with `blockTypes`): `(block type, name, label)`.
+    pub fn block_style_variations(&self, text_domain: &str) -> Vec<(String, String, String)> {
+        let mut out = Vec::new();
+        for path in self.variation_files() {
+            let Some(raw) = read_file(&path) else { continue };
+            let Some(map) = raw.as_object() else { continue };
+            let Some(block_types) = map.get("blockTypes").and_then(Value::as_array) else { continue };
+            let title = map.get("title").and_then(Value::as_str).map(str::to_owned).unwrap_or_else(|| path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default());
+            let title = self.host_ref().translate(&title, Some("Style variation name"), text_domain);
+            let name = map.get("slug").and_then(Value::as_str).map(str::to_owned).unwrap_or_else(|| kebab_case(&title));
+            for block in block_types.iter().filter_map(Value::as_str) {
+                out.push((block.to_owned(), name.clone(), title.clone()));
+            }
+        }
+        out
+    }
+
+    /// `WP_Theme_JSON_Resolver::get_style_variations()`: the whole-theme style variations of `styles/` (any depth),
+    /// by path, a child theme's file replacing the parent's of the same name.
+    pub fn style_variations(&self) -> Vec<Value> {
+        let files = self.variation_files();
         let partials = read_partials(&[self.stylesheet_dir.join("styles"), self.template_dir.join("styles")]);
         let mut out = Vec::new();
         for path in files {
@@ -514,4 +537,17 @@ async fn load_db_templates(site: &Site, stylesheet: &str) -> Result<(HashMap<Str
         }
     }
     Ok((templates, parts))
+}
+
+/// `_wp_to_kebab_case()` for a title.
+fn kebab_case(text: &str) -> String {
+    let mut out = String::new();
+    for c in text.chars() {
+        if c.is_alphanumeric() {
+            out.extend(c.to_lowercase());
+        } else if !out.ends_with('-') && !out.is_empty() {
+            out.push('-');
+        }
+    }
+    out.trim_end_matches('-').to_owned()
 }
