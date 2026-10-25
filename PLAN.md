@@ -156,4 +156,9 @@ Der Frontend-Vergleich ist weitgehend ausgeschöpft (Restliste oben). Der nächs
    - **E. Kommentare abgeben** (`wp-comments-post.php`), Passwort-Seiten, Suche in der Verwaltung.
 4. **Nicht geplant**: PHP-Plugins ausführen, Multisite-Verwaltung, Updates über wordpress.org (ein ausdrücklicher Befehl später).
 
-**Stand der Verwaltung**: noch nichts umgesetzt (Anmeldung, `wp-admin` und `xmlrpc.php` sind in `compat/known.toml` als bekannte Abweichung geführt).
+**Stand der Verwaltung (25.10.2026)**:
+- Neue Crates: `rustpress-auth` (Passwörter `$wp$2y$`/`$P$`/bcrypt/md5, Cookies aller drei Schemata, Sitzungen in `usermeta`, Nonces, Rollen und Fähigkeiten; `tests/oracle.rs` vergleicht gegen das Referenz-WordPress, `dev/auth_oracle.sh` erzeugt die Vergleichsdaten) und `rustpress-admin` (Skript- und Stil-Registry aus `script-loader.php`: `WP_Dependencies`, `WP_Scripts`, `WP_Styles` mit Zusammenfassung zu `load-scripts.php`/`load-styles.php`; Test gegen das Register des Referenz-WordPress, `dev/loader_oracle.sh`; `wp-login.php`; die `wp_die`-Seite).
+- Schreibzugriff nur mit `allow_writes = true` (`RUSTPRESS_ALLOW_WRITES=1`): `rustpress_db::Writer` mit eigener, nicht schreibgeschützter Verbindung; ohne den Schalter bleibt alles wie zuvor.
+- `wp-login.php` ist gegen das Orakel byte-gleich (Formular, Fehlerseiten, Header und Cookies der Anmeldung und Abmeldung, `dev/login-compare.sh`); das Referenz-WordPress akzeptiert die von RustPress angelegte Sitzung. Schlüssel und Salze kommen aus `wp-config.php` (auch `getenv_docker(...)`) oder den Optionen.
+- Offen in A: Passwort-Neuberechnung beim Anmelden (`wp_set_password`), „Passwort vergessen“, Admin-E-Mail-Bestätigung (`confirm_admin_email`), Registrierung, Sprachpakete der Verwaltung (`admin-<locale>.mo`), Sitzungsadresse (`REMOTE_ADDR`).
+- Als Nächstes: B/C (angemeldeter Benutzer im Frontend und in der REST-API: Admin-Leiste, Cookie plus `X-WP-Nonce`), dann die Schreib-API und die Hülle des Block-Editors (D).

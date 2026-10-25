@@ -125,7 +125,7 @@ impl Auth {
             blank(secure.clone(), &paths.admin),
             blank(auth.clone(), &paths.plugins),
             blank(secure.clone(), &paths.plugins),
-            blank(logged_in, &paths.cookie),
+            blank(logged_in.clone(), &paths.cookie),
             blank(logged_in, &paths.site),
             blank(format!("wp-settings-{user_id}"), &paths.site),
             blank(format!("wp-settings-time-{user_id}"), &paths.site),
