@@ -106,6 +106,174 @@ fn plugins_slug(plugin: &PluginInfo) -> String {
     plugin.slug()
 }
 
+/// `validate_file()`: no way out of the plugins directory.
+fn valid_plugin_file(file: &str) -> bool {
+    !file.is_empty() && !file.contains("..") && !file.contains("./") && !file.starts_with('/') && !file.contains('\\') && !file.contains(':')
+}
+
+/// `delete_plugins()`: a plugin in a folder takes the folder along, a single file goes alone.
+fn delete_plugin_files(root: &std::path::Path, file: &str) -> std::io::Result<()> {
+    let plugins = root.join("wp-content").join("plugins");
+    match file.split_once('/') {
+        Some((folder, _)) => std::fs::remove_dir_all(plugins.join(folder)),
+        None => std::fs::remove_file(plugins.join(file)),
+    }
+}
+
+/// The actions of `plugins.php` that change something: activate, deactivate, delete, auto-updates.
+async fn actions(ctx: &Ctx<'_>, action: &str, installed: &[PluginInfo], active: &mut Vec<String>, root: &std::path::Path) -> Option<AdminResponse> {
+    let request = ctx.request;
+    let tr = |s: &str| ctx.tr(s);
+    let expired = || die(ctx.env, 403, &tr("WordPress Failure Notice"), &tr("The link you followed has expired."));
+    let status = request.request("plugin_status").unwrap_or("all").to_owned();
+    let page = request.request("paged").unwrap_or("1").to_owned();
+    let search = urlenc(request.request("s").unwrap_or_default());
+    let back_url = |extra: &str| ctx.admin_url(&format!("plugins.php?{extra}plugin_status={status}&paged={page}&s={search}"));
+    let back = |extra: &str| redirect(&back_url(extra));
+    let checked: Vec<String> = request.form.iter().chain(request.query.iter()).filter(|(k, _)| k == "checked[]").map(|(_, v)| v.clone()).collect();
+    let file = request.request("plugin").unwrap_or_default().to_owned();
+    let is_installed = |f: &str| installed.iter().any(|p| p.file == f);
+    match action {
+        "activate" | "deactivate" => {
+            if !ctx.verify_nonce(&format!("{action}-plugin_{file}")) {
+                return Some(expired());
+            }
+            let Some(writer) = ctx.env.writer else { return Some(super::common::read_only(ctx)) };
+            if action == "activate" && is_installed(&file) && !active.contains(&file) {
+                active.push(file.clone());
+            } else if action == "deactivate" {
+                active.retain(|p| p != &file);
+            }
+            let _ = writer.update_option("active_plugins", &serialize_list(active)).await;
+            Some(back(&format!("{}=true&", if action == "activate" { "activate" } else { "deactivate" })))
+        }
+        "activate-selected" | "deactivate-selected" => {
+            if !ctx.can("activate_plugins") {
+                return Some(die(ctx.env, 403, "WordPress &rsaquo; Error", &format!("<p>{}</p>", if action == "activate-selected" { tr("Sorry, you are not allowed to activate plugins for this site.") } else { tr("Sorry, you are not allowed to deactivate plugins for this site.") })));
+            }
+            if !ctx.verify_nonce("bulk-plugins") {
+                return Some(expired());
+            }
+            let Some(writer) = ctx.env.writer else { return Some(super::common::read_only(ctx)) };
+            let selected: Vec<String> = checked.iter().filter(|f| if action == "activate-selected" { !active.contains(f) && is_installed(f) } else { active.contains(f) }).cloned().collect();
+            if selected.is_empty() {
+                return Some(back(""));
+            }
+            if action == "activate-selected" {
+                active.extend(selected);
+            } else {
+                active.retain(|p| !selected.contains(p));
+            }
+            let _ = writer.update_option("active_plugins", &serialize_list(active)).await;
+            Some(back(&format!("{}=true&", if action == "activate-selected" { "activate-multi" } else { "deactivate-multi" })))
+        }
+        "enable-auto-update" | "disable-auto-update" | "enable-auto-update-selected" | "disable-auto-update-selected" => {
+            if !ctx.can("update_plugins") {
+                return Some(die(ctx.env, 403, "WordPress &rsaquo; Error", &format!("<p>{}</p>", tr("Sorry, you are not allowed to manage plugins automatic updates."))));
+            }
+            let single = !action.ends_with("-selected");
+            if single && file.is_empty() || !single && checked.is_empty() {
+                return Some(back(""));
+            }
+            if !ctx.verify_nonce(if single { "updates" } else { "bulk-plugins" }) {
+                return Some(expired());
+            }
+            let Some(writer) = ctx.env.writer else { return Some(super::common::read_only(ctx)) };
+            let mut auto = auto_updates(ctx);
+            let before = auto.clone();
+            let targets = if single { vec![file] } else { checked.clone() };
+            if action.starts_with("enable") {
+                for target in targets {
+                    if !auto.contains(&target) {
+                        auto.push(target);
+                    }
+                }
+            } else {
+                auto.retain(|p| !targets.contains(p));
+            }
+            if !single && auto == before {
+                return Some(back(""));
+            }
+            auto.retain(|p| is_installed(p));
+            let _ = writer.update_option("auto_update_plugins", &serialize_list(&auto)).await;
+            let flag = match action {
+                "enable-auto-update" => "enabled-auto-update",
+                "disable-auto-update" => "disabled-auto-update",
+                "enable-auto-update-selected" => "enabled-auto-update-multi",
+                _ => "disabled-auto-update-multi",
+            };
+            // `add_query_arg()` writes an empty `s` without an equals sign.
+            let base = back_url("");
+            let base = base.strip_suffix("&s=").map_or_else(|| base.clone(), |b| format!("{b}&s"));
+            Some(redirect(&format!("{base}&{flag}=true")))
+        }
+        "delete-selected" => {
+            if !ctx.can("delete_plugins") {
+                return Some(die(ctx.env, 403, "WordPress &rsaquo; Error", &format!("<p>{}</p>", tr("Sorry, you are not allowed to delete plugins for this site."))));
+            }
+            if !ctx.verify_nonce("bulk-plugins") {
+                return Some(expired());
+            }
+            if checked.is_empty() {
+                return Some(back(""));
+            }
+            let plugins: Vec<String> = checked.iter().filter(|f| !active.contains(f)).cloned().collect();
+            if plugins.is_empty() {
+                return Some(back("error=true&main=true&"));
+            }
+            if plugins.iter().any(|f| !valid_plugin_file(f)) {
+                return Some(back(""));
+            }
+            if request.request("verify-delete").is_none() {
+                return Some(delete_confirmation(ctx, &plugins, root).await);
+            }
+            let count = plugins.len();
+            if ctx.env.writer.is_none() {
+                return Some(super::common::read_only(ctx));
+            }
+            for plugin in &plugins {
+                if delete_plugin_files(root, plugin).is_err() {
+                    return Some(die(ctx.env, 500, "WordPress &rsaquo; Error", &format!("<p>{}</p>", tr("Plugin could not be deleted."))));
+                }
+            }
+            Some(back(&format!("deleted={count}&")))
+        }
+        _ => None,
+    }
+}
+
+/// The question before `delete-selected` removes files.
+async fn delete_confirmation(ctx: &Ctx<'_>, plugins: &[String], root: &std::path::Path) -> AdminResponse {
+    let tr = |s: &str| ctx.tr(s);
+    let installed = plugins::installed(root);
+    let mut items = String::new();
+    for file in plugins {
+        let folder = file.split_once('/').map(|(f, _)| f);
+        for plugin in installed.iter().filter(|p| match folder {
+            Some(folder) => p.file.starts_with(&format!("{folder}/")),
+            None => &p.file == file,
+        }) {
+            let author = if plugin.author.is_empty() { String::new() } else { plugin.author.clone() };
+            items.push_str(&format!("<li>{}</li>", rustpress_core::i18n::sprintf(&ctx.site().trx("%1$s by %2$s", "plugin"), &[&format!("<strong>{}</strong>", esc_html(&plugin.name)), &format!("<em>{}</em>", esc_html(&author))])));
+        }
+    }
+    let many = plugins.len() != 1;
+    let current = ctx.request.request_uri.clone();
+    let hidden: String = plugins.iter().map(|p| format!("<input type=\"hidden\" name=\"checked[]\" value=\"{}\" />", esc_attr(p))).collect();
+    let nonce = ctx.nonce_field("bulk-plugins");
+    let content = format!(
+        "<div class=\"wrap\">\n\t\t\t\t\t\t\t\t\t\t\t\t\t<h1>{}</h1>\n\t\t\t\t\t\t\t\t\t\t<p>{}</p>\n\t\t\t\t\t\t\t\t\t<ul class=\"ul-disc\">\n\t\t\t\t\t\t{items}\t\t\t\t\t</ul>\n\t\t\t\t<p>\n\t\t\t\t{}\t\t\t\t</p>\n\t\t\t\t<form method=\"post\" action=\"{}\" style=\"display:inline;\">\n\t\t\t\t\t<input type=\"hidden\" name=\"verify-delete\" value=\"1\" />\n\t\t\t\t\t<input type=\"hidden\" name=\"action\" value=\"delete-selected\" />\n\t\t\t\t\t{hidden}\t\t\t\t\t{nonce}\t\t\t\t\t<input type=\"submit\" name=\"submit\" id=\"submit\" class=\"button\" value=\"{}\"  />\t\t\t\t</form>\n\t\t\t\t\t\t\t\t<form method=\"post\" action=\"\" style=\"display:inline;\">\n\t\t\t\t\t<input type=\"submit\" name=\"submit\" id=\"submit\" class=\"button\" value=\"{}\"  />\t\t\t\t</form>\n\t\t\t\t</div>\n\t\t\t\t",
+        if many { tr("Delete Plugins") } else { tr("Delete Plugin") },
+        if many { tr("You are about to remove the following plugins:") } else { tr("You are about to remove the following plugin:") },
+        tr("Are you sure you want to delete these files?"),
+        esc_url(&current),
+        esc_attr(&tr("Yes, delete these files")),
+        esc_attr(&tr("No, return me to the plugin list"))
+    );
+    let screen = Screen { file: "plugins.php".into(), parent_file: "plugins.php".into(), submenu_file: Some("plugins.php".into()), title: tr("Plugins"), ..Default::default() };
+    render(ctx, &screen, &content, &Assets { scripts: vec!["jquery".into()], ..Default::default() }).await
+}
+
 pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     let tr = |s: &str| ctx.tr(s);
     let request = ctx.request;
@@ -116,27 +284,35 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     let installed = plugins::installed(&root);
     let mut active = active_plugins(ctx);
     let mut notices = String::new();
-    let file = request.get("plugin").unwrap_or_default().to_owned();
-    match request.get("action") {
-        Some(action @ ("activate" | "deactivate")) => {
-            if !ctx.verify_nonce(&format!("{action}-plugin_{file}")) {
-                return die(ctx.env, 403, &tr("WordPress Failure Notice"), &tr("The link you followed has expired."));
-            }
-            let Some(writer) = ctx.env.writer else { return super::common::read_only(ctx) };
-            if action == "activate" && installed.iter().any(|p| p.file == file) && !active.contains(&file) {
-                active.push(file.clone());
-            } else if action == "deactivate" {
-                active.retain(|p| p != &file);
-            }
-            let _ = writer.update_option("active_plugins", &serialize_list(&active)).await;
-            return redirect(&ctx.admin_url(&format!("plugins.php?{}=true&plugin_status={}&paged=1&s", if action == "activate" { "activate" } else { "deactivate" }, request.get("plugin_status").unwrap_or("all"))));
-        }
-        _ => {}
+    let action = {
+        let first = request.request("action").unwrap_or_default();
+        if first.is_empty() || first == "-1" { request.request("action2").unwrap_or_default().to_owned() } else { first.to_owned() }
+    };
+    if let Some(response) = actions(ctx, &action, &installed, &mut active, &root).await {
+        return response;
     }
-    if request.get("activate").is_some() {
-        notices.push_str(&notice(&tr("Plugin activated."), "", true, "message", &["updated"], true));
+    let updated = |message: String| notice(&message, "", true, "message", &["updated"], true);
+    if request.get("error").is_some() {
+        let message = if request.get("main").is_some() { tr("You cannot delete a plugin while it is active on the main site.") } else { tr("Plugin could not be activated because it triggered a <strong>fatal error</strong>.") };
+        notices.push_str(&notice(&message, "", false, "message", &["error"], true));
+    } else if let Some(deleted) = request.get("deleted") {
+        notices.push_str(&updated(if deleted == "1" { tr("The selected plugin has been deleted.") } else { tr("The selected plugins have been deleted.") }));
+    } else if request.get("activate").is_some() {
+        notices.push_str(&updated(tr("Plugin activated.")));
+    } else if request.get("activate-multi").is_some() {
+        notices.push_str(&updated(tr("Selected plugins activated.")));
     } else if request.get("deactivate").is_some() {
-        notices.push_str(&notice(&tr("Plugin deactivated."), "", true, "message", &["updated"], true));
+        notices.push_str(&updated(tr("Plugin deactivated.")));
+    } else if request.get("deactivate-multi").is_some() {
+        notices.push_str(&updated(tr("Selected plugins deactivated.")));
+    } else if request.get("enabled-auto-update").is_some() {
+        notices.push_str(&updated(tr("Plugin will be auto-updated.")));
+    } else if request.get("disabled-auto-update").is_some() {
+        notices.push_str(&updated(tr("Plugin will no longer be auto-updated.")));
+    } else if request.get("enabled-auto-update-multi").is_some() {
+        notices.push_str(&updated(tr("Selected plugins will be auto-updated.")));
+    } else if request.get("disabled-auto-update-multi").is_some() {
+        notices.push_str(&updated(tr("Selected plugins will no longer be auto-updated.")));
     }
 
     let status = ["all", "active", "inactive", "mustuse", "auto-update-enabled", "auto-update-disabled"].iter().find(|s| request.get("plugin_status") == Some(**s)).copied().unwrap_or("all");
@@ -246,7 +422,12 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         }
         out
     };
-    let referer = esc_url(&request.request_uri);
+    // Temporary arguments of the notices do not belong into the address the forms come back to.
+    let mut request_uri = request.request_uri.clone();
+    for arg in ["error", "deleted", "activate", "activate-multi", "deactivate", "deactivate-multi", "enabled-auto-update", "disabled-auto-update", "enabled-auto-update-multi", "disabled-auto-update-multi", "_error_nonce"] {
+        request_uri = rustpress_core::urls::remove_query_arg(&request_uri, arg);
+    }
+    let referer = esc_url(&request_uri);
     let nonce_field = format!("<input type=\"hidden\" id=\"_wpnonce\" name=\"_wpnonce\" value=\"{}\" /><input type=\"hidden\" name=\"_wp_http_referer\" value=\"{referer}\" />", ctx.create_nonce("bulk-plugins"));
     let table = format!(
         "<form method=\"post\" id=\"bulk-action-form\">\n\n<input type=\"hidden\" name=\"plugin_status\" value=\"{status}\" />\n<input type=\"hidden\" name=\"paged\" value=\"1\" />\n\n{nonce_field}\t<div class=\"tablenav top\">\n\n\t\t\t\t{}\t\t{mu_note_top}{pagination_top}\n\t\t<br class=\"clear\" />\n\t</div>\n\t\t<h2 class='screen-reader-text'>{}</h2><table class=\"wp-list-table widefat plugins\">\n\t\t\t<thead>\n\t<tr>\n\t\t{}{}\t</tr>\n\t</thead>\n\n\t<tbody id=\"the-list\"\n\t\t\t\t>\n\t\t{rows}\t</tbody>\n\n\t<tfoot>\n\t<tr>\n\t\t{}{}\t</tr>\n\t</tfoot>\n\n</table>\n\t\t\t<div class=\"tablenav bottom\">\n\n\t\t\t\t{}\t\t{mu_note_bottom}{pagination_bottom}\n\t\t<br class=\"clear\" />\n\t</div>\n\t\t</form>\n",
@@ -267,7 +448,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         tr("Search installed plugins")
     );
     let site_url = site.settings.siteurl.trim_end_matches('/');
-    let heading = format!("<div class=\"wrap\">\n<h1 class=\"wp-heading-inline\">\n{}</h1>\n\n\t<a href=\"{site_url}/wp-admin/plugin-install.php\" class=\"page-title-action\">{}</a>\n\t\n<hr class=\"wp-header-end\">\n\n{notices}\n", tr("Plugins"), tr("Add Plugin"));
+    let heading = format!("{notices}<div class=\"wrap\">\n<h1 class=\"wp-heading-inline\">\n{}</h1>\n\n\t<a href=\"{site_url}/wp-admin/plugin-install.php\" class=\"page-title-action\">{}</a>\n\t\n<hr class=\"wp-header-end\">\n\n\n", tr("Plugins"), tr("Add Plugin"));
     // The templates of the updates script follow the form; they are the tail of the baked page.
     let tail_at = baked.content.find("\t<span class=\"spinner\"></span>").unwrap_or(0);
     let tail = &baked.content[tail_at..];
