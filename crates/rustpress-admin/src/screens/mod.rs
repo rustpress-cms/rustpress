@@ -19,6 +19,7 @@ pub mod ajax_comments;
 pub mod ajax_media;
 mod ajax_misc;
 pub mod ajax_terms;
+mod bare_pages;
 mod file_editor;
 mod attachment_edit;
 mod authorize_app;
@@ -241,6 +242,13 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse
     if request.file == "admin-ajax.php" || request.file == "async-upload.php" {
         return ajax::handle(env, request).await;
     }
+    // Pages of an installed site that need no sign-in.
+    match request.file.as_str() {
+        "install.php" => return bare_pages::install(env),
+        "upgrade.php" => return bare_pages::upgrade(env),
+        "setup-config.php" => return bare_pages::setup_config(env),
+        _ => {}
+    }
     // The signed-in user: the `auth` cookie of this connection's scheme.
     let (scheme, name) = if env.https { (Scheme::SecureAuth, env.auth.cookie_name(Scheme::SecureAuth)) } else { (Scheme::Auth, env.auth.cookie_name(Scheme::Auth)) };
     let session = match request.cookie(&name) {
@@ -295,7 +303,24 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse
         "plugins.php" => plugins::page(&ctx).await,
         "plugin-install.php" => install::plugin_install(&ctx).await,
         "theme-install.php" => install::theme_install(&ctx).await,
-        "update.php" => install::update_php(&ctx).await,
+        "update.php" => {
+            if !matches!(request.get("action"), Some("upload-plugin" | "upload-theme" | "install-plugin" | "install-theme" | "upgrade-plugin" | "upgrade-theme" | "update-selected" | "update-selected-themes" | "activate-plugin")) {
+                bare_pages::empty()
+            } else {
+                install::update_php(&ctx).await
+            }
+        }
+        "menu.php" | "admin-header.php" => bare_pages::empty(),
+        "admin.php" => {
+            // `admin.php?page=...`: a page of a plugin's menu, and there is none.
+            if request.request("page").is_some_and(|p| !p.is_empty()) {
+                die(env, 403, "WordPress &rsaquo; Error", &ctx.tr("Sorry, you are not allowed to access this page."))
+            } else {
+                bare_pages::empty()
+            }
+        }
+        "media.php" => bare_pages::media(&ctx.admin_url("")),
+        "ms-admin.php" => redirect(&ctx.admin_url("")),
         "authorize-application.php" => authorize_app::page(&ctx).await,
         "about.php" | "credits.php" | "freedoms.php" | "contribute.php" => pages::about(&ctx, &request.file).await,
         "site-health.php" => site_health::page(&ctx).await,

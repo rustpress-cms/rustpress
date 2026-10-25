@@ -97,7 +97,7 @@ fn screen_meta(help: &Help, label: &str) -> String {
 				</div>
 			</div>
 				</div>
-		".to_owned();
+".to_owned();
     }
     let mut tabs = String::new();
     let mut panels = String::new();
