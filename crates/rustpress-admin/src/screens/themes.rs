@@ -160,8 +160,49 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
                 if !ctx.verify_nonce(&format!("delete-theme_{stylesheet}")) {
                     return die(ctx.env, 403, &tr("WordPress Failure Notice"), &tr("The link you followed has expired."));
                 }
-                // Removing files is left to the file system.
-                return die(ctx.env, 403, "WordPress &rsaquo; Error", "<p>RustPress does not delete themes; remove the directory under wp-content/themes.</p>");
+                if !ctx.can("delete_themes") {
+                    return die(ctx.env, 403, "WordPress &rsaquo; Error", &format!("<h1>{}</h1><p>{}</p>", tr("You need a higher level of permission."), tr("Sorry, you are not allowed to delete this item.")));
+                }
+                let Some(_theme) = themes::find(&root, &stylesheet) else {
+                    return die(ctx.env, 403, "WordPress &rsaquo; Error", &format!("<h1>{}</h1><p>{}</p>", tr("An error occurred while deleting the theme."), tr("The requested theme does not exist.")));
+                };
+                if ctx.site().settings.template == stylesheet {
+                    return redirect(&ctx.admin_url("themes.php?delete-active-child=true"));
+                }
+                if ctx.site().settings.stylesheet == stylesheet {
+                    // WordPress only hides the link; deleting the theme in use would leave the site without one.
+                    return die(ctx.env, 403, "WordPress &rsaquo; Error", &format!("<p>{}</p>", tr("You cannot delete the active theme.")));
+                }
+                if ctx.env.writer.is_none() {
+                    return super::common::read_only(ctx);
+                }
+                let _ = std::fs::remove_dir_all(root.join("wp-content").join("themes").join(&stylesheet));
+                return redirect(&ctx.admin_url("themes.php?deleted=true"));
+            }
+            Some(action @ ("enable-auto-update" | "disable-auto-update")) => {
+                if !ctx.can("update_themes") {
+                    return die(ctx.env, 403, "WordPress &rsaquo; Error", &format!("<p>{}</p>", if action == "enable-auto-update" { tr("Sorry, you are not allowed to enable themes automatic updates.") } else { tr("Sorry, you are not allowed to disable themes automatic updates.") }));
+                }
+                if !ctx.verify_nonce("updates") {
+                    return die(ctx.env, 403, &tr("WordPress Failure Notice"), &tr("The link you followed has expired."));
+                }
+                let Some(writer) = ctx.env.writer else { return super::common::read_only(ctx) };
+                let mut auto: Vec<String> = match ctx.site().options.value("auto_update_themes") {
+                    Some(rustpress_phpser::Value::Array(items)) => items.iter().filter_map(|(_, v)| v.as_str().map(str::to_owned)).collect(),
+                    _ => Vec::new(),
+                };
+                if action == "enable-auto-update" {
+                    if !auto.contains(&stylesheet) {
+                        auto.push(stylesheet.clone());
+                    }
+                } else {
+                    auto.retain(|t| t != &stylesheet);
+                }
+                let known = themes::installed(&root);
+                auto.retain(|t| known.iter().any(|k| &k.stylesheet == t));
+                let items = auto.iter().enumerate().map(|(i, t)| (rustpress_phpser::Key::Int(i as i64), rustpress_phpser::Value::Str(t.clone().into_bytes()))).collect();
+                let _ = writer.update_option("auto_update_themes", &String::from_utf8_lossy(&rustpress_phpser::serialize(&rustpress_phpser::Value::Array(items)))).await;
+                return redirect(&ctx.admin_url(&format!("themes.php?{}=true", if action == "enable-auto-update" { "enabled-auto-update" } else { "disabled-auto-update" })));
             }
             _ => {}
         }
@@ -202,6 +243,10 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         notices.push_str(&notice(&tr("Theme deleted."), "", true, "message3", &["updated"], true));
     } else if flag("delete-active-child") {
         notices.push_str(&notice(&tr("You cannot delete a theme while it has an active child theme."), "", false, "message4", &["error"], true));
+    } else if flag("enabled-auto-update") {
+        notices.push_str(&notice(&tr("Theme will be auto-updated."), "", true, "message7", &["updated"], true));
+    } else if flag("disabled-auto-update") {
+        notices.push_str(&notice(&tr("Theme will no longer be auto-updated."), "", true, "message8", &["updated"], true));
     }
 
     let baked = super::pages::load(ctx, "themes");

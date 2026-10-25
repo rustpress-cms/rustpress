@@ -302,6 +302,120 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUs
             };
             json(200, &json!({"success": true, "data": {"message": message}}))
         }
+        "delete-plugin" => {
+            if !nonce_ok(request.request("_ajax_nonce").or(request.request("_wpnonce")).unwrap_or_default(), "updates") {
+                return text(403, "-1");
+            }
+            let (slug, plugin) = (param("slug"), param("plugin"));
+            if slug.is_empty() || plugin.is_empty() {
+                return json(200, &json!({"success": false, "data": {"slug": "", "errorCode": "no_plugin_specified", "errorMessage": tr("No plugin specified.")}}));
+            }
+            let mut status = json!({"delete": "plugin", "slug": sanitize_key(&slug)});
+            let fail = |mut status: serde_json::Value, message: String| {
+                status["errorMessage"] = json!(message);
+                json(200, &json!({"success": false, "data": status}))
+            };
+            if !user.can("delete_plugins") || plugin.contains("..") || plugin.starts_with('/') || plugin.contains('\\') {
+                return fail(status, tr("Sorry, you are not allowed to delete plugins for this site."));
+            }
+            let Some(root) = env.loader.includes.parent() else { return fail(status, tr("Plugin could not be deleted.")) };
+            let name = crate::plugins::installed(root).into_iter().find(|p| p.file == plugin).map(|p| p.name).unwrap_or_default();
+            status["plugin"] = json!(plugin);
+            status["pluginName"] = json!(name);
+            let active: Vec<String> = match site.options.value("active_plugins") {
+                Some(rustpress_phpser::Value::Array(items)) => items.iter().filter_map(|(_, v)| v.as_str().map(str::to_owned)).collect(),
+                _ => Vec::new(),
+            };
+            if active.contains(&plugin) {
+                return fail(status, tr("You cannot delete a plugin while it is active on the main site."));
+            }
+            if env.writer.is_none() {
+                return fail(status, tr("Plugin could not be deleted."));
+            }
+            let plugins_dir = root.join("wp-content").join("plugins");
+            let removed = match plugin.split_once('/') {
+                Some((folder, _)) => std::fs::remove_dir_all(plugins_dir.join(folder)),
+                None => std::fs::remove_file(plugins_dir.join(&plugin)),
+            };
+            if removed.is_err() {
+                return fail(status, tr("Plugin could not be deleted."));
+            }
+            json(200, &json!({"success": true, "data": status}))
+        }
+        "delete-theme" => {
+            if !nonce_ok(request.request("_ajax_nonce").or(request.request("_wpnonce")).unwrap_or_default(), "updates") {
+                return text(403, "-1");
+            }
+            let slug = param("slug");
+            if slug.is_empty() {
+                return json(200, &json!({"success": false, "data": {"slug": "", "errorCode": "no_theme_specified", "errorMessage": tr("No theme specified.")}}));
+            }
+            let stylesheet: String = slug.chars().filter(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-')).collect();
+            let status = json!({"delete": "theme", "slug": stylesheet});
+            let fail = |message: String| json(200, &json!({"success": false, "data": {"delete": "theme", "slug": stylesheet, "errorMessage": message}}));
+            if !user.can("delete_themes") {
+                return fail(tr("Sorry, you are not allowed to delete themes on this site."));
+            }
+            let Some(root) = env.loader.includes.parent() else { return fail(tr("Theme could not be deleted.")) };
+            if crate::themes::find(root, &stylesheet).is_none() {
+                return fail(tr("The requested theme does not exist."));
+            }
+            if stylesheet == site.settings.stylesheet || stylesheet == site.settings.template {
+                return fail(tr("Theme could not be deleted."));
+            }
+            if env.writer.is_none() || std::fs::remove_dir_all(root.join("wp-content").join("themes").join(&stylesheet)).is_err() {
+                return fail(tr("Theme could not be deleted."));
+            }
+            json(200, &json!({"success": true, "data": status}))
+        }
+        "toggle-auto-updates" => {
+            if !nonce_ok(request.request("_ajax_nonce").or(request.request("_wpnonce")).unwrap_or_default(), "updates") {
+                return text(403, "-1");
+            }
+            let error = |message: String| json(200, &json!({"success": false, "data": {"error": message}}));
+            let (kind, asset, state) = (param("type"), param("asset"), param("state"));
+            if kind.is_empty() || asset.is_empty() || state.is_empty() {
+                return error(tr("Invalid data. No selected item."));
+            }
+            let asset = rustpress_core::formatting::strip_tags(&String::from_utf8_lossy(&rustpress_core::rewrite::urldecode(asset.as_bytes())));
+            if state != "enable" && state != "disable" {
+                return error(tr("Invalid data. Unknown state."));
+            }
+            let Some(root) = env.loader.includes.parent() else { return error(tr("Invalid data. The item does not exist.")) };
+            let (option, known): (&str, Vec<String>) = match kind.as_str() {
+                "plugin" => {
+                    if !user.can("update_plugins") {
+                        return error(tr("Sorry, you are not allowed to modify plugins."));
+                    }
+                    ("auto_update_plugins", crate::plugins::installed(root).into_iter().map(|p| p.file).collect())
+                }
+                "theme" => {
+                    if !user.can("update_themes") {
+                        return error(tr("Sorry, you are not allowed to modify themes."));
+                    }
+                    ("auto_update_themes", crate::themes::installed(root).into_iter().map(|t| t.stylesheet).collect())
+                }
+                _ => return error(tr("Invalid data. Unknown type.")),
+            };
+            if !known.contains(&asset) {
+                return error(tr("Invalid data. The item does not exist."));
+            }
+            let mut auto: Vec<String> = match site.options.value(option) {
+                Some(rustpress_phpser::Value::Array(items)) => items.iter().filter_map(|(_, v)| v.as_str().map(str::to_owned)).collect(),
+                _ => Vec::new(),
+            };
+            if state == "disable" {
+                auto.retain(|a| a != &asset);
+            } else if !auto.contains(&asset) {
+                auto.push(asset);
+            }
+            auto.retain(|a| known.contains(a));
+            if let Some(writer) = env.writer {
+                let items = auto.iter().enumerate().map(|(i, a)| (rustpress_phpser::Key::Int(i as i64), rustpress_phpser::Value::Str(a.clone().into_bytes()))).collect();
+                let _ = writer.update_option(option, &String::from_utf8_lossy(&rustpress_phpser::serialize(&rustpress_phpser::Value::Array(items)))).await;
+            }
+            json(200, &json!({"success": true}))
+        }
         // Multisite only: single sites answer -1.
         "autocomplete-user" => text(200, "-1"),
         _ => text(400, "0"),
