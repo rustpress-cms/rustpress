@@ -476,7 +476,6 @@ pub async fn render_editor(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo) -> Admin
     let gs_id = global_styles_id(ctx).await;
     let preloaded = preload(ctx, post, info, gs_id).await;
     let settings = editor_settings(ctx, post, info).await;
-    let nonce = ctx.create_nonce("wp_rest");
     let is_new = post.post_status == "auto-draft";
     let heading = if is_new {
         if info.hierarchical { tr("Add Page") } else { tr("Add Post") }

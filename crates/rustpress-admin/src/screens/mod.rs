@@ -271,6 +271,7 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse
         "themes.php" => themes::page(&ctx).await,
         "site-editor.php" => site_editor::page(&ctx).await,
         "font-library.php" => boot_page::font_library(&ctx).await,
+        "options-connectors.php" => boot_page::connectors(&ctx).await,
         "plugins.php" => plugins::page(&ctx).await,
         "plugin-install.php" => install::plugin_install(&ctx).await,
         "theme-install.php" => install::theme_install(&ctx).await,

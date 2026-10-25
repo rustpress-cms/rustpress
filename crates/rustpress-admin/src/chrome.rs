@@ -215,6 +215,10 @@ pub struct Boot {
     /// The slug of the page (`font-library`).
     pub page: String,
     pub routes: Vec<BootRoute>,
+    /// More script modules the page needs: `(id, path below script-modules, e.g. "connectors/index")`.
+    pub extra_modules: Vec<(String, String)>,
+    /// `script_module_data_<page>-wp-admin`: JSON.
+    pub module_data: Option<String>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -374,6 +378,9 @@ fn script_modules(env: &ChromeEnv<'_>, editor: bool, boot: Option<&Boot>) -> Str
                 imports.push((dependency.clone(), url(&format!("{}/index", dependency.trim_start_matches("@wordpress/")))));
             }
         }
+        for (id, path) in &boot.extra_modules {
+            imports.push((id.clone(), url(path)));
+        }
         preloads.push_str(&preload("@wordpress/a11y", &url("a11y/index"), true));
         preloads.push_str(&preload("@wordpress/route", &url("route/index"), false));
         preloads.push_str(&preload("@wordpress/boot", &url("boot/index"), false));
@@ -381,6 +388,9 @@ fn script_modules(env: &ChromeEnv<'_>, editor: bool, boot: Option<&Boot>) -> Str
             if route.has_route {
                 preloads.push_str(&preload(&format!("wp/routes/{}/route", route.name), &route_url(&route.name, "route"), false));
             }
+        }
+        if let Some(data) = &boot.module_data {
+            preloads.push_str(&format!("<script id=\"wp-script-module-data-{}-wp-admin\" type=\"application/json\">\n{data}\n</script>\n", boot.page));
         }
     }
     let map: serde_json::Map<String, serde_json::Value> = imports.into_iter().map(|(id, src)| (id, serde_json::Value::from(src))).collect();

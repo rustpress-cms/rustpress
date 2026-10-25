@@ -10,6 +10,7 @@ mod fonts;
 mod icons;
 mod media;
 mod navigation;
+mod plugins;
 mod posts;
 mod settings;
 mod templates;
@@ -235,6 +236,7 @@ impl Rest<'_> {
             ["wp", "v2", "users", "me"] => self.users_me(&method, &args).await.map(Some),
             ["wp", "v2", "users"] if get && (self.access.is_some()) => self.users_list(&args).await.map(Some),
             ["wp", "v2", "users", id] if get && self.access.is_some() && id.parse::<u64>().is_ok() => self.users_get(id, &args).await.map(Some),
+            ["wp", "v2", "plugins", ..] => self.plugins_route(&segments, &method, &args).await.map(Some),
             ["wp", "v2", "settings"] => self.settings(&method, &args).await.map(Some),
             ["wp", "v2", "types"] if get && self.access.is_some() => Ok(Some(self.types_list_edit(&args))),
             ["wp", "v2", "types", name] if get && self.access.is_some() => Ok(Some(self.type_get_edit(name, &args))),

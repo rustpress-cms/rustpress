@@ -20,11 +20,6 @@ fn tags_text(theme: &ThemeInfo) -> String {
     theme.tags.iter().map(|t| themes::feature_label(t).map_or_else(|| t.clone(), str::to_owned)).collect::<Vec<_>>().join(", ")
 }
 
-/// `esc_url()` for the links in the page: `&` becomes `&#038;`.
-fn url_html(ctx: &Ctx<'_>, path: &str) -> String {
-    esc_url(&ctx.admin_url(path))
-}
-
 /// The theme the way `wp_prepare_themes_for_js()` describes it.
 fn theme_json(ctx: &Ctx<'_>, theme: &ThemeInfo, active: &str, parent_name: Option<String>, update: Option<&crate::updates::ThemeUpdate>) -> Value {
     let site = ctx.site();

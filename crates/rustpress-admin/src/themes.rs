@@ -32,20 +32,7 @@ impl ThemeInfo {
     }
 }
 
-/// `get_file_data()`: the value of `Header: value` in the first 8 KiB of a file.
-pub fn file_header(text: &str, header: &str) -> String {
-    let lower = header.to_lowercase();
-    for line in text.replace('\r', "\n").lines() {
-        let trimmed = line.trim_start_matches(|c: char| matches!(c, ' ' | '\t' | '/' | '*' | '#' | '@'));
-        let trimmed = trimmed.strip_prefix("<?php").map(str::trim_start).unwrap_or(trimmed);
-        let Some((key, value)) = trimmed.split_once(':') else { continue };
-        if key.trim().to_lowercase() == lower && key.len() == key.trim_end().len() {
-            let value = value.split("*/").next().unwrap_or(value).split("?>").next().unwrap_or(value);
-            return value.trim().to_owned();
-        }
-    }
-    String::new()
-}
+pub use rustpress_core::plugins::file_header;
 
 /// Strips the tags `wp_kses( $value, array() )` would remove.
 fn plain(text: &str) -> String {

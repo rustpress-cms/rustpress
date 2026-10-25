@@ -13,6 +13,7 @@ pub mod i18n;
 pub mod locale;
 pub mod options;
 pub mod php_lit;
+pub mod plugins;
 pub mod query;
 pub mod rewrite;
 pub mod rewrite_gen;
