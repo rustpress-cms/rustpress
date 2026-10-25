@@ -70,6 +70,15 @@ impl Site {
         }
     }
 
+    /// `get_post_type_object( $name )->labels->archives`.
+    pub fn post_type_archives_label(&self, name: &str) -> String {
+        match name {
+            "post" => self.tr("Post Archives"),
+            "page" => self.tr("Page Archives"),
+            other => self.post_type_label(other),
+        }
+    }
+
     /// `is_post_type_viewable( $post_type )`.
     pub fn is_post_type_viewable(&self, post_type: &str) -> bool {
         self.types.is_viewable(post_type, !self.rewrite.is_empty())

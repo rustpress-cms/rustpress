@@ -11,8 +11,11 @@ use crate::html::TagEditor;
 use crate::render::BlockCtx;
 
 mod adjacent;
+mod breadcrumbs;
+mod button;
 mod comments;
 mod extra;
+mod featured;
 mod media;
 mod navigation;
 mod post_content;
@@ -93,6 +96,11 @@ pub fn is_dynamic(name: &str) -> bool {
             | "core/block"
             | "core/post-comments"
             | "core/social-link"
+            | "core/button"
+            | "core/cover"
+            | "core/media-text"
+            | "core/footnotes"
+            | "core/breadcrumbs"
     )
 }
 
@@ -165,14 +173,20 @@ pub fn render<'a>(bc: &'a BlockCtx<'a>) -> BoxFuture<'a, Result<String>> {
             "core/block" => Box::pin(extra::reusable_block(bc)).await,
             "core/post-comments" => Box::pin(comments::legacy(bc)).await,
             "core/social-link" => extra::social_link(bc),
+            "core/button" => button::button(bc),
+            "core/cover" => featured::cover(bc).await,
+            "core/media-text" => featured::media_text(bc).await,
+            "core/footnotes" => featured::footnotes(bc).await,
+            "core/breadcrumbs" => breadcrumbs::breadcrumbs(bc).await,
             _ => Ok(bc.content.clone()),
         }
     })
 }
 
 /// `render_block_{name}` filters: run on the output of the generic pipeline.
-pub fn name_filter(name: &str, content: String) -> String {
+pub fn name_filter(name: &str, raw_attrs: &serde_json::Map<String, serde_json::Value>, content: String) -> String {
     match name {
+        "core/details" => featured::details_images_low_priority(raw_attrs, content),
         "core/paragraph" if !content.is_empty() => simple::add_class_to_first(&content, &["p"], "wp-block-paragraph"),
         _ => content,
     }

@@ -177,7 +177,7 @@ impl<'a> Env<'a> {
                 content = crate::duotone::render_duotone_support(self, bt, name, &raw_attrs, content);
                 content = crate::variations::render_class_name(&raw_attrs, content);
             }
-            content = dynamic::name_filter(name, content);
+            content = dynamic::name_filter(name, &raw_attrs, content);
             // Blocks that rendered nothing do not load their assets; parents come after their children.
             // Assets enqueued while rendering a block that turns out empty are dequeued again,
             // including those of its inner blocks (`WP_Block::render()`).

@@ -915,6 +915,27 @@ fn attachment_id_class(tag: &str) -> u64 {
     0
 }
 
+/// `get_post_meta( $id, '_wp_attachment_image_alt', true )`.
+pub async fn attachment_alt(env: &Env<'_>, id: u64) -> Result<String> {
+    let rows = env.site.db.post_meta(id).await?;
+    Ok(rows.iter().find(|m| m.meta_key.as_deref() == Some("_wp_attachment_image_alt")).and_then(|m| m.meta_value.clone()).unwrap_or_default())
+}
+
+/// `wp_get_attachment_image_url( $id, $size )` for an image attachment.
+pub async fn attachment_image_url(env: &Env<'_>, id: u64, size: &str) -> Result<Option<String>> {
+    let Some(post) = env.site.db.post(id).await? else { return Ok(None) };
+    if post.post_type != "attachment" || !is_image(&post) {
+        return Ok(None);
+    }
+    let (meta, attached) = load_metadata(env.site, &post).await?;
+    let Some(attached) = attached else { return Ok(None) };
+    let full_url = attachment_url(env.site, &attached);
+    Ok(Some(match meta {
+        Some(meta) => image_downsize(&full_url, &meta, size).url,
+        None => full_url,
+    }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

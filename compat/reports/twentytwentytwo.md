@@ -1,12 +1,17 @@
 # Kompatibilitätsbericht: twentytwentytwo
 
-Stand: 2026-10-25 03:28 UTC · Referenz: WordPress 7.1.3 · Theme: `twentytwentytwo`
+Stand: 2026-10-25 06:19 UTC · Referenz: WordPress 7.1.3 · Theme: `twentytwentytwo`
 
-**22 URLs verglichen: 22 identisch, 0 mit bekannten Abweichungen, 0 mit unerwarteten Abweichungen.**
+**892 URLs verglichen: 873 identisch, 19 mit bekannten Abweichungen, 0 mit unerwarteten Abweichungen.**
 
 | Art | URLs | identisch | bekannt | unerwartet | Median RustPress | Median WordPress |
 |---|---:|---:|---:|---:|---:|---:|
-| REST-API | 22 | 22 | 0 | 0 | 510 ms | 45 ms |
+| HTML-Seiten | 387 | 384 | 3 | 0 | 909 ms | 73 ms |
+| Feeds | 293 | 293 | 0 | 0 | 326 ms | 24 ms |
+| Sitemaps | 12 | 12 | 0 | 0 | 10 ms | 21 ms |
+| REST-API | 182 | 180 | 2 | 0 | 88 ms | 42 ms |
+| Dateien | 9 | 0 | 9 | 0 | 103 ms | 6 ms |
+| Sonstiges | 9 | 4 | 5 | 0 | 295 ms | 37 ms |
 
 ## Unerwartete Abweichungen
 
@@ -14,15 +19,15 @@ Keine.
 
 ## Bekannte Abweichungen
 
-Keine aufgetreten.
-
+- **Anmeldung, Admin-Oberfläche, XML-RPC und Cron gibt es nicht: RustPress arbeitet nur lesend und ohne PHP.**: `/wp-login.php` (status), `/wp-login.php` (header:link), `/wp-admin/` (status), `/wp-admin/` (header:location), `/wp-admin/` (header:link), `/xmlrpc.php` (status), `/xmlrpc.php` (header:content-type), `/xmlrpc.php` (header:cache-control), `/xmlrpc.php` (header:expires), `/xmlrpc.php` (header:link), `/xmlrpc.php` (header:allow), `/wp-cron.php` (status) … und 2 weitere
+- **Der Apache der Referenz sendet für statische Dateien keinen Cache-Control-Header; RustPress sendet bewusst public, max-age=86400.**: `/readme.html` (header:cache-control), `/license.txt` (header:cache-control)
+- **Der Routenindex von /wp-json/ listet nur die Routen, die RustPress selbst bedient (eine Teilmenge).**: `/wp-json/` (bytes)
+- **RustPress sendet für statische Dateien bewusst Cache-Control: public, max-age=86400; der Apache der Referenz sendet nichts.**: `/wp-content/` (header:cache-control), `/wp-includes/` (header:cache-control), `/wp-includes/js/dist/script-modules/interactivity/index.min.js?ver=efaa5193bbad9c60ffd1` (header:cache-control), `/wp-content/uploads/2026/10/wordpress-logo.png` (header:cache-control), `/wp-content/themes/twentytwentytwo/assets/images/flight-path-on-transparent-d.png` (header:cache-control), `/wp-content/uploads/2026/10/building-exterior.webp` (header:cache-control), `/wp-includes/js/dist/script-modules/block-library/navigation/view.min.js?ver=1bf28ded04f9f188bdcb` (header:cache-control), `/wp-includes/blocks/navigation/style.min.css?ver=7.1.3` (header:cache-control), `/wp-content/themes/twentytwentytwo/style.css?ver=2.0` (header:cache-control)
+- **Seiten mit gleichem menu_order haben in MariaDB keine definierte Reihenfolge.**: `/wp-json/wp/v2/pages?parent=0&orderby=menu_order` (bytes)
+- **Verhalten des Apache und von PHP der Referenz (leere index.php, 403 für Verzeichnisse und Dotfiles, ausgeführte wp-config.php); RustPress liefert nur Assets aus.**: `/wp-content/` (status), `/wp-content/` (header:expires), `/wp-content/` (header:link), `/wp-includes/` (status), `/wp-includes/` (header:content-type), `/wp-includes/` (header:expires), `/wp-includes/` (header:link), `/.htaccess` (status), `/.htaccess` (header:content-type), `/.htaccess` (header:cache-control), `/.htaccess` (header:expires), `/.htaccess` (header:link) … und 4 weitere
 
 Eingetragen, aber in diesem Lauf nicht aufgetreten:
 
-- `^/(wp-login[.]php|wp-admin/|xmlrpc[.]php|wp-cron[.]php)` (*): Anmeldung, Admin-Oberfläche, XML-RPC und Cron gibt es nicht: RustPress arbeitet nur lesend und ohne PHP.
-- `^/wp-json/$` (bytes): Der Routenindex von /wp-json/ listet nur die Routen, die RustPress selbst bedient (eine Teilmenge).
-- `[?&]feed=` (*): Die Referenz auf Port 8080 verliert beim Kanonisieren den Port (WordPress-Eigenheit) und leitet ?feed=… deshalb nicht um; RustPress leitet wie WordPress auf /feed/ um.
-- `^/wp-(content|includes)/` (header:cache-control): RustPress sendet für statische Dateien bewusst Cache-Control: public, max-age=86400; der Apache der Referenz sendet nichts.
 - `^/wp-sitemap-posts-post-9999[.]xml$` (bytes): Die 404-Seite eines fehlenden Sitemaps unterscheidet sich von WordPress nur durch Whitespace im Head.
 - `^/category/uncategorized/page/2/$` (body): Beiträge mit exakt gleichem Datum (hier gleich-a/gleich-b) haben in MariaDB keine definierte Reihenfolge; sie hängt vom Plan der Abfrage ab und kann sich zwischen WordPress und RustPress unterscheiden.
 - `^/[?]rest_route=/$` (bytes): Der Routenindex listet nur die Routen, die RustPress selbst bedient (eine Teilmenge).
