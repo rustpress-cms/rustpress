@@ -7,6 +7,7 @@ mod editor;
 mod media;
 mod posts;
 mod settings;
+mod templates;
 mod terms;
 mod types;
 mod users;
@@ -239,6 +240,8 @@ impl Rest<'_> {
                 self.terms_route(&tax, segments.get(3).copied(), &method, &args, params).await.map(Some)
             }
             ["wp", "v2", base] | ["wp", "v2", base, _] if self.custom_route(base).is_some() && (!get || edit_read) => self.custom_edit_route(base, segments.get(3).copied(), &method, &args, params).await.map(Some),
+            ["wp", "v2", "templates", ..] => self.templates_route(templates::TKind::Template, &segments, &method, &args, params).await.map(Some),
+            ["wp", "v2", "template-parts", ..] => self.templates_route(templates::TKind::Part, &segments, &method, &args, params).await.map(Some),
             _ => self.editor_route(&segments, &method, &args, params).await,
         }
     }

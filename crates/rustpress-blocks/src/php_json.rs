@@ -17,25 +17,37 @@ pub fn empty_object() -> Value {
 }
 
 pub fn encode(value: &Value) -> String {
+    encode_with(value, Flags::default())
+}
+
+/// `JSON_UNESCAPED_SLASHES` and `JSON_UNESCAPED_UNICODE`.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Flags {
+    pub unescaped_slashes: bool,
+    pub unescaped_unicode: bool,
+}
+
+/// `json_encode()` with the given flags.
+pub fn encode_with(value: &Value, flags: Flags) -> String {
     let mut out = String::new();
-    write(&mut out, value);
+    write(&mut out, value, flags);
     out
 }
 
-fn write(out: &mut String, value: &Value) {
+fn write(out: &mut String, value: &Value, flags: Flags) {
     match value {
         Value::Null => out.push_str("null"),
         Value::Bool(true) => out.push_str("true"),
         Value::Bool(false) => out.push_str("false"),
         Value::Number(n) => out.push_str(&number(n)),
-        Value::String(s) => write_string(out, s),
+        Value::String(s) => write_string(out, s, flags),
         Value::Array(items) => {
             out.push('[');
             for (i, item) in items.iter().enumerate() {
                 if i > 0 {
                     out.push(',');
                 }
-                write(out, item);
+                write(out, item, flags);
             }
             out.push(']');
         }
@@ -56,7 +68,7 @@ fn write(out: &mut String, value: &Value) {
                     if i > 0 {
                         out.push(',');
                     }
-                    write(out, item);
+                    write(out, item, flags);
                 }
                 out.push(']');
                 return;
@@ -66,9 +78,9 @@ fn write(out: &mut String, value: &Value) {
                 if i > 0 {
                     out.push(',');
                 }
-                write_string(out, key);
+                write_string(out, key, flags);
                 out.push(':');
-                write(out, item);
+                write(out, item, flags);
             }
             out.push('}');
         }
@@ -84,13 +96,13 @@ fn number(n: &serde_json::Number) -> String {
     n.to_string()
 }
 
-fn write_string(out: &mut String, s: &str) {
+fn write_string(out: &mut String, s: &str, flags: Flags) {
     out.push('"');
     for c in s.chars() {
         match c {
             '"' => out.push_str("\\\""),
             '\\' => out.push_str("\\\\"),
-            '/' => out.push_str("\\/"),
+            '/' if !flags.unescaped_slashes => out.push_str("\\/"),
             '\u{8}' => out.push_str("\\b"),
             '\u{c}' => out.push_str("\\f"),
             '\n' => out.push_str("\\n"),
@@ -100,6 +112,8 @@ fn write_string(out: &mut String, s: &str) {
                 out.push_str(&format!("\\u{:04x}", c as u32));
             }
             c if (c as u32) < 0x80 => out.push(c),
+            // The line terminators stay escaped even when unicode is not.
+            c if flags.unescaped_unicode && !matches!(c, '\u{2028}' | '\u{2029}') => out.push(c),
             c => {
                 let mut buf = [0u16; 2];
                 for unit in c.encode_utf16(&mut buf) {

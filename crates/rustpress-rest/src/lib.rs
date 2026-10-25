@@ -93,11 +93,13 @@ pub struct Rest<'a> {
     pub(crate) access: Option<edit::Access<'a>>,
     /// The body of a request that is not a plain GET.
     pub(crate) request: Option<edit::Request>,
+    /// The patterns of the registry, evaluated once per request.
+    pub(crate) patterns: std::sync::OnceLock<Vec<rustpress_theme::registered_patterns::PatternEntry>>,
 }
 
 impl<'a> Rest<'a> {
     pub fn new(site: &'a Site, theme: &'a Theme, registry: &'a Registry) -> Self {
-        Self { site, theme, registry, blank: QueryResult::blank(), state: Default::default(), access: None, request: None }
+        Self { site, theme, registry, blank: QueryResult::blank(), state: Default::default(), access: None, request: None, patterns: Default::default() }
     }
 
     /// Handles `GET <route>?<query>`; `route` is the part after `/wp-json` (`/wp/v2/posts`).
@@ -111,7 +113,7 @@ impl<'a> Rest<'a> {
             blank.url_path = "/".to_owned();
             blank.raw_query = if query.is_empty() { format!("rest_route={route}") } else { format!("rest_route={route}&{query}") };
         }
-        let scoped = Rest { site: self.site, theme: self.theme, registry: self.registry, blank, state: Default::default(), access: None, request: None };
+        let scoped = Rest { site: self.site, theme: self.theme, registry: self.registry, blank, state: Default::default(), access: None, request: None, patterns: Default::default() };
         scoped.handle_request(route, query).await
     }
 
@@ -126,7 +128,7 @@ impl<'a> Rest<'a> {
             blank.url_path = "/".to_owned();
             blank.raw_query = if query.is_empty() { format!("rest_route={route}") } else { format!("rest_route={route}&{query}") };
         }
-        let scoped = Rest { site: self.site, theme: self.theme, registry: self.registry, blank, state: Default::default(), access, request: Some(request) };
+        let scoped = Rest { site: self.site, theme: self.theme, registry: self.registry, blank, state: Default::default(), access, request: Some(request), patterns: Default::default() };
         scoped.handle_request(route, query).await
     }
 

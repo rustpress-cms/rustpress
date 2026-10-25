@@ -109,6 +109,52 @@ pub fn opt_in_settings(theme_json: &mut Value) {
     }
 }
 
+/// The paths of the settings that hold lists of presets.
+const PRESET_PATHS: &[&[&str]] = &[
+    &["color", "palette"],
+    &["color", "gradients"],
+    &["color", "duotone"],
+    &["typography", "fontSizes"],
+    &["typography", "fontFamilies"],
+    &["spacing", "spacingSizes"],
+    &["shadow", "presets"],
+    &["dimensions", "aspectRatios"],
+    &["dimensions", "dimensionSizes"],
+];
+
+/// Presets of a `settings` object are keyed by the origin they come from (`WP_Theme_JSON::__construct()`).
+pub fn wrap_preset_origins(settings: &mut Value, origin: &str) {
+    fn wrap_path(node: &mut Value, path: &[&str], origin: &str) {
+        match path {
+            [last] => {
+                if let Some(slot) = node.get_mut(*last).filter(|v| v.is_array()) {
+                    let items = slot.take();
+                    let mut keyed = Map::new();
+                    keyed.insert(origin.to_owned(), items);
+                    *slot = Value::Object(keyed);
+                }
+            }
+            [head, rest @ ..] => {
+                if let Some(next) = node.get_mut(*head) {
+                    wrap_path(next, rest, origin);
+                }
+            }
+            [] => {}
+        }
+    }
+    fn wrap(node: &mut Value, origin: &str) {
+        for path in PRESET_PATHS {
+            wrap_path(node, path, origin);
+        }
+    }
+    wrap(settings, origin);
+    if let Some(blocks) = settings.get_mut("blocks").and_then(Value::as_object_mut) {
+        for block in blocks.values_mut() {
+            wrap(block, origin);
+        }
+    }
+}
+
 /// `{ "ref": "styles.elements.button.border.radius" }` -> the value found at that path of the
 /// styles tree (`WP_Theme_JSON::resolve_value_references`); an unresolvable reference is removed.
 pub fn resolve_refs(styles: &mut Value) {

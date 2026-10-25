@@ -88,14 +88,19 @@ impl Rest<'_> {
                 Ok(resp)
             }
             ["wp", "v2", "themes", name] if get && self.can("edit_theme_options") && *name == self.theme.stylesheet => Ok(Resp::item(self.theme_object())),
-            ["wp", "v2", "plugins"] | ["wp", "v2", "sidebars"] | ["wp", "v2", "widgets"] | ["wp", "v2", "menus"] | ["wp", "v2", "menu-items"] | ["wp", "v2", "widget-types"] | ["wp", "v2", "menu-locations"] | ["wp", "v2", "font-families"] | ["wp", "v2", "template-parts"] | ["wp", "v2", "block-patterns", "patterns"] | ["wp", "v2", "pattern-directory", "patterns"] | ["wp", "v2", "block-directory", "search"] if get => empty_list(),
+            ["wp", "v2", "plugins"] | ["wp", "v2", "sidebars"] | ["wp", "v2", "widgets"] | ["wp", "v2", "menus"] | ["wp", "v2", "menu-items"] | ["wp", "v2", "widget-types"] | ["wp", "v2", "menu-locations"] | ["wp", "v2", "font-families"] | ["wp", "v2", "pattern-directory", "patterns"] | ["wp", "v2", "block-directory", "search"] if get => empty_list(),
             ["wp", "v2", "block-types"] | ["wp", "v2", "block-types", _] | ["wp", "v2", "block-types", _, _] if get => empty_list(),
+            ["wp", "v2", "block-patterns", "patterns"] if get => Ok(Resp::item(self.patterns_json())),
             ["wp", "v2", "block-patterns", "categories"] if get => Ok(Resp::item(self.pattern_categories())),
             ["wp", "v2", "global-styles", "themes", stylesheet] if get && self.can("edit_theme_options") => Ok(Resp::item(self.global_styles_theme(stylesheet))),
-            ["wp", "v2", "global-styles", "themes", _, "variations"] if get => Ok(Resp::item(Value::Array(Vec::new()))),
+            ["wp", "v2", "global-styles", "themes", stylesheet, "variations"] if get && self.can("edit_theme_options") => {
+                if *stylesheet != self.theme.stylesheet {
+                    Err(RestError::new("rest_theme_not_found", "Theme not found.", 404))
+                } else {
+                    Ok(Resp::item(Value::Array(self.theme.style_variations())))
+                }
+            }
             ["wp", "v2", "global-styles", id] if self.can("edit_theme_options") && id.parse::<u64>().is_ok() => return self.global_styles_user(id, method, args).await.map(Some),
-            ["wp", "v2", "templates", "lookup"] if get => self.template_lookup(args.str("slug").unwrap_or_default().as_str()),
-            ["wp", "v2", "templates"] | ["wp", "v2", "templates", _] if get => empty_list(),
             ["wp", "v2", "comments"] if get && params.get("context") == Some("edit") => {
                 // Notes (`type=note`) are not supported; the editor asks for them once.
                 empty_list()
@@ -142,7 +147,7 @@ impl Rest<'_> {
             data.insert("settings".into(), self.theme.json.settings_by_origin());
         }
         let mut links = Links::new();
-        links.add("self", vec![], self.rest_url(&format!("wp/v2/global-styles/themes/{stylesheet}")));
+        links.self_link(self.rest_url(&format!("wp/v2/global-styles/themes/{stylesheet}")));
         data.insert("_links".into(), links.finish());
         Value::Object(data)
     }
@@ -194,42 +199,43 @@ impl Rest<'_> {
         Ok(Ok(resp))
     }
 
-    fn template_lookup(&self, slug: &str) -> Outcome {
-        // Candidates in the order of the template hierarchy for a slug like `single-post-hello-world`.
-        let mut candidates: Vec<String> = Vec::new();
-        let mut parts: Vec<&str> = slug.split('-').collect();
-        while !parts.is_empty() {
-            candidates.push(parts.join("-"));
-            parts.pop();
+    /// `WP_REST_Block_Patterns_Controller::get_items()`.
+    fn patterns_json(&self) -> Value {
+        let migrate = |category: &str| match category {
+            "buttons" => "call-to-action".to_owned(),
+            "columns" => "text".to_owned(),
+            "query" => "posts".to_owned(),
+            other => other.to_owned(),
+        };
+        let mut items = Vec::new();
+        for pattern in self.registered_patterns() {
+            let mut item = Map::new();
+            item.insert("name".into(), json!(pattern.name));
+            item.insert("title".into(), json!(pattern.title));
+            item.insert("content".into(), json!(self.resolved_content(&self.with_theme_attribute(&pattern.content))));
+            if !pattern.description.is_empty() {
+                item.insert("description".into(), json!(pattern.description));
+            }
+            if let Some(width) = pattern.viewport_width {
+                item.insert("viewport_width".into(), json!(width));
+            }
+            if let Some(inserter) = pattern.inserter {
+                item.insert("inserter".into(), json!(inserter));
+            }
+            if !pattern.categories.is_empty() {
+                item.insert("categories".into(), json!(pattern.categories.iter().map(|c| migrate(c)).collect::<Vec<_>>()));
+            }
+            for (key, list) in [("keywords", &pattern.keywords), ("block_types", &pattern.block_types), ("post_types", &pattern.post_types), ("template_types", &pattern.template_types)] {
+                if !list.is_empty() {
+                    item.insert(key.into(), json!(list));
+                }
+            }
+            if let Some(source) = &pattern.source {
+                item.insert("source".into(), json!(source));
+            }
+            items.push(Value::Object(item));
         }
-        candidates.push(if slug.starts_with("page") { "singular".to_owned() } else if slug.starts_with("single") { "singular".to_owned() } else { "index".to_owned() });
-        candidates.push("index".to_owned());
-        let Some((found, markup)) = self.theme.pick_template(&candidates) else {
-            return Err(RestError::new("rest_template_not_found", "No templates exist with that id.", 404));
-        };
-        let title: String = {
-            let mut c = found.chars();
-            c.next().map_or_else(String::new, |f| f.to_uppercase().collect::<String>() + c.as_str())
-        };
-        Ok(Resp::item(json!({
-            "id": format!("{}//{found}", self.theme.stylesheet),
-            "theme": self.theme.stylesheet,
-            "content": {"raw": markup},
-            "slug": found,
-            "source": "theme",
-            "origin": "theme",
-            "type": "wp_template",
-            "description": "",
-            "title": {"raw": title, "rendered": title},
-            "status": "publish",
-            "wp_id": null,
-            "has_theme_file": true,
-            "is_custom": false,
-            "author": 0,
-            "modified": null,
-            "author_text": self.site.options.string("blogname", ""),
-            "original_source": "theme",
-        })))
+        Value::Array(items)
     }
 
     fn statuses_edit(&self) -> Value {

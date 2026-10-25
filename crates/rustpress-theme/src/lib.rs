@@ -9,7 +9,9 @@ pub mod global_styles;
 pub mod head;
 pub mod page;
 pub mod phpt;
+pub mod registered_patterns;
 pub mod theme;
+pub mod theme_headers;
 pub mod theme_json;
 
 pub use document::{Document, render_document};

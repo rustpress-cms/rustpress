@@ -8,7 +8,7 @@ use rustpress_blocks::env::TemplatePart;
 use rustpress_blocks::{Registry, ThemeAccess};
 use rustpress_core::Site;
 use rustpress_db::PostQuery;
-use serde_json::Value;
+use serde_json::{Map, Value};
 
 use crate::global_styles::GlobalStyles;
 use crate::phpt::{self, PhpHost};
@@ -16,7 +16,7 @@ use crate::theme_json::{ThemeJson, read_file};
 use crate::{Error, Result};
 
 /// URLs the pattern evaluator needs.
-struct Host {
+pub(crate) struct Host {
     template_uri: String,
     stylesheet_uri: String,
     home: String,
@@ -174,6 +174,56 @@ impl Theme {
         })
     }
 
+    pub(crate) fn host_ref(&self) -> &Host {
+        &self.host
+    }
+
+    /// `WP_Theme_JSON_Resolver::get_style_variations()`: the whole-theme style variations of `styles/` (any depth),
+    /// by path, a child theme's file replacing the parent's of the same name.
+    pub fn style_variations(&self) -> Vec<Value> {
+        let mut files: Vec<PathBuf> = Vec::new();
+        let child = self.stylesheet_dir.join("styles");
+        let parent = self.template_dir.join("styles");
+        json_files(&child, &mut files);
+        if parent != child {
+            let mut inherited = Vec::new();
+            json_files(&parent, &mut inherited);
+            let own: Vec<std::ffi::OsString> = files.iter().filter_map(|c| c.file_name().map(|n| n.to_owned())).collect();
+            files.extend(inherited.into_iter().filter(|p| !p.file_name().is_some_and(|n| own.iter().any(|o| o == n))));
+        }
+        files.sort();
+        let partials = read_partials(&[self.stylesheet_dir.join("styles"), self.template_dir.join("styles")]);
+        let mut out = Vec::new();
+        for path in files {
+            let Some(raw) = read_file(&path) else { continue };
+            let Some(map) = raw.as_object() else { continue };
+            // Variations of single blocks have a scope of their own.
+            if map.contains_key("blockTypes") {
+                continue;
+            }
+            let mut variation = serde_json::Map::new();
+            variation.insert("version".into(), map.get("version").cloned().unwrap_or(Value::from(3)));
+            let title = map.get("title").and_then(Value::as_str).map(str::to_owned).unwrap_or_else(|| path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default());
+            variation.insert("title".into(), Value::String(title));
+            if let Some(slug) = map.get("slug") {
+                variation.insert("slug".into(), slug.clone());
+            }
+            if let Some(settings) = map.get("settings") {
+                let mut settings = settings.clone();
+                crate::theme_json::wrap_preset_origins(&mut settings, "theme");
+                variation.insert("settings".into(), settings);
+            }
+            if let Some(styles) = map.get("styles") {
+                let mut styles = styles.clone();
+                unwrap_shared_variations(&mut styles, &partials);
+                crate::theme_json::resolve_custom_vars(&mut styles);
+                variation.insert("styles".into(), styles);
+            }
+            out.push(Value::Object(variation));
+        }
+        out
+    }
+
     /// Markup of a template, preferring the user's database version over files.
     pub fn template_markup(&self, slug: &str) -> Option<String> {
         if let Some(markup) = self.db_templates.get(slug) {
@@ -323,6 +373,35 @@ impl ThemeAccess for Theme {
 
     fn stylesheet_directory_uri(&self) -> String {
         self.host.stylesheet_uri.clone()
+    }
+}
+
+/// `WP_Theme_JSON::unwrap_shared_block_style_variations()`: `styles.variations.<name>` is copied to every block
+/// that the style partial of that name is registered for.
+fn unwrap_shared_variations(styles: &mut Value, partials: &[Value]) {
+    let Some(shared) = styles.as_object_mut().and_then(|m| m.remove("variations")).and_then(|v| v.as_object().cloned()) else { return };
+    // Block names in alphabetical order, the variations of each in the order of the partials.
+    let mut targets: Vec<(String, String)> = Vec::new();
+    for partial in partials {
+        let Some(name) = partial.get("slug").and_then(Value::as_str) else { continue };
+        for block in partial.get("blockTypes").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str) {
+            targets.push((block.to_owned(), name.to_owned()));
+        }
+    }
+    targets.sort_by(|a, b| a.0.cmp(&b.0));
+    for (block, name) in targets {
+        let Some(top) = shared.get(&name) else { continue };
+        let mut merged = top.clone();
+        if let Some(existing) = styles.get("blocks").and_then(|b| b.get(&block)).and_then(|b| b.get("variations")).and_then(|v| v.get(&name)) {
+            crate::theme_json::deep_merge(&mut merged, existing);
+        }
+        let mut patch = Value::Object(Map::new());
+        patch["blocks"][&block]["variations"][&name] = merged;
+        // The variation replaces what was there instead of being merged into it.
+        if let Some(slot) = styles.get_mut("blocks").and_then(|b| b.get_mut(&block)).and_then(|b| b.get_mut("variations")).and_then(Value::as_object_mut) {
+            slot.remove(&name);
+        }
+        crate::theme_json::deep_merge(styles, &patch);
     }
 }
 
