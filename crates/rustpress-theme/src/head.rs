@@ -39,7 +39,8 @@ pub async fn feed_links(site: &Site, q: &QueryResult) -> Result<String> {
         if let Queried::Post(post) = &q.queried
             && (post.comment_status == "open" || post.ping_status == "open" || post.comment_count > 0)
         {
-            let permalink = site.permalink(post).await?;
+            // `get_post_comments_feed_link()` uses the page's own address, also for the front page.
+            let permalink = if post.post_type == "page" { site.page_link_of(post).await? } else { site.permalink(post).await? };
             let href = if pretty { format!("{}{}", trailingslashit(&permalink), site.user_trailingslashit("feed")) } else if post.post_type == "page" { format!("{}?feed=rss2&page_id={}", site.home_url("/"), post.id) } else { format!("{}?feed=rss2&p={}", site.home_url("/"), post.id) };
             // `the_title_attribute()`: the filtered title without tags.
             let title = rustpress_core::formatting::strip_tags(&rustpress_blocks::content::the_title_for(site, post));

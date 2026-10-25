@@ -228,6 +228,15 @@ impl Site {
         Ok(uri)
     }
 
+    /// `_get_page_link()`: the address of the page itself, also when it is the front page.
+    pub async fn page_link_of(&self, page: &Post) -> Result<String> {
+        if self.settings.permalink_structure.is_empty() || matches!(page.post_status.as_str(), "draft" | "pending" | "auto-draft") {
+            return Ok(self.home_url(&format!("?page_id={}", page.id)));
+        }
+        let uri = self.page_uri(page).await?;
+        Ok(self.user_trailingslashit(&self.home_url(&format!("{}{uri}", self.root()))))
+    }
+
     /// `get_page_link()`.
     pub async fn page_link(&self, page: &Post) -> Result<String> {
         use crate::settings::ShowOnFront;

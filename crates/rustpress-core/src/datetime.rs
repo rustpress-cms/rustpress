@@ -32,7 +32,16 @@ impl SiteTimezone {
     pub fn local_timestamp(&self, mysql_datetime: &str) -> Option<i64> {
         let naive = NaiveDateTime::parse_from_str(mysql_datetime, "%Y-%m-%d %H:%M:%S").ok()?;
         match self {
-            SiteTimezone::Named(tz) => tz.from_local_datetime(&naive).earliest().map(|d| d.timestamp()),
+            // PHP takes the later reading of a time that happens twice (the clocks go back) and moves a
+            // time that does not exist (the clocks go forward) ahead by the gap.
+            SiteTimezone::Named(tz) => match tz.from_local_datetime(&naive) {
+                chrono::LocalResult::Single(d) => Some(d.timestamp()),
+                chrono::LocalResult::Ambiguous(_, later) => Some(later.timestamp()),
+                chrono::LocalResult::None => {
+                    let before = tz.from_local_datetime(&(naive - chrono::Duration::hours(3))).earliest()?;
+                    Some(naive.and_utc().timestamp() - i64::from(before.offset().fix().local_minus_utc()))
+                }
+            },
             SiteTimezone::Offset(offset) => offset.from_local_datetime(&naive).single().map(|d| d.timestamp()),
         }
     }

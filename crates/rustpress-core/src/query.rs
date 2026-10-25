@@ -176,7 +176,13 @@ impl Site {
                     continue;
                 }
                 matched_rule = Some(m.rule.pattern.clone());
+                // Only the public query variables of a permalink reach the query (`WP::parse_request()`).
                 vars = m.vars;
+                let keep: Vec<String> = vars.iter().map(|(k, _)| k.to_owned()).filter(|k| PUBLIC_QUERY_VARS.contains(&k.as_str()) || self.types.post_type(k).is_some() || self.types.taxonomy(k).is_some()).collect();
+                let dropped: Vec<String> = vars.iter().map(|(k, _)| k.to_owned()).filter(|k| !keep.contains(k)).collect();
+                for key in dropped {
+                    vars.remove(&key);
+                }
                 unmatched = false;
                 break;
             }
@@ -408,6 +414,11 @@ impl Site {
                 f.is_page = true;
                 f.is_home = false;
                 page_id = Some(s.page_on_front);
+                // `<!--nextpage-->` of the front page: its pages are the `paged` of the request.
+                if let Some(paged_value) = r.vars.get("paged").map(str::to_owned) {
+                    r.vars.set("page", paged_value);
+                    r.vars.remove("paged");
+                }
             }
         }
 

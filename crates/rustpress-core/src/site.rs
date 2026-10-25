@@ -55,6 +55,11 @@ impl Site {
         Ok(site)
     }
 
+    /// `get_option( 'show_avatars' )`: avatars are on unless the option is switched off.
+    pub fn show_avatars(&self) -> bool {
+        !matches!(self.options.get("show_avatars"), Some("0" | ""))
+    }
+
     /// `get_post_type_object( $name )->labels->name`.
     pub fn post_type_label(&self, name: &str) -> String {
         match name {

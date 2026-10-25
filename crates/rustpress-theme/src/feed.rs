@@ -447,8 +447,8 @@ async fn rss2_comments(c: &Ctx<'_>, q: &QueryResult, comments: &[Comment], self_
     let singular = q.flags.is_singular();
     let post = if singular { q.posts.first().cloned() } else { None };
     let heading = match &post {
-        Some(p) => ent2ncr(&sprintf(&c.site.tr("Comments on: %s"), &[&c.title_rss(p)])),
-        None => ent2ncr(&sprintf(&c.site.tr("Comments for %s"), &[title])),
+        Some(p) => sprintf(&ent2ncr(&c.site.tr("Comments on: %s")), &[&c.title_rss(p)]),
+        None => sprintf(&ent2ncr(&c.site.tr("Comments for %s")), &[title]),
     };
     let link = match &post {
         Some(p) if q.flags.is_single => esc_url(&c.site.permalink(p).await?),
@@ -498,8 +498,8 @@ async fn atom_comments(c: &Ctx<'_>, q: &QueryResult, comments: &[Comment], _self
     let singular = q.flags.is_singular();
     let post = if singular { q.posts.first().cloned() } else { None };
     let heading = match &post {
-        Some(p) => ent2ncr(&sprintf(&c.site.tr("Comments on %s"), &[&c.title_rss(p)])),
-        None => ent2ncr(&sprintf(&c.site.tr("Comments for %s"), &[title])),
+        Some(p) => sprintf(&ent2ncr(&c.site.tr("Comments on %s")), &[&c.title_rss(p)]),
+        None => sprintf(&ent2ncr(&c.site.tr("Comments for %s")), &[title]),
     };
     let mut out = String::new();
     out.push_str(&format!(

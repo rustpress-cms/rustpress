@@ -138,7 +138,9 @@ impl Rest<'_> {
         data.insert("status".into(), Value::from("approved"));
         let kind = if comment.comment_type.is_empty() { "comment" } else { comment.comment_type.as_str() };
         data.insert("type".into(), Value::from(kind));
-        data.insert("author_avatar_urls".into(), self.avatar_urls(&comment.comment_author_email));
+        if self.site.show_avatars() {
+            data.insert("author_avatar_urls".into(), self.avatar_urls(&comment.comment_author_email));
+        }
         data.insert("meta".into(), json!({"_wp_note_status": null}));
 
         let mut links = Links::new();

@@ -106,7 +106,9 @@ impl Rest<'_> {
         data.insert("description".into(), Value::from(self.site.db.user_meta(user.id, "description").await?.unwrap_or_default()));
         data.insert("link".into(), Value::from(self.site.author_url(user)));
         data.insert("slug".into(), Value::from(user.user_nicename.clone()));
-        data.insert("avatar_urls".into(), self.avatar_urls(&user.user_email));
+        if self.site.show_avatars() {
+            data.insert("avatar_urls".into(), self.avatar_urls(&user.user_email));
+        }
         if context != "embed" {
             data.insert("meta".into(), Value::Array(Vec::new()));
         }

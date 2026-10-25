@@ -86,6 +86,10 @@ pub fn get_avatar(env: &Env<'_>, email: &str, size: u64, alt: &str, extra_class:
     // `loading`, `fetchpriority` and `decoding` follow the extra attributes, in this order.
     let input = LoadingInput { width: Some(size), height: Some(size), ..Default::default() };
     let optimization = images::loading_attributes(env, "img", &input, "get_avatar");
+    // The loading attributes were worked out (and counted) before the option is looked at.
+    if !env.site.show_avatars() {
+        return String::new();
+    }
     let mut extra_attr = extra_attr.to_owned();
     for (name, allowed) in [("loading", &["lazy", "eager"][..]), ("fetchpriority", &["high", "low", "auto"][..]), ("decoding", &["async", "sync", "auto"][..])] {
         if let Some((_, value)) = optimization.iter().find(|(k, v)| k == name && allowed.contains(&v.as_str())) {
