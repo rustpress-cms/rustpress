@@ -44,6 +44,7 @@ pub mod posts;
 pub mod privacy;
 pub mod settings;
 pub mod boot_page;
+pub mod revision;
 pub mod site_editor;
 mod site_health;
 pub mod terms;
@@ -270,6 +271,7 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse
         "privacy-policy-guide.php" => privacy::guide(&ctx).await,
         "themes.php" => themes::page(&ctx).await,
         "site-editor.php" => site_editor::page(&ctx).await,
+        "revision.php" => revision::page(&ctx).await,
         "font-library.php" => boot_page::font_library(&ctx).await,
         "options-connectors.php" => boot_page::connectors(&ctx).await,
         "plugins.php" => plugins::page(&ctx).await,

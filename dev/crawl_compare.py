@@ -18,7 +18,7 @@ def get(port, path):
     h.fetch(port, 'index.php')  # makes sure the sign-in happened
     opener = h._openers[port]
     try:
-        r = opener.open(f'http://localhost:{port}/wp-admin/{path}')
+        r = opener.open(f'http://localhost:{port}/wp-admin/{path}', timeout=40)
         return r.status, r.read().decode('utf-8', 'replace'), r.geturl()
     except urllib.error.HTTPError as e:
         return e.code, e.read().decode('utf-8', 'replace'), path

@@ -22,6 +22,7 @@ pub mod settings;
 pub mod site;
 pub mod sitemap;
 pub mod text;
+pub mod text_diff;
 pub mod types;
 pub mod slug;
 pub mod urls;

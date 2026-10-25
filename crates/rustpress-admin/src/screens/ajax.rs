@@ -259,6 +259,7 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse
         "image-editor" => super::image_edit::editor(env, request, &user, &session.token).await,
         "imgedit-preview" => super::image_edit::preview(env, request, &user, &session.token).await,
         "ajax-tag-search" | "get-tagcloud" | "wp-remove-post-lock" | "dismiss-wp-pointer" | "sample-permalink" | "find_posts" | "save-user-color-scheme" | "generate-password" | "destroy-sessions" | "autocomplete-user" | "delete-plugin" | "delete-theme" | "toggle-auto-updates" | "query-themes" | "install-theme" | "install-plugin" | "update-theme" | "update-plugin" | "search-plugins" | "search-install-plugins" => super::ajax_misc::handle(env, request, &user, &session.token, &action).await,
+        "get-revision-diffs" => super::revision::ajax_diffs(env, request, &user, &session.token).await,
         "rest-nonce" => text(200, &env.auth.create_nonce("wp_rest", user.id, &session.token, env.now).unwrap_or_default()),
         "date_format" | "time_format" => {
             let format = rustpress_core::formatting::strip_tags(request.post_field("date").unwrap_or_default());

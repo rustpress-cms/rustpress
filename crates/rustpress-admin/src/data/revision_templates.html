@@ -1,0 +1,88 @@
+<script id="tmpl-revisions-frame" type="text/html">
+		<div class="revisions-control-frame"></div>
+		<div class="revisions-diff-frame"></div>
+	</script>
+
+	<script id="tmpl-revisions-buttons" type="text/html">
+		<div class="revisions-previous">
+			<input class="button button-compact" type="button" value="Previous" />
+		</div>
+
+		<div class="revisions-next">
+			<input class="button button-compact" type="button" value="Next" />
+		</div>
+	</script>
+
+	<script id="tmpl-revisions-slider-hidden-help" type="text/html">
+		<h2 class="screen-reader-text">Select a revision</h2>
+		<p id="revisions-slider-hidden-help" hidden>Change revision by using the left and right arrow keys</p>
+	</script>
+
+	<script id="tmpl-revisions-checkbox" type="text/html">
+		<div class="revision-toggle-compare-mode">
+			<label>
+				<input type="checkbox" class="compare-two-revisions"
+				<#
+				if ( 'undefined' !== typeof data && data.model.attributes.compareTwoMode ) {
+					#> checked="checked"<#
+				}
+				#>
+				/>
+				Compare any two revisions			</label>
+		</div>
+	</script>
+
+	<script id="tmpl-revisions-meta" type="text/html">
+		<# if ( ! _.isUndefined( data.attributes ) ) { #>
+			<div class="diff-title">
+				<# if ( 'from' === data.type ) { #>
+					<strong id="diff-title-from">From:</strong>
+				<# } else if ( 'to' === data.type ) { #>
+					<strong id="diff-title-to">To:</strong>
+				<# } #>
+				<div class="author-card<# if ( data.attributes.autosave ) { #> autosave<# } #>">
+					<div>
+						{{{ data.attributes.author.avatar }}}
+						<div class="author-info" id="diff-title-author">
+						<# if ( data.attributes.autosave ) { #>
+							<span class="byline">
+							Autosave by <span class="author-name">{{ data.attributes.author.name }}</span>								</span>
+						<# } else if ( data.attributes.current ) { #>
+							<span class="byline">
+							Current Revision by <span class="author-name">{{ data.attributes.author.name }}</span>								</span>
+						<# } else { #>
+							<span class="byline">
+							Revision by <span class="author-name">{{ data.attributes.author.name }}</span>								</span>
+						<# } #>
+							<span class="time-ago">{{ data.attributes.timeAgo }}</span>
+							<span class="date">({{ data.attributes.dateShort }})</span>
+						</div>
+					</div>
+				<# if ( 'to' === data.type && data.attributes.restoreUrl ) { #>
+					<input  						<# if ( data.attributes.current ) { #>
+							disabled="disabled"
+						<# } #>
+										<# if ( data.attributes.autosave ) { #>
+						type="button" class="restore-revision button button-primary button-compact" value="Restore This Autosave" />
+					<# } else { #>
+						type="button" class="restore-revision button button-primary button-compact" value="Restore This Revision" />
+					<# } #>
+				<# } #>
+			</div>
+		<# if ( 'tooltip' === data.type ) { #>
+			<div class="revisions-tooltip-arrow"><span></span></div>
+		<# } #>
+	<# } #>
+	</script>
+
+	<script id="tmpl-revisions-diff" type="text/html">
+		<div class="loading-indicator"><span class="spinner"></span></div>
+		<div class="diff-error">An error occurred while loading the comparison. Please refresh the page and try again.</div>
+		<div class="diff">
+		<# _.each( data.fields, function( field ) { #>
+			<h2>{{ field.name }}</h2>
+			{{{ field.diff }}}
+		<# }); #>
+		</div>
+	</script>
+	
