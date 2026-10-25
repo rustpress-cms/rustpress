@@ -485,6 +485,25 @@ fn sizes_include_auto(sizes: &str) -> bool {
     first.trim_matches([' ', '\t', '\x0c', '\r', '\n']).eq_ignore_ascii_case("auto")
 }
 
+/// A PDF or video with a generated preview image: `image_downsize()` starts from its `full` size.
+/// Returns metadata shaped like an image's and the path of the preview file.
+pub fn preview_metadata(meta: Option<&Metadata>, attached: Option<&str>) -> Option<(Metadata, String)> {
+    let full = meta?.sizes()?.get("full")?.as_object()?;
+    let (file, attached) = (full.get("file")?.as_str()?, attached?);
+    let path = match attached.rsplit_once('/') {
+        Some((dir, _)) => format!("{dir}/{file}"),
+        None => file.to_owned(),
+    };
+    let mut json = meta.map(|m| m.0.clone()).unwrap_or_default();
+    if let Some(map) = json.as_object_mut() {
+        map.insert("file".into(), Value::from(path.clone()));
+        map.insert("_preview".into(), Value::Bool(true));
+        map.insert("width".into(), full.get("width").cloned().unwrap_or_default());
+        map.insert("height".into(), full.get("height").cloned().unwrap_or_default());
+    }
+    Some((Metadata(json), path))
+}
+
 /// `wp_get_attachment_image( $id, $size, false, $attr )`: loads the attachment first.
 pub async fn get_attachment_image(env: &Env<'_>, attachment_id: u64, size: &str, args: &ImageArgs) -> Result<String> {
     let Some(post) = env.site.db.post(attachment_id).await? else { return Ok(String::new()) };
@@ -495,21 +514,10 @@ pub async fn get_attachment_image(env: &Env<'_>, attachment_id: u64, size: &str,
     let (meta, attached) = if is_image(&post) {
         (meta, attached)
     } else {
-        // A PDF or video with a generated preview image: `image_downsize()` starts from its `full` size.
-        let Some(full) = meta.as_ref().and_then(|m| m.sizes()).and_then(|s| s.get("full")).and_then(Value::as_object) else { return Ok(String::new()) };
-        let (Some(file), Some(attached)) = (full.get("file").and_then(Value::as_str), attached.as_deref()) else { return Ok(String::new()) };
-        let path = match attached.rsplit_once('/') {
-            Some((dir, _)) => format!("{dir}/{file}"),
-            None => file.to_owned(),
-        };
-        let mut json = meta.as_ref().map(|m| m.0.clone()).unwrap_or_default();
-        if let Some(map) = json.as_object_mut() {
-            map.insert("file".into(), Value::from(path.clone()));
-            map.insert("_preview".into(), Value::Bool(true));
-            map.insert("width".into(), full.get("width").cloned().unwrap_or_default());
-            map.insert("height".into(), full.get("height").cloned().unwrap_or_default());
+        match preview_metadata(meta.as_ref(), attached.as_deref()) {
+            Some((meta, path)) => (Some(meta), Some(path)),
+            None => return Ok(String::new()),
         }
-        (Some(Metadata(json)), Some(path))
     };
     let Some(attached) = attached else { return Ok(String::new()) };
     let rows = env.site.db.post_meta(attachment_id).await?;
@@ -537,10 +545,20 @@ pub async fn post_thumbnail_id(env: &Env<'_>, post_id: u64) -> Result<u64> {
 /// `wp_get_attachment_link( $id, $size, false )`.
 pub fn attachment_link(env: &Env<'_>, post: &Post, meta: Option<&Metadata>, attached_file: &str, size: &str, alt: &str) -> String {
     let url = attachment_url(env.site, attached_file);
-    let text = match meta {
+    let image = match meta {
         Some(_) if is_image(post) => attachment_image(env, meta, attached_file, size, alt, &ImageArgs::default()),
-        _ => post.post_title.clone(),
+        // A PDF shows its preview image.
+        Some(_) => preview_metadata(meta, Some(attached_file)).map(|(m, path)| attachment_image(env, Some(&m), &path, size, alt, &ImageArgs::default())).unwrap_or_default(),
+        None => String::new(),
     };
+    let mut text = image;
+    if text.trim().is_empty() {
+        text = post.post_title.clone();
+    }
+    if text.trim().is_empty() {
+        let name = basename(attached_file);
+        text = rustpress_core::formatting::esc_html(name.rsplit_once('.').map_or(name, |(stem, _)| stem));
+    }
     format!("<a href='{}'>{text}</a>", esc_url(&url))
 }
 

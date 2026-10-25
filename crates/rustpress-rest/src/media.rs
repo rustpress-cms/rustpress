@@ -76,7 +76,9 @@ impl Rest<'_> {
         data.insert("post".into(), if post.post_parent == 0 { Value::Null } else { Value::from(post.post_parent) });
         data.insert("source_url".into(), Value::from(source_url));
         if let Some(file) = attached_file.as_deref() {
-            data.insert("filename".into(), Value::from(file.rsplit('/').next().unwrap_or(file)));
+            // `wp_get_original_image_path()`: images that were scaled down report the original file.
+            let original = metadata.as_ref().and_then(|m| m.0.get("original_image")).and_then(Value::as_str).filter(|_| images::is_image(post));
+            data.insert("filename".into(), Value::from(original.unwrap_or_else(|| file.rsplit('/').next().unwrap_or(file))));
         }
         let filesize = metadata.as_ref().and_then(|m| m.0.get("filesize").cloned());
         if let Some(size) = filesize {
@@ -108,16 +110,20 @@ impl Rest<'_> {
                 entry.insert("source_url".into(), Value::from(format!("{}/{directory}{file}", images::upload_baseurl(self.site))));
             }
             if let Some(file) = attached_file {
-                sizes.insert(
-                    "full".into(),
-                    json!({
-                        "file": file.rsplit('/').next().unwrap_or(file),
-                        "width": metadata.width(),
-                        "height": metadata.height(),
-                        "mime_type": post.post_mime_type,
-                        "source_url": images::attachment_url(self.site, file),
-                    }),
-                );
+                // `wp_get_attachment_image_src( $id, 'full' )`: a PDF shows its preview image.
+                let shown = if images::is_image(post) { Some((file.to_owned(), metadata.width(), metadata.height())) } else { images::preview_metadata(Some(metadata), Some(file)).map(|(m, path)| (path, m.width(), m.height())) };
+                if let Some((path, width, height)) = shown {
+                    sizes.insert(
+                        "full".into(),
+                        json!({
+                            "file": path.rsplit('/').next().unwrap_or(&path),
+                            "width": width,
+                            "height": height,
+                            "mime_type": post.post_mime_type,
+                            "source_url": images::attachment_url(self.site, &path),
+                        }),
+                    );
+                }
             }
         }
         Value::Object(details)

@@ -503,7 +503,7 @@ pub(super) async fn pagination_numbers(bc: &BlockCtx<'_>) -> Result<String> {
         } else {
             "?paged=%#%".to_owned()
         };
-        let args: Vec<(String, String)> = QueryVars::parse(query).iter().filter(|(k, _)| *k != "paged").map(|(k, v)| (k.to_owned(), url_encode(v))).collect();
+        let args: Vec<(String, String)> = rustpress_core::canonical::parse_qs(query).into_iter().filter(|(k, _)| k != "paged").map(|(k, v)| (k, url_encode(&v))).collect();
         paginate_links(&base, &format, total, q.paged.max(1), mid_size, &args, "")
     } else {
         let page = custom_page(bc);
@@ -516,6 +516,18 @@ pub(super) async fn pagination_numbers(bc: &BlockCtx<'_>) -> Result<String> {
         }
         if let Some(paged) = QueryVars::parse(&q.raw_query).u64("paged") {
             args = vec![("paged".to_owned(), paged.to_string())];
+        }
+        // `paginate_links()` also carries the other query arguments of the requested URL
+        // (`get_pagenum_link()` without `paged`), except the page key itself.
+        for (k, v) in rustpress_core::canonical::parse_qs(&q.raw_query) {
+            if k == "paged" || k == key {
+                continue;
+            }
+            let value = url_encode(&v);
+            match args.iter_mut().find(|(existing, _)| *existing == k) {
+                Some(slot) => slot.1 = value,
+                None => args.push((k, value)),
+            }
         }
         paginate_links("%_%", &format!("?{key}=%#%"), total, page.max(1), mid_size, &args, "")
     };
