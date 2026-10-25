@@ -697,7 +697,7 @@ pub async fn post_php(ctx: &Ctx<'_>) -> AdminResponse {
             _ => {
                 let mut url = ctx.admin_url("edit.php");
                 if let Some(post) = &post {
-                    url = add_query_arg(&url, "post_type", &post.post_type);
+                    url = if post.post_type == "attachment" { ctx.admin_url("upload.php") } else { add_query_arg(&url, "post_type", &post.post_type) };
                 }
                 url
             }
@@ -711,6 +711,12 @@ pub async fn post_php(ctx: &Ctx<'_>) -> AdminResponse {
             let Some(post) = post else {
                 return die(ctx.env, 404, "WordPress &rsaquo; Error", &format!("<p>{}</p>", tr("You attempted to edit an item that does not exist. Perhaps it was deleted?")));
             };
+            if post.post_type == "attachment" {
+                if !(ctx.can("edit_posts") && (post.post_author == ctx.user.id || ctx.can("edit_others_posts"))) {
+                    return die(ctx.env, 403, "WordPress &rsaquo; Error", &format!("<p>{}</p>", tr("Sorry, you are not allowed to edit this item.")));
+                }
+                return super::attachment_edit::form(ctx, &post).await;
+            }
             let Some(info) = type_info(ctx, &post.post_type) else {
                 return die(ctx.env, 403, "WordPress &rsaquo; Error", &format!("<p>{}</p>", tr("Sorry, you are not allowed to edit posts in this post type.")));
             };
@@ -730,7 +736,10 @@ pub async fn post_php(ctx: &Ctx<'_>) -> AdminResponse {
             if !request.post || !ctx.verify_nonce(&format!("update-post_{post_id}")) {
                 return ays();
             }
-            edit_post(ctx, post_id).await
+            match post.as_ref().filter(|p| p.post_type == "attachment") {
+                Some(attachment) => super::attachment_edit::save(ctx, attachment).await,
+                None => edit_post(ctx, post_id).await,
+            }
         }
         "trash" | "untrash" | "delete" => {
             if !ctx.verify_nonce(&format!("{action}-post_{post_id}")) {
@@ -767,6 +776,12 @@ pub async fn post_php(ctx: &Ctx<'_>) -> AdminResponse {
                         return die(ctx.env, 500, "WordPress &rsaquo; Error", &format!("<p>{}</p>", tr("Error in restoring the item from Trash.")));
                     }
                     redirect(&add_query_arg(&add_query_arg(&sendback, "untrashed", "1"), "ids", &post_id.to_string()))
+                }
+                _ if post.post_type == "attachment" => {
+                    if !content.delete_attachment(post_id, super::ajax_media::uploads_dir(ctx.env)).await.unwrap_or(false) {
+                        return die(ctx.env, 500, "WordPress &rsaquo; Error", &format!("<p>{}</p>", tr("Error in deleting the item.")));
+                    }
+                    redirect(&add_query_arg(&sendback, "deleted", "1"))
                 }
                 _ => {
                     if !content.delete_post(post_id, true).await.unwrap_or(false) {

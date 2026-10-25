@@ -18,6 +18,7 @@ pub mod ajax;
 pub mod ajax_comments;
 pub mod ajax_media;
 pub mod ajax_terms;
+mod attachment_edit;
 pub mod block_editor;
 pub mod comments;
 pub mod media_lib;
