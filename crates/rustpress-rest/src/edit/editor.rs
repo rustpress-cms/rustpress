@@ -139,7 +139,7 @@ impl Rest<'_> {
         let mut data = Map::new();
         if stylesheet == self.theme.stylesheet {
             data.insert("styles".into(), self.theme.json.styles());
-            data.insert("settings".into(), self.theme.json.settings());
+            data.insert("settings".into(), self.theme.json.settings_by_origin());
         }
         let mut links = Links::new();
         links.add("self", vec![], self.rest_url(&format!("wp/v2/global-styles/themes/{stylesheet}")));

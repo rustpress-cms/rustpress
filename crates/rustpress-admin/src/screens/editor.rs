@@ -21,7 +21,7 @@ pub struct Editor {
 }
 
 /// `user_can_richedit()`: the browser can edit rich text and the user did not turn it off.
-fn can_richedit(ctx: &Ctx<'_>, rich_editing: Option<&str>) -> bool {
+pub(crate) fn can_richedit(ctx: &Ctx<'_>, rich_editing: Option<&str>) -> bool {
     if rich_editing != Some("true") {
         return false;
     }

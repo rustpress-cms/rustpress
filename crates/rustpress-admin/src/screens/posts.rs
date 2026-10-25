@@ -667,6 +667,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         title: info.label.clone(),
         help: None,
         view_item: None,
+        ..Default::default()
     };
     let _ = remove_query_arg("", "");
     render(ctx, &screen, &content, &Assets { scripts: vec![], ..Default::default() }).await

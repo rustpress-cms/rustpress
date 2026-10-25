@@ -644,7 +644,7 @@ async fn form(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, is_new: bool) -> Admi
     } else {
         None
     };
-    let screen = Screen { file: file.into(), parent_file, submenu_file: Some(submenu_file), post_type: info.name.clone(), title: title.clone(), help: Some(help), view_item };
+    let screen = Screen { file: file.into(), parent_file, submenu_file: Some(submenu_file), post_type: info.name.clone(), title: title.clone(), help: Some(help), view_item, ..Default::default() };
     let mut scripts: Vec<String> = vec!["post".into(), "word-count".into(), "autosave".into(), "wp-lists".into(), "suggest".into(), "postbox".into(), "tags-box".into()];
     scripts.extend(editor_scripts);
     let assets = Assets { scripts, footer: editor_footer, ..Default::default() };
@@ -671,6 +671,9 @@ pub async fn post_new(ctx: &Ctx<'_>) -> AdminResponse {
     let Ok(Some(post)) = ctx.env.db.post(id).await else {
         return die(ctx.env, 500, "WordPress &rsaquo; Error", "<p>The new post could not be read.</p>");
     };
+    if super::block_editor::uses_block_editor(ctx, &post) {
+        return super::block_editor::render_editor(ctx, &post, &info).await;
+    }
     form(ctx, &post, &info, true).await
 }
 
@@ -716,6 +719,9 @@ pub async fn post_php(ctx: &Ctx<'_>) -> AdminResponse {
             }
             if post.post_status == "trash" {
                 return die(ctx.env, 409, "WordPress &rsaquo; Error", &format!("<p>{}</p>", tr("You cannot edit this item because it is in the Trash. Please restore it and try again.")));
+            }
+            if super::block_editor::uses_block_editor(ctx, &post) {
+                return super::block_editor::render_editor(ctx, &post, &info).await;
             }
             form(ctx, &post, &info, false).await
         }

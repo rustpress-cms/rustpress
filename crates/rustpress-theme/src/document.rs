@@ -348,7 +348,7 @@ pub(crate) fn script_modules(wp_root: &Path, site: &Site, ids: &[String]) -> (St
 }
 
 /// `@font-face` rules for the font families that ship font files.
-fn font_faces(theme: &Theme) -> String {
+pub fn font_faces(theme: &Theme) -> String {
     let settings = theme.json.settings();
     let Some(families) = settings.get("typography").and_then(|t| t.get("fontFamilies")).and_then(Value::as_array) else { return String::new() };
     let base = theme.stylesheet_directory_uri();

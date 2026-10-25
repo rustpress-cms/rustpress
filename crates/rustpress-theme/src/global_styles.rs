@@ -166,6 +166,26 @@ impl<'a> GlobalStyles<'a> {
         chunks
     }
 
+    /// The stylesheets of the block editor settings: `wp_get_global_stylesheet( [ 'variables' ] )`,
+    /// `[ 'presets' ]` and `[ 'styles' ]` (every block, not only those on a page).
+    pub fn editor_stylesheets(&self) -> (String, String, String) {
+        let settings = self.settings();
+        let styles = self.json.styles();
+        let mut variables = self.variables(&settings);
+        variables.push_str(&self.block_variables(&settings));
+        let presets = self.preset_classes(&settings);
+        let mut sheet = String::new();
+        sheet.push_str(&self.root_rules(&settings, &styles));
+        sheet.push_str(&self.root_styles(&settings, &styles));
+        for chunk in self.block_chunks(&settings, &styles, None) {
+            sheet.push_str(&chunk);
+        }
+        if let Some(extra) = styles.get("css").and_then(Value::as_str) {
+            sheet.push_str(extra);
+        }
+        (variables, presets, sheet)
+    }
+
     /// `wp_get_global_stylesheet()` for a theme without `theme.json`: the variables, the layout
     /// rules WordPress needs without block gap support, the root styles of the core defaults and
     /// the preset classes, then the chunks of the blocks on the page.

@@ -18,6 +18,7 @@ pub mod ajax;
 pub mod ajax_comments;
 pub mod ajax_media;
 pub mod ajax_terms;
+pub mod block_editor;
 pub mod comments;
 pub mod media_lib;
 pub mod media_ui;
@@ -55,6 +56,9 @@ pub struct AdminEnv<'a> {
     pub available_translations: Vec<(String, String, String)>,
     /// Whether the active theme is a block theme (the Appearance menu differs).
     pub block_theme: bool,
+    /// The active theme and the block registry (the block editor needs them).
+    pub theme: &'a rustpress_theme::Theme,
+    pub registry: &'a rustpress_blocks::Registry,
 }
 
 /// A request to a file in `wp-admin`.
@@ -283,7 +287,7 @@ pub async fn render(ctx: &Ctx<'_>, screen: &Screen, content: &str, assets: &Asse
         loader,
         user: &ctx.user,
         menu: &menu,
-        bar: BarContext { updates: updates.total(), pending_comments: pending, logout_nonce: ctx.create_nonce("log-out"), view_item: None },
+        bar: BarContext { updates: updates.total(), pending_comments: pending, logout_nonce: ctx.create_nonce("log-out"), view_item: None, command_palette: assets.scripts.iter().any(|s| s == "wp-core-commands") },
         stylesheet: env.site.settings.stylesheet.clone(),
         cookie_path: paths(env.site).cookie,
         now: env.now,

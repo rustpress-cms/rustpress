@@ -46,7 +46,10 @@ fn do_opt_in(settings: &mut Map<String, Value>) {
         return;
     }
     for path in [
-        &["border", "color"][..],
+        &["background", "backgroundImage"][..],
+        &["background", "backgroundSize"],
+        &["background", "gradient"],
+        &["border", "color"],
         &["border", "radius"],
         &["border", "style"],
         &["border", "width"],
@@ -64,6 +67,7 @@ fn do_opt_in(settings: &mut Map<String, Value>) {
         &["spacing", "margin"],
         &["spacing", "padding"],
         &["typography", "lineHeight"],
+        &["typography", "textColumns"],
     ] {
         // A literal `null` (the core default for blockGap) counts as "not set".
         if let Some(Value::Null) = lookup(settings, path) {
@@ -125,10 +129,13 @@ fn replace_refs(value: &mut Value, root: &Value) {
                 *value = found.filter(|v| !v.is_object() || v.get("ref").is_none()).cloned().unwrap_or(Value::Null);
                 return;
             }
+            // An unresolvable reference removes its key; nulls the theme wrote itself stay.
+            let was_ref = |v: &Value| v.as_object().is_some_and(|m| m.len() == 1 && m.get("ref").is_some_and(Value::is_string));
+            let refs: Vec<String> = map.iter().filter(|(_, v)| was_ref(v)).map(|(k, _)| k.clone()).collect();
             for child in map.values_mut() {
                 replace_refs(child, root);
             }
-            map.retain(|_, v| !v.is_null());
+            map.retain(|k, v| !(v.is_null() && refs.contains(k)));
         }
         Value::Array(items) => items.iter_mut().for_each(|v| replace_refs(v, root)),
         _ => {}
@@ -235,6 +242,68 @@ impl ThemeJson {
         self.merged.get("settings").cloned().unwrap_or(Value::Object(Map::new()))
     }
 
+    /// `wp_get_global_settings()` as the editor gets it: the merged settings with every preset list
+    /// keyed by origin (`default` for core, `theme`, `custom` for the user).
+    pub fn settings_by_origin(&self) -> Value {
+        const PRESET_PATHS: &[&[&str]] = &[
+            &["color", "palette"],
+            &["color", "gradients"],
+            &["color", "duotone"],
+            &["typography", "fontSizes"],
+            &["typography", "fontFamilies"],
+            &["spacing", "spacingSizes"],
+            &["shadow", "presets"],
+            &["dimensions", "aspectRatios"],
+            &["dimensions", "dimensionSizes"],
+        ];
+        let mut settings = self.settings();
+        let layers = [("default", &self.core), ("theme", &self.theme), ("custom", &self.user)];
+        let apply = |target: &mut Value, prefix: &[&str]| {
+            for path in PRESET_PATHS {
+                let mut by_origin = Map::new();
+                for (origin, layer) in layers {
+                    let mut node = layer.get("settings");
+                    for key in prefix.iter().chain(path.iter()) {
+                        node = node.and_then(|n| n.get(*key));
+                    }
+                    match node {
+                        Some(Value::Array(items)) => {
+                            by_origin.insert(origin.to_owned(), Value::Array(items.clone()));
+                        }
+                        Some(Value::Object(map)) => {
+                            for (key, items) in map {
+                                if matches!(key.as_str(), "default" | "theme" | "custom") && key == origin {
+                                    by_origin.insert(key.clone(), items.clone());
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                if by_origin.is_empty() {
+                    continue;
+                }
+                let (last, parents) = path.split_last().expect("non-empty path");
+                let mut node = Some(&mut *target);
+                for key in parents {
+                    node = node.and_then(|n| n.as_object_mut()).map(|o| o.entry((*key).to_owned()).or_insert_with(|| Value::Object(Map::new())));
+                }
+                if let Some(parent) = node.and_then(Value::as_object_mut) {
+                    parent.insert((*last).to_owned(), Value::Object(by_origin));
+                }
+            }
+        };
+        apply(&mut settings, &[]);
+        if let Some(blocks) = settings.get("blocks").and_then(Value::as_object).map(|b| b.keys().cloned().collect::<Vec<_>>()) {
+            for name in blocks {
+                if let Some(node) = settings.get_mut("blocks").and_then(|b| b.get_mut(&name)) {
+                    apply(node, &["blocks", &name]);
+                }
+            }
+        }
+        settings
+    }
+
     pub fn styles(&self) -> Value {
         let mut styles = self.merged.get("styles").cloned().unwrap_or(Value::Object(Map::new()));
         resolve_refs(&mut styles);
@@ -266,12 +335,13 @@ fn compute_spacing_sizes(scale: &Value) -> Vec<Value> {
     };
     // PHP's `round()` rounds halves away from zero.
     let mid = (steps / 2.0).round();
-    let mut sizes: Vec<(String, String)> = Vec::new();
+    let mut sizes: Vec<(String, String, String)> = Vec::new();
     let mut current = medium;
     let mut slug = 40i64;
     let mut remainder = 0.0;
     let mut below_count = mid - 1.0;
-    let mut below: Vec<(String, String)> = Vec::new();
+    let mut below: Vec<(String, String, String)> = Vec::new();
+    let mut x_small_count: Option<u32> = None;
     while steps > 1.0 && slug > 0 && below_count > 0.0 {
         if operator == "+" {
             current -= increment;
@@ -284,14 +354,21 @@ fn compute_spacing_sizes(scale: &Value) -> Vec<Value> {
             remainder = below_count;
             break;
         }
-        below.push((slug.to_string(), format!("{}{unit}", round2(current))));
+        let name = if below_count == mid - 1.0 { "Small".to_owned() } else { format!("{}X-Small", x_small_count.map(|n| n.to_string()).unwrap_or_default()) };
+        below.push((name, slug.to_string(), format!("{}{unit}", round2(current))));
+        if below_count == mid - 2.0 {
+            x_small_count = Some(2);
+        } else if below_count < mid - 2.0 {
+            x_small_count = x_small_count.map(|n| n + 1);
+        }
         slug -= 10;
         below_count -= 1.0;
     }
     below.reverse();
     sizes.extend(below);
-    sizes.push(("50".to_owned(), format!("{}{unit}", scale.get("mediumStep").map(|v| v.to_string()).unwrap_or_default())));
+    sizes.push(("Medium".to_owned(), "50".to_owned(), format!("{}{unit}", scale.get("mediumStep").map(|v| v.to_string()).unwrap_or_default())));
     let mut current = medium;
+    let mut x_large_count: Option<u32> = None;
     let mut slug = 60i64;
     let steps_above = (steps - mid) + remainder;
     let mut index = 0.0;
@@ -303,17 +380,17 @@ fn compute_spacing_sizes(scale: &Value) -> Vec<Value> {
         } else {
             current / increment
         };
-        sizes.push((slug.to_string(), format!("{}{unit}", round2(current))));
+        let name = if index == 0.0 { "Large".to_owned() } else { format!("{}X-Large", x_large_count.map(|n| n.to_string()).unwrap_or_default()) };
+        sizes.push((name, slug.to_string(), format!("{}{unit}", round2(current))));
+        if index == 1.0 {
+            x_large_count = Some(2);
+        } else if index > 1.0 {
+            x_large_count = x_large_count.map(|n| n + 1);
+        }
         slug += 10;
         index += 1.0;
     }
-    // With seven steps or fewer the names are numbers.
-    let numbered = steps <= 7.0;
-    sizes
-        .into_iter()
-        .enumerate()
-        .map(|(i, (slug, size))| serde_json::json!({"name": if numbered { (i + 1).to_string() } else { slug.clone() }, "slug": slug, "size": size}))
-        .collect()
+    sizes.into_iter().map(|(name, slug, size)| serde_json::json!({"name": name, "slug": slug, "size": size})).collect()
 }
 
 /// `WP_Theme_JSON::set_spacing_sizes()`: sizes computed from the layer's own `spacingScale` are
@@ -336,6 +413,10 @@ fn set_spacing_sizes(layer: &mut Value, origin: &str) {
     };
     by_origin.insert("default".to_owned(), Value::Array(computed));
     spacing.insert("spacingSizes".to_owned(), Value::Object(by_origin));
+    // The scale itself is keyed by the origin of the layer that declares it.
+    let mut scales = Map::new();
+    scales.insert(origin.to_owned(), scale);
+    spacing.insert("spacingScale".to_owned(), Value::Object(scales));
 }
 
 #[cfg(test)]

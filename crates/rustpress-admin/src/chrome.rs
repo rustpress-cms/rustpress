@@ -24,6 +24,10 @@ pub struct Screen {
     pub help: Option<Help>,
     /// The "View Post" entry of the toolbar: `(label, address)`.
     pub view_item: Option<(String, String)>,
+    /// The block editor takes the whole window (`is-fullscreen-mode`).
+    pub fullscreen: bool,
+    /// More classes of the `body` element.
+    pub body_classes: Vec<String>,
 }
 
 /// One tab of the contextual help.
@@ -192,6 +196,15 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
         &serde_json::json!({"url": env.cookie_path, "uid": env.user.id, "time": env.now, "secure": if env.secure { "1" } else { "" }}),
     );
     scripts.enqueue("utils");
+    // `wp_heartbeat_settings()` and `wp_heartbeat_set_suspension()`.
+    let mut heartbeat = serde_json::Map::new();
+    if let Some(nonce) = env.loader.nonce.as_ref() {
+        heartbeat.insert("nonce".into(), serde_json::Value::String(nonce("heartbeat-nonce")));
+    }
+    if matches!(screen.file.as_str(), "post.php" | "post-new.php") {
+        heartbeat.insert("suspension".into(), serde_json::Value::String("disable".into()));
+    }
+    scripts.relocalize("heartbeat", "heartbeatSettings", &serde_json::Value::Object(heartbeat));
     for handle in ["common", "admin-bar", "svg-painter", "heartbeat", "wp-auth-check"] {
         scripts.enqueue(handle);
     }
@@ -208,9 +221,15 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
     let footer_scripts = scripts.print_footer_scripts(true);
 
     let mut classes = vec!["wp-admin".to_owned(), "wp-core-ui".to_owned(), "no-js".to_owned()];
+    if screen.fullscreen {
+        classes.push("is-fullscreen-mode".to_owned());
+    }
     classes.push(format!("{}-php", page));
     classes.push("auto-fold".to_owned());
     classes.push("admin-bar".to_owned());
+    if !screen.post_type.is_empty() {
+        classes.push(format!("post-type-{}", rustpress_core::formatting::sanitize_html_class(&screen.post_type)));
+    }
     let mut parts = version.split('.');
     let (major, minor) = (parts.next().unwrap_or("0"), parts.next().unwrap_or("0"));
     classes.push(format!("branch-{major}-{minor}"));
@@ -222,6 +241,7 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
     classes.push(format!("locale-{}", rustpress_core::formatting::sanitize_html_class(&site.locale().replace('_', "-").to_lowercase())));
     classes.push("no-customize-support".to_owned());
     classes.push("svg".to_owned());
+    classes.extend(screen.body_classes.iter().cloned());
     classes.push(format!("wp-theme-{}", rustpress_core::formatting::sanitize_html_class(&env.stylesheet)));
 
     let locale_data = site.locale_data();

@@ -109,6 +109,13 @@ impl Scripts {
         self.deps.add_data(handle, "data", Extra::Text(script))
     }
 
+    /// Replaces what `localize()` printed before for `handle` (the settings of a script are
+    /// registered with a filter result the loader cannot evaluate).
+    pub fn relocalize(&mut self, handle: &str, object_name: &str, l10n: &Value) -> bool {
+        self.deps.add_data(handle, "data", Extra::Text(String::new()));
+        self.localize(handle, object_name, l10n)
+    }
+
     /// `set_translations()`: the script needs `wp-i18n` and reads the JSON files of `domain`.
     pub fn set_translations(&mut self, handle: &str, domain: &str, path: &str) -> bool {
         let Some(dep) = self.deps.get_mut(handle) else { return false };

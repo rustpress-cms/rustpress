@@ -240,6 +240,8 @@ pub async fn admin_page(loaded: &Loaded, config: &Config, writer: Option<&rustpr
         languages: parts.languages.clone(),
         available_translations: Vec::new(),
         block_theme,
+        theme: &loaded.theme,
+        registry: &loaded.registry,
     };
     let content_type = headers.get(header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).unwrap_or_default();
     let (form, files) = if !method_post {

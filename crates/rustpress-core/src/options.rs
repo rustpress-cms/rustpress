@@ -28,7 +28,15 @@ pub struct Options {
 
 impl Options {
     pub async fn load(db: &Db) -> Result<Self> {
-        Ok(Self { autoloaded: db.autoload_options().await?.into_iter().collect() })
+        let mut autoloaded: HashMap<String, String> = db.autoload_options().await?.into_iter().collect();
+        // Like the `WP_HOME` and `WP_SITEURL` constants: the address the site is served at wins over
+        // the options (a scratch database shared with another server).
+        if let Ok(url) = std::env::var("RUSTPRESS_SITE_URL") {
+            let url = url.trim_end_matches('/').to_owned();
+            autoloaded.insert("home".to_owned(), url.clone());
+            autoloaded.insert("siteurl".to_owned(), url);
+        }
+        Ok(Self { autoloaded })
     }
 
     /// Builds an option set from known values (tests, defaults).
