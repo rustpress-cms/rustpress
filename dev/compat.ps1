@@ -9,7 +9,7 @@
 # With -Locale the site language of the reference is switched for the run and set back to en_US
 # afterwards; the reports are named <theme>-<locale>.md.
 param(
-    [string[]]$Themes = @('twentytwentyfive', 'twentytwentyfour'),
+    [string[]]$Themes = @('twentytwentyfive', 'twentytwentyfour', 'twentytwentythree', 'twentytwentytwo'),
     [string]$Restore = 'twentytwentyfive',
     [string]$Locale = ''
 )

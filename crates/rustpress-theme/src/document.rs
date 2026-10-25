@@ -537,13 +537,25 @@ pub async fn render_document(theme: &Theme, site: &Site, query: &QueryResult, re
                 handles.push(handle.clone());
             }
         }
+        // `add_theme_support( 'wp-block-styles' )` adds the `theme.css` handle of every core block.
+        if theme.wp_block_styles() && let Some(short) = name.strip_prefix("core/") {
+            let handle = format!("wp-block-{short}-theme");
+            if !handles.contains(&handle) {
+                handles.push(handle);
+            }
+        }
     }
     for handle in &handles {
         let Some(slug) = handle.strip_prefix("wp-block-") else { continue };
-        let path = registry.blocks_dir().join(slug).join("style.min.css");
+        // `wp-block-group-theme` is the `theme.min.css` of the group block.
+        let (slug, file_name) = match slug.strip_suffix("-theme") {
+            Some(block) if registry.blocks_dir().join(block).join("theme.min.css").is_file() => (block, "theme.min.css"),
+            _ => (slug, "style.min.css"),
+        };
+        let path = registry.blocks_dir().join(slug).join(file_name);
         if path.is_file() {
             // Block styles are read from the -rtl file, but name the usual URL as their source.
-            let url = format!("{includes_url}/blocks/{slug}/style.min.css?ver={version}");
+            let url = format!("{includes_url}/blocks/{slug}/{file_name}?ver={version}");
             let variant = rtl_variant(rtl, &path, &url);
             let (path, rtl_link) = match variant {
                 Some((rtl_path, rtl_url)) => (rtl_path, Some(rtl_url)),
@@ -551,7 +563,7 @@ pub async fn render_document(theme: &Theme, site: &Site, query: &QueryResult, re
             };
             sheets.push(Sheet { id: handle.clone(), file: Some((path, url)), inline: None, extra: Vec::new(), rtl_link });
             // Stylesheets the theme enqueues for this block (`wp_enqueue_block_style()`) follow it.
-            for extra in theme.block_stylesheets().iter().filter(|s| s.block.strip_prefix("core/") == Some(slug) && state.rendered_blocks.contains(&s.block)) {
+            for extra in theme.block_stylesheets().iter().filter(|s| file_name == "style.min.css" && s.block.strip_prefix("core/") == Some(slug) && state.rendered_blocks.contains(&s.block)) {
                 if let Some(file) = theme.theme_file(&extra.path) {
                     let url = format!("{}/{}?ver={}", theme.template_directory_uri(), extra.path, theme.version());
                     sheets.push(Sheet { id: extra.handle.clone(), file: Some((file, url)), inline: None, extra: Vec::new(), rtl_link: None });
@@ -585,11 +597,11 @@ pub async fn render_document(theme: &Theme, site: &Site, query: &QueryResult, re
     const SKIP_LINK: usize = usize::MAX;
     const THEME_STYLE: usize = usize::MAX - 1;
     let skip_link_file = wp_root.join("wp-includes").join("css").join("wp-block-template-skip-link.min.css");
-    let theme_style_file = theme.theme_style_handle().and_then(|_| ["style.min.css", "style.css"].iter().map(|f| theme.template_dir().join(f)).find(|p| p.is_file()));
+    let theme_style_file = theme.theme_style_handle().and_then(|_| if theme.theme_style_path() { ["style.min.css", "style.css"].iter().map(|f| theme.template_dir().join(f)).find(|p| p.is_file()) } else { Some(theme.template_dir().join("style.css")) });
     if let Ok(meta) = std::fs::metadata(&skip_link_file) {
         by_size.push((SKIP_LINK, meta.len()));
     }
-    if let Some(meta) = theme_style_file.as_ref().and_then(|p| std::fs::metadata(p).ok()) {
+    if let Some(meta) = theme_style_file.as_ref().filter(|_| theme.theme_style_path()).and_then(|p| std::fs::metadata(p).ok()) {
         by_size.push((THEME_STYLE, meta.len()));
     }
     by_size.sort_by_key(|(_, size)| *size);
@@ -639,7 +651,9 @@ pub async fn render_document(theme: &Theme, site: &Site, query: &QueryResult, re
     let global = {
         // Core blocks without a stylesheet are queued under their handle, too: global styles attach to it.
         let mut queued = handles.clone();
-        for name in &state.used_blocks {
+        // `wp-block-post-comments` is not registered when WordPress adds the global styles of the blocks.
+        queued.retain(|h| h != "wp-block-post-comments");
+        for name in state.used_blocks.iter().filter(|n| *n != "core/post-comments") {
             if let Some(short) = name.strip_prefix("core/") {
                 // `core/query` drops its style handle unless it is interactive (query.php).
                 if short == "query" && !state.script_modules.contains("@wordpress/block-library/query/view") {

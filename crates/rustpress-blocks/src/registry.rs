@@ -181,6 +181,9 @@ impl Registry {
     }
 
     fn load(&self, name: &str) -> Option<BlockType> {
+        if name == "core/post-comments" {
+            return Some(legacy_post_comments(self.blocks_dir.join("comments")));
+        }
         let slug = name.strip_prefix("core/")?;
         if slug.contains(['/', '\\', '.']) {
             return None;
@@ -209,6 +212,31 @@ impl Registry {
             },
             dir,
         })
+    }
+}
+
+/// `register_legacy_post_comments_block()`: the type that `core/post-comments` stands for.
+fn legacy_post_comments(dir: PathBuf) -> BlockType {
+    BlockType {
+        name: "core/post-comments".into(),
+        attributes: serde_json::json!({ "textAlign": { "type": "string" } }).as_object().cloned().unwrap_or_default(),
+        supports: serde_json::json!({
+            "html": false,
+            "align": ["wide", "full"],
+            "typography": {
+                "fontSize": true, "lineHeight": true, "__experimentalFontStyle": true, "__experimentalFontWeight": true,
+                "__experimentalLetterSpacing": true, "__experimentalTextTransform": true,
+                "__experimentalDefaultControls": { "fontSize": true }
+            },
+            "color": { "gradients": true, "link": true, "__experimentalDefaultControls": { "background": true, "text": true } },
+            "inserter": false
+        }),
+        uses_context: vec!["postId".into(), "postType".into()],
+        provides_context: Map::new(),
+        selectors: Value::Null,
+        dir,
+        has_style: true,
+        styles: vec!["wp-block-post-comments".into(), "wp-block-buttons".into(), "wp-block-button".into()],
     }
 }
 

@@ -35,6 +35,18 @@ impl std::fmt::Display for PhpError {
 
 impl std::error::Error for PhpError {}
 
+/// The `'content'` of a pattern file that `return`s an array (classic `register_block_pattern()` files).
+pub fn pattern_array_content(source: &str, host: &dyn PhpHost) -> Result<String, PhpError> {
+    let Some(ret) = source.find("return array(") else { return Err(PhpError { message: "no return array()".into(), offset: 0 }) };
+    let Some(key) = source[ret..].find("'content'") else { return Err(PhpError { message: "no content key".into(), offset: ret }) };
+    let after_key = ret + key + "'content'".len();
+    let Some(arrow) = source[after_key..].find("=>") else { return Err(PhpError { message: "no => after content".into(), offset: after_key }) };
+    let start = after_key + arrow + 2;
+    let mut vars = std::collections::HashMap::new();
+    let mut parser = Parser { src: source, pos: start, base: 0, host, vars: &mut vars };
+    parser.expression()
+}
+
 /// Renders a PHP template file to its output.
 pub fn render(source: &str, host: &dyn PhpHost) -> Result<String, PhpError> {
     let mut vars = std::collections::HashMap::new();

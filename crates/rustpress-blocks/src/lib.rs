@@ -17,6 +17,7 @@ pub mod html;
 pub mod images;
 pub mod interactivity;
 pub mod layout;
+pub mod legacy_comments;
 pub mod parser;
 pub mod php_json;
 pub mod registry;

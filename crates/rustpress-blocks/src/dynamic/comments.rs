@@ -64,7 +64,38 @@ pub(super) async fn comments(bc: &BlockCtx<'_>) -> Result<String> {
     if !comments_open(&post) && post.comment_count == 0 {
         return Ok(String::new());
     }
+    if bc.attr_bool("legacy") {
+        return legacy(bc).await;
+    }
     render_inner(bc, bc.available).await
+}
+
+/// The legacy comments block (`core/post-comments`, or `core/comments` with `legacy`): the classic comments template.
+pub(super) async fn legacy(bc: &BlockCtx<'_>) -> Result<String> {
+    let Some(post) = global_post(bc).await? else { return Ok(String::new()) };
+    if bc.context.post_id().is_none() || (!comments_open(&post) && post.comment_count == 0) {
+        return Ok(String::new());
+    }
+    let q = bc.env.query;
+    let request = format!("{}{}", q.url_path, if q.raw_query.is_empty() { String::new() } else { format!("?{}", q.raw_query) });
+    let output = crate::legacy_comments::compat_comments_template(bc.env.site, bc.env, &post, &request, true).await?;
+    let mut classes = Vec::new();
+    if bc.attrs.contains_key("legacy") {
+        classes.push("wp-block-post-comments".to_owned());
+    }
+    if let Some(align) = bc.attr_str("textAlign") {
+        classes.push(format!("has-text-align-{align}"));
+    }
+    let wrapper = bc.wrapper_attributes(&[("class", classes.join(" "))]);
+    bc.env.with_state(|s| {
+        if !s.scripts.iter().any(|x| x == "comment-reply") {
+            s.scripts.push("comment-reply".into());
+        }
+        // `enqueue_legacy_post_comments_block_styles()`
+        s.note_block("core/buttons");
+        s.note_block("core/button");
+    });
+    Ok(format!("<div {wrapper}>{output}</div>"))
 }
 
 pub(super) async fn comments_title(bc: &BlockCtx<'_>) -> Result<String> {

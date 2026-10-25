@@ -69,6 +69,10 @@ pub struct Theme {
     block_style_inline: Vec<(String, String)>,
     block_stylesheets: Vec<crate::functions_php::BlockStylesheet>,
     theme_style_handle: Option<String>,
+    /// The theme gave its stylesheet a `path` (`wp_style_add_data()`), so WordPress may inline it.
+    theme_style_path: bool,
+    /// `add_theme_support( 'wp-block-styles' )`: core blocks load their `theme.css`, too.
+    wp_block_styles: bool,
     pattern_cache: Mutex<HashMap<String, Option<String>>>,
 }
 
@@ -106,6 +110,7 @@ impl Theme {
         let mut patterns = HashMap::new();
         for dir in [&template_dir, &stylesheet_dir] {
             scan_patterns(&dir.join("patterns"), &mut patterns);
+            scan_registered_patterns(dir, &mut patterns);
         }
 
         let (db_templates, db_parts) = load_db_templates(site, &stylesheet).await?;
@@ -114,6 +119,8 @@ impl Theme {
         let mut block_style_inline = Vec::new();
         let mut block_stylesheets = Vec::new();
         let mut theme_style_handle = None;
+        let mut theme_style_path = false;
+        let mut wp_block_styles = false;
         let mut dirs = vec![&stylesheet_dir];
         if template_dir != stylesheet_dir {
             dirs.push(&template_dir);
@@ -122,7 +129,11 @@ impl Theme {
             if let Ok(php) = std::fs::read_to_string(dir.join("functions.php")) {
                 block_style_inline.extend(crate::functions_php::block_style_inline_styles(&php));
                 block_stylesheets.extend(crate::functions_php::block_stylesheets(&php));
+                wp_block_styles |= crate::functions_php::adds_theme_support(&php, "wp-block-styles");
                 theme_style_handle = theme_style_handle.or_else(|| crate::functions_php::theme_stylesheet_handle(&php));
+                if let Some(handle) = &theme_style_handle {
+                    theme_style_path |= crate::functions_php::theme_stylesheet_has_path(&php, handle);
+                }
             }
         }
 
@@ -159,6 +170,8 @@ impl Theme {
             block_style_inline,
             block_stylesheets,
             theme_style_handle,
+            theme_style_path,
+            wp_block_styles,
             pattern_cache: Mutex::new(HashMap::new()),
         })
     }
@@ -205,6 +218,16 @@ impl Theme {
     /// The handle under which the theme enqueues its `style.css`, if its `functions.php` does.
     pub fn theme_style_handle(&self) -> Option<&str> {
         self.theme_style_handle.as_deref()
+    }
+
+    /// `current_theme_supports( 'wp-block-styles' )`.
+    pub fn wp_block_styles(&self) -> bool {
+        self.wp_block_styles
+    }
+
+    /// Whether the theme's `style.css` can be inlined (it has a `path`).
+    pub fn theme_style_path(&self) -> bool {
+        self.theme_style_path
     }
 
     /// A file of the theme (the child theme's wins), if it exists.
@@ -273,7 +296,8 @@ impl ThemeAccess for Theme {
         }
         let result = self.patterns.get(slug).and_then(|path| {
             let source = std::fs::read_to_string(path).ok()?;
-            match phpt::render(&source, &self.host) {
+            let rendered = if source.contains("return array(") && source.contains("'content'") { phpt::pattern_array_content(&source, &self.host) } else { phpt::render(&source, &self.host) };
+            match rendered {
                 Ok(markup) => Some(markup),
                 Err(e) => {
                     tracing::warn!(pattern = slug, error = %e, "cannot evaluate pattern");
@@ -310,6 +334,27 @@ fn read_partials(dir: &Path) -> Vec<Value> {
     let mut files: Vec<PathBuf> = entries.flatten().map(|e| e.path()).filter(|p| p.extension().and_then(|e| e.to_str()) == Some("json")).collect();
     files.sort();
     files.iter().filter_map(|p| read_file(p)).collect()
+}
+
+/// Patterns a classic block theme registers from `inc/block-patterns.php`:
+/// `$block_patterns = array( 'name', ... )` and `register_block_pattern( 'theme/' . $block_pattern, require ... )`.
+fn scan_registered_patterns(theme_dir: &Path, patterns: &mut HashMap<String, PathBuf>) {
+    let Ok(php) = std::fs::read_to_string(theme_dir.join("inc").join("block-patterns.php")) else { return };
+    let Some(prefix) = php.find("register_block_pattern(").map(|i| &php[i..]).and_then(|rest| {
+        let rest = rest["register_block_pattern(".len()..].trim_start();
+        let rest = rest.strip_prefix('\'')?;
+        let end = rest.find('\'')?;
+        rest[end + 1..].trim_start().starts_with('.').then(|| rest[..end].to_owned())
+    }) else { return };
+    let Some(list_start) = php.find("$block_patterns = array(") else { return };
+    let list = &php[list_start + "$block_patterns = array(".len()..];
+    let Some(list_end) = list.find(");") else { return };
+    for name in list[..list_end].split(',').filter_map(|item| item.trim().strip_prefix('\'').and_then(|i| i.strip_suffix('\''))) {
+        let path = theme_dir.join("inc").join("patterns").join(format!("{name}.php"));
+        if path.is_file() {
+            patterns.entry(format!("{prefix}{name}")).or_insert(path);
+        }
+    }
 }
 
 /// Records `Slug:` from the docblock of every pattern file.

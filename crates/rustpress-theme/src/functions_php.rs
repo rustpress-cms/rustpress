@@ -253,6 +253,18 @@ pub fn theme_stylesheet_handle(php: &str) -> Option<String> {
     })
 }
 
+/// Whether the theme calls `add_theme_support( 'feature' )`.
+pub fn adds_theme_support(php: &str, feature: &str) -> bool {
+    let quoted = format!("'{feature}'");
+    call_arguments(php, "add_theme_support").into_iter().any(|arguments| arguments.trim_start().starts_with(&quoted))
+}
+
+/// Whether `wp_style_add_data( $handle, 'path', ... )` lets WordPress inline the stylesheet.
+pub fn theme_stylesheet_has_path(php: &str, handle: &str) -> bool {
+    let quoted = format!("'{handle}'");
+    call_arguments(php, "wp_style_add_data").into_iter().any(|arguments| arguments.contains(&quoted) && arguments.contains("'path'"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

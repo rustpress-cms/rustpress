@@ -91,6 +91,7 @@ pub fn is_dynamic(name: &str) -> bool {
             | "core/term-count"
             | "core/term-description"
             | "core/block"
+            | "core/post-comments"
     )
 }
 
@@ -159,6 +160,7 @@ pub fn render<'a>(bc: &'a BlockCtx<'a>) -> BoxFuture<'a, Result<String>> {
             "core/term-count" => Box::pin(extra::term_count(bc)).await,
             "core/term-description" => Box::pin(extra::term_description(bc)).await,
             "core/block" => Box::pin(extra::reusable_block(bc)).await,
+            "core/post-comments" => Box::pin(comments::legacy(bc)).await,
             _ => Ok(bc.content.clone()),
         }
     })
