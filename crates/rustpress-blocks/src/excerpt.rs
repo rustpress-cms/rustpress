@@ -34,6 +34,7 @@ pub async fn get_the_excerpt_with(env: &Env<'_>, post: &Arc<Post>, length: usize
         return Ok(post.post_excerpt.clone());
     }
     let content = get_the_content(env, post, 1, true);
+    let content = rustpress_core::shortcodes::strip_shortcodes(&content);
     let content = excerpt_remove_blocks(env, post, &content).await?;
     let html = the_content_for_excerpt(env, post, &content).await?.replace("]]>", "]]&gt;");
     Ok(rustpress_core::formatting::wp_trim_words_with(&html, length, more, env.site.locale_data().word_count_type))

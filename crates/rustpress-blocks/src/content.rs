@@ -245,12 +245,24 @@ async fn apply_the_content(env: &Env<'_>, post: &Arc<Post>, raw: &str, prefix: &
     let blocks = has_blocks(&raw);
     let mut out = env.render_markup(&raw, &context_for_post(post)).await?;
     out = env.site.texturize(&out);
+    let late = env.with_state(|s| s.wpautop_late);
+    let mut prefix_done = false;
     if !blocks {
-        out = wpautop(&out);
-        out = rustpress_core::shortcodes::shortcode_unautop(&out);
+        if late {
+            out = rustpress_core::shortcodes::shortcode_unautop(&out);
+            out = wpautop(&format!("{prefix}{out}"));
+            prefix_done = true;
+        } else {
+            out = wpautop(&out);
+            out = rustpress_core::shortcodes::shortcode_unautop(&out);
+        }
+    } else if filter_tags {
+        env.with_state(|s| s.wpautop_late = true);
     }
     out = capital_p_dangit(&out, false);
-    out = format!("{prefix}{out}");
+    if !prefix_done {
+        out = format!("{prefix}{out}");
+    }
     out = crate::shortcodes::do_shortcode(env, Some(post), &out).await?;
     if filter_tags { images::filter_content_tags(env, &out, "the_content").await } else { Ok(out) }
 }

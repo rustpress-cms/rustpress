@@ -41,7 +41,7 @@ async fn lists_only_published_posts_by_default() {
     let db = db_or_skip!();
     let query = PostQuery::default();
     // 12 test posts + hello-world + klassisch + geschuetzt + mehrseitig + gleich-a/b; the draft is hidden.
-    assert_eq!(db.count_posts(&query).await.unwrap(), 23);
+    assert_eq!(db.count_posts(&query).await.unwrap(), 26);
     let page = db.posts(&PostQuery { limit: Some(5), ..query.clone() }).await.unwrap();
     assert_eq!(page.len(), 5);
     assert!(page.iter().all(|p| p.post_status == "publish" && p.post_type == "post"));
@@ -107,12 +107,12 @@ async fn filters_by_term_search_and_date() {
     assert_eq!(db.count_posts(&wildcard).await.unwrap(), 0);
 
     let year_hit = PostQuery { year: Some(2026), ..PostQuery::default() };
-    assert_eq!(db.count_posts(&year_hit).await.unwrap(), 23);
+    assert_eq!(db.count_posts(&year_hit).await.unwrap(), 26);
     let year_miss = PostQuery { year: Some(1999), ..PostQuery::default() };
     assert_eq!(db.count_posts(&year_miss).await.unwrap(), 0);
 
     let by_title = PostQuery { order_by: OrderBy::Title, order: Order::Asc, limit: Some(1), ..PostQuery::default() };
-    assert_eq!(db.posts(&by_title).await.unwrap()[0].post_title, "Bilder");
+    assert_eq!(db.posts(&by_title).await.unwrap()[0].post_title, "Abfrage-Bloecke");
 }
 
 #[tokio::test]
@@ -139,7 +139,7 @@ async fn terms_meta_comments_users() {
 
     // Only the approved comment is visible.
     let comments = db.approved_comments(post.id).await.unwrap();
-    assert_eq!(comments.len(), 1);
+    assert_eq!(comments.len(), 2);
     assert_eq!(comments[0].comment_content, "Guter Beitrag");
 
     let author = db.user(post.post_author).await.unwrap().expect("author");

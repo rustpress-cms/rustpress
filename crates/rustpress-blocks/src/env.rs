@@ -151,6 +151,9 @@ pub struct State {
     pub id_counters: HashMap<String, u64>,
     /// Counter behind wp_unique_id().
     pub unique_counter: u64,
+    /// `do_blocks()` took `wpautop` off the `the_content` filter and `_restore_wpautop_hook()` put it back
+    /// behind `shortcode_unautop`: from then on the paragraphs are made after the shortcodes were unwrapped.
+    pub wpautop_late: bool,
     /// `static $instance` of `gallery_shortcode()`.
     pub gallery_instances: u64,
     /// Patterns being rendered right now (recursion guard).

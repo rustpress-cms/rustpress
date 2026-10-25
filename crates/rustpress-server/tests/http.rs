@@ -210,6 +210,6 @@ async fn rest_api_is_served_like_wordpress() {
         assert_eq!(headers[header::CONTENT_TYPE], "application/json; charset=UTF-8", "{path}");
     }
     let (_, headers, _) = get(&app, Method::GET, "/wp-json/wp/v2/posts?per_page=1").await;
-    assert_eq!(headers["x-wp-total"], "23");
-    assert_eq!(headers["x-wp-totalpages"], "23");
+    assert_eq!(headers["x-wp-total"], "26");
+    assert_eq!(headers["x-wp-totalpages"], "26");
 }

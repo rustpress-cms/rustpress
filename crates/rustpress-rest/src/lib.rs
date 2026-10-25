@@ -68,15 +68,31 @@ pub struct Rest<'a> {
     pub(crate) theme: &'a Theme,
     pub(crate) registry: &'a Registry,
     pub(crate) blank: QueryResult,
+    /// The render state that PHP keeps in static variables for the whole request (unique ids, ...).
+    pub(crate) state: std::sync::Mutex<rustpress_blocks::env::State>,
 }
 
 impl<'a> Rest<'a> {
     pub fn new(site: &'a Site, theme: &'a Theme, registry: &'a Registry) -> Self {
-        Self { site, theme, registry, blank: QueryResult::blank() }
+        Self { site, theme, registry, blank: QueryResult::blank(), state: Default::default() }
     }
 
     /// Handles `GET <route>?<query>`; `route` is the part after `/wp-json` (`/wp/v2/posts`).
     pub async fn handle(&self, route: &str, query: &str) -> Result<Reply> {
+        // Blocks that link to "the current page" (query pagination) see the request URI.
+        let mut blank = QueryResult::blank();
+        if self.site.uses_pretty_permalinks() {
+            blank.url_path = format!("/wp-json{route}");
+            blank.raw_query = query.to_owned();
+        } else {
+            blank.url_path = "/".to_owned();
+            blank.raw_query = if query.is_empty() { format!("rest_route={route}") } else { format!("rest_route={route}&{query}") };
+        }
+        let scoped = Rest { site: self.site, theme: self.theme, registry: self.registry, blank, state: Default::default() };
+        scoped.handle_request(route, query).await
+    }
+
+    async fn handle_request(&self, route: &str, query: &str) -> Result<Reply> {
         let params = Params::parse(query);
         let outcome = self.dispatch(route, &params).await?;
         let mut headers = vec![

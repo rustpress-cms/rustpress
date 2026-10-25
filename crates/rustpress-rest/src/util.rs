@@ -154,8 +154,30 @@ impl Rest<'_> {
 }
 
 /// The `Env` used to render content outside of a page request.
-pub fn env<'a>(rest: &'a Rest<'a>) -> rustpress_blocks::Env<'a> {
-    rustpress_blocks::Env::new(rest.site, &rest.blank, rest.theme, rest.registry)
+pub fn env<'a>(rest: &'a Rest<'a>) -> RestEnv<'a> {
+    let env = rustpress_blocks::Env::new(rest.site, &rest.blank, rest.theme, rest.registry);
+    env.with_state(|s| *s = std::mem::take(&mut *rest.state.lock().expect("rest state lock")));
+    RestEnv { env, rest }
+}
+
+/// An [`rustpress_blocks::Env`] whose state goes back to the request when it is dropped.
+pub struct RestEnv<'a> {
+    env: rustpress_blocks::Env<'a>,
+    rest: &'a Rest<'a>,
+}
+
+impl<'a> std::ops::Deref for RestEnv<'a> {
+    type Target = rustpress_blocks::Env<'a>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.env
+    }
+}
+
+impl Drop for RestEnv<'_> {
+    fn drop(&mut self) {
+        *self.rest.state.lock().expect("rest state lock") = self.env.take_state();
+    }
 }
 
 #[cfg(test)]
