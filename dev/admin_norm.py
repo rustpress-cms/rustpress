@@ -20,6 +20,7 @@ text = re.sub(r"(nonce|_wpnonce)([\"' =:]+(?:value=\")?)[0-9a-f]{10}", r"\1\2N",
 text = re.sub(r"_wpnonce=[0-9a-f]{10}", "_wpnonce=N", text)
 text = re.sub(r'(name="(?:_wpnonce[\w-]*|_inline_edit|_ajax_nonce[\w-]*|[\w-]*nonce)" value=")[0-9a-f]{10}', r"\g<1>N", text)
 text = re.sub(r'(id="(?:_wpnonce[\w-]*|_inline_edit|[\w-]*nonce)" name="[\w-]+" value=")[0-9a-f]{10}', r"\g<1>N", text)
+text = re.sub(r'(name="_wp_unfiltered_html_comment" value=")[0-9a-f]{10}', r"\g<1>N", text)
 text = re.sub(r"<code>\d{4}-\d{2}-\d{2} [\d:]{8}</code>", "<code>TIME</code>", text)
 text = text.replace("><", ">\n<")
 text = "\n".join(line.rstrip() for line in text.split("\n") if line.strip())

@@ -706,6 +706,7 @@ pub async fn post_php(ctx: &Ctx<'_>) -> AdminResponse {
     let can_delete = |post: &Post| ctx.can(if post.post_type == "page" { "delete_pages" } else { "delete_posts" }) && (post.post_author == ctx.user.id || ctx.can("delete_others_posts") || ctx.can("delete_others_pages"));
     let ays = || die(ctx.env, 403, &tr("WordPress Failure Notice"), &tr("The link you followed has expired."));
     match action.as_str() {
+        "post-quickdraft-save" => super::dashboard::quickdraft_save(ctx).await,
         "edit" => {
             let Some(post) = post else {
                 return die(ctx.env, 404, "WordPress &rsaquo; Error", &format!("<p>{}</p>", tr("You attempted to edit an item that does not exist. Perhaps it was deleted?")));

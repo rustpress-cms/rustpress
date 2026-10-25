@@ -167,6 +167,19 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse
             response.insert("wp-auth-check".into(), Json::Bool(true));
             json(200, &Json::Object(response))
         }
+        "update-welcome-panel" => {
+            if !nonce_ok(request.request("welcomepanelnonce").unwrap_or_default(), "welcome-panel-nonce") {
+                return text(403, "-1");
+            }
+            if !user.can("edit_theme_options") {
+                return text(403, "-1");
+            }
+            let visible = request.request("visible").is_some_and(|v| !v.is_empty() && v != "0");
+            write_meta("show_welcome_panel".to_owned(), if visible { "1" } else { "0" }.to_owned()).await;
+            text(200, "1")
+        }
+        // The feeds of the "WordPress Events and News" widget come from wordpress.org; RustPress makes no outgoing requests.
+        "dashboard-widgets" => text(200, ""),
         "closed-postboxes" => {
             if !nonce_ok(request.request("closedpostboxesnonce").unwrap_or_default(), "closedpostboxes") {
                 return text(403, "-1");

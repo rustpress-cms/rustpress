@@ -26,13 +26,11 @@ pub fn antispambot(email: &str) -> String {
     let mut rng = rand::rng();
     let mut out = String::new();
     for ch in email.chars() {
-        let choice = rng.random_range(0..2);
+        // `rand( 0, 1 )`: an entity or the character itself; `@` is always an entity.
         if ch == '@' {
             out.push_str("&#064;");
-        } else if choice == 0 {
-            out.push_str(&format!("&#{};", ch as u32));
-        } else if choice == 1 {
-            out.push_str(&format!("&#x{:x};", ch as u32).replace("&#x", "&#").replace(';', ";"));
+        } else if rng.random_range(0..2) == 0 {
+            out.push_str(&format!("&#{:03};", ch as u32));
         } else {
             out.push(ch);
         }
@@ -209,7 +207,7 @@ pub async fn row_html(ctx: &Ctx<'_>, comment: &Comment, index: usize, current_st
     let text = rustpress_blocks::content::comment_text(site, &comment.comment_content);
     let raw_text = esc_textarea(&comment.comment_content);
     let inline = format!(
-        "\n\t\t<div id=\"inline-{id}\" class=\"hidden\">\n\t\t\t<textarea class=\"comment\" rows=\"1\" cols=\"1\">{raw_text}</textarea>\n\t\t\t<div class=\"author-email\">{}</div>\n\t\t\t<div class=\"author\">{}</div>\n\t\t\t<div class=\"author-url\">{}</div>\n\t\t\t<div class=\"comment_status\">{}</div>\n\t\t</div>\n\t\t",
+        "\n\t\t<div id=\"inline-{id}\" class=\"hidden\">\n\t\t\t<textarea class=\"comment\" rows=\"1\" cols=\"1\">{raw_text}</textarea>\n\t\t\t<div class=\"author-email\">{}</div>\n\t\t\t<div class=\"author\">{}</div>\n\t\t\t<div class=\"author-url\">{}</div>\n\t\t\t<div class=\"comment_status\">{}</div>\n\t\t</div>\n\t\t\t",
         esc_html(&comment.comment_author_email),
         esc_html(&comment.comment_author),
         esc_html(&comment.comment_author_url),
@@ -426,7 +424,13 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
 
 /// `wp_comment_reply()`: the inline editor and reply form.
 fn reply_form(ctx: &Ctx<'_>) -> String {
-    let template = include_str!("reply_form.tpl");
+    reply_form_html(ctx, false)
+}
+
+/// `wp_comment_reply()`; the dashboard variant has no table around the form.
+pub fn reply_form_html(ctx: &Ctx<'_>, dashboard: bool) -> String {
+    let template = include_str!("reply_form.tpl").replace("\r\n", "\n");
+    let template = template.as_str();
     let mut out = String::new();
     let mut rest = template;
     while let Some(start) = rest.find("@@") {
@@ -438,6 +442,13 @@ fn reply_form(ctx: &Ctx<'_>) -> String {
         rest = &after[end + 2..];
     }
     out.push_str(rest);
+    if dashboard {
+        out = out.replacen("\n<div id=\"ajax-response\"></div>\n\n", "", 1);
+        out = out.replacen("\t<table style=\"display:none;\"><tbody id=\"com-reply\"><tr id=\"replyrow\" class=\"inline-edit-row\" style=\"display:none;\"><td colspan=\"5\" class=\"colspanchange\">", "\t<div id=\"com-reply\" style=\"display:none;\"><div id=\"replyrow\" style=\"display:none;\">", 1);
+        out = out.replacen("\t</td></tr></tbody></table>", "\t</div></div>", 1);
+        out = out.replacen("name=\"checkbox\" id=\"checkbox\" value=\"1\"", "name=\"checkbox\" id=\"checkbox\" value=\"0\"", 1);
+        out = out.replacen("id=\"mode\" value=\"detail\"", "id=\"mode\" value=\"dashboard\"", 1);
+    }
     out.replace("{{reply_nonce}}", &ctx.create_nonce("replyto-comment")).replace("{{unfiltered}}", &ctx.create_nonce("unfiltered-html-comment")).replace("{{editor_css}}", &format!("{}/wp-includes/css/editor.min.css?ver={}", ctx.site().settings.siteurl.trim_end_matches('/'), ctx.env.loader.version))
 }
 
