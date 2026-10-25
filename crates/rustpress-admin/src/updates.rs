@@ -67,3 +67,24 @@ pub async fn counts(site: &Site) -> UpdateCounts {
     counts.translations = u64::from(translations > 0);
     counts
 }
+
+/// A theme update the transient `update_themes` announces.
+#[derive(Debug, Clone, Default)]
+pub struct ThemeUpdate {
+    pub new_version: String,
+    pub url: String,
+    pub package: String,
+}
+
+/// The pending theme updates by stylesheet.
+pub async fn theme_updates(site: &Site) -> std::collections::HashMap<String, ThemeUpdate> {
+    let mut out = std::collections::HashMap::new();
+    let Some(themes) = transient(site, "update_themes").await else { return out };
+    let Some(Value::Array(items)) = field(&themes, "response") else { return out };
+    for (key, item) in items {
+        let Key::Str(name) = key else { continue };
+        let text = |n: &str| field(item, n).and_then(Value::as_str).unwrap_or_default().to_owned();
+        out.insert(String::from_utf8_lossy(name).into_owned(), ThemeUpdate { new_version: text("new_version"), url: text("url"), package: text("package") });
+    }
+    out
+}

@@ -1,0 +1,228 @@
+//! `wp-admin/themes.php`: the installed themes and switching between them.
+
+use rustpress_core::formatting::{esc_html, esc_url, wptexturize};
+use serde_json::{Map, Value, json};
+
+use super::notices::notice;
+use super::{AdminResponse, Ctx, die, redirect, render};
+use crate::chrome::{Assets, Screen};
+use crate::themes::{self, ThemeInfo};
+
+const CARD: &str = include_str!("../data/theme_card.tpl");
+const CARD_ACTIVE: &str = include_str!("../data/theme_card_active.tpl");
+
+fn wp_root(ctx: &Ctx<'_>) -> Option<std::path::PathBuf> {
+    ctx.env.loader.includes.parent().map(std::path::Path::to_path_buf)
+}
+
+/// The tags with the labels WordPress gives the known ones.
+fn tags_text(theme: &ThemeInfo) -> String {
+    theme.tags.iter().map(|t| themes::feature_label(t).map_or_else(|| t.clone(), str::to_owned)).collect::<Vec<_>>().join(", ")
+}
+
+/// `esc_url()` for the links in the page: `&` becomes `&#038;`.
+fn url_html(ctx: &Ctx<'_>, path: &str) -> String {
+    esc_url(&ctx.admin_url(path))
+}
+
+/// The theme the way `wp_prepare_themes_for_js()` describes it.
+fn theme_json(ctx: &Ctx<'_>, theme: &ThemeInfo, active: &str, parent_name: Option<String>, update: Option<&crate::updates::ThemeUpdate>) -> Value {
+    let site = ctx.site();
+    let siteurl = site.settings.siteurl.trim_end_matches('/');
+    let is_active = theme.stylesheet == active;
+    let author_and_uri = if theme.author_uri.is_empty() { wptexturize(&theme.author) } else { format!("<a href=\"{}\">{}</a>", esc_url(&theme.author_uri), wptexturize(&theme.author)) };
+    let nonce_url = |action: &str, nonce_action: &str| {
+        let url = ctx.admin_url(&format!("themes.php?action={action}&stylesheet={}", theme.stylesheet));
+        esc_url(&format!("{url}&_wpnonce={}", ctx.create_nonce(nonce_action))).replace("&#038;", "&amp;")
+    };
+    let mut actions = Map::new();
+    actions.insert("activate".into(), json!(nonce_url("activate", &format!("switch-theme_{}", theme.stylesheet))));
+    actions.insert(
+        "customize".into(),
+        json!(if theme.block_theme {
+            let path = if is_active { "site-editor.php?return=%2Fwp-admin%2Fthemes.php".to_owned() } else { format!("site-editor.php?wp_theme_preview={}&return=%2Fwp-admin%2Fthemes.php", theme.stylesheet) };
+            esc_url(&ctx.admin_url(&path))
+        } else {
+            String::new()
+        }),
+    );
+    actions.insert("delete".into(), json!(nonce_url("delete", &format!("delete-theme_{}", theme.stylesheet))));
+    actions.insert("autoupdate".into(), json!(nonce_url("enable-auto-update", "updates")));
+    let (has_update, has_package, update_html) = match update {
+        Some(u) => {
+            let tr = |s: &str| ctx.tr(s);
+            let name = esc_html(&theme.name);
+            let details = format!("{}?TB_iframe=true&#038;width=1024&#038;height=800", u.url);
+            let html = format!(
+                "<p><strong>{}</strong></p>",
+                rustpress_core::i18n::sprintf(
+                    &tr("There is a new version of %1$s available. <a href=\"%2$s\" %3$s>View version %4$s details</a> or <a href=\"%5$s\" %6$s>update now</a>."),
+                    &[
+                        &name,
+                        &details,
+                        &format!("class=\"thickbox open-plugin-details-modal\" aria-label=\"{}\"", rustpress_core::formatting::esc_attr(&rustpress_core::i18n::sprintf(&tr("View %1$s version %2$s details"), &[&theme.name, &u.new_version]))),
+                        &u.new_version,
+                        &nonce_url("upgrade-theme", "upgrade-theme_x").replace("themes.php?action=upgrade-theme&amp;stylesheet=", "update.php?action=upgrade-theme&amp;theme=").replace(&ctx.create_nonce("upgrade-theme_x"), &ctx.create_nonce(&format!("upgrade-theme_{}", theme.stylesheet))),
+                        &format!("aria-label=\"{}\" id=\"update-theme\" data-slug=\"{}\"", rustpress_core::formatting::esc_attr(&rustpress_core::i18n::sprintf(&tr("Update %s now"), &[&theme.name])), theme.stylesheet),
+                    ]
+                )
+            );
+            (true, !u.package.is_empty(), html)
+        }
+        None => (false, false, String::new()),
+    };
+    let screenshot = theme.screenshot.as_ref().map(|f| json!(format!("{siteurl}/wp-content/themes/{}/{f}", theme.stylesheet))).into_iter().collect::<Vec<_>>();
+    let mut out = Map::new();
+    out.insert("id".into(), json!(theme.stylesheet));
+    out.insert("name".into(), json!(wptexturize(&theme.name)));
+    out.insert("screenshot".into(), Value::Array(screenshot));
+    out.insert("description".into(), json!(wptexturize(&theme.description)));
+    out.insert("author".into(), json!(wptexturize(&theme.author)));
+    out.insert("authorAndUri".into(), json!(author_and_uri));
+    out.insert("tags".into(), json!(tags_text(theme)));
+    out.insert("version".into(), json!(theme.version));
+    out.insert("compatibleWP".into(), json!(true));
+    out.insert("compatiblePHP".into(), json!(true));
+    out.insert("updateResponse".into(), json!({"compatibleWP": true, "compatiblePHP": true}));
+    out.insert("parent".into(), parent_name.map_or(json!(false), Value::from));
+    out.insert("active".into(), json!(is_active));
+    out.insert("hasUpdate".into(), json!(has_update));
+    out.insert("hasPackage".into(), json!(has_package));
+    out.insert("update".into(), json!(update_html));
+    out.insert("autoupdate".into(), json!({"enabled": false, "supported": true, "forced": null}));
+    out.insert("actions".into(), Value::Object(actions));
+    out.insert("blockTheme".into(), json!(theme.block_theme));
+    Value::Object(out)
+}
+
+/// One card of the server-side list.
+fn card(ctx: &Ctx<'_>, theme: &ThemeInfo, active: bool, update: bool) -> String {
+    let template = if active { CARD_ACTIVE } else { CARD };
+    let site = ctx.site().settings.siteurl.trim_end_matches('/').to_owned();
+    let nonce = ctx.create_nonce(&format!("switch-theme_{}", theme.stylesheet));
+    let notice = if update { format!("\t<div class=\"notice notice-warning notice-alt inline update-message\"><p>{} <button class=\"button-link\" type=\"button\">{}</button></p></div>\t", ctx.tr("New version available."), ctx.tr("Update now")) } else { String::new() };
+    let mut html = template.replace("\r\n", "\n");
+    for (needle, value) in [("{{id}}", theme.stylesheet.as_str()), ("{{name}}", &esc_html(&wptexturize(&theme.name))), ("{{version}}", &theme.version), ("{{author}}", &wptexturize(&theme.author)), ("{{nonce}}", &nonce), ("{{update_notice}}", &notice), ("{{site}}", &site)] {
+        html = html.replace(needle, value);
+    }
+    // The few texts of the card.
+    for text in ["Theme Details", "Customize", "Activate", "Live Preview", "Active:"] {
+        html = html.replace(&format!(">{text}<"), &format!(">{}<", ctx.tr(text)));
+    }
+    html = html.replace("By ", &format!("{} ", ctx.tr("By %s").replace("%s", "").trim()));
+    html
+}
+
+/// `switch_theme()`.
+async fn switch(ctx: &Ctx<'_>, theme: &ThemeInfo) -> bool {
+    let Some(writer) = ctx.env.writer else { return false };
+    let site = ctx.site();
+    let old = site.settings.stylesheet.clone();
+    let _ = writer.update_option("template", &theme.template).await;
+    let _ = writer.update_option("stylesheet", &theme.stylesheet).await;
+    let _ = writer.update_option("current_theme", &theme.name).await;
+    // The mods of the new theme exist (empty) from now on.
+    let mods = format!("theme_mods_{}", theme.stylesheet);
+    if ctx.env.db.option(&mods).await.ok().flatten().is_none() {
+        let _ = writer.update_option_with_autoload(&mods, "a:0:{}", "yes").await;
+    }
+    let old_mods = format!("theme_mods_{old}");
+    if let Ok(Some(value)) = ctx.env.db.option(&old_mods).await {
+        let _ = writer.update_option_with_autoload(&old_mods, &value, "no").await;
+    }
+    let _ = writer.update_option("theme_switched", &old).await;
+    true
+}
+
+pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
+    let tr = |s: &str| ctx.tr(s);
+    let request = ctx.request;
+    if !ctx.can("switch_themes") && !ctx.can("edit_theme_options") {
+        return die(ctx.env, 403, "WordPress &rsaquo; Error", &format!("<h1>{}</h1><p>{}</p>", tr("You need a higher level of permission."), tr("Sorry, you are not allowed to edit theme options on this site.")));
+    }
+    let Some(root) = wp_root(ctx) else { return die(ctx.env, 500, "WordPress &rsaquo; Error", "<p>The WordPress files are not available.</p>") };
+    let stylesheet = request.get("stylesheet").unwrap_or_default().to_owned();
+    if ctx.can("switch_themes") {
+        match request.get("action") {
+            Some("activate") => {
+                if !ctx.verify_nonce(&format!("switch-theme_{stylesheet}")) {
+                    return die(ctx.env, 403, &tr("WordPress Failure Notice"), &tr("The link you followed has expired."));
+                }
+                let Some(theme) = themes::find(&root, &stylesheet) else {
+                    return die(ctx.env, 403, "WordPress &rsaquo; Error", &format!("<h1>{}</h1><p>{}</p>", tr("An error occurred."), tr("The requested theme does not exist.")));
+                };
+                if !switch(ctx, &theme).await {
+                    return super::common::read_only(ctx);
+                }
+                return redirect(&ctx.admin_url("themes.php?activated=true"));
+            }
+            Some("delete") => {
+                if !ctx.verify_nonce(&format!("delete-theme_{stylesheet}")) {
+                    return die(ctx.env, 403, &tr("WordPress Failure Notice"), &tr("The link you followed has expired."));
+                }
+                // Removing files is left to the file system.
+                return die(ctx.env, 403, "WordPress &rsaquo; Error", "<p>RustPress does not delete themes; remove the directory under wp-content/themes.</p>");
+            }
+            _ => {}
+        }
+    }
+
+    let site = ctx.site();
+    let installed = themes::installed(&root);
+    let active = site.settings.stylesheet.clone();
+    let updates = crate::updates::theme_updates(site).await;
+    // The active theme comes first, the others by name.
+    let mut ordered: Vec<&ThemeInfo> = installed.iter().collect();
+    ordered.sort_by_key(|t| (t.stylesheet != active, t.name.to_lowercase()));
+    let name_of = |stylesheet: &str| installed.iter().find(|t| t.stylesheet == stylesheet).map(|t| t.name.clone());
+    let theme_list: Vec<Value> = installed
+        .iter()
+        .map(|t| {
+            let parent = if t.has_parent() { name_of(&t.template) } else { None };
+            theme_json(ctx, t, &active, parent, updates.get(&t.stylesheet))
+        })
+        .collect();
+    // The active theme leads the list of the script, too.
+    let mut theme_list = theme_list;
+    theme_list.sort_by_key(|t| t["id"].as_str() != Some(active.as_str()));
+
+    let mut cards = String::new();
+    for theme in &ordered {
+        cards.push_str(&card(ctx, theme, theme.stylesheet == active, updates.contains_key(&theme.stylesheet)));
+    }
+    let mut notices = String::new();
+    let home = esc_url(&site.home_url("/"));
+    let flag = |name: &str| request.get(name).is_some();
+    if flag("broken") {
+        notices.push_str(&notice(&tr("The active theme is broken. Reverting to the default theme."), "", true, "message1", &["updated"], true));
+    } else if flag("activated") {
+        let message = if flag("previewed") { tr("Settings saved and theme activated.") } else { tr("New theme activated.") };
+        notices.push_str(&notice(&format!("{message} <a href=\"{home}\">{}</a>", tr("Visit site")), "", true, "message2", &["updated"], true));
+    } else if flag("deleted") {
+        notices.push_str(&notice(&tr("Theme deleted."), "", true, "message3", &["updated"], true));
+    } else if flag("delete-active-child") {
+        notices.push_str(&notice(&tr("You cannot delete a theme while it has an active child theme."), "", false, "message4", &["error"], true));
+    }
+
+    let baked = super::pages::load(ctx, "themes");
+    let content = baked.content.replace("{{cards}}", &cards).replace("{{count}}", &installed.len().to_string()).replace("{{notices}}", &notices);
+    let settings = json!({
+        "themes": theme_list,
+        "settings": {
+            "canInstall": ctx.can("install_themes"),
+            "installURI": ctx.admin_url("theme-install.php"),
+            "confirmDelete": tr("Are you sure you want to delete this theme?\n\nClick 'Cancel' to go back, 'OK' to confirm the delete."),
+            "adminUrl": "/wp-admin/",
+        },
+        "l10n": {
+            "addNew": tr("Add Theme"),
+            "search": tr("Search installed themes"),
+            "themesFound": tr("Number of Themes found: %d"),
+            "noThemesFound": tr("No themes found. Try a different search."),
+            "themeViewed": tr("Theme details: %s"),
+        },
+    });
+    let assets = Assets { scripts: vec!["theme".into(), "updates".into()], styles: vec!["thickbox".into()], localize: vec![("theme".into(), "_wpThemeSettings".into(), settings)], ..Default::default() };
+    let screen = Screen { file: "themes.php".into(), parent_file: "themes.php".into(), submenu_file: Some("themes.php".into()), title: tr("Themes"), help: Some(baked.help), ..Default::default() };
+    render(ctx, &screen, &content, &assets).await
+}

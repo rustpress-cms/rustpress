@@ -15,6 +15,7 @@ pub mod screens;
 pub mod scripts;
 pub mod styles;
 pub mod tags;
+pub mod themes;
 pub mod updates;
 
 pub use rustpress_content::{content, media, sanitize};
