@@ -117,6 +117,7 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse
     };
 
     match action.as_str() {
+        "inline-save" => super::quick_edit::inline_save(env, request, &user, &session.token).await,
         "heartbeat" => {
             let mut response = Map::new();
             let nonce_valid = nonce_ok(request.request("_nonce").unwrap_or_default(), "heartbeat-nonce");

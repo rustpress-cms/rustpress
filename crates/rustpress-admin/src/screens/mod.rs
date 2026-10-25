@@ -33,6 +33,7 @@ pub mod pages;
 pub mod post_edit;
 pub mod plugins;
 mod inline_edit;
+mod quick_edit;
 pub mod posts;
 pub mod privacy;
 pub mod settings;

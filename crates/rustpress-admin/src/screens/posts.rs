@@ -135,6 +135,11 @@ fn result_notice(ctx: &Ctx<'_>, info: &TypeInfo) -> String {
         let plural = if info.name == "page" { "%s pages restored from the Trash." } else { "%s posts restored from the Trash." };
         messages.push(rustpress_core::i18n::sprintf(&site.trn(singular, plural, n), &[&number(n)]));
     }
+    if let Some(n) = count("locked").filter(|n| *n > 0) {
+        let singular = if info.name == "page" { "%s page not updated, somebody is editing it." } else { "%s post not updated, somebody is editing it." };
+        let plural = if info.name == "page" { "%s pages not updated, somebody is editing them." } else { "%s posts not updated, somebody is editing them." };
+        messages.push(rustpress_core::i18n::sprintf(&site.trn(singular, plural, n), &[&number(n)]));
+    }
     if messages.is_empty() {
         return String::new();
     }
@@ -171,6 +176,14 @@ async fn bulk_action(ctx: &Ctx<'_>, info: &TypeInfo) -> Option<AdminResponse> {
         sendback = add_query_arg(&sendback, "post_status", status);
     }
     let content = Content { site: ctx.site(), db: ctx.env.db, writer, user: &ctx.user, now: ctx.env.now };
+    // Bulk Edit: the form sends `action=edit` with `bulk_edit`.
+    if action == "edit" && request.request("bulk_edit").is_some() {
+        let (updated, skipped, locked) = super::quick_edit::bulk_edit(ctx, &ids).await;
+        sendback = add_query_arg(&sendback, "updated", &updated.to_string());
+        sendback = add_query_arg(&sendback, "skipped", &skipped.to_string());
+        sendback = add_query_arg(&sendback, "locked", &locked.to_string());
+        return Some(redirect(&ctx.admin_url(&sendback)));
+    }
     let mut done = 0i64;
     let key;
     match action.as_str() {
@@ -418,26 +431,8 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     }
 
     // The table
-    let supports_author = site.post_type_supports(&info.name, "author");
     let taxonomies = Content { site, db, writer: match ctx.env.writer { Some(w) => w, None => return super::die(ctx.env, 403, "WordPress &rsaquo; Error", "<p>RustPress was started without write access.</p>") }, user: &ctx.user, now: ctx.env.now }.object_taxonomies(&info.name);
-    let mut columns: Vec<Column> = vec![Column::new("cb", "<input type=\"checkbox\" />"), Column::new("title", &site.trx("Title", "column name")).sortable("title", false, Some(&tr("Title")), if info.hierarchical { Some("asc") } else { None })];
-    if supports_author {
-        columns.push(Column::new("author", &tr("Author")));
-    }
-    for (taxonomy, _) in &taxonomies {
-        if taxonomy == "category" {
-            columns.push(Column::new("categories", &site.taxonomy_label("category")));
-        } else if taxonomy == "post_tag" {
-            columns.push(Column::new("tags", &site.taxonomy_label("post_tag")));
-        }
-    }
-    if site.post_type_supports(&info.name, "comments") && !matches!(status_param.as_str(), "pending" | "draft" | "future") {
-        columns.push(
-            Column::new("comments", &format!("<span class=\"vers comment-grey-bubble\" title=\"{}\" aria-hidden=\"true\"></span><span class=\"screen-reader-text\">{}</span>", esc_attr(&tr("Comments")), tr("Comments")))
-                .sortable("comment_count", false, Some(&tr("Comments")), None),
-        );
-    }
-    columns.push(Column::new("date", &tr("Date")).sortable("date", true, Some(&tr("Date")), if info.hierarchical { None } else { Some("desc") }));
+    let columns = list_columns(ctx, &info, &status_param, &taxonomies);
 
     let bulk_actions = {
         let mut list: Vec<(String, String)> = Vec::new();
@@ -480,103 +475,8 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         rows.push_str(&format!("<tr class=\"no-items\"><td class=\"colspanchange\" colspan=\"{}\">{not_found}</td></tr>", columns.len()));
     }
     for (post, level) in posts.iter().zip(levels.iter()) {
-        let categories = db.terms_for_post(post.id, Some("category")).await.unwrap_or_default();
-        let tags = db.terms_for_post(post.id, Some("post_tag")).await.unwrap_or_default();
-        let is_sticky = sticky.contains(&post.id);
-        let thumbnail = db.post_meta(post.id).await.unwrap_or_default().iter().any(|m| m.meta_key.as_deref() == Some("_thumbnail_id") && m.meta_value.as_deref().and_then(|v| v.parse::<u64>().ok()).is_some_and(|id| id > 0));
-        let author_row = authors.iter().find(|u| u.id == post.post_author);
-        let class = format!(
-            "iedit author-{} level-{level} {}",
-            if post.post_author == ctx.user.id { "self" } else { "other" },
-            post_class(post, &categories, &tags, is_sticky, thumbnail)
-        );
-        rows.push_str(&format!("\t\t{}<tr id=\"post-{}\" class=\"{class}\">\n\t\t\t", if hierarchical_display { "\t" } else { "" }, post.id));
-        let title = draft_or_title(ctx, post);
-        let can_edit = ctx.can(edit_cap) && (post.post_author == ctx.user.id || ctx.can("edit_others_posts") || ctx.can("edit_others_pages"));
-        for column in &columns {
-            match column.key.as_str() {
-                "cb" => {
-                    if can_edit {
-                        rows.push_str(&format!(
-                            "<td class=\"check-column\">\t\t\t<input id=\"cb-select-{id}\" type=\"checkbox\" name=\"post[]\" value=\"{id}\" />\n\t\t\t<label for=\"cb-select-{id}\">\n\t\t\t\t<span class=\"screen-reader-text\">\n\t\t\t\t{}\t\t\t\t</span>\n\t\t\t</label>\n\t\t\t<div class=\"locked-indicator\">\n\t\t\t\t<span class=\"locked-indicator-icon\" aria-hidden=\"true\"></span>\n\t\t\t\t<span class=\"screen-reader-text\">\n\t\t\t\t{}\t\t\t\t</span>\n\t\t\t</div>\n\t\t\t</td>",
-                            rustpress_core::i18n::sprintf(&tr("Select %s"), &[&title]),
-                            rustpress_core::i18n::sprintf(&tr("&#8220;%s&#8221; is locked"), &[&title]),
-                            id = post.id
-                        ));
-                    } else {
-                        rows.push_str("<td class=\"check-column\"></td>");
-                    }
-                }
-                "title" => {
-                    let aria = if post.post_title.is_empty() { tr("no title") } else { post.post_title.clone() };
-                    let pad = "<span aria-hidden=\"true\">&#8212;</span> ".repeat(*level);
-                    let parent = parents.iter().find(|p| p.id == post.post_parent);
-                    let (described, hierarchy_linked, hierarchy_nolink) = match parent {
-                        Some(parent) => {
-                            let hierarchy_id = format!("post-hierarchy-{}", post.id);
-                            let text = esc_html(&rustpress_core::i18n::sprintf(&tr("Child of %s"), &[&rustpress_core::formatting::wp_strip_all_tags(&esc_html(&parent.post_title))]));
-                            (format!(" aria-describedby=\"{hierarchy_id}\""), format!("<span id=\"{hierarchy_id}\" class=\"hidden\">{text}</span>"), format!("<span id=\"{hierarchy_id}\" class=\"screen-reader-text\"> ({text})</span>"))
-                        }
-                        None => (String::new(), String::new(), String::new()),
-                    };
-                    let edit_link = ctx.admin_url(&format!("post.php?post={}&action=edit", post.id)).replace('&', "&amp;");
-                    let states = post_states(ctx, post, &status_param, is_sticky);
-                    let name_html = if can_edit && post.post_status != "trash" {
-                        format!("{pad}<a class=\"row-title\" href=\"{edit_link}\"{described}>{title}</a>{hierarchy_linked}")
-                    } else {
-                        format!("{pad}<span>{title}{hierarchy_nolink}</span>")
-                    };
-                    let inline = if can_edit { inline_data(ctx, post, &info, &taxonomies, is_sticky).await } else { String::new() };
-                    rows.push_str(&format!(
-                        "<th scope=\"row\" class=\"title column-title has-row-actions column-primary page-title\" data-colname=\"{}\" aria-label=\"{}\"><div class=\"locked-info\"><span class=\"locked-avatar\"></span> <span class=\"locked-text\"></span></div>\n<strong>{name_html}{states}</strong>\n{inline}{}<button type=\"button\" class=\"toggle-row\"><span class=\"screen-reader-text\">{}</span></button></th>",
-                        esc_attr(&column.label),
-                        esc_attr(&aria),
-                        row_actions_for(ctx, post, &title, can_edit, &info).await,
-                        tr("Show more details")
-                    ));
-                }
-                "author" => {
-                    let cell = match author_row {
-                        Some(user) if !user.display_name.is_empty() => {
-                            let mut url = add_query_arg("edit.php", "post_type", &post.post_type);
-                            url = add_query_arg(&url, "author", &user.id.to_string());
-                            format!("<a href=\"{}\">{}</a>", esc_url(&url), esc_html(&user.display_name))
-                        }
-                        _ => format!("<span aria-hidden=\"true\">&#8212;</span><span class=\"screen-reader-text\">{}</span>", tr("(no author)")),
-                    };
-                    rows.push_str(&format!("<td class='author column-author' data-colname=\"{}\">{cell}</td>", tr("Author")));
-                }
-                "categories" | "tags" => {
-                    let (terms, label, none, query_var) = if column.key == "categories" { (&categories, site.taxonomy_label("category"), tr("No categories"), "category_name") } else { (&tags, site.taxonomy_label("post_tag"), tr("No tags"), "tag") };
-                    let cell = if terms.is_empty() {
-                        format!("<span aria-hidden=\"true\">&#8212;</span><span class=\"screen-reader-text\">{none}</span>")
-                    } else {
-                        let links: Vec<String> = terms
-                            .iter()
-                            .map(|t| {
-                                let mut url = "edit.php".to_owned();
-                                if post.post_type != "post" {
-                                    url = add_query_arg(&url, "post_type", &post.post_type);
-                                }
-                                url = add_query_arg(&url, query_var, &t.slug);
-                                format!("<a href=\"{}\">{}</a>", esc_url(&url), esc_html(&t.name))
-                            })
-                            .collect();
-                        links.join(&site.trx(", ", "tag delimiter"))
-                    };
-                    rows.push_str(&format!("<td class='{} column-{}' data-colname=\"{}\">{cell}</td>", column.key, column.key, esc_attr(&label)));
-                }
-                "comments" => {
-                    let pending_count = pending.iter().find(|(id, _)| *id == post.id).map_or(0, |(_, n)| *n);
-                    rows.push_str(&format!("<td class='comments column-comments' data-colname=\"{}\">\t\t<div class=\"post-com-count-wrapper\">\n\t\t{}\t\t</div>\n\t\t</td>", esc_attr(&strip_tags_label(&column.label, ctx)), comments_bubble(ctx, post, pending_count)));
-                }
-                "date" => {
-                    rows.push_str(&format!("<td class='date column-date' data-colname=\"{}\">{}</td>", tr("Date"), date_cell(ctx, post)));
-                }
-                _ => {}
-            }
-        }
-        rows.push_str("\t\t</tr>\n\t\t");
+        let row_env = RowEnv { info: &info, columns: &columns, status_param: &status_param, hierarchical_display, sticky: &sticky, taxonomies: &taxonomies, edit_cap, pending: &pending, authors: &authors, parents: &parents };
+        rows.push_str(&post_row(ctx, post, *level, &row_env).await);
     }
 
     // Extra navigation: months, categories, filter button, "Empty Trash".
@@ -692,6 +592,153 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     };
     let _ = remove_query_arg("", "");
     render(ctx, &screen, &content, &Assets { scripts: vec!["inline-edit-post".into(), "heartbeat".into()], ..Default::default() }).await
+}
+
+/// The columns of the list: `WP_Posts_List_Table::get_columns()`.
+pub(super) fn list_columns(ctx: &Ctx<'_>, info: &TypeInfo, status_param: &str, taxonomies: &[(String, bool)]) -> Vec<Column> {
+    let site = ctx.site();
+    let tr = |s: &str| ctx.tr(s);
+    let supports_author = site.post_type_supports(&info.name, "author");
+    let mut columns: Vec<Column> = vec![Column::new("cb", "<input type=\"checkbox\" />"), Column::new("title", &site.trx("Title", "column name")).sortable("title", false, Some(&tr("Title")), if info.hierarchical { Some("asc") } else { None })];
+    if supports_author {
+        columns.push(Column::new("author", &tr("Author")));
+    }
+    for (taxonomy, _) in taxonomies {
+        if taxonomy == "category" {
+            columns.push(Column::new("categories", &site.taxonomy_label("category")));
+        } else if taxonomy == "post_tag" {
+            columns.push(Column::new("tags", &site.taxonomy_label("post_tag")));
+        }
+    }
+    if site.post_type_supports(&info.name, "comments") && !matches!(status_param, "pending" | "draft" | "future") {
+        columns.push(
+            Column::new("comments", &format!("<span class=\"vers comment-grey-bubble\" title=\"{}\" aria-hidden=\"true\"></span><span class=\"screen-reader-text\">{}</span>", esc_attr(&tr("Comments")), tr("Comments")))
+                .sortable("comment_count", false, Some(&tr("Comments")), None),
+        );
+    }
+    columns.push(Column::new("date", &tr("Date")).sortable("date", true, Some(&tr("Date")), if info.hierarchical { None } else { Some("desc") }));
+    columns
+}
+
+/// What a row of the posts list needs besides the post.
+pub(super) struct RowEnv<'a> {
+    pub info: &'a TypeInfo,
+    pub columns: &'a [Column],
+    pub status_param: &'a str,
+    pub hierarchical_display: bool,
+    pub sticky: &'a [u64],
+    pub taxonomies: &'a [(String, bool)],
+    pub edit_cap: &'a str,
+    pub pending: &'a [(u64, u64)],
+    pub authors: &'a [rustpress_db::User],
+    pub parents: &'a [Post],
+}
+
+/// `WP_Posts_List_Table::single_row()`.
+pub(super) async fn post_row(ctx: &Ctx<'_>, post: &Post, level: usize, row: &RowEnv<'_>) -> String {
+    let RowEnv { info, columns, status_param, hierarchical_display, sticky, taxonomies, edit_cap, pending, authors, parents } = *row;
+    let tr = |s: &str| ctx.tr(s);
+    let site = ctx.site();
+    let db = ctx.env.db;
+    let mut out = String::new();
+    let categories = db.terms_for_post(post.id, Some("category")).await.unwrap_or_default();
+    let tags = db.terms_for_post(post.id, Some("post_tag")).await.unwrap_or_default();
+    let is_sticky = sticky.contains(&post.id);
+    let thumbnail = db.post_meta(post.id).await.unwrap_or_default().iter().any(|m| m.meta_key.as_deref() == Some("_thumbnail_id") && m.meta_value.as_deref().and_then(|v| v.parse::<u64>().ok()).is_some_and(|id| id > 0));
+    let author_row = authors.iter().find(|u| u.id == post.post_author);
+    let class = format!(
+        "iedit author-{} level-{level} {}",
+        if post.post_author == ctx.user.id { "self" } else { "other" },
+        post_class(post, &categories, &tags, is_sticky, thumbnail)
+    );
+    out.push_str(&format!("\t\t{}<tr id=\"post-{}\" class=\"{class}\">\n\t\t\t", if hierarchical_display { "\t" } else { "" }, post.id));
+    let title = draft_or_title(ctx, post);
+    let can_edit = ctx.can(edit_cap) && (post.post_author == ctx.user.id || ctx.can("edit_others_posts") || ctx.can("edit_others_pages"));
+    for column in columns {
+        match column.key.as_str() {
+            "cb" => {
+                if can_edit {
+                    out.push_str(&format!(
+                        "<td class=\"check-column\">\t\t\t<input id=\"cb-select-{id}\" type=\"checkbox\" name=\"post[]\" value=\"{id}\" />\n\t\t\t<label for=\"cb-select-{id}\">\n\t\t\t\t<span class=\"screen-reader-text\">\n\t\t\t\t{}\t\t\t\t</span>\n\t\t\t</label>\n\t\t\t<div class=\"locked-indicator\">\n\t\t\t\t<span class=\"locked-indicator-icon\" aria-hidden=\"true\"></span>\n\t\t\t\t<span class=\"screen-reader-text\">\n\t\t\t\t{}\t\t\t\t</span>\n\t\t\t</div>\n\t\t\t</td>",
+                        rustpress_core::i18n::sprintf(&tr("Select %s"), &[&title]),
+                        rustpress_core::i18n::sprintf(&tr("&#8220;%s&#8221; is locked"), &[&title]),
+                        id = post.id
+                    ));
+                } else {
+                    out.push_str("<td class=\"check-column\"></td>");
+                }
+            }
+            "title" => {
+                let aria = if post.post_title.is_empty() { tr("no title") } else { post.post_title.clone() };
+                let pad = "<span aria-hidden=\"true\">&#8212;</span> ".repeat(level);
+                let parent = parents.iter().find(|p| p.id == post.post_parent);
+                let (described, hierarchy_linked, hierarchy_nolink) = match parent {
+                    Some(parent) => {
+                        let hierarchy_id = format!("post-hierarchy-{}", post.id);
+                        let text = esc_html(&rustpress_core::i18n::sprintf(&tr("Child of %s"), &[&rustpress_core::formatting::wp_strip_all_tags(&esc_html(&parent.post_title))]));
+                        (format!(" aria-describedby=\"{hierarchy_id}\""), format!("<span id=\"{hierarchy_id}\" class=\"hidden\">{text}</span>"), format!("<span id=\"{hierarchy_id}\" class=\"screen-reader-text\"> ({text})</span>"))
+                    }
+                    None => (String::new(), String::new(), String::new()),
+                };
+                let edit_link = ctx.admin_url(&format!("post.php?post={}&action=edit", post.id)).replace('&', "&amp;");
+                let states = post_states(ctx, post, &status_param, is_sticky);
+                let name_html = if can_edit && post.post_status != "trash" {
+                    format!("{pad}<a class=\"row-title\" href=\"{edit_link}\"{described}>{title}</a>{hierarchy_linked}")
+                } else {
+                    format!("{pad}<span>{title}{hierarchy_nolink}</span>")
+                };
+                let inline = if can_edit { inline_data(ctx, post, &info, &taxonomies, is_sticky).await } else { String::new() };
+                out.push_str(&format!(
+                    "<th scope=\"row\" class=\"title column-title has-row-actions column-primary page-title\" data-colname=\"{}\" aria-label=\"{}\"><div class=\"locked-info\"><span class=\"locked-avatar\"></span> <span class=\"locked-text\"></span></div>\n<strong>{name_html}{states}</strong>\n{inline}{}<button type=\"button\" class=\"toggle-row\"><span class=\"screen-reader-text\">{}</span></button></th>",
+                    esc_attr(&column.label),
+                    esc_attr(&aria),
+                    row_actions_for(ctx, post, &title, can_edit, &info).await,
+                    tr("Show more details")
+                ));
+            }
+            "author" => {
+                let cell = match author_row {
+                    Some(user) if !user.display_name.is_empty() => {
+                        let mut url = add_query_arg("edit.php", "post_type", &post.post_type);
+                        url = add_query_arg(&url, "author", &user.id.to_string());
+                        format!("<a href=\"{}\">{}</a>", esc_url(&url), esc_html(&user.display_name))
+                    }
+                    _ => format!("<span aria-hidden=\"true\">&#8212;</span><span class=\"screen-reader-text\">{}</span>", tr("(no author)")),
+                };
+                out.push_str(&format!("<td class='author column-author' data-colname=\"{}\">{cell}</td>", tr("Author")));
+            }
+            "categories" | "tags" => {
+                let (terms, label, none, query_var) = if column.key == "categories" { (&categories, site.taxonomy_label("category"), tr("No categories"), "category_name") } else { (&tags, site.taxonomy_label("post_tag"), tr("No tags"), "tag") };
+                let cell = if terms.is_empty() {
+                    format!("<span aria-hidden=\"true\">&#8212;</span><span class=\"screen-reader-text\">{none}</span>")
+                } else {
+                    let links: Vec<String> = terms
+                        .iter()
+                        .map(|t| {
+                            let mut url = "edit.php".to_owned();
+                            if post.post_type != "post" {
+                                url = add_query_arg(&url, "post_type", &post.post_type);
+                            }
+                            url = add_query_arg(&url, query_var, &t.slug);
+                            format!("<a href=\"{}\">{}</a>", esc_url(&url), esc_html(&t.name))
+                        })
+                        .collect();
+                    links.join(&site.trx(", ", "tag delimiter"))
+                };
+                out.push_str(&format!("<td class='{} column-{}' data-colname=\"{}\">{cell}</td>", column.key, column.key, esc_attr(&label)));
+            }
+            "comments" => {
+                let pending_count = pending.iter().find(|(id, _)| *id == post.id).map_or(0, |(_, n)| *n);
+                out.push_str(&format!("<td class='comments column-comments' data-colname=\"{}\">\t\t<div class=\"post-com-count-wrapper\">\n\t\t{}\t\t</div>\n\t\t</td>", esc_attr(&strip_tags_label(&column.label, ctx)), comments_bubble(ctx, post, pending_count)));
+            }
+            "date" => {
+                out.push_str(&format!("<td class='date column-date' data-colname=\"{}\">{}</td>", tr("Date"), date_cell(ctx, post)));
+            }
+            _ => {}
+        }
+    }
+    out.push_str("\t\t</tr>\n\t\t");
+    out
 }
 
 fn strip_tags_label(label: &str, ctx: &Ctx<'_>) -> String {
