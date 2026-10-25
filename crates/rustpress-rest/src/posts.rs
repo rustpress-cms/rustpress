@@ -168,8 +168,8 @@ impl Rest<'_> {
             query.mime_type = params.get("mime_type").map(str::to_owned);
         }
         if kind != Kind::Post && kind.hierarchical() {
-            query.parent_in = params.id_list("parent").unwrap_or_default();
-            query.parent_not_in = params.id_list("parent_exclude").unwrap_or_default();
+            query.parent_in = params.parent_list("parent").unwrap_or_default();
+            query.parent_not_in = params.parent_list("parent_exclude").unwrap_or_default();
         }
         if kind == Kind::Page || self.supports(kind, "page-attributes") {
             query.menu_order = params.get("menu_order").and_then(|v| v.parse().ok());

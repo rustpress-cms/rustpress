@@ -43,3 +43,16 @@ reason = "Ohne Permalink-Regeln kennt WordPress diese Dateien nicht und leitet /
 [[deviation]]
 path = '^/wp-content/uploads/'
 reason = "Die Referenz der echten Seite hat die hochgeladenen Dateien nicht (sie liegen beim Betreiber); beide Seiten antworten ohne Datei unterschiedlich."
+
+[[deviation]]
+path = '^/(wp-config[.]php|[.]htaccess|wp-content/|wp-includes/)$'
+reason = "Verhalten des Apache und von PHP der Referenz (leere index.php, 403 für Verzeichnisse und Dotfiles, ausgeführte wp-config.php); RustPress liefert nur Assets aus."
+
+[[deviation]]
+path = '^/(license[.]txt|readme[.]html)$'
+reason = "Der Apache der Referenz sendet für statische Dateien keinen Cache-Control-Header; RustPress sendet bewusst public, max-age=86400."
+aspect = "header:cache-control"
+
+[[deviation]]
+path = '^/wp-json/wp/v2/pages[?]parent=0&orderby=menu_order$'
+reason = "Seiten mit gleichem menu_order haben in MariaDB keine definierte Reihenfolge."

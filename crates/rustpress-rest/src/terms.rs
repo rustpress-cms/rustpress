@@ -93,7 +93,7 @@ impl Rest<'_> {
         let exclude = params.id_list("exclude").unwrap_or_default();
         let hide_empty = params.truthy("hide_empty");
         let search = params.get("search").filter(|s| !s.is_empty()).map(str::to_lowercase);
-        let parent = if tax.hierarchical { params.id_list("parent") } else { None };
+        let parent = if tax.hierarchical { params.parent_list("parent") } else { None };
         let of_post = match params.id_list("post").and_then(|ids| ids.first().copied()) {
             Some(post) => {
                 let ids: Vec<u64> = self.site.db.terms_for_post(post, Some(taxonomy)).await?.iter().map(|t| t.term_id).collect();

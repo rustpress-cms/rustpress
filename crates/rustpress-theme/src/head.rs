@@ -10,7 +10,7 @@ use crate::Result;
 
 /// `get_search_link()` for the current search words.
 fn search_link(site: &Site, words: &str) -> String {
-    let encoded = rustpress_core::canonical::rawurlencode(words).replace("%2F", "/");
+    let encoded = rustpress_core::canonical::php_urlencode(words).replace("%2F", "/");
     site.user_trailingslashit(&site.home_url(&format!("{}search/{encoded}", site.root())))
 }
 

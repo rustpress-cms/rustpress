@@ -213,7 +213,7 @@ impl Site {
         let mut found = 0;
         let mut q = PostQuery::default();
 
-        let mut paged = v.u64("paged").filter(|p| *p > 0).unwrap_or(1);
+        let paged = v.u64("paged").filter(|p| *p > 0).unwrap_or(1);
         let mut page_id = v.u64("page_id");
         let pagename = v.get("pagename");
 
@@ -266,6 +266,17 @@ impl Site {
                 f.is_year = true;
                 f.is_date = true;
             }
+            // `hour`, `minute`, `second` and the week `w` are date archives, too.
+            let time = |key: &str| v.get(key).map(|x| x.trim().parse::<u32>().unwrap_or(0));
+            let (hour, minute, second) = (time("hour"), time("minute"), time("second"));
+            let week = v.get("w").map(|w| w.trim().parse::<u32>().unwrap_or(0)).filter(|w| *w != 0);
+            if hour.is_some() || minute.is_some() || second.is_some() || week.is_some() {
+                f.is_date = true;
+            }
+            q.hour = hour;
+            q.minute = minute;
+            q.second = second;
+            q.week = week.map(|w| (w, self.options.u64("start_of_week", 0) as u32));
             if f.is_date {
                 q.year = (year != 0).then_some(year);
                 q.month = (month != 0).then_some(month);
@@ -276,28 +287,45 @@ impl Site {
             if let Some(path) = v.get("category_name") {
                 let slugs: Vec<String> = split_slugs(path.rsplit('/').next().unwrap_or(path));
                 let terms = self.terms_by_slugs("category", &slugs).await?;
-                let Some(first) = terms.first().cloned() else { return Ok(r.into_404()) };
+                let Some(first) = terms.first().cloned() else { return Ok(if f.is_feed { r.flags = Flags { is_category: true, ..f }; r } else { r.into_404() }) };
                 f.is_category = true;
                 q.tax_groups.push(self.with_descendants("category", &terms).await?);
                 queried = Queried::Term(first);
             } else if let Some(ids) = v.get("cat") {
-                let ids: Vec<u64> = ids.split(',').filter_map(|i| i.trim().parse().ok()).collect();
+                // `intval()` of each entry: positive ids select, negative ones exclude.
+                let ids: Vec<i64> = ids.split(|c: char| c == ',' || c.is_whitespace()).filter(|s| !s.is_empty()).map(|i| i.trim().parse().unwrap_or(0)).collect();
                 let mut terms = Vec::new();
+                let mut excluded = Vec::new();
                 for id in &ids {
-                    terms.extend(self.db.term_by_id(Some("category"), *id).await?);
+                    if *id > 0 {
+                        terms.extend(self.db.term_by_id(Some("category"), *id as u64).await?);
+                    } else if *id < 0 {
+                        excluded.extend(self.db.term_by_id(Some("category"), id.unsigned_abs()).await?);
+                    }
                 }
-                let Some(first) = terms.first().cloned() else { return Ok(r.into_404()) };
-                f.is_category = true;
-                q.tax_groups.push(self.with_descendants("category", &terms).await?);
-                queried = Queried::Term(first);
+                if !excluded.is_empty() {
+                    q.tax_not.extend(self.with_descendants("category", &excluded).await?);
+                }
+                if terms.is_empty() && excluded.is_empty() {
+                    if f.is_feed {
+                        r.flags = Flags { is_category: true, ..f };
+                        return Ok(r);
+                    }
+                    return Ok(r.into_404());
+                }
+                if let Some(first) = terms.first().cloned() {
+                    f.is_category = true;
+                    q.tax_groups.push(self.with_descendants("category", &terms).await?);
+                    queried = Queried::Term(first);
+                }
             }
             if let Some(tag) = v.get("tag") {
                 // `a,b` matches either tag, `a b` (from `a+b`) requires both.
                 let any = tag.contains(',');
-                let slugs = split_slugs(tag);
+                let slugs = if any { split_slugs(tag) } else { tag.split(|c: char| c == '+' || c.is_whitespace()).filter(|s| !s.is_empty()).map(str::to_owned).collect() };
                 let terms = self.terms_by_slugs("post_tag", &slugs).await?;
                 if terms.is_empty() || (!any && terms.len() < slugs.len()) {
-                    return Ok(r.into_404());
+                    return Ok(if f.is_feed { r.flags = Flags { is_tag: true, ..f }; r } else { r.into_404() });
                 }
                 f.is_tag = true;
                 if any {
@@ -333,7 +361,7 @@ impl Site {
             if let Some((taxonomy, term)) = tax_vars {
                 let taxonomy = taxonomy.as_str();
                 let Some(term) = self.db.term_by_slug(taxonomy, &sanitize_title(&term)).await? else {
-                    return Ok(r.into_404());
+                    return Ok(if f.is_feed { r.flags = Flags { is_tax: true, ..f }; r } else { r.into_404() });
                 };
                 f.is_tax = true;
                 q.tax_groups.push(self.with_descendants(taxonomy, std::slice::from_ref(&term)).await?);
@@ -455,7 +483,10 @@ impl Site {
                 if let Some(s) = v.get("s") {
                     q.search = parse_search_terms(s, v.has("sentence"));
                     q.search_phrase = Some(s.to_owned());
-                    q.order_by = OrderBy::Relevance;
+                    // Feeds are in date order: `empty( $q['orderby'] ) && ! $this->is_feed`.
+                    if !f.is_feed {
+                        q.order_by = OrderBy::Relevance;
+                    }
                 }
             }
             q.limit = Some(r.per_page);
@@ -467,7 +498,7 @@ impl Site {
                 posts = self.with_sticky_first(posts).await?;
             }
         } else {
-            paged = 1;
+            // A single post can be "paged", too (`/post/page/2/`): the title and the classes show it.
             r.paged = paged;
         }
         f.is_paged = paged > 1;

@@ -26,10 +26,14 @@ pub fn is_static_candidate(path: &str) -> bool {
         return false;
     }
     let Some((_, extension)) = relative.rsplit_once('.') else { return false };
+    let top_level = !relative.contains('/');
+    // Documents in the root (`readme.html`, site verification files) are served as they are.
+    if top_level && matches!(extension.to_ascii_lowercase().as_str(), "html" | "htm") {
+        return true;
+    }
     if !EXTENSIONS.contains(&extension.to_ascii_lowercase().as_str()) {
         return false;
     }
-    let top_level = !relative.contains('/');
     top_level || relative.starts_with("wp-content/") || relative.starts_with("wp-includes/")
 }
 

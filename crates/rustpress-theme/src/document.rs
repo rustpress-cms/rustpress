@@ -465,6 +465,10 @@ pub(crate) fn robots_meta(site: &Site, q: &QueryResult) -> String {
             directives.extend(["noindex", "follow"]);
         }
         directives.push("max-image-preview:large");
+        // `wp_robots_noindex_replytocom()`: reply links are not for search engines.
+        if rustpress_core::QueryVars::parse(&q.raw_query).has("replytocom") && !q.flags.is_search {
+            directives.extend(["noindex", "follow"]);
+        }
     }
     format!("<meta name='robots' content='{}' />
 ", directives.join(", "))

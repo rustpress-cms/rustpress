@@ -66,6 +66,11 @@ impl Params {
         self.list(key).map(|items| items.iter().filter_map(|s| s.parse::<u64>().ok()).filter(|id| *id > 0).collect())
     }
 
+    /// [Self::id_list] for the `parent` parameters, where `0` (top level) is a value.
+    pub fn parent_list(&self, key: &str) -> Option<Vec<u64>> {
+        self.list(key).map(|items| items.iter().filter_map(|s| s.parse::<u64>().ok()).collect())
+    }
+
     /// `rest_sanitize_boolean`-ish: present and not `0`, `false` or empty.
     pub fn truthy(&self, key: &str) -> bool {
         self.get(key).is_some_and(|v| !matches!(v, "" | "0" | "false"))

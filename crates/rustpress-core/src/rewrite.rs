@@ -189,7 +189,16 @@ fn substitute(query: &str, caps: &Captures<'_>) -> QueryVars {
             && let Some(n) = std::str::from_utf8(&rest[..end]).ok().and_then(|n| n.parse::<usize>().ok())
         {
             if let Some(m) = caps.get(n) {
-                out.extend_from_slice(m.as_bytes());
+                // `WP_MatchesMapRegex` urlencodes the captures, so `parse_str()` gives back exactly what matched.
+                for &b in m.as_bytes() {
+                    if b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.') {
+                        out.push(b);
+                    } else if b == b' ' {
+                        out.push(b'+');
+                    } else {
+                        out.extend_from_slice(format!("%{b:02X}").as_bytes());
+                    }
+                }
             }
             i += "$matches[".len() + end + 1;
             continue;
@@ -273,10 +282,11 @@ mod tests {
     }
 
     #[test]
-    fn percent_encoded_requests_match_and_decode() {
+    fn percent_encoded_requests_keep_what_matched() {
         let r = rules(&[("([^/]+)/?$", "index.php?name=$matches[1]")]);
         let m = r.matches("caf%C3%A9").next().unwrap();
-        assert_eq!(m.vars.get("name"), Some("café"));
+        // The raw request matches first; `parse_str()` gives back exactly the matched text.
+        assert_eq!(m.vars.get("name"), Some("caf%C3%A9"));
     }
 
     #[test]

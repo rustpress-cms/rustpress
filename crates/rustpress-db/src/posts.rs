@@ -71,6 +71,11 @@ pub struct PostQuery {
     pub year: Option<u32>,
     pub month: Option<u32>,
     pub day: Option<u32>,
+    pub hour: Option<u32>,
+    pub minute: Option<u32>,
+    pub second: Option<u32>,
+    /// `(week, start_of_week)`: `WEEK( post_date )` the way `_wp_mysql_week()` writes it.
+    pub week: Option<(u32, u32)>,
     pub order_by: OrderBy,
     pub order: Order,
     pub limit: Option<u64>,
@@ -108,6 +113,10 @@ impl Default for PostQuery {
             year: None,
             month: None,
             day: None,
+            hour: None,
+            minute: None,
+            second: None,
+            week: None,
             order_by: OrderBy::Date,
             order: Order::Desc,
             limit: None,
@@ -185,10 +194,18 @@ impl PostQuery {
             qb.push(" OR p.post_excerpt LIKE ").push_bind(pattern.clone());
             qb.push(" OR p.post_content LIKE ").push_bind(pattern).push(")");
         }
-        for (column, value) in [("YEAR", self.year), ("MONTH", self.month), ("DAYOFMONTH", self.day)] {
+        for (column, value) in [("YEAR", self.year), ("MONTH", self.month), ("DAYOFMONTH", self.day), ("HOUR", self.hour), ("MINUTE", self.minute), ("SECOND", self.second)] {
             if let Some(value) = value {
                 qb.push(format!(" AND {column}(p.post_date) = ")).push_bind(value);
             }
+        }
+        if let Some((week, start)) = self.week {
+            let expression = match start {
+                1 => "WEEK(p.post_date, 1)".to_owned(),
+                2..=6 => format!("WEEK(DATE_SUB(p.post_date, INTERVAL {start} DAY), 0)"),
+                _ => "WEEK(p.post_date, 0)".to_owned(),
+            };
+            qb.push(format!(" AND {expression} = ")).push_bind(week);
         }
     }
 }

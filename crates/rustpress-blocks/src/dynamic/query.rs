@@ -470,16 +470,9 @@ pub(super) fn paginate_links(base: &str, format: &str, total: u64, current: u64,
     Some(links.join("\n"))
 }
 
+/// `urlencode_deep()`: PHP's `urlencode()`, spaces become `+`.
 fn url_encode(value: &str) -> String {
-    let mut out = String::new();
-    for b in value.bytes() {
-        if b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.' | b'~') {
-            out.push(b as char);
-        } else {
-            out.push_str(&format!("%{b:02X}"));
-        }
-    }
-    out
+    rustpress_core::canonical::php_urlencode(value)
 }
 
 pub(super) async fn pagination_numbers(bc: &BlockCtx<'_>) -> Result<String> {
@@ -592,6 +585,6 @@ mod tests {
 
     #[test]
     fn query_string_values_are_encoded() {
-        assert_eq!(url_encode("a b&c"), "a%20b%26c");
+        assert_eq!(url_encode("a b&c"), "a+b%26c");
     }
 }

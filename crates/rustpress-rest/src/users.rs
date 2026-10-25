@@ -21,19 +21,27 @@ impl Rest<'_> {
                 }
             };
         }
-        if params.get("context") == Some("edit") {
-            return Ok(Err(RestError::new("rest_forbidden_context", "Sorry, you are not allowed to list users.", 401)));
-        }
-        for (param, noun) in [("roles", "role"), ("capabilities", "capability")] {
-            if params.has(param) {
-                return Ok(Err(RestError::new("rest_user_cannot_view", &format!("Sorry, you are not allowed to filter users by {noun}."), 401)));
-            }
-        }
+        // The arguments are validated before the permission check runs.
         let per_page = try_param!(params.integer("per_page", 10, 1, Some(100)));
         let page = try_param!(params.integer("page", 1, 1, None));
         let offset = try_param!(params.integer("offset", 0, 0, None));
         let order = try_param!(params.one_of("order", &["asc", "desc"], "asc"));
         let orderby = try_param!(params.one_of("orderby", &["id", "include", "name", "registered_date", "slug", "include_slugs", "email", "url"], "name"));
+        let who = if params.has("who") { Some(try_param!(params.one_of("who", &["authors"], "authors"))) } else { None };
+        for (param, noun) in [("roles", "role"), ("capabilities", "capability")] {
+            if params.has(param) {
+                return Ok(Err(RestError::new("rest_user_cannot_view", &format!("Sorry, you are not allowed to filter users by {noun}."), 401)));
+            }
+        }
+        if params.get("context") == Some("edit") {
+            return Ok(Err(RestError::new("rest_forbidden_context", "Sorry, you are not allowed to edit users.", 401)));
+        }
+        if matches!(orderby, "email" | "registered_date") {
+            return Ok(Err(RestError::new("rest_forbidden_orderby", "Sorry, you are not allowed to order users by this parameter.", 401)));
+        }
+        if who.is_some() {
+            return Ok(Err(RestError::new("rest_forbidden_who", "Sorry, you are not allowed to query users by this parameter.", 401)));
+        }
         let include = params.id_list("include").unwrap_or_default();
         let exclude = params.id_list("exclude").unwrap_or_default();
         let slugs = params.list("slug").unwrap_or_default();

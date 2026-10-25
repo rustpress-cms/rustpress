@@ -52,6 +52,10 @@ impl Feed {
 enum Kind {
     Rss2,
     Atom,
+    /// `feed=rss`: RSS 0.92, posts only.
+    Rss092,
+    /// `feed=rdf`: RSS 1.0, posts only.
+    Rdf,
 }
 
 fn parse_gmt(s: &str) -> Option<NaiveDateTime> {
@@ -121,9 +125,9 @@ impl Ctx<'_> {
             let mut terms = self.site.db.terms_for_post(post.id, Some(taxonomy)).await?;
             terms.sort_by_key(|t| (t.name.to_lowercase(), t.term_id));
             for term in terms {
-                let name = match self.kind {
+let name = match self.kind {
                     Kind::Atom => term.name,
-                    Kind::Rss2 => convert_chars(&term.name),
+                    _ => convert_chars(&term.name),
                 };
                 if !names.contains(&name) {
                     names.push(name);
@@ -134,7 +138,8 @@ impl Ctx<'_> {
         for name in names {
             match self.kind {
                 Kind::Atom => list.push_str(&format!("<category scheme=\"{}\" term=\"{}\" />", esc_attr(&bloginfo_rss(self.site.settings.home.trim_end_matches('/'))), esc_attr(&name))),
-                Kind::Rss2 => list.push_str(&format!("\t\t<category><![CDATA[{}]]></category>\n", html_entity_decode(&name))),
+                Kind::Rdf => list.push_str(&format!("\t\t<dc:subject><![CDATA[{}]]></dc:subject>\n", html_entity_decode(&name))),
+                _ => list.push_str(&format!("\t\t<category><![CDATA[{}]]></category>\n", html_entity_decode(&name))),
             }
         }
         Ok(list)
@@ -168,7 +173,7 @@ impl Ctx<'_> {
             let kind = lines[2].trim().split([' ', '\t']).next().unwrap_or("");
             let length: u64 = lines[1].trim().parse().unwrap_or(0);
             match self.kind {
-                Kind::Rss2 => out.push_str(&format!("<enclosure url=\"{}\" length=\"{length}\" type=\"{}\" />\n", esc_url(lines[0].trim()), esc_attr(kind))),
+                Kind::Rss2 | Kind::Rss092 | Kind::Rdf => out.push_str(&format!("<enclosure url=\"{}\" length=\"{length}\" type=\"{}\" />\n", esc_url(lines[0].trim()), esc_attr(kind))),
                 Kind::Atom => out.push_str(&format!("<link href=\"{}\" rel=\"enclosure\" length=\"{length}\" type=\"{}\" />\n", esc_url(lines[0].trim()), esc_attr(kind))),
             }
         }
@@ -177,7 +182,7 @@ impl Ctx<'_> {
 
     fn generator(&self) -> String {
         match self.kind {
-            Kind::Rss2 => format!("<generator>https://wordpress.org/?v={}</generator>", self.version),
+            Kind::Rss2 | Kind::Rss092 | Kind::Rdf => format!("<generator>https://wordpress.org/?v={}</generator>", self.version),
             Kind::Atom => format!("<generator uri=\"https://wordpress.org/\" version=\"{}\">WordPress</generator>", esc_attr(&self.version)),
         }
     }
@@ -219,7 +224,9 @@ async fn build_date(site: &Site, q: &QueryResult, comments: &[Comment], comment_
 pub async fn render_feed(theme: &Theme, site: &Site, q: &QueryResult, registry: &rustpress_blocks::Registry, request_uri: &str) -> Result<Option<Feed>> {
     let feed_var = q.vars.get("feed").unwrap_or("feed");
     let kind = match feed_var.trim_start_matches("comments-") {
-        "feed" | "rss2" | "rss" => Kind::Rss2,
+        "feed" | "rss2" => Kind::Rss2,
+        "rss" => Kind::Rss092,
+        "rdf" => Kind::Rdf,
         "atom" => Kind::Atom,
         _ => return Ok(None),
     };
@@ -256,8 +263,20 @@ pub async fn render_feed(theme: &Theme, site: &Site, q: &QueryResult, registry: 
         Vec::new()
     };
     let built = build_date(site, q, &comments, comment_feed).await?;
+    // The posts of a comment feed that is not about one post are those of the latest comments.
+    let posts_of_comments;
+    let q = if comment_feed && !singular && matches!(kind, Kind::Rdf | Kind::Rss092) {
+        let ids: Vec<u64> = comments.iter().map(|c| c.comment_post_id).collect();
+        let posts = if ids.is_empty() { Vec::new() } else { site.db.posts(&rustpress_db::PostQuery { ids, statuses: vec!["publish".into()], post_types: site.types.public_post_types().into_iter().map(str::to_owned).collect(), limit: Some(site.settings.posts_per_rss), ..Default::default() }).await? };
+        posts_of_comments = QueryResult { posts, ..q.clone() };
+        &posts_of_comments
+    } else {
+        q
+    };
 
     let body = match (kind, comment_feed) {
+        (Kind::Rss092, _) => rss092_posts(&ctx, q, &home, &description, &lang, &title, &built).await?,
+        (Kind::Rdf, _) => rdf_posts(&ctx, q, &home, &description, &title, &built).await?,
         (Kind::Rss2, false) => rss2_posts(&ctx, q, &self_url, &home, &description, &lang, &title, &built).await?,
         (Kind::Atom, false) => atom_posts(&ctx, q, &self_url, &home, &description, &lang, &title, &built).await?,
         (Kind::Rss2, true) => rss2_comments(&ctx, q, &comments, &self_url, &home, &description, &title, &built).await?,
@@ -278,11 +297,52 @@ pub async fn render_feed(theme: &Theme, site: &Site, q: &QueryResult, registry: 
     let last_modified = format!("{} GMT", parse_gmt(&newest).map(|d| d.format("%a, %d %b %Y %H:%M:%S").to_string()).unwrap_or_else(|| chrono::Utc::now().format("%a, %d %b %Y %H:%M:%S").to_string()));
     let etag = format!("\"{:x}\"", md5::compute(last_modified.as_bytes()));
     let content_type = match kind {
-        Kind::Rss2 => "application/rss+xml; charset=UTF-8",
+        Kind::Rss2 | Kind::Rss092 => "application/rss+xml; charset=UTF-8",
         Kind::Atom => "application/atom+xml; charset=UTF-8",
+        Kind::Rdf => "application/rdf+xml; charset=UTF-8",
     };
     let nocache = singular && q.posts.first().is_some_and(|p| !p.post_password.is_empty());
     Ok(Some(Feed { content_type: content_type.to_owned(), body, modified_at: last_modified.clone(), last_modified: (!nocache).then_some(last_modified), etag, nocache }))
+}
+
+/// `feed-rss.php`.
+async fn rss092_posts(c: &Ctx<'_>, q: &QueryResult, home: &str, description: &str, lang: &str, title: &str, built: &str) -> Result<String> {
+    let mut out = String::new();
+    out.push_str(&format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?><rss version=\"0.92\">\n<channel>\n\t<title>{title}</title>\n\t<link>{home}</link>\n\t<description>{description}</description>\n\t<lastBuildDate>{}</lastBuildDate>\n\t<docs>http://backend.userland.com/rss092</docs>\n\t<language>{lang}</language>\n\t<!-- generator=\"WordPress/{}\" -->\n\n", rfc2822(built), c.version));
+    for post in &q.posts {
+        let post = Arc::new(post.clone());
+        let permalink = c.site.permalink(&post).await?;
+        let excerpt = c.excerpt(&post).await?;
+        out.push_str(&format!("\t<item>\n\t\t<title>{}</title>\n\t\t<description><![CDATA[{excerpt}]]></description>\n\t\t<link>{}</link>\n\t\t\t</item>\n", c.title_rss(&post), esc_url(&permalink)));
+    }
+    out.push_str("</channel>\n</rss>\n");
+    Ok(out)
+}
+
+/// `feed-rdf.php`.
+async fn rdf_posts(c: &Ctx<'_>, q: &QueryResult, home: &str, description: &str, title: &str, built: &str) -> Result<String> {
+    let mut out = String::new();
+    out.push_str("<?xml version=\"1.0\" encoding=\"UTF-8\"?><rdf:RDF\n\txmlns=\"http://purl.org/rss/1.0/\"\n\txmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\"\n\txmlns:dc=\"http://purl.org/dc/elements/1.1/\"\n\txmlns:sy=\"http://purl.org/rss/1.0/modules/syndication/\"\n\txmlns:admin=\"http://webns.net/mvcb/\"\n\txmlns:content=\"http://purl.org/rss/1.0/modules/content/\"\n\t>\n");
+    out.push_str(&format!("<channel rdf:about=\"{home}\">\n\t<title>{title}</title>\n\t<link>{home}</link>\n\t<description>{description}</description>\n\t<dc:date>{}\t</dc:date>\n\t<sy:updatePeriod>\n\thourly\t</sy:updatePeriod>\n\t<sy:updateFrequency>\n\t1\t</sy:updateFrequency>\n\t<sy:updateBase>2000-01-01T12:00+00:00</sy:updateBase>\n\t<admin:generatorAgent rdf:resource=\"https://wordpress.org/?v={}\" />\n\t<items>\n\t\t<rdf:Seq>\n\t\t", atom_date(built), c.version));
+    for post in &q.posts {
+        out.push_str(&format!("\t\t\t<rdf:li rdf:resource=\"{}\"/>\n\t\t", esc_url(&c.site.permalink(post).await?)));
+    }
+    out.push_str("\t\t</rdf:Seq>\n\t</items>\n</channel>\n");
+    for post in &q.posts {
+        let post = Arc::new(post.clone());
+        let permalink = esc_url(&c.site.permalink(&post).await?);
+        let author = c.author(&post).await?.map(|u| u.display_name).unwrap_or_default();
+        let excerpt = c.excerpt(&post).await?;
+        let content = c.content(&post).await?;
+        out.push_str(&format!(
+            "<item rdf:about=\"{permalink}\">\n\t<title>{}</title>\n\t<link>{permalink}</link>\n\n\t<dc:creator><![CDATA[{author}]]></dc:creator>\n\t<dc:date>{}</dc:date>\n\t{}\n\t\t\t<description><![CDATA[{excerpt}]]></description>\n\t\t<content:encoded><![CDATA[{content}]]></content:encoded>\n\t\n\t</item>\n",
+            c.title_rss(&post),
+            atom_date(&post.post_date_gmt),
+            c.categories(&post).await?
+        ));
+    }
+    out.push_str("</rdf:RDF>\n");
+    Ok(out)
 }
 
 #[allow(clippy::too_many_arguments)]

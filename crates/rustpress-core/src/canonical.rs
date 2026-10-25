@@ -404,7 +404,7 @@ impl Site {
                     .iter()
                     .chain(custom_vars.iter())
                     .filter_map(|k| q.vars.get(k))
-                    .map(|v| v.split([',', '+']).filter(|s| !s.is_empty()).count())
+                    .map(|v| v.split(['+', ',', ' ']).filter(|s| !s.is_empty()).count())
                     .sum::<usize>();
                 if let Queried::Term(term) = &q.queried
                     && term_count <= 1 && term.term_id != 0 && !rquery.is_empty() {

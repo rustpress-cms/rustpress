@@ -153,6 +153,17 @@ async fn page(app: &App, uri: &axum::http::Uri, request_headers: &axum::http::He
             SitemapOutput::NotFound => result = result.into_404(),
         }
     }
+    // `wp-trackback.php` for a request that is not a trackback ping: back to the post.
+    if result.vars.get("tb").is_some() && result.flags.is_singular() && let Some(post) = result.queried_post() {
+        let permalink = loaded.site.permalink(post).await?;
+        let (target_path, target_query) = rustpress_core::canonical::split_url(&permalink);
+        let target = if target_query.is_empty() { target_path } else { format!("{target_path}?{target_query}") };
+        let mut response = redirect(&target);
+        *response.status_mut() = StatusCode::FOUND;
+        response.headers_mut().insert(header::CONTENT_TYPE, HeaderValue::from_static("text/html; charset=UTF-8"));
+        singular_headers(&mut response, &result, &loaded);
+        return Ok(with_api_link(response, &loaded));
+    }
     let document = render_document(&loaded.theme, &loaded.site, &result, &loaded.registry).await?;
     let mut response = Response::new(Body::from(document.html));
     *response.status_mut() = StatusCode::from_u16(document.status).unwrap_or(StatusCode::OK);

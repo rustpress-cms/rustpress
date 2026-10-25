@@ -114,10 +114,23 @@ impl<'a> Rest<'a> {
             ("Access-Control-Allow-Headers".to_owned(), "Authorization, X-WP-Nonce, Content-Disposition, Content-MD5, Content-Type".to_owned()),
         ];
         let mut xml_body = None;
-        let (status, mut data) = match outcome {
+        // The headers of the response itself, which `?_envelope` moves into the body.
+        let mut response_headers: Vec<(String, String)> = Vec::new();
+        let (mut status, mut data) = match outcome {
             Ok(resp) => {
                 xml_body = resp.xml.clone();
-                let link = resp.link.clone().or_else(|| resp.alternate.as_ref().map(|url| format!("<{url}>; rel=\"alternate\"; type=text/html"))).unwrap_or_else(|| self.root_link());
+                let response_link = resp.link.clone().or_else(|| resp.alternate.as_ref().map(|url| format!("<{url}>; rel=\"alternate\"; type=text/html")));
+                if let Some(total) = resp.total {
+                    response_headers.push(("X-WP-Total".to_owned(), total.to_string()));
+                }
+                if let Some(pages) = resp.total_pages {
+                    response_headers.push(("X-WP-TotalPages".to_owned(), pages.to_string()));
+                }
+                if let Some(link) = &response_link {
+                    response_headers.push(("Link".to_owned(), link.clone()));
+                }
+                response_headers.push(("Allow".to_owned(), "GET".to_owned()));
+                let link = response_link.unwrap_or_else(|| self.root_link());
                 headers.insert(1, ("Link".to_owned(), link));
                 if let Some(total) = resp.total {
                     headers.push(("X-WP-Total".to_owned(), total.to_string()));
@@ -132,6 +145,7 @@ impl<'a> Rest<'a> {
                 headers.insert(1, ("Link".to_owned(), self.root_link()));
                 if e.passed_permission_check() {
                     headers.push(("Allow".to_owned(), "GET".to_owned()));
+                    response_headers.push(("Allow".to_owned(), "GET".to_owned()));
                 }
                 (e.status, e.to_value(self.site))
             }
@@ -155,6 +169,32 @@ impl<'a> Rest<'a> {
             if let Some(list) = params.list("_fields") {
                 fields::filter(&mut data, &list);
             }
+        }
+        // `?_envelope`: status and headers move into the body, the response itself is a plain 200.
+        if params.has("_envelope") {
+            let mut inner = Map::new();
+            for (name, value) in &response_headers {
+                let json = if name.starts_with("X-WP-") { value.parse::<u64>().map_or_else(|_| Value::from(value.clone()), Value::from) } else { Value::from(value.clone()) };
+                inner.insert(name.clone(), json);
+            }
+            data = serde_json::json!({"body": data, "status": status, "headers": Value::Object(inner)});
+            status = 200;
+            headers.retain(|(n, _)| !matches!(n.as_str(), "X-WP-Total" | "X-WP-TotalPages" | "Allow"));
+            let root = self.root_link();
+            if let Some(h) = headers.iter_mut().find(|(n, _)| n == "Link") {
+                h.1 = root;
+            }
+        }
+        // `?_jsonp=callback`.
+        if let Some(callback) = params.get("_jsonp").filter(|c| !c.is_empty()) {
+            if callback.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.') {
+                if let Some(h) = headers.iter_mut().find(|(n, _)| n == "Content-Type") {
+                    h.1 = "application/javascript; charset=UTF-8".to_owned();
+                }
+                return Ok(Reply { status, headers, body: format!("/**/{callback}({})", php_json::encode(&data)) });
+            }
+            let error = RestError::new("rest_callback_invalid", "Invalid JSONP callback function.", 400).to_value(self.site);
+            return Ok(Reply { status: 400, headers, body: php_json::encode(&error) });
         }
         Ok(Reply { status, headers, body: php_json::encode(&data) })
     }
