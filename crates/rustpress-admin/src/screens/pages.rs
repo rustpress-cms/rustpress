@@ -24,6 +24,8 @@ fn source(name: &str) -> &'static str {
         "themes" => include_str!("../data/pages/themes.json"),
         "site-health" => include_str!("../data/pages/site-health.json"),
         "attachment-edit" => include_str!("../data/pages/attachment-edit.json"),
+        "plugin-install-upload" => include_str!("../data/pages/plugin-install-upload.json"),
+        "theme-install-upload" => include_str!("../data/pages/theme-install-upload.json"),
         "about" => include_str!("../data/pages/about.json"),
         "credits" => include_str!("../data/pages/credits.json"),
         "freedoms" => include_str!("../data/pages/freedoms.json"),

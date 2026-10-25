@@ -29,6 +29,7 @@ pub mod dashboard;
 pub mod editor;
 pub mod export;
 pub mod general;
+mod install;
 pub mod notices;
 pub mod options;
 pub mod pages;
@@ -266,6 +267,9 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse
         "themes.php" => themes::page(&ctx).await,
         "site-editor.php" => site_editor::page(&ctx).await,
         "plugins.php" => plugins::page(&ctx).await,
+        "plugin-install.php" => install::plugin_install(&ctx).await,
+        "theme-install.php" => install::theme_install(&ctx).await,
+        "update.php" => install::update_php(&ctx).await,
         "about.php" | "credits.php" | "freedoms.php" | "contribute.php" => pages::about(&ctx, &request.file).await,
         "site-health.php" => site_health::page(&ctx).await,
         "update-core.php" => update_core::page(&ctx).await,
