@@ -110,6 +110,10 @@ pub async fn body_classes(theme: &Theme, site: &Site, q: &QueryResult) -> Result
         }
     } else if f.is_archive {
         match &q.queried {
+            Queried::PostType(post_type) if f.is_post_type_archive => {
+                c.push("post-type-archive".into());
+                c.push(format!("post-type-archive-{}", html_class(post_type)));
+            }
             Queried::User(user) if f.is_author => {
                 c.push("author".into());
                 c.push(format!("author-{}", slug_class(&user.user_nicename, user.id)));
@@ -156,6 +160,8 @@ pub async fn body_classes(theme: &Theme, site: &Site, q: &QueryResult) -> Result
             Some("author")
         } else if f.is_search {
             Some("search")
+        } else if f.is_post_type_archive {
+            Some("post-type")
         } else {
             None
         };
@@ -205,6 +211,10 @@ pub async fn document_title(site: &Site, q: &QueryResult) -> Result<String> {
     } else if f.is_singular() || f.is_posts_page {
         if let Some(post) = q.queried_post() {
             parts.push(post.post_title.clone());
+        }
+    } else if f.is_post_type_archive {
+        if let Queried::PostType(post_type) = &q.queried {
+            parts.push(site.post_type_label(post_type));
         }
     } else if f.is_category || f.is_tag || f.is_tax {
         if let Queried::Term(term) = &q.queried {

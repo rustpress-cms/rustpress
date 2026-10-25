@@ -107,12 +107,20 @@ pub(super) async fn post_terms(bc: &BlockCtx<'_>) -> Result<String> {
     Ok(format!("{prefix}{}{suffix}", links.join(&glue)))
 }
 
+/// The author blocks render nothing for post types without author support.
+fn supports_author(bc: &BlockCtx<'_>) -> bool {
+    match bc.context.values.get("postType").and_then(serde_json::Value::as_str) {
+        Some(post_type) => bc.env.site.post_type_supports(post_type, "author"),
+        None => true,
+    }
+}
+
 pub(super) async fn post_author_name(bc: &BlockCtx<'_>) -> Result<String> {
     let author_id = match bc.context.post_id() {
         Some(_) => global_post(bc).await?.map_or(0, |p| p.post_author),
         None => bc.env.query.vars.u64("author").unwrap_or(0),
     };
-    if author_id == 0 {
+    if author_id == 0 || !supports_author(bc) {
         return Ok(String::new());
     }
     let Some(author) = bc.env.site.db.user(author_id).await? else { return Ok(String::new()) };
@@ -178,7 +186,7 @@ pub(super) async fn post_author(bc: &BlockCtx<'_>) -> Result<String> {
         None => bc.env.query.vars.u64("author").unwrap_or(0),
         Some(_) => global_post(bc).await?.map_or(0, |p| p.post_author),
     };
-    if author_id == 0 {
+    if author_id == 0 || !supports_author(bc) {
         return Ok(String::new());
     }
     let Some(user) = bc.env.site.db.user(author_id).await? else { return Ok(String::new()) };

@@ -14,6 +14,8 @@ pub struct Site {
     pub settings: Settings,
     pub rewrite: RewriteRules,
     pub timezone: SiteTimezone,
+    /// Custom post types and taxonomies, inferred from the rewrite rules.
+    pub types: crate::types::Types,
     /// Translations of the site's locale; empty (English) until [Site::init_i18n] ran.
     i18n: std::sync::OnceLock<std::sync::Arc<crate::i18n::I18n>>,
 }
@@ -21,7 +23,75 @@ pub struct Site {
 impl Site {
     pub async fn load(db: Db) -> Result<Self> {
         let options = Options::load(&db).await?;
-        Ok(Self::from_parts(db, options))
+        let mut site = Self::from_parts(db, options);
+        if !site.rewrite.is_empty() {
+            let post_types = site.db.used_post_types().await?;
+            let taxonomies = site.db.used_taxonomies().await?;
+            let relations = site.db.taxonomy_post_types().await?;
+            site.types = crate::types::Types::infer(&site.rewrite, &post_types, &taxonomies, &relations);
+        }
+        Ok(site)
+    }
+
+    /// [Site::load] plus what the plugins and the theme under `wp_root` register: labels and
+    /// REST settings of the custom post types and taxonomies.
+    pub async fn load_at(db: Db, wp_root: &std::path::Path) -> Result<Self> {
+        let mut site = Self::load(db).await?;
+        if !site.types.post_types.is_empty() || !site.types.taxonomies.is_empty() {
+            let plugins: Vec<String> = site
+                .options
+                .value("active_plugins")
+                .and_then(|v| v.as_array().map(|items| items.iter().filter_map(|(_, p)| p.as_str().map(str::to_owned)).collect()))
+                .unwrap_or_default();
+            let themes = wp_root.join("wp-content").join("themes");
+            let mut dirs = vec![themes.join(&site.settings.stylesheet)];
+            if site.settings.template != site.settings.stylesheet {
+                dirs.push(themes.join(&site.settings.template));
+            }
+            let registrations = crate::types::scan_registrations(wp_root, &plugins, &dirs);
+            site.types.apply(&registrations);
+        }
+        Ok(site)
+    }
+
+    /// `get_post_type_object( $name )->labels->name`.
+    pub fn post_type_label(&self, name: &str) -> String {
+        match name {
+            "post" => self.trx("Posts", "post type general name"),
+            "page" => self.trx("Pages", "post type general name"),
+            "attachment" => self.trx("Media", "post type general name"),
+            other => self.types.post_type(other).map_or_else(|| other.to_owned(), |t| t.plural_label()),
+        }
+    }
+
+    /// `post_type_supports( $post_type, $feature )`.
+    pub fn post_type_supports(&self, post_type: &str, feature: &str) -> bool {
+        match post_type {
+            "post" => matches!(feature, "title" | "editor" | "author" | "thumbnail" | "excerpt" | "trackbacks" | "custom-fields" | "comments" | "revisions" | "post-formats"),
+            "page" => matches!(feature, "title" | "editor" | "author" | "thumbnail" | "page-attributes" | "custom-fields" | "comments" | "revisions" | "excerpt"),
+            "attachment" => matches!(feature, "title" | "author" | "comments"),
+            other => self.types.post_type(other).is_none_or(|t| t.supports(feature)),
+        }
+    }
+
+    /// `get_taxonomy( $name )->labels->singular_name`.
+    pub fn taxonomy_singular_label(&self, name: &str) -> String {
+        match name {
+            "category" => self.trx("Category", "taxonomy singular name"),
+            "post_tag" => self.trx("Tag", "taxonomy singular name"),
+            "post_format" => self.trx("Format", "post format"),
+            other => self.types.taxonomy(other).map_or_else(|| other.to_owned(), |t| t.singular_label()),
+        }
+    }
+
+    /// `get_taxonomy( $name )->labels->name`.
+    pub fn taxonomy_label(&self, name: &str) -> String {
+        match name {
+            "category" => self.trx("Categories", "taxonomy general name"),
+            "post_tag" => self.trx("Tags", "taxonomy general name"),
+            "post_format" => self.trx("Formats", "post format"),
+            other => self.types.taxonomy(other).map_or_else(|| other.to_owned(), |t| t.plural_label()),
+        }
     }
 
     /// The locale (`WPLANG`), `en_US` if unset.
@@ -145,6 +215,6 @@ impl Site {
             tracing::warn!(pattern, "rewrite rule uses regex features that are not supported; skipped");
         }
         let timezone = SiteTimezone::from_options(&options);
-        Self { db, options, settings, rewrite, timezone, i18n: std::sync::OnceLock::new() }
+        Self { db, options, settings, rewrite, timezone, types: crate::types::Types::default(), i18n: std::sync::OnceLock::new() }
     }
 }

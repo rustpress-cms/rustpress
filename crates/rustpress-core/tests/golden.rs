@@ -9,6 +9,7 @@ use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::time::Duration;
 
+const DEFAULT_ROOT: &str = r"\\wsl.localhost\Debian\home\yoshi\.local\share\containers\storage\volumes\rustpress-wp\_data";
 use rustpress_core::{Queried, QueryResult, Site};
 use rustpress_db::Db;
 
@@ -120,7 +121,7 @@ async fn site() -> Option<Site> {
     let url = std::env::var("RUSTPRESS_TEST_DB").unwrap_or_else(|_| "mysql://wordpress:wordpress@127.0.0.1:3306/wordpress".into());
     let db = Db::connect(&url, "wp_").await.ok()?;
     get("/").ok()?;
-    Site::load(db).await.ok()
+    Site::load_at(db, std::path::Path::new(&std::env::var("RUSTPRESS_WP_ROOT").unwrap_or_else(|_| DEFAULT_ROOT.into()))).await.ok()
 }
 
 #[tokio::test]

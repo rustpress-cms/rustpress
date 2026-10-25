@@ -42,7 +42,7 @@ impl App {
     }
 
     async fn load(config: &Config, db: &Db) -> Result<Loaded> {
-        let site = Site::load(db.clone()).await?;
+        let site = Site::load_at(db.clone(), &config.wp_root).await?;
         let theme = Theme::load(&site, &config.wp_root).await?;
         let registry = Registry::new(config.wp_root.join("wp-includes").join("blocks"));
         Ok(Loaded { site, theme, registry, loaded_at: Instant::now() })

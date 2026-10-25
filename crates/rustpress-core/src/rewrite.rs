@@ -127,6 +127,11 @@ impl RewriteRules {
         Self { rules, skipped }
     }
 
+    /// `(pattern, query)` of every rule, in stored order.
+    pub fn patterns(&self) -> impl Iterator<Item = (&str, &str)> {
+        self.rules.iter().map(|r| (r.pattern.as_str(), r.query.as_str()))
+    }
+
     pub fn len(&self) -> usize {
         self.rules.len()
     }

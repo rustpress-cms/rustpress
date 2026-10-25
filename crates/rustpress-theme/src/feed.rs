@@ -212,7 +212,7 @@ async fn build_date(site: &Site, q: &QueryResult, comments: &[Comment], comment_
             return Ok(max);
         }
     }
-    Ok(site.db.last_post_modified_gmt().await?.unwrap_or_default())
+    Ok(site.db.last_post_modified_gmt(&site.types.public_post_types()).await?.unwrap_or_default())
 }
 
 /// Renders the feed for a request, or `None` for feed types that are not supported.
@@ -268,7 +268,7 @@ pub async fn render_feed(theme: &Theme, site: &Site, q: &QueryResult, registry: 
     let with_comments = comment_feed
         || (q.vars.get("withoutcomments").is_none_or(|v| v.is_empty() || v == "0")
             && ["p", "name", "page_id", "pagename", "attachment", "attachment_id"].iter().any(|k| q.vars.get(k).is_some_and(|v| !v.is_empty() && v != "0")));
-    let post_modified = site.db.last_post_modified_gmt().await?.unwrap_or_default();
+    let post_modified = site.db.last_post_modified_gmt(&site.types.public_post_types()).await?.unwrap_or_default();
     let newest = if with_comments {
         let comment_modified = site.db.last_comment_modified_gmt().await?.unwrap_or_default();
         if post_modified > comment_modified { post_modified } else { comment_modified }

@@ -12,6 +12,7 @@ pub mod hierarchy;
 pub mod i18n;
 pub mod locale;
 pub mod options;
+pub mod php_lit;
 pub mod query;
 pub mod rewrite;
 pub mod shortcodes;
@@ -19,6 +20,7 @@ pub mod settings;
 pub mod site;
 pub mod sitemap;
 pub mod text;
+pub mod types;
 pub mod slug;
 pub mod urls;
 

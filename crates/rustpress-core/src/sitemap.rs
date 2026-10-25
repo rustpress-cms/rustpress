@@ -32,7 +32,7 @@ pub enum SitemapOutput {
 /// A sitemap of one provider (`posts`, `taxonomies`, `users`) and subtype.
 struct Entry {
     provider: &'static str,
-    subtype: Option<&'static str>,
+    subtype: Option<String>,
     pages: u64,
 }
 
@@ -67,18 +67,35 @@ impl Site {
         self.sitemap_url(name, subtype, page.max(1))
     }
 
+    /// The post types with a sitemap: public and viewable, without attachments.
+    fn sitemap_post_types(&self) -> Vec<&str> {
+        self.types.public_post_types().into_iter().filter(|t| *t != "attachment").collect()
+    }
+
+    /// The taxonomies with a sitemap.
+    fn sitemap_taxonomies(&self) -> Vec<String> {
+        let mut all: Vec<String> = ["category", "post_tag", "post_format"].iter().map(|t| (*t).to_owned()).collect();
+        all.extend(self.types.taxonomies.iter().map(|t| t.name.clone()));
+        all
+    }
+
+    /// Authors count with posts of every public type but pages and attachments.
+    fn sitemap_author_types(&self) -> Vec<&str> {
+        self.types.public_post_types().into_iter().filter(|t| !matches!(*t, "attachment" | "page")).collect()
+    }
+
     async fn sitemap_entries(&self) -> Result<Vec<Entry>> {
         let mut entries = Vec::new();
-        for post_type in ["post", "page"] {
-            let count = self.db.count_posts(&rustpress_db::PostQuery { post_types: vec![post_type.into()], statuses: vec!["publish".into()], ..Default::default() }).await?;
+        for post_type in self.sitemap_post_types() {
+            let count = self.db.count_posts(&rustpress_db::PostQuery { post_types: vec![post_type.to_owned()], statuses: vec!["publish".into()], ..Default::default() }).await?;
             let minimum = u64::from(post_type == "page" && self.settings.show_on_front == ShowOnFront::Posts);
-            entries.push(Entry { provider: "posts", subtype: Some(post_type), pages: count.div_ceil(MAX_URLS).max(minimum) });
+            entries.push(Entry { provider: "posts", subtype: Some(post_type.to_owned()), pages: count.div_ceil(MAX_URLS).max(minimum) });
         }
-        for taxonomy in ["category", "post_tag", "post_format"] {
-            let count = self.db.terms(taxonomy).await?.iter().filter(|t| t.count > 0).count() as u64;
+        for taxonomy in self.sitemap_taxonomies() {
+            let count = self.db.terms(&taxonomy).await?.iter().filter(|t| t.count > 0).count() as u64;
             entries.push(Entry { provider: "taxonomies", subtype: Some(taxonomy), pages: count.div_ceil(MAX_URLS) });
         }
-        let users = self.db.count_users_with_published_posts(&["post"]).await?;
+        let users = self.db.count_users_with_published_posts(&self.sitemap_author_types()).await?;
         entries.push(Entry { provider: "users", subtype: None, pages: users.div_ceil(MAX_URLS) });
         Ok(entries)
     }
@@ -144,7 +161,7 @@ impl Site {
             let mut body = String::new();
             for entry in self.sitemap_entries().await? {
                 for page in 1..=entry.pages {
-                    body.push_str(&format!("<sitemap><loc>{}</loc></sitemap>", xml_text(&self.sitemap_url(entry.provider, entry.subtype, page))));
+                    body.push_str(&format!("<sitemap><loc>{}</loc></sitemap>", xml_text(&self.sitemap_url(entry.provider, entry.subtype.as_deref(), page))));
                 }
             }
             let head = format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<?xml-stylesheet type=\"text/xsl\" href=\"{}\" ?>\n", esc_url(&stylesheet_url("wp-sitemap-index.xsl", "index")));
@@ -159,8 +176,8 @@ impl Site {
         let page = q.vars.u64("paged").filter(|p| *p > 0).unwrap_or(1);
         let subtype = q.vars.get("sitemap-subtype").unwrap_or("");
         let urls = match (sitemap, subtype) {
-            ("posts", t @ ("post" | "page")) => self.post_sitemap_urls(t, page).await?,
-            ("taxonomies", t @ ("category" | "post_tag" | "post_format")) => self.taxonomy_sitemap_urls(t, page).await?,
+            ("posts", t) if self.sitemap_post_types().contains(&t) => self.post_sitemap_urls(t, page).await?,
+            ("taxonomies", t) if self.sitemap_taxonomies().iter().any(|x| x == t) => self.taxonomy_sitemap_urls(t, page).await?,
             ("users", _) => self.user_sitemap_urls(page).await?,
             _ => Vec::new(),
         };
@@ -223,7 +240,7 @@ impl Site {
     }
 
     async fn user_sitemap_urls(&self, page: u64) -> Result<Vec<(String, Option<String>)>> {
-        let users = self.db.users_with_published_posts(&["post"], MAX_URLS, (page - 1) * MAX_URLS).await?;
+        let users = self.db.users_with_published_posts(&self.sitemap_author_types(), MAX_URLS, (page - 1) * MAX_URLS).await?;
         Ok(users.iter().map(|u| (self.author_url(u), None)).collect())
     }
 

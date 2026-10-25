@@ -97,3 +97,30 @@ impl Db {
         Ok(query.fetch_all(&self.pool).await?)
     }
 }
+
+impl Db {
+    /// The distinct `post_type` values in use.
+    pub async fn used_post_types(&self) -> Result<Vec<String>> {
+        let sql = format!("SELECT DISTINCT post_type FROM {} ORDER BY post_type", self.prefix.table("posts"));
+        Ok(sqlx::query_scalar(AssertSqlSafe(sql)).fetch_all(&self.pool).await?)
+    }
+
+    /// The distinct `taxonomy` values in use.
+    pub async fn used_taxonomies(&self) -> Result<Vec<String>> {
+        let sql = format!("SELECT DISTINCT taxonomy FROM {} ORDER BY taxonomy", self.prefix.table("term_taxonomy"));
+        Ok(sqlx::query_scalar(AssertSqlSafe(sql)).fetch_all(&self.pool).await?)
+    }
+}
+
+impl Db {
+    /// `(taxonomy, post_type)` pairs that have at least one relationship.
+    pub async fn taxonomy_post_types(&self) -> Result<Vec<(String, String)>> {
+        let sql = format!(
+            "SELECT DISTINCT tt.taxonomy, p.post_type FROM {} tr INNER JOIN {} tt ON tt.term_taxonomy_id = tr.term_taxonomy_id INNER JOIN {} p ON p.ID = tr.object_id ORDER BY tt.taxonomy, p.post_type",
+            self.prefix.table("term_relationships"),
+            self.prefix.table("term_taxonomy"),
+            self.prefix.table("posts")
+        );
+        Ok(sqlx::query_as(AssertSqlSafe(sql)).fetch_all(&self.pool).await?)
+    }
+}

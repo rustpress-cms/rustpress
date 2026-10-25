@@ -87,7 +87,7 @@ async fn setup() -> Option<(Site, Theme, Registry)> {
     let url = std::env::var("RUSTPRESS_TEST_DB").unwrap_or_else(|_| "mysql://wordpress:wordpress@127.0.0.1:3306/wordpress".into());
     let db = Db::connect(&url, "wp_").await.ok()?;
     get("/").ok()?;
-    let site = Site::load(db).await.ok()?;
+    let site = Site::load_at(db, &root).await.ok()?;
     let theme = Theme::load(&site, &root).await.ok()?;
     let registry = Registry::new(root.join("wp-includes").join("blocks"));
     Some((site, theme, registry))

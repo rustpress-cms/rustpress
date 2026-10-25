@@ -327,11 +327,13 @@ pub async fn post_class(env: &Env<'_>, post: &Post, extra: &[&str], is_home_unpa
     classes.push("hentry".into());
     // `get_the_terms()` per taxonomy (categories, then tags), each ordered by name.
     let mut terms = env.site.db.terms_for_post(post.id, None).await?;
-    terms.retain(|t| matches!(t.taxonomy.as_str(), "category" | "post_tag" | "post_format"));
+    let custom = |taxonomy: &str| env.site.types.taxonomy(taxonomy).is_some_and(|t| t.object_types.contains(&post.post_type));
+    terms.retain(|t| matches!(t.taxonomy.as_str(), "category" | "post_tag" | "post_format") || custom(&t.taxonomy));
     let rank = |taxonomy: &str| match taxonomy {
         "category" => 0,
         "post_tag" => 1,
-        _ => 2,
+        "post_format" => 2,
+        other => 3 + env.site.types.taxonomies.iter().position(|t| t.name == other).unwrap_or(0),
     };
     terms.sort_by_key(|t| (rank(&t.taxonomy), t.name.to_lowercase()));
     for term in terms {

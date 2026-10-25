@@ -6,6 +6,7 @@
 use rustpress_core::Site;
 use rustpress_db::Db;
 
+const DEFAULT_ROOT: &str = r"\\wsl.localhost\Debian\home\yoshi\.local\share\containers\storage\volumes\rustpress-wp\_data";
 const EXPECTED: &str = include_str!("fixtures/canonical_expected.tsv");
 
 #[tokio::test]
@@ -15,7 +16,7 @@ async fn canonical_redirects_match_wordpress() {
         eprintln!("reference DB not available, skipping");
         return;
     };
-    let site = Site::load(db).await.unwrap();
+    let site = Site::load_at(db, std::path::Path::new(&std::env::var("RUSTPRESS_WP_ROOT").unwrap_or_else(|_| DEFAULT_ROOT.into()))).await.unwrap();
 
     let mut problems = Vec::new();
     let mut total = 0;

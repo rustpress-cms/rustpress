@@ -311,7 +311,8 @@ fn archive_title(bc: &BlockCtx<'_>) -> String {
         Queried::Term(term) if f.is_category => (term.name.clone(), site.trx("Category:", "category archive title prefix")),
         Queried::Term(term) if f.is_tag => (term.name.clone(), site.trx("Tag:", "tag archive title prefix")),
         Queried::User(user) if f.is_author => (user.display_name.clone(), site.trx("Author:", "author archive title prefix")),
-        Queried::Term(term) if f.is_tax => (term.name.clone(), format!("{}:", term.taxonomy)),
+        Queried::PostType(post_type) if f.is_post_type_archive => (site.post_type_label(post_type), site.trx("Archives:", "post type archive title prefix")),
+        Queried::Term(term) if f.is_tax => (term.name.clone(), rustpress_core::i18n::sprintf(&site.trx("%s:", "taxonomy term archive title prefix"), &[&site.taxonomy_singular_label(&term.taxonomy)])),
         _ if f.is_year || f.is_month || f.is_day => {
             let vars = &q.vars;
             let year = vars.u64("year").unwrap_or(0) as u32;

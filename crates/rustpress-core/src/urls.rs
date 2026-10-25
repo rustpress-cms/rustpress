@@ -63,8 +63,7 @@ impl Site {
             "page" => return self.page_link(post).await,
             "attachment" => return self.attachment_link(post).await,
             "post" => {}
-            // Custom post types need their registered rewrite slug; fall back to the plain URL.
-            other => return Ok(self.home_url(&format!("?post_type={other}&p={}", post.id))),
+            other => return self.custom_permalink(post, other).await,
         }
         let structure = &self.settings.permalink_structure;
         let unpublished = matches!(post.post_status.as_str(), "draft" | "pending" | "auto-draft" | "future");
@@ -104,6 +103,27 @@ impl Site {
             path = path.replace(tag, value);
         }
         Ok(self.user_trailingslashit(&self.home_url(&path)))
+    }
+
+    /// `get_post_permalink()` for a custom post type: its rewrite slug and the post name or page path.
+    async fn custom_permalink(&self, post: &Post, post_type: &str) -> Result<String> {
+        let unpublished = matches!(post.post_status.as_str(), "draft" | "pending" | "auto-draft" | "future");
+        if let Some(info) = self.types.post_type(post_type).filter(|_| !unpublished && !self.settings.permalink_structure.is_empty()) {
+            let tail = if info.hierarchical { self.page_uri(post).await? } else { post.post_name.clone() };
+            return Ok(self.user_trailingslashit(&self.home_url(&format!("{}/{tail}", info.slug))));
+        }
+        Ok(self.home_url(&format!("?post_type={post_type}&p={}", post.id)))
+    }
+
+    /// `get_post_type_archive_link()`.
+    pub fn post_type_archive_link(&self, post_type: &str) -> Option<String> {
+        let info = self.types.post_type(post_type)?;
+        let slug = info.archive_slug.as_deref()?;
+        Some(if self.settings.permalink_structure.is_empty() {
+            self.home_url(&format!("?post_type={post_type}"))
+        } else {
+            self.user_trailingslashit(&self.home_url(slug))
+        })
     }
 
     /// `get_page_uri()`: `parent/child`.
@@ -185,6 +205,10 @@ impl Site {
         if term.taxonomy == "post_format" {
             let slug = term.slug.strip_prefix("post-format-").unwrap_or(&term.slug);
             return Ok(self.user_trailingslashit(&self.home_url(&format!("{}type/{slug}", self.front()))));
+        }
+        if let Some(info) = self.types.taxonomy(&term.taxonomy) {
+            let tail = if info.hierarchical { self.term_path(term).await? } else { term.slug.clone() };
+            return Ok(self.user_trailingslashit(&self.home_url(&format!("{}/{tail}", info.slug))));
         }
         let base = match term.taxonomy.as_str() {
             "category" => self.options.string("category_base", "").trim_matches('/').to_owned(),

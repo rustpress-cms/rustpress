@@ -87,7 +87,7 @@ async fn global_styles_match_wordpress() {
     };
     let reference = style_block(&page, "global-styles-inline-css").expect("global styles in reference page");
 
-    let site = Site::load(db).await.unwrap();
+    let site = Site::load_at(db, &root).await.unwrap();
     let theme = Theme::load(&site, &root).await.unwrap();
     let registry = Registry::new(root.join("wp-includes").join("blocks"));
     let result = site.query("/ueber-uns/", "").await.unwrap();

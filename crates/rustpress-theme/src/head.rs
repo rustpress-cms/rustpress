@@ -45,6 +45,13 @@ pub async fn feed_links(site: &Site, q: &QueryResult) -> Result<String> {
             let title = rustpress_core::formatting::strip_tags(&rustpress_blocks::content::the_title_for(site, post));
             out.push_str(&link(&titled("%1$s %2$s %3$s Comments Feed", &[&title]), &href));
         }
+    } else if flags.is_post_type_archive {
+        if let Queried::PostType(post_type) = &q.queried
+            && let Some(archive) = site.post_type_archive_link(post_type)
+        {
+            let href = if pretty { format!("{}feed/", trailingslashit(&archive)) } else { rustpress_core::urls::add_query_arg(&archive, "feed", "rss2") };
+            out.push_str(&link(&titled("%1$s %2$s %3$s Feed", &[&site.post_type_label(post_type)]), &href));
+        }
     } else if flags.is_category || flags.is_tag || flags.is_tax {
         if let Queried::Term(term) = &q.queried {
             let name = site.term_name(term);
@@ -53,7 +60,7 @@ pub async fn feed_links(site: &Site, q: &QueryResult) -> Result<String> {
             } else if flags.is_tag {
                 titled("%1$s %2$s %3$s Tag Feed", &[&name])
             } else {
-                titled("%1$s %2$s %3$s %4$s Feed", &[&name, &if term.taxonomy == "post_format" { site.trx("Format", "post format") } else { term.taxonomy.clone() }])
+                titled("%1$s %2$s %3$s %4$s Feed", &[&name, &site.taxonomy_singular_label(&term.taxonomy)])
             };
             let href = if pretty {
                 feed_of(&site.term_link(term).await?)

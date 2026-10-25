@@ -10,6 +10,7 @@ use crate::rewrite::{QueryVars, request_path};
 use crate::settings::ShowOnFront;
 use crate::site::Site;
 use crate::slug::sanitize_title;
+use crate::types::is_internal_post_type;
 
 /// Query variables WordPress reads from the query string (`$wp->public_query_vars`
 /// plus the ones core registers through the `query_vars` filter).
@@ -26,12 +27,6 @@ const SEARCH_STOPWORDS: &[&str] = &[
     "that", "the", "this", "to", "was", "what", "when", "where", "who", "will", "with", "www",
 ];
 
-/// Internal post types that are never reachable by `?p=ID`.
-fn is_internal_post_type(post_type: &str) -> bool {
-    matches!(post_type, "revision" | "nav_menu_item" | "customize_changeset" | "oembed_cache" | "user_request")
-        || post_type.starts_with("wp_")
-}
-
 /// The `is_*()` conditionals of `WP_Query`.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Flags {
@@ -45,6 +40,7 @@ pub struct Flags {
     pub is_category: bool,
     pub is_tag: bool,
     pub is_tax: bool,
+    pub is_post_type_archive: bool,
     pub is_author: bool,
     pub is_date: bool,
     pub is_year: bool,
@@ -73,6 +69,8 @@ pub enum Queried {
     Post(Box<Post>),
     Term(Term),
     User(User),
+    /// The archive of a post type (get_queried_object() is its WP_Post_Type).
+    PostType(String),
 }
 
 #[derive(Debug, Clone)]
@@ -136,7 +134,7 @@ impl QueryResult {
             Queried::Post(post) => post.id,
             Queried::Term(term) => term.term_id,
             Queried::User(user) => user.id,
-            Queried::None => 0,
+            Queried::None | Queried::PostType(_) => 0,
         }
     }
 
@@ -177,11 +175,12 @@ impl Site {
 
         // Query-string variables win over the ones from the permalink.
         for (key, value) in QueryVars::parse(query_string).iter() {
-            if PUBLIC_QUERY_VARS.contains(&key) {
+            if PUBLIC_QUERY_VARS.contains(&key) || self.types.post_type(key).is_some() || self.types.taxonomy(key).is_some() {
                 vars.set(key, value);
             }
         }
 
+        self.map_type_vars(&mut vars);
         let mut result = QueryResult::new(vars, matched_rule);
         result.url_path = url_path.to_owned();
         result.raw_query = query_string.to_owned();
@@ -302,7 +301,15 @@ impl Site {
                 }
             }
             // `post_format=link` is the taxonomy archive of `post-format-link` (`_post_format_request()`).
+            let custom_tax = self.types.taxonomies.iter().find_map(|t| {
+                v.get(&t.name).map(|term| {
+                    // A hierarchical rewrite passes the whole path; the last segment is the term.
+                    let term = if t.hierarchical { term.rsplit('/').next().unwrap_or(term) } else { term };
+                    (t.name.clone(), term.to_owned())
+                })
+            });
             let tax_vars: Option<(String, String)> = match (v.get("taxonomy"), v.get("term"), v.get("post_format")) {
+                _ if custom_tax.is_some() => custom_tax,
                 (Some(taxonomy), Some(term), _) => Some((taxonomy.to_owned(), term.to_owned())),
                 (_, _, Some(format)) if !format.is_empty() => Some(("post_format".to_owned(), format!("post-format-{}", sanitize_title(format)))),
                 _ => None,
@@ -334,7 +341,17 @@ impl Site {
                 }
             }
 
-            f.is_archive = f.is_date || f.is_author || f.is_category || f.is_tag || f.is_tax;
+            // post_type=book is the archive of a type that has one.
+            if let Some(post_type) = v.get("post_type").filter(|t| !t.contains(','))
+                && self.types.post_type(post_type).is_some_and(|t| t.archive_slug.is_some())
+            {
+                f.is_post_type_archive = true;
+                if matches!(queried, Queried::None) {
+                    queried = Queried::PostType(post_type.to_owned());
+                }
+            }
+
+            f.is_archive = f.is_date || f.is_author || f.is_category || f.is_tag || f.is_tax || f.is_post_type_archive;
             if !(f.is_archive || f.is_search || f.is_feed) {
                 f.is_home = true;
             }
@@ -396,8 +413,16 @@ impl Site {
         }
         if !f.is_singular() {
             r.paged = paged;
+            if let Some(post_type) = v.get("post_type") {
+                q.post_types = vec![post_type.to_owned()];
+            } else if f.is_tax {
+                // Every searchable type that has objects in the queried taxonomies.
+                q.post_types = self.tax_post_types(&r.vars);
+            }
             if f.is_search {
-                q.post_types = vec!["post".into(), "page".into()];
+                if v.get("post_type").is_none() {
+                    q.post_types = self.types.searchable_post_types().into_iter().map(str::to_owned).collect();
+                }
                 if let Some(s) = v.get("s") {
                     q.search = parse_search_terms(s, v.has("sentence"));
                     q.search_phrase = Some(s.to_owned());
@@ -422,7 +447,7 @@ impl Site {
         if posts.is_empty() {
             let term_found = matches!(queried, Queried::Term(_));
             let tolerated = !f.is_paged
-                && (f.is_author || ((f.is_category || f.is_tag || f.is_tax) && term_found) || f.is_home || f.is_search || f.is_feed);
+                && (f.is_author || ((f.is_category || f.is_tag || f.is_tax || f.is_post_type_archive) && (term_found || f.is_post_type_archive)) || f.is_home || f.is_search || f.is_feed);
             if !tolerated {
                 return Ok(r.into_404());
             }
@@ -439,14 +464,43 @@ impl Site {
         Ok(r)
     }
 
+    /// `WP::parse_request()`: the query variable of a custom post type names the type and the slug,
+    /// and only publicly queryable types may be asked for.
+    fn map_type_vars(&self, vars: &mut QueryVars) {
+        for t in &self.types.post_types {
+            if let Some(value) = vars.get(&t.name).map(str::to_owned) {
+                vars.set("post_type", t.name.clone());
+                vars.set("name", value);
+            }
+        }
+        if let Some(post_type) = vars.get("post_type")
+            && !self.types.public_post_types().contains(&post_type)
+        {
+            vars.remove("post_type");
+        }
+    }
+
+    /// The post types of a taxonomy archive: every searchable type with objects in the taxonomy.
+    fn tax_post_types(&self, vars: &QueryVars) -> Vec<String> {
+        let taxonomy = vars.get("taxonomy").or_else(|| self.types.taxonomies.iter().find(|t| vars.get(&t.name).is_some()).map(|t| t.name.as_str()));
+        let Some(info) = taxonomy.and_then(|name| self.types.taxonomy(name)) else { return vec!["post".into()] };
+        let searchable = self.types.searchable_post_types();
+        info.object_types.iter().filter(|t| searchable.contains(&t.as_str())).cloned().collect()
+    }
+
     /// `get_page_by_path()`: resolves `parent/child` through the page hierarchy.
     pub async fn page_by_path(&self, path: &str) -> Result<Option<Post>> {
+        self.post_by_path(path, "page").await
+    }
+
+    /// `get_page_by_path( $path, OBJECT, $post_type )`.
+    pub async fn post_by_path(&self, path: &str, post_type: &str) -> Result<Option<Post>> {
         let parts: Vec<String> =
             path.trim_matches('/').split('/').map(sanitize_title).filter(|p| !p.is_empty()).collect();
         let Some(last) = parts.last() else { return Ok(None) };
         let candidates = self
             .db
-            .posts(&PostQuery { post_types: vec!["page".into()], names: parts.clone(), ..PostQuery::default() })
+            .posts(&PostQuery { post_types: vec![post_type.to_owned()], names: parts.clone(), ..PostQuery::default() })
             .await?;
         'candidate: for page in candidates.iter().filter(|p| &p.post_name == last) {
             let mut current = page;
@@ -483,6 +537,9 @@ impl Site {
                 .pop()
         } else if let Some(name) = v.get("name") {
             let post_type = v.get("post_type").unwrap_or("post").to_owned();
+            if self.types.post_type(&post_type).is_some_and(|t| t.hierarchical) {
+                return self.post_by_path(name, &post_type).await;
+            }
             self.db
                 .posts(&PostQuery {
                     post_types: vec![post_type],

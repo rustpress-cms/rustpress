@@ -28,6 +28,11 @@ pub fn template_candidates(result: &QueryResult, settings: &Settings, page_templ
         }
         if f.is_home {
             add("home".into());
+        } else if f.is_post_type_archive {
+            if let Queried::PostType(post_type) = &result.queried {
+                add(format!("archive-{post_type}"));
+            }
+            add("archive".into());
         } else if f.is_tax {
             if let Queried::Term(term) = &result.queried {
                 add(format!("taxonomy-{}-{}", term.taxonomy, decoded(&term.slug)));

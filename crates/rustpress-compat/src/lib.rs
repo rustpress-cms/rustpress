@@ -57,7 +57,7 @@ impl Default for Options {
             host: "localhost:8080".into(),
             database_url: "mysql://wordpress:wordpress@127.0.0.1:3306/wordpress".into(),
             wp_root: PathBuf::from(r"\\wsl.localhost\Debian\home\yoshi\.local\share\containers\storage\volumes\rustpress-wp\_data"),
-            limit: 400,
+            limit: 1500,
             concurrency: 4,
             only: None,
             known: PathBuf::from("compat/known.toml"),

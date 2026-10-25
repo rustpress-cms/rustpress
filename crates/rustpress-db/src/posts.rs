@@ -397,12 +397,17 @@ impl Db {
         Ok(qb.build_query_scalar::<u64>().fetch_optional(&self.pool).await?)
     }
     /// `get_lastpostmodified( 'GMT' )`: the newest `post_modified_gmt` of published content.
-    pub async fn last_post_modified_gmt(&self) -> Result<Option<String>> {
+    pub async fn last_post_modified_gmt(&self, post_types: &[&str]) -> Result<Option<String>> {
+        let types = post_types.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
         let sql = format!(
-            "SELECT CAST(post_modified_gmt AS CHAR) FROM {} WHERE post_status = 'publish' AND post_type IN ('post', 'page', 'attachment') ORDER BY post_modified_gmt DESC LIMIT 1",
+            "SELECT CAST(post_modified_gmt AS CHAR) FROM {} WHERE post_status = 'publish' AND post_type IN ({types}) ORDER BY post_modified_gmt DESC LIMIT 1",
             self.prefix.table("posts")
         );
-        Ok(sqlx::query_scalar(AssertSqlSafe(sql)).fetch_optional(&self.pool).await?)
+        let mut query = sqlx::query_scalar(AssertSqlSafe(sql));
+        for t in post_types {
+            query = query.bind(*t);
+        }
+        Ok(query.fetch_optional(&self.pool).await?)
     }
     pub async fn post_meta(&self, post_id: u64) -> Result<Vec<PostMeta>> {
         let sql = format!(

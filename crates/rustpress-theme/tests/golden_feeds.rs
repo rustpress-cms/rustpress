@@ -64,7 +64,7 @@ async fn feeds_match_wordpress() {
         eprintln!("WordPress not reachable, skipping");
         return;
     }
-    let site = Site::load(db).await.unwrap();
+    let site = Site::load_at(db, &root).await.unwrap();
     let theme = Theme::load(&site, &root).await.unwrap();
     let registry = Registry::new(root.join("wp-includes").join("blocks"));
 

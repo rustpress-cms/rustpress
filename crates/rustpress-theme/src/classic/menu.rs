@@ -154,7 +154,7 @@ fn queried_of(q: &QueryResult) -> QueriedObject<'_> {
         Queried::Post(p) => QueriedObject { id: p.id, post: Some(p), term: None },
         Queried::Term(t) => QueriedObject { id: t.term_id, post: None, term: Some(t) },
         Queried::User(u) => QueriedObject { id: u.id, post: None, term: None },
-        Queried::None => QueriedObject { id: 0, post: None, term: None },
+        Queried::None | Queried::PostType(_) => QueriedObject { id: 0, post: None, term: None },
     }
 }
 
