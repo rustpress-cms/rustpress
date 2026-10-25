@@ -1357,12 +1357,16 @@ dependencies = [
 name = "rustpress-admin"
 version = "0.1.0"
 dependencies = [
+ "chrono",
+ "chrono-tz",
  "regex",
  "rustpress-auth",
  "rustpress-blocks",
  "rustpress-core",
  "rustpress-db",
+ "rustpress-phpser",
  "serde_json",
+ "sha2 0.10.9",
  "thiserror",
  "tokio",
 ]

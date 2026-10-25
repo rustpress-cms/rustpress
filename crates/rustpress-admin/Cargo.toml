@@ -9,8 +9,12 @@ license.workspace = true
 rustpress-core.workspace = true
 rustpress-db.workspace = true
 rustpress-auth.workspace = true
+rustpress-phpser.workspace = true
 rustpress-blocks.workspace = true
 regex.workspace = true
+chrono.workspace = true
+chrono-tz.workspace = true
+sha2.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 

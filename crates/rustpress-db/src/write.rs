@@ -45,4 +45,47 @@ impl Writer {
         sqlx::query(AssertSqlSafe(sql)).bind(user_id).bind(key).execute(&self.pool).await?;
         Ok(())
     }
+    /// `update_option( $name, $value )` for a value that is already serialized: nothing happens when the
+    /// stored value is the same, a missing option is added (autoload `auto`, like WordPress does).
+    /// Returns whether the database changed.
+    pub async fn update_option(&self, name: &str, value: &str) -> Result<bool> {
+        self.update_option_with_autoload(name, value, "auto").await
+    }
+
+    /// `update_option()` where a missing option is added with the given `autoload` value.
+    pub async fn update_option_with_autoload(&self, name: &str, value: &str, autoload: &str) -> Result<bool> {
+        let table = self.prefix.table("options");
+        let old: Option<String> = sqlx::query_scalar(AssertSqlSafe(format!("SELECT option_value FROM {table} WHERE option_name = ? LIMIT 1"))).bind(name).fetch_optional(&self.pool).await?;
+        match old {
+            Some(old) if old == value => Ok(false),
+            Some(_) => {
+                sqlx::query(AssertSqlSafe(format!("UPDATE {table} SET option_value = ? WHERE option_name = ?"))).bind(value).bind(name).execute(&self.pool).await?;
+                Ok(true)
+            }
+            None => {
+                sqlx::query(AssertSqlSafe(format!("INSERT INTO {table} (option_name, option_value, autoload) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE option_value = VALUES(option_value)")))
+                    .bind(name)
+                    .bind(value)
+                    .bind(autoload)
+                    .execute(&self.pool)
+                    .await?;
+                Ok(true)
+            }
+        }
+    }
+
+    /// `delete_option( $name )`.
+    pub async fn delete_option(&self, name: &str) -> Result<bool> {
+        let sql = format!("DELETE FROM {} WHERE option_name = ?", self.prefix.table("options"));
+        Ok(sqlx::query(AssertSqlSafe(sql)).bind(name).execute(&self.pool).await?.rows_affected() > 0)
+    }
+
+    /// `set_transient( $name, $value, $expiration )`: the value and its timeout, serialized already.
+    pub async fn set_transient(&self, name: &str, value: &str, expiration: i64, now: i64) -> Result<()> {
+        self.update_option_with_autoload(&format!("_transient_{name}"), value, "off").await?;
+        if expiration > 0 {
+            self.update_option_with_autoload(&format!("_transient_timeout_{name}"), &(now + expiration).to_string(), "off").await?;
+        }
+        Ok(())
+    }
 }

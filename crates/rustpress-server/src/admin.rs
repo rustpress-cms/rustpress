@@ -193,6 +193,50 @@ pub async fn login_page(loaded: &Loaded, writer: Option<&rustpress_db::Writer>, 
     response
 }
 
+/// A file in `wp-admin` (`index.php`, `options-general.php`, ...).
+pub async fn admin_page(loaded: &Loaded, config: &Config, writer: Option<&rustpress_db::Writer>, file: &str, method_post: bool, request_uri: &str, query: &str, body: &str, headers: &HeaderMap) -> Response<Body> {
+    let Some(parts) = &loaded.admin else { return plain(StatusCode::NOT_FOUND, "Not Found") };
+    let themes = config.wp_root.join("wp-content").join("themes");
+    let block_theme = [&loaded.site.settings.stylesheet, &loaded.site.settings.template].iter().any(|t| themes.join(t.as_str()).join("templates").join("index.html").is_file());
+    let env = rustpress_admin::screens::AdminEnv {
+        site: &loaded.site,
+        db: &loaded.site.db,
+        writer,
+        auth: &parts.auth,
+        roles: &parts.roles,
+        loader: parts.loader.clone(),
+        https: loaded.site.settings.siteurl.starts_with("https"),
+        now: now(),
+        languages: parts.languages.clone(),
+        available_translations: Vec::new(),
+        block_theme,
+    };
+    let request = rustpress_admin::screens::AdminRequest {
+        post: method_post,
+        file: file.to_owned(),
+        query: pairs_of(query),
+        form: if method_post { pairs_of(body) } else { Vec::new() },
+        cookies: cookies_of(headers),
+        request_uri: request_uri.to_owned(),
+        remote_addr: None,
+        user_agent: headers.get(header::USER_AGENT).and_then(|v| v.to_str().ok()).map(str::to_owned),
+    };
+    let reply = rustpress_admin::screens::handle(&env, &request).await;
+    let mut response = Response::new(Body::from(reply.body));
+    *response.status_mut() = StatusCode::from_u16(reply.status).unwrap_or(StatusCode::OK);
+    for (name, value) in &reply.headers {
+        if let (Ok(name), Ok(value)) = (header::HeaderName::from_bytes(name.as_bytes()), HeaderValue::from_str(value)) {
+            response.headers_mut().append(name, value);
+        }
+    }
+    for cookie in &reply.cookies {
+        if let Ok(value) = HeaderValue::from_str(&cookie.header_value(env.now)) {
+            response.headers_mut().append(header::SET_COOKIE, value);
+        }
+    }
+    response
+}
+
 fn plain(status: StatusCode, text: &'static str) -> Response<Body> {
     let mut response = Response::new(Body::from(text));
     *response.status_mut() = status;

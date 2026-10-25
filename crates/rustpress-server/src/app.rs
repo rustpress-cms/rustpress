@@ -78,6 +78,15 @@ impl App {
         }
     }
 
+    /// Re-reads options and theme right away (after the administration area changed something).
+    pub async fn reload_now(&self) {
+        let _guard = self.reload.lock().await;
+        match Self::load(&self.config, &self.db).await {
+            Ok(fresh) => *self.loaded.write().await = Arc::new(fresh),
+            Err(e) => tracing::error!(error = %e, "reload failed, keeping previous snapshot"),
+        }
+    }
+
     pub fn router(self: &Arc<Self>) -> Router {
         Router::new().fallback(handle).with_state(self.clone()).layer(TraceLayer::new_for_http())
     }
@@ -113,7 +122,8 @@ async fn admin_route(app: &Arc<App>, request: Request<Body>) -> std::result::Res
     let is_login = path.ends_with("/wp-login.php") || path == "/wp-login.php";
     let is_styles = path.ends_with("/wp-admin/load-styles.php");
     let is_scripts = path.ends_with("/wp-admin/load-scripts.php");
-    if !(is_login || is_styles || is_scripts) || app.writer.is_none() {
+    let admin_file = admin_file_of(&path);
+    if !(is_login || is_styles || is_scripts || admin_file.is_some()) || app.writer.is_none() {
         return Err(request);
     }
     let loaded = app.current().await;
@@ -128,10 +138,29 @@ async fn admin_route(app: &Arc<App>, request: Request<Body>) -> std::result::Res
     if !post && !matches!(*request.method(), Method::GET | Method::HEAD) {
         return Err(request);
     }
+    let request_uri = request.uri().path_and_query().map(|p| p.as_str().to_owned()).unwrap_or_default();
     let (parts, body) = request.into_parts();
-    let bytes = axum::body::to_bytes(body, 64 * 1024).await.unwrap_or_default();
+    let bytes = axum::body::to_bytes(body, 1024 * 1024).await.unwrap_or_default();
     let body_text = String::from_utf8_lossy(&bytes).into_owned();
+    if let Some(file) = admin_file {
+        let response = crate::admin::admin_page(&loaded, &app.config, app.writer.as_ref(), &file, post, &request_uri, &query, &body_text, &parts.headers).await;
+        if post {
+            app.reload_now().await;
+        }
+        return Ok(response);
+    }
     Ok(crate::admin::login_page(&loaded, app.writer.as_ref(), post, &query, &body_text, &parts.headers).await)
+}
+
+/// `index.php` for `wp-admin/`, the file name for `wp-admin/<file>.php`; `None` for anything else
+/// (static files, `load-styles.php`, sub-directories).
+fn admin_file_of(path: &str) -> Option<String> {
+    let rest = path.rsplit_once("/wp-admin/").map(|(_, rest)| rest)?;
+    if rest.is_empty() {
+        return Some("index.php".to_owned());
+    }
+    let valid = rest.ends_with(".php") && !rest.contains('/') && !rest.starts_with("load-") && rest != "admin-ajax.php";
+    valid.then(|| rest.to_owned())
 }
 
 async fn page(app: &App, uri: &axum::http::Uri, request_headers: &axum::http::HeaderMap) -> Result<Response<Body>> {

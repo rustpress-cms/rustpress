@@ -8,6 +8,7 @@
 //! Date columns are returned as the strings MySQL stores (`2026-10-24 14:07:01`),
 //! because WordPress allows `0000-00-00 00:00:00`, which date types cannot hold.
 
+mod admin;
 mod archives;
 mod comments;
 mod models;
