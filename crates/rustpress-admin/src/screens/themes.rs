@@ -142,7 +142,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         match request.get("action") {
             Some("activate") => {
                 if !ctx.verify_nonce(&format!("switch-theme_{stylesheet}")) {
-                    return die(ctx.env, 403, &tr("WordPress Failure Notice"), &tr("The link you followed has expired."));
+                    return die(ctx.env, 403, &tr("An error occurred."), &tr("The link you followed has expired."));
                 }
                 let Some(theme) = themes::find(&root, &stylesheet) else {
                     return die(ctx.env, 403, "WordPress &rsaquo; Error", &format!("<h1>{}</h1><p>{}</p>", tr("An error occurred."), tr("The requested theme does not exist.")));
@@ -154,7 +154,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
             }
             Some("delete") => {
                 if !ctx.verify_nonce(&format!("delete-theme_{stylesheet}")) {
-                    return die(ctx.env, 403, &tr("WordPress Failure Notice"), &tr("The link you followed has expired."));
+                    return die(ctx.env, 403, &tr("An error occurred."), &tr("The link you followed has expired."));
                 }
                 if !ctx.can("delete_themes") {
                     return die(ctx.env, 403, "WordPress &rsaquo; Error", &format!("<h1>{}</h1><p>{}</p>", tr("You need a higher level of permission."), tr("Sorry, you are not allowed to delete this item.")));
@@ -180,7 +180,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
                     return die(ctx.env, 403, "WordPress &rsaquo; Error", &format!("<p>{}</p>", if action == "enable-auto-update" { tr("Sorry, you are not allowed to enable themes automatic updates.") } else { tr("Sorry, you are not allowed to disable themes automatic updates.") }));
                 }
                 if !ctx.verify_nonce("updates") {
-                    return die(ctx.env, 403, &tr("WordPress Failure Notice"), &tr("The link you followed has expired."));
+                    return die(ctx.env, 403, &tr("An error occurred."), &tr("The link you followed has expired."));
                 }
                 let Some(writer) = ctx.env.writer else { return super::common::read_only(ctx) };
                 let mut auto: Vec<String> = match ctx.site().options.value("auto_update_themes") {

@@ -74,7 +74,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     let action = request.post_field("action").unwrap_or_default().to_owned();
     if !action.is_empty() {
         if !ctx.verify_nonce(&action) {
-            return die(ctx.env, 403, &tr("WordPress Failure Notice"), &tr("The link you followed has expired."));
+            return die(ctx.env, 403, &tr("An error occurred."), &tr("The link you followed has expired."));
         }
         let Some(writer) = ctx.env.writer else { return read_only(ctx) };
         let content = Content { site, db: ctx.env.db, writer, user: &ctx.user, now: ctx.env.now };

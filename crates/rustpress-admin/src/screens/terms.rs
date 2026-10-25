@@ -230,7 +230,8 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     let request = ctx.request;
     let tr = |s: &str| ctx.tr(s);
     let site = ctx.site();
-    let taxonomy = request.request("taxonomy").unwrap_or_default().to_owned();
+    // Without a taxonomy the screen is the one of the tags.
+    let taxonomy = request.request("taxonomy").filter(|t| !t.is_empty()).unwrap_or("post_tag").to_owned();
     // Taxonomies without a screen of their own.
     if matches!(taxonomy.as_str(), "post_format" | "nav_menu" | "link_category" | "wp_theme" | "wp_template_part_area") {
         return super::common::die_plain(ctx, "Sorry, you are not allowed to edit terms in this taxonomy.");
@@ -258,7 +259,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         }
         redirect(&url)
     };
-    let expired = || super::die(ctx.env, 403, &ctx.tr("WordPress Failure Notice"), &ctx.tr("The link you followed has expired."));
+    let expired = || super::die(ctx.env, 403, &ctx.tr("An error occurred."), &ctx.tr("The link you followed has expired."));
     if request.post && action == "editedtag" {
         return edited_tag(ctx, &info).await;
     }
@@ -419,12 +420,20 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     h.push_str(&table_html.replacen("<input type=\"hidden\" name=\"taxonomy\"", "<input type=\"hidden\" name=\"taxonomy\"", 1));
     h.push_str("\n</form>\n\n");
     let default_name = if info.name == "category" { terms.iter().find(|t| t.term_id == site.options.u64("default_category", 1)).map(|t| t.name.clone()).unwrap_or_default() } else { String::new() };
-    if info.name == "category" || info.name == "post_tag" {
+    // The converters belong to those who may import.
+    let can_import = ctx.can("import");
+    if info.name == "category" || (info.name == "post_tag" && can_import) {
         h.push_str("<div class=\"form-wrap edit-term-notes\">\n<p>\n\t");
     }
     if info.name == "category" {
         h.push_str(&sprintf(&tr("Deleting a category does not delete the posts in that category. Instead, posts that were only assigned to the deleted category are set to the default category %s. The default category cannot be deleted."), &[&format!("<strong>{}</strong>", esc_html(&default_name))]));
-        h.push_str(&format!("</p>\n\t\t<p>\n\t\t{}\t</p>\n\t</div>\n</div>\n", sprintf(&tr("Categories can be selectively converted to tags using the <a href=\"%s\">category to tag converter</a>."), &[&ctx.admin_url("import.php")])));
+        if can_import {
+            h.push_str(&format!("</p>\n\t\t<p>\n\t\t{}\t</p>\n\t</div>\n</div>\n", sprintf(&tr("Categories can be selectively converted to tags using the <a href=\"%s\">category to tag converter</a>."), &[&ctx.admin_url("import.php")])));
+        } else {
+            h.push_str("</p>\n\t</div>\n</div>\n");
+        }
+    } else if info.name == "post_tag" && !can_import {
+        h.push_str("</div>\n");
     } else if info.name == "post_tag" {
         h.push_str(&format!("{}\t</p>\n</div>\n\t</div>\n", sprintf(&tr("Tags can be selectively converted to categories using the <a href=\"%s\">tag to category converter</a>."), &[&ctx.admin_url("import.php")])));
     } else {
@@ -590,7 +599,7 @@ async fn edited_tag(ctx: &Ctx<'_>, info: &TaxInfo) -> AdminResponse {
     let tr = |s: &str| ctx.tr(s);
     let id: u64 = request.request("tag_ID").and_then(|v| v.parse().ok()).unwrap_or(0);
     if !ctx.verify_nonce(&format!("update-tag_{id}")) {
-        return super::die(ctx.env, 403, &tr("WordPress Failure Notice"), &tr("The link you followed has expired."));
+        return super::die(ctx.env, 403, &tr("An error occurred."), &tr("The link you followed has expired."));
     }
     let Some(writer) = ctx.env.writer else { return read_only(ctx) };
     let content = Content { site: ctx.site(), db: ctx.env.db, writer, user: &ctx.user, now: ctx.env.now };

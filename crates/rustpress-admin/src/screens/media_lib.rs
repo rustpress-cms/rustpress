@@ -201,10 +201,13 @@ async fn list_mode(ctx: &Ctx<'_>, title: String) -> AdminResponse {
     h.push_str("<hr class=\"wp-header-end\">\n\n\n");
     h.push_str(&notice(ctx));
     // `view_switcher()`: the addresses of the other modes keep the rest of the query.
+    // An unknown mode is neither of the two views.
+    let mode_value = esc_attr(request.get("mode").unwrap_or("list"));
+    let (list_current, list_aria) = if mode_value == "list" { (" current", " aria-current=\"page\"") } else { ("", "") };
     let list_url = esc_url(&add_query_arg(&request.request_uri, "mode", "list"));
     let grid_url = esc_url(&add_query_arg(&request.request_uri, "mode", "grid"));
     h.push_str(&format!(
-        "<form id=\"posts-filter\" method=\"get\">\n\n<h2 class='screen-reader-text'>{filter_heading}</h2>\t\t<div class=\"wp-filter\">\n\t\t\t<div class=\"filter-items\">\n\t\t\t\t\t\t<input type=\"hidden\" name=\"mode\" value=\"list\" />\n\t\t<div class=\"view-switch\">\n\t\t<a href='{list_url}' class='view-list current' id='view-switch-list' aria-current=\"page\"><span class='screen-reader-text'>{list}</span></a>\n<a href='{grid_url}' class='view-grid' id='view-switch-grid'><span class='screen-reader-text'>{grid}</span></a>\n\t\t</div>\n\t\t\n\t\t\t\t<label for=\"attachment-filter\" class=\"screen-reader-text\">\n\t\t\t\t\t{by_type}\t\t\t\t</label>\n\t\t\t\t<select class=\"attachment-filters\" name=\"attachment-filter\" id=\"attachment-filter\">\n\t\t\t\t\t\t{options}\t\t\t\t</select>\n\n\t\t\t\t\t\t<div class=\"actions\">\n\t\t\t\t\t<label for=\"filter-by-date\" class=\"screen-reader-text\">{by_date}</label>\n\t\t<select name=\"m\" id=\"filter-by-date\">\n{months}\t\t</select>\n\t\t<input type=\"submit\" name=\"filter_action\" id=\"post-query-submit\" class=\"button button-compact\" value=\"{filter_btn}\"  />\t\t</div>\n\t\t\t\t\t</div>\n\n\t\t\t<div class=\"search-form\">\n\t\t\t\t<p class=\"search-box\">\n\t\t\t\t\t<label class=\"screen-reader-text\" for=\"media-search-input\">\n\t\t\t\t\t{search_label}\t\t\t\t\t</label>\n\t\t\t\t\t<input type=\"search\" id=\"media-search-input\" class=\"search\" name=\"s\" value=\"{search}\">\n\t\t\t\t\t<input id=\"search-submit\" type=\"submit\" class=\"button button-compact\" value=\"{search_label}\">\n\t\t\t\t</p>\n\t\t\t</div>\n\t\t</div>\n\t\t\n",
+        "<form id=\"posts-filter\" method=\"get\">\n\n<h2 class='screen-reader-text'>{filter_heading}</h2>\t\t<div class=\"wp-filter\">\n\t\t\t<div class=\"filter-items\">\n\t\t\t\t\t\t<input type=\"hidden\" name=\"mode\" value=\"{mode_value}\" />\n\t\t<div class=\"view-switch\">\n\t\t<a href='{list_url}' class='view-list{list_current}' id='view-switch-list'{list_aria}><span class='screen-reader-text'>{list}</span></a>\n<a href='{grid_url}' class='view-grid' id='view-switch-grid'><span class='screen-reader-text'>{grid}</span></a>\n\t\t</div>\n\t\t\n\t\t\t\t<label for=\"attachment-filter\" class=\"screen-reader-text\">\n\t\t\t\t\t{by_type}\t\t\t\t</label>\n\t\t\t\t<select class=\"attachment-filters\" name=\"attachment-filter\" id=\"attachment-filter\">\n\t\t\t\t\t\t{options}\t\t\t\t</select>\n\n\t\t\t\t\t\t<div class=\"actions\">\n\t\t\t\t\t<label for=\"filter-by-date\" class=\"screen-reader-text\">{by_date}</label>\n\t\t<select name=\"m\" id=\"filter-by-date\">\n{months}\t\t</select>\n\t\t<input type=\"submit\" name=\"filter_action\" id=\"post-query-submit\" class=\"button button-compact\" value=\"{filter_btn}\"  />\t\t</div>\n\t\t\t\t\t</div>\n\n\t\t\t<div class=\"search-form\">\n\t\t\t\t<p class=\"search-box\">\n\t\t\t\t\t<label class=\"screen-reader-text\" for=\"media-search-input\">\n\t\t\t\t\t{search_label}\t\t\t\t\t</label>\n\t\t\t\t\t<input type=\"search\" id=\"media-search-input\" class=\"search\" name=\"s\" value=\"{search}\">\n\t\t\t\t\t<input id=\"search-submit\" type=\"submit\" class=\"button button-compact\" value=\"{search_label}\">\n\t\t\t\t</p>\n\t\t\t</div>\n\t\t</div>\n\t\t\n",
         filter_heading = tr("Filter media items list"),
         list = tr("List view"),
         grid = tr("Grid view"),
@@ -332,7 +335,7 @@ async fn delete_action(ctx: &Ctx<'_>) -> Option<AdminResponse> {
         return None;
     }
     if !ctx.verify_nonce("bulk-media") {
-        return Some(die(ctx.env, 403, &ctx.tr("WordPress Failure Notice"), &ctx.tr("The link you followed has expired.")));
+        return Some(die(ctx.env, 403, &ctx.tr("An error occurred."), &ctx.tr("The link you followed has expired.")));
     }
     if ctx.env.writer.is_none() {
         return Some(read_only(ctx));
@@ -381,7 +384,7 @@ pub async fn media_new(ctx: &Ctx<'_>) -> AdminResponse {
     // The browser uploader.
     if request.post && request.post_field("html-upload").is_some() {
         if !ctx.verify_nonce("media-form") {
-            return die(ctx.env, 403, &tr("WordPress Failure Notice"), &tr("The link you followed has expired."));
+            return die(ctx.env, 403, &tr("An error occurred."), &tr("The link you followed has expired."));
         }
         let Some(writer) = ctx.env.writer else { return read_only(ctx) };
         let content = Content { site, db: ctx.env.db, writer, user: &ctx.user, now: ctx.env.now };

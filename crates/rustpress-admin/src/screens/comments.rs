@@ -551,7 +551,7 @@ async fn bulk(ctx: &Ctx<'_>) -> Option<AdminResponse> {
     };
     let action = action.as_str();
     if !ctx.verify_nonce("bulk-comments") {
-        return Some(die(ctx.env, 403, &tr("WordPress Failure Notice"), &tr("The link you followed has expired.")));
+        return Some(die(ctx.env, 403, &tr("An error occurred."), &tr("The link you followed has expired.")));
     }
     if !ctx.can("moderate_comments") {
         return Some(forbidden(ctx, "Sorry, you are not allowed to edit comments."));
@@ -649,7 +649,7 @@ pub async fn comment_php(ctx: &Ctx<'_>) -> AdminResponse {
         "editcomment" => edit_form(ctx, &comment).await,
         "editedcomment" => {
             if !ctx.verify_nonce(&format!("update-comment_{id}")) {
-                return die(ctx.env, 403, &tr("WordPress Failure Notice"), &tr("The link you followed has expired."));
+                return die(ctx.env, 403, &tr("An error occurred."), &tr("The link you followed has expired."));
             }
             let Some(writer) = ctx.env.writer else { return read_only(ctx) };
             let content = Content { site: ctx.site(), db: ctx.env.db, writer, user: &ctx.user, now: ctx.env.now };
@@ -675,7 +675,7 @@ pub async fn comment_php(ctx: &Ctx<'_>) -> AdminResponse {
         "approvecomment" | "unapprovecomment" | "spamcomment" | "unspamcomment" | "trashcomment" | "untrashcomment" | "deletecomment" => {
             let nonce_action = if matches!(action.as_str(), "approvecomment" | "unapprovecomment") { format!("approve-comment_{id}") } else { format!("delete-comment_{id}") };
             if !ctx.verify_nonce(&nonce_action) {
-                return die(ctx.env, 403, &tr("WordPress Failure Notice"), &tr("The link you followed has expired."));
+                return die(ctx.env, 403, &tr("An error occurred."), &tr("The link you followed has expired."));
             }
             let Some(writer) = ctx.env.writer else { return read_only(ctx) };
             let content = Content { site: ctx.site(), db: ctx.env.db, writer, user: &ctx.user, now: ctx.env.now };

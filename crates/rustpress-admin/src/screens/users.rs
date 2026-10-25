@@ -328,7 +328,7 @@ async fn handle_action(ctx: &Ctx<'_>, action: &str) -> Option<AdminResponse> {
         ids
     };
     let site = ctx.site();
-    let expired = || super::die(ctx.env, 403, &tr("WordPress Failure Notice"), &tr("The link you followed has expired."));
+    let expired = || super::die(ctx.env, 403, &tr("An error occurred."), &tr("The link you followed has expired."));
     let self_redirect = |code: &str, extra: &str| redirect(&ctx.admin_url(&format!("users.php?update={code}{extra}")));
     match action {
         "delete" | "dodelete" | "remove" | "doremove" if !users.is_empty() => {

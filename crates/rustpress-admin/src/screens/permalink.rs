@@ -49,7 +49,7 @@ async fn save(ctx: &Ctx<'_>) -> Option<AdminResponse> {
         return None;
     }
     if !ctx.verify_nonce("update-permalink") {
-        return Some(die(ctx.env, 403, &ctx.tr("WordPress Failure Notice"), &ctx.tr("The link you followed has expired.")));
+        return Some(die(ctx.env, 403, &ctx.tr("An error occurred."), &ctx.tr("The link you followed has expired.")));
     }
     let Some(writer) = ctx.env.writer else { return Some(super::common::read_only(ctx)) };
     let site = ctx.site();

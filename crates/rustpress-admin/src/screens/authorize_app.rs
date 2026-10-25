@@ -50,7 +50,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
 
     if request.post && request.post_field("action") == Some("authorize_application_password") {
         if !ctx.verify_nonce("authorize_application_password") {
-            return die(ctx.env, 403, &tr("WordPress Failure Notice"), &tr("The link you followed has expired."));
+            return die(ctx.env, 403, &tr("An error occurred."), &tr("The link you followed has expired."));
         }
         let field = |name: &str| request.post_field(name).unwrap_or_default().to_owned();
         let (success_url, reject_url, app_name, app_id) = (field("success_url"), field("reject_url"), field("app_name"), field("app_id"));

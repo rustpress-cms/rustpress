@@ -140,7 +140,7 @@ fn nonce_ays(ctx: &Ctx<'_>) -> AdminResponse {
     if let Some(referer) = referer(ctx) {
         html.push_str(&format!("</p><p><a href=\"{}\">{}</a>", rustpress_core::formatting::esc_url(&referer), ctx.tr("Please try again.")));
     }
-    die(ctx.env, 403, &ctx.tr("WordPress Failure Notice"), &html)
+    die(ctx.env, 403, &ctx.tr("An error occurred."), &html)
 }
 
 /// `wp_get_referer()`: the page the form came from.

@@ -201,7 +201,7 @@ async fn upload(ctx: &Ctx<'_>, plugin: bool) -> AdminResponse {
         return die(ctx.env, 403, "WordPress &rsaquo; Error", &format!("<p>{}</p>", if plugin { tr("Sorry, you are not allowed to install plugins on this site.") } else { tr("Sorry, you are not allowed to install themes on this site.") }));
     }
     if !request.post || !ctx.verify_nonce(if plugin { "plugin-upload" } else { "theme-upload" }) {
-        return die(ctx.env, 403, &tr("WordPress Failure Notice"), &tr("The link you followed has expired."));
+        return die(ctx.env, 403, &tr("An error occurred."), &tr("The link you followed has expired."));
     }
     let field = if plugin { "pluginzip" } else { "themezip" };
     let Some(file) = request.files.iter().find(|f| f.field == field) else {

@@ -449,7 +449,7 @@ async fn save(ctx: &Ctx<'_>, id: u64, own: bool) -> AdminResponse {
     let request = ctx.request;
     let tr = |s: &str| ctx.tr(s);
     if !ctx.verify_nonce(&format!("update-user_{id}")) {
-        return super::die(ctx.env, 403, &tr("WordPress Failure Notice"), &tr("The link you followed has expired."));
+        return super::die(ctx.env, 403, &tr("An error occurred."), &tr("The link you followed has expired."));
     }
     let Some(writer) = ctx.env.writer else { return read_only(ctx) };
     let Some(user) = ctx.env.db.user(id).await.ok().flatten() else { return forbidden(ctx, "Invalid user ID.") };
@@ -539,7 +539,7 @@ pub async fn user_new(ctx: &Ctx<'_>) -> AdminResponse {
     let submitted = |name: &str| request.post_field(name).unwrap_or_default().to_owned();
     if request.post && request.post_field("action") == Some("createuser") {
         if request.post_field("_wpnonce_create-user").is_none_or(|n| ctx.env.auth.verify_nonce(n, "create-user", ctx.user.id, &ctx.token, ctx.env.now).is_none()) {
-            return super::die(ctx.env, 403, &tr("WordPress Failure Notice"), &tr("The link you followed has expired."));
+            return super::die(ctx.env, 403, &tr("An error occurred."), &tr("The link you followed has expired."));
         }
         let Some(writer) = ctx.env.writer else { return read_only(ctx) };
         let content = Content { site: ctx.site(), db: ctx.env.db, writer, user: &ctx.user, now: ctx.env.now };

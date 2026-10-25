@@ -247,7 +247,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
             return redirect(&ctx.admin_url(&format!("edit.php?post_type={}", post.post_type)));
         }
         if !ctx.verify_nonce(&format!("restore-post_{}", revision.id)) {
-            return die(env, 403, &ctx.tr("WordPress Failure Notice"), &ctx.tr("The link you followed has expired."));
+            return die(env, 403, &ctx.tr("An error occurred."), &ctx.tr("The link you followed has expired."));
         }
         let Some(writer) = env.writer else { return super::common::read_only(ctx) };
         let content = Content { site: env.site, db: env.db, writer, user: &ctx.user, now: env.now };

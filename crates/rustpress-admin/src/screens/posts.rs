@@ -172,7 +172,7 @@ async fn bulk_action(ctx: &Ctx<'_>, info: &TypeInfo) -> Option<AdminResponse> {
     let action = action?;
     let writer = ctx.env.writer?;
     if !ctx.verify_nonce("bulk-posts") {
-        return Some(super::die(ctx.env, 403, &ctx.tr("WordPress Failure Notice"), &ctx.tr("The link you followed has expired.")));
+        return Some(super::die(ctx.env, 403, &ctx.tr("An error occurred."), &ctx.tr("The link you followed has expired.")));
     }
     let mut ids: Vec<u64> = request.query.iter().chain(request.form.iter()).filter(|(k, _)| k == "post[]" || k == "post").filter_map(|(_, v)| v.parse().ok()).collect();
     if let Some(list) = request.request("ids") {
@@ -363,7 +363,8 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     // The query
     let orderby_param = request.get("orderby").unwrap_or_default().to_owned();
     let order_param = request.get("order").unwrap_or_default().to_lowercase();
-    let hierarchical_display = info.hierarchical && orderby_param.is_empty();
+    // Drafts and pending items are ordered by their modification (`wp_edit_posts_query()`), not by hierarchy.
+    let hierarchical_display = info.hierarchical && orderby_param.is_empty() && !matches!(post_status.as_deref(), Some("pending" | "draft"));
     let order_by = match orderby_param.as_str() {
         "title" => OrderBy::Title,
         "date" => OrderBy::Date,

@@ -129,7 +129,7 @@ fn delete_plugin_files(root: &std::path::Path, file: &str) -> std::io::Result<()
 async fn actions(ctx: &Ctx<'_>, action: &str, installed: &[PluginInfo], active: &mut Vec<String>, root: &std::path::Path) -> Option<AdminResponse> {
     let request = ctx.request;
     let tr = |s: &str| ctx.tr(s);
-    let expired = || die(ctx.env, 403, &tr("WordPress Failure Notice"), &tr("The link you followed has expired."));
+    let expired = || die(ctx.env, 403, &tr("An error occurred."), &tr("The link you followed has expired."));
     let status = request.request("plugin_status").unwrap_or("all").to_owned();
     let page = request.request("paged").unwrap_or("1").to_owned();
     let search = urlenc(request.request("s").unwrap_or_default());
