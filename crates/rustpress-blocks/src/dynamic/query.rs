@@ -20,6 +20,9 @@ use crate::render::BlockCtx;
 pub(super) struct LoopData {
     pub posts: Vec<Post>,
     pub max_pages: u64,
+    /// `found_posts` and `posts_per_page` of the query.
+    pub found: u64,
+    pub per_page: u64,
 }
 
 fn query_ctx<'a>(bc: &'a BlockCtx<'_>) -> Option<&'a Map<String, Value>> {
@@ -145,13 +148,13 @@ async fn custom_query(bc: &BlockCtx<'_>, page: u64) -> Result<LoopData> {
         posts = front;
     }
     let max_pages = found.div_ceil(effective_per_page);
-    Ok(LoopData { posts, max_pages })
+    Ok(LoopData { posts, max_pages, found, per_page: effective_per_page })
 }
 
 pub(super) async fn loop_data(bc: &BlockCtx<'_>) -> Result<LoopData> {
     if is_inherit(bc) {
         let q = bc.env.query;
-        return Ok(LoopData { posts: q.posts.clone(), max_pages: q.max_pages });
+        return Ok(LoopData { posts: q.posts.clone(), max_pages: q.max_pages, found: q.found_posts, per_page: q.per_page });
     }
     custom_query(bc, custom_page(bc)).await
 }
@@ -230,6 +233,26 @@ pub(super) async fn post_template(bc: &BlockCtx<'_>) -> Result<String> {
     }
     bc.env.with_state(|s| s.media.in_main_loop = was_in_loop);
     Ok(format!("<ul {wrapper}>{items}</ul>"))
+}
+
+/// `core/query-total`.
+pub(super) async fn query_total(bc: &BlockCtx<'_>) -> Result<String> {
+    let data = loop_data(bc).await?;
+    let current_page = if is_inherit(bc) { bc.env.query.vars.u64("paged").unwrap_or(1).max(1) } else { custom_page(bc) } as i64;
+    let (found, per_page) = (data.found as i64, data.per_page as i64);
+    let site = bc.env.site;
+    let start = if found == 0 { 0 } else { (current_page - 1) * per_page + 1 };
+    let end = (start + per_page - 1).min(found);
+    let output = if bc.attr_str("displayType") == Some("range-display") {
+        if start == end {
+            rustpress_core::i18n::sprintf(&site.tr("Displaying %1$s of %2$s"), &[&start.to_string(), &found.to_string()])
+        } else {
+            rustpress_core::i18n::sprintf(&site.tr("Displaying %1$s – %2$s of %3$s"), &[&start.to_string(), &end.to_string(), &found.to_string()])
+        }
+    } else {
+        rustpress_core::i18n::sprintf(&site.trn("%d result found", "%d results found", found), &[&found.to_string()])
+    };
+    Ok(format!("<div {}>{output}</div>", bc.wrapper_attributes(&[])))
 }
 
 pub(super) async fn query_no_results(bc: &BlockCtx<'_>) -> Result<String> {

@@ -1,7 +1,7 @@
 //! Sidebars and widgets (`wp_get_sidebars_widgets()`, `dynamic_sidebar()` and the core widgets).
 
-use rustpress_blocks::Env;
-use rustpress_core::formatting::{esc_attr, esc_html, esc_url, strip_tags};
+use rustpress_blocks::{Env, general};
+use rustpress_core::formatting::{esc_attr, esc_url, strip_tags};
 use rustpress_core::{Queried, QueryResult, Site};
 use rustpress_db::{CommentQuery, Order, OrderBy, PostQuery};
 use rustpress_phpser::Value;
@@ -379,21 +379,10 @@ async fn tag_cloud(s: &Services<'_>, sidebar: &Sidebar, before: &str, settings: 
         let t = setting_str(settings, "title");
         (if t.is_empty() { default.clone() } else { t }, default)
     };
-    let mut terms: Vec<_> = site.db.terms(&taxonomy).await?.into_iter().filter(|t| t.count > 0).collect();
-    // `wp_generate_tag_cloud()` sorts the names with `natcasesort()`.
-    terms.sort_by_key(|t| t.name.to_ascii_lowercase());
-    terms.truncate(45);
-    let mut items = String::new();
-    for (i, term) in terms.iter().enumerate() {
-        items.push_str(&format!(
-            "\t<li><a href=\"{}\" class=\"tag-cloud-link tag-link-{} tag-link-position-{}\" style=\"font-size: 1em;\">{}</a></li>\n",
-            esc_url(&site.term_link(term).await?),
-            term.term_id,
-            i + 1,
-            esc_html(&term.name)
-        ));
-    }
-    let cloud = if terms.is_empty() { String::new() } else { format!("<div class=\"tagcloud\"><ul class='wp-tag-cloud' role='list'>\n{items}</ul>\n</div>\n") };
+    // `twentyseventeen_widget_tag_cloud_args()`
+    let args = general::TagCloud { taxonomy, smallest: 1.0, largest: 1.0, unit: "em".into(), list: true, ..general::TagCloud::new() };
+    let cloud = general::wp_tag_cloud(s.env, &args).await?;
+    let cloud = if cloud.is_empty() { cloud } else { format!("<div class=\"tagcloud\">{cloud}</div>\n") };
     Ok(format!("{before}{}{}{cloud}</nav>{}", heading(sidebar, &title), nav_open(&title, &default_title), sidebar.after_widget))
 }
 
@@ -401,16 +390,8 @@ async fn tag_cloud(s: &Services<'_>, sidebar: &Sidebar, before: &str, settings: 
 async fn archives(s: &Services<'_>, sidebar: &Sidebar, before: &str, settings: &Value) -> Result<String> {
     let site = s.site;
     let (title, default_title) = widget_title(site, settings, Some("Archives"));
-    let count = setting_flag(settings, "count");
-    let locale = site.locale_data();
-    let mut items = String::new();
-    for (year, month, posts) in site.db.monthly_archives().await? {
-        let name = locale.month.get(month as usize - 1).cloned().unwrap_or_default();
-        let label = rustpress_core::i18n::sprintf(&site.tr("%1$s %2$d"), &[&name, &year.to_string()]);
-        let link = site.date_link(year, month, 0);
-        let after = if count { format!("&nbsp;({posts})") } else { String::new() };
-        items.push_str(&format!("\t<li><a href='{}'>{label}</a>{after}</li>\n", esc_url(&link)));
-    }
+    let args = general::Archives { show_post_count: setting_flag(settings, "count"), ..general::Archives::new() };
+    let items = general::wp_get_archives(s.env, &args).await?;
     Ok(format!("{before}{}{}\n\t\t\t<ul>\n\t\t\t\t{items}\t\t\t</ul>\n\n\t\t\t</nav>{}", heading(sidebar, &title), nav_open(&title, &default_title), sidebar.after_widget))
 }
 
@@ -418,103 +399,12 @@ async fn archives(s: &Services<'_>, sidebar: &Sidebar, before: &str, settings: &
 async fn categories(s: &Services<'_>, sidebar: &Sidebar, before: &str, settings: &Value) -> Result<String> {
     let site = s.site;
     let (title, default_title) = widget_title(site, settings, Some("Categories"));
-    let count = setting_flag(settings, "count");
-    let hierarchical = setting_flag(settings, "hierarchical");
-    let mut terms: Vec<_> = site.db.terms("category").await?.into_iter().filter(|t| t.count > 0).collect();
-    terms.sort_by_key(|t| t.name.to_lowercase());
-    // `Walker_Category`: the queried category, its parent and its ancestors are marked.
-    let mut current: Option<(u64, u64)> = None;
-    let mut ancestors = Vec::new();
-    if let Queried::Term(term) = &s.q.queried
-        && (s.q.flags.is_category || s.q.flags.is_tax || s.q.flags.is_tag)
-        && term.taxonomy == "category"
-    {
-        current = Some((term.term_id, term.parent));
-        let mut parent = term.parent;
-        while parent != 0 && !ancestors.contains(&parent) {
-            ancestors.push(parent);
-            parent = site.db.term_by_id(Some("category"), parent).await?.map_or(0, |t| t.parent);
-        }
-    }
-    struct Walk<'a> {
-        site: &'a Site,
-        terms: &'a [rustpress_db::Term],
-        hierarchical: bool,
-        count: bool,
-        current: Option<(u64, u64)>,
-        ancestors: &'a [u64],
-    }
-    fn walk<'a>(w: &'a Walk<'a>, parent: u64, depth: usize, out: &'a mut String) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<()>> + Send + 'a>> {
-        Box::pin(async move {
-            let Walk { site, terms, hierarchical, count, current, ancestors } = *w;
-            for term in terms.iter().filter(|t| if hierarchical { t.parent == parent } else { parent == 0 }) {
-                let indent = "\t".repeat(depth + 1);
-                let n = if count { format!(" ({})", site.number_i18n(term.count.max(0) as u64)) } else { String::new() };
-                let mut classes = format!("cat-item cat-item-{}", term.term_id);
-                let mut aria = "";
-                if let Some((id, current_parent)) = current {
-                    if term.term_id == id {
-                        classes.push_str(" current-cat");
-                        aria = " aria-current=\"page\"";
-                    } else if term.term_id == current_parent {
-                        classes.push_str(" current-cat-parent");
-                    }
-                    if ancestors.contains(&term.term_id) {
-                        classes.push_str(" current-cat-ancestor");
-                    }
-                }
-                out.push_str(&format!("{indent}<li class=\"{classes}\"><a{aria} href=\"{}\">{}</a>{n}\n", esc_url(&site.term_link(term).await?), esc_html(&term.name)));
-                if hierarchical && terms.iter().any(|c| c.parent == term.term_id) {
-                    out.push_str("<ul class='children'>\n");
-                    walk(w, term.term_id, depth + 1, out).await?;
-                    out.push_str(&format!("{indent}</ul>\n"));
-                }
-                out.push_str("</li>\n");
-            }
-            Ok(())
-        })
-    }
-    let mut list = String::new();
-    walk(&Walk { site, terms: &terms, hierarchical, count, current, ancestors: &ancestors }, 0, 0, &mut list).await?;
+    let mut args = general::ListCategories::new(s.env, "category");
+    args.show_count = setting_flag(settings, "count");
+    args.terms.hierarchical = setting_flag(settings, "hierarchical");
+    args.title_li = String::new();
+    let list = general::wp_list_categories(s.env, &args).await?;
     Ok(format!("{before}{}{}\n\t\t\t<ul>\n\t\t\t\t{list}\t\t\t</ul>\n\n\t\t\t</nav>{}", heading(sidebar, &title), nav_open(&title, &default_title), sidebar.after_widget))
-}
-
-/// `gmdate()` for the date formats of the calendar (English names, as WordPress prints them there).
-fn gmdate_english(format: &str, year: u32, month: u32, day: u32) -> String {
-    const MONTHS: [&str; 12] = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-    let mut out = String::new();
-    let mut chars = format.chars();
-    while let Some(c) = chars.next() {
-        match c {
-            'F' => out.push_str(MONTHS[month as usize - 1]),
-            'M' => out.push_str(&MONTHS[month as usize - 1][..3]),
-            'j' => out.push_str(&day.to_string()),
-            'd' => out.push_str(&format!("{day:02}")),
-            'n' => out.push_str(&month.to_string()),
-            'm' => out.push_str(&format!("{month:02}")),
-            'Y' => out.push_str(&year.to_string()),
-            'y' => out.push_str(&format!("{:02}", year % 100)),
-            '\\' => out.extend(chars.next()),
-            other => out.push(other),
-        }
-    }
-    out
-}
-
-fn days_in_month(year: u32, month: u32) -> u32 {
-    match month {
-        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
-        4 | 6 | 9 | 11 => 30,
-        _ if (year.is_multiple_of(4) && !year.is_multiple_of(100)) || year.is_multiple_of(400) => 29,
-        _ => 28,
-    }
-}
-
-/// Weekday of a date, 0 = Sunday.
-fn weekday(year: u32, month: u32, day: u32) -> u32 {
-    let t = [0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4];
-    let y = if month < 3 { year - 1 } else { year };
-    (y + y / 4 - y / 100 + y / 400 + t[month as usize - 1] + day) % 7
 }
 
 /// `WP_Widget_Calendar::widget()` with `get_calendar()`.
@@ -523,84 +413,6 @@ async fn calendar_widget(s: &Services<'_>, sidebar: &Sidebar, before: &str, sett
     let (title, _) = widget_title(site, settings, None);
     let wrap = if *instances == 0 { "<div id=\"calendar_wrap\" class=\"calendar_wrap\">" } else { "<div class=\"calendar_wrap\">" };
     *instances += 1;
-    let calendar = get_calendar(s).await?;
+    let calendar = general::get_calendar(s.env, true, None).await?;
     Ok(format!("{before}{}{wrap}{calendar}</div>{}", heading(sidebar, &title), sidebar.after_widget))
-}
-
-/// `get_calendar()`.
-async fn get_calendar(s: &Services<'_>) -> Result<String> {
-    let site = s.site;
-    let q = s.q;
-    let locale = site.locale_data();
-    let now = chrono::Utc::now().timestamp();
-    let today = |code: &str| site.timezone.format(code, now).parse::<u32>().unwrap_or(0);
-    let vars = &q.vars;
-    let (this_year, this_month) = match (vars.u64("monthnum"), vars.u64("year"), vars.get("m")) {
-        (Some(month), Some(year), _) if month > 0 && year > 0 => (year as u32, month as u32),
-        (_, _, Some(m)) if !m.is_empty() => (m.get(..4).and_then(|y| y.parse().ok()).unwrap_or(0), if m.len() < 6 { 1 } else { m.get(4..6).and_then(|v| v.parse().ok()).unwrap_or(1) }),
-        _ => (today("Y"), today("n")),
-    };
-    // `mktime( 0, 0, 0, $thismonth, 1, $thisyear )` normalizes an out-of-range month into the year; the caption
-    // still prints the month name for the raw value (empty if there is none).
-    let raw_month = this_month;
-    let months = this_year as i64 * 12 + this_month as i64 - 1;
-    let (this_year, this_month) = ((months.div_euclid(12)).max(1) as u32, months.rem_euclid(12) as u32 + 1);
-    let week_begins = site.options.u64("start_of_week", 0) as u32;
-    let last_day = days_in_month(this_year, this_month);
-    // WordPress compares `post_date` with the raw string `$thisyear-$thismonth-01`; MariaDB reads an invalid month
-    // as no date: nothing is "before" it and every post is "after" it (observed with `?m=201713`).
-    let valid = (1..=12).contains(&raw_month);
-    let previous = if valid { site.db.calendar_neighbor(this_year, this_month, last_day, true).await? } else { None };
-    let next = if valid { site.db.calendar_neighbor(this_year, this_month, last_day, false).await? } else { site.db.calendar_neighbor(0, 1, 31, false).await? };
-    let caption = rustpress_core::i18n::sprintf(&site.trx("%1$s %2$s", "calendar caption"), &[locale.month.get((raw_month as usize).wrapping_sub(1)).map_or("", String::as_str), &this_year.to_string()]);
-    let mut out = format!("<table id=\"wp-calendar\" class=\"wp-calendar-table\">\n\t<caption>{caption}</caption>\n\t<thead>\n\t<tr>");
-    for i in 0..7 {
-        let wd = ((i + week_begins) % 7) as usize;
-        out.push_str(&format!("\n\t\t<th scope=\"col\" aria-label=\"{}\">{}</th>", esc_attr(&locale.weekday[wd]), locale.weekday_initial[wd]));
-    }
-    out.push_str("\n\t</tr>\n\t</thead>\n\t<tbody>\n\t<tr>");
-    let with_posts = site.db.calendar_days(this_year, this_month, last_day).await?;
-    let week_mod = |n: i64| n.rem_euclid(7);
-    let pad = week_mod(weekday(this_year, this_month, 1) as i64 - week_begins as i64);
-    if pad > 0 {
-        out.push_str(&format!("\n\t\t<td colspan=\"{pad}\" class=\"pad\">&nbsp;</td>"));
-    }
-    let mut new_row = false;
-    for day in 1..=last_day {
-        if new_row {
-            out.push_str("\n\t</tr>\n\t<tr>\n\t\t");
-        }
-        new_row = false;
-        out.push_str(if today("j") == day && today("n") == this_month && today("Y") == this_year { "<td id=\"today\">" } else { "<td>" });
-        if with_posts.contains(&day) {
-            let date = gmdate_english(&site.trx("F j, Y", "daily archives date format"), this_year, this_month, day);
-            let label = rustpress_core::i18n::sprintf(&site.tr("Posts published on %s"), &[&date]);
-            out.push_str(&format!("<a href=\"{}\" aria-label=\"{}\">{day}</a>", site.date_link(this_year, this_month, day), esc_attr(&label)));
-        } else {
-            out.push_str(&day.to_string());
-        }
-        out.push_str("</td>");
-        if week_mod(weekday(this_year, this_month, day) as i64 - week_begins as i64) == 6 {
-            new_row = true;
-        }
-    }
-    // `$day` is one past the last day here.
-    let pad = 7 - week_mod(weekday(this_year, this_month, last_day) as i64 + 1 - week_begins as i64);
-    if (1..7).contains(&pad) {
-        out.push_str(&format!("\n\t\t<td class=\"pad\" colspan=\"{pad}\">&nbsp;</td>"));
-    }
-    out.push_str("\n\t</tr>\n\t</tbody>\n\t</table>");
-    out.push_str(&format!("<nav aria-label=\"{}\" class=\"wp-calendar-nav\">", site.tr("Previous and next months")));
-    let abbrev = |month: u32| locale.month_abbrev[month as usize - 1].clone();
-    match previous {
-        Some((y, m)) => out.push_str(&format!("\n\t\t<span class=\"wp-calendar-nav-prev\"><a href=\"{}\">&laquo; {}</a></span>", site.date_link(y, m, 0), abbrev(m))),
-        None => out.push_str("\n\t\t<span class=\"wp-calendar-nav-prev\">&nbsp;</span>"),
-    }
-    out.push_str("\n\t\t<span class=\"pad\">&nbsp;</span>");
-    match next {
-        Some((y, m)) => out.push_str(&format!("\n\t\t<span class=\"wp-calendar-nav-next\"><a href=\"{}\">{} &raquo;</a></span>", site.date_link(y, m, 0), abbrev(m))),
-        None => out.push_str("\n\t\t<span class=\"wp-calendar-nav-next\">&nbsp;</span>"),
-    }
-    out.push_str("\n\t</nav>");
-    Ok(out)
 }

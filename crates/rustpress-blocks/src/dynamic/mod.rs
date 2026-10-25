@@ -12,6 +12,7 @@ use crate::render::BlockCtx;
 
 mod adjacent;
 mod comments;
+mod extra;
 mod media;
 mod navigation;
 mod post_content;
@@ -71,6 +72,25 @@ pub fn is_dynamic(name: &str) -> bool {
             | "core/comments-pagination-next"
             | "core/comments-pagination-numbers"
             | "core/post-navigation-link"
+            | "core/archives"
+            | "core/categories"
+            | "core/tag-cloud"
+            | "core/calendar"
+            | "core/latest-comments"
+            | "core/home-link"
+            | "core/loginout"
+            | "core/post-comments-count"
+            | "core/post-comments-link"
+            | "core/post-author-biography"
+            | "core/post-time-to-read"
+            | "core/read-more"
+            | "core/shortcode"
+            | "core/query-total"
+            | "core/term-template"
+            | "core/term-name"
+            | "core/term-count"
+            | "core/term-description"
+            | "core/block"
     )
 }
 
@@ -120,6 +140,25 @@ pub fn render<'a>(bc: &'a BlockCtx<'a>) -> BoxFuture<'a, Result<String>> {
             "core/comments-pagination" => comments::comments_pagination(bc).await,
             "core/comments-pagination-previous" | "core/comments-pagination-next" | "core/comments-pagination-numbers" => Ok(String::new()),
             "core/post-navigation-link" => adjacent::render(bc).await,
+            "core/archives" => extra::archives(bc).await,
+            "core/categories" => extra::categories(bc).await,
+            "core/tag-cloud" => extra::tag_cloud(bc).await,
+            "core/calendar" => extra::calendar(bc).await,
+            "core/latest-comments" => extra::latest_comments(bc).await,
+            "core/home-link" => extra::home_link(bc),
+            "core/loginout" => extra::loginout(bc),
+            "core/post-comments-count" => extra::post_comments_count(bc).await,
+            "core/post-comments-link" => extra::post_comments_link(bc).await,
+            "core/post-author-biography" => extra::post_author_biography(bc).await,
+            "core/post-time-to-read" => extra::post_time_to_read(bc).await,
+            "core/read-more" => extra::read_more(bc).await,
+            "core/shortcode" => extra::shortcode(bc),
+            "core/query-total" => query::query_total(bc).await,
+            "core/term-template" => extra::term_template(bc).await,
+            "core/term-name" => extra::term_name(bc).await,
+            "core/term-count" => extra::term_count(bc).await,
+            "core/term-description" => extra::term_description(bc).await,
+            "core/block" => extra::reusable_block(bc).await,
             _ => Ok(bc.content.clone()),
         }
     })

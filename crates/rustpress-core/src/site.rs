@@ -127,6 +127,17 @@ impl Site {
             None => self.timezone.format(format, timestamp),
         }
     }
+
+    /// `date_i18n( $format, $timestamp_with_offset )`: the timestamp already carries the site's
+    /// offset, so it is formatted as UTC.
+    pub fn date_utc(&self, format: &str, timestamp: i64) -> String {
+        let utc = crate::datetime::SiteTimezone::utc();
+        match self.i18n.get().filter(|i| i.is_translated()) {
+            Some(i18n) => i18n.locale_data().date(&utc, format, timestamp),
+            None => utc.format(format, timestamp),
+        }
+    }
+
     pub fn from_parts(db: Db, options: Options) -> Self {
         let settings = Settings::from_options(&options);
         let rewrite = options.value("rewrite_rules").map(|v| RewriteRules::from_option(&v)).unwrap_or_default();

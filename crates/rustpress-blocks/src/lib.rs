@@ -11,6 +11,7 @@ pub mod dynamic;
 pub mod elements;
 pub mod excerpt;
 pub mod fluid;
+pub mod general;
 pub mod env;
 pub mod html;
 pub mod images;

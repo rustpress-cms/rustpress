@@ -8,6 +8,7 @@
 //! Date columns are returned as the strings MySQL stores (`2026-10-24 14:07:01`),
 //! because WordPress allows `0000-00-00 00:00:00`, which date types cannot hold.
 
+mod archives;
 mod comments;
 mod models;
 mod options;
@@ -18,6 +19,7 @@ mod users;
 use sqlx::Executor;
 use sqlx::mysql::{MySqlPool, MySqlPoolOptions};
 
+pub use archives::{ArchiveKind, ArchiveRow};
 pub use comments::{CommentOrder, CommentQuery};
 pub use models::{Comment, Post, PostMeta, Term, User};
 pub use posts::{Order, OrderBy, PostQuery};
