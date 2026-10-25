@@ -133,7 +133,15 @@ pub struct ChromeEnv<'a> {
     pub cookie_path: String,
     pub now: i64,
     pub secure: bool,
+    /// `$_SERVER['REQUEST_URI']`.
+    pub request_uri: String,
 }
+
+/// `wp_removable_query_args()`.
+const REMOVABLE_QUERY_ARGS: &[&str] = &[
+    "activate", "activated", "admin_email_remind_later", "approved", "core-major-auto-updates-saved", "deactivate", "delete_count", "deleted", "disabled", "doing_wp_cron", "enabled", "error", "hotkeys_highlight_first",
+    "hotkeys_highlight_last", "ids", "locked", "message", "same", "saved", "settings-updated", "skipped", "spammed", "trashed", "unspammed", "untrashed", "update", "updated", "wp-post-new-reload",
+];
 
 /// Extra assets of a screen.
 #[derive(Debug, Clone, Default)]
@@ -280,7 +288,15 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
     let thousands = (locale_data.thousands_sep.clone(), locale_data.decimal_point.clone());
     let ajax = esc_url(&site.site_url("wp-admin/admin-ajax.php"));
     let ajax_path = ajax.strip_prefix(&env.loader.site_url).unwrap_or(&ajax).to_owned();
-    let canonical = site.site_url(&format!("wp-admin/{}", screen.file));
+    // `wp_admin_canonical_url()`: the address of the request without the arguments of a one-time notice.
+    let origin = match env.loader.site_url.split_once("://") {
+        Some((scheme, rest)) => format!("{scheme}://{}", rest.split('/').next().unwrap_or_default()),
+        None => env.loader.site_url.clone(),
+    };
+    let mut canonical = if env.request_uri.is_empty() { site.site_url(&format!("wp-admin/{}", screen.file)) } else { format!("{origin}{}", env.request_uri) };
+    for arg in REMOVABLE_QUERY_ARGS {
+        canonical = rustpress_core::urls::remove_query_arg(&canonical, arg);
+    }
 
     let mut out = String::new();
     out.push_str(&format!(

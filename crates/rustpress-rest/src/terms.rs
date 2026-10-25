@@ -13,6 +13,10 @@ impl Tax {
         Tax { name: "category".into(), base: "categories".into(), hierarchical: true, object_types: vec!["post".into()] }
     }
 
+    pub(crate) fn pattern_category() -> Self {
+        Tax { name: "wp_pattern_category".into(), base: "wp_pattern_category".into(), hierarchical: false, object_types: vec!["wp_block".into()] }
+    }
+
     pub(crate) fn tag() -> Self {
         Tax { name: "post_tag".into(), base: "tags".into(), hierarchical: false, object_types: vec!["post".into()] }
     }
@@ -34,6 +38,7 @@ impl Rest<'_> {
         match name {
             "category" => Some(Tax { name: name.into(), base: "categories".into(), hierarchical: true, object_types: vec!["post".into()] }),
             "post_tag" => Some(Tax { name: name.into(), base: "tags".into(), hierarchical: false, object_types: vec!["post".into()] }),
+            "wp_pattern_category" => Some(Tax::pattern_category()),
             other => self.site.types.taxonomy(other).filter(|t| t.show_in_rest).map(|t| Tax {
                 name: t.name.clone(),
                 base: t.rest_base().to_owned(),

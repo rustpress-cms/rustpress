@@ -15,6 +15,7 @@ pub use templates::default_template_types;
 mod terms;
 mod types;
 mod users;
+mod view_config;
 
 use std::path::PathBuf;
 
@@ -239,14 +240,20 @@ impl Rest<'_> {
                 self.revisions_route(kind, parent, sub, segments.get(5).copied(), &method, &args).await.map(Some)
             }
             ["wp", "v2", "media"] | ["wp", "v2", "media", _] if !get || self.access.is_some() => self.media_route(segments.get(3).copied(), &method, &args, params).await.map(Some),
-            ["wp", "v2", base @ ("categories" | "tags")] | ["wp", "v2", base @ ("categories" | "tags"), _] if !get || edit_read => {
-                let tax = if *base == "categories" { crate::terms::Tax::category() } else { crate::terms::Tax::tag() };
+            ["wp", "v2", base @ ("categories" | "tags" | "wp_pattern_category")] | ["wp", "v2", base @ ("categories" | "tags" | "wp_pattern_category"), _] if !get || edit_read => {
+                let tax = match *base {
+                    "categories" => crate::terms::Tax::category(),
+                    "tags" => crate::terms::Tax::tag(),
+                    _ => crate::terms::Tax::pattern_category(),
+                };
                 self.terms_route(&tax, segments.get(3).copied(), &method, &args, params).await.map(Some)
             }
             ["wp", "v2", base] | ["wp", "v2", base, _] if self.custom_route(base).is_some() && (!get || edit_read) => self.custom_edit_route(base, segments.get(3).copied(), &method, &args, params).await.map(Some),
             ["wp", "v2", "templates", ..] => self.templates_route(templates::TKind::Template, &segments, &method, &args, params).await.map(Some),
             ["wp", "v2", "template-parts", ..] => self.templates_route(templates::TKind::Part, &segments, &method, &args, params).await.map(Some),
             ["wp", "v2", "block-renderer", namespace, name] if get || method == "POST" => self.block_renderer(namespace, name, &args, params).await.map(Some),
+            ["oembed", "1.0", "proxy"] if get => Ok(Some(if self.can("edit_posts") { Err(RestError::new("oembed_invalid_url", &self.site.tr("Not Found"), 404).after_permission_check()) } else { Err(self.forbidden("rest_forbidden", &self.site.tr("Sorry, you are not allowed to make proxied oEmbed requests."))) })),
+            ["wp", "v2", "view-config"] if get => self.view_config(&args).await.map(Some),
             ["wp", "v2", "icons", ..] if get =>Ok(Some(self.icons_route(&segments, &args))),
             ["wp-block-editor", "v1", "navigation-fallback"] if get => self.navigation_fallback(&args).await.map(Some),
             _ => self.editor_route(&segments, &method, &args, params).await,

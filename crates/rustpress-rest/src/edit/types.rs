@@ -8,54 +8,74 @@ use crate::meta::{TaxonomyEntry, TypeEntry};
 use crate::util::Links;
 use crate::{Outcome, Resp, Rest};
 
+/// The labels, capabilities, supports and visibility of the internal types (`wp_template`, `wp_block`, ...).
+fn core_types() -> &'static Value {
+    static DATA: std::sync::OnceLock<Value> = std::sync::OnceLock::new();
+    DATA.get_or_init(|| serde_json::from_str(include_str!("../data/core_types.json")).unwrap_or(Value::Null))
+}
+
 fn s(text: &str) -> Value {
     Value::from(text.to_owned())
 }
 
 impl Rest<'_> {
-    /// `get_post_type_labels()`: the labels of a post type.
+    /// `get_post_type_labels()`: the labels of a post type that gave only its name and singular name.
     fn type_labels(&self, entry: &TypeEntry, singular: &str, plural: &str) -> Value {
         let site = self.site;
-        let lower = plural.to_lowercase();
-        let lower_singular = singular.to_lowercase();
         let hierarchical = entry.hierarchical;
+        let pick = |post: &str, page: &str| s(&site.tr(if hierarchical { page } else { post }));
+        let pick_x = |post: &str, page: &str, context: &str| s(&site.trx(if hierarchical { page } else { post }, context));
         let mut labels = Map::new();
         labels.insert("name".into(), s(plural));
         labels.insert("singular_name".into(), s(singular));
-        labels.insert("add_new".into(), s(&site.trx("Add", "post")));
-        labels.insert("add_new_item".into(), s(&rustpress_core::i18n::sprintf(&site.tr(if hierarchical { "Add Page" } else { "Add Post" }), &[]).replace("Page", singular).replace("Post", singular)));
-        labels.insert("edit_item".into(), s(&format!("{} {singular}", site.tr("Edit"))));
-        labels.insert("new_item".into(), s(&format!("{} {singular}", site.tr("New"))));
-        labels.insert("view_item".into(), s(&format!("{} {singular}", site.tr("View"))));
-        labels.insert("view_items".into(), s(&format!("{} {plural}", site.tr("View"))));
-        labels.insert("search_items".into(), s(&format!("{} {plural}", site.tr("Search"))));
-        labels.insert("not_found".into(), s(&rustpress_core::i18n::sprintf(&site.tr(if hierarchical { "No pages found." } else { "No posts found." }), &[]).replace("pages", &lower).replace("posts", &lower)));
-        labels.insert("not_found_in_trash".into(), s(&rustpress_core::i18n::sprintf(&site.tr(if hierarchical { "No pages found in Trash." } else { "No posts found in Trash." }), &[]).replace("pages", &lower).replace("posts", &lower)));
-        labels.insert("parent_item_colon".into(), if hierarchical { s(&format!("{} {singular}:", site.tr("Parent"))) } else { Value::Null });
-        labels.insert("all_items".into(), s(&format!("{} {plural}", site.tr("All"))));
-        labels.insert("archives".into(), s(&format!("{singular} {}", site.tr("Archives"))));
-        labels.insert("attributes".into(), s(&format!("{singular} {}", site.tr("Attributes"))));
-        labels.insert("insert_into_item".into(), s(&format!("{} {lower_singular}", site.tr("Insert into"))));
-        labels.insert("uploaded_to_this_item".into(), s(&format!("{} {lower_singular}", site.tr("Uploaded to this"))));
-        labels.insert("featured_image".into(), s(&site.tr("Featured image")));
-        labels.insert("set_featured_image".into(), s(&site.tr("Set featured image")));
-        labels.insert("remove_featured_image".into(), s(&site.tr("Remove featured image")));
-        labels.insert("use_featured_image".into(), s(&site.tr("Use as featured image")));
-        labels.insert("filter_items_list".into(), s(&format!("{} {lower} {}", site.tr("Filter"), site.tr("list"))));
+        labels.insert("add_new".into(), s(&site.trx("Add", if hierarchical { "page" } else { "post" })));
+        labels.insert("add_new_item".into(), pick("Add Post", "Add Page"));
+        labels.insert("edit_item".into(), pick("Edit Post", "Edit Page"));
+        labels.insert("new_item".into(), pick("New Post", "New Page"));
+        labels.insert("view_item".into(), pick("View Post", "View Page"));
+        labels.insert("view_items".into(), pick("View Posts", "View Pages"));
+        labels.insert("search_items".into(), pick("Search Posts", "Search Pages"));
+        labels.insert("not_found".into(), pick("No posts found.", "No pages found."));
+        labels.insert("not_found_in_trash".into(), pick("No posts found in Trash.", "No pages found in Trash."));
+        labels.insert("parent_item_colon".into(), if hierarchical { s(&site.tr("Parent Page:")) } else { Value::Null });
+        labels.insert("all_items".into(), pick("All Posts", "All Pages"));
+        labels.insert("archives".into(), pick("Post Archives", "Page Archives"));
+        labels.insert("attributes".into(), pick("Post Attributes", "Page Attributes"));
+        labels.insert("insert_into_item".into(), pick("Insert into post", "Insert into page"));
+        labels.insert("uploaded_to_this_item".into(), pick("Uploaded to this post", "Uploaded to this page"));
+        labels.insert("featured_image".into(), s(&site.trx("Featured image", "post")));
+        labels.insert("set_featured_image".into(), s(&site.trx("Set featured image", "post")));
+        labels.insert("remove_featured_image".into(), s(&site.trx("Remove featured image", "post")));
+        labels.insert("use_featured_image".into(), s(&site.trx("Use as featured image", "post")));
+        labels.insert("filter_items_list".into(), pick("Filter posts list", "Filter pages list"));
         labels.insert("filter_by_date".into(), s(&site.tr("Filter by date")));
-        labels.insert("items_list_navigation".into(), s(&format!("{plural} {}", site.tr("list navigation"))));
-        labels.insert("items_list".into(), s(&format!("{plural} {}", site.tr("list"))));
-        labels.insert("item_published".into(), s(&format!("{singular} {}", site.tr("published."))));
-        labels.insert("item_published_privately".into(), s(&format!("{singular} {}", site.tr("published privately."))));
-        labels.insert("item_reverted_to_draft".into(), s(&format!("{singular} {}", site.tr("reverted to draft."))));
-        labels.insert("item_trashed".into(), s(&format!("{singular} {}", site.tr("trashed."))));
-        labels.insert("item_scheduled".into(), s(&format!("{singular} {}", site.tr("scheduled."))));
-        labels.insert("item_updated".into(), s(&format!("{singular} {}", site.tr("updated."))));
-        labels.insert("item_link".into(), s(&format!("{singular} {}", site.tr("Link"))));
-        labels.insert("item_link_description".into(), s(&format!("{} {lower_singular}.", site.tr("A link to a"))));
+        labels.insert("items_list_navigation".into(), pick("Posts list navigation", "Pages list navigation"));
+        labels.insert("items_list".into(), pick("Posts list", "Pages list"));
+        labels.insert("item_published".into(), pick("Post published.", "Page published."));
+        labels.insert("item_published_privately".into(), pick("Post published privately.", "Page published privately."));
+        labels.insert("item_reverted_to_draft".into(), pick("Post reverted to draft.", "Page reverted to draft."));
+        labels.insert("item_trashed".into(), pick("Post trashed.", "Page trashed."));
+        labels.insert("item_scheduled".into(), pick("Post scheduled.", "Page scheduled."));
+        labels.insert("item_updated".into(), pick("Post updated.", "Page updated."));
+        labels.insert("item_link".into(), pick_x("Post Link", "Page Link", "navigation link block title"));
+        labels.insert("item_link_description".into(), pick_x("A link to a post.", "A link to a page.", "navigation link block description"));
         labels.insert("menu_name".into(), s(plural));
         labels.insert("name_admin_bar".into(), s(singular));
+        // `_get_custom_object_labels()`: what a registration without these labels falls back to.
+        if !matches!(entry.name.as_str(), "post" | "page") {
+            labels.insert("all_items".into(), s(plural));
+            labels.insert("archives".into(), s(plural));
+            labels.insert("template_name".into(), s(&rustpress_core::i18n::sprintf(&site.tr("Single item: %s"), &[singular])));
+        }
         Value::Object(labels)
+    }
+
+    /// The English labels of an internal type, translated.
+    fn translate_labels(&self, labels: &Value) -> Value {
+        match labels {
+            Value::Object(map) => Value::Object(map.iter().map(|(k, v)| (k.clone(), v.as_str().map_or_else(|| v.clone(), |text| Value::from(self.site.tr(text))))).collect()),
+            other => other.clone(),
+        }
     }
 
     /// The `supports` object of a type.
@@ -68,16 +88,18 @@ impl Rest<'_> {
         };
         let mut map = Map::new();
         if features.is_empty() {
-            let known = ["title", "editor", "author", "thumbnail", "excerpt", "trackbacks", "custom-fields", "comments", "revisions", "page-attributes", "post-formats", "autosave"];
-            for feature in known {
-                if self.site.post_type_supports(name, feature) {
-                    map.insert(feature.to_owned(), Value::Bool(true));
-                }
+            // A type of a plugin: what its registration listed, in that order; `autosave` follows `editor`.
+            let listed: Vec<String> = self.site.types.post_type(name).and_then(|t| t.supports.clone()).unwrap_or_else(|| vec!["title".into(), "editor".into()]);
+            for feature in &listed {
+                map.insert(feature.clone(), Value::Bool(true));
             }
-        } else {
-            for feature in features {
-                map.insert((*feature).to_owned(), Value::Bool(true));
+            if map.contains_key("editor") && !map.contains_key("autosave") {
+                map.insert("autosave".into(), Value::Bool(true));
             }
+            return Value::Object(map);
+        }
+        for feature in features {
+            map.insert((*feature).to_owned(), Value::Bool(true));
         }
         if let Some(Value::Bool(true)) = map.get("editor") {
             map.insert("editor".into(), json!([{"notes": true}]));
@@ -85,7 +107,7 @@ impl Rest<'_> {
         Value::Object(map)
     }
 
-    fn prepare_type_edit(&self, entry: &TypeEntry) -> Value {
+    pub(super) fn prepare_type_edit(&self, entry: &TypeEntry) -> Value {
         let (singular, plural) = match entry.name.as_str() {
             "post" => (self.site.trx("Post", "post type singular name"), entry.label.clone()),
             "page" => (self.site.trx("Page", "post type singular name"), entry.label.clone()),
@@ -131,6 +153,13 @@ impl Rest<'_> {
         data.insert("rest_namespace".into(), s("wp/v2"));
         data.insert("template".into(), Value::Array(Vec::new()));
         data.insert("template_lock".into(), Value::Bool(false));
+        // The internal types register their own labels, capabilities and supports.
+        if let Some(Value::Object(own)) = core_types().get(&entry.name) {
+            for (key, value) in own {
+                let value = if key == "labels" { self.translate_labels(value) } else { value.clone() };
+                data.insert(key.clone(), value);
+            }
+        }
         let mut links = Links::new();
         links.add("collection", vec![], self.rest_url("wp/v2/types"));
         links.add("wp:items", vec![], self.rest_url(&format!("wp/v2/{}", entry.rest_base)));
@@ -175,6 +204,7 @@ impl Rest<'_> {
         Ok(Resp::item(self.prepare_type(&entry, &context)))
     }
 
+    /// `get_taxonomy_labels()`: the defaults of WordPress for a taxonomy that gave only its name.
     fn taxonomy_labels(&self, entry: &TaxonomyEntry) -> Value {
         let site = self.site;
         let (singular, plural) = match entry.name.as_str() {
@@ -182,46 +212,52 @@ impl Rest<'_> {
             "post_tag" => (site.trx("Tag", "taxonomy singular name"), entry.label.clone()),
             other => (site.types.taxonomy(other).map_or_else(|| entry.label.clone(), |t| t.singular_label()), entry.label.clone()),
         };
-        let lower = plural.to_lowercase();
         let hier = entry.hierarchical;
+        let core_tax = matches!(entry.name.as_str(), "category" | "post_tag");
+        let pick = |tag: &str, category: &str| s(&site.tr(if hier { category } else { tag }));
+        let pick_opt = |tag: Option<&str>, category: Option<&str>| match if hier { category } else { tag } {
+            Some(text) => s(&site.tr(text)),
+            None => Value::Null,
+        };
+        let pick_x = |tag: &str, category: &str, context: &str| s(&site.trx(if hier { category } else { tag }, context));
         let mut labels = Map::new();
-        let put = |labels: &mut Map<String, Value>, key: &str, value: Value| {
+        let mut put = |key: &str, value: Value| {
             labels.insert(key.to_owned(), value);
         };
-        put(&mut labels, "name", s(&plural));
-        put(&mut labels, "singular_name", s(&singular));
-        put(&mut labels, "search_items", s(&format!("{} {plural}", site.tr("Search"))));
-        put(&mut labels, "popular_items", if hier { Value::Null } else { s(&format!("{} {plural}", site.tr("Popular"))) });
-        put(&mut labels, "all_items", s(&format!("{} {plural}", site.tr("All"))));
-        put(&mut labels, "parent_item", if hier { s(&format!("{} {singular}", site.tr("Parent"))) } else { Value::Null });
-        put(&mut labels, "parent_item_colon", if hier { s(&format!("{} {singular}:", site.tr("Parent"))) } else { Value::Null });
-        put(&mut labels, "name_field_description", s(&site.tr("The name is how it appears on your site.")));
-        put(&mut labels, "slug_field_description", s(&site.tr("The &#8220;slug&#8221; is the URL-friendly version of the name. It is usually all lowercase and contains only letters, numbers, and hyphens.")));
-        put(&mut labels, "parent_field_description", if hier { s(&site.tr("Assign a parent term to create a hierarchy. The term Jazz, for example, would be the parent of Bebop and Big Band.")) } else { Value::Null });
-        put(&mut labels, "desc_field_description", s(&site.tr("The description is not prominent by default; however, some themes may show it.")));
-        put(&mut labels, "edit_item", s(&format!("{} {singular}", site.tr("Edit"))));
-        put(&mut labels, "view_item", s(&format!("{} {singular}", site.tr("View"))));
-        put(&mut labels, "update_item", s(&format!("{} {singular}", site.tr("Update"))));
-        put(&mut labels, "add_new_item", s(&format!("{} {singular}", site.tr("Add"))));
-        put(&mut labels, "new_item_name", s(&format!("{} {singular} {}", site.tr("New"), site.tr("Name"))));
-        put(&mut labels, "separate_items_with_commas", if hier { Value::Null } else { s(&format!("{} {lower} {}", site.tr("Separate"), site.tr("with commas"))) });
-        put(&mut labels, "add_or_remove_items", if hier { Value::Null } else { s(&format!("{} {lower}", site.tr("Add or remove"))) });
-        put(&mut labels, "choose_from_most_used", if hier { Value::Null } else { s(&format!("{} {lower}", site.tr("Choose from the most used"))) });
-        put(&mut labels, "not_found", s(&format!("{} {lower} {}", site.tr("No"), site.tr("found."))));
-        put(&mut labels, "no_terms", s(&format!("{} {lower}", site.tr("No"))));
-        put(&mut labels, "filter_by_item", if hier { s(&format!("{} {}", site.tr("Filter by"), singular.to_lowercase())) } else { Value::Null });
-        put(&mut labels, "items_list_navigation", s(&format!("{plural} {}", site.tr("list navigation"))));
-        put(&mut labels, "items_list", s(&format!("{plural} {}", site.tr("list"))));
-        put(&mut labels, "most_used", s(&site.tr("Most Used")));
-        put(&mut labels, "back_to_items", s(&format!("&larr; {} {plural}", site.tr("Go to"))));
-        put(&mut labels, "item_link", s(&format!("{singular} {}", site.tr("Link"))));
-        put(&mut labels, "item_link_description", s(&format!("{} {}.", site.tr("A link to a"), singular.to_lowercase())));
-        put(&mut labels, "menu_name", s(&plural));
-        let core_tax = matches!(entry.name.as_str(), "category" | "post_tag");
-        put(&mut labels, "name_admin_bar", s(if core_tax { &entry.name } else { &singular }));
-        if core_tax {
-            put(&mut labels, "template_name", s(&format!("{singular} {}", site.tr("Archives"))));
+        put("name", s(&plural));
+        put("singular_name", s(&singular));
+        put("search_items", pick("Search Tags", "Search Categories"));
+        put("popular_items", pick_opt(Some("Popular Tags"), None));
+        put("all_items", if core_tax { pick("All Tags", "All Categories") } else { s(&plural) });
+        put("parent_item", pick_opt(None, Some("Parent Category")));
+        put("parent_item_colon", pick_opt(None, Some("Parent Category:")));
+        put("name_field_description", s(&site.tr("The name is how it appears on your site.")));
+        put("slug_field_description", s(&site.tr("The &#8220;slug&#8221; is the URL-friendly version of the name. It is usually all lowercase and contains only letters, numbers, and hyphens.")));
+        put("parent_field_description", pick_opt(None, Some("Assign a parent term to create a hierarchy. The term Jazz, for example, would be the parent of Bebop and Big Band.")));
+        put("desc_field_description", s(&site.tr("The description is not prominent by default; however, some themes may show it.")));
+        put("edit_item", pick("Edit Tag", "Edit Category"));
+        put("view_item", pick("View Tag", "View Category"));
+        put("update_item", pick("Update Tag", "Update Category"));
+        put("add_new_item", pick("Add Tag", "Add Category"));
+        put("new_item_name", pick("New Tag Name", "New Category Name"));
+        put("separate_items_with_commas", pick_opt(Some("Separate tags with commas"), None));
+        put("add_or_remove_items", pick_opt(Some("Add or remove tags"), None));
+        put("choose_from_most_used", pick_opt(Some("Choose from the most used tags"), None));
+        put("not_found", pick("No tags found.", "No categories found."));
+        put("no_terms", pick("No tags", "No categories"));
+        put("filter_by_item", pick_opt(None, Some("Filter by category")));
+        put("items_list_navigation", pick("Tags list navigation", "Categories list navigation"));
+        put("items_list", pick("Tags list", "Categories list"));
+        put("most_used", pick_x("Most Used", "Most Used", if hier { "categories" } else { "tags" }));
+        put("back_to_items", pick("&larr; Go to Tags", "&larr; Go to Categories"));
+        put("item_link", pick_x("Tag Link", "Category Link", "navigation link block title"));
+        put("item_link_description", pick_x("A link to a tag.", "A link to a category.", "navigation link block description"));
+        put("menu_name", s(&plural));
+        put("name_admin_bar", s(if core_tax { &entry.name } else { &singular }));
+        if !core_tax {
+            put("archives", s(&plural));
         }
+        put("template_name", s(&rustpress_core::i18n::sprintf(&site.tr("%s Archives"), &[&singular])));
         Value::Object(labels)
     }
 
@@ -232,6 +268,7 @@ impl Rest<'_> {
             "nav_menu" => json!({"manage_terms": "edit_theme_options", "edit_terms": "edit_theme_options", "delete_terms": "edit_theme_options", "assign_terms": "edit_theme_options"}),
             _ => json!({"manage_terms": "manage_categories", "edit_terms": "manage_categories", "delete_terms": "manage_categories", "assign_terms": "edit_posts"}),
         };
+        let custom_tax = self.site.types.taxonomy(&entry.name);
         let mut data = Map::new();
         data.insert("name".into(), s(&entry.label));
         data.insert("slug".into(), s(&entry.name));
@@ -243,7 +280,13 @@ impl Rest<'_> {
         data.insert("hierarchical".into(), Value::Bool(entry.hierarchical));
         data.insert("rest_base".into(), s(&entry.rest_base));
         data.insert("rest_namespace".into(), s("wp/v2"));
-        data.insert("visibility".into(), json!({"public": entry.name != "nav_menu" && entry.name != "wp_pattern_category" || entry.name == "wp_pattern_category" && false, "publicly_queryable": entry.name == "category" || entry.name == "post_tag", "show_admin_column": entry.name == "category" || entry.name == "post_tag", "show_in_nav_menus": entry.name == "category" || entry.name == "post_tag", "show_in_quick_edit": true, "show_ui": true}));
+        data.insert("visibility".into(), json!({"public": entry.name != "nav_menu" && entry.name != "wp_pattern_category" || entry.name == "wp_pattern_category" && false, "publicly_queryable": entry.name == "category" || entry.name == "post_tag" || custom_tax.is_some_and(|t| t.queryable), "show_admin_column": entry.name == "category" || entry.name == "post_tag", "show_in_nav_menus": entry.name == "category" || entry.name == "post_tag" || custom_tax.is_some_and(|t| t.public), "show_in_quick_edit": true, "show_ui": true}));
+        if let Some(Value::Object(own)) = core_types().pointer(&format!("/__taxonomies/{}", entry.name)) {
+            for (key, value) in own {
+                let value = if key == "labels" { self.translate_labels(value) } else { value.clone() };
+                data.insert(key.clone(), value);
+            }
+        }
         let mut links = Links::new();
         links.add("collection", vec![], self.rest_url("wp/v2/taxonomies"));
         links.add("wp:items", vec![], self.rest_url(&format!("wp/v2/{}", entry.rest_base)));

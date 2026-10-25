@@ -105,7 +105,7 @@ impl Rest<'_> {
                 // Notes (`type=note`) are not supported; the editor asks for them once.
                 empty_list()
             }
-            ["wp", "v2", base @ ("blocks" | "navigation")] | ["wp", "v2", base @ ("blocks" | "navigation"), _] if get => {
+            ["wp", "v2", base @ ("blocks" | "navigation")] | ["wp", "v2", base @ ("blocks" | "navigation"), _] => {
                 let info = crate::meta::core_post_type(base);
                 let kind = crate::posts::Kind::Custom(&info);
                 return self.posts_route(kind, segments.get(3).copied(), method, args, params).await.map(Some);
@@ -117,27 +117,7 @@ impl Rest<'_> {
     }
 
     fn pattern_categories(&self) -> Value {
-        let s = |t: &str| self.site.tr(t);
-        json!([
-            {"name": "banner", "label": s("Banners"), "description": s("Bold sections designed to showcase key content.")},
-            {"name": "buttons", "label": s("Buttons"), "description": s("Patterns that contain buttons and call to actions.")},
-            {"name": "columns", "label": s("Columns"), "description": s("Multi-column patterns with more complex layouts.")},
-            {"name": "text", "label": s("Text"), "description": s("Patterns containing mostly text.")},
-            {"name": "query", "label": s("Posts"), "description": s("Display your latest posts in lists, grids or other layouts.")},
-            {"name": "featured", "label": s("Featured"), "description": s("A set of high quality curated patterns.")},
-            {"name": "call-to-action", "label": s("Call to action"), "description": s("Sections whose purpose is to trigger a specific action.")},
-            {"name": "team", "label": s("Team"), "description": s("A variety of designs to display the members of your team.")},
-            {"name": "testimonials", "label": s("Testimonials"), "description": s("Share reviews and feedback about your brand/business.")},
-            {"name": "services", "label": s("Services"), "description": s("Describe your services in a visually appealing way.")},
-            {"name": "contact", "label": s("Contact"), "description": s("Display your contact information.")},
-            {"name": "about", "label": s("About"), "description": s("Introduce yourself.")},
-            {"name": "portfolio", "label": s("Portfolio"), "description": s("Showcase your latest work.")},
-            {"name": "gallery", "label": s("Gallery"), "description": s("Different layouts for displaying images.")},
-            {"name": "media", "label": s("Media"), "description": s("Different layouts containing video or audio.")},
-            {"name": "posts", "label": s("Posts"), "description": s("Display your latest posts in lists, grids or other layouts.")},
-            {"name": "footer", "label": s("Footers"), "description": s("A variety of footer designs displaying information and site navigation.")},
-            {"name": "header", "label": s("Headers"), "description": s("A variety of header designs displaying your site title and navigation.")},
-        ])
+        Value::Array(self.theme.pattern_categories().into_iter().map(|c| json!({"name": c.name, "label": c.label, "description": c.description})).collect())
     }
 
     fn global_styles_theme(&self, stylesheet: &str) -> Value {

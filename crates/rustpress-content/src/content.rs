@@ -233,6 +233,16 @@ impl Content<'_> {
             out.push(("category".into(), true));
             out.push(("post_tag".into(), false));
         }
+        // The taxonomies of the internal types.
+        match post_type {
+            "wp_template" => out.push(("wp_theme".into(), false)),
+            "wp_template_part" => {
+                out.push(("wp_theme".into(), false));
+                out.push(("wp_template_part_area".into(), false));
+            }
+            "wp_block" => out.push(("wp_pattern_category".into(), false)),
+            _ => {}
+        }
         for tax in &self.site.types.taxonomies {
             if tax.object_types.iter().any(|t| t == post_type) && !out.iter().any(|(n, _)| *n == tax.name) {
                 out.push((tax.name.clone(), tax.hierarchical));

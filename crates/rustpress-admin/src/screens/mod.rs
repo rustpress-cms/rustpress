@@ -306,6 +306,7 @@ pub async fn render(ctx: &Ctx<'_>, screen: &Screen, content: &str, assets: &Asse
         cookie_path: paths(env.site).cookie,
         now: env.now,
         secure: env.https,
+        request_uri: ctx.request.request_uri.clone(),
     };
     let body = chrome::render(&chrome_env, screen, content, assets);
     AdminResponse { status: 200, headers: page_headers(), cookies: Vec::new(), body }

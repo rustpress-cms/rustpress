@@ -263,6 +263,8 @@ impl<'a> Rest<'a> {
             ["wp", "v2", "categories", id] => self.terms_item(&terms::Tax::category(), id, params).await,
             ["wp", "v2", "tags"] => self.terms_collection(&terms::Tax::tag(), params).await,
             ["wp", "v2", "tags", id] => self.terms_item(&terms::Tax::tag(), id, params).await,
+            ["wp", "v2", "wp_pattern_category"] => self.terms_collection(&terms::Tax::pattern_category(), params).await,
+            ["wp", "v2", "wp_pattern_category", id] => self.terms_item(&terms::Tax::pattern_category(), id, params).await,
             ["wp", "v2", "users"] => self.users_collection(params).await,
             ["wp", "v2", "users", "me"] => Ok(Err(RestError::new("rest_not_logged_in", "You are not currently logged in.", 401))),
             ["wp", "v2", "users", id] => self.users_item(id, params).await,

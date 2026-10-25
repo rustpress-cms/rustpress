@@ -125,6 +125,102 @@ impl Theme {
     }
 }
 
+/// A block pattern category as `WP_Block_Pattern_Categories_Registry` holds it.
+#[derive(Debug, Clone)]
+pub struct PatternCategory {
+    pub name: String,
+    pub label: String,
+    pub description: String,
+}
+
+/// The next argument of a PHP call: the literal after a comma.
+fn next_literal(rest: &str) -> Option<(String, &str)> {
+    php_literal(rest.trim_start().strip_prefix(',').unwrap_or(rest))
+}
+
+/// The single-quoted PHP string at the start of `text` and what follows it.
+fn php_literal(text: &str) -> Option<(String, &str)> {
+    let rest = text.trim_start().strip_prefix('\'')?;
+    let mut out = String::new();
+    let mut chars = rest.char_indices();
+    while let Some((i, c)) = chars.next() {
+        match c {
+            '\\' => match chars.next() {
+                Some((_, escaped @ ('\'' | '\\'))) => out.push(escaped),
+                Some((_, other)) => {
+                    out.push('\\');
+                    out.push(other);
+                }
+                None => return None,
+            },
+            '\'' => return Some((out, &rest[i + 1..])),
+            _ => out.push(c),
+        }
+    }
+    None
+}
+
+impl Theme {
+    /// The text of `'key' => __( 'text', 'domain' )`, `_x( 'text', 'context', 'domain' )` or `'text'` after `from`.
+    fn php_array_text(&self, from: &str, key: &str, default_domain: &str) -> String {
+        let Some(at) = from.find(&format!("'{key}'")) else { return String::new() };
+        let value = from[at + key.len() + 2..].trim_start().strip_prefix("=>").unwrap_or_default().trim_start();
+        let (function, args) = if let Some(args) = value.strip_prefix("_x(") {
+            ("_x", args)
+        } else if let Some(args) = value.strip_prefix("__(") {
+            ("__", args)
+        } else {
+            ("", value)
+        };
+        let Some((text, rest)) = php_literal(args) else { return String::new() };
+        match function {
+            "_x" => {
+                let Some((context, rest)) = next_literal(rest) else { return text };
+                let domain = next_literal(rest).map_or_else(|| default_domain.to_owned(), |(d, _)| d);
+                self.translate_with_context(&text, &context, &domain)
+            }
+            "__" => {
+                let domain = next_literal(rest).map_or_else(|| default_domain.to_owned(), |(d, _)| d);
+                self.host_ref().translate(&text, None, &domain)
+            }
+            _ => text,
+        }
+    }
+
+    fn scan_pattern_categories(&self, source: &str, domain: &str, out: &mut Vec<PatternCategory>) {
+        let mut rest = source;
+        while let Some(at) = rest.find("register_block_pattern_category(") {
+            rest = &rest[at + "register_block_pattern_category(".len()..];
+            let Some((name, after)) = php_literal(rest) else { continue };
+            let end = after.find("register_block_pattern_category(").unwrap_or(after.len());
+            let body = &after[..end];
+            let (label, description) = (self.php_array_text(body, "label", domain), self.php_array_text(body, "description", domain));
+            if !out.iter().any(|c| c.name == name) {
+                out.push(PatternCategory { name, label, description });
+            }
+        }
+    }
+
+    /// `WP_Block_Pattern_Categories_Registry::get_all_registered()`: WordPress' categories, then those the theme (and
+    /// its parent) registers in `functions.php`.
+    pub fn pattern_categories(&self) -> Vec<PatternCategory> {
+        let mut out = Vec::new();
+        if let Ok(source) = std::fs::read_to_string(self.wp_root.join("wp-includes").join("block-patterns.php")) {
+            self.scan_pattern_categories(&source, "default", &mut out);
+        }
+        let mut dirs = vec![self.stylesheet_dir().to_path_buf()];
+        if self.template_dir() != self.stylesheet_dir() {
+            dirs.push(self.template_dir().to_path_buf());
+        }
+        for dir in dirs {
+            if let Ok(source) = std::fs::read_to_string(dir.join("functions.php")) {
+                self.scan_pattern_categories(&source, &crate::theme_headers::text_domain(&dir), &mut out);
+            }
+        }
+        out
+    }
+}
+
 /// `Header: value` in the first lines of a pattern file.
 fn rustpress_header(head: &str, name: &str) -> String {
     head.lines()
