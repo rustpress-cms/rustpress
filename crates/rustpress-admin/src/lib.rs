@@ -4,21 +4,19 @@
 pub mod adminbar;
 pub mod deps;
 pub mod chrome;
-pub mod content;
 pub mod cron;
 pub mod die;
 pub mod list_table;
 pub mod login;
-pub mod media;
 pub mod menu;
 pub mod multipart;
 pub mod registry;
-pub mod sanitize;
 pub mod screens;
 pub mod scripts;
 pub mod styles;
 pub mod tags;
 pub mod updates;
 
+pub use rustpress_content::{content, media, sanitize};
 pub use scripts::Scripts;
 pub use styles::Styles;

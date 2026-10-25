@@ -11,6 +11,7 @@ rustpress-db.workspace = true
 rustpress-auth.workspace = true
 rustpress-phpser.workspace = true
 rustpress-blocks.workspace = true
+rustpress-content.workspace = true
 regex.workspace = true
 chrono.workspace = true
 chrono-tz.workspace = true

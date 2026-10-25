@@ -98,7 +98,7 @@ impl Content<'_> {
             }
         }
         let email = match &data.user_email {
-            Some(email) => super::super::screens::options::sanitize_email(email),
+            Some(email) => crate::sanitize::sanitize_email(email),
             None => existing.as_ref().map(|u| u.user_email.clone()).unwrap_or_default(),
         };
         if email.is_empty() && !update {

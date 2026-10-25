@@ -6,6 +6,7 @@ members = [
     "crates/rustpress-core",
     "crates/rustpress-auth",
     "crates/rustpress-admin",
+    "crates/rustpress-content",
     "crates/rustpress-blocks",
     "crates/rustpress-theme",
     "crates/rustpress-rest",
@@ -24,6 +25,7 @@ rustpress-db = { path = "crates/rustpress-db" }
 rustpress-core = { path = "crates/rustpress-core" }
 rustpress-auth = { path = "crates/rustpress-auth" }
 rustpress-admin = { path = "crates/rustpress-admin" }
+rustpress-content = { path = "crates/rustpress-content" }
 rustpress-blocks = { path = "crates/rustpress-blocks" }
 rustpress-theme = { path = "crates/rustpress-theme" }
 rustpress-rest = { path = "crates/rustpress-rest" }

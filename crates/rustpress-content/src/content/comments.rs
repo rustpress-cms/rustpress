@@ -104,7 +104,7 @@ impl Content<'_> {
             fields.push(("comment_author", Val::Str(sanitize::text_field(author))));
         }
         if let Some(email) = &update.author_email {
-            fields.push(("comment_author_email", Val::Str(super::super::screens::options::sanitize_email(email))));
+            fields.push(("comment_author_email", Val::Str(crate::sanitize::sanitize_email(email))));
         }
         if let Some(url) = &update.author_url {
             fields.push(("comment_author_url", Val::Str(if url.trim().is_empty() { String::new() } else { rustpress_core::formatting::esc_url_raw(url.trim()) })));

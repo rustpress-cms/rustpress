@@ -105,3 +105,40 @@ pub fn random_password(length: usize, special: bool) -> String {
     let mut rng = rand::rng();
     (0..length).map(|_| alphabet[rng.random_range(0..alphabet.len())]).collect()
 }
+
+/// `is_email()`: the shape WordPress accepts.
+pub fn is_email(email: &str) -> bool {
+    if email.len() < 6 || email.len() > 254 {
+        return false;
+    }
+    let Some((local, domain)) = email.split_once('@') else { return false };
+    if local.is_empty() || domain.contains('@') {
+        return false;
+    }
+    if !local.chars().all(|c| c.is_ascii_alphanumeric() || "!#$%&'*+/=?^_`{|}~.-".contains(c)) {
+        return false;
+    }
+    let parts: Vec<&str> = domain.split('.').collect();
+    if parts.len() < 2 {
+        return false;
+    }
+    parts.iter().all(|p| !p.is_empty() && !p.starts_with('-') && !p.ends_with('-') && p.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'))
+}
+
+/// `sanitize_email()`: the cleaned address, or an empty string when nothing valid is left.
+pub fn sanitize_email(email: &str) -> String {
+    let email = email.trim();
+    if email.len() < 6 {
+        return String::new();
+    }
+    let Some((local, domain)) = email.split_once('@') else { return String::new() };
+    let local: String = local.chars().filter(|c| c.is_ascii_alphanumeric() || "!#$%&'*+/=?^_`{|}~.-".contains(*c)).collect();
+    if local.is_empty() {
+        return String::new();
+    }
+    let parts: Vec<String> = domain.split('.').map(|p| p.trim_matches('-').chars().filter(|c| c.is_ascii_alphanumeric() || *c == '-').collect::<String>()).filter(|p: &String| !p.is_empty()).collect();
+    if parts.len() < 2 {
+        return String::new();
+    }
+    format!("{local}@{}", parts.join("."))
+}
