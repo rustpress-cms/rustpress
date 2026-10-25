@@ -322,6 +322,13 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse
             }
         }
         "media.php" => bare_pages::media(&ctx.admin_url("")),
+        // The screens of themes that are not block themes.
+        "widgets.php" => die(env, 500, "WordPress &rsaquo; Error", &sprintf_html(&ctx.tr("The theme you are currently using is not widget-aware, meaning that it has no sidebars that you are able to change. For information on making your theme widget-aware, please <a href=\"%s\">follow these instructions</a>."), "https://developer.wordpress.org/themes/functionality/widgets/")),
+        "nav-menus.php" => die(env, 500, "WordPress &rsaquo; Error", &ctx.tr("Your theme does not support navigation menus or widgets.")),
+        "link-manager.php" | "link-add.php" | "link.php" => {
+            let url = ctx.admin_url(&format!("update.php?action=install-plugin&plugin=link-manager&_wpnonce={}", ctx.create_nonce("install-plugin_link-manager")));
+            die(env, 500, "WordPress &rsaquo; Error", &sprintf_html(&ctx.tr("If you are looking to use the link manager, please install the <a href=\"%s\">Link Manager plugin</a>."), &rustpress_core::formatting::esc_url(&url)))
+        }
         "ms-admin.php" => redirect(&ctx.admin_url("")),
         "authorize-application.php" => authorize_app::page(&ctx).await,
         "about.php" | "credits.php" | "freedoms.php" | "contribute.php" => pages::about(&ctx, &request.file).await,
@@ -335,6 +342,11 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse
     cookies.extend(std::mem::take(&mut response.cookies));
     response.cookies = cookies;
     response
+}
+
+/// `sprintf()` with one string, not escaped.
+fn sprintf_html(format: &str, value: &str) -> String {
+    rustpress_core::i18n::sprintf(format, &[value])
 }
 
 /// The capabilities (any of them) the menu of WordPress asks for a page.

@@ -151,7 +151,8 @@ async fn admin_route(app: &Arc<App>, request: Request<Body>) -> std::result::Res
     let is_login = path.ends_with("/wp-login.php") || path == "/wp-login.php";
     let is_styles = path.ends_with("/wp-admin/load-styles.php");
     let is_scripts = path.ends_with("/wp-admin/load-scripts.php");
-    let admin_file = admin_file_of(&path);
+    // A file that `wp-admin` does not have is a request for the site: its 404 page.
+    let admin_file = admin_file_of(&path).filter(|file| app.config.wp_root.join("wp-admin").join(file).is_file());
     if !(is_login || is_styles || is_scripts || admin_file.is_some()) || app.writer.is_none() {
         return Err(request);
     }
