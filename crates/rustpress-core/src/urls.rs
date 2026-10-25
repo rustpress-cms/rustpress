@@ -36,6 +36,12 @@ impl Site {
         if self.using_index_permalinks() { "index.php/" } else { "" }
     }
 
+    /// A rewrite slug below `index.php/` for path info permalinks (slugs of types that follow the
+    /// permalink front already start with it).
+    pub fn rooted(&self, slug: &str) -> String {
+        if slug.starts_with("index.php/") { slug.to_owned() } else { format!("{}{slug}", self.root()) }
+    }
+
     /// `WP_Rewrite::using_index_permalinks()`.
     pub fn using_index_permalinks(&self) -> bool {
         let structure = self.settings.permalink_structure.trim_start_matches('/');
@@ -192,7 +198,7 @@ impl Site {
         let unpublished = matches!(post.post_status.as_str(), "draft" | "pending" | "auto-draft" | "future");
         if let Some(info) = self.types.post_type(post_type).filter(|_| !unpublished && !self.settings.permalink_structure.is_empty()) {
             let tail = if info.hierarchical { self.page_uri(post).await? } else { post.post_name.clone() };
-            return Ok(self.user_trailingslashit(&self.home_url(&format!("{}{}/{tail}", self.root(), info.slug))));
+            return Ok(self.user_trailingslashit(&self.home_url(&format!("{}/{tail}", self.rooted(&info.slug)))));
         }
         Ok(self.home_url(&format!("?post_type={post_type}&p={}", post.id)))
     }
@@ -204,7 +210,7 @@ impl Site {
         Some(if self.settings.permalink_structure.is_empty() {
             self.home_url(&format!("?post_type={post_type}"))
         } else {
-            self.user_trailingslashit(&self.home_url(&format!("{}{slug}", self.root())))
+            self.user_trailingslashit(&self.home_url(&self.rooted(slug)))
         })
     }
 
@@ -290,7 +296,7 @@ impl Site {
         }
         if let Some(info) = self.types.taxonomy(&term.taxonomy) {
             let tail = if info.rewrite_hierarchical { self.term_path(term).await? } else { term.slug.clone() };
-            return Ok(self.user_trailingslashit(&self.home_url(&format!("{}{}/{tail}", self.root(), info.slug))));
+            return Ok(self.user_trailingslashit(&self.home_url(&format!("{}/{tail}", self.rooted(&info.slug)))));
         }
         let base = match term.taxonomy.as_str() {
             "category" => self.options.string("category_base", "").trim_matches('/').to_owned(),
@@ -330,13 +336,28 @@ impl Site {
             }
             return self.home_url(&format!("?{query}"));
         }
-        let mut path = format!("{}{year}", self.front());
-        if month != 0 {
-            path.push_str(&format!("/{month:02}"));
-            if day != 0 {
-                path.push_str(&format!("/{day:02}"));
-            }
+        // `WP_Rewrite::get_date_permastruct()`: the order of the permalink structure, below `date/`
+        // when the post ID comes early.
+        let structure = &self.settings.permalink_structure;
+        let order: [&str; 3] = ["%year%/%monthnum%/%day%", "%day%/%monthnum%/%year%", "%monthnum%/%day%/%year%"]
+            .into_iter()
+            .find(|endian| structure.contains(endian))
+            .map_or(["year", "monthnum", "day"], |endian| if endian.starts_with("%day%") { ["day", "monthnum", "year"] } else if endian.starts_with("%monthnum%") { ["monthnum", "day", "year"] } else { ["year", "monthnum", "day"] });
+        let mut front = self.front();
+        let tokens: Vec<&str> = structure.split('%').skip(1).step_by(2).collect();
+        if tokens.iter().take(3).any(|t| *t == "post_id") {
+            front.push_str("date/");
         }
+        let parts: Vec<String> = order
+            .iter()
+            .filter_map(|part| match *part {
+                "year" => Some(year.to_string()),
+                "monthnum" if month != 0 => Some(format!("{month:02}")),
+                "day" if month != 0 && day != 0 => Some(format!("{day:02}")),
+                _ => None,
+            })
+            .collect();
+        let path = format!("{front}{}", parts.join("/"));
         self.user_trailingslashit(&self.home_url(&path))
     }
 
@@ -367,11 +388,16 @@ impl Site {
             path = rest.to_owned();
         }
         let mut path = path.trim_start_matches('/').to_owned();
+        if self.using_index_permalinks() && (pagenum > 1 || !path.is_empty()) {
+            path = format!("index.php/{path}");
+        }
         if pagenum > 1 {
             let page_part = self.user_trailingslashit(&format!("page/{pagenum}"));
             path = if path.is_empty() { page_part } else { format!("{}{page_part}", trailingslashit(&path)) };
         }
-        format!("{base}{path}{query_string}")
+        // `user_trailingslashit( implode( '/', $parts ), 'paged' )`.
+        let joined = if path.is_empty() { untrailingslashit(&base) } else { format!("{}{path}", base) };
+        format!("{}{query_string}", self.user_trailingslashit(&joined))
     }
     /// `get_pagenum_link()` for a base URL (without query string and page part).
     pub fn paged_url(&self, base_url: &str, page: u64, query: &str) -> String {

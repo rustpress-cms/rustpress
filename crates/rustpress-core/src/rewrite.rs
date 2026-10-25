@@ -144,9 +144,25 @@ impl RewriteRules {
     /// in order. The caller takes the first one it accepts. An empty request
     /// can only match the special `$` rule.
     pub fn matches<'a>(&'a self, request: &'a str) -> impl Iterator<Item = Match<'a>> + 'a {
+        self.matches_in_file(request, "")
+    }
+
+    /// [Self::matches] for a request that named the script (`/index.php/post/`): rules that start with
+    /// the script, as path info permalinks do, are matched against `index.php/<request>`.
+    pub fn matches_in_file<'a>(&'a self, request: &'a str, file: &'a str) -> impl Iterator<Item = Match<'a>> + 'a {
         let raw = request.as_bytes().to_vec();
         let decoded = urldecode(&raw);
         self.rules.iter().filter_map(move |rule| {
+            if raw.is_empty() && rule.pattern != "$" && file.is_empty() {
+                return None;
+            }
+            let anchored = !file.is_empty() && rule.pattern.starts_with(file) && file != request;
+            let (raw, decoded) = if anchored {
+                let join = |part: &[u8]| if part.is_empty() { file.as_bytes().to_vec() } else { [file.as_bytes(), b"/", part].concat() };
+                (join(&raw), join(&decoded))
+            } else {
+                (raw.clone(), decoded.clone())
+            };
             if raw.is_empty() && rule.pattern != "$" {
                 return None;
             }

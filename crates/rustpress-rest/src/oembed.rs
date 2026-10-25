@@ -28,17 +28,26 @@ fn xml_text(value: &str) -> String {
     out
 }
 
-fn xml_of(data: &Map<String, Value>) -> String {
-    let mut out = String::from("<?xml version=\"1.0\"?>\n<oembed>");
+/// The members of an array as elements; nested arrays nest (`_oembed_create_xml()`).
+fn xml_children(data: &Map<String, Value>) -> String {
+    let mut out = String::new();
     for (key, value) in data {
-        let text = match value {
-            Value::String(s) => s.clone(),
-            other => other.to_string(),
-        };
-        out.push_str(&format!("<{key}>{}</{key}>", xml_text(&text)));
+        let key = if key.parse::<u64>().is_ok() { "oembed" } else { key.as_str() };
+        match value {
+            Value::Object(inner) => out.push_str(&format!("<{key}>{}</{key}>", xml_children(inner))),
+            Value::Array(items) => {
+                let inner: Map<String, Value> = items.iter().enumerate().map(|(i, v)| (i.to_string(), v.clone())).collect();
+                out.push_str(&format!("<{key}>{}</{key}>", xml_children(&inner)));
+            }
+            Value::String(s) => out.push_str(&format!("<{key}>{}</{key}>", xml_text(s))),
+            other => out.push_str(&format!("<{key}>{}</{key}>", xml_text(&other.to_string()))),
+        }
     }
-    out.push_str("</oembed>\n");
     out
+}
+
+pub(crate) fn xml_of(data: &Map<String, Value>) -> String {
+    format!("<?xml version=\"1.0\"?>\n<oembed>{}</oembed>\n", xml_children(data))
 }
 
 impl Rest<'_> {

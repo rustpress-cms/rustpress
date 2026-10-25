@@ -497,8 +497,9 @@ pub(super) async fn pagination_numbers(bc: &BlockCtx<'_>) -> Result<String> {
         let pretty = site.uses_pretty_permalinks();
         let base = if pretty && !site.settings.permalink_structure.ends_with('/') { rustpress_core::urls::untrailingslashit(path) } else { rustpress_core::urls::trailingslashit(path) };
         let base = format!("{base}%_%");
+        let index = if site.using_index_permalinks() && !base.contains("index.php") { "index.php/" } else { "" };
         let format = if pretty {
-            let f = site.user_trailingslashit("page/%#%");
+            let f = format!("{index}{}", site.user_trailingslashit("page/%#%"));
             if site.settings.permalink_structure.ends_with('/') { f } else { format!("/{}", f.trim_start_matches('/')) }
         } else {
             "?paged=%#%".to_owned()

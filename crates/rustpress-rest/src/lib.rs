@@ -138,6 +138,13 @@ impl<'a> Rest<'a> {
         };
         headers.push(("Vary".to_owned(), "Origin".to_owned()));
         headers.push(("Content-Type".to_owned(), if xml_body.is_some() { "text/xml; charset=UTF-8" } else { "application/json; charset=UTF-8" }.to_owned()));
+        // An oEmbed error is XML, too, when XML was asked for.
+        if xml_body.is_none() && status != 200 && route == "/oembed/1.0/embed" && params.get("format") == Some("xml") && let Value::Object(map) = &data {
+            xml_body = Some(oembed::xml_of(map));
+            if let Some(h) = headers.iter_mut().find(|(n, _)| n == "Content-Type") {
+                h.1 = "text/xml; charset=UTF-8".to_owned();
+            }
+        }
         if let Some(xml) = xml_body {
             return Ok(Reply { status, headers, body: xml });
         }

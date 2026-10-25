@@ -163,10 +163,13 @@ impl Site {
         let mut unmatched = false;
         if !request.is_empty() {
             unmatched = true;
-            for m in self.rewrite.matches(&request) {
+            // The script named in the address (`/index.php/...`) takes part in the matching.
+            let file = if url_path.trim_matches('/').strip_prefix(self.settings.home_path().trim_matches('/')).unwrap_or(url_path).trim_matches('/').starts_with("index.php") { "index.php" } else { "" };
+            for m in self.rewrite.matches_in_file(&request, file) {
                 // With "verbose" page rules (`%postname%` permalinks) a rule that
                 // yields `pagename` only applies if that page exists.
-                if m.rule.query.contains("pagename=$matches[")
+                if self.use_verbose_page_rules()
+                    && m.rule.query.contains("pagename=$matches[")
                     && let Some(path) = m.vars.get("pagename")
                     && self.page_by_path(path).await?.is_none()
                 {
@@ -191,13 +194,13 @@ impl Site {
         result.url_path = url_path.to_owned();
         result.raw_query = query_string.to_owned();
         if unmatched {
-            return Ok(result.into_404());
+            let mut not_found = result.into_404();
+            not_found.flags.is_embed = not_found.vars.get("embed").is_some();
+            return Ok(not_found);
         }
         let mut result = self.run_main_query(result).await?;
-        // `WP_Query::parse_query()`: only requests for one post (or ones that fail) can be embeds.
-        let vars = &result.vars;
-        let singular_intent = vars.get("attachment").is_some() || vars.u64("attachment_id").is_some() || vars.get("name").is_some() || vars.u64("p").is_some_and(|p| p != 0) || vars.get("pagename").is_some() || vars.u64("page_id").is_some_and(|p| p != 0);
-        result.flags.is_embed = vars.get("embed").is_some() && (result.flags.is_singular() || (result.flags.is_404 && singular_intent));
+        // `WP_Query::parse_query()`: only requests for one post, or ones that failed, can be embeds.
+        result.flags.is_embed = result.vars.get("embed").is_some() && (result.flags.is_singular() || result.flags.is_404);
         Ok(result)
     }
 
@@ -389,7 +392,20 @@ impl Site {
                 (None, Some(id)) => self.page_by_id(id).await?,
                 _ => None,
             };
-            let Some(page) = page else { return Ok(r.into_404()) };
+            let Some(page) = page else {
+                // `WP_Query::get_posts()` takes the last segment of the page path as `name`, which is what
+                // `redirect_guess_404_permalink()` looks for.
+                if let Some(path) = pagename {
+                    let name = sanitize_title(path.rsplit('/').next().unwrap_or(path));
+                    r.vars.set("name", name);
+                }
+                if f.is_feed {
+                    // A feed is not a 404 even when there is nothing in it.
+                    r.flags = f;
+                    return Ok(r);
+                }
+                return Ok(r.into_404());
+            };
             if s.show_on_front == ShowOnFront::Page && s.page_for_posts == page.id {
                 f.is_page = false;
                 f.is_home = true;
@@ -475,6 +491,13 @@ impl Site {
         r.queried = queried;
         r.found_posts = found;
         Ok(r)
+    }
+
+    /// `WP_Rewrite::$use_verbose_page_rules`: the generic page rules come first unless the permalink
+    /// structure starts with a wildcard such as `%post_id%`.
+    pub fn use_verbose_page_rules(&self) -> bool {
+        static RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| regex::Regex::new(r"^[^%]*%(?:postname|category|tag|author)%").expect("valid regex"));
+        RE.is_match(&self.settings.permalink_structure)
     }
 
     /// `WP::parse_request()`: the query variable of a custom post type names the type and the slug,

@@ -332,10 +332,10 @@ async fn rss2_posts(c: &Ctx<'_>, q: &QueryResult, self_url: &str, home: &str, de
 
 #[allow(clippy::too_many_arguments)]
 async fn atom_posts(c: &Ctx<'_>, q: &QueryResult, self_url: &str, home: &str, description: &str, lang: &str, title: &str, built: &str) -> Result<String> {
-    let atom_id = esc_url(&c.site.home_url(&format!("{}feed/atom/", c.site.root())));
+    let atom_id = esc_url(&c.site.user_trailingslashit(&c.site.home_url(&format!("{}feed/atom", c.site.root()))));
     let _ = atom_id;
     let mut out = String::new();
-    out.push_str(&format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?><feed\n\txmlns=\"http://www.w3.org/2005/Atom\"\n\txmlns:thr=\"http://purl.org/syndication/thread/1.0\"\n\txml:lang=\"{lang}\"\n\t>\n\t<title type=\"text\">{title}</title>\n\t<subtitle type=\"text\">{description}</subtitle>\n\n\t<updated>{}</updated>\n\n\t<link rel=\"alternate\" type=\"text/html\" href=\"{home}\" />\n\t<id>{}</id>\n\t<link rel=\"self\" type=\"application/atom+xml\" href=\"{self_url}\" />\n\n\t", atom_date(built), c.site.home_url(&format!("{}feed/atom/", c.site.root()))));
+    out.push_str(&format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?><feed\n\txmlns=\"http://www.w3.org/2005/Atom\"\n\txmlns:thr=\"http://purl.org/syndication/thread/1.0\"\n\txml:lang=\"{lang}\"\n\t>\n\t<title type=\"text\">{title}</title>\n\t<subtitle type=\"text\">{description}</subtitle>\n\n\t<updated>{}</updated>\n\n\t<link rel=\"alternate\" type=\"text/html\" href=\"{home}\" />\n\t<id>{}</id>\n\t<link rel=\"self\" type=\"application/atom+xml\" href=\"{self_url}\" />\n\n\t", atom_date(built), c.site.user_trailingslashit(&c.site.home_url(&format!("{}feed/atom", c.site.root())))));
     out.push_str(&c.generator());
     out.push('\n');
     for post in &q.posts {
