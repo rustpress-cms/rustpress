@@ -23,6 +23,10 @@ fn source(name: &str) -> &'static str {
         "plugins" => include_str!("../data/pages/plugins.json"),
         "themes" => include_str!("../data/pages/themes.json"),
         "site-health" => include_str!("../data/pages/site-health.json"),
+        "about" => include_str!("../data/pages/about.json"),
+        "credits" => include_str!("../data/pages/credits.json"),
+        "freedoms" => include_str!("../data/pages/freedoms.json"),
+        "contribute" => include_str!("../data/pages/contribute.json"),
         "update-core" => include_str!("../data/pages/update-core.json"),
         _ => "{}",
     }
@@ -161,4 +165,15 @@ pub async fn tools(ctx: &Ctx<'_>) -> AdminResponse {
 /// `import.php`.
 pub async fn import(ctx: &Ctx<'_>) -> AdminResponse {
     simple(ctx, "import.php", "import", "Import", "tools.php", Assets { scripts: vec!["thickbox".into(), "plugin-install".into(), "updates".into()], styles: vec!["thickbox".into()], ..Default::default() }).await
+}
+
+/// `about.php`, `credits.php`, `freedoms.php` and `contribute.php`: the pages about the release.
+pub async fn about(ctx: &Ctx<'_>, file: &str) -> AdminResponse {
+    let (name, title) = match file {
+        "credits.php" => ("credits", "Credits"),
+        "freedoms.php" => ("freedoms", "Freedoms"),
+        "contribute.php" => ("contribute", "Get Involved"),
+        _ => ("about", "About"),
+    };
+    simple(ctx, file, name, title, file, Assets::default()).await
 }
