@@ -57,6 +57,11 @@ impl Roles {
     pub fn contains(&self, role: &str) -> bool {
         self.roles.contains_key(role)
     }
+
+    /// The capabilities of a role.
+    pub fn capabilities(&self, role: &str) -> Option<&HashMap<String, bool>> {
+        self.roles.get(role)
+    }
 }
 
 /// A signed-in user with everything `current_user_can()` needs.

@@ -65,6 +65,14 @@ pub async fn destroy_session(db: &Db, writer: &Writer, user_id: u64, token: &str
     store(writer, user_id, sessions).await
 }
 
+/// `WP_Session_Tokens::destroy_others()`: every session but the one of `token` ends.
+pub async fn destroy_other_sessions(db: &Db, writer: &Writer, user_id: u64, token: &str, now: i64) -> Result<(), rustpress_db::Error> {
+    let verifier = sha256_hex(token);
+    let mut sessions = live_sessions(db, user_id, now).await?;
+    sessions.retain(|(k, _)| *k == key(&verifier));
+    store(writer, user_id, sessions).await
+}
+
 /// `WP_Session_Tokens::destroy_all()`.
 pub async fn destroy_all_sessions(writer: &Writer, user_id: u64) -> Result<(), rustpress_db::Error> {
     writer.delete_user_meta(user_id, "session_tokens").await

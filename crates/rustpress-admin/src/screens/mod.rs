@@ -26,6 +26,8 @@ pub mod post_edit;
 pub mod posts;
 pub mod settings;
 pub mod terms;
+pub mod user_edit;
+pub mod users;
 pub mod timezones;
 
 /// The answer of a screen is the one of the sign-in page: status, headers, cookies, body.
@@ -224,6 +226,10 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse
         "options.php" => options::handle(&ctx).await,
         "edit-tags.php" => terms::page(&ctx).await,
         "term.php" => terms::edit_page(&ctx).await,
+        "users.php" => users::page(&ctx).await,
+        "profile.php" => user_edit::profile(&ctx).await,
+        "user-edit.php" => user_edit::user_edit(&ctx).await,
+        "user-new.php" => user_edit::user_new(&ctx).await,
         other => unavailable(&ctx, other).await,
     };
     let mut cookies = user_settings_cookies(env, request, ctx.user.id).await;

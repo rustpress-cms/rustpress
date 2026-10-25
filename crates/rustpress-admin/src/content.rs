@@ -8,7 +8,9 @@ use rustpress_db::{Db, Post, SlugScope, Val, Writer};
 use rustpress_phpser::{Key, Value};
 
 mod terms;
+mod users;
 pub use terms::TermData;
+pub use users::UserData;
 
 /// What goes wrong when writing content.
 #[derive(Debug)]

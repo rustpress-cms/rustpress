@@ -9,6 +9,7 @@
 //! because WordPress allows `0000-00-00 00:00:00`, which date types cannot hold.
 
 mod admin;
+mod admin_users;
 mod archives;
 mod comments;
 mod models;
@@ -22,6 +23,7 @@ use sqlx::Executor;
 use sqlx::mysql::{MySqlPool, MySqlPoolOptions};
 
 pub use admin::SlugScope;
+pub use admin_users::UserListQuery;
 pub use archives::{ArchiveKind, ArchiveRow};
 pub use comments::{CommentOrder, CommentQuery};
 pub use models::{AuthUser, Comment, Post, PostMeta, Term, User};
