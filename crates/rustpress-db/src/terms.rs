@@ -3,7 +3,7 @@ use crate::models::{TERM_COLUMNS, Term};
 use crate::{Db, Result};
 
 impl Db {
-    fn term_from(&self) -> String {
+    pub(crate) fn term_from(&self) -> String {
         format!(
             "{} t JOIN {} tt ON tt.term_id = t.term_id",
             self.prefix.table("terms"),

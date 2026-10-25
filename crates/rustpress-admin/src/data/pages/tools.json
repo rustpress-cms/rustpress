@@ -1,0 +1,13 @@
+{
+ "help": {
+  "tabs": [
+   {
+    "id": "converter",
+    "title": "Categories and Tags Converter",
+    "content": "<p>Categories have hierarchy, meaning that you can nest sub-categories. Tags do not have hierarchy and cannot be nested. Sometimes people start out using one on their posts, then later realize that the other would work better for their content.</p><p>The Categories and Tags Converter link on this screen will take you to the Import screen, where that Converter is one of the plugins you can install. Once that plugin is installed, the Activate Plugin &amp; Run Importer link will take you to a screen where you can choose to convert tags into categories or vice versa.</p>"
+   }
+  ],
+  "sidebar": "<p><strong>For more information:</strong></p><p><a href=\"https://wordpress.org/documentation/article/tools-screen/\">Documentation on Tools</a></p><p><a href=\"https://wordpress.org/support/forums/\">Support forums</a></p>"
+ },
+ "content": "<div class=\"wrap\">\n<h1>Tools</h1>\n\t\t<div class=\"card\">\n\t\t\t<h2 class=\"title\">Categories and Tags Converter</h2>\n\t\t\t<p>\n\t\t\tIf you want to convert your categories to tags (or vice versa), use the <a href=\"import.php\">Categories and Tags Converter</a> available from the Import screen.\t\t\t</p>\n\t\t</div>\n\t\t</div>\n\n"
+}

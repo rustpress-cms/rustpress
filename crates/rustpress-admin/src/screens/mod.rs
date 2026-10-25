@@ -25,9 +25,11 @@ pub mod media_ui;
 pub mod common;
 pub mod dashboard;
 pub mod editor;
+pub mod export;
 pub mod general;
 pub mod notices;
 pub mod options;
+pub mod pages;
 pub mod post_edit;
 pub mod posts;
 pub mod settings;
@@ -245,6 +247,9 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse
         "profile.php" => user_edit::profile(&ctx).await,
         "user-edit.php" => user_edit::user_edit(&ctx).await,
         "user-new.php" => user_edit::user_new(&ctx).await,
+        "tools.php" => pages::tools(&ctx).await,
+        "import.php" => pages::import(&ctx).await,
+        "export.php" => export::page(&ctx).await,
         other => unavailable(&ctx, other).await,
     };
     let mut cookies = user_settings_cookies(env, request, ctx.user.id).await;
