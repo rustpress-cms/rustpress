@@ -131,14 +131,20 @@ pub fn has_blocks(content: &str) -> bool {
 
 /// `get_the_content()`: page selection (`<!--nextpage-->`), the `<!--more-->`
 /// teaser and the password form.
-pub fn get_the_content(env: &Env<'_>, post: &Post, page: u64, singular: bool) -> String {
-    get_the_content_with(env, post, page, singular, false)
+pub async fn get_the_content(env: &Env<'_>, post: &Post, page: u64, singular: bool) -> Result<String> {
+    get_the_content_with(env, post, page, singular, false).await
 }
 
 /// [`get_the_content`]; `no_more_link` is `get_the_content( ' )`: the teaser without a link to the rest.
-pub fn get_the_content_with(env: &Env<'_>, post: &Post, page: u64, singular: bool, no_more_link: bool) -> String {
+pub async fn get_the_content_with(env: &Env<'_>, post: &Post, page: u64, singular: bool, no_more_link: bool) -> Result<String> {
+    // The permalink is only needed for the password form and the "more" link.
+    let permalink = if post_password_required(post) || post.post_content.contains("<!--more") { env.site.permalink(post).await? } else { String::new() };
+    Ok(content_with_permalink(env, post, page, singular, no_more_link, &permalink))
+}
+
+fn content_with_permalink(env: &Env<'_>, post: &Post, page: u64, singular: bool, no_more_link: bool, permalink: &str) -> String {
     if post_password_required(post) {
-        return password_form(env, post);
+        return password_form_for(env, post, permalink);
     }
     let mut content = post.post_content.clone();
     content = content
@@ -187,7 +193,7 @@ pub fn get_the_content_with(env: &Env<'_>, post: &Post, page: u64, singular: boo
             } else {
                 rustpress_core::formatting::strip_tags(&custom_text)
             };
-            output.push_str(&format!(" <a href=\"{}#more-{id}\" class=\"more-link\">{text}</a>", permalink_sync(env, post), id = post.id));
+            output.push_str(&format!(" <a href=\"{}#more-{id}\" class=\"more-link\">{text}</a>", permalink, id = post.id));
         }
         return output;
     }
@@ -195,37 +201,22 @@ pub fn get_the_content_with(env: &Env<'_>, post: &Post, page: u64, singular: boo
 }
 
 /// `get_the_password_form()` for a block theme.
-pub fn password_form(env: &Env<'_>, post: &Post) -> String {
+pub async fn password_form(env: &Env<'_>, post: &Post) -> Result<String> {
+    let permalink = env.site.permalink(post).await?;
+    Ok(password_form_for(env, post, &permalink))
+}
+
+fn password_form_for(env: &Env<'_>, post: &Post, permalink: &str) -> String {
     env.with_state(|s| s.note_block("core/button"));
     let field_id = format!("pwbox-{}", post.id);
-    let permalink = permalink_sync(env, post);
     format!(
         "<form action=\"{}\" class=\"post-password-form\" method=\"post\"><input type=\"hidden\" name=\"redirect_to\" value=\"{}\" />\n\t<p>{}</p>\n\t<p><label for=\"{field_id}\">{} <input name=\"post_password\" id=\"{field_id}\" type=\"password\" spellcheck=\"false\" required size=\"20\" /></label> <span class=\"wp-block-button\"><input type=\"submit\" name=\"Submit\" class=\"wp-block-button__link wp-element-button\" value=\"{}\" /></span></p></form>\n\t",
         esc_url(&env.site.site_url("wp-login.php?action=postpass")),
-        esc_attr(&permalink),
+        esc_attr(permalink),
         env.site.tr("This content is password-protected. To view it, please enter the password below."),
         env.site.tr("Password:"),
         esc_attr(&env.site.trx("Enter", "post password form")),
     )
-}
-
-/// Best-effort permalink without database access (used for the password form's redirect field).
-fn permalink_sync(env: &Env<'_>, post: &Post) -> String {
-    let structure = &env.site.settings.permalink_structure;
-    if structure.is_empty() || post.post_type != "post" {
-        return env.site.home_url(&format!("?p={}", post.id));
-    }
-    if structure.contains("%postname%") && !structure.contains("%category%") && !structure.contains("%author%") {
-        let date = &post.post_date;
-        let path = structure
-            .replace("%postname%", &post.post_name)
-            .replace("%post_id%", &post.id.to_string())
-            .replace("%year%", date.get(0..4).unwrap_or(""))
-            .replace("%monthnum%", date.get(5..7).unwrap_or(""))
-            .replace("%day%", date.get(8..10).unwrap_or(""));
-        return env.site.user_trailingslashit(&env.site.home_url(&path));
-    }
-    env.site.home_url(&format!("?p={}", post.id))
 }
 
 /// The root block context for rendering content of `post` (`render_block()` with `global $post`).

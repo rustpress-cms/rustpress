@@ -12,7 +12,7 @@ use rustpress_core::i18n::I18n;
 const DEFAULT_ROOT: &str = r"\\wsl.localhost\Debian\home\yoshi\.local\share\containers\storage\volumes\rustpress-wp\_data";
 
 /// Texts that are not part of WordPress' own catalogs (RustPress additions) and so cannot be checked.
-const OWN_MESSAGES: &[&str] = &[];
+const OWN_MESSAGES: &[&str] = &["Not Found"]; // get_status_header_desc( 404 ) is not translated
 
 fn rust_files(dir: &Path, out: &mut Vec<PathBuf>) {
     let Ok(entries) = std::fs::read_dir(dir) else { return };

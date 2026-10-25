@@ -98,11 +98,20 @@ pub struct RestError {
     param: Option<Box<ParamError>>,
     /// The error comes from the endpoint itself, after its permission check passed.
     after_permission: bool,
+    /// `rest_missing_callback_param`: the parameters that were not sent.
+    missing: Vec<String>,
 }
 
 impl RestError {
     pub fn new(code: &str, message: impl Into<Msg>, status: u16) -> Self {
-        Self { code: code.to_owned(), message: message.into(), status, param: None, after_permission: false }
+        Self { code: code.to_owned(), message: message.into(), status, param: None, after_permission: false, missing: Vec::new() }
+    }
+
+    /// `rest_missing_callback_param`.
+    pub fn missing_params(names: &[&str]) -> Self {
+        let mut error = Self::new("rest_missing_callback_param", Msg::new("Missing parameter(s): %s").with(&[&names.join(", ")]), 400);
+        error.missing = names.iter().map(|n| (*n).to_owned()).collect();
+        error
     }
 
     /// `rest_invalid_param` for one parameter.
@@ -161,6 +170,9 @@ impl RestError {
     pub fn to_value(&self, site: &Site) -> Value {
         let mut data = Map::new();
         data.insert("status".into(), Value::from(self.status));
+        if !self.missing.is_empty() {
+            data.insert("params".into(), Value::from(self.missing.clone()));
+        }
         if let Some(p) = &self.param {
             let message = p.message.render(site);
             data.insert("params".into(), json!({ p.param.as_str(): message }));

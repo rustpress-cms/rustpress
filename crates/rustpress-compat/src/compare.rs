@@ -57,7 +57,7 @@ pub fn compare(kind: Kind, ours: &Response, theirs: &Response) -> Vec<Difference
     }
     match kind {
         Kind::Page if ours.media_type() == "text/html" && theirs.media_type() == "text/html" => {
-            let (mine, theirs_text) = (unbrand(&ours.text()), unbrand(&theirs.text()));
+            let (mine, theirs_text) = (unbrand(&randomised(&ours.text())), unbrand(&randomised(&theirs.text())));
             compare_documents(&mine, &theirs_text, &mut out);
             // Equal in every respect that matters, but not byte for byte.
             if out.iter().all(|d| d.aspect.starts_with("header:")) && mine != theirs_text {
@@ -65,12 +65,22 @@ pub fn compare(kind: Kind, ours: &Response, theirs: &Response) -> Vec<Difference
             }
         }
         _ => {
-            if ours.body != theirs.body {
-                out.push(Difference::new("bytes", describe_difference(&ours.body, &theirs.body)));
+            let (mine, theirs_body) = (randomised(&ours.text()).into_bytes(), randomised(&theirs.text()).into_bytes());
+            if mine != theirs_body {
+                out.push(Difference::new("bytes", describe_difference(&mine, &theirs_body)));
             }
         }
     }
     out
+}
+
+/// What WordPress makes up for each request: the secret of an embed (`wp_generate_password()`) and
+/// the number in the ids of the sharing dialog (`wp_rand()`).
+fn randomised(text: &str) -> String {
+    static SECRET: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| regex::Regex::new(r#"(secret=|data-secret=(?:\\"|&quot;|"))[A-Za-z0-9]{10}"#).unwrap());
+    static SUFFIX: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| regex::Regex::new(r"((?:tab|description)-(?:wordpress|html)-\d+)-\d+").unwrap());
+    let text = SECRET.replace_all(text, "${1}SECRET");
+    SUFFIX.replace_all(&text, "${1}-RAND").into_owned()
 }
 
 /// The credit line of Twenty Seventeen names RustPress instead of WordPress on purpose.

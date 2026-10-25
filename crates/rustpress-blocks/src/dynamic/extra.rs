@@ -429,7 +429,7 @@ fn word_count(text: &str, kind: rustpress_core::locale::WordCountType) -> u64 {
 pub(super) async fn post_time_to_read(bc: &BlockCtx<'_>) -> Result<String> {
     let Some(post) = global_post(bc).await? else { return Ok(String::new()) };
     let site = bc.env.site;
-    let content = crate::content::get_the_content(bc.env, &post, 1, bc.env.query.flags.is_singular());
+    let content = crate::content::get_the_content(bc.env, &post, 1, bc.env.query.flags.is_singular()).await?;
     let rate = bc.attrs.get("averageReadingSpeed").and_then(Value::as_f64).unwrap_or(189.0);
     let kind = site.locale_data().word_count_type;
     let total = word_count(&content, kind);

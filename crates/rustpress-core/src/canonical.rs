@@ -155,6 +155,18 @@ fn regex_replace(cell: &'static OnceLock<Regex>, pattern: &str, text: &str, repl
 
 impl Site {
     /// The canonical `path?query` for a request, or `None` if the request is canonical.
+    /// [Self::canonical_redirect] as a request sees it. WordPress builds the target of paging and feed
+    /// redirects without the port of the site and then finds that it still is not canonical (its
+    /// guard against chained redirects): on a port other than 80 or 443 these are never redirected.
+    pub async fn canonical_redirect_for_request(&self, path: &str, query: &str, q: &QueryResult) -> Result<Option<String>> {
+        let paging = (q.vars.u64("paged").unwrap_or(0) != 0 || q.flags.is_feed || q.vars.u64("cpage").unwrap_or(0) != 0) && q.vars.get("sitemap").is_none_or(str::is_empty);
+        let has_port = self.settings.home.rsplit_once("://").is_some_and(|(_, rest)| rest.split('/').next().is_some_and(|host| host.contains(':')));
+        if paging && has_port {
+            return Ok(None);
+        }
+        self.canonical_redirect(path, query, q).await
+    }
+
     pub async fn canonical_redirect(&self, path: &str, query: &str, q: &QueryResult) -> Result<Option<String>> {
         if let Some(target) = self.old_slug_redirect(q).await? {
             return Ok(Some(target));
@@ -597,12 +609,6 @@ impl Site {
             return Ok(None);
         }
         Ok(Some(candidate))
-    }
-
-    /// `WP_Rewrite::using_index_permalinks()`.
-    fn using_index_permalinks(&self) -> bool {
-        let structure = self.settings.permalink_structure.trim_start_matches('/');
-        !self.settings.permalink_structure.is_empty() && structure.starts_with("index.php")
     }
 
     /// `wp_get_attachment_url()`: the uploads URL of the attached file.

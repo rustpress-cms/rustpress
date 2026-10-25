@@ -208,8 +208,8 @@ fn meta(s: &Services<'_>, sidebar: &Sidebar, before: &str, settings: &Value) -> 
     let site = s.site;
     let (title, default_title) = widget_title(site, settings, Some("Meta"));
     let pretty = site.uses_pretty_permalinks();
-    let feed = if pretty { site.user_trailingslashit(&site.home_url("feed")) } else { site.home_url("?feed=rss2") };
-    let comments = if pretty { site.user_trailingslashit(&site.home_url("comments/feed")) } else { site.home_url("?feed=comments-rss2") };
+    let feed = if pretty { site.user_trailingslashit(&site.home_url(&format!("{}feed", site.root()))) } else { site.home_url("?feed=rss2") };
+    let comments = if pretty { site.user_trailingslashit(&site.home_url(&format!("{}comments/feed", site.root()))) } else { site.home_url("?feed=comments-rss2") };
     format!(
         "{before}{}{}\n\t\t<ul>\n\t\t\t\t\t\t<li><a href=\"{}\">{}</a></li>\n\t\t\t<li><a href=\"{}\">{}</a></li>\n\t\t\t<li><a href=\"{}\">{}</a></li>\n\n\t\t\t<li><a href=\"{}\">{}</a></li>\n\t\t</ul>\n\n\t\t</nav>{}",
         heading(sidebar, &title),

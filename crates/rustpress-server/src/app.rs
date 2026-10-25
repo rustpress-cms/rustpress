@@ -110,7 +110,7 @@ async fn page(app: &App, uri: &axum::http::Uri, request_headers: &axum::http::He
     // Physical PHP endpoints (wp-login.php, xmlrpc.php, ...) do not exist here; they get the
     // 404 page rather than a canonical redirect. Only `/index.php` is WordPress' own alias for `/`.
     let php_endpoint = path.ends_with(".php") && path != "/index.php";
-    let canonical = if php_endpoint { None } else { loaded.site.canonical_redirect(path, query, &result).await? };
+    let canonical = if php_endpoint { None } else { loaded.site.canonical_redirect_for_request(path, query, &result).await? };
     if let Some(target) = canonical {
         // A relative `Location` (RFC 9110) keeps the client's own scheme and host, and
         // never trusts the `Host` header.
@@ -159,6 +159,9 @@ async fn page(app: &App, uri: &axum::http::Uri, request_headers: &axum::http::He
     response.headers_mut().insert(header::CONTENT_TYPE, HeaderValue::from_static("text/html; charset=UTF-8"));
     if document.status == 404 {
         no_cache(response.headers_mut());
+    }
+    if result.flags.is_embed {
+        response.headers_mut().insert("x-wp-embed", HeaderValue::from_static("true"));
     }
     singular_headers(&mut response, &result, &loaded);
     Ok(with_api_link(response, &loaded))
@@ -220,6 +223,8 @@ fn redirect(location: &str) -> Response<Body> {
 fn rest_route(home_path: &str, path: &str, query: &str) -> Option<(String, String)> {
     let home = home_path.trim_end_matches('/');
     let relative = path.strip_prefix(home).unwrap_or(path);
+    // Path info permalinks: `/index.php/wp-json/...`.
+    let relative = relative.strip_prefix("/index.php").filter(|rest| rest.starts_with("/wp-json")).unwrap_or(relative);
     if relative == "/wp-json" || relative.starts_with("/wp-json/") {
         return Some((relative["/wp-json".len()..].to_owned(), query.to_owned()));
     }

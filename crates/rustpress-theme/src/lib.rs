@@ -2,6 +2,7 @@
 
 pub mod classic;
 pub mod document;
+pub mod embed;
 pub mod feed;
 pub mod functions_php;
 pub mod global_styles;

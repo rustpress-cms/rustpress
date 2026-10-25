@@ -111,10 +111,13 @@ impl Rest<'_> {
     fn type_entries(&self) -> Vec<TypeEntry> {
         let mut all = self.core_types();
         for info in self.site.types.post_types.iter().filter(|t| t.show_in_rest) {
+            // `has_archive` is what the registration said: `true`, or the slug without the permalink front.
+            let front = self.site.front();
+            let bare = |s: &str| s.strip_prefix(front.as_str()).unwrap_or(s).to_owned();
             let has_archive = match &info.archive_slug {
                 None => Value::Bool(false),
-                Some(slug) if *slug == info.slug => Value::Bool(true),
-                Some(slug) => Value::from(slug.clone()),
+                Some(slug) if bare(slug) == bare(&info.slug) => Value::Bool(true),
+                Some(slug) => Value::from(bare(slug)),
             };
             all.push(TypeEntry {
                 name: info.name.clone(),

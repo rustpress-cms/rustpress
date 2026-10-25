@@ -415,7 +415,7 @@ async fn content_part(ctx: &Ctx<'_>, post: &Arc<Post>) -> Result<String> {
             }
         }
     }
-    let raw = get_the_content(&ctx.env, post, 1, is_single);
+    let raw = get_the_content(&ctx.env, post, 1, is_single).await?;
     let content = the_content(&ctx.env, post, &raw).await?;
     let footer = if is_single { entry_footer(ctx, post).await? } else { String::new() };
     Ok(format!(
@@ -537,7 +537,7 @@ async fn excerpt_part(ctx: &Ctx<'_>, post: &Arc<Post>) -> Result<String> {
 async fn page_part(ctx: &Ctx<'_>, post: &Arc<Post>) -> Result<String> {
     let classes = post_class(&ctx.env, post, &[], false, true).await?;
     let title = the_title_for(ctx.site, post);
-    let raw = get_the_content(&ctx.env, post, 1, true);
+    let raw = get_the_content(&ctx.env, post, 1, true).await?;
     let content = the_content(&ctx.env, post, &raw).await?;
     Ok(format!(
         "\n<article id=\"post-{id}\" class=\"{classes}\">\n\t<header class=\"entry-header\">\n\t\t<h1 class=\"entry-title\">{title}</h1>\t\t\t</header><!-- .entry-header -->\n\t<div class=\"entry-content\">\n\t\t{content}\t</div><!-- .entry-content -->\n</article><!-- #post-{id} -->\n",

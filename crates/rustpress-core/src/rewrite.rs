@@ -195,7 +195,12 @@ pub fn request_path(url_path: &str, home_path: &str) -> String {
     } else {
         path
     };
-    if path == "index.php" { String::new() } else { path.to_owned() }
+    // `PATH_INFO`: the part after `index.php/` is the request.
+    if path == "index.php" {
+        String::new()
+    } else {
+        path.strip_prefix("index.php/").unwrap_or(path).trim_matches('/').to_owned()
+    }
 }
 
 #[cfg(test)]

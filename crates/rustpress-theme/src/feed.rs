@@ -147,7 +147,7 @@ impl Ctx<'_> {
     }
     /// `get_the_content_feed()`.
     async fn content(&self, post: &Arc<Post>) -> Result<String> {
-        let raw = get_the_content(&self.env, post, 1, true);
+        let raw = get_the_content(&self.env, post, 1, true).await?;
         let content = the_content(&self.env, post, &raw).await?.replace("]]>", "]]&gt;");
         // `the_content_feed`: `wp_staticize_emoji()`.
         let formatting = std::fs::read_to_string(self.wp_root.join("wp-includes").join("formatting.php")).unwrap_or_default();
@@ -332,10 +332,10 @@ async fn rss2_posts(c: &Ctx<'_>, q: &QueryResult, self_url: &str, home: &str, de
 
 #[allow(clippy::too_many_arguments)]
 async fn atom_posts(c: &Ctx<'_>, q: &QueryResult, self_url: &str, home: &str, description: &str, lang: &str, title: &str, built: &str) -> Result<String> {
-    let atom_id = esc_url(&c.site.home_url("feed/atom/"));
+    let atom_id = esc_url(&c.site.home_url(&format!("{}feed/atom/", c.site.root())));
     let _ = atom_id;
     let mut out = String::new();
-    out.push_str(&format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?><feed\n\txmlns=\"http://www.w3.org/2005/Atom\"\n\txmlns:thr=\"http://purl.org/syndication/thread/1.0\"\n\txml:lang=\"{lang}\"\n\t>\n\t<title type=\"text\">{title}</title>\n\t<subtitle type=\"text\">{description}</subtitle>\n\n\t<updated>{}</updated>\n\n\t<link rel=\"alternate\" type=\"text/html\" href=\"{home}\" />\n\t<id>{}</id>\n\t<link rel=\"self\" type=\"application/atom+xml\" href=\"{self_url}\" />\n\n\t", atom_date(built), c.site.home_url("feed/atom/")));
+    out.push_str(&format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?><feed\n\txmlns=\"http://www.w3.org/2005/Atom\"\n\txmlns:thr=\"http://purl.org/syndication/thread/1.0\"\n\txml:lang=\"{lang}\"\n\t>\n\t<title type=\"text\">{title}</title>\n\t<subtitle type=\"text\">{description}</subtitle>\n\n\t<updated>{}</updated>\n\n\t<link rel=\"alternate\" type=\"text/html\" href=\"{home}\" />\n\t<id>{}</id>\n\t<link rel=\"self\" type=\"application/atom+xml\" href=\"{self_url}\" />\n\n\t", atom_date(built), c.site.home_url(&format!("{}feed/atom/", c.site.root()))));
     out.push_str(&c.generator());
     out.push('\n');
     for post in &q.posts {
@@ -378,8 +378,8 @@ async fn atom_posts(c: &Ctx<'_>, q: &QueryResult, self_url: &str, home: &str, de
 }
 
 /// The password form shown in place of protected comments.
-fn protected_form(c: &Ctx<'_>, post: &Post) -> String {
-    rustpress_blocks::content::password_form(&c.env, post)
+async fn protected_form(c: &Ctx<'_>, post: &Post) -> Result<String> {
+    Ok(rustpress_blocks::content::password_form(&c.env, post).await?)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -418,7 +418,7 @@ async fn rss2_comments(c: &Ctx<'_>, q: &QueryResult, comments: &[Comment], self_
             out.push_str(&format!(
                 "\t\t\t<description>{}</description>\n\t\t\t<content:encoded><![CDATA[{}]]></content:encoded>\n\t\t",
                 ent2ncr(&c.site.tr("Protected Comments: Please enter your password to view comments.")),
-                protected_form(c, &comment_post)
+                protected_form(c, &comment_post).await?
             ));
         } else {
             out.push_str(&format!(
@@ -457,7 +457,7 @@ async fn atom_comments(c: &Ctx<'_>, q: &QueryResult, comments: &[Comment], _self
             ));
         }
         None => {
-            let atom_url = bloginfo_rss(&c.site.user_trailingslashit(&c.site.home_url("comments/feed/atom")));
+            let atom_url = bloginfo_rss(&c.site.user_trailingslashit(&c.site.home_url(&format!("{}comments/feed/atom", c.site.root()))));
             out.push_str(&format!("\t<link rel=\"alternate\" type=\"text/html\" href=\"{home}\" />\n\t<link rel=\"self\" type=\"application/atom+xml\" href=\"{atom_url}\" />\n\t<id>{atom_url}</id>\n"));
         }
     }
@@ -483,7 +483,7 @@ async fn atom_comments(c: &Ctx<'_>, q: &QueryResult, comments: &[Comment], _self
             atom_date(&comment.comment_date_gmt)
         ));
         if post_password_required(&comment_post) {
-            out.push_str(&format!("\t\t\t<content type=\"html\" xml:base=\"{comment_link}\"><![CDATA[{}]]></content>\n\t\t", protected_form(c, &comment_post)));
+            out.push_str(&format!("\t\t\t<content type=\"html\" xml:base=\"{comment_link}\"><![CDATA[{}]]></content>\n\t\t", protected_form(c, &comment_post).await?));
         } else {
             out.push_str(&format!("\t\t\t<content type=\"html\" xml:base=\"{comment_link}\"><![CDATA[{}]]></content>\n\t\t", comment_text(c.site, &feed_comment_text(c, comment).await?)));
         }

@@ -10,6 +10,7 @@ mod error;
 mod fields;
 mod media;
 mod meta;
+mod oembed;
 mod params;
 mod posts;
 mod terms;
@@ -33,6 +34,8 @@ pub enum Error {
     Core(#[from] rustpress_core::Error),
     #[error(transparent)]
     Blocks(#[from] rustpress_blocks::Error),
+    #[error(transparent)]
+    Theme(#[from] rustpress_theme::Error),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -60,11 +63,13 @@ pub(crate) struct Resp {
     pub link: Option<String>,
     /// The permalink of a single post or page, sent as `Link: <...>; rel="alternate"`.
     pub alternate: Option<String>,
+    /// A response that is sent as XML instead of JSON (`oembed/1.0/embed?format=xml`).
+    pub xml: Option<String>,
 }
 
 impl Resp {
     pub fn item(data: Value) -> Self {
-        Self { data, total: None, total_pages: None, link: None, alternate: None }
+        Self { data, total: None, total_pages: None, link: None, alternate: None, xml: None }
     }
 }
 
@@ -108,8 +113,10 @@ impl<'a> Rest<'a> {
             ("Access-Control-Expose-Headers".to_owned(), "X-WP-Total, X-WP-TotalPages, Link".to_owned()),
             ("Access-Control-Allow-Headers".to_owned(), "Authorization, X-WP-Nonce, Content-Disposition, Content-MD5, Content-Type".to_owned()),
         ];
+        let mut xml_body = None;
         let (status, mut data) = match outcome {
             Ok(resp) => {
+                xml_body = resp.xml.clone();
                 let link = resp.link.clone().or_else(|| resp.alternate.as_ref().map(|url| format!("<{url}>; rel=\"alternate\"; type=text/html"))).unwrap_or_else(|| self.root_link());
                 headers.insert(1, ("Link".to_owned(), link));
                 if let Some(total) = resp.total {
@@ -130,7 +137,10 @@ impl<'a> Rest<'a> {
             }
         };
         headers.push(("Vary".to_owned(), "Origin".to_owned()));
-        headers.push(("Content-Type".to_owned(), "application/json; charset=UTF-8".to_owned()));
+        headers.push(("Content-Type".to_owned(), if xml_body.is_some() { "text/xml; charset=UTF-8" } else { "application/json; charset=UTF-8" }.to_owned()));
+        if let Some(xml) = xml_body {
+            return Ok(Reply { status, headers, body: xml });
+        }
         if status == 200 {
             if params.truthy("_embed") {
                 self.embed_all(&mut data).await?;
@@ -180,6 +190,8 @@ impl<'a> Rest<'a> {
             ["wp", "v2", "statuses"] => Ok(self.statuses_collection(params)),
             ["wp", "v2", "statuses", slug] => Ok(self.statuses_item(slug, params)),
             ["wp", "v2", "search"] => self.search(params).await,
+            ["oembed", "1.0", "embed"] => self.oembed_embed(params).await,
+            ["oembed", "1.0", "proxy"] => Ok(self.oembed_proxy()),
             ["wp", "v2", base @ ("blocks" | "navigation")] | ["wp", "v2", base @ ("blocks" | "navigation"), _] => {
                 let info = meta::core_post_type(base);
                 match segments.get(3) {
@@ -237,7 +249,7 @@ impl<'a> Rest<'a> {
         let route = match query.split('&').find_map(|p| p.strip_prefix("rest_route=")) {
             Some(route) => String::from_utf8_lossy(&rustpress_core::rewrite::urldecode(route.as_bytes())).into_owned(),
             None => {
-                let base = rustpress_core::canonical::split_url(&self.site.home_url("wp-json")).0;
+                let base = rustpress_core::canonical::split_url(&self.site.home_url(&format!("{}wp-json", self.site.root()))).0;
                 path.strip_prefix(&base).unwrap_or(&path).to_owned()
             }
         };

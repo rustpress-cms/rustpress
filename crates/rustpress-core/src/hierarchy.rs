@@ -18,7 +18,12 @@ pub fn template_candidates(result: &QueryResult, settings: &Settings, page_templ
         }
     };
 
-    if f.is_404 {
+    if f.is_embed {
+        if let Queried::Post(post) = &result.queried {
+            add(format!("embed-{}", post.post_type));
+        }
+        add("embed".into());
+    } else if f.is_404 {
         add("404".into());
     } else if f.is_search {
         add("search".into());

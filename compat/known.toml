@@ -15,10 +15,6 @@ aspect = "bytes"
 reason = "Der Routenindex von /wp-json/ listet nur die Routen, die RustPress selbst bedient (eine Teilmenge)."
 
 [[deviation]]
-path = '[?&]feed='
-reason = "Die Referenz auf Port 8080 verliert beim Kanonisieren den Port (WordPress-Eigenheit) und leitet ?feed=… deshalb nicht um; RustPress leitet wie WordPress auf /feed/ um."
-
-[[deviation]]
 path = '^/wp-(content|includes)/'
 aspect = "header:cache-control"
 reason = "RustPress sendet für statische Dateien bewusst Cache-Control: public, max-age=86400; der Apache der Referenz sendet nichts."

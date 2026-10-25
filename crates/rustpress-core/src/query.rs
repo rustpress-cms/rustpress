@@ -48,6 +48,8 @@ pub struct Flags {
     pub is_day: bool,
     pub is_search: bool,
     pub is_feed: bool,
+    /// The request asks for the embeddable view of a post (`/post/embed/`, `?embed=true`).
+    pub is_embed: bool,
     pub is_paged: bool,
     pub is_robots: bool,
     pub is_sitemap: bool,
@@ -191,7 +193,12 @@ impl Site {
         if unmatched {
             return Ok(result.into_404());
         }
-        self.run_main_query(result).await
+        let mut result = self.run_main_query(result).await?;
+        // `WP_Query::parse_query()`: only requests for one post (or ones that fail) can be embeds.
+        let vars = &result.vars;
+        let singular_intent = vars.get("attachment").is_some() || vars.u64("attachment_id").is_some() || vars.get("name").is_some() || vars.u64("p").is_some_and(|p| p != 0) || vars.get("pagename").is_some() || vars.u64("page_id").is_some_and(|p| p != 0);
+        result.flags.is_embed = vars.get("embed").is_some() && (result.flags.is_singular() || (result.flags.is_404 && singular_intent));
+        Ok(result)
     }
 
     async fn run_main_query(&self, mut r: QueryResult) -> Result<QueryResult> {

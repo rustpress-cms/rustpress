@@ -20,7 +20,7 @@ pub(super) async fn render(bc: &BlockCtx<'_>) -> Result<String> {
     let q = bc.env.query;
     let is_main_post = q.flags.is_singular() && q.queried_post().is_some_and(|p| p.id == post.id);
     let page = if is_main_post { q.vars.u64("page").unwrap_or(1) } else { 1 };
-    let raw = get_the_content(bc.env, &post, page, is_main_post);
+    let raw = get_the_content(bc.env, &post, page, is_main_post).await?;
     let content = the_content(bc.env, &post, &raw).await;
     bc.env.with_state(|s| s.active_patterns.remove(&guard));
     let content = content?;

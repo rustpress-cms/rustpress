@@ -11,7 +11,7 @@ use crate::Result;
 /// `get_search_link()` for the current search words.
 fn search_link(site: &Site, words: &str) -> String {
     let encoded = rustpress_core::canonical::rawurlencode(words).replace("%2F", "/");
-    site.user_trailingslashit(&site.home_url(&format!("search/{encoded}")))
+    site.user_trailingslashit(&site.home_url(&format!("{}search/{encoded}", site.root())))
 }
 
 /// `feed_links()` and `feed_links_extra()`.
@@ -25,8 +25,8 @@ pub async fn feed_links(site: &Site, q: &QueryResult) -> Result<String> {
         sprintf(&site.tr(template), &all)
     };
     let pretty_feeds = site.uses_pretty_permalinks();
-    let main_feed = if pretty_feeds { site.user_trailingslashit(&site.home_url("feed")) } else { site.home_url("?feed=rss2") };
-    let comments_feed = if pretty_feeds { site.user_trailingslashit(&site.home_url("comments/feed")) } else { site.home_url("?feed=comments-rss2") };
+    let main_feed = if pretty_feeds { site.user_trailingslashit(&site.home_url(&format!("{}feed", site.root()))) } else { site.home_url("?feed=rss2") };
+    let comments_feed = if pretty_feeds { site.user_trailingslashit(&site.home_url(&format!("{}comments/feed", site.root()))) } else { site.home_url("?feed=comments-rss2") };
     let mut out = link(&titled("%1$s %2$s Feed", &[]), &main_feed);
     out.push_str(&link(&titled("%1$s %2$s Comments Feed", &[]), &comments_feed));
 
@@ -40,7 +40,7 @@ pub async fn feed_links(site: &Site, q: &QueryResult) -> Result<String> {
             && (post.comment_status == "open" || post.ping_status == "open" || post.comment_count > 0)
         {
             let permalink = site.permalink(post).await?;
-            let href = if pretty { format!("{}feed/", trailingslashit(&permalink)) } else if post.post_type == "page" { format!("{}?feed=rss2&page_id={}", site.home_url("/"), post.id) } else { format!("{}?feed=rss2&p={}", site.home_url("/"), post.id) };
+            let href = if pretty { format!("{}{}", trailingslashit(&permalink), site.user_trailingslashit("feed")) } else if post.post_type == "page" { format!("{}?feed=rss2&page_id={}", site.home_url("/"), post.id) } else { format!("{}?feed=rss2&p={}", site.home_url("/"), post.id) };
             // `the_title_attribute()`: the filtered title without tags.
             let title = rustpress_core::formatting::strip_tags(&rustpress_blocks::content::the_title_for(site, post));
             out.push_str(&link(&titled("%1$s %2$s %3$s Comments Feed", &[&title]), &href));

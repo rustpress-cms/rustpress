@@ -30,14 +30,91 @@ impl Site {
         if path.is_empty() { base.to_owned() } else { format!("{base}/{}", path.trim_start_matches('/')) }
     }
 
+    /// `WP_Rewrite::$root`: `index.php/` with path info permalinks, else nothing. Everything that
+    /// does not follow the structure of the posts (pages, feeds, search, ...) lives below it.
+    pub fn root(&self) -> &'static str {
+        if self.using_index_permalinks() { "index.php/" } else { "" }
+    }
+
+    /// `WP_Rewrite::using_index_permalinks()`.
+    pub fn using_index_permalinks(&self) -> bool {
+        let structure = self.settings.permalink_structure.trim_start_matches('/');
+        !self.settings.permalink_structure.is_empty() && structure.starts_with("index.php")
+    }
+
     /// `rest_url( $path )`: below `wp-json` with pretty permalinks, else `index.php?rest_route=`.
     pub fn rest_url(&self, path: &str) -> String {
         let path = format!("/{}", path.trim_start_matches('/'));
         if self.uses_pretty_permalinks() {
-            format!("{}{path}", self.home_url("wp-json"))
+            format!("{}{path}", self.home_url(&format!("{}wp-json", self.root())))
         } else {
             format!("{}?rest_route={path}", self.home_url("index.php"))
         }
+    }
+
+    /// `url_to_postid()`: the ID of the post a URL of this site shows, 0 if there is none.
+    pub async fn url_to_postid(&self, url: &str) -> Result<u64> {
+        let host_of = |u: &str| -> String {
+            let rest = u.split_once("://").map_or("", |(_, r)| r);
+            let host = rest.split(['/', '?', '#']).next().unwrap_or("");
+            let host = host.rsplit_once('@').map_or(host, |(_, h)| h);
+            let host = host.split(':').next().unwrap_or("");
+            host.strip_prefix("www.").unwrap_or(host).to_owned()
+        };
+        let (url_host, home_host) = (host_of(url), host_of(&self.settings.home));
+        if !url_host.is_empty() && url_host != home_host {
+            return Ok(0);
+        }
+        // `?p=N`, `?page_id=N`, `?attachment_id=N`.
+        if let Ok(re) = regex::Regex::new(r"[?&](?:p|page_id|attachment_id)=(\d+)")
+            && let Some(caps) = re.captures(url)
+        {
+            let id: u64 = caps[1].parse().unwrap_or(0);
+            if id != 0 {
+                return Ok(id);
+            }
+        }
+        let url = url.split('#').next().unwrap_or("");
+        let url = url.split('?').next().unwrap_or("");
+        // The scheme and `www.` follow the home URL.
+        let home = self.settings.home.trim_end_matches('/');
+        let home_scheme = home.split_once("://").map_or("http", |(s, _)| s);
+        let mut url = match url.split_once("://") {
+            Some((_, rest)) => format!("{home_scheme}://{rest}"),
+            None => url.to_owned(),
+        };
+        if home.contains("://www.") && !url.contains("://www.") {
+            url = url.replace("://", "://www.");
+        } else if !home.contains("://www.") {
+            url = url.replace("://www.", "://");
+        }
+        if url.trim_matches('/') == home && self.settings.show_on_front == crate::settings::ShowOnFront::Page {
+            let front = self.settings.page_on_front;
+            if front != 0 && self.db.post(front).await?.is_some() {
+                return Ok(front);
+            }
+        }
+        if self.rewrite.is_empty() {
+            return Ok(0);
+        }
+        // Without path info permalinks `index.php/` is not part of the URL.
+        let index_permalinks = self.settings.permalink_structure.trim_start_matches('/').starts_with("index.php");
+        if !index_permalinks {
+            url = url.replace("index.php/", "");
+        }
+        let home_slash = format!("{home}/");
+        let path = if trailingslashit(&url).contains(&home_slash) {
+            url.replace(home, "")
+        } else {
+            let home_path = home.split_once("://").and_then(|(_, r)| r.find('/').map(|i| r[i..].to_owned())).unwrap_or_default();
+            trailingslashit(&url).strip_prefix(&format!("{home_path}/")).map_or_else(|| trailingslashit(&url), str::to_owned)
+        };
+        let path = path.trim_matches('/');
+        let result = self.query(&format!("/{path}"), "").await?;
+        if result.flags.is_singular() && let Some(post) = result.posts.first() {
+            return Ok(post.id);
+        }
+        Ok(0)
     }
 
     pub fn uses_pretty_permalinks(&self) -> bool {
@@ -51,7 +128,7 @@ impl Site {
 
     /// The part of the permalink structure before the first rewrite tag
     /// (`WP_Rewrite::$front`), without its leading slash.
-    fn front(&self) -> String {
+    pub fn front(&self) -> String {
         let structure = &self.settings.permalink_structure;
         let front = structure.find('%').map_or(structure.as_str(), |i| &structure[..i]);
         front.trim_start_matches('/').to_owned()
@@ -79,6 +156,9 @@ impl Site {
             cats.sort_by_key(|t| t.term_id);
             if let Some(first) = cats.first() {
                 category = self.term_path(first).await?;
+            } else if let Some(default) = self.db.term_by_id(Some("category"), self.options.u64("default_category", 0)).await? {
+                // Posts without a category show the default one in their address.
+                category = default.slug;
             }
         }
         let author = if structure.contains("%author%") {
@@ -112,7 +192,7 @@ impl Site {
         let unpublished = matches!(post.post_status.as_str(), "draft" | "pending" | "auto-draft" | "future");
         if let Some(info) = self.types.post_type(post_type).filter(|_| !unpublished && !self.settings.permalink_structure.is_empty()) {
             let tail = if info.hierarchical { self.page_uri(post).await? } else { post.post_name.clone() };
-            return Ok(self.user_trailingslashit(&self.home_url(&format!("{}/{tail}", info.slug))));
+            return Ok(self.user_trailingslashit(&self.home_url(&format!("{}{}/{tail}", self.root(), info.slug))));
         }
         Ok(self.home_url(&format!("?post_type={post_type}&p={}", post.id)))
     }
@@ -124,7 +204,7 @@ impl Site {
         Some(if self.settings.permalink_structure.is_empty() {
             self.home_url(&format!("?post_type={post_type}"))
         } else {
-            self.user_trailingslashit(&self.home_url(slug))
+            self.user_trailingslashit(&self.home_url(&format!("{}{slug}", self.root())))
         })
     }
 
@@ -152,7 +232,7 @@ impl Site {
             return Ok(self.home_url(&format!("?page_id={}", page.id)));
         }
         let uri = self.page_uri(page).await?;
-        Ok(self.user_trailingslashit(&self.home_url(&uri)))
+        Ok(self.user_trailingslashit(&self.home_url(&format!("{}{uri}", self.root()))))
     }
 
     /// `get_attachment_link()`.
@@ -210,7 +290,7 @@ impl Site {
         }
         if let Some(info) = self.types.taxonomy(&term.taxonomy) {
             let tail = if info.rewrite_hierarchical { self.term_path(term).await? } else { term.slug.clone() };
-            return Ok(self.user_trailingslashit(&self.home_url(&format!("{}/{tail}", info.slug))));
+            return Ok(self.user_trailingslashit(&self.home_url(&format!("{}{}/{tail}", self.root(), info.slug))));
         }
         let base = match term.taxonomy.as_str() {
             "category" => self.options.string("category_base", "").trim_matches('/').to_owned(),
@@ -223,7 +303,7 @@ impl Site {
             other => other,
         };
         let front = self.front();
-        let prefix = if base.is_empty() { format!("{front}{default_base}") } else { base };
+        let prefix = if base.is_empty() { format!("{front}{default_base}") } else { format!("{}{base}", self.root()) };
         let slug = if term.taxonomy == "category" { self.term_path(term).await? } else { term.slug.clone() };
         Ok(self.user_trailingslashit(&self.home_url(&format!("{prefix}/{slug}"))))
     }

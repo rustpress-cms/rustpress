@@ -405,26 +405,34 @@ pub(crate) async fn discovery_links(site: &Site, q: &QueryResult, version: &str,
     out.push_str(&format!("<meta name=\"generator\" content=\"WordPress {version}\" />\n"));
     if q.flags.is_singular()
         && let Queried::Post(post) = &q.queried {
-            // `wp_get_canonical_url()`: a later page of the post or of its comments is part of the address.
-            let mut canonical = site.permalink(post).await?;
-            if q.queried_object_id() == post.id {
-                let page = q.vars.u64("page").unwrap_or(0);
-                if page >= 2 {
-                    canonical = if site.uses_pretty_permalinks() { format!("{}{}", rustpress_core::urls::trailingslashit(&canonical), site.user_trailingslashit(&page.to_string())) } else { rustpress_core::urls::add_query_arg(&canonical, "page", &page.to_string()) };
-                }
-                let cpage = q.vars.u64("cpage").filter(|c| *c != 0).unwrap_or(cpage_override);
-                if cpage != 0 {
-                    canonical = rustpress_blocks::comment_pages::pagenum_link(site, &site.permalink(post).await?, cpage, 0);
-                }
-            }
-            out.push_str(&format!("<link rel=\"canonical\" href=\"{}\" />
+            if let Some(canonical) = canonical_url(site, q, cpage_override).await? {
+                out.push_str(&format!("<link rel=\"canonical\" href=\"{}\" />
 ", esc_url(&canonical)));
+            }
             let settings = &site.settings;
             let shortlink = if post.post_type == "page" && settings.show_on_front == rustpress_core::settings::ShowOnFront::Page && settings.page_on_front == post.id { site.home_url("/") } else { site.home_url(&format!("?p={}", post.id)) };
             out.push_str(&format!("<link rel='shortlink' href='{}' />
 ", esc_url(&shortlink)));
         }
     Ok(out)
+}
+
+/// `wp_get_canonical_url()` of the queried post: a later page of the post or of its comments is
+/// part of the address.
+pub(crate) async fn canonical_url(site: &Site, q: &QueryResult, cpage_override: u64) -> Result<Option<String>> {
+    let Queried::Post(post) = &q.queried else { return Ok(None) };
+    let mut canonical = site.permalink(post).await?;
+    if q.queried_object_id() == post.id {
+        let page = q.vars.u64("page").unwrap_or(0);
+        if page >= 2 {
+            canonical = if site.uses_pretty_permalinks() { format!("{}{}", rustpress_core::urls::trailingslashit(&canonical), site.user_trailingslashit(&page.to_string())) } else { rustpress_core::urls::add_query_arg(&canonical, "page", &page.to_string()) };
+        }
+        let cpage = q.vars.u64("cpage").filter(|c| *c != 0).unwrap_or(cpage_override);
+        if cpage != 0 {
+            canonical = rustpress_blocks::comment_pages::pagenum_link(site, &site.permalink(post).await?, cpage, 0);
+        }
+    }
+    Ok(Some(canonical))
 }
 
 /// `wp_oembed_add_discovery_links()`: the oEmbed endpoints of a single post or page.
@@ -569,6 +577,9 @@ fn mediaelement_scripts(site: &Site, wp_root: &std::path::Path, includes_url: &s
 
 /// Renders a request into a complete HTML document.
 pub async fn render_document(theme: &Theme, site: &Site, query: &QueryResult, registry: &Registry) -> Result<Document> {
+    if query.flags.is_embed {
+        return crate::embed::render(theme, site, query, registry).await;
+    }
     if crate::classic::is_ported(theme) {
         return crate::classic::render_document(theme, site, query, registry).await;
     }

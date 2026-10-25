@@ -211,6 +211,49 @@ pub fn srcset(site: &Site, width: u64, height: u64, image_src: &str, meta: &Meta
     Some(sources.iter().map(|(w, url)| format!("{} {w}w", url.replace(' ', "%20"))).collect::<Vec<_>>().join(", "))
 }
 
+/// `image_get_intermediate_size()` for a size given as `[width, height]`, as the URL of the best
+/// generated file: an exact match, else the smallest larger one with the same proportions.
+pub fn intermediate_url(full_url: &str, meta: &Metadata, width: u64, height: u64) -> Option<String> {
+    intermediate_size(full_url, meta, width, height).map(|(url, _, _)| url)
+}
+
+/// [intermediate_url] with the size of the file.
+pub fn intermediate_size(full_url: &str, meta: &Metadata, width: u64, height: u64) -> Option<(String, u64, u64)> {
+    let sizes = meta.sizes()?;
+    let mut candidates: Vec<(u64, &str, u64, u64)> = Vec::new();
+    for data in sizes.values() {
+        let (w, h) = (data.get("width").and_then(Value::as_u64).unwrap_or(0), data.get("height").and_then(Value::as_u64).unwrap_or(0));
+        let Some(file) = data.get("file").and_then(Value::as_str) else { continue };
+        if w == width && h == height {
+            candidates = vec![(w * h, file, w, h)];
+            break;
+        }
+        if w >= width && h >= height {
+            let same_ratio = if width == 0 || height == 0 { matches_ratio(w, h, meta.width(), meta.height()) } else { matches_ratio(w, h, width, height) };
+            if same_ratio {
+                candidates.push((w * h, file, w, h));
+            }
+        }
+    }
+    candidates.sort_by_key(|(area, ..)| *area);
+    let (_, file, w, h) = candidates.first()?;
+    Some((full_url.replace(basename(full_url), file), *w, *h))
+}
+
+/// `wp_get_attachment_image_src( $id, array( $width, 0 ) )`: `(url, width, height)`.
+pub async fn attachment_image_src_width(env: &Env<'_>, id: u64, width: u64) -> Result<Option<(String, u64, u64)>> {
+    let Some(post) = env.site.db.post(id).await? else { return Ok(None) };
+    let (meta, attached) = load_metadata(env.site, &post).await?;
+    let (Some(meta), Some(attached)) = (meta, attached) else { return Ok(None) };
+    let full = attachment_url(env.site, &attached);
+    let (url, w, h) = match intermediate_size(&full, &meta, width, 0) {
+        Some((url, w, h)) => (url, w, h),
+        None => (full, meta.width(), meta.height()),
+    };
+    let (w, h) = constrain_dimensions(w, h, width, 0);
+    Ok(Some((url, w, h)))
+}
+
 /// `wp_calculate_image_sizes()` for a size given in pixels.
 pub fn calculate_sizes(width: u64) -> Option<String> {
     (width > 0).then(|| format!("(max-width: {width}px) 100vw, {width}px"))
