@@ -255,7 +255,7 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse
         }
         "add-tag" | "inline-save-tax" | "delete-tag" => super::ajax_terms::handle(env, request, &user, &session.token, &action).await,
         "dim-comment" | "delete-comment" | "replyto-comment" | "edit-comment" => super::ajax_comments::handle(env, request, &user, &session.token, &action).await,
-        "query-attachments" | "get-attachment" | "save-attachment" | "delete-post" | "upload-attachment" | "async-upload" | "set-attachment-thumbnail" => super::ajax_media::handle(env, request, &user, &session.token, &action).await,
+        "query-attachments" | "get-attachment" | "save-attachment" | "delete-post" | "upload-attachment" | "async-upload" | "set-attachment-thumbnail" | "crop-image" => super::ajax_media::handle(env, request, &user, &session.token, &action).await,
         "image-editor" => super::image_edit::editor(env, request, &user, &session.token).await,
         "imgedit-preview" => super::image_edit::preview(env, request, &user, &session.token).await,
         "ajax-tag-search" | "get-tagcloud" | "wp-remove-post-lock" | "dismiss-wp-pointer" | "sample-permalink" | "find_posts" | "save-user-color-scheme" | "generate-password" | "destroy-sessions" | "autocomplete-user" | "delete-plugin" | "delete-theme" | "toggle-auto-updates" | "query-themes" | "install-theme" | "install-plugin" | "update-theme" | "update-plugin" | "search-plugins" | "search-install-plugins" => super::ajax_misc::handle(env, request, &user, &session.token, &action).await,

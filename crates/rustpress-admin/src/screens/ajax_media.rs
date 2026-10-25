@@ -53,6 +53,11 @@ fn orientation(width: u64, height: u64) -> &'static str {
 
 /// `wp_prepare_attachment_for_js()`.
 pub async fn attachment_js(ctx: &Ctx<'_>, post: &Post) -> Option<Json> {
+    attachment_js_with(ctx, post, &[]).await
+}
+
+/// [`attachment_js`] with more size names than the chooser has (`image_size_names_choose`, as the site icon adds them).
+pub async fn attachment_js_with(ctx: &Ctx<'_>, post: &Post, extra_sizes: &[String]) -> Option<Json> {
     if post.post_type != "attachment" {
         return None;
     }
@@ -96,7 +101,7 @@ pub async fn attachment_js(ctx: &Ctx<'_>, post: &Post) -> Option<Json> {
     response.insert("dateFormatted".into(), json!(site.date(&site.options.string("date_format", "F j, Y"), date_ts)));
     response.insert("nonces".into(), json!({"update": false, "delete": false, "edit": false}));
     if can_edit {
-        response.insert("nonces".into(), json!({"update": nonce("update-post"), "delete": nonce("delete-post"), "edit": nonce("edit-post")}));
+        response.insert("nonces".into(), json!({"update": nonce("update-post"), "delete": nonce("delete-post"), "edit": ctx.create_nonce(&format!("image_editor-{}", post.id))}));
     }
     response.insert("editLink".into(), if can_edit { json!(ctx.admin_url(&format!("post.php?post={}&action=edit", post.id))) } else { json!(false) });
     // Audio and video carry their tags.
@@ -112,6 +117,17 @@ pub async fn attachment_js(ctx: &Ctx<'_>, post: &Post) -> Option<Json> {
         response.insert("meta".into(), Json::Bool(false));
     }
     response.insert("authorName".into(), json!(author_name));
+    if db.user(post.post_author).await.ok().flatten().is_some() {
+        // `get_edit_user_link()`
+        let link = if post.post_author == ctx.user.id {
+            ctx.admin_url("profile.php")
+        } else if ctx.can("edit_users") {
+            ctx.admin_url(&format!("user-edit.php?user_id={}", post.post_author))
+        } else {
+            String::new()
+        };
+        response.insert("authorLink".into(), json!(link));
+    }
     if post.post_parent != 0
         && let Some(parent) = db.post(post.post_parent).await.ok().flatten()
     {
@@ -130,12 +146,11 @@ pub async fn attachment_js(ctx: &Ctx<'_>, post: &Post) -> Option<Json> {
             let (w, h) = (m.width(), m.height());
             let mut sizes = Map::new();
             let mut names: Vec<String> = ["thumbnail", "medium", "large"].iter().map(|s| (*s).to_owned()).collect();
-            if let Some(stored) = m.sizes() {
-                for key in stored.keys() {
-                    if !names.contains(key) {
-                        names.push(key.clone());
-                    }
-                }
+            names.extend(extra_sizes.iter().cloned());
+            if let Some(original) = m.0.get("original_image").and_then(Json::as_str).filter(|o| !o.is_empty()) {
+                let dir = url.rsplit_once('/').map_or("", |(d, _)| d);
+                response.insert("originalImageURL".into(), json!(format!("{dir}/{original}")));
+                response.insert("originalImageName".into(), json!(original));
             }
             for name in names {
                 let down = rustpress_blocks::images::image_downsize(&url, m, &name);
@@ -166,6 +181,17 @@ pub async fn attachment_js(ctx: &Ctx<'_>, post: &Post) -> Option<Json> {
         response.insert("thumb".into(), json!({"src": icon, "width": w, "height": h}));
     }
     response.insert("compat".into(), json!({"item": "", "meta": ""}));
+    // `get_media_states()`
+    let mut states: Vec<String> = Vec::new();
+    if site.options.u64("site_icon", 0) == post.id {
+        states.push(ctx.tr("Site Icon"));
+    }
+    if site.options.u64("site_logo", 0) == post.id {
+        states.push(ctx.tr("Logo"));
+    }
+    if !states.is_empty() {
+        response.insert("mediaStates".into(), json!(states.join(", ")));
+    }
     Some(Json::Object(response))
 }
 
@@ -325,8 +351,83 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUs
             response
         }
         "set-attachment-thumbnail" => text(200, "0"),
+        "crop-image" => crop_image(&ctx).await,
         _ => text(400, "0"),
     }
+}
+
+/// `wp_ajax_crop_image()`: the cropped copy of an image becomes a new attachment (a site icon, a header).
+async fn crop_image(ctx: &Ctx<'_>) -> AdminResponse {
+    let (env, request, user) = (ctx.env, ctx.request, &ctx.user);
+    let absint = |value: &str| value.trim().parse::<i64>().map(i64::unsigned_abs).unwrap_or(0);
+    let id = request.request("id").map(absint).unwrap_or(0);
+    if !request.request("nonce").is_some_and(|n| env.auth.verify_nonce(n, &format!("image_editor-{id}"), user.id, &ctx.token, env.now).is_some()) {
+        return text(403, "-1");
+    }
+    let Some(parent) = env.db.post(id).await.ok().flatten().filter(|p| p.post_type == "attachment") else { return send_json(200, &json!({"success": false})) };
+    if id == 0 || !(parent.post_author == user.id || user.can("edit_others_posts")) {
+        return send_json(200, &json!({"success": false}));
+    }
+    let context = request.request("context").unwrap_or_default().replace('_', "-");
+    let detail = |name: &str| request.request(&format!("cropDetails[{name}]")).map(absint).unwrap_or(0) as u32;
+    let uploads = uploads_dir(env);
+    let meta = env.db.post_meta(id).await.unwrap_or_default();
+    let meta_value = |key: &str| meta.iter().find(|m| m.meta_key.as_deref() == Some(key)).and_then(|m| m.meta_value.clone());
+    let attached = meta_value("_wp_attached_file").unwrap_or_default();
+    let failure_message = || send_json(200, &json!({"success": false, "data": {"message": ctx.tr("Image could not be processed.")}}));
+    let source = uploads.join(&attached);
+    let Ok(cropped) = rustpress_content::media::crop_image(&source, detail("x1"), detail("y1"), detail("width"), detail("height"), detail("dst_width"), detail("dst_height"), &parent.post_mime_type) else { return failure_message() };
+    let Some(writer) = env.writer else { return text(500, "0") };
+    // A site icon that already is one needs no copy.
+    if meta_value("_wp_attachment_context").as_deref() == Some(context.as_str()) && context == "site-icon" {
+        let _ = std::fs::remove_file(&cropped);
+        return success(attachment_js(ctx, &parent).await.unwrap_or(Json::Null));
+    }
+    // `wp_copy_parent_attachment_properties()`
+    let basename = |path: &str| path.rsplit('/').next().unwrap_or(path).to_owned();
+    let cropped_name = cropped.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let parent_url = rustpress_blocks::images::attachment_url(env.site, &attached);
+    let url = parent_url.replace(&basename(&parent_url), &cropped_name);
+    let sanitized_title = crate::sanitize::file_name(&parent.post_title);
+    let parent_basename = basename(&parent_url);
+    let parent_stem = parent_basename.rsplit_once('.').map_or(parent_basename.clone(), |(a, _)| a.to_owned());
+    let use_original_title = !parent.post_title.trim().is_empty() && parent_basename != sanitized_title && parent_stem != sanitized_title;
+    let relative = match cropped.strip_prefix(&uploads) {
+        Ok(rel) => rel.to_string_lossy().replace('\\', "/"),
+        Err(_) => cropped_name.clone(),
+    };
+    let content = Content { site: env.site, db: env.db, writer, user, now: env.now };
+    let data = PostData {
+        post_title: Some(if use_original_title { parent.post_title.clone() } else { cropped_name.clone() }),
+        post_content: Some(if parent.post_content.trim().is_empty() { url.clone() } else { parent.post_content.clone() }),
+        post_excerpt: (!parent.post_excerpt.trim().is_empty()).then(|| parent.post_excerpt.clone()),
+        post_status: Some("inherit".into()),
+        post_type: Some("attachment".into()),
+        post_mime_type: Some(parent.post_mime_type.clone()),
+        post_parent: Some(id),
+        guid: Some(url),
+        post_author: Some(user.id),
+        comment_status: Some(env.site.options.string("default_comment_status", "closed")),
+        ping_status: Some("closed".into()),
+        ..Default::default()
+    };
+    let Ok(new_id) = content.insert_post(&data).await else { return failure_message() };
+    let extra = if context == "site-icon" { rustpress_content::media::site_icon_sizes() } else { Vec::new() };
+    let (metadata, final_relative) = match rustpress_content::media::generate_image_metadata_with(&env.site.options, context != "site-icon", &extra, &uploads, &relative, &parent.post_mime_type) {
+        Some((meta, final_relative, _)) => (meta, final_relative),
+        None => return failure_message(),
+    };
+    let _ = writer.update_post_meta(new_id, "_wp_attached_file", &final_relative).await;
+    let _ = writer.update_post_meta(new_id, "_wp_attachment_metadata", &String::from_utf8_lossy(&rustpress_phpser::serialize(&metadata))).await;
+    if !context.is_empty() {
+        let _ = writer.update_post_meta(new_id, "_wp_attachment_context", &context).await;
+    }
+    if let Some(alt) = meta_value("_wp_attachment_image_alt").filter(|a| !a.trim().is_empty()) {
+        let _ = writer.update_post_meta(new_id, "_wp_attachment_image_alt", &alt).await;
+    }
+    let Some(created) = env.db.post(new_id).await.ok().flatten() else { return failure_message() };
+    let extra_names: Vec<String> = if context == "site-icon" { extra.iter().map(|(name, ..)| name.clone()).collect() } else { Vec::new() };
+    success(attachment_js_with(ctx, &created, &extra_names).await.unwrap_or(Json::Null))
 }
 
 /// Stores the uploaded files and answers like `wp_ajax_upload_attachment()`.

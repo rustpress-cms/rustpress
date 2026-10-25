@@ -224,6 +224,17 @@ pub fn registered_sizes(options: &rustpress_core::options::Options) -> Vec<(Stri
 
 /// The metadata of an uploaded image: sizes written next to the file. Returns `(metadata, final relative path)`.
 pub fn generate_image_metadata(options: &rustpress_core::options::Options, uploads: &Path, relative: &str, mime: &str) -> Option<(Value, String, Option<String>)> {
+    generate_image_metadata_with(options, true, &[], uploads, relative, mime)
+}
+
+/// The sizes `WP_Site_Icon::additional_sizes()` adds: `site_icon-<size>` for every size below 512 (WordPress misspells
+/// the key of the width, so the width is open and the height decides).
+pub fn site_icon_sizes() -> Vec<(String, u32, u32, bool)> {
+    [270u32, 192, 180, 64, 32].into_iter().map(|size| (format!("site_icon-{size}"), 0, size, true)).collect()
+}
+
+/// [`generate_image_metadata`] with more sizes than the ones of the site, or with those only (`registered` false: a site icon).
+pub fn generate_image_metadata_with(options: &rustpress_core::options::Options, registered: bool, extra: &[(String, u32, u32, bool)], uploads: &Path, relative: &str, mime: &str) -> Option<(Value, String, Option<String>)> {
     if !matches!(mime, "image/jpeg" | "image/png" | "image/gif" | "image/webp") {
         return None;
     }
@@ -255,7 +266,8 @@ pub fn generate_image_metadata(options: &rustpress_core::options::Options, uploa
     };
     let mut sizes: Vec<(Key, Value)> = Vec::new();
     let mut made: Vec<(u32, u32)> = Vec::new();
-    for (name, dest_w, dest_h, crop) in registered_sizes(options) {
+    let site_sizes = if registered { registered_sizes(options) } else { Vec::new() };
+    for (name, dest_w, dest_h, crop) in site_sizes.into_iter().chain(extra.iter().cloned()) {
         let Some((sx, sy, cw, ch, nw, nh)) = resize_dimensions(width, height, dest_w, dest_h, crop) else { continue };
         if made.contains(&(nw, nh)) && name != "thumbnail" {
             // Same dimensions as a size already written: WordPress reuses the file.
@@ -320,6 +332,23 @@ pub fn generate_sizes(options: &rustpress_core::options::Options, full: &Path, m
         ));
     }
     Some((width, height, sizes))
+}
+
+/// `WP_Image_Editor_GD::crop()` and `save()` as `wp_crop_image()` uses them: the part `(x, y, width, height)` of the
+/// image at `src`, scaled to `dst_w` x `dst_h`, saved next to it as `cropped-<name>`. Returns the path.
+pub fn crop_image(src: &Path, x: u32, y: u32, w: u32, h: u32, dst_w: u32, dst_h: u32, mime: &str) -> Result<PathBuf, UploadError> {
+    let decoded = image::open(src).map_err(|e| UploadError(e.to_string()))?;
+    let (w, h) = (w.min(decoded.width().saturating_sub(x)), h.min(decoded.height().saturating_sub(y)));
+    if w == 0 || h == 0 {
+        return Err(UploadError("empty crop".into()));
+    }
+    let (dst_w, dst_h) = (if dst_w == 0 { w } else { dst_w }, if dst_h == 0 { h } else { dst_h });
+    let cropped = decoded.crop_imm(x, y, w, h).resize_exact(dst_w, dst_h, image::imageops::FilterType::Lanczos3);
+    let dir = src.parent().ok_or_else(|| UploadError("no directory".into()))?;
+    let name = src.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let target = dir.join(unique_filename(dir, &format!("cropped-{name}")));
+    save_image(&cropped, &target, mime)?;
+    Ok(target)
 }
 
 /// The directory for new uploads: `Y/m` unless the site stores them flat.

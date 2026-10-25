@@ -15,7 +15,8 @@ import head_compare as h
 
 
 def get(port, path):
-    h.fetch(port, 'index.php')  # makes sure the sign-in happened
+    if port not in h._openers:
+        h.fetch(port, 'index.php')  # makes sure the sign-in happened
     opener = h._openers[port]
     try:
         r = opener.open(f'http://localhost:{port}/wp-admin/{path}', timeout=40)
