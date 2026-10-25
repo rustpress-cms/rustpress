@@ -20,6 +20,7 @@ pub mod ajax_media;
 mod ajax_misc;
 pub mod ajax_terms;
 mod attachment_edit;
+mod authorize_app;
 pub mod block_editor;
 pub mod comments;
 pub mod media_lib;
@@ -270,6 +271,7 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse
         "plugin-install.php" => install::plugin_install(&ctx).await,
         "theme-install.php" => install::theme_install(&ctx).await,
         "update.php" => install::update_php(&ctx).await,
+        "authorize-application.php" => authorize_app::page(&ctx).await,
         "about.php" | "credits.php" | "freedoms.php" | "contribute.php" => pages::about(&ctx, &request.file).await,
         "site-health.php" => site_health::page(&ctx).await,
         "update-core.php" => update_core::page(&ctx).await,
