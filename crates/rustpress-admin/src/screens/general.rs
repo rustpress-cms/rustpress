@@ -44,10 +44,16 @@ fn dropdown_roles(ctx: &Ctx<'_>, roles: &[(String, String)], selected: &str) -> 
     out
 }
 
-/// `wp_dropdown_languages()` for the installed languages.
+/// `wp_dropdown_languages()`: the installed languages and, when WordPress knows them, the available translations.
 fn dropdown_languages(ctx: &Ctx<'_>, selected: &str) -> String {
     let selected = if selected == "en_US" { "" } else { selected };
+    let installed: Vec<&str> = ctx.env.languages.iter().map(|l| l.locale.as_str()).collect();
+    let available: Vec<&(String, String, String)> = ctx.env.available_translations.iter().filter(|(locale, _, _)| !installed.contains(&locale.as_str())).collect();
+    let show_available = !available.is_empty();
     let mut structure: Vec<String> = Vec::new();
+    if show_available {
+        structure.push(format!("<optgroup label=\"{}\">", esc_attr(&ctx.site().trx("Installed", "translations"))));
+    }
     structure.push(format!("<option value=\"\" lang=\"en\" data-installed=\"1\"{}>English (United States)</option>", if selected.is_empty() { " selected='selected'" } else { "" }));
     for language in &ctx.env.languages {
         structure.push(format!(
@@ -57,6 +63,14 @@ fn dropdown_languages(ctx: &Ctx<'_>, selected: &str) -> String {
             if language.locale == selected { " selected='selected'" } else { "" },
             esc_html(&language.native_name)
         ));
+    }
+    if show_available {
+        structure.push("</optgroup>".to_owned());
+        structure.push(format!("<optgroup label=\"{}\">", esc_attr(&ctx.site().trx("Available", "translations"))));
+        for (locale, native_name, lang) in available {
+            structure.push(format!("<option value=\"{}\" lang=\"{}\"{}>{}</option>", esc_attr(locale), esc_attr(lang), if locale == selected { " selected='selected'" } else { "" }, esc_html(native_name)));
+        }
+        structure.push("</optgroup>".to_owned());
     }
     format!("<select name=\"WPLANG\" id=\"WPLANG\">{}</select>", structure.join("\n"))
 }
@@ -255,7 +269,14 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     h.push_str(&format!("<p class=\"submit\"><input type=\"submit\" name=\"submit\" id=\"submit\" class=\"button button-primary\" value=\"{}\"  /></p></form>\n\n</div>\n\n", esc_attr(&tr("Save Changes"))));
 
     let screen = Screen { file: "options-general.php".into(), parent_file: "options-general.php".into(), submenu_file: Some("options-general.php".into()), title, help: Some(help(ctx)), ..Default::default() };
-    let assets = Assets { head: options_general_js(ctx), scripts: vec!["site-icon".into()], ..Default::default() };
+    let mut assets = Assets { head: options_general_js(ctx), ..Default::default() };
+    if ctx.can("upload_files") {
+        super::media_ui::enqueue(ctx, &mut assets, 0).await;
+        // `wp_enqueue_media()` runs in the page, after the header was printed.
+        assets.post_header_scripts = std::mem::take(&mut assets.scripts);
+        assets.post_header_styles = std::mem::take(&mut assets.styles);
+        assets.post_header_scripts.push("site-icon".into());
+    }
     render(ctx, &screen, &h, &assets).await
 }
 

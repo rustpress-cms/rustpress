@@ -78,14 +78,56 @@ fn postbox(ctx: &Ctx<'_>, widget: &Widget, closed: bool, hidden: bool, body: &st
 
 // ------------------------------------------------------------------ widgets
 
-/// `wp_dashboard_site_health()`: the results come from a transient that RustPress never fills.
-fn site_health(ctx: &Ctx<'_>) -> String {
+/// The counts `WP_Site_Health` caches in the transient `health-check-site-status-result`.
+async fn health_counts(ctx: &Ctx<'_>) -> Option<(i64, i64, i64)> {
+    let site = ctx.site();
+    let raw = site.options.fetch(&site.db, "_transient_health-check-site-status-result").await.ok().flatten()?;
+    // A transient that has a timeout has expired when the timeout is over.
+    if let Some(timeout) = site.options.fetch(&site.db, "_transient_timeout_health-check-site-status-result").await.ok().flatten().and_then(|t| t.parse::<i64>().ok())
+        && timeout < ctx.env.now
+    {
+        return None;
+    }
+    let value: serde_json::Value = serde_json::from_str(&raw).ok()?;
+    let count = |key: &str| value.get(key).and_then(serde_json::Value::as_i64).unwrap_or(0);
+    Some((count("good"), count("recommended"), count("critical")))
+}
+
+/// `wp_dashboard_site_health()`.
+async fn site_health(ctx: &Ctx<'_>) -> String {
     let tr = |s: &str| ctx.tr(s);
+    let counts = health_counts(ctx).await;
     let link = esc_url(&ctx.admin_url("site-health.php"));
-    let text = sprintf(&tr("Site health checks will automatically run periodically to gather information about your site. You can also <a href=\"%s\">visit the Site Health screen</a> to gather information about your site now."), &[&link]);
+    let (_, recommended, critical) = counts.unwrap_or((0, 0, 0));
+    let total = recommended + critical;
+    let label = if counts.is_none() { tr("No information yet&hellip;") } else { tr("Results are still loading&hellip;") };
+    let body = match counts {
+        None => format!(
+            "\t\t\t\t\t\t\t\t\t\t\t<p>\n\t\t\t\t\t{}\t\t\t\t</p>\n\t\t\t\n",
+            sprintf(&tr("Site health checks will automatically run periodically to gather information about your site. You can also <a href=\"%s\">visit the Site Health screen</a> to gather information about your site now."), &[&link])
+        ),
+        Some(_) => {
+            let sentence = if total <= 0 {
+                tr("Great job! Your site currently passes all site health checks.")
+            } else if critical == 1 {
+                tr("Your site has a critical issue that should be addressed as soon as possible to improve its performance and security.")
+            } else if critical > 1 {
+                tr("Your site has critical issues that should be addressed as soon as possible to improve its performance and security.")
+            } else if recommended == 1 {
+                tr("Your site&#8217;s health is looking good, but there is still one thing you can do to improve its performance and security.")
+            } else {
+                tr("Your site&#8217;s health is looking good, but there are still some things you can do to improve its performance and security.")
+            };
+            let mut body = format!("\t\t\t\t\t\t\t<p>\n\t\t\t\t\t\t\t\t\t\t\t{sentence}\t\t\t\t\t\t\t\t\t</p>\n\t\t\t\n");
+            if total > 0 {
+                let text = ctx.site().trn("Take a look at the <strong>%1$d item</strong> on the <a href=\"%2$s\">Site Health screen</a>.", "Take a look at the <strong>%1$d items</strong> on the <a href=\"%2$s\">Site Health screen</a>.", total);
+                body.push_str(&format!("\t\t\t\t\t\t\t<p>\n\t\t\t\t\t{}\t\t\t\t</p>\n", sprintf(&text, &[&total.to_string(), &link])));
+            }
+            body
+        }
+    };
     format!(
-        "\t<div class=\"health-check-widget\">\n\t\t<div class=\"health-check-widget-title-section site-health-progress-wrapper loading hide-if-no-js\">\n\t\t\t<div class=\"site-health-progress\">\n\t\t\t\t<svg aria-hidden=\"true\" focusable=\"false\" width=\"100%\" height=\"100%\" viewBox=\"0 0 200 200\" version=\"1.1\" xmlns=\"http://www.w3.org/2000/svg\">\n\t\t\t\t\t<circle r=\"90\" cx=\"100\" cy=\"100\" fill=\"transparent\" stroke-dasharray=\"565.48\" stroke-dashoffset=\"0\"></circle>\n\t\t\t\t\t<circle id=\"bar\" r=\"90\" cx=\"100\" cy=\"100\" fill=\"transparent\" stroke-dasharray=\"565.48\" stroke-dashoffset=\"0\"></circle>\n\t\t\t\t</svg>\n\t\t\t</div>\n\t\t\t<div class=\"site-health-progress-label\">\n\t\t\t\t\t\t\t\t\t{}\t\t\t\t\t\t\t</div>\n\t\t</div>\n\n\t\t<div class=\"site-health-details\">\n\t\t\t\t\t\t\t<p>\n\t\t\t\t\t{text}\t\t\t\t</p>\n\t\t\t\n\t\t\t\t\t</div>\n\t</div>\n\n\t",
-        tr("No information yet&hellip;")
+        "\t<div class=\"health-check-widget\">\n\t\t<div class=\"health-check-widget-title-section site-health-progress-wrapper loading hide-if-no-js\">\n\t\t\t<div class=\"site-health-progress\">\n\t\t\t\t<svg aria-hidden=\"true\" focusable=\"false\" width=\"100%\" height=\"100%\" viewBox=\"0 0 200 200\" version=\"1.1\" xmlns=\"http://www.w3.org/2000/svg\">\n\t\t\t\t\t<circle r=\"90\" cx=\"100\" cy=\"100\" fill=\"transparent\" stroke-dasharray=\"565.48\" stroke-dashoffset=\"0\"></circle>\n\t\t\t\t\t<circle id=\"bar\" r=\"90\" cx=\"100\" cy=\"100\" fill=\"transparent\" stroke-dasharray=\"565.48\" stroke-dashoffset=\"0\"></circle>\n\t\t\t\t</svg>\n\t\t\t</div>\n\t\t\t<div class=\"site-health-progress-label\">\n\t\t\t\t\t\t\t\t\t{label}\t\t\t\t\t\t\t</div>\n\t\t</div>\n\n\t\t<div class=\"site-health-details\">\n{body}\t\t\t\t\t</div>\n\t</div>\n\n\t"
     )
 }
 
@@ -566,7 +608,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         let mut boxes = String::new();
         for widget in ids {
             let body = match widget.id {
-                "dashboard_site_health" => site_health(ctx),
+                "dashboard_site_health" => site_health(ctx).await,
                 "dashboard_right_now" => at_a_glance(ctx).await,
                 "dashboard_activity" => activity(ctx).await,
                 "dashboard_quick_press" => quick_press(ctx, None).await,
@@ -588,14 +630,36 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     );
     let screen = Screen { file: "index.php".into(), parent_file: "index.php".into(), submenu_file: Some("index.php".into()), title, ..Default::default() };
     let list_args = "<script>list_args = {\"class\":\"WP_Comments_List_Table\",\"screen\":{\"id\":\"dashboard\",\"base\":\"dashboard\"}};</script>\n";
-    let mut scripts = vec!["dashboard".to_owned()];
+    let mut scripts = Vec::new();
+    let mut styles = vec!["thickbox".to_owned()];
+    let mut localize = vec![(
+        "dashboard".to_owned(),
+        "communityEventsData".to_owned(),
+        serde_json::json!({"nonce": ctx.create_nonce("community_events"), "cache": "", "time_format": ctx.site().options.string("time_format", &ctx.tr("g:i a"))}),
+    )];
+    if ctx.can("view_site_health_checks") {
+        styles.insert(0, "site-health".to_owned());
+        scripts.push("site-health".to_owned());
+        let (good, recommended, critical) = health_counts(ctx).await.unwrap_or((0, 0, 0));
+        localize.push((
+            "site-health".to_owned(),
+            "SiteHealth".to_owned(),
+            serde_json::json!({
+                "screen": "dashboard",
+                "nonce": {"site_status": ctx.create_nonce("health-check-site-status"), "site_status_result": ctx.create_nonce("health-check-site-status-result")},
+                "site_status": {"direct": [], "async": [], "issues": {"good": good, "recommended": recommended, "critical": critical}}
+            }),
+        ));
+        localize.push(("wp-api-request".to_owned(), "wpApiSettings".to_owned(), serde_json::json!({"root": ctx.site().site_url("wp-json/"), "nonce": ctx.create_nonce("wp_rest"), "versionString": "wp/v2/"})));
+    }
+    scripts.push("dashboard".to_owned());
     if ctx.can("install_plugins") {
         scripts.extend(["plugin-install".to_owned(), "updates".to_owned()]);
     }
     if ctx.can("upload_files") {
         scripts.push("media-upload".to_owned());
     }
-    let assets = Assets { scripts, styles: vec!["thickbox".into()], pre_footer: format!("{list_args}{list_args}"), ..Default::default() };
+    let assets = Assets { scripts, styles, localize, late_scripts: vec!["wplink".into(), "jquery-ui-autocomplete".into()], pre_footer: format!("{list_args}{list_args}"), ..Default::default() };
     render(ctx, &screen, &content, &assets).await
 }
 

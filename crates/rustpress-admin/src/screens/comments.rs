@@ -419,7 +419,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
 ");
     h.push_str(&reply_form(ctx));
     let screen = Screen { file: "edit-comments.php".into(), parent_file: "edit-comments.php".into(), submenu_file: Some("edit-comments.php".into()), title, help: Some(help(ctx)), ..Default::default() };
-    render(ctx, &screen, &h, &Assets { scripts: vec!["admin-comments".into(), "wp-lists".into()], ..Default::default() }).await
+    render(ctx, &screen, &h, &Assets { scripts: vec!["admin-comments".into(), "wp-lists".into()], late_scripts: vec!["wplink".into(), "jquery-ui-autocomplete".into()], ..Default::default() }).await
 }
 
 /// `wp_comment_reply()`: the inline editor and reply form.
@@ -612,8 +612,10 @@ async fn edit_form(ctx: &Ctx<'_>, comment: &Comment) -> AdminResponse {
     let link = comment_link(ctx, comment).await;
     let mut h = format!("{}<div class=\"wrap\">\n<h1>{}</h1>\n\n<div id=\"poststuff\">\n", ctx.nonce_field(&format!("update-comment_{id}")), tr("Edit Comment"));
     h.push_str(&format!("<input type=\"hidden\" name=\"action\" value=\"editedcomment\" />\n<input type=\"hidden\" name=\"comment_ID\" value=\"{id}\" />\n<input type=\"hidden\" name=\"comment_post_ID\" value=\"{}\" />\n\n", comment.comment_post_id));
-    h.push_str("<div id=\"post-body\" class=\"metabox-holder columns-2\">\n<div id=\"post-body-content\" class=\"edit-form-section edit-comment-section\">\n<div class=\"inside\">\n");
-    h.push_str(&format!("\t<div id=\"comment-link-box\">\n\t\t<strong>{}</strong>\n\t\t<span id=\"sample-permalink\">\n\t\t\t<a href=\"{}\">\n\t\t\t\t{}\t\t\t</a>\n\t\t</span>\n\t</div>\n</div>\n", tr("Permalink:"), esc_url(&link), esc_html(&link)));
+    h.push_str("<div id=\"post-body\" class=\"metabox-holder columns-2\">\n<div id=\"post-body-content\" class=\"edit-form-section edit-comment-section\">\n");
+    if comment.comment_approved == "1" && comment.comment_post_id > 0 {
+        h.push_str(&format!("<div class=\"inside\">\n\t<div id=\"comment-link-box\">\n\t\t<strong>{}</strong>\n\t\t<span id=\"sample-permalink\">\n\t\t\t<a href=\"{}\">\n\t\t\t\t{}\t\t\t</a>\n\t\t</span>\n\t</div>\n</div>\n", site.trx("Permalink:", "comment"), esc_url(&link), esc_html(&link)));
+    }
     h.push_str(&format!(
         "<div id=\"namediv\" class=\"stuffbox\">\n<div class=\"inside\">\n<h2 class=\"edit-comment-author\">{}</h2>\n<fieldset>\n<legend class=\"screen-reader-text\">\n\t{}</legend>\n<table class=\"form-table editcomment\" role=\"presentation\">\n<tbody>\n<tr>\n\t<td class=\"first\"><label for=\"name\">{}</label></td>\n\t<td><input type=\"text\" name=\"newcomment_author\" size=\"30\" value=\"{}\" id=\"name\" /></td>\n</tr>\n<tr>\n\t<td class=\"first\"><label for=\"email\">{}</label></td>\n\t<td>\n\t\t<input type=\"text\" name=\"newcomment_author_email\" size=\"30\" class=\"code\" value=\"{}\" id=\"email\" />\n\t</td>\n</tr>\n<tr>\n\t<td class=\"first\"><label for=\"newcomment_author_url\">{}</label></td>\n\t<td>\n\t\t<input type=\"text\" id=\"newcomment_author_url\" name=\"newcomment_author_url\" size=\"30\" class=\"code\" value=\"{}\" />\n\t</td>\n</tr>\n</tbody>\n</table>\n</fieldset>\n</div>\n</div>\n\n",
         tr("Author"),
@@ -626,9 +628,12 @@ async fn edit_form(ctx: &Ctx<'_>, comment: &Comment) -> AdminResponse {
         esc_attr(&comment.comment_author_url)
     ));
     h.push_str(&format!(
-        "<div id=\"postdiv\" class=\"postarea\">\n<label for=\"content\" class=\"screen-reader-text\">\n\t{}</label>\n<div id=\"wp-content-wrap\" class=\"wp-core-ui wp-editor-wrap html-active\"><div id=\"wp-content-editor-container\" class=\"wp-editor-container\"><div id=\"qt_content_toolbar\" class=\"quicktags-toolbar hide-if-no-js\"></div><textarea class=\"wp-editor-area\" rows=\"20\" cols=\"40\" name=\"content\" id=\"content\">{}</textarea></div>\n</div>\n\n</div>\n</div><!-- /post-body-content -->\n\n",
+        "<div id=\"postdiv\" class=\"postarea\">\n<label for=\"content\" class=\"screen-reader-text\">\n\t{}</label>\n<div id=\"wp-content-wrap\" class=\"wp-core-ui wp-editor-wrap html-active\"><link rel='stylesheet' id='editor-buttons-css' href='{}/wp-includes/css/editor.min.css?ver={}' media='all' />\n<div id=\"wp-content-editor-container\" class=\"wp-editor-container\"><div id=\"qt_content_toolbar\" class=\"quicktags-toolbar hide-if-no-js\"></div><textarea class=\"wp-editor-area\" rows=\"20\" cols=\"40\" name=\"content\" id=\"content\">{}</textarea></div>\n</div>\n\n<input type=\"hidden\" id=\"closedpostboxesnonce\" name=\"closedpostboxesnonce\" value=\"{}\" /></div>\n</div><!-- /post-body-content -->\n\n",
         tr("Comment"),
-        esc_textarea(&comment.comment_content)
+        ctx.env.loader.site_url.trim_end_matches('/'),
+        ctx.env.loader.version,
+        esc_textarea(&comment.comment_content),
+        ctx.create_nonce("closedpostboxes")
     ));
     // The save box.
     let status_label = match comment.comment_approved.as_str() {
@@ -645,40 +650,90 @@ async fn edit_form(ctx: &Ctx<'_>, comment: &Comment) -> AdminResponse {
         None => String::new(),
     };
     let parent_row = {
-        let display = if comment.comment_parent != 0 {
-            match ctx.env.db.comment_any(comment.comment_parent).await.ok().flatten() {
-                Some(parent) => format!("{} <b><a href=\"{}\">{}</a></b>", tr("In reply to:"), esc_url(&comment_link(ctx, &parent).await), esc_html(&parent.comment_author)),
-                None => String::new(),
-            }
-        } else {
-            String::new()
+        let parent_comment = if comment.comment_parent != 0 { ctx.env.db.comment_any(comment.comment_parent).await.ok().flatten() } else { None };
+        let parent_display = match &parent_comment {
+            Some(parent) => format!("<a href=\"{}\">{}</a>", esc_url(&comment_link(ctx, parent).await), esc_html(&parent.comment_author)),
+            None => tr("None"),
         };
-        let siblings = ctx.env.db.list_comments_admin(&CommentListQuery { status: "1".into(), post_id: Some(comment.comment_post_id), kind: "comment".into(), orderby: "comment_ID".into(), ..Default::default() }).await.map(|(c, _)| c).unwrap_or_default();
-        let mut options = String::new();
-        for sibling in siblings.iter().filter(|c| c.comment_id != id) {
-            let plain = rustpress_core::formatting::wp_strip_all_tags(&sibling.comment_content);
-            let excerpt: String = if plain.chars().count() > 50 { format!("{}&hellip;", plain.chars().take(50).collect::<String>()) } else { plain };
-            options.push_str(&format!(
-                "\t<option value='{}' data-author='{}'{}>{}</option>\n",
-                sibling.comment_id,
-                esc_attr(&sibling.comment_author),
-                if sibling.comment_id == comment.comment_parent { " selected='selected'" } else { "" },
-                sprintf(&tr("%1$s: %2$s"), &[&esc_html(&sibling.comment_author), &excerpt])
+        let display = sprintf(&tr("In reply to: %s"), &[&format!("<b>{parent_display}</b>")]);
+        let threading = site.options.string("thread_comments", "0") != "0";
+        let mut row = format!("\n<span id=\"comment-parent-display\">\n{display}</span>\n");
+        if threading {
+            let max_depth = site.options.string("thread_comments_depth", "5").parse::<i64>().unwrap_or(5);
+            // Pending comments may be nested under pending parents; approved ones need publicly visible parents.
+            let status = if comment.comment_approved == "1" { "1" } else { "all" };
+            let query = CommentListQuery { status: status.into(), post_id: Some(comment.comment_post_id), kind: "comment".into(), orderby: "comment_date".into(), desc: true, limit: 100, ..Default::default() };
+            let mut post_comments = ctx.env.db.list_comments_admin(&query).await.map(|(c, _)| c).unwrap_or_default();
+            post_comments.reverse();
+            // The replies that move with the comment, and how deep that subtree is.
+            let mut descendants: Vec<u64> = Vec::new();
+            let mut subtree_height = 1;
+            let mut level = vec![id];
+            while !level.is_empty() {
+                let next: Vec<u64> = post_comments.iter().filter(|c| level.contains(&c.comment_parent)).map(|c| c.comment_id).collect();
+                descendants.extend(&next);
+                if !next.is_empty() {
+                    subtree_height += 1;
+                }
+                level = next;
+            }
+            let depth_of = |comment_id: u64| {
+                let mut depth = 1;
+                let mut ancestor = post_comments.iter().find(|c| c.comment_id == comment_id).map_or(0, |c| c.comment_parent);
+                while ancestor != 0 {
+                    let Some(found) = post_comments.iter().find(|c| c.comment_id == ancestor) else { break };
+                    depth += 1;
+                    ancestor = found.comment_parent;
+                }
+                depth
+            };
+            let label_of = |author: &str, content: &str| {
+                let text: String = content.replace(['\n', '\r'], " ");
+                let excerpt = rustpress_core::formatting::wp_trim_words(&rustpress_core::formatting::wp_strip_all_tags(&text), 20, "&hellip;");
+                let plain = rustpress_core::formatting::wp_strip_all_tags(&excerpt);
+                let short = if plain.chars().count() > 50 { format!("{}…", plain.chars().take(50).collect::<String>().trim_end()) } else { plain };
+                esc_html(&sprintf(&tr("%1$s: %2$s"), &[author, &short]))
+            };
+            let mut options = String::new();
+            let mut listed = false;
+            for post_comment in &post_comments {
+                if post_comment.comment_id == id || descendants.contains(&post_comment.comment_id) {
+                    continue;
+                }
+                if max_depth != 0 && depth_of(post_comment.comment_id) + subtree_height > max_depth {
+                    continue;
+                }
+                let selected = post_comment.comment_id == comment.comment_parent;
+                listed |= selected;
+                options.push_str(&format!(
+                    "\t<option value='{}' data-author='{}'{}>{}</option>\n",
+                    post_comment.comment_id,
+                    esc_attr(&post_comment.comment_author),
+                    if selected { " selected='selected'" } else { "" },
+                    label_of(&post_comment.comment_author, &post_comment.comment_content)
+                ));
+            }
+            if let Some(parent) = &parent_comment
+                && !listed
+            {
+                options.push_str(&format!("\t<option value='{}' data-author='{}' selected>{}</option>\n", parent.comment_id, esc_attr(&parent.comment_author), label_of(&parent.comment_author, &parent.comment_content)));
+            }
+            row.push_str(&format!(
+                "<a href=\"#edit_comment_parent\" class=\"edit-comment-parent hide-if-no-js\"><span aria-hidden=\"true\">{edit}</span> <span class=\"screen-reader-text\">\n\t{edit_parent}</span></a>\n<fieldset id=\"comment-parent-div\" class=\"hide-if-js\">\n<legend class=\"screen-reader-text\">\n\t{parent_legend}</legend>\n<label for=\"comment_parent\">{parent_legend}</label>\n<select name=\"comment_parent\" id=\"comment_parent\">\n\t<option value=\"0\"{none_selected}>\n\t\t{none}\t</option>\n\t{options}</select>\n<input type=\"hidden\" id=\"hidden_comment_parent\" value=\"{parent}\" />\n<p>\n<a href=\"#edit_comment_parent\" class=\"save-comment-parent hide-if-no-js button\">{ok}</a>\n<a href=\"#edit_comment_parent\" class=\"cancel-comment-parent hide-if-no-js button-cancel\">{cancel}</a>\n</p>\n</fieldset>\n",
+                edit = tr("Edit"),
+                edit_parent = tr("Edit parent comment"),
+                parent_legend = tr("Parent comment"),
+                none = tr("None (top-level comment)"),
+                none_selected = if comment.comment_parent == 0 { " selected='selected'" } else { "" },
+                parent = comment.comment_parent,
+                ok = tr("OK"),
+                cancel = tr("Cancel")
             ));
         }
-        format!(
-            "\n<span id=\"comment-parent-display\">\n{display}</span>\n<a href=\"#edit_comment_parent\" class=\"edit-comment-parent hide-if-no-js\"><span aria-hidden=\"true\">{edit}</span> <span class=\"screen-reader-text\">\n\t{edit_parent}</span></a>\n<fieldset id=\"comment-parent-div\" class=\"hide-if-js\">\n<legend class=\"screen-reader-text\">\n\t{parent_legend}</legend>\n<label for=\"comment_parent\">{parent_legend}</label>\n<select name=\"comment_parent\" id=\"comment_parent\">\n\t<option value=\"0\">\n\t\t{none}\t</option>\n\t\t{options}</select>\n<input type=\"hidden\" id=\"hidden_comment_parent\" value=\"{parent}\" />\n<p>\n<a href=\"#edit_comment_parent\" class=\"save-comment-parent hide-if-no-js button\">{ok}</a>\n<a href=\"#edit_comment_parent\" class=\"cancel-comment-parent hide-if-no-js button-cancel\">{cancel}</a>\n</p>\n</fieldset>\n",
-            edit = tr("Edit"),
-            edit_parent = tr("Edit parent comment"),
-            parent_legend = tr("Parent comment"),
-            none = tr("None (top-level comment)"),
-            parent = comment.comment_parent,
-            ok = tr("OK"),
-            cancel = tr("Cancel")
-        )
+        row
     };
     h.push_str(&format!(
-        "<div id=\"postbox-container-1\" class=\"postbox-container\">\n<div id=\"submitdiv\" class=\"stuffbox\" >\n<h2>{save}</h2>\n<div class=\"inside\">\n<div class=\"submitbox\" id=\"submitcomment\">\n<div id=\"minor-publishing\">\n\n<div id=\"misc-publishing-actions\">\n\n<div class=\"misc-pub-section misc-pub-comment-status\" id=\"comment-status\">\n{status}: <span id=\"comment-status-display\">\n{status_label}</span>\n\n<fieldset id=\"comment-status-radio\">\n<legend class=\"screen-reader-text\">\n\t{status_legend}</legend>\n{approved}<br />\n{pending}<br />\n{spam}\n</fieldset>\n</div><!-- .misc-pub-section -->\n\n<div class=\"misc-pub-section curtime misc-pub-curtime\">\n<span id=\"timestamp\">\n{submitted}</span>\n<a href=\"#edit_timestamp\" class=\"edit-timestamp hide-if-no-js\"><span aria-hidden=\"true\">{edit}</span> <span class=\"screen-reader-text\">\n\t{edit_date}</span></a>\n<fieldset id='timestampdiv' class='hide-if-js'>\n<legend class=\"screen-reader-text\">\n\t{date_legend}</legend>\n{timestamp}\n\t</fieldset>\n</div>\n\n\n<div class=\"misc-pub-section misc-pub-response-to\">\n\t{response_to}</div>\n\n<div class=\"misc-pub-section misc-pub-reply-to\">{parent_row}</div>\n\n</div> <!-- misc actions -->\n<div class=\"clear\"></div>\n</div>\n\n<div id=\"major-publishing-actions\">\n<div id=\"delete-action\">\n<a class='submitdelete deletion' href='comment.php?action=trashcomment&amp;c={id}&amp;_wpnonce={nonce}'>{trash}</a>\n</div>\n<div id=\"publishing-action\">\n<input type=\"submit\" name=\"save\" id=\"save\" class=\"button button-primary button-large\" value=\"{update}\"  /></div>\n<div class=\"clear\"></div>\n</div>\n</div>\n</div>\n</div><!-- /submitdiv -->\n</div>\n\n",
+        "<div id=\"postbox-container-1\" class=\"postbox-container\">\n<div id=\"submitdiv\" class=\"stuffbox\" >\n<h2>{save}</h2>\n<div class=\"inside\">\n<div class=\"submitbox\" id=\"submitcomment\">\n<div id=\"minor-publishing\">\n\n<div id=\"misc-publishing-actions\">\n\n<div class=\"misc-pub-section misc-pub-comment-status\" id=\"comment-status\">\n{status}: <span id=\"comment-status-display\">\n{status_label}</span>\n\n<fieldset id=\"comment-status-radio\">\n<legend class=\"screen-reader-text\">\n\t{status_legend}</legend>\n{approved}<br />\n{pending}<br />\n{spam}\n</fieldset>\n</div><!-- .misc-pub-section -->\n\n<div class=\"misc-pub-section curtime misc-pub-curtime\">\n<span id=\"timestamp\">\n{submitted}</span>\n<a href=\"#edit_timestamp\" class=\"edit-timestamp hide-if-no-js\"><span aria-hidden=\"true\">{edit}</span> <span class=\"screen-reader-text\">\n\t{edit_date}</span></a>\n<fieldset id='timestampdiv' class='hide-if-js'>\n<legend class=\"screen-reader-text\">\n\t{date_legend}</legend>\n{timestamp}\n\t</fieldset>\n</div>\n\n\n<div class=\"misc-pub-section misc-pub-response-to\">\n\t{response_to}</div>\n\n<div class=\"misc-pub-section misc-pub-reply-to\">{parent_row}</div>\n\n\n</div> <!-- misc actions -->\n<div class=\"clear\"></div>\n</div>\n\n<div id=\"major-publishing-actions\">\n<div id=\"delete-action\">\n<a class='submitdelete deletion' href='comment.php?action=trashcomment&amp;c={id}&amp;_wp_original_http_referer&amp;_wpnonce={nonce}'>{trash}</a>\n</div>\n<div id=\"publishing-action\">\n<input type=\"submit\" name=\"save\" id=\"save\" class=\"button button-primary button-large\" value=\"{update}\"  /></div>\n<div class=\"clear\"></div>\n</div>\n</div>\n</div>\n</div><!-- /submitdiv -->\n</div>\n\n",
         save = tr("Save"),
         status = tr("Status"),
         status_legend = tr("Comment status"),
@@ -697,5 +752,5 @@ async fn edit_form(ctx: &Ctx<'_>, comment: &Comment) -> AdminResponse {
     // The form wraps everything from the nonce on.
     let h = format!("<form name=\"post\" action=\"comment.php\" method=\"post\" id=\"post\">\n{h}");
     let screen = Screen { file: "comment.php".into(), parent_file: "edit-comments.php".into(), submenu_file: Some("edit-comments.php".into()), title: tr("Edit Comment"), help: Some(help(ctx)), ..Default::default() };
-    render(ctx, &screen, &h, &Assets { scripts: vec!["comment".into(), "quicktags".into()], footer: "<script>window.quicktags && quicktags({id: 'content'});</script>\n".into(), ..Default::default() }).await
+    render(ctx, &screen, &h, &Assets { scripts: vec!["comment".into()], late_scripts: vec!["quicktags".into(), "wplink".into(), "jquery-ui-autocomplete".into()], footer: "<script>window.quicktags && quicktags({id: 'content'});</script>\n".into(), ..Default::default() }).await
 }

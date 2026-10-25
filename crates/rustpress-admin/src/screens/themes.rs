@@ -222,7 +222,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
             "themeViewed": tr("Theme details: %s"),
         },
     });
-    let assets = Assets { scripts: vec!["theme".into(), "updates".into()], styles: vec!["thickbox".into()], localize: vec![("theme".into(), "_wpThemeSettings".into(), settings)], ..Default::default() };
+    let assets = Assets { scripts: vec!["thickbox".into(), "theme".into(), "updates".into()], styles: vec!["thickbox".into()], localize: vec![("theme".into(), "_wpThemeSettings".into(), settings)], ..Default::default() };
     let screen = Screen { file: "themes.php".into(), parent_file: "themes.php".into(), submenu_file: Some("themes.php".into()), title: tr("Themes"), help: Some(baked.help), ..Default::default() };
     render(ctx, &screen, &content, &assets).await
 }

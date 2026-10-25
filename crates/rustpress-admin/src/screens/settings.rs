@@ -85,7 +85,7 @@ pub async fn writing(ctx: &Ctx<'_>) -> AdminResponse {
     h.push_str(&submit(ctx));
     h.push_str("</form>\n</div>\n");
     let overview = format!("<p>{}</p><p>{}</p>", tr("You can submit content in several different ways; this screen holds the settings for all of them. The top section controls the editor within the dashboard, while the rest control external publishing methods. For more information on any of these methods, use the documentation links."), tr("You must click the Save Changes button at the bottom of the screen for new settings to take effect."));
-    finish(ctx, "options-writing.php", title, h, help(ctx, &overview, &tr("<a href=\"https://wordpress.org/documentation/article/settings-writing-screen/\">Documentation on Writing Settings</a>")), Assets::default()).await
+    finish(ctx, "options-writing.php", title, h, help(ctx, &overview, &tr("<a href=\"https://wordpress.org/documentation/article/settings-writing-screen/\">Documentation on Writing Settings</a>")), Assets { scripts: vec!["user-profile".into()], ..Default::default() }).await
 }
 
 fn random_string(len: usize) -> String {

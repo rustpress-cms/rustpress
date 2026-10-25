@@ -532,5 +532,5 @@ pub async fn user_new(ctx: &Ctx<'_>) -> AdminResponse {
     h.push_str(&format!("\t\t\t<tr class=\"form-field\">\n\t\t<th scope=\"row\"><label for=\"role\">{}</label></th>\n\t\t<td><select name=\"role\" id=\"role\">\n\t\t\t{}\t\t\t</select>\n\t\t</td>\n\t</tr>\n", tr("Role"), role_options(&names, ctx, &default_role)));
     h.push_str(&format!("\t\t</table>\n\n\t\n\t<p class=\"submit\"><input type=\"submit\" name=\"createuser\" id=\"createusersub\" class=\"button button-primary\" value=\"{}\"  /></p>\n</form>\n</div>\n\n", esc_attr(&tr("Add User"))));
     let screen = Screen { file: "user-new.php".into(), parent_file: "users.php".into(), submenu_file: Some("user-new.php".into()), title: tr("Add User"), help: Some(help(ctx)), ..Default::default() };
-    render(ctx, &screen, &h, &Assets { scripts: vec!["user-profile".into()], ..Default::default() }).await
+    render(ctx, &screen, &h, &Assets { scripts: vec!["wp-ajax-response".into(), "user-profile".into()], ..Default::default() }).await
 }

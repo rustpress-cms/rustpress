@@ -691,7 +691,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         ..Default::default()
     };
     let _ = remove_query_arg("", "");
-    render(ctx, &screen, &content, &Assets { scripts: vec![], ..Default::default() }).await
+    render(ctx, &screen, &content, &Assets { scripts: vec!["inline-edit-post".into(), "heartbeat".into()], ..Default::default() }).await
 }
 
 fn strip_tags_label(label: &str, ctx: &Ctx<'_>) -> String {

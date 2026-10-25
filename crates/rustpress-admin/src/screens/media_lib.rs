@@ -78,8 +78,9 @@ pub async fn upload_php(ctx: &Ctx<'_>) -> AdminResponse {
     }
     let title = tr("Media Library");
     if mode_now == "grid" {
-        let mut assets = Assets { scripts: vec!["media-grid".into(), "media".into(), "moxiejs".into(), "plupload".into()], ..Default::default() };
+        let mut assets = Assets::default();
         super::media_ui::enqueue(ctx, &mut assets, 0).await;
+        assets.scripts.extend(["media-grid".to_owned(), "media".to_owned()]);
         assets.localize.push(("media-grid".into(), "_wpMediaGridSettings".into(), serde_json::json!({"adminUrl": "/wp-admin/", "queryVars": request.query.iter().filter(|(k, _)| ["s", "m", "attachment-filter", "item", "post__in", "post_mime_type", "orderby", "order"].contains(&k.as_str())).map(|(k, v)| (k.clone(), serde_json::Value::String(v.clone()))).collect::<serde_json::Map<_, _>>()})));
         let mut h = format!("\t\t<div class=\"wrap\" id=\"wp-media-grid\" data-search=\"{}\">\n\t\t<h1 class=\"wp-heading-inline\">{}</h1>\n\n", esc_attr(request.get("s").unwrap_or_default()), esc_html(&title));
         if ctx.can("upload_files") {

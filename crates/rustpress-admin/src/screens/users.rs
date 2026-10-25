@@ -221,7 +221,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         table_html
     ));
     let screen = Screen { file: "users.php".into(), parent_file: "users.php".into(), submenu_file: Some("users.php".into()), title, help: Some(help(ctx)), ..Default::default() };
-    render(ctx, &screen, &h, &Assets { scripts: vec!["wp-lists".into()], ..Default::default() }).await
+    render(ctx, &screen, &h, &Assets::default()).await
 }
 
 fn help(ctx: &Ctx<'_>) -> Help {

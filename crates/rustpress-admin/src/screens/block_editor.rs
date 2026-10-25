@@ -447,7 +447,7 @@ pub async fn render_editor(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo) -> Admin
     };
 
     let mut assets = Assets {
-        scripts: ["wp-edit-post", "wp-format-library", "wp-block-directory", "wp-core-commands", "media-editor", "media-audiovideo", "mce-view", "image-edit", "imgareaselect", "quicktags", "wplink", "jquery-ui-autocomplete", "thickbox", "media-upload"].iter().map(|s| (*s).to_owned()).collect(),
+        scripts: ["wp-edit-post", "wp-format-library", "wp-block-directory", "media-editor", "media-audiovideo", "mce-view", "image-edit", "imgareaselect", "quicktags", "wplink", "jquery-ui-autocomplete", "thickbox", "media-upload"].iter().map(|s| (*s).to_owned()).collect(),
         editor_modules: true,
         styles: ["wp-edit-post", "wp-format-library", "wp-block-directory", "wp-edit-blocks", "wp-commands", "media-views"].iter().map(|s| (*s).to_owned()).collect(),
         ..Default::default()

@@ -150,6 +150,11 @@ pub struct Assets {
     pub scripts: Vec<String>,
     /// Scripts a page enqueues before `admin-header.php` runs: they come before `svg-painter` and `heartbeat`.
     pub early_scripts: Vec<String>,
+    /// Scripts a screen enqueues on `admin_enqueue_scripts`: after those of every screen.
+    pub late_scripts: Vec<String>,
+    /// Enqueued by the page after `admin-header.php` has printed the head: they are printed in the footer.
+    pub post_header_scripts: Vec<String>,
+    pub post_header_styles: Vec<String>,
     /// Printed in the head after the scripts (`admin_head`).
     pub head: String,
     /// Printed after the scripts of the footer (`admin_print_footer_scripts`, late).
@@ -162,6 +167,80 @@ pub struct Assets {
     pub inline: Vec<(String, String, String)>,
     /// The screen runs the block editor: its script modules (math blocks, routing) are loaded too.
     pub editor_modules: bool,
+}
+
+/// `print_emoji_detection_script()`: the settings and the detection script, inline.
+fn emoji_scripts(env: &ChromeEnv<'_>, editor: bool) -> String {
+    if editor {
+        return String::new();
+    }
+    let root = env.loader.site_url.trim_end_matches('/');
+    let settings = serde_json::json!({
+        "baseUrl": "https://s.w.org/images/core/emoji/17.0.2/72x72/",
+        "ext": ".png",
+        "svgUrl": "https://s.w.org/images/core/emoji/17.0.2/svg/",
+        "svgExt": ".svg",
+        "source": {"concatemoji": format!("{root}/wp-includes/js/wp-emoji-release.min.js?ver={}", env.loader.version)}
+    });
+    let loader = std::fs::read_to_string(env.loader.includes.join("js").join("wp-emoji-loader.min.js")).unwrap_or_default();
+    let json = rustpress_blocks::php_json::encode_with(&settings, rustpress_blocks::php_json::Flags { unescaped_slashes: true, unescaped_unicode: false });
+    format!("<script id=\"wp-emoji-settings\" type=\"application/json\">\n{json}\n</script>\n<script type=\"module\">\n{}\n//# sourceURL={root}/wp-includes/js/wp-emoji-loader.min.js\n</script>\n", loader.trim_end())
+}
+
+/// The root-level text of an HTML label (`$extract_root_text()` of `wp_enqueue_command_palette_assets()`).
+fn root_text(label: &str) -> String {
+    let mut out = String::new();
+    let mut depth = 0usize;
+    let mut rest = label;
+    while !rest.is_empty() {
+        match rest.find('<') {
+            Some(at) => {
+                if depth == 0 {
+                    out.push_str(&rest[..at]);
+                }
+                let Some(end) = rest[at..].find('>') else { break };
+                let tag = &rest[at + 1..at + end];
+                if tag.starts_with('/') {
+                    depth = depth.saturating_sub(1);
+                } else if !tag.ends_with('/') {
+                    depth += 1;
+                }
+                rest = &rest[at + end + 1..];
+            }
+            None => {
+                if depth == 0 {
+                    out.push_str(rest);
+                }
+                break;
+            }
+        }
+    }
+    out.trim().to_owned()
+}
+
+/// `wp.coreCommands.initializeCommandPalette( {...} )` with the entries of the menu.
+fn command_palette_call(env: &ChromeEnv<'_>) -> String {
+    let site = env.site;
+    let url_of = |slug: &str| if slug.contains(".php") { slug.to_owned() } else { format!("admin.php?page={slug}") };
+    let mut commands: Vec<serde_json::Value> = Vec::new();
+    for item in &env.menu.items {
+        let label = root_text(&item.title);
+        if label.is_empty() {
+            continue;
+        }
+        commands.push(serde_json::json!({"label": label, "url": url_of(&item.slug), "name": item.slug}));
+        if let Some((_, list)) = env.menu.submenu.iter().find(|(parent, _)| *parent == item.slug) {
+            for sub in list {
+                let sub_label = root_text(&sub.title);
+                if sub_label.is_empty() {
+                    continue;
+                }
+                commands.push(serde_json::json!({"label": rustpress_core::i18n::sprintf(&site.tr("%1$s > %2$s"), &[&label, &sub_label]), "url": url_of(&sub.slug), "name": format!("{}-{}", item.slug, sub.slug)}));
+            }
+        }
+    }
+    let json = rustpress_blocks::php_json::encode_with(&serde_json::json!({"is_network_admin": false, "menu_commands": commands}), rustpress_blocks::php_json::Flags { unescaped_slashes: true, unescaped_unicode: false });
+    format!("wp.coreCommands.initializeCommandPalette( {} );", json.replace('<', &format!("{}u003C", char::from(92u8))).replace('>', &format!("{}u003E", char::from(92u8))))
 }
 
 /// The `version` of a script module (`wp-includes/js/dist/script-modules/<path>.min.asset.php`).
@@ -231,10 +310,6 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
         "userSettings",
         &serde_json::json!({"url": env.cookie_path, "uid": env.user.id, "time": env.now, "secure": if env.secure { "1" } else { "" }}),
     );
-    // The editors enqueue their own scripts before `admin-header.php`, and `utils` comes after the first two.
-    if assets.early_scripts.is_empty() {
-        scripts.enqueue("utils");
-    }
     // `wp_heartbeat_settings()` and `wp_heartbeat_set_suspension()`.
     let mut heartbeat = serde_json::Map::new();
     if let Some(nonce) = env.loader.nonce.as_ref() {
@@ -244,8 +319,8 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
         heartbeat.insert("suspension".into(), serde_json::Value::String("disable".into()));
     }
     scripts.relocalize("heartbeat", "heartbeatSettings", &serde_json::Value::Object(heartbeat));
-    let (first, rest) = assets.early_scripts.split_at(assets.early_scripts.len().min(2));
-    for handle in ["common", "admin-bar"].into_iter().chain(first.iter().map(String::as_str)).chain(if assets.early_scripts.is_empty() { None } else { Some("utils") }).chain(rest.iter().map(String::as_str)).chain(["svg-painter", "heartbeat", "wp-auth-check"]) {
+    // A screen enqueues its scripts before `admin-header.php` adds the ones of every screen.
+    for handle in ["common", "admin-bar"].into_iter().chain(assets.early_scripts.iter().map(String::as_str)).chain(assets.scripts.iter().map(String::as_str)) {
         scripts.enqueue(handle);
     }
     for (handle, object, data) in &assets.localize {
@@ -254,10 +329,25 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
     for (handle, code, position) in &assets.inline {
         scripts.add_inline_script(handle, code, position);
     }
-    for handle in &assets.scripts {
+    for handle in ["svg-painter", "heartbeat", "wp-auth-check"] {
+        scripts.enqueue(handle);
+    }
+    // `wp_enqueue_command_palette_assets()` runs for every screen, last.
+    scripts.enqueue("wp-commands");
+    scripts.enqueue("wp-core-commands");
+    scripts.add_inline_script("wp-core-commands", &command_palette_call(env), "after");
+    for handle in &assets.late_scripts {
         scripts.enqueue(handle);
     }
     let head_scripts = scripts.print_head_scripts(true);
+    // What the page enqueues after the head is printed comes with the footer.
+    for handle in &assets.post_header_styles {
+        styles.enqueue(handle);
+    }
+    let footer_styles = styles.print_admin_styles(true);
+    for handle in &assets.post_header_scripts {
+        scripts.enqueue(handle);
+    }
     let footer_scripts = scripts.print_footer_scripts(true);
 
     let mut classes = vec!["wp-admin".to_owned(), "wp-core-ui".to_owned(), "no-js".to_owned()];
@@ -360,8 +450,10 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
         note = tr("The login page will open in a new tab. After logging in you can close it and return to this page.")
     ));
     out.push_str(&script_modules(env, assets.editor_modules));
+    out.push_str(&footer_styles);
     out.push_str(&footer_scripts);
+    out.push_str(&emoji_scripts(env, assets.editor_modules));
     out.push_str(&assets.footer);
-    out.push_str("\n</body>\n</html>");
+    out.push_str("\n<div class=\"clear\"></div></div><!-- wpwrap -->\n<script>if(typeof wpOnload==='function')wpOnload();</script>\n</body>\n</html>\n");
     out
 }

@@ -116,7 +116,6 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     super::media_ui::enqueue(ctx, &mut assets, 0).await;
     assets.early_scripts = std::mem::take(&mut assets.scripts);
     assets.early_scripts.push("wp-block-directory".into());
-    assets.scripts = vec!["wp-core-commands".into()];
     shared_inline(ctx, &mut assets, &preloaded).await;
     assets.inline.push(("wp-edit-site".into(), format!("wp.domReady( function() {{\n\t\t\twp.editSite.initializeEditor( \"site-editor\", {} );\n\t\t}} );", inline_json(&settings)), "after".into()));
 

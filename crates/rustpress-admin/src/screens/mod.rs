@@ -301,14 +301,103 @@ pub async fn render(ctx: &Ctx<'_>, screen: &Screen, content: &str, assets: &Asse
         loader,
         user: &ctx.user,
         menu: &menu,
-        bar: BarContext { updates: updates.total(), pending_comments: pending, logout_nonce: ctx.create_nonce("log-out"), view_item: None, command_palette: assets.scripts.iter().any(|s| s == "wp-core-commands") },
+        bar: BarContext { updates: updates.total(), pending_comments: pending, logout_nonce: ctx.create_nonce("log-out"), view_item: None, command_palette: true },
         stylesheet: env.site.settings.stylesheet.clone(),
         cookie_path: paths(env.site).cookie,
         now: env.now,
         secure: env.https,
         request_uri: ctx.request.request_uri.clone(),
     };
-    let body = chrome::render(&chrome_env, screen, content, assets);
+    // What the command palette's scripts need on every screen: the fetch layer, the data and preferences persistence.
+    let mut assets = assets.clone();
+    if !assets.inline.iter().any(|(handle, _, _)| handle == "wp-api-fetch") {
+        let nonce = ctx.create_nonce("wp_rest");
+        assets.inline.push((
+            "wp-api-fetch".into(),
+            format!(
+                "wp.apiFetch.use( wp.apiFetch.createRootURLMiddleware( {} ) );\nwp.apiFetch.nonceMiddleware = wp.apiFetch.createNonceMiddleware( {} );\nwp.apiFetch.use( wp.apiFetch.nonceMiddleware );\nwp.apiFetch.use( wp.apiFetch.mediaUploadMiddleware );\nwp.apiFetch.nonceEndpoint = {};",
+                serde_json::json!(env.site.site_url("wp-json/")),
+                serde_json::json!(nonce),
+                serde_json::json!(env.site.site_url("wp-admin/admin-ajax.php?action=rest-nonce"))
+            ),
+            "after".into(),
+        ));
+    }
+    if !assets.inline.iter().any(|(handle, _, _)| handle == "mediaelement-core") {
+        // `var mejsL10n`: the strings of MediaElement.js, read from the script loader of WordPress and translated.
+        let mut strings = serde_json::Map::new();
+        if let Ok(php) = std::fs::read_to_string(env.loader.includes.join("script-loader.php"))
+            && let Ok(re) = regex::Regex::new(r"'(mejs\.[a-z-]+)'\s*=>\s*__\(\s*'((?:[^'\\]|\\.)*)'\s*\)")
+        {
+            for found in re.captures_iter(&php) {
+                strings.insert(found[1].to_owned(), serde_json::Value::from(ctx.tr(&found[2].replace("\\'", "'"))));
+            }
+        }
+        let language = env.site.locale().split(['_', '-']).next().unwrap_or("en").to_lowercase();
+        let json = rustpress_blocks::php_json::encode_with(&serde_json::json!({"language": language, "strings": strings}), rustpress_blocks::php_json::Flags { unescaped_slashes: true, unescaped_unicode: false });
+        let json = json.replace('<', &format!("{}u003C", char::from(92u8))).replace('>', &format!("{}u003E", char::from(92u8)));
+        assets.inline.push(("mediaelement-core".into(), format!("var mejsL10n = {json};"), "before".into()));
+    }
+    if !assets.inline.iter().any(|(handle, _, _)| handle == "moment") {
+        // `moment.updateLocale()` and `wp.date.setSettings()` (`wp_default_packages_inline_scripts()`).
+        let site = env.site;
+        let locale = site.locale_data();
+        let flags = rustpress_blocks::php_json::Flags { unescaped_slashes: true, unescaped_unicode: false };
+        let hex_tags = |json: String| json.replace('<', &format!("{}u003C", char::from(92u8))).replace('>', &format!("{}u003E", char::from(92u8)));
+        let time_format = site.options.string("time_format", &ctx.tr("g:i a"));
+        let date_format = site.options.string("date_format", &ctx.tr("F j, Y"));
+        let start_of_week = site.options.string("start_of_week", "0").parse::<i64>().unwrap_or(0);
+        let user_locale = site.locale();
+        let moment = serde_json::json!({
+            "months": locale.month, "monthsShort": locale.month_abbrev, "weekdays": locale.weekday, "weekdaysShort": locale.weekday_abbrev,
+            "week": {"dow": start_of_week},
+            "longDateFormat": {"LT": time_format, "LTS": null, "L": null, "LL": date_format, "LLL": ctx.tr("F j, Y g:i a"), "LLLL": null}
+        });
+        assets.inline.push(("moment".into(), format!("moment.updateLocale( '{user_locale}', {} );", rustpress_blocks::php_json::encode_with(&moment, flags)), "after".into()));
+        let gmt_offset = site.options.string("gmt_offset", "0");
+        let offset: f64 = gmt_offset.parse().unwrap_or(0.0);
+        let timezone_string = site.options.string("timezone_string", "UTC");
+        let abbr = if timezone_string.is_empty() { String::new() } else { site.date("T", env.now) };
+        let offset_value = if offset.fract() == 0.0 { serde_json::json!(offset as i64) } else { serde_json::json!(offset) };
+        let relative = serde_json::json!({
+            "future": ctx.tr("%s from now"), "past": ctx.tr("%s ago"), "s": ctx.tr("a second"), "ss": ctx.tr("%d seconds"), "m": ctx.tr("a minute"), "mm": ctx.tr("%d minutes"),
+            "h": ctx.tr("an hour"), "hh": ctx.tr("%d hours"), "d": ctx.tr("a day"), "dd": ctx.tr("%d days"), "M": ctx.tr("a month"), "MM": ctx.tr("%d months"), "y": ctx.tr("a year"), "yy": ctx.tr("%d years")
+        });
+        let date = serde_json::json!({
+            "l10n": {
+                "locale": user_locale, "months": locale.month, "monthsShort": locale.month_abbrev, "weekdays": locale.weekday, "weekdaysShort": locale.weekday_abbrev,
+                "meridiem": {"am": locale.meridiem[0], "pm": locale.meridiem[1], "AM": locale.meridiem[2], "PM": locale.meridiem[3]},
+                "relative": relative, "startOfWeek": start_of_week
+            },
+            "formats": {"time": time_format, "date": date_format, "datetime": ctx.tr("F j, Y g:i a"), "datetimeAbbreviated": ctx.tr("M j, Y g:i a")},
+            "timezone": {"offset": offset_value, "offsetFormatted": gmt_offset.replace(".25", ":15").replace(".5", ":30").replace(".75", ":45"), "string": timezone_string, "abbr": abbr}
+        });
+        assets.inline.push(("wp-date".into(), hex_tags(format!("wp.date.setSettings( {} );", rustpress_blocks::php_json::encode_with(&date, flags))), "after".into()));
+    }
+    if !assets.inline.iter().any(|(handle, _, _)| handle == "wp-data") {
+        assets.inline.push((
+            "wp-data".into(),
+            format!("( function() {{\n\tvar userId = {};\n\tvar storageKey = \"WP_DATA_USER_\" + userId;\n\twp.data\n\t\t.use( wp.data.plugins.persistence, {{ storageKey: storageKey }} );\n}} )();", ctx.user.id),
+            "after".into(),
+        ));
+    }
+    if !assets.inline.iter().any(|(handle, _, _)| handle == "wp-preferences") {
+        let preferences = env
+            .db
+            .user_meta(ctx.user.id, &format!("{}persisted_preferences", env.db.table_prefix()))
+            .await
+            .ok()
+            .flatten()
+            .and_then(|raw| rustpress_phpser::unserialize(raw.as_bytes()).ok())
+            .map_or_else(|| serde_json::json!(""), |value| rustpress_core::options::php_to_json(&value));
+        let preferences = rustpress_blocks::php_json::encode_with(&preferences, rustpress_blocks::php_json::Flags { unescaped_slashes: true, unescaped_unicode: true });
+        assets.inline.push((
+            "wp-preferences".into(),
+            format!("( function() {{\n\t\t\t\tvar serverData = {};\n\t\t\t\tvar userId = \"{}\";\n\t\t\t\tvar persistenceLayer = wp.preferencesPersistence.__unstableCreatePersistenceLayer( serverData, userId );\n\t\t\t\tvar preferencesStore = wp.preferences.store;\n\t\t\t\twp.data.dispatch( preferencesStore ).setPersistenceLayer( persistenceLayer );\n\t\t\t}} ) ();", preferences, ctx.user.id),
+            "after".into(),
+        ));
+    }
+    let body = chrome::render(&chrome_env, screen, content, &assets);
     AdminResponse { status: 200, headers: page_headers(), cookies: Vec::new(), body }
 }
 

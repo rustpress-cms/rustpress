@@ -160,5 +160,5 @@ pub async fn tools(ctx: &Ctx<'_>) -> AdminResponse {
 
 /// `import.php`.
 pub async fn import(ctx: &Ctx<'_>) -> AdminResponse {
-    simple(ctx, "import.php", "import", "Import", "tools.php", Assets { scripts: vec!["plugin-install".into(), "updates".into()], styles: vec!["thickbox".into()], ..Default::default() }).await
+    simple(ctx, "import.php", "import", "Import", "tools.php", Assets { scripts: vec!["thickbox".into(), "plugin-install".into(), "updates".into()], styles: vec!["thickbox".into()], ..Default::default() }).await
 }

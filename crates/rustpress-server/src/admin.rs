@@ -110,6 +110,25 @@ async fn installed_languages(config: &Config, site: &Site) -> Vec<LanguageOption
         .collect()
 }
 
+/// `wp_get_available_translations()` from its transient: `(locale, native name, lang)` in the order it was stored.
+async fn available_translations(site: &Site, now: i64) -> Vec<(String, String, String)> {
+    let timeout = site.options.fetch(&site.db, "_site_transient_timeout_available_translations").await.ok().flatten().and_then(|t| t.parse::<i64>().ok());
+    if timeout.is_some_and(|t| t < now) {
+        return Vec::new();
+    }
+    let Some(raw) = site.options.fetch(&site.db, "_site_transient_available_translations").await.ok().flatten() else { return Vec::new() };
+    let Ok(rustpress_phpser::Value::Array(items)) = rustpress_phpser::unserialize(raw.as_bytes()) else { return Vec::new() };
+    items
+        .iter()
+        .filter_map(|(_, entry)| {
+            let language = entry.get("language")?.as_str()?.to_owned();
+            let native_name = entry.get("native_name").and_then(|v| v.as_str()).unwrap_or_default().to_owned();
+            let lang = entry.get("iso").and_then(|iso| iso.as_array()).and_then(|items| items.first()).and_then(|(_, v)| v.as_str()).unwrap_or_default().to_owned();
+            Some((language, native_name, lang))
+        })
+        .collect()
+}
+
 /// The privacy policy page, when it is published: `(title, address)`.
 async fn privacy_policy(site: &Site) -> Option<(String, String)> {
     let id = site.options.u64("wp_page_for_privacy_policy", 0);
@@ -238,7 +257,7 @@ pub async fn admin_page(loaded: &Loaded, config: &Config, writer: Option<&rustpr
         https: loaded.site.settings.siteurl.starts_with("https"),
         now: now(),
         languages: parts.languages.clone(),
-        available_translations: Vec::new(),
+        available_translations: available_translations(&loaded.site, now()).await,
         block_theme,
         theme: &loaded.theme,
         registry: &loaded.registry,
