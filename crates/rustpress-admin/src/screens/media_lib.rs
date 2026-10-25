@@ -2,7 +2,7 @@
 
 use rustpress_core::formatting::{esc_attr, esc_html, esc_url};
 use rustpress_core::i18n::sprintf;
-use rustpress_core::urls::add_query_arg;
+use rustpress_core::urls::{add_query_arg, remove_query_arg};
 use rustpress_db::{AttachmentQuery, Post};
 
 use super::common::{forbidden, read_only};
@@ -222,7 +222,14 @@ fn notice(ctx: &Ctx<'_>) -> String {
     let tr = |s: &str| ctx.tr(s);
     let site = ctx.site();
     let mut message = String::new();
-    if let Some(n) = ctx.request.get("deleted").and_then(|v| v.parse::<i64>().ok()).filter(|n| *n > 0) {
+    let count = |key: &str| ctx.request.get(key).and_then(|v| v.parse::<i64>().ok()).filter(|n| *n > 0);
+    if let Some(n) = count("attached") {
+        message = if n == 1 { tr("Media file attached.") } else { sprintf(&tr("%s media files attached."), &[&site.number_i18n(n as u64)]) };
+    }
+    if let Some(n) = count("detach") {
+        message = if n == 1 { tr("Media file detached.") } else { sprintf(&tr("%s media files detached."), &[&site.number_i18n(n as u64)]) };
+    }
+    if let Some(n) = count("deleted") {
         message = if n == 1 { tr("Media file permanently deleted.") } else { sprintf(&tr("%s media files permanently deleted."), &[&site.number_i18n(n as u64)]) };
     }
     if message.is_empty() {
@@ -300,25 +307,51 @@ async fn row(ctx: &Ctx<'_>, post: &Post) -> String {
     )
 }
 
-/// `post.php?action=delete` for one attachment and the bulk delete of the list.
+/// `post.php?action=delete` for one attachment, and the bulk actions of the list: delete, attach and detach.
 async fn delete_action(ctx: &Ctx<'_>) -> Option<AdminResponse> {
     let request = ctx.request;
-    let action = {
+    let has_media = request.form.iter().chain(request.query.iter()).any(|(k, _)| k == "media[]");
+    let action = if request.request("found_post_id").is_some() && has_media {
+        "attach".to_owned()
+    } else if request.request("parent_post_id").is_some() && has_media {
+        "detach".to_owned()
+    } else {
         let a = request.request("action").unwrap_or_default();
         if a.is_empty() || a == "-1" { request.request("action2").unwrap_or_default().to_owned() } else { a.to_owned() }
     };
-    if action != "delete" || !request.post {
+    if !matches!(action.as_str(), "delete" | "attach" | "detach") || (action == "delete" && !request.post) {
         return None;
     }
     if !ctx.verify_nonce("bulk-media") {
         return Some(die(ctx.env, 403, &ctx.tr("WordPress Failure Notice"), &ctx.tr("The link you followed has expired.")));
+    }
+    if ctx.env.writer.is_none() {
+        return Some(read_only(ctx));
+    }
+    let ids: Vec<u64> = request.form.iter().chain(request.query.iter()).filter(|(k, _)| k == "media[]").filter_map(|(_, v)| v.parse().ok()).collect();
+    if action != "delete" {
+        let parent: u64 = request.request(if action == "attach" { "found_post_id" } else { "parent_post_id" }).and_then(|p| p.parse().ok()).unwrap_or(0);
+        if parent == 0 {
+            return None;
+        }
+        if !ctx.can("edit_posts") {
+            return Some(forbidden(ctx, "Sorry, you are not allowed to edit this post."));
+        }
+        let count = super::ajax_misc::attach(ctx, &ids, if action == "attach" { parent } else { 0 }).await;
+        let referer = request.request("_wp_http_referer").filter(|r| r.contains("upload.php")).unwrap_or("upload.php").to_owned();
+        let base = ctx.admin_url("upload.php");
+        let location = match referer.split_once('?') {
+            Some((_, query)) if !query.is_empty() => format!("{base}?{query}"),
+            _ => base,
+        };
+        let location = remove_query_arg(&remove_query_arg(&location, "attached"), "detach");
+        return Some(redirect(&add_query_arg(&location, if action == "attach" { "attached" } else { "detach" }, &count.to_string())));
     }
     if !ctx.can("delete_posts") {
         return Some(forbidden(ctx, "Sorry, you are not allowed to delete this item."));
     }
     let Some(writer) = ctx.env.writer else { return Some(read_only(ctx)) };
     let content = Content { site: ctx.site(), db: ctx.env.db, writer, user: &ctx.user, now: ctx.env.now };
-    let ids: Vec<u64> = request.form.iter().filter(|(k, _)| k == "media[]").filter_map(|(_, v)| v.parse().ok()).collect();
     let mut deleted = 0;
     for id in ids {
         if content.delete_attachment(id, super::ajax_media::uploads_dir(ctx.env)).await.unwrap_or(false) {

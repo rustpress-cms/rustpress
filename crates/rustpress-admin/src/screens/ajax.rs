@@ -18,7 +18,25 @@ pub(super) fn headers(content_type: &str) -> Vec<(String, String)> {
 
 /// `wp_send_json( $value )`.
 pub fn json(status: u16, value: &Json) -> AdminResponse {
-    AdminResponse { status, headers: headers("application/json; charset=UTF-8"), cookies: Vec::new(), body: value.to_string() }
+    AdminResponse { status, headers: headers("application/json; charset=UTF-8"), cookies: Vec::new(), body: php_json(value) }
+}
+
+/// `wp_json_encode()` without flags: slashes and everything outside ASCII are escaped.
+pub fn php_json(value: &Json) -> String {
+    let mut out = String::new();
+    for c in value.to_string().chars() {
+        match c {
+            '/' => out.push_str("\\/"),
+            c if c.is_ascii() => out.push(c),
+            c => {
+                let mut units = [0u16; 2];
+                for unit in c.encode_utf16(&mut units) {
+                    out.push_str(&format!("\\u{unit:04x}"));
+                }
+            }
+        }
+    }
+    out
 }
 
 /// `wp_die( $text )` of the Ajax handlers: plain text.
@@ -238,6 +256,7 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse
         "add-tag" | "inline-save-tax" | "delete-tag" => super::ajax_terms::handle(env, request, &user, &session.token, &action).await,
         "dim-comment" | "delete-comment" | "replyto-comment" | "edit-comment" => super::ajax_comments::handle(env, request, &user, &session.token, &action).await,
         "query-attachments" | "get-attachment" | "save-attachment" | "delete-post" | "upload-attachment" | "async-upload" | "set-attachment-thumbnail" => super::ajax_media::handle(env, request, &user, &session.token, &action).await,
+        "ajax-tag-search" | "get-tagcloud" | "wp-remove-post-lock" | "dismiss-wp-pointer" | "sample-permalink" | "find_posts" | "save-user-color-scheme" | "generate-password" | "destroy-sessions" | "autocomplete-user" => super::ajax_misc::handle(env, request, &user, &session.token, &action).await,
         "rest-nonce" => text(200, &env.auth.create_nonce("wp_rest", user.id, &session.token, env.now).unwrap_or_default()),
         "date_format" | "time_format" => {
             let format = rustpress_core::formatting::strip_tags(request.post_field("date").unwrap_or_default());
