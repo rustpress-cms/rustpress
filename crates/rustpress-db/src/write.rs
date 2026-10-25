@@ -197,6 +197,12 @@ impl Writer {
         Ok(sqlx::query(AssertSqlSafe(sql)).execute(&self.pool).await?.rows_affected())
     }
 
+    /// `DELETE FROM table WHERE <condition>`; the condition is built by the caller from trusted parts.
+    pub async fn delete_rows_where(&self, table: &str, condition: &str) -> Result<u64> {
+        let sql = format!("DELETE FROM {} WHERE {condition}", self.prefix.table(table));
+        Ok(sqlx::query(AssertSqlSafe(sql)).execute(&self.pool).await?.rows_affected())
+    }
+
     /// The first column of a query as numbers.
     pub async fn column_u64(&self, sql: &str) -> Result<Vec<u64>> {
         Ok(sqlx::query_scalar(AssertSqlSafe(sql.to_owned())).fetch_all(&self.pool).await?)

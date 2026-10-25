@@ -7,8 +7,10 @@ use rustpress_core::slug::sanitize_title;
 use rustpress_db::{Db, Post, SlugScope, Val, Writer};
 use rustpress_phpser::{Key, Value};
 
+mod comments;
 mod terms;
 mod users;
+pub use comments::CommentUpdate;
 pub use terms::TermData;
 pub use users::UserData;
 

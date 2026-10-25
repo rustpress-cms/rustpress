@@ -74,12 +74,15 @@ fn postbox(id: &str, title: &str, extra_class: &str, inner: &str) -> String {
 
 /// `touch_time()` for the publish box.
 fn touch_time(ctx: &Ctx<'_>, post: &Post, edit: bool) -> String {
+    let now_local = ctx.site().date("Y-m-d H:i:s", ctx.env.now);
+    let date = if edit && post.post_date != "0000-00-00 00:00:00" && !post.post_date.is_empty() { post.post_date.clone() } else { now_local };
+    timestamp_fields(ctx, &date)
+}
+
+/// The date fields of `touch_time()` for the local date `date` (`Y-m-d H:i:s`).
+pub fn timestamp_fields(ctx: &Ctx<'_>, date: &str) -> String {
     let site = ctx.site();
-    let (date, cur) = {
-        let now_local = site.date("Y-m-d H:i:s", ctx.env.now);
-        let date = if edit && post.post_date != "0000-00-00 00:00:00" && !post.post_date.is_empty() { post.post_date.clone() } else { now_local.clone() };
-        (date, now_local)
-    };
+    let (date, cur) = (date.to_owned(), site.date("Y-m-d H:i:s", ctx.env.now));
     let part = |s: &str, range: std::ops::Range<usize>| s.get(range).unwrap_or("00").to_owned();
     let (jj, mm, aa, hh, mn, ss) = (part(&date, 8..10), part(&date, 5..7), part(&date, 0..4), part(&date, 11..13), part(&date, 14..16), part(&date, 17..19));
     let (cur_jj, cur_mm, cur_aa, cur_hh, cur_mn) = (part(&cur, 8..10), part(&cur, 5..7), part(&cur, 0..4), part(&cur, 11..13), part(&cur, 14..16));

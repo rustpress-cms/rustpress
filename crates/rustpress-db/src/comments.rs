@@ -14,6 +14,12 @@ impl Db {
     }
 
     /// A single comment by ID, whatever its status.
+    /// A comment in any status.
+    pub async fn comment_any(&self, id: u64) -> Result<Option<Comment>> {
+        let sql = format!("SELECT {COMMENT_COLUMNS} FROM {} WHERE comment_ID = ?", self.prefix.table("comments"));
+        Ok(sqlx::query_as(AssertSqlSafe(sql)).bind(id).fetch_optional(&self.pool).await?)
+    }
+
     pub async fn comment(&self, id: u64) -> Result<Option<Comment>> {
         let sql = format!("SELECT {COMMENT_COLUMNS} FROM {} WHERE comment_ID = ?", self.prefix.table("comments"));
         Ok(sqlx::query_as(AssertSqlSafe(sql)).bind(id).fetch_optional(&self.pool).await?)

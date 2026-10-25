@@ -597,7 +597,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
             out.push_str(&submit_button(&tr("Empty Trash"), "apply", "delete_all", "delete_all"));
         }
         out.push_str("</div>
-");
+		");
         out
     };
     let extra_bottom = {
@@ -607,7 +607,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
             out.push_str(&submit_button(&tr("Empty Trash"), "apply", "delete_all2", "delete_all2"));
         }
         out.push_str("		</div>
-");
+		");
         out
     };
 

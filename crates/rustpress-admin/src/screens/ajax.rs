@@ -222,6 +222,7 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse
             text(200, "1")
         }
         "add-tag" | "inline-save-tax" | "delete-tag" => super::ajax_terms::handle(env, request, &user, &session.token, &action).await,
+        "dim-comment" | "delete-comment" | "replyto-comment" | "edit-comment" => super::ajax_comments::handle(env, request, &user, &session.token, &action).await,
         "date_format" | "time_format" => {
             let format = rustpress_core::formatting::strip_tags(request.post_field("date").unwrap_or_default());
             text(200, &env.site.date(&format, env.now))

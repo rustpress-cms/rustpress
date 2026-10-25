@@ -252,9 +252,6 @@ impl Table<'_> {
         out.push_str("		</div>
 		");
         out.push_str(extra);
-        if !extra.is_empty() {
-            out.push_str("		");
-        }
         if which == "top" && self.total_pages() > 1 {
             out.push_str(&format!("<h2 class='screen-reader-text'>{}</h2>", self.heading_pagination()));
         }

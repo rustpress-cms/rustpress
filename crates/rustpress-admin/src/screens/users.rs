@@ -183,7 +183,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     let role_options = |suffix: &str| -> String {
         let options: Vec<String> = all_roles.iter().rev().map(|(slug, name)| format!("\t<option value='{}'>{}</option>", esc_attr(slug), site.trx(name, "User role"))).collect();
         format!(
-            "\t<div class=\"alignleft actions\">\n\t\t\t\t<label class=\"screen-reader-text\" for=\"new_role{suffix}\">\n\t\t\t{change}\t\t</label>\n\t\t<select name=\"new_role{suffix}\" id=\"new_role{suffix}\">\n\t\t\t<option value=\"\">{change}</option>\n\t\t\t\n{options}\t\t\t<option value=\"none\">&mdash; {none} &mdash;</option>\n\t\t</select>\n\t\t\t<input type=\"submit\" name=\"changeit{suffix}\" id=\"changeit{suffix}\" class=\"button\" value=\"{btn}\"  />\t\t</div>\n",
+            "\t<div class=\"alignleft actions\">\n\t\t\t\t<label class=\"screen-reader-text\" for=\"new_role{suffix}\">\n\t\t\t{change}\t\t</label>\n\t\t<select name=\"new_role{suffix}\" id=\"new_role{suffix}\">\n\t\t\t<option value=\"\">{change}</option>\n\t\t\t\n{options}\t\t\t<option value=\"none\">&mdash; {none} &mdash;</option>\n\t\t</select>\n\t\t\t<input type=\"submit\" name=\"changeit{suffix}\" id=\"changeit{suffix}\" class=\"button\" value=\"{btn}\"  />\t\t</div>\n\t\t",
             options = options.join("\n"),
             change = tr("Change role to&hellip;"),
             none = tr("No role for this site"),

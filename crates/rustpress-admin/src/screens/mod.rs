@@ -15,7 +15,9 @@ use crate::menu::{AdminMenu, MenuContext};
 use crate::registry::LoaderEnv;
 
 pub mod ajax;
+pub mod ajax_comments;
 pub mod ajax_terms;
+pub mod comments;
 pub mod common;
 pub mod dashboard;
 pub mod editor;
@@ -226,6 +228,8 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse
         "options.php" => options::handle(&ctx).await,
         "edit-tags.php" => terms::page(&ctx).await,
         "term.php" => terms::edit_page(&ctx).await,
+        "edit-comments.php" => comments::page(&ctx).await,
+        "comment.php" => comments::comment_php(&ctx).await,
         "users.php" => users::page(&ctx).await,
         "profile.php" => user_edit::profile(&ctx).await,
         "user-edit.php" => user_edit::user_edit(&ctx).await,
