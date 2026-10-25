@@ -31,7 +31,7 @@ async fn transient(ctx: &Ctx<'_>, name: &str) -> Option<Value> {
     rustpress_phpser::unserialize(raw.as_bytes()).ok()
 }
 
-fn wp_root(ctx: &Ctx<'_>) -> std::path::PathBuf {
+pub(super) fn wp_root(ctx: &Ctx<'_>) -> std::path::PathBuf {
     ctx.env.loader.includes.parent().map(std::path::Path::to_path_buf).unwrap_or_default()
 }
 
@@ -63,6 +63,13 @@ fn list_core_update(ctx: &Ctx<'_>, update: &Value, version: &str) -> String {
     out.push_str(&format!("<input type=\"submit\" name=\"upgrade\" id=\"upgrade\" class=\"button\" value=\"{}\"  /></p>", esc_attr(&submit)));
     out.push_str("</form>");
     out
+}
+
+/// The version the first core offer upgrades to, when there is one.
+pub(super) async fn core_upgrade_version(ctx: &Ctx<'_>) -> Option<String> {
+    let core = transient(ctx, "update_core").await?;
+    let Some(Value::Array(updates)) = field(&core, "updates") else { return None };
+    updates.iter().map(|(_, u)| u).find(|u| text(u, "response") == "upgrade").map(|u| text(u, "current"))
 }
 
 /// `core_upgrade_preamble()`.
