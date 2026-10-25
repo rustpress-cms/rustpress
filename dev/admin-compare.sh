@@ -7,8 +7,7 @@ export MSYS_NO_PATHCONV=1
 T="${TEMP:-/tmp}"
 login() { rm -f "$T/ac_$1.txt"; curl -s -c "$T/ac_$1.txt" -b "$T/ac_$1.txt" "http://localhost:$2/wp-login.php" -o /dev/null; curl -s -c "$T/ac_$1.txt" -b "$T/ac_$1.txt" -X POST "http://localhost:$2/wp-login.php" --data-urlencode log=rpadmin --data-urlencode pwd=rustpress-dev --data-urlencode testcookie=1 -o /dev/null; }
 # Only the frame and the content: from the wrapper to the footer (the head carries fonts and global styles RustPress leaves out).
-body() { sed -n '/<div id="wpwrap">/,/<div id="wpfooter"/p'; }
-norm() { body | tr -d '\r' | sed 's/></>\n</g' | sed -E 's/(nonce|_wpnonce|welcomepanelnonce)(["'\'' =:]+)[0-9a-f]{10}/\1\2N/g; s/_wpnonce=[0-9a-f]{10}/_wpnonce=N/g; s/localhost:3001/localhost:8080/g; s/"time":"[0-9]+"/"time":"T"/; s/<code>[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9:]{8}<\/code>/<code>TIME<\/code>/g'; }
+norm() { python3 "$(dirname "$0")/admin_norm.py"; }
 login ref 8080; login rp 3001
 rc=0
 for screen in "$@"; do

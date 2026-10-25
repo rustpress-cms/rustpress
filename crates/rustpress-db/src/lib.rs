@@ -21,11 +21,12 @@ mod write;
 use sqlx::Executor;
 use sqlx::mysql::{MySqlPool, MySqlPoolOptions};
 
+pub use admin::SlugScope;
 pub use archives::{ArchiveKind, ArchiveRow};
 pub use comments::{CommentOrder, CommentQuery};
 pub use models::{AuthUser, Comment, Post, PostMeta, Term, User};
 pub use posts::{Order, OrderBy, PostQuery};
-pub use write::Writer;
+pub use write::{Val, Writer};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {

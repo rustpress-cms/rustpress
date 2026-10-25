@@ -14,6 +14,8 @@ pub struct BarContext {
     pub pending_comments: u64,
     /// `wp_create_nonce( 'log-out' )`.
     pub logout_nonce: String,
+    /// The "View Post" entry of the screen that edits a post: `(label, address)`.
+    pub view_item: Option<(String, String)>,
 }
 
 fn item(id: &str, class: &str, inner: &str) -> String {
@@ -135,6 +137,10 @@ pub fn render_admin(site: &Site, user: &CurrentUser, ctx: &BarContext) -> String
                 submenu(&site.trx("New", "admin bar menu group label"), "new-content-default", "ab-submenu", &new_items)
             ),
         ));
+    }
+
+    if let Some((label, url)) = &ctx.view_item {
+        top.push(item("view", "", &link(&esc_url(url), &esc_html(label), false)));
     }
 
     // My account

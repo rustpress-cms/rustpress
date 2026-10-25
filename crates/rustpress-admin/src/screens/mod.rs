@@ -18,6 +18,8 @@ pub mod dashboard;
 pub mod general;
 pub mod notices;
 pub mod options;
+pub mod post_edit;
+pub mod posts;
 pub mod timezones;
 
 /// The answer of a screen is the one of the sign-in page: status, headers, cookies, body.
@@ -116,7 +118,7 @@ impl Ctx<'_> {
         format!(
             "<input type=\"hidden\" id=\"_wpnonce\" name=\"_wpnonce\" value=\"{}\" /><input type=\"hidden\" name=\"_wp_http_referer\" value=\"{}\" />",
             self.create_nonce(action),
-            esc_attr(&self.request.request_uri)
+            rustpress_core::formatting::esc_url(&self.request.request_uri)
         )
     }
 
@@ -203,6 +205,9 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse
     let mut response = match request.file.as_str() {
         "" | "index.php" => dashboard::page(&ctx).await,
         "options-general.php" => general::page(&ctx).await,
+        "edit.php" => posts::page(&ctx).await,
+        "post.php" => post_edit::post_php(&ctx).await,
+        "post-new.php" => post_edit::post_new(&ctx).await,
         "options.php" => options::handle(&ctx).await,
         other => unavailable(&ctx, other).await,
     };
@@ -246,7 +251,7 @@ pub async fn render(ctx: &Ctx<'_>, screen: &Screen, content: &str, assets: &Asse
         loader,
         user: &ctx.user,
         menu: &menu,
-        bar: BarContext { updates: updates.total(), pending_comments: pending, logout_nonce: ctx.create_nonce("log-out") },
+        bar: BarContext { updates: updates.total(), pending_comments: pending, logout_nonce: ctx.create_nonce("log-out"), view_item: None },
         stylesheet: env.site.settings.stylesheet.clone(),
         cookie_path: paths(env.site).cookie,
         now: env.now,

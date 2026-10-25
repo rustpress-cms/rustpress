@@ -14,6 +14,9 @@ pub enum OrderBy {
     Author,
     Slug,
     Parent,
+    CommentCount,
+    /// `menu_order title` (the order of the pages list).
+    MenuOrderTitle,
     /// The order of ids (orderby=include).
     Include,
     /// Search relevance as in `WP_Query::parse_search_order`: title matches
@@ -274,6 +277,8 @@ impl Db {
             OrderBy::Author => "p.post_author",
             OrderBy::Slug => "p.post_name",
             OrderBy::Parent => "p.post_parent",
+            OrderBy::CommentCount => "p.comment_count",
+            OrderBy::MenuOrderTitle => "p.menu_order ASC, p.post_title",
             OrderBy::Include => "",
             OrderBy::Relevance => "",
         };

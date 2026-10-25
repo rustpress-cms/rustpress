@@ -4,7 +4,9 @@
 pub mod adminbar;
 pub mod deps;
 pub mod chrome;
+pub mod content;
 pub mod die;
+pub mod list_table;
 pub mod login;
 pub mod menu;
 pub mod registry;

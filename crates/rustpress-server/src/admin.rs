@@ -144,7 +144,8 @@ fn pairs_of(text: &str) -> Vec<(String, String)> {
         .filter(|p| !p.is_empty())
         .map(|pair| {
             let (name, value) = pair.split_once('=').unwrap_or((pair, ""));
-            (String::from_utf8_lossy(&urldecode(name.as_bytes())).into_owned(), String::from_utf8_lossy(&urldecode(value.as_bytes())).into_owned())
+            // Invalid UTF-8 is dropped, like `wp_check_invalid_utf8()` does.
+            (String::from_utf8_lossy(&urldecode(name.as_bytes())).replace('\u{fffd}', ""), String::from_utf8_lossy(&urldecode(value.as_bytes())).replace('\u{fffd}', ""))
         })
         .collect()
 }

@@ -22,6 +22,8 @@ pub struct Screen {
     pub title: String,
     /// The contextual help (`get_current_screen()->add_help_tab()`).
     pub help: Option<Help>,
+    /// The "View Post" entry of the toolbar: `(label, address)`.
+    pub view_item: Option<(String, String)>,
 }
 
 /// One tab of the contextual help.
@@ -219,7 +221,9 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
     out.push_str(&env.menu.render(site, &screen.file, &parent_file, submenu_file.as_deref(), &screen.post_type));
     out.push_str("</ul>\n</div>\n</div>\n");
     out.push_str("<div id=\"wpcontent\">\n");
-    out.push_str(&adminbar::render_admin(site, env.user, &env.bar));
+    let mut bar = env.bar.clone();
+    bar.view_item = screen.view_item.clone();
+    out.push_str(&adminbar::render_admin(site, env.user, &bar));
     out.push_str("\n<div id=\"wpbody\" role=\"main\">\n\n<div id=\"wpbody-content\">\n");
     match &screen.help {
         Some(help) => out.push_str(&screen_meta(help, &tr("Help"))),

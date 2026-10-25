@@ -152,6 +152,14 @@ impl Site {
             None => (if n == 1 { singular } else { plural }).to_owned(),
         }
     }
+    /// `_nx( $single, $plural, $n, $context )`.
+    pub fn trnx(&self, singular: &str, plural: &str, n: i64, context: &str) -> String {
+        match self.i18n.get() {
+            Some(i18n) => i18n.npgettext("default", context, singular, plural, n),
+            None => (if n == 1 { singular } else { plural }).to_owned(),
+        }
+    }
+
     /// The names and conventions of the site's language (`$wp_locale`).
     pub fn locale_data(&self) -> std::borrow::Cow<'_, crate::locale::LocaleData> {
         match self.i18n.get() {
