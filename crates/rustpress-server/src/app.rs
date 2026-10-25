@@ -184,7 +184,7 @@ fn admin_file_of(path: &str) -> Option<String> {
     if rest.is_empty() {
         return Some("index.php".to_owned());
     }
-    let valid = rest.ends_with(".php") && !rest.contains('/') && !rest.starts_with("load-") && rest != "admin-ajax.php";
+    let valid = rest.ends_with(".php") && !rest.contains('/') && !rest.starts_with("load-");
     valid.then(|| rest.to_owned())
 }
 

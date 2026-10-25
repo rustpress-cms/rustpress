@@ -573,6 +573,71 @@ impl Content<'_> {
         Ok(())
     }
 
+    /// `wp_create_post_autosave()`: the autosave of the current user is a revision named `<id>-autosave-v1`.
+    pub async fn create_autosave(&self, post_id: u64, data: &PostData) -> Result<()> {
+        let Some(post) = self.db.post(post_id).await? else { return Err(ContentError::Message(self.site.tr("Invalid post ID."))) };
+        let title = data.post_title.clone().unwrap_or_else(|| post.post_title.clone());
+        let content = data.post_content.clone().unwrap_or_else(|| post.post_content.clone());
+        let excerpt = data.post_excerpt.clone().unwrap_or_else(|| post.post_excerpt.clone());
+        let name = format!("{post_id}-autosave-v1");
+        let query = rustpress_db::PostQuery { post_types: vec!["revision".into()], statuses: vec!["inherit".into()], parent: Some(post_id), order_by: rustpress_db::OrderBy::Date, ..Default::default() };
+        let existing = self.db.posts(&query).await?.into_iter().find(|r| r.post_name == name && r.post_author == self.user.id);
+        let now_local = self.site.date("Y-m-d H:i:s", self.now);
+        let now_gmt = self.site.date_utc("Y-m-d H:i:s", self.now);
+        // The autosave equals the post: nothing to keep.
+        if title == post.post_title && content == post.post_content && excerpt == post.post_excerpt {
+            if let Some(autosave) = existing {
+                self.writer.execute(format!("DELETE FROM {} WHERE post_id = {}", self.writer.table("postmeta"), autosave.id)).await?;
+                self.writer.delete_rows("posts", "ID", autosave.id).await?;
+            }
+            return Ok(());
+        }
+        if let Some(autosave) = existing {
+            self.writer
+                .update_rows(
+                    "posts",
+                    "ID",
+                    autosave.id,
+                    &[
+                        ("post_title", Val::Str(title)),
+                        ("post_content", Val::Str(content)),
+                        ("post_excerpt", Val::Str(excerpt)),
+                        ("post_modified", Val::Str(now_local)),
+                        ("post_modified_gmt", Val::Str(now_gmt)),
+                    ],
+                )
+                .await?;
+            return Ok(());
+        }
+        let fields: Vec<(&str, Val)> = vec![
+            ("post_author", Val::Int(self.user.id as i64)),
+            ("post_date", Val::Str(now_local.clone())),
+            ("post_date_gmt", Val::Str(now_gmt.clone())),
+            ("post_content", Val::Str(content)),
+            ("post_content_filtered", Val::Str(String::new())),
+            ("post_title", Val::Str(title)),
+            ("post_excerpt", Val::Str(excerpt)),
+            ("post_status", Val::Str("inherit".into())),
+            ("post_type", Val::Str("revision".into())),
+            ("comment_status", Val::Str("closed".into())),
+            ("ping_status", Val::Str("closed".into())),
+            ("post_password", Val::Str(String::new())),
+            ("post_name", Val::Str(name)),
+            ("to_ping", Val::Str(String::new())),
+            ("pinged", Val::Str(String::new())),
+            ("post_modified", Val::Str(now_local)),
+            ("post_modified_gmt", Val::Str(now_gmt)),
+            ("post_parent", Val::Int(post_id as i64)),
+            ("menu_order", Val::Int(0)),
+            ("post_mime_type", Val::Str(String::new())),
+            ("guid", Val::Str(String::new())),
+        ];
+        let id = self.writer.insert_row("posts", &fields).await?;
+        let guid = format!("{}/?p={id}", self.site.settings.home.trim_end_matches('/'));
+        self.writer.update_rows("posts", "ID", id, &[("guid", Val::Str(guid))]).await?;
+        Ok(())
+    }
+
     // ------------------------------------------------------------------ terms
 
     /// Finds a term of a taxonomy by ID, name or slug, or makes it (`wp_insert_term()`); returns its `term_taxonomy_id`.

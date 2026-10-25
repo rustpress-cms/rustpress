@@ -14,6 +14,7 @@ use crate::login::LoginResponse;
 use crate::menu::{AdminMenu, MenuContext};
 use crate::registry::LoaderEnv;
 
+pub mod ajax;
 pub mod dashboard;
 pub mod editor;
 pub mod general;
@@ -192,6 +193,9 @@ pub fn die(env: &AdminEnv<'_>, status: u16, title: &str, message: &str) -> Admin
 
 /// Handles a request to a file in `wp-admin`.
 pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse {
+    if request.file == "admin-ajax.php" {
+        return ajax::handle(env, request).await;
+    }
     // The signed-in user: the `auth` cookie of this connection's scheme.
     let (scheme, name) = if env.https { (Scheme::SecureAuth, env.auth.cookie_name(Scheme::SecureAuth)) } else { (Scheme::Auth, env.auth.cookie_name(Scheme::Auth)) };
     let session = match request.cookie(&name) {
