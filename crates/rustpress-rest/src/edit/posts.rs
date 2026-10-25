@@ -257,7 +257,7 @@ impl Rest<'_> {
         if kind == Kind::Post && self.can(&caps.edit_others) && self.can(&caps.publish) {
             action("sticky");
         }
-        if self.can(&caps.edit_others) {
+        if self.can(&caps.edit_others) && (!matches!(kind, Kind::Custom(_)) || self.supports(kind, "author")) {
             action("assign-author");
         }
         for tax in self.taxonomies_of(kind.name()) {

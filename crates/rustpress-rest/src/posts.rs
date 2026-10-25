@@ -386,10 +386,29 @@ impl Rest<'_> {
 
         data.insert("_links".into(), self.post_links(post, kind, featured).await?);
         if context == "embed" {
-            data.retain(|key, _| EMBED_FIELDS.contains(&key.as_str()));
+            // `WP_Navigation_Fallback::update_wp_navigation_post_schema()` exposes more of a menu.
+            let menu = post.post_type == "wp_navigation";
+            data.retain(|key, _| EMBED_FIELDS.contains(&key.as_str()) || (menu && matches!(key.as_str(), "status" | "content")));
             for key in ["title", "excerpt"] {
                 if let Some(Value::Object(inner)) = data.get_mut(key) {
                     inner.retain(|k, _| k == "rendered" || k == "protected");
+                }
+            }
+            if menu {
+                if let Some(Value::Object(title)) = data.get_mut("title") {
+                    let mut with_raw = Map::new();
+                    with_raw.insert("raw".into(), Value::from(post.post_title.clone()));
+                    with_raw.extend(std::mem::take(title));
+                    *title = with_raw;
+                }
+                if let Some(Value::Object(content)) = data.get_mut("content") {
+                    let rendered = content.remove("rendered").unwrap_or(Value::Null);
+                    let protected = content.remove("protected").unwrap_or(Value::Bool(false));
+                    *content = Map::new();
+                    content.insert("raw".into(), Value::from(post.post_content.clone()));
+                    content.insert("rendered".into(), rendered);
+                    content.insert("protected".into(), protected);
+                    content.insert("block_version".into(), Value::from(i32::from(rustpress_blocks::content::has_blocks(&post.post_content))));
                 }
             }
         }

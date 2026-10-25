@@ -99,7 +99,23 @@ const DEFAULT_TYPES: &[(&str, &str, &str, &str, &str)] = &[
 ];
 
 /// Post formats: `(slug, name)`.
-const POST_FORMATS: &[(&str, &str)] = &[("aside", "Aside"), ("audio", "Audio"), ("chat", "Chat"), ("gallery", "Gallery"), ("image", "Image"), ("link", "Link"), ("quote", "Quote"), ("standard", "Standard"), ("status", "Status"), ("video", "Video")];
+const POST_FORMATS: &[(&str, &str)] = &[("standard", "Standard"), ("aside", "Aside"), ("chat", "Chat"), ("gallery", "Gallery"), ("link", "Link"), ("image", "Image"), ("quote", "Quote"), ("status", "Status"), ("video", "Video"), ("audio", "Audio")];
+
+/// `get_default_block_template_types()`: `(slug, title, description)`.
+pub fn default_template_types(site: &rustpress_core::Site) -> Vec<(String, String, String)> {
+    let mut out: Vec<(String, String, String)> = DEFAULT_TYPES
+        .iter()
+        .map(|(slug, title, context, description, _)| {
+            let title = if context.is_empty() { site.tr(title) } else { site.trx(title, context) };
+            ((*slug).to_owned(), title, site.tr(description))
+        })
+        .collect();
+    for (slug, name) in POST_FORMATS {
+        let name = site.trx(name, "Post format");
+        out.push((format!("taxonomy-post_format-post-format-{slug}"), rustpress_core::i18n::sprintf(&site.trx("Post Format: %s", "Template name"), &[&name]), rustpress_core::i18n::sprintf(&site.tr("Displays the %s post format archive."), &[&name])));
+    }
+    out
+}
 
 /// `block_version()`: 1 when the content has blocks.
 fn block_version(content: &str) -> u8 {
@@ -131,19 +147,7 @@ fn html_files(dir: &Path, base: &Path, out: &mut Vec<(String, PathBuf)>) {
 impl Rest<'_> {
     /// The default template types: `(slug, title, description)`.
     pub(crate) fn default_template_types(&self) -> Vec<(String, String, String)> {
-        let site = self.site;
-        let mut out: Vec<(String, String, String)> = DEFAULT_TYPES
-            .iter()
-            .map(|(slug, title, context, description, _)| {
-                let title = if context.is_empty() { site.tr(title) } else { site.trx(title, context) };
-                ((*slug).to_owned(), title, site.tr(description))
-            })
-            .collect();
-        for (slug, name) in POST_FORMATS {
-            let name = site.trx(name, "Post format");
-            out.push((format!("taxonomy-post_format-post-format-{slug}"), rustpress_core::i18n::sprintf(&site.trx("Post Format: %s", "Template name"), &[&name]), rustpress_core::i18n::sprintf(&site.tr("Displays the %s post format archive."), &[&name])));
-        }
-        out
+        default_template_types(self.site)
     }
 
     fn template_roots(&self) -> Vec<(String, PathBuf)> {

@@ -32,9 +32,11 @@ pub mod options;
 pub mod pages;
 pub mod post_edit;
 pub mod plugins;
+mod inline_edit;
 pub mod posts;
 pub mod privacy;
 pub mod settings;
+pub mod site_editor;
 pub mod terms;
 pub mod themes;
 pub mod user_edit;
@@ -255,6 +257,7 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse
         "export.php" => export::page(&ctx).await,
         "options-privacy.php" => privacy::page(&ctx).await,
         "themes.php" => themes::page(&ctx).await,
+        "site-editor.php" => site_editor::page(&ctx).await,
         "plugins.php" => plugins::page(&ctx).await,
         other => unavailable(&ctx, other).await,
     };

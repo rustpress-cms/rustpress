@@ -14,7 +14,7 @@ use crate::chrome::{Assets, Screen};
 const STATIC: &str = include_str!("../data/editor_static.json");
 
 /// `wp_json_encode( $value, JSON_HEX_TAG )`: safe inside an inline script.
-fn inline_json(value: &Value) -> String {
+pub(super) fn inline_json(value: &Value) -> String {
     value.to_string().replace('<', "\\u003C").replace('>', "\\u003E")
 }
 
@@ -101,32 +101,33 @@ async fn preload(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, global_styles_id: 
     paths.push(("GET".into(), "/wp/v2/templates/lookup?slug=front-page".into()));
     paths.push(("GET".into(), "/wp/v2/taxonomies?context=edit".into()));
     paths.push(("GET".into(), format!("/wp/v2/users/{}?context=view&_fields=id,name", post.post_author)));
+    preload_paths(ctx, paths).await
+}
+
+/// `block_editor_rest_api_preload()`: the answers of the requests in the order they are asked; the `OPTIONS`
+/// answers are collected under one key that sits where the first of them was.
+pub(super) async fn preload_paths(ctx: &Ctx<'_>, paths: Vec<(String, String)>) -> Value {
+    let mut ordered = Map::new();
     let mut options = Map::new();
-    let mut preloaded = Map::new();
     for (method, path) in paths {
         let Some(value) = preload_one(ctx, &method, &path).await else { continue };
         if method == "OPTIONS" {
+            if !ordered.contains_key("OPTIONS") {
+                ordered.insert("OPTIONS".into(), Value::Null);
+            }
             options.insert(path, value);
         } else {
-            preloaded.insert(path, value);
+            ordered.insert(path, value);
         }
     }
-    // The key order of the middleware's data: the `OPTIONS` entry comes after the first requests.
-    let mut ordered = Map::new();
-    for (key, value) in preloaded {
-        if ordered.len() == 5 && !options.is_empty() {
-            ordered.insert("OPTIONS".into(), Value::Object(std::mem::take(&mut options)));
-        }
-        ordered.insert(key, value);
-    }
-    if !options.is_empty() {
+    if ordered.contains_key("OPTIONS") {
         ordered.insert("OPTIONS".into(), Value::Object(options));
     }
     Value::Object(ordered)
 }
 
 /// The user's `wp_global_styles` post of the active theme.
-async fn global_styles_id(ctx: &Ctx<'_>) -> Option<u64> {
+pub(super) async fn global_styles_id(ctx: &Ctx<'_>) -> Option<u64> {
     let site = ctx.site();
     let query = rustpress_db::PostQuery { post_types: vec!["wp_global_styles".into()], statuses: vec!["publish".into(), "draft".into()], names: vec![format!("wp-global-styles-{}", rustpress_core::slug::sanitize_title(&site.settings.stylesheet))], limit: Some(1), ..Default::default() };
     site.db.posts(&query).await.ok()?.first().map(|p| p.id)
@@ -167,47 +168,11 @@ fn duotone_entries(features: &Value) -> Vec<Value> {
     vec![json!({"assets": svgs, "__unstableType": "svgs", "isGlobalStyles": false}), json!({"css": css, "__unstableType": "presets", "isGlobalStyles": false})]
 }
 
-async fn editor_settings(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo) -> Value {
+/// The settings that belong to a post (`edit-form-blocks.php`).
+async fn post_settings(ctx: &Ctx<'_>, post: &Post, settings: &mut Map<String, Value>) {
     let env = ctx.env;
     let site = ctx.site();
     let theme = env.theme;
-    let baked = statics();
-    let mut settings = Map::new();
-    let get = |key: &str| baked.get(key).cloned().unwrap_or(Value::Null);
-
-    let mut mimes = Map::new();
-    for (exts, mime) in crate::media::MIME_TYPES {
-        mimes.insert((*exts).to_owned(), json!(mime));
-    }
-    settings.insert("alignWide".into(), json!(false));
-    settings.insert("allowedBlockTypes".into(), json!(true));
-    settings.insert("allowedMimeTypes".into(), Value::Object(mimes));
-    settings.insert("defaultEditorStyles".into(), get("defaultEditorStyles"));
-    settings.insert("blockCategories".into(), get("blockCategories"));
-    settings.insert("isRTL".into(), json!(site.is_rtl()));
-    let default_size = site.options.string("image_default_size", "");
-    settings.insert("imageDefaultSize".into(), json!(if default_size.is_empty() { "large".to_owned() } else { default_size }));
-    settings.insert("imageDimensions".into(), {
-        let sizes = crate::media::registered_sizes(&site.options);
-        let mut map = Map::new();
-        for (name, w, h, crop) in sizes {
-            if matches!(name.as_str(), "thumbnail" | "medium" | "large") {
-                map.insert(name, json!({"width": w, "height": h, "crop": crop}));
-            }
-        }
-        Value::Object(map)
-    });
-    settings.insert("imageEditing".into(), json!(true));
-    settings.insert("imageSizes".into(), get("imageSizes"));
-    settings.insert("maxUploadFileSize".into(), json!(super::media_ui::MAX_UPLOAD));
-    settings.insert("__experimentalDashboardLink".into(), json!(ctx.admin_url("")));
-    settings.insert("__unstableGalleryWithImageBlocks".into(), json!(true));
-    for key in ["disableCustomColors", "disableCustomFontSizes", "disableCustomGradients", "disableLayoutStyles"] {
-        settings.insert(key.into(), json!(false));
-    }
-    settings.insert("enableCustomLineHeight".into(), json!(true));
-    settings.insert("enableCustomSpacing".into(), json!(true));
-    settings.insert("enableCustomUnits".into(), json!(["%", "px", "em", "rem", "vh", "vw"]));
     // The page templates of the theme (`customTemplates` of theme.json that apply to this type).
     let mut templates = Map::new();
     for template in theme.json.custom_templates() {
@@ -249,9 +214,64 @@ async fn editor_settings(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo) -> Value {
         settings.insert("postLock".into(), json!({"isLocked": false, "activePostLock": lock}));
     }
     settings.insert("postLockUtils".into(), json!({"nonce": ctx.create_nonce(&format!("lock-post_{}", post.id)), "unlockNonce": ctx.create_nonce(&format!("update-post_{}", post.id)), "ajaxUrl": ctx.admin_url("admin-ajax.php")}));
-    settings.insert("supportsLayout".into(), json!(true));
     settings.insert("supportsTemplateMode".into(), json!(env.block_theme));
     settings.insert("enableCustomFields".into(), json!(false));
+    settings.insert("postContentAttributes".into(), json!({"align": "full", "layout": {"type": "constrained"}}));
+}
+
+pub(super) async fn editor_settings(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo) -> Value {
+    let env = ctx.env;
+    let site = ctx.site();
+    let theme = env.theme;
+    let baked = statics();
+    let mut settings = Map::new();
+    let get = |key: &str| baked.get(key).cloned().unwrap_or(Value::Null);
+
+    let mut mimes = Map::new();
+    for (exts, mime) in crate::media::MIME_TYPES {
+        mimes.insert((*exts).to_owned(), json!(mime));
+    }
+    settings.insert("alignWide".into(), json!(false));
+    settings.insert("allowedBlockTypes".into(), json!(true));
+    settings.insert("allowedMimeTypes".into(), Value::Object(mimes));
+    settings.insert("defaultEditorStyles".into(), get("defaultEditorStyles"));
+    settings.insert("blockCategories".into(), get("blockCategories"));
+    settings.insert("isRTL".into(), json!(site.is_rtl()));
+    let default_size = site.options.string("image_default_size", "");
+    settings.insert("imageDefaultSize".into(), json!(if default_size.is_empty() { "large".to_owned() } else { default_size }));
+    settings.insert("imageDimensions".into(), {
+        let sizes = crate::media::registered_sizes(&site.options);
+        let mut map = Map::new();
+        for (name, w, h, crop) in sizes {
+            if matches!(name.as_str(), "thumbnail" | "medium" | "large") {
+                map.insert(name, json!({"width": w, "height": h, "crop": crop}));
+            }
+        }
+        Value::Object(map)
+    });
+    settings.insert("imageEditing".into(), json!(true));
+    settings.insert("imageSizes".into(), get("imageSizes"));
+    settings.insert("maxUploadFileSize".into(), json!(super::media_ui::MAX_UPLOAD));
+    settings.insert("__experimentalDashboardLink".into(), json!(ctx.admin_url("")));
+    settings.insert("__unstableGalleryWithImageBlocks".into(), json!(true));
+    for key in ["disableCustomColors", "disableCustomFontSizes", "disableCustomGradients", "disableLayoutStyles"] {
+        settings.insert(key.into(), json!(false));
+    }
+    settings.insert("enableCustomLineHeight".into(), json!(true));
+    settings.insert("enableCustomSpacing".into(), json!(true));
+    settings.insert("enableCustomUnits".into(), json!(["%", "px", "em", "rem", "vh", "vw"]));
+    let site_mode = post.id == 0 && post.post_type.is_empty();
+    if site_mode {
+        // `site-editor.php`
+        settings.insert("siteUrl".into(), json!(site.settings.siteurl));
+        settings.insert("postsPerPage".into(), json!(site.options.string("posts_per_page", "10")));
+        let types: Vec<Value> = rustpress_rest::edit::default_template_types(site).into_iter().map(|(slug, title, description)| json!({"title": title, "description": description, "slug": slug})).collect();
+        settings.insert("defaultTemplateTypes".into(), Value::Array(types));
+        settings.insert("supportsTemplatePartsMode".into(), json!(false));
+    } else {
+        post_settings(ctx, post, &mut settings).await;
+    }
+    settings.insert("supportsLayout".into(), json!(true));
     settings.insert("__experimentalAdditionalBlockPatterns".into(), json!([]));
     settings.insert("__experimentalAdditionalBlockPatternCategories".into(), json!([]));
     settings.insert("defaultTemplatePartAreas".into(), get("defaultTemplatePartAreas"));
@@ -331,6 +351,7 @@ async fn editor_settings(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo) -> Value {
     assets.push_str(&link("wp-block-editor-content", "block-editor/content.min.css"));
     assets.push_str(&link("wp-edit-blocks", "block-library/editor.min.css"));
     assets.push_str(&rustpress_theme::document::font_faces(theme));
+    assets.push_str(&rustpress_theme::document::font_faces_from_style_variations(theme));
     settings.insert("__unstableResolvedAssets".into(), json!({"styles": assets, "scripts": format!("<script src=\"{root}/wp-admin/load-scripts.php?c=0&#038;load%5Bchunk_0%5D=wp-polyfill&#038;ver={version}\"></script>\n")}));
     settings.insert("__unstableIsBlockBasedTheme".into(), json!(env.block_theme));
     settings.insert("localAutosaveInterval".into(), json!(15));
@@ -348,11 +369,65 @@ async fn editor_settings(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo) -> Value {
             "avatarURL": rustpress_blocks::content::avatar_url(&site.options, "", 96).replace("&r=", "&f=y&r="),
         }),
     );
-    settings.insert("postContentAttributes".into(), json!({"align": "full", "layout": {"type": "constrained"}}));
     settings.insert("canUpdateBlockBindings".into(), json!(true));
     settings.insert("canEditCSS".into(), json!((ctx.can("edit_css") || ctx.can("unfiltered_html"))));
     let _ = info;
     Value::Object(settings)
+}
+
+/// The inline scripts both editors start with: the REST client, the data stores, preferences and the blocks.
+pub(super) async fn shared_inline(ctx: &Ctx<'_>, assets: &mut Assets, preloaded: &Value) {
+    let site = ctx.site();
+    let root = site.site_url("wp-json/");
+    let nonce = ctx.create_nonce("wp_rest");
+    // The fetch layer: root URL, nonce and the answers the editor starts with.
+    assets.inline.retain(|(handle, _, _)| handle != "wp-api-fetch");
+    assets.inline.push((
+        "wp-api-fetch".into(),
+        format!(
+            "wp.apiFetch.use( wp.apiFetch.createRootURLMiddleware( {} ) );\nwp.apiFetch.nonceMiddleware = wp.apiFetch.createNonceMiddleware( {} );\nwp.apiFetch.use( wp.apiFetch.nonceMiddleware );\nwp.apiFetch.use( wp.apiFetch.mediaUploadMiddleware );\nwp.apiFetch.nonceEndpoint = {};\nwp.apiFetch.use( wp.apiFetch.createPreloadingMiddleware( {} ) );",
+            json!(root),
+            json!(nonce),
+            json!(site.site_url("wp-admin/admin-ajax.php?action=rest-nonce")),
+            inline_json(preloaded)
+        ),
+        "after".into(),
+    ));
+    assets.inline.push((
+        "wp-data".into(),
+        format!("( function() {{\n\tvar userId = {};\n\tvar storageKey = \"WP_DATA_USER_\" + userId;\n\twp.data\n\t\t.use( wp.data.plugins.persistence, {{ storageKey: storageKey }} );\n}} )();", ctx.user.id),
+        "after".into(),
+    ));
+    let preferences = site
+        .db
+        .user_meta(ctx.user.id, &format!("{}persisted_preferences", site.db.table_prefix()))
+        .await
+        .ok()
+        .flatten()
+        .and_then(|raw| rustpress_phpser::unserialize(raw.as_bytes()).ok())
+        .map_or_else(|| json!(""), |value| rustpress_core::options::php_to_json(&value));
+    assets.inline.push((
+        "wp-preferences".into(),
+        format!("( function() {{\n\t\t\t\tvar serverData = {};\n\t\t\t\tvar userId = \"{}\";\n\t\t\t\tvar persistenceLayer = wp.preferencesPersistence.__unstableCreatePersistenceLayer( serverData, userId );\n\t\t\t\tvar preferencesStore = wp.preferences.store;\n\t\t\t\twp.data.dispatch( preferencesStore ).setPersistenceLayer( persistenceLayer );\n\t\t\t}} ) ();", inline_json(&preferences), ctx.user.id),
+        "after".into(),
+    ));
+    assets.inline.push(("wp-editor".into(), "Object.assign( window.wp.editor, window.wp.oldEditor );".into(), "after".into()));
+    assets.inline.push(("editor".into(), "window.wp.oldEditor = window.wp.editor;".into(), "after".into()));
+    assets.inline.push((
+        "wp-block-library".into(),
+        format!(
+            "window.wpEditorL10n = {{\n\t\ttinymce: {{\n\t\t\tbaseURL: {},\n\t\t\tsuffix: \".min\",\n\t\t\tsettings: {{plugins:\"charmap,colorpicker,hr,lists,media,paste,tabfocus,textcolor,fullscreen,wordpress,wpautoresize,wpeditimage,wpemoji,wpgallery,wplink,wpdialogs,wptextpattern,wpview\",toolbar1:\"formatselect,bold,italic,bullist,numlist,blockquote,alignleft,aligncenter,alignright,link,unlink,wp_more,spellchecker,wp_add_media,wp_adv\",toolbar2:\"strikethrough,hr,forecolor,pastetext,removeformat,charmap,outdent,indent,undo,redo,wp_help\",toolbar3:\"\",toolbar4:\"\",external_plugins:[],classic_block_editor:true}},\n\t\t}}\n\t}}",
+            json!(site.site_url("wp-includes/js/tinymce"))
+        ),
+        "before".into(),
+    ));
+    let definitions = statics().get("blockDefinitions").cloned().unwrap_or(Value::Null);
+    let categories = statics().get("blockCategories").cloned().unwrap_or(Value::Null);
+    assets.inline.push((
+        "wp-blocks".into(),
+        format!("wp.blocks.setCategories( {} );\nwp.blocks.unstable__bootstrapServerSideBlockDefinitions({});", inline_json(&categories), inline_json(&definitions)),
+        "after".into(),
+    ));
 }
 
 /// The block editor for `post`.
@@ -363,7 +438,6 @@ pub async fn render_editor(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo) -> Admin
     let gs_id = global_styles_id(ctx).await;
     let preloaded = preload(ctx, post, info, gs_id).await;
     let settings = editor_settings(ctx, post, info).await;
-    let root = site.site_url("wp-json/");
     let nonce = ctx.create_nonce("wp_rest");
     let is_new = post.post_status == "auto-draft";
     let heading = if is_new {
@@ -373,7 +447,8 @@ pub async fn render_editor(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo) -> Admin
     };
 
     let mut assets = Assets {
-        scripts: ["wp-edit-post", "wp-format-library", "wp-core-commands", "media-editor", "media-audiovideo", "mce-view", "image-edit", "imgareaselect", "quicktags", "wplink", "jquery-ui-autocomplete", "thickbox", "media-upload"].iter().map(|s| (*s).to_owned()).collect(),
+        scripts: ["wp-edit-post", "wp-format-library", "wp-block-directory", "wp-core-commands", "media-editor", "media-audiovideo", "mce-view", "image-edit", "imgareaselect", "quicktags", "wplink", "jquery-ui-autocomplete", "thickbox", "media-upload"].iter().map(|s| (*s).to_owned()).collect(),
+        editor_modules: true,
         styles: ["wp-edit-post", "wp-format-library", "wp-block-directory", "wp-edit-blocks", "wp-commands", "media-views"].iter().map(|s| (*s).to_owned()).collect(),
         ..Default::default()
     };
@@ -402,56 +477,9 @@ pub async fn render_editor(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo) -> Admin
         inline_json(&settings),
         inline_json(&initial_edits)
     );
-    // The fetch layer: root URL, nonce and the answers the editor starts with.
-    assets.inline.retain(|(handle, _, _)| handle != "wp-api-fetch");
-    assets.inline.push((
-        "wp-api-fetch".into(),
-        format!(
-            "wp.apiFetch.use( wp.apiFetch.createRootURLMiddleware( {} ) );\nwp.apiFetch.nonceMiddleware = wp.apiFetch.createNonceMiddleware( {} );\nwp.apiFetch.use( wp.apiFetch.nonceMiddleware );\nwp.apiFetch.use( wp.apiFetch.mediaUploadMiddleware );\nwp.apiFetch.nonceEndpoint = {};\nwp.apiFetch.use( wp.apiFetch.createPreloadingMiddleware( {} ) );",
-            json!(root),
-            json!(nonce),
-            json!(site.site_url("wp-admin/admin-ajax.php?action=rest-nonce")),
-            inline_json(&preloaded)
-        ),
-        "after".into(),
-    ));
+    shared_inline(ctx, &mut assets, &preloaded).await;
     assets.inline.push(("wp-edit-post".into(), init, "after".into()));
-    assets.inline.push((
-        "wp-data".into(),
-        format!("( function() {{\n\tvar userId = {};\n\tvar storageKey = \"WP_DATA_USER_\" + userId;\n\twp.data\n\t\t.use( wp.data.plugins.persistence, {{ storageKey: storageKey }} );\n}} )();", ctx.user.id),
-        "after".into(),
-    ));
-    let preferences = site
-        .db
-        .user_meta(ctx.user.id, &format!("{}persisted_preferences", site.db.table_prefix()))
-        .await
-        .ok()
-        .flatten()
-        .and_then(|raw| rustpress_phpser::unserialize(raw.as_bytes()).ok())
-        .map_or_else(|| json!(""), |value| rustpress_core::options::php_to_json(&value));
-    assets.inline.push((
-        "wp-preferences".into(),
-        format!("( function() {{\n\t\t\t\tvar serverData = {};\n\t\t\t\tvar userId = \"{}\";\n\t\t\t\tvar persistenceLayer = wp.preferencesPersistence.__unstableCreatePersistenceLayer( serverData, userId );\n\t\t\t\tvar preferencesStore = wp.preferences.store;\n\t\t\t\twp.data.dispatch( preferencesStore ).setPersistenceLayer( persistenceLayer );\n\t\t\t}} ) ();", inline_json(&preferences), ctx.user.id),
-        "after".into(),
-    ));
     assets.inline.push(("wp-editor".into(), format!("var _wpMetaBoxUrl = {};", json!(format!("{}?post={}&action=edit&meta-box-loader=1&meta-box-loader-nonce={}", ctx.admin_url("post.php"), post.id, ctx.create_nonce("meta-box-loader")))), "before".into()));
-    assets.inline.push(("wp-editor".into(), "Object.assign( window.wp.editor, window.wp.oldEditor );".into(), "after".into()));
-    assets.inline.push(("editor".into(), "window.wp.oldEditor = window.wp.editor;".into(), "after".into()));
-    assets.inline.push((
-        "wp-block-library".into(),
-        format!(
-            "window.wpEditorL10n = {{\n\t\ttinymce: {{\n\t\t\tbaseURL: {},\n\t\t\tsuffix: \".min\",\n\t\t\tsettings: {{plugins:\"charmap,colorpicker,hr,lists,media,paste,tabfocus,textcolor,fullscreen,wordpress,wpautoresize,wpeditimage,wpemoji,wpgallery,wplink,wpdialogs,wptextpattern,wpview\",toolbar1:\"formatselect,bold,italic,bullist,numlist,blockquote,alignleft,aligncenter,alignright,link,unlink,wp_more,spellchecker,wp_add_media,wp_adv\",toolbar2:\"strikethrough,hr,forecolor,pastetext,removeformat,charmap,outdent,indent,undo,redo,wp_help\",toolbar3:\"\",toolbar4:\"\",external_plugins:[],classic_block_editor:true}},\n\t\t}}\n\t}}",
-            json!(site.site_url("wp-includes/js/tinymce"))
-        ),
-        "before".into(),
-    ));
-    let definitions = statics().get("blockDefinitions").cloned().unwrap_or(Value::Null);
-    let categories = statics().get("blockCategories").cloned().unwrap_or(Value::Null);
-    assets.inline.push((
-        "wp-blocks".into(),
-        format!("wp.blocks.setCategories( {} );\nwp.blocks.unstable__bootstrapServerSideBlockDefinitions({});", inline_json(&categories), inline_json(&definitions)),
-        "after".into(),
-    ));
 
     let classic_link = esc_url(&ctx.admin_url(&format!("update.php?action=install-plugin&plugin=classic-editor&_wpnonce={}", ctx.create_nonce("install-plugin_classic-editor")))).replace("&#038;", "&amp;");
     let content = format!(

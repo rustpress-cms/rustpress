@@ -236,8 +236,14 @@ pub fn intermediate_size(full_url: &str, meta: &Metadata, width: u64, height: u6
         }
     }
     candidates.sort_by_key(|(area, ..)| *area);
-    let (_, file, w, h) = candidates.first()?;
-    Some((full_url.replace(basename(full_url), file), *w, *h))
+    if let Some((_, file, w, h)) = candidates.first() {
+        return Some((full_url.replace(basename(full_url), file), *w, *h));
+    }
+    // A request that fits into the thumbnail gets the thumbnail (WordPress compares the height with its width, too).
+    let thumbnail = sizes.get("thumbnail")?;
+    let (w, h) = (thumbnail.get("width").and_then(Value::as_u64).unwrap_or(0), thumbnail.get("height").and_then(Value::as_u64).unwrap_or(0));
+    let file = thumbnail.get("file").and_then(Value::as_str)?;
+    (width <= w && height <= w).then(|| (full_url.replace(basename(full_url), file), w, h))
 }
 
 /// `wp_get_attachment_image_src( $id, array( $width, 0 ) )`: `(url, width, height)`.

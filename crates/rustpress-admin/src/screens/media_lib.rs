@@ -172,7 +172,7 @@ async fn list_mode(ctx: &Ctx<'_>, title: String) -> AdminResponse {
     // Filters above the table.
     let mime_counts = db.attachment_mime_counts().await.unwrap_or_default();
     let count_of = |prefix: &str| mime_counts.iter().filter(|(m, _)| m.starts_with(prefix)).map(|(_, n)| *n).sum::<u64>();
-    let mut options = format!("\t<option value=\"\">{}</option>\n", tr("All media items"));
+    let mut options = format!("<option value=\"\">{}</option>\n", tr("All media items"));
     for (prefix, key, label) in [("image/", "image", tr("Images")), ("audio/", "audio", tr("Audio")), ("video/", "video", tr("Video"))] {
         if count_of(prefix) > 0 {
             options.push_str(&format!("\t<option value=\"post_mime_type:{key}\"{}>{label}</option>\n", if filter == format!("post_mime_type:{key}") { " selected='selected'" } else { "" }));
@@ -276,7 +276,7 @@ async fn row(ctx: &Ctx<'_>, post: &Post) -> String {
         Some(parent) => {
             let parent_title = if parent.post_title.is_empty() { tr("(no title)") } else { parent.post_title.clone() };
             let detach = if ctx.can("edit_posts") { format!("<br />\n<a href=\"upload.php?parent_post_id={}&media[]={}&_wpnonce={}\" class=\"hide-if-no-js detach-from-parent\" aria-label=\"{}\">{}</a>", parent.id, post.id, ctx.create_nonce("bulk-media"), esc_attr(&sprintf(&tr("Detach from %s"), &[&format!("&#8220;{}&#8221;", esc_html(&parent_title))])), tr("Detach")) } else { String::new() };
-            format!("<strong><a href=\"{}\">{}</a></strong>\n{detach}", esc_url(&ctx.admin_url(&format!("post.php?post={}&action=edit", parent.id))), esc_html(&parent_title))
+            format!("<strong><a href=\"{}\">{}</a></strong>\n{detach}", esc_url(&ctx.admin_url(&format!("post.php?post={}&action=edit", parent.id))).replace("&#038;", "&amp;"), esc_html(&parent_title))
         }
         None => format!("{}\t\t\t<br /><a href=\"#the-list\" onclick=\"findPosts.open( 'media[]', '{}' ); return false;\" class=\"hide-if-no-js aria-button-if-js\" aria-label=\"{}\">{}</a>", tr("(Unattached)"), post.id, esc_attr(&sprintf(&tr("Attach %s to existing content"), &[&quote])), tr("Attach")),
     };
@@ -284,8 +284,9 @@ async fn row(ctx: &Ctx<'_>, post: &Post) -> String {
     let diff = ctx.env.now - timestamp;
     let date = if diff > 0 && diff < 86_400 { sprintf(&tr("%s ago"), &[&human_time_diff(ctx, timestamp, ctx.env.now)]) } else { site.date(&tr("Y/m/d"), timestamp) };
     format!(
-        "\t\t\t\t\t<tr id=\"post-{id}\" class=\"author-other status-inherit\">\n\t\t\t\t<td class=\"check-column\">\t\t\t<input type=\"checkbox\" name=\"media[]\" id=\"cb-select-{id}\" value=\"{id}\" />\n\t\t\t<label for=\"cb-select-{id}\">\n\t\t\t\t<span class=\"screen-reader-text\">\n\t\t\t\t{select}\t\t\t\t</span>\n\t\t\t</label>\n\t\t\t</td><th class='title column-title has-row-actions column-primary' data-colname=\"{file}\" scope=\"row\" aria-label=\"{label}\">\t\t<strong class=\"has-media-icon\">\n\t\t\t{title_html}{state}\t\t</strong>\n\t\t<p class=\"filename\">\n\t\t\t<span class=\"screen-reader-text\">\n\t\t\t\t{filename_label}\t\t\t</span>\n\t\t\t{filename}\t\t</p>\n\t\t{actions}</th><td class='author column-author' data-colname=\"{author_label}\">{author}</td><td class='parent column-parent' data-colname=\"{parent_label}\">{parent}</td><td class='date column-date' data-colname=\"{date_label}\">{date}</td>\t\t\t</tr>\n",
+        "\t\t\t<tr id=\"post-{id}\" class=\"author-{owner} status-inherit\">\n\t\t\t\t<td class=\"check-column\">\t\t\t<input type=\"checkbox\" name=\"media[]\" id=\"cb-select-{id}\" value=\"{id}\" />\n\t\t\t<label for=\"cb-select-{id}\">\n\t\t\t\t<span class=\"screen-reader-text\">\n\t\t\t\t{select}\t\t\t\t</span>\n\t\t\t</label>\n\t\t\t</td><th class='title column-title has-row-actions column-primary' data-colname=\"{file}\" scope=\"row\" aria-label=\"{label}\">\t\t<strong class=\"has-media-icon\">\n\t\t\t{title_html}{state}\t\t</strong>\n\t\t<p class=\"filename\">\n\t\t\t<span class=\"screen-reader-text\">\n\t\t\t\t{filename_label}\t\t\t</span>\n\t\t\t{filename}\t\t</p>\n\t\t{actions}</th><td class='author column-author' data-colname=\"{author_label}\">{author}</td><td class='parent column-parent' data-colname=\"{parent_label}\">{parent}</td><td class='date column-date' data-colname=\"{date_label}\">{date}</td>\t\t\t</tr>\n\t\t\t",
         id = post.id,
+        owner = if post.post_author == ctx.user.id { "self" } else { "other" },
         select = sprintf(&tr("Select %s"), &[&esc_html(&title)]),
         file = tr("File"),
         label = esc_attr(&title),

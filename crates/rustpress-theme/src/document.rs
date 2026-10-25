@@ -351,6 +351,22 @@ pub(crate) fn script_modules(wp_root: &Path, site: &Site, ids: &[String]) -> (St
 pub fn font_faces(theme: &Theme) -> String {
     let settings = theme.json.settings();
     let Some(families) = settings.get("typography").and_then(|t| t.get("fontFamilies")).and_then(Value::as_array) else { return String::new() };
+    font_faces_of(theme, families)
+}
+
+/// `wp_print_font_faces_from_style_variations()`: the fonts the style variations of the theme add.
+pub fn font_faces_from_style_variations(theme: &Theme) -> String {
+    let families: Vec<Value> = theme
+        .style_variations()
+        .iter()
+        .filter_map(|variation| variation.pointer("/settings/typography/fontFamilies/theme").and_then(Value::as_array))
+        .flatten()
+        .cloned()
+        .collect();
+    font_faces_of(theme, &families)
+}
+
+fn font_faces_of(theme: &Theme, families: &[Value]) -> String {
     let base = theme.stylesheet_directory_uri();
     let mut css = String::new();
     for family in families {

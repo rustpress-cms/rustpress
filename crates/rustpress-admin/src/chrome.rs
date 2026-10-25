@@ -140,6 +140,8 @@ pub struct ChromeEnv<'a> {
 pub struct Assets {
     pub styles: Vec<String>,
     pub scripts: Vec<String>,
+    /// Scripts a page enqueues before `admin-header.php` runs: they come before `svg-painter` and `heartbeat`.
+    pub early_scripts: Vec<String>,
     /// Printed in the head after the scripts (`admin_head`).
     pub head: String,
     /// Printed after the scripts of the footer (`admin_print_footer_scripts`, late).
@@ -150,6 +152,33 @@ pub struct Assets {
     pub localize: Vec<(String, String, serde_json::Value)>,
     /// `wp_add_inline_script()`: `(handle, code, position)`.
     pub inline: Vec<(String, String, String)>,
+    /// The screen runs the block editor: its script modules (math blocks, routing) are loaded too.
+    pub editor_modules: bool,
+}
+
+/// The `version` of a script module (`wp-includes/js/dist/script-modules/<path>.min.asset.php`).
+fn module_version(includes: &std::path::Path, path: &str) -> String {
+    let asset = std::fs::read_to_string(includes.join("js/dist/script-modules").join(format!("{path}.min.asset.php"))).unwrap_or_default();
+    asset.split("'version' => '").nth(1).and_then(|rest| rest.split('\'').next()).unwrap_or_default().to_owned()
+}
+
+/// `WP_Script_Modules::print_import_map()` and `print_enqueued_script_modules()`.
+fn script_modules(env: &ChromeEnv<'_>, editor: bool) -> String {
+    let root = env.loader.site_url.trim_end_matches('/').to_owned();
+    let includes = &env.loader.includes;
+    let url = |path: &str| format!("{root}/wp-includes/js/dist/script-modules/{path}.min.js?ver={}", module_version(includes, path));
+    let mut imports = vec![("@wordpress/video-conversion/worker", "video-conversion/worker"), ("@wordpress/vips/worker", "vips/worker")];
+    if editor {
+        imports.push(("@wordpress/latex-to-mathml", "latex-to-mathml/index"));
+        imports.push(("@wordpress/route", "route/index"));
+    }
+    let map: serde_json::Map<String, serde_json::Value> = imports.into_iter().map(|(id, path)| (id.to_owned(), serde_json::Value::from(url(path)))).collect();
+    let json = rustpress_blocks::php_json::encode_with(&serde_json::json!({"imports": map}), rustpress_blocks::php_json::Flags { unescaped_slashes: true, unescaped_unicode: true });
+    let mut out = format!("<script id=\"wp-importmap\" type=\"importmap\">\n{json}\n</script>\n");
+    if editor {
+        out.push_str(&format!("<script id=\"@wordpress/latex-to-mathml/loader-js-module\" src=\"{}\" type=\"module\"></script>\n", url("latex-to-mathml/loader")));
+    }
+    out
 }
 
 /// `wp-admin/admin-header.php` to `admin-footer.php` around `content` (the inside of `.wrap`, with
@@ -194,7 +223,10 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
         "userSettings",
         &serde_json::json!({"url": env.cookie_path, "uid": env.user.id, "time": env.now, "secure": if env.secure { "1" } else { "" }}),
     );
-    scripts.enqueue("utils");
+    // The editors enqueue their own scripts before `admin-header.php`, and `utils` comes after the first two.
+    if assets.early_scripts.is_empty() {
+        scripts.enqueue("utils");
+    }
     // `wp_heartbeat_settings()` and `wp_heartbeat_set_suspension()`.
     let mut heartbeat = serde_json::Map::new();
     if let Some(nonce) = env.loader.nonce.as_ref() {
@@ -204,7 +236,8 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
         heartbeat.insert("suspension".into(), serde_json::Value::String("disable".into()));
     }
     scripts.relocalize("heartbeat", "heartbeatSettings", &serde_json::Value::Object(heartbeat));
-    for handle in ["common", "admin-bar", "svg-painter", "heartbeat", "wp-auth-check"] {
+    let (first, rest) = assets.early_scripts.split_at(assets.early_scripts.len().min(2));
+    for handle in ["common", "admin-bar"].into_iter().chain(first.iter().map(String::as_str)).chain(if assets.early_scripts.is_empty() { None } else { Some("utils") }).chain(rest.iter().map(String::as_str)).chain(["svg-painter", "heartbeat", "wp-auth-check"]) {
         scripts.enqueue(handle);
     }
     for (handle, object, data) in &assets.localize {
@@ -300,6 +333,7 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
         rustpress_core::i18n::sprintf(&tr("Thank you for creating with <a href=\"%s\">WordPress</a>."), &["https://wordpress.org/"]),
         rustpress_core::i18n::sprintf(&tr("Version %s"), &[&version])
     ));
+    out.push_str(&assets.pre_footer);
     out.push_str(&format!(
         "\t\t<div id=\"wp-auth-check-wrap\" class=\"hidden\">\n\t<div id=\"wp-auth-check-bg\"></div>\n\t<div id=\"wp-auth-check\">\n\t<button type=\"button\" class=\"wp-auth-check-close button-link\"><span class=\"screen-reader-text\">\n\t\t{close}\t</span></button>\n\t\t\t<div id=\"wp-auth-check-form\" class=\"loading\" data-src=\"{src}\"></div>\n\t\t\t<div class=\"wp-auth-fallback\">\n\t\t<p><b class=\"wp-auth-fallback-expired\" tabindex=\"0\">{expired}</b></p>\n\t\t<p><a href=\"{login}\" target=\"_blank\">{again}</a>\n\t\t{note}</p>\n\t</div>\n\t</div>\n\t</div>\n\t",
         close = tr("Close dialog"),
@@ -309,7 +343,7 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
         again = tr("Please log in again."),
         note = tr("The login page will open in a new tab. After logging in you can close it and return to this page.")
     ));
-    out.push_str(&assets.pre_footer);
+    out.push_str(&script_modules(env, assets.editor_modules));
     out.push_str(&footer_scripts);
     out.push_str(&assets.footer);
     out.push_str("\n</body>\n</html>");

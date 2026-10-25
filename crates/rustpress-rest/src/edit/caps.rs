@@ -20,6 +20,10 @@ pub(crate) struct TypeCaps {
 
 impl TypeCaps {
     pub fn of(post_type: &str) -> Self {
+        if post_type == "wp_navigation" {
+            let cap = || "edit_theme_options".to_owned();
+            return Self { edit_posts: cap(), edit_others: cap(), publish: cap(), read_private: cap(), delete_posts: cap(), delete_others: cap(), delete_published: cap(), delete_private: cap(), edit_private: cap(), edit_published: cap() };
+        }
         let plural = if post_type == "page" { "pages" } else { "posts" };
         let name = |prefix: &str| format!("{prefix}_{plural}");
         Self {

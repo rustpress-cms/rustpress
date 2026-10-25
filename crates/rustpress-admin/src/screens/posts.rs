@@ -31,10 +31,16 @@ pub fn type_info(ctx: &Ctx<'_>, name: &str) -> Option<TypeInfo> {
 }
 
 /// `post_class()` for a list row.
-fn post_class(post: &Post, categories: &[rustpress_db::Term], tags: &[rustpress_db::Term], sticky: bool) -> String {
+fn post_class(post: &Post, categories: &[rustpress_db::Term], tags: &[rustpress_db::Term], sticky: bool, thumbnail: bool) -> String {
     let mut classes = vec![format!("post-{}", post.id), format!("type-{}", post.post_type), format!("status-{}", post.post_status)];
     if post.post_type == "post" {
         classes.push("format-standard".to_owned());
+    }
+    if thumbnail {
+        classes.push("has-post-thumbnail".to_owned());
+    }
+    if sticky {
+        classes.push("status-sticky".to_owned());
     }
     classes.push("hentry".to_owned());
     for term in categories {
@@ -42,9 +48,6 @@ fn post_class(post: &Post, categories: &[rustpress_db::Term], tags: &[rustpress_
     }
     for term in tags {
         classes.push(format!("tag-{}", rustpress_core::formatting::sanitize_html_class(&term.slug)));
-    }
-    if sticky {
-        classes.push("sticky".to_owned());
     }
     classes.join(" ")
 }
@@ -260,7 +263,17 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     let status_param = request.get("post_status").unwrap_or("all").to_owned();
     let is_trash = post_status.as_deref() == Some("trash");
     let author = request.get("author").and_then(|a| a.parse::<u64>().ok()).filter(|a| *a != 0);
-    let cat = request.get("cat").and_then(|a| a.parse::<u64>().ok()).unwrap_or(0);
+    let mut cat = request.get("cat").and_then(|a| a.parse::<u64>().ok()).unwrap_or(0);
+    // `category_name=slug` (the links of the category column) becomes the `cat` of the query.
+    if cat == 0
+        && let Some(slug) = request.get("category_name").and_then(|s| s.rsplit('/').next()).filter(|s| !s.is_empty())
+        && let Ok(Some(term)) = db.term_by_slug("category", slug).await {
+            cat = term.term_id;
+        }
+    let tag_term = match request.get("tag").filter(|s| !s.is_empty()) {
+        Some(slug) => db.term_by_slug("post_tag", slug).await.ok().flatten(),
+        None => None,
+    };
     let month = request.get("m").and_then(|a| a.parse::<u32>().ok()).unwrap_or(0);
     let search = request.get("s").map(|s| s.trim().to_owned()).filter(|s| !s.is_empty());
     let paged = request.get("paged").and_then(|p| p.parse::<u64>().ok()).filter(|p| *p > 0).unwrap_or(1);
@@ -361,6 +374,10 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     }
     if cat != 0 {
         query.tax_groups.push(category_tt_ids(ctx, cat).await);
+    }
+    if request.get("tag").is_some_and(|slug| !slug.is_empty()) {
+        // A tag that does not exist matches nothing.
+        query.tax_groups.push(vec![tag_term.as_ref().map_or(0, |term| term.term_taxonomy_id)]);
     }
     if month >= 190_000 {
         query.year = Some(month / 100);
@@ -466,11 +483,12 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         let categories = db.terms_for_post(post.id, Some("category")).await.unwrap_or_default();
         let tags = db.terms_for_post(post.id, Some("post_tag")).await.unwrap_or_default();
         let is_sticky = sticky.contains(&post.id);
+        let thumbnail = db.post_meta(post.id).await.unwrap_or_default().iter().any(|m| m.meta_key.as_deref() == Some("_thumbnail_id") && m.meta_value.as_deref().and_then(|v| v.parse::<u64>().ok()).is_some_and(|id| id > 0));
         let author_row = authors.iter().find(|u| u.id == post.post_author);
         let class = format!(
             "iedit author-{} level-{level} {}",
             if post.post_author == ctx.user.id { "self" } else { "other" },
-            post_class(post, &categories, &tags, is_sticky)
+            post_class(post, &categories, &tags, is_sticky, thumbnail)
         );
         rows.push_str(&format!("\t\t{}<tr id=\"post-{}\" class=\"{class}\">\n\t\t\t", if hierarchical_display { "\t" } else { "" }, post.id));
         let title = draft_or_title(ctx, post);
@@ -508,8 +526,9 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
                     } else {
                         format!("{pad}<span>{title}{hierarchy_nolink}</span>")
                     };
+                    let inline = if can_edit { inline_data(ctx, post, &info, &taxonomies, is_sticky).await } else { String::new() };
                     rows.push_str(&format!(
-                        "<th scope=\"row\" class=\"title column-title has-row-actions column-primary page-title\" data-colname=\"{}\" aria-label=\"{}\"><div class=\"locked-info\"><span class=\"locked-avatar\"></span> <span class=\"locked-text\"></span></div>\n<strong>{name_html}{states}</strong>\n{}<button type=\"button\" class=\"toggle-row\"><span class=\"screen-reader-text\">{}</span></button></th>",
+                        "<th scope=\"row\" class=\"title column-title has-row-actions column-primary page-title\" data-colname=\"{}\" aria-label=\"{}\"><div class=\"locked-info\"><span class=\"locked-avatar\"></span> <span class=\"locked-text\"></span></div>\n<strong>{name_html}{states}</strong>\n{inline}{}<button type=\"button\" class=\"toggle-row\"><span class=\"screen-reader-text\">{}</span></button></th>",
                         esc_attr(&column.label),
                         esc_attr(&aria),
                         row_actions_for(ctx, post, &title, can_edit, &info).await,
@@ -655,8 +674,10 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         esc_attr(&info.name)
     );
     let notice = result_notice(ctx, &info);
+    // `if ( $wp_list_table->has_items() )`: an empty list has no Quick Edit.
+    let inline = if posts.is_empty() { String::new() } else { super::inline_edit::inline_edit(ctx, &info, posts.first(), columns.len(), taxonomies.iter().any(|(_, hierarchical)| *hierarchical)).await };
     let content = format!(
-        "<div class=\"wrap\">\n{heading}{notice}\n{}\n<form id=\"posts-filter\" method=\"get\">\n\n{search_box}{hidden_fields}\n\n\n{table_html}\n</form>\n\n\n<div id=\"ajax-response\"></div>\n<div class=\"clear\"></div>\n</div>\n\n",
+        "<div class=\"wrap\">\n{heading}{notice}\n{}\n<form id=\"posts-filter\" method=\"get\">\n\n{search_box}{hidden_fields}\n\n\n{table_html}\n</form>\n\n\n{inline}<div id=\"ajax-response\"></div>\n<div class=\"clear\"></div>\n</div>\n\n",
         views(&filter_heading, &links)
     );
     let screen = Screen {
@@ -676,6 +697,68 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
 fn strip_tags_label(label: &str, ctx: &Ctx<'_>) -> String {
     let _ = label;
     ctx.tr("Comments")
+}
+
+/// `esc_textarea()`.
+fn esc_textarea(text: &str) -> String {
+    text.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;").replace('\'', "&#039;")
+}
+
+/// `get_inline_data()`: what the quick edit form reads from the row.
+async fn inline_data(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, taxonomies: &[(String, bool)], sticky: bool) -> String {
+    let site = ctx.site();
+    let db = ctx.env.db;
+    let meta = db.post_meta(post.id).await.unwrap_or_default();
+    let template = meta.iter().find(|m| m.meta_key.as_deref() == Some("_wp_page_template")).and_then(|m| m.meta_value.clone()).unwrap_or_default();
+    let date = |range: std::ops::Range<usize>| post.post_date.get(range).unwrap_or_default().to_owned();
+    let slug = String::from_utf8_lossy(&rustpress_core::rewrite::urldecode(post.post_name.as_bytes())).into_owned();
+    let mut out = format!(
+        "\n<div class=\"hidden\" id=\"inline_{id}\">\n\t<div class=\"post_title\">{}</div>\n\t<div class=\"post_name\">{}</div>\n\t<div class=\"post_author\">{}</div>\n\t<div class=\"comment_status\">{}</div>\n\t<div class=\"ping_status\">{}</div>\n\t<div class=\"_status\">{}</div>\n\t<div class=\"jj\">{}</div>\n\t<div class=\"mm\">{}</div>\n\t<div class=\"aa\">{}</div>\n\t<div class=\"hh\">{}</div>\n\t<div class=\"mn\">{}</div>\n\t<div class=\"ss\">{}</div>\n\t<div class=\"post_password\">{}</div>",
+        esc_textarea(post.post_title.trim()),
+        esc_textarea(&slug),
+        post.post_author,
+        esc_html(&post.comment_status),
+        esc_html(&post.ping_status),
+        esc_html(&post.post_status),
+        date(8..10),
+        date(5..7),
+        date(0..4),
+        date(11..13),
+        date(14..16),
+        date(17..19),
+        esc_html(&post.post_password),
+        id = post.id
+    );
+    if info.hierarchical {
+        out.push_str(&format!("<div class=\"post_parent\">{}</div>", post.post_parent));
+    }
+    out.push_str(&format!("<div class=\"page_template\">{}</div>", if template.is_empty() { "default".to_owned() } else { esc_html(&template) }));
+    if site.post_type_supports(&post.post_type, "page-attributes") {
+        out.push_str(&format!("<div class=\"menu_order\">{}</div>", post.menu_order));
+    }
+    for (name, hierarchical) in taxonomies {
+        if name == "post_format" {
+            continue;
+        }
+        let terms = db.terms_for_post(post.id, Some(name)).await.unwrap_or_default();
+        if *hierarchical {
+            let ids: Vec<String> = terms.iter().map(|t| t.term_id.to_string()).collect();
+            out.push_str(&format!("<div class=\"post_category\" id=\"{name}_{}\">{}</div>", post.id, ids.join(",")));
+        } else {
+            let names: Vec<String> = terms.iter().map(|t| t.name.clone()).collect();
+            out.push_str(&format!("<div class=\"tags_input\" id=\"{name}_{}\">{}</div>", post.id, esc_html(&esc_attr(&names.join(",")).replace(',', ", "))));
+        }
+    }
+    if !info.hierarchical {
+        out.push_str(&format!("<div class=\"sticky\">{}</div>", if sticky { "sticky" } else { "" }));
+    }
+    if site.post_type_supports(&post.post_type, "post-formats") {
+        let formats = db.terms_for_post(post.id, Some("post_format")).await.unwrap_or_default();
+        let format = formats.first().and_then(|t| t.slug.strip_prefix("post-format-")).unwrap_or_default().to_owned();
+        out.push_str(&format!("<div class=\"post_format\">{}</div>", esc_html(&format)));
+    }
+    out.push_str("</div>");
+    out
 }
 
 /// `get_post_states()` as `_post_states()` prints it.
@@ -732,6 +815,7 @@ async fn row_actions_for(ctx: &Ctx<'_>, post: &Post, title: &str, can_edit: bool
     let edit_url = ctx.admin_url(&format!("post.php?post={}&action=edit", post.id)).replace('&', "&amp;");
     if can_edit && post.post_status != "trash" {
         actions.push(("edit".into(), format!("<a href=\"{edit_url}\" aria-label=\"{}\">{}</a>", esc_attr(&rustpress_core::i18n::sprintf(&tr("Edit &#8220;%s&#8221;"), &[title])), tr("Edit"))));
+        actions.push(("inline hide-if-no-js".into(), format!("<button type=\"button\" class=\"button-link editinline\" aria-label=\"{}\" aria-expanded=\"false\">{}</button>", esc_attr(&rustpress_core::i18n::sprintf(&tr("Quick edit &#8220;%s&#8221; inline"), &[title])), tr("Quick&nbsp;Edit"))));
     }
     let can_delete = ctx.can(if info.name == "page" { "delete_pages" } else { "delete_posts" }) && (post.post_author == ctx.user.id || ctx.can("delete_others_posts") || ctx.can("delete_others_pages"));
     if can_delete {

@@ -32,8 +32,17 @@ impl Params {
     }
 
     pub fn set(&mut self, key: &str, value: &str) {
-        match self.pairs.iter_mut().find(|(k, _)| k == key) {
-            Some(existing) => existing.1 = value.to_owned(),
+        let same = |k: &str| k == key || k.strip_suffix("[]") == Some(key);
+        match self.pairs.iter().position(|(k, _)| same(k)) {
+            Some(at) => {
+                // Array notation of the same parameter (`status[]`) is replaced as a whole.
+                let mut index = 0;
+                self.pairs.retain(|(k, _)| {
+                    index += 1;
+                    index - 1 == at || !same(k)
+                });
+                self.pairs[at] = (key.to_owned(), value.to_owned());
+            }
             None => self.pairs.push((key.to_owned(), value.to_owned())),
         }
     }
