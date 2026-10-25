@@ -80,9 +80,15 @@ pub async fn form(ctx: &Ctx<'_>, post: &Post) -> AdminResponse {
     } else {
         format!("{siteurl}/wp-includes/images/media/{}", mime_icon(&post.post_mime_type))
     };
+    // `wp_image_editor_supports()`: the formats the editor can read and write.
+    let edit_button = if matches!(post.post_mime_type.as_str(), "image/jpeg" | "image/png" | "image/gif" | "image/webp") {
+        format!("<input type='button' id='imgedit-open-btn-{id}' onclick='imageEdit.open( {id}, \"{}\" )' class='button' value='{}' /> <span class='spinner'></span>", ctx.create_nonce(&format!("image_editor-{id}")), esc_attr(&tr("Edit Image")))
+    } else {
+        String::new()
+    };
     let holder = if image {
         format!(
-            "\t\t\t<div class=\"imgedit-response\" id=\"imgedit-response-{id}\"></div>\n\n\t\t<div class=\"wp_attachment_image wp-clearfix\" id=\"media-head-{id}\">\n\t\t\t<p id=\"thumbnail-head-{id}\"><img class=\"thumbnail\" src=\"{}\" style=\"max-width:100%\" alt=\"\" /></p>\n\t\t\t<p></p>\n\t\t</div>\n\t\t<div style=\"display:none\" class=\"image-editor\" id=\"image-editor-{id}\">\n\t\t\t\t</div>\n",
+            "\t\t\t<div class=\"imgedit-response\" id=\"imgedit-response-{id}\"></div>\n\n\t\t<div class=\"wp_attachment_image wp-clearfix\" id=\"media-head-{id}\">\n\t\t\t<p id=\"thumbnail-head-{id}\"><img class=\"thumbnail\" src=\"{}\" style=\"max-width:100%\" alt=\"\" /></p>\n\t\t\t<p>{edit_button}</p>\n\t\t</div>\n\t\t<div style=\"display:none\" class=\"image-editor\" id=\"image-editor-{id}\">\n\t\t\t\t</div>\n",
             esc_url(&thumb_url)
         )
     } else if kind == "audio" {

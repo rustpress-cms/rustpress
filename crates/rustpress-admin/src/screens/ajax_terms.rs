@@ -40,7 +40,7 @@ impl AjaxResponse {
 
     pub fn send(self) -> AdminResponse {
         let body = format!("<?xml version='1.0' encoding='UTF-8' standalone='yes'?><wp_ajax>{}</wp_ajax>", self.entries.concat());
-        AdminResponse { status: 200, headers: headers("text/xml; charset=UTF-8"), cookies: Vec::new(), body }
+        AdminResponse { status: 200, headers: headers("text/xml; charset=UTF-8"), cookies: Vec::new(), body, bytes: Vec::new() }
     }
 }
 

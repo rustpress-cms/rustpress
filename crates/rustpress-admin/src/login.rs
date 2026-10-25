@@ -74,6 +74,8 @@ pub struct LoginResponse {
     pub headers: Vec<(String, String)>,
     pub cookies: Vec<SetCookie>,
     pub body: String,
+    /// Sent instead of `body` when it is not empty (an image).
+    pub bytes: Vec<u8>,
 }
 
 /// One entry of a `WP_Error`.
@@ -400,7 +402,7 @@ impl LoginEnv<'_> {
 
     /// The default action: the form, with the outcome of a sign-in attempt.
     async fn login_action(&self, request: &LoginRequest) -> LoginResponse {
-        let mut response = LoginResponse { status: 200, headers: page_headers(), cookies: self.test_cookies(), body: String::new() };
+        let mut response = LoginResponse { status: 200, headers: page_headers(), cookies: self.test_cookies(), body: String::new(), bytes: Vec::new() };
         response.headers.extend(frame_headers());
 
         let redirect_to_requested = request.request("redirect_to").map(str::to_owned);
@@ -544,7 +546,7 @@ impl LoginEnv<'_> {
 
     /// `wp-login.php?action=logout`.
     async fn logout_action(&self, request: &LoginRequest) -> LoginResponse {
-        let mut response = LoginResponse { status: 200, headers: page_headers(), cookies: self.test_cookies(), body: String::new() };
+        let mut response = LoginResponse { status: 200, headers: page_headers(), cookies: self.test_cookies(), body: String::new(), bytes: Vec::new() };
         response.headers.extend(frame_headers());
         // The session of the logged-in cookie, and the nonce of the sign-out link.
         let cookie_name = self.auth.cookie_name(Scheme::LoggedIn);

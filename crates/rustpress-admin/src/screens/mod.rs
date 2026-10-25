@@ -30,6 +30,7 @@ pub mod dashboard;
 pub mod editor;
 pub mod export;
 pub mod general;
+mod image_edit;
 mod install;
 pub mod notices;
 pub mod options;
@@ -220,7 +221,7 @@ fn auth_redirect(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse {
 
 /// `wp_die()` for the administration area.
 pub fn die(env: &AdminEnv<'_>, status: u16, title: &str, message: &str) -> AdminResponse {
-    AdminResponse { status, headers: page_headers(), cookies: Vec::new(), body: crate::die::page(env.site, title, message) }
+    AdminResponse { status, headers: page_headers(), cookies: Vec::new(), body: crate::die::page(env.site, title, message), bytes: Vec::new() }
 }
 
 /// Handles a request to a file in `wp-admin`.
@@ -414,7 +415,7 @@ pub async fn render(ctx: &Ctx<'_>, screen: &Screen, content: &str, assets: &Asse
         ));
     }
     let body = chrome::render(&chrome_env, screen, content, &assets);
-    AdminResponse { status: 200, headers: page_headers(), cookies: Vec::new(), body }
+    AdminResponse { status: 200, headers: page_headers(), cookies: Vec::new(), body, bytes: Vec::new() }
 }
 
 /// A redirect (`wp_redirect()` and `exit`).
@@ -430,5 +431,6 @@ pub fn redirect(location: &str) -> AdminResponse {
         ],
         cookies: Vec::new(),
         body: String::new(),
+        bytes: Vec::new(),
     }
 }

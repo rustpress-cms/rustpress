@@ -194,7 +194,7 @@ fn resize_dimensions(orig_w: u32, orig_h: u32, dest_w: u32, dest_h: u32, crop: b
     Some((s_x, s_y, crop_w, crop_h, new_w.max(1), new_h.max(1)))
 }
 
-fn save_image(image: &image::DynamicImage, path: &Path, mime: &str) -> Result<(), UploadError> {
+pub fn save_image(image: &image::DynamicImage, path: &Path, mime: &str) -> Result<(), UploadError> {
     let result = match mime {
         "image/jpeg" => {
             let mut out = std::fs::File::create(path).map_err(|e| UploadError(e.to_string()))?;
@@ -294,6 +294,32 @@ pub fn generate_image_metadata(options: &rustpress_core::options::Options, uploa
         items.push(entry("original_image", s(original)));
     }
     Some((Value::Array(items), relative, original_image))
+}
+
+/// `WP_Image_Editor::multi_resize()` for the sizes of the site: the files written next to `full` and their
+/// entries for the metadata, in the order of the sizes. Sizes that would not be smaller than the image are skipped.
+pub fn generate_sizes(options: &rustpress_core::options::Options, full: &Path, mime: &str) -> Option<(u32, u32, Vec<(String, Value)>)> {
+    let decoded = image::open(full).ok()?;
+    let (width, height) = (decoded.width(), decoded.height());
+    let dir = full.parent()?.to_path_buf();
+    let name = full.file_name()?.to_string_lossy().into_owned();
+    let (stem, ext) = name.rsplit_once('.')?;
+    let mut sizes = Vec::new();
+    for (size, dest_w, dest_h, crop) in registered_sizes(options) {
+        let Some((sx, sy, cw, ch, nw, nh)) = resize_dimensions(width, height, dest_w, dest_h, crop) else { continue };
+        let file_name = format!("{stem}-{nw}x{nh}.{ext}");
+        let target = dir.join(&file_name);
+        let resized = decoded.crop_imm(sx, sy, cw, ch).resize_exact(nw, nh, image::imageops::FilterType::Lanczos3);
+        if save_image(&resized, &target, mime).is_err() {
+            continue;
+        }
+        let filesize = std::fs::metadata(&target).map(|m| m.len() as i64).unwrap_or(0);
+        sizes.push((
+            size,
+            Value::Array(vec![entry("file", s(&file_name)), entry("width", Value::Int(i64::from(nw))), entry("height", Value::Int(i64::from(nh))), entry("mime-type", s(mime)), entry("filesize", Value::Int(filesize))]),
+        ));
+    }
+    Some((width, height, sizes))
 }
 
 /// The directory for new uploads: `Y/m` unless the site stores them flat.

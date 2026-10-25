@@ -262,7 +262,7 @@ pub async fn login_page(loaded: &Loaded, writer: Option<&rustpress_db::Writer>, 
         user_agent: headers.get(header::USER_AGENT).and_then(|v| v.to_str().ok()).map(str::to_owned),
     };
     let reply = login::handle(&env, &request).await;
-    let mut response = Response::new(Body::from(reply.body));
+    let mut response = if reply.bytes.is_empty() { Response::new(Body::from(reply.body)) } else { Response::new(Body::from(reply.bytes)) };
     *response.status_mut() = StatusCode::from_u16(reply.status).unwrap_or(StatusCode::OK);
     for (name, value) in &reply.headers {
         if let (Ok(name), Ok(value)) = (header::HeaderName::from_bytes(name.as_bytes()), HeaderValue::from_str(value)) {
@@ -318,7 +318,7 @@ pub async fn admin_page(loaded: &Loaded, config: &Config, writer: Option<&rustpr
         user_agent: headers.get(header::USER_AGENT).and_then(|v| v.to_str().ok()).map(str::to_owned),
     };
     let reply = rustpress_admin::screens::handle(&env, &request).await;
-    let mut response = Response::new(Body::from(reply.body));
+    let mut response = if reply.bytes.is_empty() { Response::new(Body::from(reply.body)) } else { Response::new(Body::from(reply.bytes)) };
     *response.status_mut() = StatusCode::from_u16(reply.status).unwrap_or(StatusCode::OK);
     for (name, value) in &reply.headers {
         if let (Ok(name), Ok(value)) = (header::HeaderName::from_bytes(name.as_bytes()), HeaderValue::from_str(value)) {
