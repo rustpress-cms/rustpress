@@ -149,9 +149,9 @@ async fn feeds_support_conditional_get() {
 }
 
 #[tokio::test]
-async fn unsupported_feed_types_are_not_found() {
+async fn unknown_feed_types_are_not_found() {
     let Some(app) = app().await else { return };
-    let (status, _, _) = get(&app, Method::GET, "/feed/rdf/").await;
+    let (status, _, _) = get(&app, Method::GET, "/?feed=bogus").await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
