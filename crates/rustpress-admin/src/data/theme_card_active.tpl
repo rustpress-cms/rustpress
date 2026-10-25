@@ -15,7 +15,7 @@
 		
 		<div class="theme-actions">
 									<a class="button button-compact button-primary customize load-customize hide-if-no-customize"
-					href="{{site}}/wp-admin/site-editor.php?return=%2Fwp-admin%2Fthemes.php"
+					href="{{site}}/wp-admin/site-editor.php?return={{return}}"
 					aria-label="Customize {{name}}"
 				>Customize</a>
 					

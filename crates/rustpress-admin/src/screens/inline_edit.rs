@@ -58,8 +58,10 @@ async fn authors(ctx: &Ctx<'_>, info: &TypeInfo, bulk: bool) -> String {
     if bulk {
         out.push_str(&format!("\t<option value='-1'>{}</option>\n", ctx.tr("&mdash; No Change &mdash;")));
     }
+    // `wp_dropdown_users()` selects the author of an author archive: the list filtered by `author=`.
+    let selected = ctx.request.get("author").and_then(|a| a.parse::<u64>().ok()).unwrap_or(0);
     for user in &users {
-        out.push_str(&format!("\t<option value='{}'>{} ({})</option>\n", user.id, esc_html(&user.display_name), esc_html(&user.user_login)));
+        out.push_str(&format!("\t<option value='{}'{}>{} ({})</option>\n", user.id, if selected == user.id { " selected='selected'" } else { "" }, esc_html(&user.display_name), esc_html(&user.user_login)));
     }
     out.push_str("</select>");
     out

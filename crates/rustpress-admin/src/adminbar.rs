@@ -16,6 +16,8 @@ pub struct BarContext {
     pub logout_nonce: String,
     /// The "View Post" entry of the screen that edits a post: `(label, address)`.
     pub view_item: Option<(String, String)>,
+    /// The entry is the archive of a post type (`View Posts`), not the view of one item.
+    pub view_archive: bool,
     /// The screen loads the command palette (`wp-core-commands` is enqueued).
     pub command_palette: bool,
 }
@@ -155,7 +157,7 @@ pub fn render_admin(site: &Site, user: &CurrentUser, ctx: &BarContext) -> String
     }
 
     if let Some((label, url)) = &ctx.view_item {
-        top.push(item("view", "", &link(&esc_url(url), &esc_html(label), false)));
+        top.push(item(if ctx.view_archive { "archive" } else { "view" }, "", &link(&esc_url(url), &esc_html(label), false)));
     }
 
     // My account

@@ -22,6 +22,17 @@ text = re.sub(r'(name="(?:_wpnonce[\w-]*|_inline_edit|_ajax_nonce[\w-]*|[\w-]*no
 text = re.sub(r'(id="(?:_wpnonce[\w-]*|_inline_edit|[\w-]*nonce)" name="[\w-]+" value=")[0-9a-f]{10}', r"\g<1>N", text)
 text = re.sub(r'(name="_wp_unfiltered_html_comment" value=")[0-9a-f]{10}', r"\g<1>N", text)
 text = re.sub(r"<code>\d{4}-\d{2}-\d{2} [\d:]{8}</code>", "<code>TIME</code>", text)
+# The current time in the date fields, and `antispambot()` (random per request).
+text = re.sub(r'(id="(?:ss|mn|hh)" name="(?:ss|mn|hh)" value=")\d\d', r"\g<1>00", text)
+
+
+def _unmangle(match):
+    import html
+
+    return html.unescape(match.group(0))
+
+
+text = re.sub(r'<a href="mailto:[^"]*">[^<]*</a>', _unmangle, text)
 text = text.replace("><", ">\n<")
 text = "\n".join(line.rstrip() for line in text.split("\n") if line.strip())
 sys.stdout.buffer.write((text + "\n").encode("utf-8"))

@@ -97,7 +97,12 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         limit: per_page,
         offset: (paged - 1) * per_page,
     };
-    let (users, total) = db.list_users(&query).await.unwrap_or_default();
+    let (mut users, mut total) = db.list_users(&query).await.unwrap_or_default();
+    if query.no_role && total == 0 {
+        // `wp_get_users_with_no_role()` is empty, and WP_User_Query takes an empty `include` for no filter.
+        let all = UserListQuery { no_role: false, ..query.clone() };
+        (users, total) = db.list_users(&all).await.unwrap_or_default();
+    }
     let ids: Vec<u64> = users.iter().map(|u| u.id).collect();
     let type_refs: Vec<&str> = vec!["post"];
     let counts = db.published_post_counts(&ids, &type_refs).await.unwrap_or_default();
@@ -192,7 +197,14 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     };
     let extra_top = if ctx.can("promote_users") { role_options("") } else { String::new() };
     let extra_bottom = if ctx.can("promote_users") { role_options("2") } else { String::new() };
-    let caption = if desc { tr("Table ordered by Username. Descending.") } else { tr("Table ordered by Username. Ascending.") };
+    // `print_table_description()`: the initial view is sorted by user name; only the sortable columns have a text.
+    let requested = request.get("orderby").unwrap_or_default();
+    let order_text = if request.get("order") == Some("desc") { tr("Descending.") } else { tr("Ascending.") };
+    let caption = match requested {
+        "" | "login" => format!("{} {order_text}", tr("Table ordered by Username.")),
+        "email" => format!("{} {order_text}", tr("Table ordered by E-mail.")),
+        _ => String::new(),
+    };
     let nonce_field = ctx.nonce_field("bulk-users");
     let table_html = table.display(&nonce_field, &extra_top, &extra_bottom, &caption, &rows, &tr("Users list"));
 
@@ -203,7 +215,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         h.push_str(&format!("\t\t<a href=\"{}\" class=\"page-title-action\">{}</a>\n", esc_url(&ctx.admin_url("user-new.php")), tr("Add User")));
     }
     if !search.is_empty() {
-        h.push_str(&format!("\t\t<span class=\"subtitle\">{}</span>\n", sprintf(&tr("Search results for: %s"), &[&format!("<strong>{}</strong>", esc_html(&search))])));
+        h.push_str(&format!("<span class=\"subtitle\">{}</span>\n", sprintf(&tr("Search results for: %s"), &[&format!("<strong>{}</strong>", esc_html(&search))])));
     }
     h.push_str("\t\t<hr class=\"wp-header-end\">\n\n");
     if let Some(code) = request.get("update")
@@ -212,8 +224,17 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         h.push_str(&format!("<div id=\"message\" class=\"{} notice is-dismissible\"><p>{message}</p></div>\n", if error { "error" } else { "updated" }));
     }
     h.push_str(&format!("\t\t{}\n", views(&tr("Filter users list"), &links)));
+    // `search_box()` carries the sort order of the list along.
+    let mut sort_inputs = String::new();
+    if let Some(by) = request.request("orderby").filter(|v| !v.is_empty()) {
+        sort_inputs.push_str(&format!("<input type=\"hidden\" name=\"orderby\" value=\"{}\" />", esc_attr(by)));
+    }
+    if let Some(order) = request.request("order").filter(|v| !v.is_empty()) {
+        sort_inputs.push_str(&format!("<input type=\"hidden\" name=\"order\" value=\"{}\" />", esc_attr(order)));
+    }
     h.push_str(&format!(
-        "\t\t<form method=\"get\">\n\n\t\t<p class=\"search-box\">\n\t<label class=\"screen-reader-text\" for=\"user-search-input\">{}</label>\n\t<input type=\"search\" id=\"user-search-input\" name=\"s\" value=\"{}\" />\n\t\t<input type=\"submit\" id=\"search-submit\" class=\"button button-compact\" value=\"{}\"  /></p>\n\t\t\n{}\t\t{}\n\t\t</form>\n\n\t\t<div class=\"clear\"></div>\n\t\t</div><!-- .wrap -->\n\t\t",
+        "\t\t<form method=\"get\">\n\n\t\t{}<p class=\"search-box\">\n\t<label class=\"screen-reader-text\" for=\"user-search-input\">{}</label>\n\t<input type=\"search\" id=\"user-search-input\" name=\"s\" value=\"{}\" />\n\t\t<input type=\"submit\" id=\"search-submit\" class=\"button button-compact\" value=\"{}\"  /></p>\n\t\t\n{}\t\t{}\n\t\t</form>\n\n\t\t<div class=\"clear\"></div>\n\t\t</div><!-- .wrap -->\n\t\t",
+        sort_inputs,
         tr("Search Users:"),
         esc_attr(&search),
         esc_attr(&tr("Search Users")),

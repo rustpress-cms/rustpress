@@ -35,7 +35,8 @@ fn theme_json(ctx: &Ctx<'_>, theme: &ThemeInfo, active: &str, parent_name: Optio
     actions.insert(
         "customize".into(),
         json!(if theme.block_theme {
-            let path = if is_active { "site-editor.php?return=%2Fwp-admin%2Fthemes.php".to_owned() } else { format!("site-editor.php?wp_theme_preview={}&return=%2Fwp-admin%2Fthemes.php", theme.stylesheet) };
+            let back = rustpress_core::canonical::rawurlencode(&ctx.request.request_uri);
+            let path = if is_active { format!("site-editor.php?return={back}") } else { format!("site-editor.php?wp_theme_preview={}&return={back}", theme.stylesheet) };
             esc_url(&ctx.admin_url(&path))
         } else {
             String::new()
@@ -96,7 +97,7 @@ fn card(ctx: &Ctx<'_>, theme: &ThemeInfo, active: bool, update: bool) -> String 
     let site = ctx.site().settings.siteurl.trim_end_matches('/').to_owned();
     let nonce = ctx.create_nonce(&format!("switch-theme_{}", theme.stylesheet));
     let notice = if update { format!("\t<div class=\"notice notice-warning notice-alt inline update-message\"><p>{} <button class=\"button-link\" type=\"button\">{}</button></p></div>\t", ctx.tr("New version available."), ctx.tr("Update now")) } else { String::new() };
-    let mut html = template.replace("\r\n", "\n");
+    let mut html = template.replace("\r\n", "\n").replace("{{return}}", &rustpress_core::canonical::rawurlencode(&ctx.request.request_uri));
     for (needle, value) in [("{{id}}", theme.stylesheet.as_str()), ("{{name}}", &esc_html(&wptexturize(&theme.name))), ("{{version}}", &theme.version), ("{{author}}", &wptexturize(&theme.author)), ("{{nonce}}", &nonce), ("{{update_notice}}", &notice), ("{{site}}", &site)] {
         html = html.replace(needle, value);
     }
@@ -245,7 +246,12 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     }
 
     let baked = super::pages::load(ctx, "themes");
-    let content = baked.content.replace("{{cards}}", &cards).replace("{{count}}", &installed.len().to_string()).replace("{{notices}}", &notices);
+    let searching = request.get("search").is_some_and(|s| !s.is_empty());
+    let count = if searching { ctx.tr("&hellip;") } else { installed.len().to_string() };
+    let mut content = baked.content.replace("{{cards}}", &cards).replace("{{count}}", &count).replace("{{notices}}", &notices);
+    if searching {
+        content = content.replacen("class=\"theme-browser\"", "class=\"theme-browser search-loading\"", 1);
+    }
     let settings = json!({
         "themes": theme_list,
         "settings": {

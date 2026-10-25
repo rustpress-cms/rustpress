@@ -31,7 +31,7 @@ pub fn type_info(ctx: &Ctx<'_>, name: &str) -> Option<TypeInfo> {
 }
 
 /// `post_class()` for a list row.
-fn post_class(post: &Post, categories: &[rustpress_db::Term], tags: &[rustpress_db::Term], sticky: bool, thumbnail: bool) -> String {
+fn post_class(post: &Post, categories: &[rustpress_db::Term], tags: &[rustpress_db::Term], others: &[(String, rustpress_db::Term)], sticky: bool, thumbnail: bool) -> String {
     let mut classes = vec![format!("post-{}", post.id), format!("type-{}", post.post_type), format!("status-{}", post.post_status)];
     if post.post_type == "post" {
         classes.push("format-standard".to_owned());
@@ -48,6 +48,10 @@ fn post_class(post: &Post, categories: &[rustpress_db::Term], tags: &[rustpress_
     }
     for term in tags {
         classes.push(format!("tag-{}", rustpress_core::formatting::sanitize_html_class(&term.slug)));
+    }
+    // The terms of every other public taxonomy: `genre-krimi`.
+    for (taxonomy, term) in others {
+        classes.push(rustpress_core::formatting::sanitize_html_class(&format!("{taxonomy}-{}", rustpress_core::formatting::sanitize_html_class(&term.slug))));
     }
     classes.join(" ")
 }
@@ -367,6 +371,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         _ => OrderBy::Date,
     };
     let order = if order_param == "asc" || (hierarchical_display) || (order_param.is_empty() && post_status.as_deref() == Some("pending")) { Order::Asc } else { Order::Desc };
+    let taxonomies = Content { site, db, writer: match ctx.env.writer { Some(w) => w, None => return super::die(ctx.env, 403, "WordPress &rsaquo; Error", "<p>RustPress was started without write access.</p>") }, user: &ctx.user, now: ctx.env.now }.object_taxonomies(&info.name);
     let mut query = PostQuery {
         post_types: vec![info.name.clone()],
         statuses: match &post_status {
@@ -391,6 +396,40 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     if request.get("tag").is_some_and(|slug| !slug.is_empty()) {
         // A tag that does not exist matches nothing.
         query.tax_groups.push(vec![tag_term.as_ref().map_or(0, |term| term.term_taxonomy_id)]);
+    }
+    // The query variables of the other taxonomies (`genre=krimi`), and the post format (`post_format=video`).
+    for (taxonomy, _) in &taxonomies {
+        let (query_var, hierarchical) = match taxonomy.as_str() {
+            "category" | "post_tag" => continue,
+            "post_format" => (Some("post_format".to_owned()), false),
+            other => (site.types.taxonomy(other).and_then(|t| t.query_var.clone()), site.types.taxonomy(other).is_some_and(|t| t.hierarchical)),
+        };
+        let Some(slugs) = query_var.and_then(|var| request.get(&var).filter(|v| !v.is_empty()).map(str::to_owned)) else { continue };
+        let all_terms = db.terms(taxonomy).await.unwrap_or_default();
+        let mut ids: Vec<u64> = Vec::new();
+        for slug in slugs.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+            // `_post_format_request()`: `video` is the term `post-format-video`.
+            let slug = if taxonomy == "post_format" && !slug.starts_with("post-format-") { format!("post-format-{slug}") } else { slug.to_owned() };
+            if let Some(term) = all_terms.iter().find(|t| t.slug == slug) {
+                ids.push(term.term_id);
+                if hierarchical {
+                    loop {
+                        let before = ids.len();
+                        for child in &all_terms {
+                            if ids.contains(&child.parent) && !ids.contains(&child.term_id) {
+                                ids.push(child.term_id);
+                            }
+                        }
+                        if ids.len() == before {
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        let tt: Vec<u64> = all_terms.iter().filter(|t| ids.contains(&t.term_id)).map(|t| t.term_taxonomy_id).collect();
+        // A term that does not exist matches nothing.
+        query.tax_groups.push(if tt.is_empty() { vec![0] } else { tt });
     }
     if month >= 190_000 {
         query.year = Some(month / 100);
@@ -431,7 +470,6 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     }
 
     // The table
-    let taxonomies = Content { site, db, writer: match ctx.env.writer { Some(w) => w, None => return super::die(ctx.env, 403, "WordPress &rsaquo; Error", "<p>RustPress was started without write access.</p>") }, user: &ctx.user, now: ctx.env.now }.object_taxonomies(&info.name);
     let columns = list_columns(ctx, &info, &status_param, &taxonomies);
 
     let bulk_actions = {
@@ -497,7 +535,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
                 let name = site.locale_data().month[(*month_number as usize).saturating_sub(1).min(11)].clone();
                 let label = rustpress_core::i18n::sprintf(&tr("%1$s %2$d"), &[&name, &year.to_string()]);
                 filters.push_str(&format!("<option {} value='{value}'>{}</option>
-", if month.to_string() == value { "selected='selected'" } else { "" }, esc_html(&label)));
+", if month.to_string() == value { " selected='selected'" } else { "" }, esc_html(&label)));
             }
             filters.push_str("		</select>
 		");
@@ -535,7 +573,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         let (ordered_by, direction) = match (orderby_param.as_str(), order_param.as_str()) {
             ("title", o) => (tr("Table ordered by Title."), o == "desc"),
             ("comment_count", o) => (tr("Table ordered by Comments."), o == "desc"),
-            ("", _) if info.hierarchical => (tr("Table ordered by Hierarchical Menu Order and Title."), false),
+            ("", _) if info.name == "page" => (tr("Table ordered by Hierarchical Menu Order and Title."), false),
             (_, o) => (tr("Table ordered by Date."), o != "asc"),
         };
         format!("{ordered_by} {}", if direction { tr("Descending.") } else { tr("Ascending.") })
@@ -568,11 +606,17 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         String::new()
     };
     let filter_heading = if info.hierarchical { tr("Filter pages list") } else { tr("Filter posts list") };
-    let hidden_fields = format!(
+    let mut hidden_fields = format!(
         "<input type=\"hidden\" name=\"post_status\" class=\"post_status_page\" value=\"{}\" />\n<input type=\"hidden\" name=\"post_type\" class=\"post_type_page\" value=\"{}\" />\n",
         esc_attr(&status_param),
         esc_attr(&info.name)
     );
+    if let Some(a) = request.request("author").filter(|a| !a.is_empty() && *a != "0") {
+        hidden_fields.push_str(&format!("\n<input type=\"hidden\" name=\"author\" value=\"{}\" />\n", esc_attr(a)));
+    }
+    if request.request("show_sticky").is_some_and(|v| !v.is_empty() && v != "0") {
+        hidden_fields.push_str("\n<input type=\"hidden\" name=\"show_sticky\" value=\"1\" />\n");
+    }
     let notice = result_notice(ctx, &info);
     // `if ( $wp_list_table->has_items() )`: an empty list has no Quick Edit.
     let inline = if posts.is_empty() { String::new() } else { super::inline_edit::inline_edit(ctx, &info, posts.first(), columns.len(), taxonomies.iter().any(|(_, hierarchical)| *hierarchical)).await };
@@ -580,6 +624,8 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         "<div class=\"wrap\">\n{heading}{notice}\n{}\n<form id=\"posts-filter\" method=\"get\">\n\n{search_box}{hidden_fields}\n\n\n{table_html}\n</form>\n\n\n{inline}<div id=\"ajax-response\"></div>\n<div class=\"clear\"></div>\n</div>\n\n",
         views(&filter_heading, &links)
     );
+    // `wp_admin_bar_edit_menu()`: a post type with an archive gets "View Posts" on its list.
+    let archive_item = if ctx.can("read") { site.post_type_archive_link(&info.name).map(|url| (if info.hierarchical { tr("View Pages") } else { tr("View Posts") }, url)) } else { None };
     let screen = Screen {
         file: "edit.php".into(),
         parent_file: edit_base.clone(),
@@ -587,7 +633,8 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         post_type: info.name.clone(),
         title: info.label.clone(),
         help: None,
-        view_item: None,
+        view_item: archive_item.clone(),
+        view_archive: archive_item.is_some(),
         ..Default::default()
     };
     let _ = remove_query_arg("", "");
@@ -599,7 +646,7 @@ pub(super) fn list_columns(ctx: &Ctx<'_>, info: &TypeInfo, status_param: &str, t
     let site = ctx.site();
     let tr = |s: &str| ctx.tr(s);
     let supports_author = site.post_type_supports(&info.name, "author");
-    let mut columns: Vec<Column> = vec![Column::new("cb", "<input type=\"checkbox\" />"), Column::new("title", &site.trx("Title", "column name")).sortable("title", false, Some(&tr("Title")), if info.hierarchical { Some("asc") } else { None })];
+    let mut columns: Vec<Column> = vec![Column::new("cb", "<input type=\"checkbox\" />"), Column::new("title", &site.trx("Title", "column name")).sortable("title", false, Some(&tr("Title")), if info.name == "page" { Some("asc") } else { None })];
     if supports_author {
         columns.push(Column::new("author", &tr("Author")));
     }
@@ -616,7 +663,7 @@ pub(super) fn list_columns(ctx: &Ctx<'_>, info: &TypeInfo, status_param: &str, t
                 .sortable("comment_count", false, Some(&tr("Comments")), None),
         );
     }
-    columns.push(Column::new("date", &tr("Date")).sortable("date", true, Some(&tr("Date")), if info.hierarchical { None } else { Some("desc") }));
+    columns.push(Column::new("date", &tr("Date")).sortable("date", true, Some(&tr("Date")), if info.name == "page" { None } else { Some("desc") }));
     columns
 }
 
@@ -643,13 +690,22 @@ pub(super) async fn post_row(ctx: &Ctx<'_>, post: &Post, level: usize, row: &Row
     let mut out = String::new();
     let categories = db.terms_for_post(post.id, Some("category")).await.unwrap_or_default();
     let tags = db.terms_for_post(post.id, Some("post_tag")).await.unwrap_or_default();
+    let mut others: Vec<(String, rustpress_db::Term)> = Vec::new();
+    for (taxonomy, _) in taxonomies {
+        if matches!(taxonomy.as_str(), "category" | "post_tag") {
+            continue;
+        }
+        for term in db.terms_for_post(post.id, Some(taxonomy)).await.unwrap_or_default() {
+            others.push((taxonomy.clone(), term));
+        }
+    }
     let is_sticky = sticky.contains(&post.id);
     let thumbnail = db.post_meta(post.id).await.unwrap_or_default().iter().any(|m| m.meta_key.as_deref() == Some("_thumbnail_id") && m.meta_value.as_deref().and_then(|v| v.parse::<u64>().ok()).is_some_and(|id| id > 0));
     let author_row = authors.iter().find(|u| u.id == post.post_author);
     let class = format!(
         "iedit author-{} level-{level} {}",
         if post.post_author == ctx.user.id { "self" } else { "other" },
-        post_class(post, &categories, &tags, is_sticky, thumbnail)
+        post_class(post, &categories, &tags, &others, is_sticky, thumbnail)
     );
     out.push_str(&format!("\t\t{}<tr id=\"post-{}\" class=\"{class}\">\n\t\t\t", if hierarchical_display { "\t" } else { "" }, post.id));
     let title = draft_or_title(ctx, post);

@@ -145,6 +145,12 @@ impl Db {
         Ok(sqlx::query_scalar(AssertSqlSafe(sql)).bind(comment_id).bind(key).fetch_optional(&self.pool).await?)
     }
 
+    /// The comments with a `comment_approved` value that are older than `before` (GMT): what "Empty Spam" deletes.
+    pub async fn comment_ids_before(&self, approved: &str, before: &str) -> Result<Vec<u64>> {
+        let sql = format!("SELECT comment_ID FROM {} WHERE comment_approved = ? AND ? > comment_date_gmt", self.prefix.table("comments"));
+        Ok(sqlx::query_scalar(AssertSqlSafe(sql)).bind(approved).bind(before).fetch_all(&self.pool).await?)
+    }
+
     /// Comment IDs whose parent is `parent`.
     pub async fn comment_children(&self, parent: u64) -> Result<Vec<u64>> {
         let sql = format!("SELECT comment_ID FROM {} WHERE comment_parent = ?", self.prefix.table("comments"));

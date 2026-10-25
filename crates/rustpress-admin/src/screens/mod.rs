@@ -324,7 +324,7 @@ pub async fn render(ctx: &Ctx<'_>, screen: &Screen, content: &str, assets: &Asse
         loader,
         user: &ctx.user,
         menu: &menu,
-        bar: BarContext { updates: updates.total(), pending_comments: pending, logout_nonce: ctx.create_nonce("log-out"), view_item: None, command_palette: true },
+        bar: BarContext { updates: updates.total(), pending_comments: pending, logout_nonce: ctx.create_nonce("log-out"), view_item: None, view_archive: false, command_palette: true },
         stylesheet: env.site.settings.stylesheet.clone(),
         cookie_path: paths(env.site).cookie,
         now: env.now,

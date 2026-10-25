@@ -98,7 +98,7 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUs
             let level = depth(&all, &term);
             let noparents = if info.hierarchical { terms::row_html(&ctx, &info.name, &term, level).await.unwrap_or_default() } else { String::new() };
             let parents = terms::row_html(&ctx, &info.name, &term, 0).await.unwrap_or_default();
-            let message = rustpress_core::i18n::sprintf(&env.site.tr("%s added."), &[&info.singular]);
+            let message = terms::messages(&ctx, &info).swap_remove(1);
             x.add("taxonomy", 0, None, Ok(&message), &[("parents", parents), ("noparents", noparents), ("notice", message.clone())]);
             let fields = vec![
                 ("term_id", term.term_id.to_string()),

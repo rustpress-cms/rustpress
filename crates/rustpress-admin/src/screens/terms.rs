@@ -20,6 +20,37 @@ pub struct TaxInfo {
     pub singular: String,
     pub query_var: Option<String>,
     pub post_type: String,
+    pub labels: TaxLabels,
+}
+
+/// The labels of `get_taxonomy_labels()` the screens use: a taxonomy that only names itself gets the ones of tags
+/// or of categories.
+#[derive(Debug, Clone)]
+pub struct TaxLabels {
+    pub search_items: String,
+    pub add_new_item: String,
+    pub edit_item: String,
+    pub update_item: String,
+    pub view_item: String,
+    pub parent_item: String,
+    pub items_list: String,
+    pub items_list_navigation: String,
+}
+
+impl TaxLabels {
+    fn new(site: &rustpress_core::Site, hierarchical: bool) -> Self {
+        let pick = |tag: &str, category: &str| site.tr(if hierarchical { category } else { tag });
+        Self {
+            search_items: pick("Search Tags", "Search Categories"),
+            add_new_item: pick("Add Tag", "Add Category"),
+            edit_item: pick("Edit Tag", "Edit Category"),
+            update_item: pick("Update Tag", "Update Category"),
+            view_item: pick("View Tag", "View Category"),
+            parent_item: site.tr("Parent Category"),
+            items_list: pick("Tags list", "Categories list"),
+            items_list_navigation: pick("Tags list navigation", "Categories list navigation"),
+        }
+    }
 }
 
 pub fn tax_info(ctx: &Ctx<'_>, name: &str, post_type: Option<&str>) -> Option<TaxInfo> {
@@ -33,22 +64,17 @@ pub fn tax_info(ctx: &Ctx<'_>, name: &str, post_type: Option<&str>) -> Option<Ta
         }
     };
     let post_type = post_type.filter(|p| !p.is_empty() && objects.iter().any(|o| o == p)).map(str::to_owned).or_else(|| objects.first().cloned()).unwrap_or_else(|| "post".to_owned());
-    Some(TaxInfo { name: name.to_owned(), hierarchical, plural, singular, query_var, post_type })
+    let labels = TaxLabels::new(site, hierarchical);
+    Some(TaxInfo { name: name.to_owned(), hierarchical, plural, singular, query_var, post_type, labels })
 }
 
-fn messages(ctx: &Ctx<'_>, info: &TaxInfo) -> Vec<String> {
-    let s = &info.singular;
-    let p = &info.plural;
-    let _ = ctx;
-    vec![
-        String::new(),
-        sprintf(&ctx.tr("%s added."), &[s]),
-        sprintf(&ctx.tr("%s deleted."), &[s]),
-        sprintf(&ctx.tr("%s updated."), &[s]),
-        sprintf(&ctx.tr("%s not added."), &[s]),
-        sprintf(&ctx.tr("%s not updated."), &[s]),
-        sprintf(&ctx.tr("%s deleted."), &[p]),
-    ]
+pub(super) fn messages(ctx: &Ctx<'_>, info: &TaxInfo) -> Vec<String> {
+    let tr = |s: &str| ctx.tr(s);
+    match info.name.as_str() {
+        "category" => vec![String::new(), tr("Category added."), tr("Category deleted."), tr("Category updated."), tr("Category not added."), tr("Category not updated."), tr("Categories deleted.")],
+        "post_tag" => vec![String::new(), tr("Tag added."), tr("Tag deleted."), tr("Tag updated."), tr("Tag not added."), tr("Tag not updated."), tr("Tags deleted.")],
+        _ => vec![String::new(), tr("Item added."), tr("Item deleted."), tr("Item updated."), tr("Item not added."), tr("Item not updated."), tr("Items deleted.")],
+    }
 }
 
 fn term_edit_url(ctx: &Ctx<'_>, info: &TaxInfo, term: &Term, referer: &str) -> String {
@@ -359,7 +385,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         sprintf(&if desc { tr("Table ordered by %s. Descending.") } else { tr("Table ordered by %s. Ascending.") }, &[&by])
     };
     let nonce_field = format!("<input type=\"hidden\" name=\"taxonomy\" value=\"{}\" />\n<input type=\"hidden\" name=\"post_type\" value=\"{}\" />\n\n{}", info.name, info.post_type, ctx.nonce_field("bulk-tags"));
-    let table_html = table.display(&nonce_field, "", "", &caption, &rows, &sprintf(&tr("%s list"), &[&info.plural]));
+    let table_html = table.display(&nonce_field, "", "", &caption, &rows, &info.labels.items_list);
 
     // The page
     let title = info.plural.clone();
@@ -376,9 +402,9 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     h.push_str("<div id=\"ajax-response\"></div>\n\n");
     h.push_str(&format!(
         "<form class=\"search-form wp-clearfix\" method=\"get\">\n<input type=\"hidden\" name=\"taxonomy\" value=\"{tax}\" />\n<input type=\"hidden\" name=\"post_type\" value=\"{pt}\" />\n{order_inputs}\n<p class=\"search-box\">\n\t<label class=\"screen-reader-text\" for=\"tag-search-input\">{}</label>\n\t<input type=\"search\" id=\"tag-search-input\" name=\"s\" value=\"{}\" />\n\t\t<input type=\"submit\" id=\"search-submit\" class=\"button button-compact\" value=\"{}\"  /></p>\n\t\t\n</form>\n\n",
-        sprintf(&tr("Search %s:"), &[&info.plural]),
+        format!("{}:", info.labels.search_items),
         esc_attr(&search),
-        esc_attr(&sprintf(&tr("Search %s"), &[&info.plural])),
+        esc_attr(&info.labels.search_items),
         tax = info.name,
         pt = info.post_type,
         order_inputs = order_inputs
@@ -407,10 +433,10 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
 
 async fn add_form(ctx: &Ctx<'_>, info: &TaxInfo) -> String {
     let tr = |s: &str| ctx.tr(s);
-    let singular = &info.singular;
+    let singular = &info.labels.add_new_item;
     let mut h = format!(
         "<div class=\"form-wrap\">\n<h2>{}</h2>\n<form id=\"addtag\" method=\"post\" action=\"edit-tags.php\" class=\"validate\"\n\t>\n<input type=\"hidden\" name=\"action\" value=\"add-tag\" />\n<input type=\"hidden\" name=\"screen\" value=\"edit-{}\" />\n<input type=\"hidden\" name=\"taxonomy\" value=\"{}\" />\n<input type=\"hidden\" name=\"post_type\" value=\"{}\" />\n\t",
-        sprintf(&tr("Add %s"), &[singular]),
+        singular,
         info.name,
         info.name,
         info.post_type
@@ -435,7 +461,7 @@ async fn add_form(ctx: &Ctx<'_>, info: &TaxInfo) -> String {
         let help_text = if info.name == "category" { tr("Categories, unlike tags, can have a hierarchy. You might have a Jazz category, and under that have children categories for Bebop and Big Band. Totally optional.") } else { tr("Assign a parent term to create a hierarchy. The term Jazz, for example, would be the parent of Bebop and Big Band.") };
         h.push_str(&format!(
             "\t<div class=\"form-field term-parent-wrap\">\n\t<label for=\"parent\">{}</label>\n\t\t{dropdown}\t\t\t\t<p id=\"parent-description\">{help_text}</p>\n\t</div>\n",
-            sprintf(&tr("Parent %s"), &[&info.singular])
+            info.labels.parent_item.clone()
         ));
     }
     h.push_str(&format!(
@@ -443,7 +469,7 @@ async fn add_form(ctx: &Ctx<'_>, info: &TaxInfo) -> String {
         tr("Description"),
         tr("The description is not prominent by default; however, some themes may show it.")
     ));
-    h.push_str(&format!("\t\t<p class=\"submit\">\n\t\t<input type=\"submit\" name=\"submit\" id=\"submit\" class=\"button button-primary\" value=\"{}\"  />\t\t<span class=\"spinner\"></span>\n\t</p>\n\t</form></div>\n", esc_attr(&sprintf(&tr("Add %s"), &[singular]))));
+    h.push_str(&format!("\t\t<p class=\"submit\">\n\t\t<input type=\"submit\" name=\"submit\" id=\"submit\" class=\"button button-primary\" value=\"{}\"  />\t\t<span class=\"spinner\"></span>\n\t</p>\n\t</form></div>\n", esc_attr(&sprintf(&tr("%s"), &[singular]))));
     h
 }
 
@@ -454,7 +480,7 @@ fn inline_edit(ctx: &Ctx<'_>, info: &TaxInfo) -> String {
         quick = tr("Quick Edit"),
         name = tr("Name"),
         slug = tr("Slug"),
-        update = sprintf(&tr("Update %s"), &[&info.singular]),
+        update = info.labels.update_item,
         cancel = tr("Cancel"),
         nonce = ctx.create_nonce("taxinlineeditnonce"),
         tax = info.name,
@@ -480,7 +506,7 @@ pub async fn edit_page(ctx: &Ctx<'_>) -> AdminResponse {
     let site = ctx.site();
 
     // The form posts to edit-tags.php with `editedtag`; this screen is reached by GET only.
-    let mut h = format!("<div class=\"wrap\">\n<h1>{}</h1>\n\n", sprintf(&tr("Edit %s"), &[&info.singular]));
+    let mut h = format!("<div class=\"wrap\">\n<h1>{}</h1>\n\n", info.labels.edit_item);
     if let Some(code) = request.get("message").and_then(|m| m.parse::<usize>().ok()).filter(|m| *m > 0) {
         let list = messages(ctx, &info);
         if let Some(text) = list.get(code) {
@@ -515,7 +541,7 @@ pub async fn edit_page(ctx: &Ctx<'_>) -> AdminResponse {
         let help_text = if info.name == "category" { tr("Categories, unlike tags, can have a hierarchy. You might have a Jazz category, and under that have children categories for Bebop and Big Band. Totally optional.") } else { tr("Assign a parent term to create a hierarchy. The term Jazz, for example, would be the parent of Bebop and Big Band.") };
         h.push_str(&format!(
             "\t\t<tr class=\"form-field term-parent-wrap\">\n\t\t\t<th scope=\"row\"><label for=\"parent\">{}</label></th>\n\t\t\t<td>\n\t\t\t\t{dropdown}\t\t\t\t\t\t\t\t\t<p class=\"description\" id=\"parent-description\">{help_text}</p>\n\t\t\t\t\t\t\t</td>\n\t\t</tr>\n",
-            sprintf(&tr("Parent %s"), &[&info.singular])
+            info.labels.parent_item.clone()
         ));
     }
     h.push_str(&format!(
@@ -531,10 +557,10 @@ pub async fn edit_page(ctx: &Ctx<'_>) -> AdminResponse {
         h.push_str(&format!("\t\t<span id=\"delete-link\">\n\t\t\t<a class=\"delete\" href=\"{}\">{}</a>\n\t\t</span>\n\t", esc_url(&url), tr("Delete")));
     }
     h.push_str("\n</div>\n\n</form>\n</div>\n\n<script>\ntry{document.forms.edittag.name.focus();}catch(e){}\n</script>\n\t\n");
-    let title = sprintf(&tr("Edit %s"), &[&info.singular]);
+    let title = info.labels.edit_item.clone();
     let mut screen = screen_for(&info, title, Help::default(), "term.php");
     if let Ok(link) = site.term_link(&term).await {
-        screen.view_item = Some((sprintf(&tr("View %s"), &[&info.singular]), link));
+        screen.view_item = Some((info.labels.view_item.clone(), link));
     }
     // The empty help of the screen ends without a line break.
     render(ctx, &screen, &format!("\n{h}"), &Assets::default()).await

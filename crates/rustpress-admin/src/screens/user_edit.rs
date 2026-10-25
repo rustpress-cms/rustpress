@@ -138,6 +138,11 @@ async fn meta(ctx: &Ctx<'_>, user_id: u64, key: &str) -> String {
 
 /// The profile form for `user`; `own` is true for `profile.php`.
 async fn form(ctx: &Ctx<'_>, user: &User, own: bool, errors: &[String]) -> AdminResponse {
+    form_on(ctx, user, own, errors, "profile.php").await
+}
+
+/// The form of a profile; `file` is the page it is shown on (`user-edit.php` shows the own profile, too).
+async fn form_on(ctx: &Ctx<'_>, user: &User, own: bool, errors: &[String], file: &str) -> AdminResponse {
     let tr = |s: &str| ctx.tr(s);
     let request = ctx.request;
     let id = user.id;
@@ -183,7 +188,15 @@ async fn form(ctx: &Ctx<'_>, user: &User, own: bool, errors: &[String]) -> Admin
         ctx.user.id
     ));
     h.push_str(&format!("\t\t\t\t<h2>{}</h2>\n\n\t\t\t\t<table class=\"form-table\" role=\"presentation\">\n\t\t\t\t\t\n\t\t\t\t\t\n\t\t\t\t\t\n", tr("Personal Options")));
-    if own {
+    // `$show_syntax_highlighting_preference`: the edited user may edit the theme options, plugins or themes.
+    let edited_can = {
+        let loaded = match ctx.env.db.auth_user_by_id(id).await.ok().flatten() {
+            Some(auth_user) => rustpress_auth::CurrentUser::load(ctx.env.db, ctx.env.roles, &auth_user).await.ok(),
+            None => None,
+        };
+        loaded.is_some_and(|u| u.can("edit_theme_options") || u.can("edit_plugins") || u.can("edit_themes"))
+    };
+    if edited_can {
         h.push_str(&format!(
             "\t\t\t\t\t\t\t\t\t\t<tr class=\"user-syntax-highlighting-wrap\">\n\t\t\t\t\t\t<th scope=\"row\">{}</th>\n\t\t\t\t\t\t<td>\n\t\t\t\t\t\t\t<label for=\"syntax_highlighting\"><input name=\"syntax_highlighting\" type=\"checkbox\" id=\"syntax_highlighting\" value=\"false\" {} />\n\t\t\t\t\t\t\t\t{}\t\t\t\t\t\t\t</label>\n\t\t\t\t\t\t</td>\n\t\t\t\t\t</tr>\n",
             tr("Syntax Highlighting"),
@@ -364,12 +377,12 @@ async fn form(ctx: &Ctx<'_>, user: &User, own: bool, errors: &[String]) -> Admin
         h.push_str(&super::pages::translate_html(ctx, APP_PASSWORDS_TEMPLATES).replace("{{SITE}}", ctx.site().settings.siteurl.trim_end_matches('/')));
     }
     let (parent_file, submenu_file) = if ctx.can("list_users") { ("users.php", if own { "profile.php" } else { "users.php" }) } else { ("profile.php", "profile.php") };
-    let view_item = (!own).then(|| {
+    let view_item = (!own || file == "user-edit.php").then(|| {
         let url = if ctx.site().settings.permalink_structure.is_empty() { ctx.site().home_url(&format!("?author={id}")) } else { ctx.site().home_url(&format!("author/{}/", user.user_nicename)) };
         (tr("View User"), url)
     });
     let screen = Screen {
-        file: if own { "profile.php".into() } else { "user-edit.php".into() },
+        file: file.to_owned(),
         parent_file: parent_file.into(),
         submenu_file: Some(submenu_file.into()),
         title: if own { tr("Profile") } else { tr("Edit User") },
@@ -409,19 +422,18 @@ pub async fn user_edit(ctx: &Ctx<'_>) -> AdminResponse {
     if id == 0 {
         return super::die(ctx.env, 200, "WordPress &rsaquo; Error", &format!("<p>{}</p>", tr("Invalid user ID.")));
     }
-    if id == ctx.user.id {
-        return redirect(&ctx.admin_url("profile.php"));
-    }
-    if !ctx.can("edit_users") {
+    if id != ctx.user.id && !ctx.can("edit_users") {
         return super::die(ctx.env, 403, "WordPress &rsaquo; Error", &format!("<p>{}</p>", tr("Sorry, you are not allowed to edit this user.")));
     }
     let Some(user) = ctx.env.db.user(id).await.ok().flatten() else {
         return super::die(ctx.env, 200, "WordPress &rsaquo; Error", &format!("<p>{}</p>", tr("Invalid user ID.")));
     };
+    let own = id == ctx.user.id;
     if ctx.request.post && ctx.request.post_field("action") == Some("update") {
-        return save(ctx, id, false).await;
+        return save(ctx, id, own).await;
     }
-    form(ctx, &user, false, &[]).await
+    // The own profile on `user-edit.php` is the profile page with the toolbar entry "View User".
+    form_on(ctx, &user, own, &[], "user-edit.php").await
 }
 
 /// `edit_user()` for the profile forms.

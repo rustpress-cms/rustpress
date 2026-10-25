@@ -19,7 +19,7 @@
 			>Activate</a>
 
 							<a class="button button-compact button-primary load-customize hide-if-no-customize"
-					href="{{site}}/wp-admin/site-editor.php?wp_theme_preview={{id}}&#038;return=%2Fwp-admin%2Fthemes.php"
+					href="{{site}}/wp-admin/site-editor.php?wp_theme_preview={{id}}&#038;return={{return}}"
 					aria-label="Live Preview {{ data.name }}"
 				>Live Preview</a>
 					

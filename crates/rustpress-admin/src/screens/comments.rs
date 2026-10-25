@@ -144,21 +144,21 @@ pub async fn row_html(ctx: &Ctx<'_>, comment: &Comment, index: usize, current_st
     let approve_nonce = ctx.create_nonce(&format!("approve-comment_{id}"));
     let url = |action: &str, nonce: &str| esc_url(&format!("comment.php?action={action}&c={id}&_wpnonce={nonce}"));
     let post_id = comment.comment_post_id;
+    // A comment that came out of the trash or the spam goes back to what it was (`_wp_trash_meta_status`).
+    let trash_meta_approved = matches!(status, "spam" | "trash") && db.comment_meta_value(id, "_wp_trash_meta_status").await.ok().flatten().as_deref() == Some("1");
     // The row actions.
     let mut actions: Vec<(String, String)> = Vec::new();
     let mut push = |class: &str, html: String| actions.push((class.to_owned(), html));
     if can_moderate {
-        let approve = format!("<a href=\"{}\" data-wp-lists=\"dim:the-comment-list:comment-{id}:unapproved:e7e7d3:e7e7d3:new=approved\" class=\"vim-a aria-button-if-js\" aria-label=\"{}\">{}</a>", url("approvecomment", &approve_nonce), tr("Approve this comment"), tr("Approve"));
-        let unapprove = format!("<a href=\"{}\" data-wp-lists=\"dim:the-comment-list:comment-{id}:unapproved:e7e7d3:e7e7d3:new=unapproved\" class=\"vim-u aria-button-if-js\" aria-label=\"{}\">{}</a>", url("unapprovecomment", &approve_nonce), tr("Unapprove this comment"), tr("Unapprove"));
         if current_status != "all" && !current_status.is_empty() {
             if status == "approved" {
-                push("unapprove", unapprove);
+                push("unapprove", format!("<a href=\"{}\" data-wp-lists=\"delete:the-comment-list:comment-{id}:e7e7d3:action=dim-comment&amp;new=unapproved\" class=\"vim-u vim-destructive aria-button-if-js\" aria-label=\"{}\">{}</a>", url("unapprovecomment", &approve_nonce), tr("Unapprove this comment"), tr("Unapprove")));
             } else if status == "unapproved" {
-                push("approve", approve);
+                push("approve", format!("<a href=\"{}\" data-wp-lists=\"delete:the-comment-list:comment-{id}:e7e7d3:action=dim-comment&amp;new=approved\" class=\"vim-a vim-destructive aria-button-if-js\" aria-label=\"{}\">{}</a>", url("approvecomment", &approve_nonce), tr("Approve this comment"), tr("Approve")));
             }
         } else {
-            push("approve", approve);
-            push("unapprove", unapprove);
+            push("approve", format!("<a href=\"{}\" data-wp-lists=\"dim:the-comment-list:comment-{id}:unapproved:e7e7d3:e7e7d3:new=approved\" class=\"vim-a aria-button-if-js\" aria-label=\"{}\">{}</a>", url("approvecomment", &approve_nonce), tr("Approve this comment"), tr("Approve")));
+            push("unapprove", format!("<a href=\"{}\" data-wp-lists=\"dim:the-comment-list:comment-{id}:unapproved:e7e7d3:e7e7d3:new=unapproved\" class=\"vim-u aria-button-if-js\" aria-label=\"{}\">{}</a>", url("unapprovecomment", &approve_nonce), tr("Unapprove this comment"), tr("Unapprove")));
         }
         if status != "spam" && status != "trash" {
             push("reply hide-if-no-js", format!("<button type=\"button\" data-comment-id=\"{id}\" data-post-id=\"{post_id}\" data-action=\"replyto\" class=\"vim-r comment-inline button-link\" aria-expanded=\"false\" aria-label=\"{}\">{}</button>", tr("Reply to this comment"), tr("Reply")));
@@ -168,10 +168,10 @@ pub async fn row_html(ctx: &Ctx<'_>, comment: &Comment, index: usize, current_st
         if status != "spam" {
             push("spam", format!("<a href=\"{}\" data-wp-lists=\"delete:the-comment-list:comment-{id}::spam=1\" class=\"vim-s vim-destructive aria-button-if-js\" aria-label=\"{}\">{}</a>", url("spamcomment", &del_nonce), tr("Mark this comment as spam"), tr("Spam")));
         } else {
-            push("unspam", format!("<a href=\"{}\" data-wp-lists=\"delete:the-comment-list:comment-{id}:e7e7d3:action=dim-comment&amp;new=approved\" class=\"vim-z vim-destructive aria-button-if-js\" aria-label=\"{}\">{}</a>", url("unspamcomment", &del_nonce), tr("Restore this comment from the spam"), tr("Not Spam")));
+            push(&format!("unspam {}", if trash_meta_approved { "approve" } else { "unapprove" }), format!("<a href=\"{}\" data-wp-lists=\"delete:the-comment-list:comment-{id}:66cc66:unspam=1\" class=\"vim-z vim-destructive aria-button-if-js\" aria-label=\"{}\">{}</a>", url("unspamcomment", &del_nonce), tr("Restore this comment from the spam"), tr("Not Spam")));
         }
         if status == "trash" {
-            push("untrash", format!("<a href=\"{}\" data-wp-lists=\"delete:the-comment-list:comment-{id}:e7e7d3:action=dim-comment&amp;new=approved\" class=\"vim-z vim-destructive aria-button-if-js\" aria-label=\"{}\">{}</a>", url("untrashcomment", &del_nonce), tr("Restore this comment from the Trash"), tr("Restore")));
+            push(&format!("untrash {}", if trash_meta_approved { "approve" } else { "unapprove" }), format!("<a href=\"{}\" data-wp-lists=\"delete:the-comment-list:comment-{id}:66cc66:untrash=1\" class=\"vim-z vim-destructive aria-button-if-js\" aria-label=\"{}\">{}</a>", url("untrashcomment", &del_nonce), tr("Restore this comment from the Trash"), tr("Restore")));
         }
         if status == "spam" || status == "trash" {
             push("delete", format!("<a href=\"{}\" data-wp-lists=\"delete:the-comment-list:comment-{id}::delete=1\" class=\"delete vim-d vim-destructive aria-button-if-js\" aria-label=\"{}\">{}</a>", url("deletecomment", &del_nonce), tr("Delete this comment permanently"), tr("Delete Permanently")));
@@ -197,7 +197,7 @@ pub async fn row_html(ctx: &Ctx<'_>, comment: &Comment, index: usize, current_st
         match db.comment_any(comment.comment_parent).await.ok().flatten() {
             Some(parent) => {
                 let link = comment_link(ctx, &parent).await;
-                format!("{} ", sprintf(&tr("In reply to %s."), &[&format!("<a href=\"{}\">{}</a>", esc_url(&link), esc_html(&parent.comment_author))]))
+                sprintf(&tr("In reply to %s."), &[&format!("<a href=\"{}\">{}</a>", esc_url(&link), esc_html(&parent.comment_author))])
             }
             None => String::new(),
         }
@@ -285,15 +285,8 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     if !ctx.can("edit_posts") {
         return forbidden(ctx, "Sorry, you are not allowed to edit comments.");
     }
-    // Bulk actions.
-    let action = {
-        let a = request.request("action").unwrap_or_default();
-        if a.is_empty() || a == "-1" { request.request("action2").unwrap_or_default().to_owned() } else { a.to_owned() }
-    };
-    if request.post_field("bulk_action").is_some() || request.get("bulk_action").is_some() || (!action.is_empty() && request.request("delete_comments[]").is_some()) {
-        if let Some(response) = bulk(ctx, &action).await {
-            return response;
-        }
+    if let Some(response) = bulk(ctx).await {
+        return response;
     }
     let status_param = request.get("comment_status").unwrap_or("all").to_owned();
     let status_param = if ["all", "mine", "moderated", "approved", "spam", "trash"].contains(&status_param.as_str()) { status_param } else { "all".to_owned() };
@@ -326,7 +319,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
 
     let mut links: Vec<(String, String)> = Vec::new();
     let link_for = |status: &str, label: &str, class_name: &str, n: u64, extra: &str| -> (String, String) {
-        let mut url = ctx.admin_url(&format!("edit-comments.php?comment_status={status}{extra}"));
+        let mut url = if kind.is_empty() || kind == "all" { ctx.admin_url(&format!("edit-comments.php?comment_status={status}{extra}")) } else { ctx.admin_url(&format!("edit-comments.php?comment_type={kind}&comment_status={status}{extra}")) };
         if let Some(p) = post_id {
             url = add_query_arg(&url, "p", &p.to_string());
         }
@@ -346,6 +339,10 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     let mut rows = String::new();
     for (index, comment) in comments.iter().enumerate() {
         rows.push_str(&row_html(ctx, comment, index, &status_param, &post_counts).await);
+    }
+    if comments.is_empty() {
+        let none = if status_param == "moderated" { tr("No comments awaiting moderation.") } else { tr("No comments found.") };
+        rows = format!("<tr class=\"no-items\"><td class=\"colspanchange\" colspan=\"5\">{none}</td></tr>");
     }
     let columns = vec![
         Column::new("cb", ""),
@@ -376,8 +373,21 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         bulk_actions: if ctx.can("moderate_comments") { bulk_actions } else { Vec::new() },
         has_items: !comments.is_empty(),
     };
-    let type_select = format!(
-        "<div class=\"alignleft actions\"><label class=\"screen-reader-text\" for=\"filter-by-comment-type\">{}</label><select id=\"filter-by-comment-type\" name=\"comment_type\">\t<option value=''>{}</option>\t<option value='comment'{}>{}</option>\n\t<option value='pings'{}>{}</option>\n</select><input type=\"submit\" name=\"filter_action\" id=\"post-query-submit\" class=\"button button-compact\" value=\"{}\"  /></div>",
+    let has_items = !comments.is_empty();
+    // `extra_tablenav()`: the filter by type, and "Empty Spam" / "Empty Trash".
+    let empty_button = if has_items && (status_param == "spam" || status_param == "trash") && ctx.can("moderate_comments") {
+        format!(
+            "<input type=\"hidden\" id=\"_destroy_nonce\" name=\"_destroy_nonce\" value=\"{}\" /><input type=\"hidden\" name=\"_wp_http_referer\" value=\"{}\" />{}",
+            ctx.create_nonce("bulk-destroy"),
+            esc_url(&request.request_uri),
+            crate::list_table::submit_button(&if status_param == "spam" { esc_attr(&tr("Empty Spam")) } else { esc_attr(&tr("Empty Trash")) }, "apply", "delete_all", "delete_all")
+        )
+    } else {
+        String::new()
+    };
+    let bottom_extra = format!("<div class=\"alignleft actions\">\n{empty_button}</div>\n");
+    let type_filter = format!(
+        "<label class=\"screen-reader-text\" for=\"filter-by-comment-type\">{}</label><select id=\"filter-by-comment-type\" name=\"comment_type\">\t<option value=''>{}</option>\t<option value='comment'{}>{}</option>\n\t<option value='pings'{}>{}</option>\n</select><input type=\"submit\" name=\"filter_action\" id=\"post-query-submit\" class=\"button button-compact\" value=\"{}\"  />",
         tr("Filter by comment type"),
         tr("All comment types"),
         if kind == "comment" { " selected='selected'" } else { "" },
@@ -386,13 +396,11 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         tr("Pings"),
         tr("Filter")
     );
-    let caption = if orderby == "comment_date" {
-        if desc { tr("Ordered by Comment Date, descending.") } else { tr("Ordered by Comment Date, ascending.") }
-    } else {
-        tr("Ordered by Comment Date, descending.")
-    };
-    let nonce_field = format!("<input type=\"hidden\" id=\"_ajax_fetch_list_nonce\" name=\"_ajax_fetch_list_nonce\" value=\"{}\" /><input type=\"hidden\" name=\"_wp_http_referer\" value=\"{}\" />{}", ctx.create_nonce("fetch-list-wp_list_comments_table"), esc_url(&request.request_uri), ctx.nonce_field("bulk-comments"));
-    let table_html = table.display(&nonce_field, &type_select, "", &caption, &rows, &tr("Comments list")).replace("<tbody id=\"the-list\"\n\t\t\t\t>", "<tbody id=\"the-comment-list\" data-wp-lists=\"list:comment\">");
+    let type_select = format!("<div class=\"alignleft actions\">{}{empty_button}</div>", if has_items { type_filter.as_str() } else { "" });
+    // The caption of the initial view; a sorted list has none (its columns carry no description).
+    let caption = if request.get("orderby").is_some() { String::new() } else { tr("Ordered by Comment Date, descending.") };
+    let nonce_field = format!("<input type=\"hidden\" id=\"_ajax_fetch_list_nonce\" name=\"_ajax_fetch_list_nonce\" value=\"{}\" /><input type=\"hidden\" name=\"_wp_http_referer\" value=\"{}\" />{}", ctx.create_nonce("fetch-list-wp_list_comments_table"), esc_url(&request.request_uri), if has_items { ctx.nonce_field("bulk-comments") } else { String::new() });
+    let table_html = table.display_opts(has_items, &nonce_field, &type_select, &bottom_extra, &caption, &rows, &tr("Comments list")).replace("<tbody id=\"the-list\"\n\t\t\t\t>", "<tbody id=\"the-comment-list\" data-wp-lists=\"list:comment\">");
     let table_html = table_html.replace("<tbody id=\"the-list\"\n\t\t\t\t\t>", "<tbody id=\"the-comment-list\" data-wp-lists=\"list:comment\">");
 
     let no_items = if status_param == "moderated" { tr("No comments awaiting moderation.") } else { tr("No comments found.") };
@@ -432,13 +440,22 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     h.push('\n');
     h.push_str(&views(&tr("Filter comments list"), &links));
     h.push_str(&format!(
-        "\n<form id=\"comments-form\" method=\"get\">\n\n<p class=\"search-box\">\n\t<label class=\"screen-reader-text\" for=\"comment-search-input\">{}</label>\n\t<input type=\"search\" id=\"comment-search-input\" name=\"s\" value=\"{}\" />\n\t\t<input type=\"submit\" id=\"search-submit\" class=\"button button-compact\" value=\"{}\"  /></p>\n\t\t\n<input type=\"hidden\" name=\"comment_status\" value=\"{}\" />\n<input type=\"hidden\" name=\"pagegen_timestamp\" value=\"{}\" />\n\n<input type=\"hidden\" name=\"_total\" value=\"{total}\" />\n<input type=\"hidden\" name=\"_per_page\" value=\"{per_page}\" />\n<input type=\"hidden\" name=\"_page\" value=\"{paged}\" />\n\n\n{}\n</form>\n",
-        tr("Search Comments:"),
-        esc_attr(&search),
-        esc_attr(&tr("Search Comments")),
+        "\n<form id=\"comments-form\" method=\"get\">\n\n{}\t\t\n<input type=\"hidden\" name=\"comment_status\" value=\"{}\" />\n<input type=\"hidden\" name=\"pagegen_timestamp\" value=\"{}\" />\n\n<input type=\"hidden\" name=\"_total\" value=\"{total}\" />\n<input type=\"hidden\" name=\"_per_page\" value=\"{per_page}\" />\n<input type=\"hidden\" name=\"_page\" value=\"{paged}\" />\n\n\n{}</form>\n",
+        if has_items || !search.is_empty() {
+            let mut sort = String::new();
+            if let Some(by) = request.request("orderby").filter(|v| !v.is_empty()) {
+                sort.push_str(&format!("<input type=\"hidden\" name=\"orderby\" value=\"{}\" />", esc_attr(by)));
+            }
+            if let Some(order) = request.request("order").filter(|v| !v.is_empty()) {
+                sort.push_str(&format!("<input type=\"hidden\" name=\"order\" value=\"{}\" />", esc_attr(order)));
+            }
+            format!("{sort}<p class=\"search-box\">\n\t<label class=\"screen-reader-text\" for=\"comment-search-input\">{}</label>\n\t<input type=\"search\" id=\"comment-search-input\" name=\"s\" value=\"{}\" />\n\t\t<input type=\"submit\" id=\"search-submit\" class=\"button button-compact\" value=\"{}\"  /></p>\n", tr("Search Comments:"), esc_attr(&search), esc_attr(&tr("Search Comments")))
+        } else {
+            String::new()
+        },
         esc_attr(&status_param),
         site.date("Y-m-d H:i:s", ctx.env.now),
-        table_html
+        format!("{}\n\t\t", table_html.trim_end_matches(['\n', '\t']))
     ));
     h.push_str("</div>
 ");
@@ -478,12 +495,27 @@ pub fn reply_form_html(ctx: &Ctx<'_>, dashboard: bool) -> String {
 }
 
 /// The bulk actions of the list.
-async fn bulk(ctx: &Ctx<'_>, action: &str) -> Option<AdminResponse> {
+async fn bulk(ctx: &Ctx<'_>) -> Option<AdminResponse> {
     let request = ctx.request;
     let tr = |s: &str| ctx.tr(s);
-    if !request.post || action.is_empty() || action == "-1" {
+    // `WP_Comments_List_Table::current_action()`
+    let doaction = if request.request("filter_action").is_some_and(|v| !v.is_empty()) {
+        None
+    } else if request.request("delete_all").is_some() || request.request("delete_all2").is_some() {
+        Some("delete_all".to_owned())
+    } else {
+        request.request("action").filter(|a| *a != "-1").map(str::to_owned)
+    };
+    let Some(action) = doaction else {
+        // A link that came from a form: the arguments of the form are dropped from the address.
+        let referer_args = request.get("_wp_http_referer").is_some_and(|v| !v.is_empty());
+        if referer_args {
+            let url = rustpress_core::urls::remove_query_arg(&rustpress_core::urls::remove_query_arg(&request.request_uri, "_wp_http_referer"), "_wpnonce");
+            return Some(redirect(&url));
+        }
         return None;
-    }
+    };
+    let action = action.as_str();
     if !ctx.verify_nonce("bulk-comments") {
         return Some(die(ctx.env, 403, &tr("WordPress Failure Notice"), &tr("The link you followed has expired.")));
     }
@@ -492,56 +524,71 @@ async fn bulk(ctx: &Ctx<'_>, action: &str) -> Option<AdminResponse> {
     }
     let Some(writer) = ctx.env.writer else { return Some(read_only(ctx)) };
     let content = Content { site: ctx.site(), db: ctx.env.db, writer, user: &ctx.user, now: ctx.env.now };
-    let ids: Vec<u64> = request.form.iter().filter(|(k, _)| k == "delete_comments[]").filter_map(|(_, v)| v.parse().ok()).collect();
+    let referer = request.request("_wp_http_referer").filter(|r| !r.is_empty() && *r != request.request_uri.as_str() && r.starts_with('/')).map(str::to_owned);
+    let mut action = action.to_owned();
+    let ids: Vec<u64> = if action == "delete_all" && request.request("pagegen_timestamp").is_some_and(|t| !t.is_empty()) {
+        let status = request.request("comment_status").unwrap_or_default();
+        let before = request.request("pagegen_timestamp").unwrap_or_default();
+        action = "delete".into();
+        ctx.env.db.comment_ids_before(status, before).await.unwrap_or_default()
+    } else if request.request("delete_comments[]").is_some() {
+        request.form.iter().chain(request.query.iter()).filter(|(k, _)| k == "delete_comments[]").filter_map(|(_, v)| v.parse().ok()).collect()
+    } else if let Some(list) = request.request("ids") {
+        list.split(',').map(|i| i.trim().parse::<i64>().map(i64::unsigned_abs).unwrap_or(0)).collect()
+    } else if let Some(back) = &referer {
+        return Some(redirect(back));
+    } else {
+        return None;
+    };
     let (mut approved, mut unapproved, mut spammed, mut unspammed, mut trashed, mut untrashed, mut deleted) = (0, 0, 0, 0, 0, 0, 0);
     for id in &ids {
-        match action {
+        // WordPress counts every comment it is allowed to touch.
+        match action.as_str() {
             "approve" => {
-                if content.set_comment_status(*id, "approve").await.unwrap_or(false) {
-                    approved += 1;
-                }
+                let _ = content.set_comment_status(*id, "approve").await;
+                approved += 1;
             }
             "unapprove" => {
-                if content.set_comment_status(*id, "hold").await.unwrap_or(false) {
-                    unapproved += 1;
-                }
+                let _ = content.set_comment_status(*id, "hold").await;
+                unapproved += 1;
             }
             "spam" => {
-                if content.spam_comment(*id).await.unwrap_or(false) {
-                    spammed += 1;
-                }
+                let _ = content.spam_comment(*id).await;
+                spammed += 1;
             }
             "unspam" => {
-                if content.unspam_comment(*id).await.unwrap_or(false) {
-                    unspammed += 1;
-                }
+                let _ = content.unspam_comment(*id).await;
+                unspammed += 1;
             }
             "trash" => {
-                if content.trash_comment(*id).await.unwrap_or(false) {
-                    trashed += 1;
-                }
+                let _ = content.trash_comment(*id).await;
+                trashed += 1;
             }
             "untrash" => {
-                if content.untrash_comment(*id).await.unwrap_or(false) {
-                    untrashed += 1;
-                }
+                let _ = content.untrash_comment(*id).await;
+                untrashed += 1;
             }
             "delete" => {
-                if content.delete_comment(*id).await.unwrap_or(false) {
-                    deleted += 1;
-                }
+                let _ = content.delete_comment(*id).await;
+                deleted += 1;
             }
             _ => {}
         }
     }
-    let mut url = ctx.admin_url("edit-comments.php");
+    let base = referer.unwrap_or_else(|| request.request_uri.clone());
+    let mut url = base;
+    for name in ["trashed", "untrashed", "deleted", "spammed", "unspammed", "approved", "unapproved", "ids"] {
+        url = rustpress_core::urls::remove_query_arg(&url, name);
+    }
+    let paged = request.request("paged").and_then(|p| p.parse::<u64>().ok()).filter(|p| *p > 0).unwrap_or(1);
+    url = add_query_arg(&url, "paged", &paged.to_string());
     for (name, value) in [("approved", approved), ("unapproved", unapproved), ("spammed", spammed), ("unspammed", unspammed), ("trashed", trashed), ("untrashed", untrashed), ("deleted", deleted)] {
         if value > 0 {
             url = add_query_arg(&url, name, &value.to_string());
         }
     }
-    if let Some(status) = request.get("comment_status").or(request.post_field("comment_status")).filter(|s| *s != "all") {
-        url = add_query_arg(&url, "comment_status", status);
+    if trashed > 0 || spammed > 0 {
+        url = add_query_arg(&url, "ids", &ids.iter().map(u64::to_string).collect::<Vec<_>>().join(","));
     }
     Some(redirect(&url))
 }

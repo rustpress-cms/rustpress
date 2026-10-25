@@ -327,6 +327,8 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         ("auto-update-enabled", installed.iter().filter(|p| auto.contains(&p.file)).count()),
         ("auto-update-disabled", installed.iter().filter(|p| !auto.contains(&p.file)).count()),
     ];
+    // A list with no plugins in it is the list of all plugins (`$plugins[ $status ]` is empty).
+    let status = if status != "all" && counts.iter().find(|(name, _)| *name == status).map_or(0, |(_, n)| *n) == 0 { "all" } else { status };
     let label = |s: &str| match s {
         "all" => tr("All"),
         "active" => tr("Active"),

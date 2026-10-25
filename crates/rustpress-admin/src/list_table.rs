@@ -275,11 +275,25 @@ impl Table<'_> {
 
     /// `display()`: top navigation, the table, bottom navigation. `rows` is the HTML of the `<tr>` elements.
     pub fn display(&self, nonce_field: &str, extra_top: &str, extra_bottom: &str, caption: &str, rows: &str, list_heading: &str) -> String {
+        self.display_opts(true, nonce_field, extra_top, extra_bottom, caption, rows, list_heading)
+    }
+
+    /// [`Table::display`], optionally without the top navigation (the comments screen leaves it out of an empty list).
+    #[allow(clippy::too_many_arguments)]
+    pub fn display_opts(&self, show_top: bool, nonce_field: &str, extra_top: &str, extra_bottom: &str, caption: &str, rows: &str, list_heading: &str) -> String {
         let mut out = String::new();
-        out.push_str(&self.tablenav("top", nonce_field, extra_top));
-        out.push_str(&format!("		<h2 class='screen-reader-text'>{list_heading}</h2><table class=\"wp-list-table widefat fixed striped table-view-list {}\">
+        let indent = if show_top {
+            out.push_str(&self.tablenav("top", nonce_field, extra_top));
+            "		"
+        } else {
+            out.push_str(nonce_field);
+            out.push('\n');
+            ""
+        };
+        out.push_str(&format!("{indent}<h2 class='screen-reader-text'>{list_heading}</h2><table class=\"wp-list-table widefat fixed striped table-view-list {}\">
 ", self.plural));
-        out.push_str(&format!("		<caption class=\"screen-reader-text\">{caption}</caption>	<thead>
+        let caption_html = if caption.is_empty() { String::new() } else { format!("<caption class=\"screen-reader-text\">{caption}</caption>") };
+        out.push_str(&format!("		{caption_html}	<thead>
 	<tr>
 		"));
         out.push_str(&self.column_headers(true, 1));

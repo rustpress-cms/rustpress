@@ -26,6 +26,8 @@ pub struct Screen {
     pub help: Option<Help>,
     /// The "View Post" entry of the toolbar: `(label, address)`.
     pub view_item: Option<(String, String)>,
+    /// `view_item` is the archive of the post type.
+    pub view_archive: bool,
     /// The block editor takes the whole window (`is-fullscreen-mode`).
     pub fullscreen: bool,
     /// More classes of the `body` element.
@@ -624,6 +626,7 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
     out.push_str("<div id=\"wpcontent\">\n");
     let mut bar = env.bar.clone();
     bar.view_item = screen.view_item.clone();
+    bar.view_archive = screen.view_archive;
     out.push_str(&adminbar::render_admin(site, env.user, &bar));
     out.push_str("\n<div id=\"wpbody\" role=\"main\">\n\n<div id=\"wpbody-content\">\n");
     match &screen.help {
