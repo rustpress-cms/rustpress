@@ -136,4 +136,25 @@ impl Db {
         let sql = format!("SELECT ID FROM {} WHERE post_parent = ? AND post_type = 'revision'", self.prefix.table("posts"));
         Ok(sqlx::query_scalar(AssertSqlSafe(sql)).bind(post_id).fetch_all(&self.pool).await?)
     }
+    /// Scheduled posts whose GMT date is not after `gmt_now` (`Y-m-d H:i:s`).
+    pub async fn due_future_post_ids(&self, gmt_now: &str) -> Result<Vec<u64>> {
+        let sql = format!("SELECT ID FROM {} WHERE post_status = 'future' AND post_date_gmt <= ? AND post_date_gmt != '0000-00-00 00:00:00' ORDER BY post_date_gmt", self.prefix.table("posts"));
+        Ok(sqlx::query_scalar(AssertSqlSafe(sql)).bind(gmt_now).fetch_all(&self.pool).await?)
+    }
+
+    /// Auto-drafts created before `before` (GMT is not stored for them; the local date is compared).
+    pub async fn old_auto_draft_ids(&self, before: &str) -> Result<Vec<u64>> {
+        let sql = format!("SELECT ID FROM {} WHERE post_status = 'auto-draft' AND post_date < ?", self.prefix.table("posts"));
+        Ok(sqlx::query_scalar(AssertSqlSafe(sql)).bind(before).fetch_all(&self.pool).await?)
+    }
+
+    /// Trashed posts whose `_wp_trash_meta_time` is before the given Unix time.
+    pub async fn trashed_before(&self, timestamp: i64) -> Result<Vec<u64>> {
+        let sql = format!(
+            "SELECT p.ID FROM {posts} p JOIN {meta} m ON m.post_id = p.ID AND m.meta_key = '_wp_trash_meta_time' WHERE p.post_status = 'trash' AND CAST(m.meta_value AS SIGNED) < ?",
+            posts = self.prefix.table("posts"),
+            meta = self.prefix.table("postmeta")
+        );
+        Ok(sqlx::query_scalar(AssertSqlSafe(sql)).bind(timestamp).fetch_all(&self.pool).await?)
+    }
 }

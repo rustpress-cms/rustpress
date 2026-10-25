@@ -42,7 +42,11 @@ impl App {
         let db = Db::connect(&config.database_url, &config.table_prefix).await?;
         let writer = if config.allow_writes { Some(rustpress_db::Writer::connect(&config.database_url, &config.table_prefix).await?) } else { None };
         let loaded = Self::load(&config, &db).await?;
-        Ok(Arc::new(Self { statics: Statics::new(&config.wp_root), config, db, writer, loaded: RwLock::new(Arc::new(loaded)), reload: Mutex::new(()) }))
+        let app = Arc::new(Self { statics: Statics::new(&config.wp_root), config, db, writer, loaded: RwLock::new(Arc::new(loaded)), reload: Mutex::new(()) });
+        if app.writer.is_some() {
+            tokio::spawn(scheduler(app.clone()));
+        }
+        Ok(app)
     }
 
     async fn load(config: &Config, db: &Db) -> Result<Loaded> {
@@ -89,6 +93,26 @@ impl App {
 
     pub fn router(self: &Arc<Self>) -> Router {
         Router::new().fallback(handle).with_state(self.clone()).layer(TraceLayer::new_for_http())
+    }
+}
+
+/// What `wp-cron.php` does for content: publish scheduled posts, empty old auto-drafts and the trash.
+async fn scheduler(app: Arc<App>) {
+    let mut interval = tokio::time::interval(Duration::from_secs(60));
+    loop {
+        interval.tick().await;
+        let Some(writer) = app.writer.as_ref() else { return };
+        let loaded = app.current().await;
+        let now = crate::admin::now();
+        match rustpress_admin::cron::run(&loaded.site, &app.db, writer, now).await {
+            Ok(report) => {
+                if report != rustpress_admin::cron::Report::default() {
+                    tracing::info!(published = report.published, auto_drafts = report.auto_drafts_deleted, trash = report.trash_purged, "scheduled jobs");
+                    app.reload_now().await;
+                }
+            }
+            Err(e) => tracing::error!(error = %e, "scheduled jobs failed"),
+        }
     }
 }
 

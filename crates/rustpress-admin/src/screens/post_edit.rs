@@ -16,6 +16,10 @@ fn esc_textarea(text: &str) -> String {
     text.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;").replace('\'', "&#039;")
 }
 
+pub fn esc_textarea_pub(text: &str) -> String {
+    esc_textarea(text)
+}
+
 fn content_for<'a>(ctx: &'a Ctx<'a>) -> Option<Content<'a>> {
     Some(Content { site: ctx.site(), db: ctx.env.db, writer: ctx.env.writer?, user: &ctx.user, now: ctx.env.now })
 }
@@ -568,11 +572,16 @@ async fn form(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, is_new: bool) -> Admi
         }
         h.push_str(&format!("\t\t\t</div>\n\t<input type=\"hidden\" id=\"samplepermalinknonce\" name=\"samplepermalinknonce\" value=\"{}\" /></div><!-- /titlediv -->\n", ctx.create_nonce("samplepermalink")));
     }
+    let mut editor_preinit = String::new();
+    let mut editor_scripts: Vec<String> = Vec::new();
+    let mut editor_footer = String::new();
     if supports("editor") {
-        h.push_str(&format!(
-            "\t<div id=\"postdivrich\" class=\"postarea\">\n\t<div id=\"wp-content-wrap\" class=\"wp-core-ui wp-editor-wrap html-active\"><div id=\"wp-content-editor-tools\" class=\"wp-editor-tools hide-if-no-js\"><div class=\"wp-editor-tabs\"></div>\n</div>\n<div id=\"wp-content-editor-container\" class=\"wp-editor-container\"><div id=\"ed_toolbar\" class=\"quicktags-toolbar hide-if-no-js\"></div><textarea class=\"wp-editor-area\" style=\"height: 300px\" cols=\"40\" name=\"content\" id=\"content\">{}</textarea></div>\n</div>\n",
-            esc_textarea(&post.post_content)
-        ));
+        let rich_editing = db.user_meta(ctx.user.id, "rich_editing").await.ok().flatten();
+        let editor = super::editor::classic_editor(ctx, &post.post_content, &info.name, &post.post_status, rich_editing.as_deref());
+        h.push_str(&editor.html);
+        editor_scripts = editor.scripts.clone();
+        editor_footer = editor.init.clone();
+        editor_preinit = editor.preinit.clone();
         let last_edit = if post.post_status == "auto-draft" {
             String::new()
         } else {
@@ -619,9 +628,7 @@ async fn form(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, is_new: bool) -> Admi
     if post_title.is_empty() {
         h.push_str("<script>\ntry{document.post.title.focus();}catch(e){}\n</script>\n");
     }
-    h.push_str("<script>\n\t\ttinyMCEPreInit = {\n\t\t\tbaseURL: \"");
-    h.push_str(&format!("{}/wp-includes/js/tinymce", ctx.env.loader.site_url));
-    h.push_str("\",\n\t\t\tsuffix: \".min\",\n\t\t\tdragDropUpload: true,\t\t\tmceInit: {},\n\t\t\tqtInit: {'content':{id:\"content\",buttons:\"strong,em,link,block,del,ins,img,ul,ol,li,code,more,close,dfw\"}},\n\t\t\tref: {plugins:\"\",theme:\"modern\",language:\"\"},\n\t\t\tload_ext: function(url,lang){var sl=tinymce.ScriptLoader;sl.markDone(url+'/langs/'+lang+'.js');sl.markDone(url+'/langs/'+lang+'_dlg.js');}\n\t\t};\n\t\t</script>\n<script>\n\t\t( function() {\n\t\t\tif ( typeof quicktags !== 'undefined' ) {\n\t\t\t\tfor ( var id in tinyMCEPreInit.qtInit ) {\n\t\t\t\t\tquicktags( tinyMCEPreInit.qtInit[id] );\n\t\t\t\t\tif ( ! window.wpActiveEditor ) {\n\t\t\t\t\t\twindow.wpActiveEditor = id;\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t}\n\t\t}());\n\t\t</script>\n");
+    h.push_str(&editor_preinit);
 
     let (parent_file, submenu_file) = if info.name == "post" { ("edit.php".to_owned(), "edit.php".to_owned()) } else { (format!("edit.php?post_type={}", info.name), format!("edit.php?post_type={}", info.name)) };
     let file = if is_new { "post-new.php" } else { "post.php" };
@@ -635,7 +642,9 @@ async fn form(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, is_new: bool) -> Admi
         None
     };
     let screen = Screen { file: file.into(), parent_file, submenu_file: Some(submenu_file), post_type: info.name.clone(), title: title.clone(), help: Some(help), view_item };
-    let assets = Assets { scripts: vec!["post".into(), "quicktags".into(), "word-count".into(), "autosave".into(), "wp-lists".into(), "suggest".into(), "postbox".into(), "tags-box".into()], ..Default::default() };
+    let mut scripts: Vec<String> = vec!["post".into(), "word-count".into(), "autosave".into(), "wp-lists".into(), "suggest".into(), "postbox".into(), "tags-box".into()];
+    scripts.extend(editor_scripts);
+    let assets = Assets { scripts, footer: editor_footer, ..Default::default() };
     render(ctx, &screen, &h, &assets).await
 }
 

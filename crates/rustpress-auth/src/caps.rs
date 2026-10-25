@@ -70,9 +70,16 @@ pub struct CurrentUser {
     pub roles: Vec<String>,
     /// `$user->allcaps`: the capabilities of the roles plus the user's own (which include the role names).
     pub allcaps: HashMap<String, bool>,
+    /// The scheduler: may do everything and is nobody (ID 0).
+    system: bool,
 }
 
 impl CurrentUser {
+    /// The user background jobs run as (`wp-cron.php` has no current user; every check passes).
+    pub fn system() -> Self {
+        Self { id: 0, login: String::new(), display_name: String::new(), email: String::new(), roles: Vec::new(), allcaps: HashMap::new(), system: true }
+    }
+
     /// Loads the capabilities of `user`.
     pub async fn load(db: &Db, site_roles: &Roles, user: &AuthUser) -> Result<Self, rustpress_db::Error> {
         let key = format!("{}capabilities", db.table_prefix());
@@ -102,13 +109,16 @@ impl CurrentUser {
         for (cap, granted) in caps {
             allcaps.insert(cap, granted);
         }
-        Ok(Self { id: user.id, login: user.user_login.clone(), display_name: user.display_name.clone(), email: user.user_email.clone(), roles, allcaps })
+        Ok(Self { id: user.id, login: user.user_login.clone(), display_name: user.display_name.clone(), email: user.user_email.clone(), roles, allcaps, system: false })
     }
 
     /// `current_user_can( $cap )` for a primitive capability.
     pub fn can(&self, capability: &str) -> bool {
         if capability == "do_not_allow" {
             return false;
+        }
+        if self.system {
+            return true;
         }
         // `map_meta_cap()`: capabilities without a post or user in question that stand for another one.
         let capability = match capability {

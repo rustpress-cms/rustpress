@@ -15,6 +15,7 @@ use crate::menu::{AdminMenu, MenuContext};
 use crate::registry::LoaderEnv;
 
 pub mod dashboard;
+pub mod editor;
 pub mod general;
 pub mod notices;
 pub mod options;

@@ -118,6 +118,8 @@ pub struct Assets {
     pub scripts: Vec<String>,
     /// Printed in the head after the scripts (`admin_head`).
     pub head: String,
+    /// Printed after the scripts of the footer (`admin_print_footer_scripts`, late).
+    pub footer: String,
 }
 
 /// `wp-admin/admin-header.php` to `admin-footer.php` around `content` (the inside of `.wrap`, with
@@ -136,7 +138,10 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
 
     // Styles of the head.
     let mut styles = default_styles(&env.loader);
-    for handle in ["dashicons", "admin-bar", "common", "forms", "admin-menu", "dashboard", "list-tables", "edit", "revisions", "media", "themes", "about", "nav-menus", "wp-pointer", "widgets", "site-icon", "l10n", "buttons", "wp-auth-check"] {
+    for handle in [
+        "dashicons", "admin-bar", "common", "forms", "admin-menu", "dashboard", "list-tables", "edit", "revisions", "media", "themes", "about", "nav-menus", "wp-pointer", "widgets", "site-icon", "l10n", "wp-base-styles", "wp-tooltip", "buttons",
+        "wp-auth-check", "wp-theme", "wp-components", "wp-commands",
+    ] {
         styles.enqueue(handle);
     }
     for handle in &assets.styles {
@@ -246,6 +251,7 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
         note = tr("The login page will open in a new tab. After logging in you can close it and return to this page.")
     ));
     out.push_str(&footer_scripts);
+    out.push_str(&assets.footer);
     out.push_str("\n</body>\n</html>");
     out
 }

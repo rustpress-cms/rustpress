@@ -5,6 +5,7 @@ pub mod adminbar;
 pub mod deps;
 pub mod chrome;
 pub mod content;
+pub mod cron;
 pub mod die;
 pub mod list_table;
 pub mod login;
