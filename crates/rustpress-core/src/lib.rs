@@ -15,6 +15,7 @@ pub mod options;
 pub mod php_lit;
 pub mod query;
 pub mod rewrite;
+pub mod rewrite_gen;
 pub mod shortcodes;
 pub mod settings;
 pub mod site;
