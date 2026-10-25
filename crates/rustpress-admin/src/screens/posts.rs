@@ -34,9 +34,15 @@ pub fn type_info(ctx: &Ctx<'_>, name: &str) -> Option<TypeInfo> {
 fn post_class(post: &Post, categories: &[rustpress_db::Term], tags: &[rustpress_db::Term], others: &[(String, rustpress_db::Term)], sticky: bool, thumbnail: bool) -> String {
     let mut classes = vec![format!("post-{}", post.id), format!("type-{}", post.post_type), format!("status-{}", post.post_status)];
     if post.post_type == "post" {
-        classes.push("format-standard".to_owned());
+        let format = others.iter().find(|(taxonomy, _)| taxonomy == "post_format").and_then(|(_, term)| term.slug.strip_prefix("post-format-"));
+        classes.push(format!("format-{}", rustpress_core::formatting::sanitize_html_class(format.unwrap_or("standard"))));
     }
-    if thumbnail {
+    // `post_password_required()`: in the admin there is no password cookie.
+    let protected = !post.post_password.is_empty();
+    if protected {
+        classes.push("post-password-required".to_owned());
+    }
+    if thumbnail && !protected {
         classes.push("has-post-thumbnail".to_owned());
     }
     if sticky {
@@ -255,7 +261,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     let tr = |s: &str| ctx.tr(s);
     let post_type = request.get("post_type").filter(|t| !t.is_empty()).unwrap_or("post").to_owned();
     let Some(info) = type_info(ctx, &post_type) else {
-        return super::die(ctx.env, 200, "WordPress &rsaquo; Error", &format!("<p>{}</p>", tr("Invalid post type.")));
+        return super::common::die_plain(ctx, "Invalid post type.");
     };
     let edit_cap = if info.name == "page" { "edit_pages" } else { "edit_posts" };
     if !ctx.can(edit_cap) {
@@ -619,7 +625,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     }
     let notice = result_notice(ctx, &info);
     // `if ( $wp_list_table->has_items() )`: an empty list has no Quick Edit.
-    let inline = if posts.is_empty() { String::new() } else { super::inline_edit::inline_edit(ctx, &info, posts.first(), columns.len(), taxonomies.iter().any(|(_, hierarchical)| *hierarchical)).await };
+    let inline = if posts.is_empty() { String::new() } else { super::inline_edit::inline_edit(ctx, &info, posts.first(), columns.len(), &taxonomies).await };
     let content = format!(
         "<div class=\"wrap\">\n{heading}{notice}\n{}\n<form id=\"posts-filter\" method=\"get\">\n\n{search_box}{hidden_fields}\n\n\n{table_html}\n</form>\n\n\n{inline}<div id=\"ajax-response\"></div>\n<div class=\"clear\"></div>\n</div>\n\n",
         views(&filter_heading, &links)
@@ -702,9 +708,19 @@ pub(super) async fn post_row(ctx: &Ctx<'_>, post: &Post, level: usize, row: &Row
     let is_sticky = sticky.contains(&post.id);
     let thumbnail = db.post_meta(post.id).await.unwrap_or_default().iter().any(|m| m.meta_key.as_deref() == Some("_thumbnail_id") && m.meta_value.as_deref().and_then(|v| v.parse::<u64>().ok()).is_some_and(|id| id > 0));
     let author_row = authors.iter().find(|u| u.id == post.post_author);
+    // `wp_check_post_lock()`: another user edited the post within the last 150 seconds.
+    let lock_holder = {
+        let lock = db.post_meta(post.id).await.unwrap_or_default().into_iter().find(|m| m.meta_key.as_deref() == Some("_edit_lock")).and_then(|m| m.meta_value);
+        let parsed = lock.as_deref().and_then(|v| v.split_once(':')).and_then(|(time, user)| Some((time.parse::<i64>().ok()?, user.parse::<u64>().ok()?)));
+        match parsed {
+            Some((time, user)) if time > ctx.env.now - 150 && user != ctx.user.id => db.user(user).await.ok().flatten(),
+            _ => None,
+        }
+    };
     let class = format!(
-        "iedit author-{} level-{level} {}",
+        "iedit author-{} {}level-{level} {}",
         if post.post_author == ctx.user.id { "self" } else { "other" },
+        if lock_holder.is_some() { "wp-locked " } else { "" },
         post_class(post, &categories, &tags, &others, is_sticky, thumbnail)
     );
     out.push_str(&format!("\t\t{}<tr id=\"post-{}\" class=\"{class}\">\n\t\t\t", if hierarchical_display { "\t" } else { "" }, post.id));
@@ -743,9 +759,19 @@ pub(super) async fn post_row(ctx: &Ctx<'_>, post: &Post, level: usize, row: &Row
                 } else {
                     format!("{pad}<span>{title}{hierarchy_nolink}</span>")
                 };
+                let (locked_avatar, locked_text) = match &lock_holder {
+                    Some(holder) => {
+                        let url = |size: u64| esc_url(&rustpress_blocks::content::avatar_url(&ctx.site().options, &holder.user_email, size));
+                        (
+                            format!("<img alt='' src='{}' srcset='{} 2x' class='avatar avatar-18 photo' height='18' width='18' loading='lazy' decoding='async'/>", url(18), url(36)),
+                            esc_html(&rustpress_core::i18n::sprintf(&ctx.tr("%s is currently editing"), &[&holder.display_name])),
+                        )
+                    }
+                    None => (String::new(), String::new()),
+                };
                 let inline = if can_edit { inline_data(ctx, post, &info, &taxonomies, is_sticky).await } else { String::new() };
                 out.push_str(&format!(
-                    "<th scope=\"row\" class=\"title column-title has-row-actions column-primary page-title\" data-colname=\"{}\" aria-label=\"{}\"><div class=\"locked-info\"><span class=\"locked-avatar\"></span> <span class=\"locked-text\"></span></div>\n<strong>{name_html}{states}</strong>\n{inline}{}<button type=\"button\" class=\"toggle-row\"><span class=\"screen-reader-text\">{}</span></button></th>",
+                    "<th scope=\"row\" class=\"title column-title has-row-actions column-primary page-title\" data-colname=\"{}\" aria-label=\"{}\"><div class=\"locked-info\"><span class=\"locked-avatar\">{locked_avatar}</span> <span class=\"locked-text\">{locked_text}</span></div>\n<strong>{name_html}{states}</strong>\n{inline}{}<button type=\"button\" class=\"toggle-row\"><span class=\"screen-reader-text\">{}</span></button></th>",
                     esc_attr(&column.label),
                     esc_attr(&aria),
                     row_actions_for(ctx, post, &title, can_edit, &info).await,

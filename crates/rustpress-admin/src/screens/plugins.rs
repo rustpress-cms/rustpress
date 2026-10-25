@@ -36,6 +36,11 @@ fn serialize_list(items: &[String]) -> String {
 
 /// One row of the list.
 fn row(ctx: &Ctx<'_>, plugin: &PluginInfo, active: bool, auto_update: bool, status: &str) -> String {
+    // The search of the list is part of the links (`add_query_arg()` writes an empty `s` without an equals sign).
+    let s_arg = match ctx.request.request("s").map(str::trim).filter(|s| !s.is_empty()) {
+        Some(search) => format!("s={}", urlenc(search)),
+        None => "s".to_owned(),
+    };
     let tr = |s: &str| ctx.tr(s);
     let name = esc_html(&wptexturize(&plugin.name));
     let slug = plugin.slug();
@@ -48,10 +53,10 @@ fn row(ctx: &Ctx<'_>, plugin: &PluginInfo, active: bool, auto_update: bool, stat
     let updates_nonce = ctx.create_nonce("updates");
     let mut actions = String::new();
     if active {
-        actions.push_str(&format!("<span class='deactivate'><a href=\"plugins.php?action=deactivate&amp;plugin={file_q}&amp;plugin_status={status}&amp;paged=1&amp;s&amp;_wpnonce={deactivate_nonce}\" id=\"deactivate-{slug}\" aria-label=\"{}\">{}</a></span>", esc_attr(&rustpress_core::i18n::sprintf(&tr("Deactivate %s"), &[&plugin.name])), tr("Deactivate")));
+        actions.push_str(&format!("<span class='deactivate'><a href=\"plugins.php?action=deactivate&amp;plugin={file_q}&amp;plugin_status={status}&amp;paged=1&amp;{s_arg}&amp;_wpnonce={deactivate_nonce}\" id=\"deactivate-{slug}\" aria-label=\"{}\">{}</a></span>", esc_attr(&rustpress_core::i18n::sprintf(&tr("Deactivate %s"), &[&plugin.name])), tr("Deactivate")));
     } else {
-        actions.push_str(&format!("<span class='activate'><a href=\"plugins.php?action=activate&amp;plugin={file_q}&amp;plugin_status={status}&amp;paged=1&amp;s&amp;_wpnonce={activate_nonce}\" id=\"activate-{slug}\" class=\"edit\" aria-label=\"{}\">{}</a> | </span>", esc_attr(&rustpress_core::i18n::sprintf(&tr("Activate %s"), &[&plugin.name])), tr("Activate")));
-        actions.push_str(&format!("<span class='delete'><a href=\"plugins.php?action=delete-selected&amp;checked%5B0%5D={file_q}&amp;plugin_status={status}&amp;paged=1&amp;s&amp;_wpnonce={bulk_nonce}\" id=\"delete-{slug}\" class=\"delete\" aria-label=\"{}\">{}</a></span>", esc_attr(&rustpress_core::i18n::sprintf(&tr("Delete %s"), &[&plugin.name])), tr("Delete")));
+        actions.push_str(&format!("<span class='activate'><a href=\"plugins.php?action=activate&amp;plugin={file_q}&amp;plugin_status={status}&amp;paged=1&amp;{s_arg}&amp;_wpnonce={activate_nonce}\" id=\"activate-{slug}\" class=\"edit\" aria-label=\"{}\">{}</a> | </span>", esc_attr(&rustpress_core::i18n::sprintf(&tr("Activate %s"), &[&plugin.name])), tr("Activate")));
+        actions.push_str(&format!("<span class='delete'><a href=\"plugins.php?action=delete-selected&amp;checked%5B0%5D={file_q}&amp;plugin_status={status}&amp;paged=1&amp;{s_arg}&amp;_wpnonce={bulk_nonce}\" id=\"delete-{slug}\" class=\"delete\" aria-label=\"{}\">{}</a></span>", esc_attr(&rustpress_core::i18n::sprintf(&tr("Delete %s"), &[&plugin.name])), tr("Delete")));
     }
     let description = if plugin.description.is_empty() { "&nbsp;".to_owned() } else { wptexturize(&plugins::kses_description(&plugin.description)) };
     let mut meta = Vec::new();
@@ -315,6 +320,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         notices.push_str(&updated(tr("Selected plugins will no longer be auto-updated.")));
     }
 
+    let searching = request.request("s").is_some_and(|s| !s.trim().is_empty());
     let status = ["all", "active", "inactive", "mustuse", "auto-update-enabled", "auto-update-disabled"].iter().find(|s| request.get("plugin_status") == Some(**s)).copied().unwrap_or("all");
     let mu = plugins::must_use(&root);
     let auto = auto_updates(ctx);
@@ -329,6 +335,8 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     ];
     // A list with no plugins in it is the list of all plugins (`$plugins[ $status ]` is empty).
     let status = if status != "all" && counts.iter().find(|(name, _)| *name == status).map_or(0, |(_, n)| *n) == 0 { "all" } else { status };
+    // `$status = 'search'` for a search; no view is the current one then.
+    let status = if searching { "search" } else { status };
     let label = |s: &str| match s {
         "all" => tr("All"),
         "active" => tr("Active"),
@@ -352,7 +360,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     let last = views.len();
     let views_html = format!("<h2 class='screen-reader-text'>{}</h2><ul class='subsubsub'>\n{}</ul>", tr("Filter plugins list"), views.iter().enumerate().map(|(i, v)| format!("{v}{}\n", if i + 1 == last { "</li>" } else { " |</li>" })).collect::<String>());
 
-    let search = request.get("s").unwrap_or_default().trim().to_lowercase();
+    let search = request.request("s").unwrap_or_default().trim().to_lowercase();
     let list: Vec<&PluginInfo> = installed
         .iter()
         .filter(|p| match status {
@@ -446,11 +454,19 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     let search_form = format!(
         "<form class=\"search-form search-plugins\" method=\"get\">\n\t\t<p class=\"search-box\">\n\t\t\t<label for=\"plugin-search-input\">{}</label>\n\t\t\t<input type=\"search\" id=\"plugin-search-input\" class=\"wp-filter-search\" name=\"s\" value=\"{}\" />\n\t\t\t<input type=\"submit\" id=\"search-submit\" class=\"button hide-if-js\" value=\"{}\"  />\t\t</p>\n\t\t</form>\n\n",
         tr("Search installed plugins"),
-        esc_attr(request.get("s").unwrap_or_default()),
+        esc_attr(request.request("s").unwrap_or_default()),
         tr("Search installed plugins")
     );
     let site_url = site.settings.siteurl.trim_end_matches('/');
-    let heading = format!("{notices}<div class=\"wrap\">\n<h1 class=\"wp-heading-inline\">\n{}</h1>\n\n\t<a href=\"{site_url}/wp-admin/plugin-install.php\" class=\"page-title-action\">{}</a>\n\t\n<hr class=\"wp-header-end\">\n\n\n", tr("Plugins"), tr("Add Plugin"));
+    let subtitle = if searching {
+        format!("	<span class=\"subtitle\">{}
+</span>
+", rustpress_core::i18n::sprintf(&tr("Search results for: %s"), &[&format!("<strong>{}</strong>", esc_html(request.request("s").unwrap_or_default()))]))
+    } else {
+        "	
+".to_owned()
+    };
+    let heading = format!("{notices}<div class=\"wrap\">\n<h1 class=\"wp-heading-inline\">\n{}</h1>\n\n\t<a href=\"{site_url}/wp-admin/plugin-install.php\" class=\"page-title-action\">{}</a>\n{subtitle}<hr class=\"wp-header-end\">\n\n\n", tr("Plugins"), tr("Add Plugin"));
     // The templates of the updates script follow the form; they are the tail of the baked page.
     let tail_at = baked.content.find("\t<span class=\"spinner\"></span>").unwrap_or(0);
     let tail = &baked.content[tail_at..];

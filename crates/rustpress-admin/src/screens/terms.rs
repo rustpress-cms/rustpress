@@ -127,7 +127,7 @@ async fn row(ctx: &Ctx<'_>, info: &TaxInfo, term: &Term, level: usize, pad_level
     let count_url = if info.post_type != "post" { add_query_arg(&count_url, "post_type", &info.post_type) } else { count_url };
     format!(
         "<tr id=\"tag-{id}\" class=\"level-{level}\"><td class=\"check-column\">{checkbox}</td><th class='name column-name has-row-actions column-primary' data-colname=\"{n}\" scope=\"row\" aria-label=\"{label}\"><strong>{title}</strong><br /><div class=\"hidden\" id=\"inline_{id}\"><div class=\"name\">{ename}</div><div class=\"slug\">{eslug}</div><div class=\"parent\">{parent}</div></div>{actions}</th><td class='description column-description' data-colname=\"{d}\">{description}</td><td class='slug column-slug' data-colname=\"{s}\">{eslug}</td><td class='posts column-posts' data-colname=\"{c}\"><a href='{}'>{}</a></td></tr>",
-        esc_url(&count_url).replace("&#038;", "&amp;"),
+        esc_url(&count_url),
         site.number_i18n(term.count.max(0) as u64),
         id = term.term_id,
         n = tr("Name"),
@@ -219,7 +219,7 @@ fn screen_for(info: &TaxInfo, title: String, help: Help, file: &str) -> Screen {
     };
     let submenu = match info.post_type.as_str() {
         "post" => format!("edit-tags.php?taxonomy={}", info.name),
-        other => format!("edit-tags.php?taxonomy={}&post_type={other}", info.name),
+        other => format!("edit-tags.php?taxonomy={}&amp;post_type={other}", info.name),
     };
     let id = format!("edit-{}", info.name);
     Screen { file: file.into(), parent_file: parent, submenu_file: Some(submenu), post_type: info.post_type.clone(), id, title, help: Some(help), ..Default::default() }
@@ -231,8 +231,12 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     let tr = |s: &str| ctx.tr(s);
     let site = ctx.site();
     let taxonomy = request.request("taxonomy").unwrap_or_default().to_owned();
+    // Taxonomies without a screen of their own.
+    if matches!(taxonomy.as_str(), "post_format" | "nav_menu" | "link_category" | "wp_theme" | "wp_template_part_area") {
+        return super::common::die_plain(ctx, "Sorry, you are not allowed to edit terms in this taxonomy.");
+    }
     let Some(info) = tax_info(ctx, &taxonomy, request.request("post_type")) else {
-        return super::die(ctx.env, 200, "WordPress &rsaquo; Error", &format!("<p>{}</p>", tr("Invalid taxonomy.")));
+        return super::common::die_plain(ctx, "Invalid taxonomy.");
     };
     if !ctx.can("manage_categories") {
         return forbidden_heading(ctx, "Sorry, you are not allowed to manage terms in this taxonomy.");
@@ -415,14 +419,22 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     h.push_str(&table_html.replacen("<input type=\"hidden\" name=\"taxonomy\"", "<input type=\"hidden\" name=\"taxonomy\"", 1));
     h.push_str("\n</form>\n\n");
     let default_name = if info.name == "category" { terms.iter().find(|t| t.term_id == site.options.u64("default_category", 1)).map(|t| t.name.clone()).unwrap_or_default() } else { String::new() };
-    h.push_str("<div class=\"form-wrap edit-term-notes\">\n<p>\n\t");
+    if info.name == "category" || info.name == "post_tag" {
+        h.push_str("<div class=\"form-wrap edit-term-notes\">\n<p>\n\t");
+    }
     if info.name == "category" {
         h.push_str(&sprintf(&tr("Deleting a category does not delete the posts in that category. Instead, posts that were only assigned to the deleted category are set to the default category %s. The default category cannot be deleted."), &[&format!("<strong>{}</strong>", esc_html(&default_name))]));
         h.push_str(&format!("</p>\n\t\t<p>\n\t\t{}\t</p>\n\t</div>\n</div>\n", sprintf(&tr("Categories can be selectively converted to tags using the <a href=\"%s\">category to tag converter</a>."), &[&ctx.admin_url("import.php")])));
     } else if info.name == "post_tag" {
         h.push_str(&format!("{}\t</p>\n</div>\n\t</div>\n", sprintf(&tr("Tags can be selectively converted to categories using the <a href=\"%s\">tag to category converter</a>."), &[&ctx.admin_url("import.php")])));
     } else {
-        h.push_str("</p>\n</div>\n\t</div>\n");
+        // The notes are the description of the taxonomy; without one there is no box.
+        let description = site.types.taxonomy(&info.name).map(|t| t.description.clone()).unwrap_or_default();
+        if description.is_empty() {
+            h.push_str("</div>\n");
+        } else {
+            h.push_str(&format!("<div class=\"form-wrap edit-term-notes\">\n<p>\n\t{}</p>\n</div>\n\t</div>\n", esc_html(&description)));
+        }
     }
     h.push_str("</div><!-- /col-right -->\n\n</div><!-- /col-container -->\n\n</div><!-- /wrap -->\n\n<script>\ntry{document.forms.addtag['tag-name'].focus();}catch(e){}\n</script>\n\t\n");
     h.push_str(&inline_edit(ctx, &info));
@@ -493,15 +505,21 @@ pub async fn edit_page(ctx: &Ctx<'_>) -> AdminResponse {
     let request = ctx.request;
     let tr = |s: &str| ctx.tr(s);
     let taxonomy = request.request("taxonomy").unwrap_or_default().to_owned();
+    let id: u64 = request.request("tag_ID").and_then(|v| v.parse().ok()).unwrap_or(0);
+    // An unknown taxonomy is no taxonomy at all: the term is looked up by its ID and brings its own.
+    let taxonomy = if tax_info(ctx, &taxonomy, request.request("post_type")).is_some() {
+        taxonomy
+    } else {
+        ctx.env.db.term_by_id(None, id).await.ok().flatten().map(|t| t.taxonomy).unwrap_or_default()
+    };
     let Some(info) = tax_info(ctx, &taxonomy, request.request("post_type")) else {
-        return super::die(ctx.env, 200, "WordPress &rsaquo; Error", &format!("<p>{}</p>", tr("Invalid taxonomy.")));
+        return super::common::die_plain(ctx, "You attempted to edit an item that does not exist. Perhaps it was deleted?");
     };
     if !ctx.can("manage_categories") {
         return forbidden_heading(ctx, "Sorry, you are not allowed to edit this item.");
     }
-    let id: u64 = request.request("tag_ID").and_then(|v| v.parse().ok()).unwrap_or(0);
     let Some(term) = ctx.env.db.term_by_id(Some(&info.name), id).await.ok().flatten() else {
-        return super::die(ctx.env, 200, "WordPress &rsaquo; Error", &format!("<p>{}</p>", tr("You attempted to edit an item that does not exist. Perhaps it was deleted?")));
+        return super::common::die_plain(ctx, "You attempted to edit an item that does not exist. Perhaps it was deleted?");
     };
     let site = ctx.site();
 

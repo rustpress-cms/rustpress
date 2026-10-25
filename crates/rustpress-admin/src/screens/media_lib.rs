@@ -106,7 +106,13 @@ async fn list_mode(ctx: &Ctx<'_>, title: String) -> AdminResponse {
     let tr = |s: &str| ctx.tr(s);
     let site = ctx.site();
     let db = ctx.env.db;
-    let filter = request.get("attachment-filter").unwrap_or_default().to_owned();
+    // `post_mime_type=image` in the address is the same filter as the drop-down's `post_mime_type:image`.
+    let selected_filter = request.get("attachment-filter").unwrap_or_default().to_owned();
+    let filter = match (request.get("attachment-filter").filter(|f| !f.is_empty()), request.get("post_mime_type").filter(|m| !m.is_empty())) {
+        (Some(filter), _) => filter.to_owned(),
+        (None, Some(mime)) => format!("post_mime_type:{mime}"),
+        _ => String::new(),
+    };
     let search = request.get("s").map(|s| s.trim().to_owned()).unwrap_or_default();
     let month = request.get("m").and_then(|m| m.parse::<u32>().ok()).unwrap_or(0);
     let orderby = request.get("orderby").filter(|o| ["title", "author", "parent", "date"].contains(o)).unwrap_or("date").to_owned();
@@ -176,7 +182,7 @@ async fn list_mode(ctx: &Ctx<'_>, title: String) -> AdminResponse {
     let mut options = format!("<option value=\"\">{}</option>\n", tr("All media items"));
     for (prefix, key, label) in [("image/", "image", tr("Images")), ("audio/", "audio", tr("Audio")), ("video/", "video", tr("Video"))] {
         if count_of(prefix) > 0 {
-            options.push_str(&format!("\t<option value=\"post_mime_type:{key}\"{}>{label}</option>\n", if filter == format!("post_mime_type:{key}") { " selected='selected'" } else { "" }));
+            options.push_str(&format!("\t<option value=\"post_mime_type:{key}\"{}>{label}</option>\n", if selected_filter == format!("post_mime_type:{key}") { " selected='selected'" } else { "" }));
         }
     }
     options.push_str(&format!("\t<option value=\"detached\"{}>{}</option>\n", if filter == "detached" { " selected='selected'" } else { "" }, tr("Unattached")));
@@ -194,8 +200,11 @@ async fn list_mode(ctx: &Ctx<'_>, title: String) -> AdminResponse {
     }
     h.push_str("<hr class=\"wp-header-end\">\n\n\n");
     h.push_str(&notice(ctx));
+    // `view_switcher()`: the addresses of the other modes keep the rest of the query.
+    let list_url = esc_url(&add_query_arg(&request.request_uri, "mode", "list"));
+    let grid_url = esc_url(&add_query_arg(&request.request_uri, "mode", "grid"));
     h.push_str(&format!(
-        "<form id=\"posts-filter\" method=\"get\">\n\n<h2 class='screen-reader-text'>{filter_heading}</h2>\t\t<div class=\"wp-filter\">\n\t\t\t<div class=\"filter-items\">\n\t\t\t\t\t\t<input type=\"hidden\" name=\"mode\" value=\"list\" />\n\t\t<div class=\"view-switch\">\n\t\t<a href='/wp-admin/upload.php?mode=list' class='view-list current' id='view-switch-list' aria-current=\"page\"><span class='screen-reader-text'>{list}</span></a>\n<a href='/wp-admin/upload.php?mode=grid' class='view-grid' id='view-switch-grid'><span class='screen-reader-text'>{grid}</span></a>\n\t\t</div>\n\t\t\n\t\t\t\t<label for=\"attachment-filter\" class=\"screen-reader-text\">\n\t\t\t\t\t{by_type}\t\t\t\t</label>\n\t\t\t\t<select class=\"attachment-filters\" name=\"attachment-filter\" id=\"attachment-filter\">\n\t\t\t\t\t\t{options}\t\t\t\t</select>\n\n\t\t\t\t\t\t<div class=\"actions\">\n\t\t\t\t\t<label for=\"filter-by-date\" class=\"screen-reader-text\">{by_date}</label>\n\t\t<select name=\"m\" id=\"filter-by-date\">\n{months}\t\t</select>\n\t\t<input type=\"submit\" name=\"filter_action\" id=\"post-query-submit\" class=\"button button-compact\" value=\"{filter_btn}\"  />\t\t</div>\n\t\t\t\t\t</div>\n\n\t\t\t<div class=\"search-form\">\n\t\t\t\t<p class=\"search-box\">\n\t\t\t\t\t<label class=\"screen-reader-text\" for=\"media-search-input\">\n\t\t\t\t\t{search_label}\t\t\t\t\t</label>\n\t\t\t\t\t<input type=\"search\" id=\"media-search-input\" class=\"search\" name=\"s\" value=\"{search}\">\n\t\t\t\t\t<input id=\"search-submit\" type=\"submit\" class=\"button button-compact\" value=\"{search_label}\">\n\t\t\t\t</p>\n\t\t\t</div>\n\t\t</div>\n\t\t\n",
+        "<form id=\"posts-filter\" method=\"get\">\n\n<h2 class='screen-reader-text'>{filter_heading}</h2>\t\t<div class=\"wp-filter\">\n\t\t\t<div class=\"filter-items\">\n\t\t\t\t\t\t<input type=\"hidden\" name=\"mode\" value=\"list\" />\n\t\t<div class=\"view-switch\">\n\t\t<a href='{list_url}' class='view-list current' id='view-switch-list' aria-current=\"page\"><span class='screen-reader-text'>{list}</span></a>\n<a href='{grid_url}' class='view-grid' id='view-switch-grid'><span class='screen-reader-text'>{grid}</span></a>\n\t\t</div>\n\t\t\n\t\t\t\t<label for=\"attachment-filter\" class=\"screen-reader-text\">\n\t\t\t\t\t{by_type}\t\t\t\t</label>\n\t\t\t\t<select class=\"attachment-filters\" name=\"attachment-filter\" id=\"attachment-filter\">\n\t\t\t\t\t\t{options}\t\t\t\t</select>\n\n\t\t\t\t\t\t<div class=\"actions\">\n\t\t\t\t\t<label for=\"filter-by-date\" class=\"screen-reader-text\">{by_date}</label>\n\t\t<select name=\"m\" id=\"filter-by-date\">\n{months}\t\t</select>\n\t\t<input type=\"submit\" name=\"filter_action\" id=\"post-query-submit\" class=\"button button-compact\" value=\"{filter_btn}\"  />\t\t</div>\n\t\t\t\t\t</div>\n\n\t\t\t<div class=\"search-form\">\n\t\t\t\t<p class=\"search-box\">\n\t\t\t\t\t<label class=\"screen-reader-text\" for=\"media-search-input\">\n\t\t\t\t\t{search_label}\t\t\t\t\t</label>\n\t\t\t\t\t<input type=\"search\" id=\"media-search-input\" class=\"search\" name=\"s\" value=\"{search}\">\n\t\t\t\t\t<input id=\"search-submit\" type=\"submit\" class=\"button button-compact\" value=\"{search_label}\">\n\t\t\t\t</p>\n\t\t\t</div>\n\t\t</div>\n\t\t\n",
         filter_heading = tr("Filter media items list"),
         list = tr("List view"),
         grid = tr("Grid view"),

@@ -78,7 +78,7 @@ pub async fn plugin_install(ctx: &Ctx<'_>) -> AdminResponse {
 pub async fn theme_install(ctx: &Ctx<'_>) -> AdminResponse {
     let tr = |s: &str| ctx.tr(s);
     if !ctx.can("install_themes") {
-        return die(ctx.env, 403, "WordPress &rsaquo; Error", &format!("<p>{}</p>", tr("Sorry, you are not allowed to install themes on this site.")));
+        return super::common::die_plain(ctx, "Sorry, you are not allowed to install themes on this site.");
     }
     let baked = super::pages::load(ctx, "theme-install-upload");
     let content = fresh_nonces(ctx, &baked.content, &[("111475f3f0", "theme-upload".to_owned()), ("5381e0bb1b", format!("save_wporg_username_{}", ctx.user.id))])

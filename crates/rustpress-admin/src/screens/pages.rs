@@ -162,7 +162,17 @@ pub async fn simple(ctx: &Ctx<'_>, file: &str, name: &str, title: &str, parent: 
 
 /// `tools.php`.
 pub async fn tools(ctx: &Ctx<'_>) -> AdminResponse {
-    simple(ctx, "tools.php", "tools", "Tools", "tools.php", Assets::default()).await
+    if ctx.can("import") {
+        return simple(ctx, "tools.php", "tools", "Tools", "tools.php", Assets::default()).await;
+    }
+    // The converter of categories and tags belongs to those who may import.
+    let baked = load(ctx, "tools");
+    let content = match baked.content.find("\t\t<div class=\"card\">") {
+        Some(start) => format!("{}</div>\n", &baked.content[..start]),
+        None => baked.content.clone(),
+    };
+    let screen = Screen { file: "tools.php".to_owned(), parent_file: "tools.php".to_owned(), submenu_file: Some("tools.php".to_owned()), title: ctx.tr("Tools"), help: Some(baked.help), ..Default::default() };
+    render(ctx, &screen, &format!("{}\n", content.trim_end_matches('\n')), &Assets::default()).await
 }
 
 /// `import.php`.

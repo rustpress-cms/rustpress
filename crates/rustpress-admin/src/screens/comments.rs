@@ -223,15 +223,15 @@ pub async fn row_html(ctx: &Ctx<'_>, comment: &Comment, index: usize, current_st
         }
         None => String::new(),
     };
+    let response_cell = if ctx.request.get("p").and_then(|p| p.parse::<u64>().ok()).is_some_and(|p| p > 0) { String::new() } else { format!("<td class='response column-response' data-colname=\"{}\">{response}</td>", tr("In response to")) };
     let link = comment_link(ctx, comment).await;
     let time = sprintf(&tr("%1$s at %2$s"), &[&site.date(&tr("Y/m/d"), rustpress_core::datetime::SiteTimezone::gmt_timestamp(&comment.comment_date_gmt).unwrap_or(0)), &site.date(&tr("g:i a"), rustpress_core::datetime::SiteTimezone::gmt_timestamp(&comment.comment_date_gmt).unwrap_or(0))]);
     let checkbox = if can_moderate { format!("\t\t<input id=\"cb-select-{id}\" type=\"checkbox\" name=\"delete_comments[]\" value=\"{id}\" />\n\t\t<label for=\"cb-select-{id}\">\n\t\t\t<span class=\"screen-reader-text\">\n\t\t\t{}\t\t\t</span>\n\t\t</label>\n\t\t\t", tr("Select comment")) } else { String::new() };
     format!(
-        "<tr id='comment-{id}' class='{kind} {alt} {thread_alt} depth-1 {status}'><td class=\"check-column\">{checkbox}</td><td class='author column-author' data-colname=\"{a}\">{author}</td><th class='comment column-comment has-row-actions column-primary' data-colname=\"{c}\" scope=\"row\"><div class=\"comment-author\">{author}</div>{reply_to}{text}{inline}{actions_html}</th><td class='response column-response' data-colname=\"{r}\">{response}</td><td class='date column-date' data-colname=\"{d}\"><div class=\"submitted-on\">{}</div></td></tr>\n",
+        "<tr id='comment-{id}' class='{kind} {alt} {thread_alt} depth-1 {status}'><td class=\"check-column\">{checkbox}</td><td class='author column-author' data-colname=\"{a}\">{author}</td><th class='comment column-comment has-row-actions column-primary' data-colname=\"{c}\" scope=\"row\"><div class=\"comment-author\">{author}</div>{reply_to}{text}{inline}{actions_html}</th>{response_cell}<td class='date column-date' data-colname=\"{d}\"><div class=\"submitted-on\">{}</div></td></tr>\n",
         if status == "approved" { format!("<a href=\"{}\">{time}</a>", esc_url(&link)) } else { time.clone() },
         a = tr("Author"),
         c = tr("Comment"),
-        r = tr("In response to"),
         d = tr("Submitted on"),
     )
 }
@@ -291,8 +291,8 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     let status_param = request.get("comment_status").unwrap_or("all").to_owned();
     let status_param = if ["all", "mine", "moderated", "approved", "spam", "trash"].contains(&status_param.as_str()) { status_param } else { "all".to_owned() };
     let db = ctx.env.db;
-    let counts = db.comment_counts(None).await.unwrap_or_default();
     let post_id = request.get("p").and_then(|v| v.parse::<u64>().ok()).filter(|p| *p > 0);
+    let counts = db.comment_counts(post_id).await.unwrap_or_default();
     let search = request.get("s").map(|s| s.trim().to_owned()).unwrap_or_default();
     let kind = request.get("comment_type").unwrap_or_default().to_owned();
     let orderby = request.get("orderby").filter(|o| ["comment_author", "comment_post_ID", "comment_date", "comment_ID"].contains(o)).unwrap_or("comment_date").to_owned();
@@ -315,14 +315,15 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
             post_counts.insert(comment.comment_post_id, (c.approved, c.moderated));
         }
     }
-    let mine = db.list_comments_admin(&CommentListQuery { status: "all".into(), user_id: Some(ctx.user.id), limit: 1, ..Default::default() }).await.map(|(_, n)| n).unwrap_or(0);
+    let mine = db.list_comments_admin(&CommentListQuery { status: "all".into(), user_id: Some(ctx.user.id), post_id, limit: 1, ..Default::default() }).await.map(|(_, n)| n).unwrap_or(0);
 
     let mut links: Vec<(String, String)> = Vec::new();
     let link_for = |status: &str, label: &str, class_name: &str, n: u64, extra: &str| -> (String, String) {
-        let mut url = if kind.is_empty() || kind == "all" { ctx.admin_url(&format!("edit-comments.php?comment_status={status}{extra}")) } else { ctx.admin_url(&format!("edit-comments.php?comment_type={kind}&comment_status={status}{extra}")) };
+        let mut url = if kind.is_empty() || kind == "all" { ctx.admin_url(&format!("edit-comments.php?comment_status={status}")) } else { ctx.admin_url(&format!("edit-comments.php?comment_type={kind}&comment_status={status}")) };
         if let Some(p) = post_id {
             url = add_query_arg(&url, "p", &p.to_string());
         }
+        url.push_str(extra);
         let text = format!("{label} <span class=\"count\">(<span class=\"{class_name}-count\">{}</span>)</span>", site.number_i18n(n));
         (status.to_owned(), view_link(&url, &text, status_param == status))
     };
@@ -336,13 +337,14 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         links.retain(|(class, _)| class == "all" || class == "mine" || class == "approved");
     }
 
+    let ncols = if post_id.is_some() { 4 } else { 5 };
     let mut rows = String::new();
     for (index, comment) in comments.iter().enumerate() {
         rows.push_str(&row_html(ctx, comment, index, &status_param, &post_counts).await);
     }
     if comments.is_empty() {
-        let none = if status_param == "moderated" { tr("No comments awaiting moderation.") } else { tr("No comments found.") };
-        rows = format!("<tr class=\"no-items\"><td class=\"colspanchange\" colspan=\"5\">{none}</td></tr>");
+        let none = match status_param.as_str() { "moderated" => tr("No comments awaiting moderation."), "trash" => tr("No comments found in Trash."), _ => tr("No comments found.") };
+        rows = format!("<tr class=\"no-items\"><td class=\"colspanchange\" colspan=\"{ncols}\">{none}</td></tr>");
     }
     let columns = vec![
         Column::new("cb", ""),
@@ -351,6 +353,8 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         Column::new("response", &tr("In response to")).sortable("comment_post_ID", false, Some(&tr("In Response To")), None),
         Column::new("date", &tr("Submitted on")).sortable("comment_date", false, None, None),
     ];
+    // The comments of one post do not name the post.
+    let columns: Vec<Column> = columns.into_iter().filter(|c| post_id.is_none() || c.key != "response").collect();
     let bulk_actions: Vec<(String, String)> = match status_param.as_str() {
         "spam" => vec![("unspam".into(), tr("Not Spam")), ("delete".into(), tr("Delete permanently"))],
         "trash" => vec![("untrash".into(), tr("Restore")), ("delete".into(), tr("Delete permanently"))],
@@ -403,8 +407,8 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     let table_html = table.display_opts(has_items, &nonce_field, &type_select, &bottom_extra, &caption, &rows, &tr("Comments list")).replace("<tbody id=\"the-list\"\n\t\t\t\t>", "<tbody id=\"the-comment-list\" data-wp-lists=\"list:comment\">");
     let table_html = table_html.replace("<tbody id=\"the-list\"\n\t\t\t\t\t>", "<tbody id=\"the-comment-list\" data-wp-lists=\"list:comment\">");
 
-    let no_items = if status_param == "moderated" { tr("No comments awaiting moderation.") } else { tr("No comments found.") };
-    let table_html = table_html.replacen("\t</tbody>\n\n\t<tfoot>", &format!("\t</tbody>\n\t<tbody id=\"the-extra-comment-list\" data-wp-lists=\"list:comment\" style=\"display: none;\">\n\t\t<tr class=\"no-items\"><td class=\"colspanchange\" colspan=\"5\">{no_items}</td></tr>\t</tbody>\n\n\t<tfoot>"), 1);
+    let no_items = match status_param.as_str() { "moderated" => tr("No comments awaiting moderation."), "trash" => tr("No comments found in Trash."), _ => tr("No comments found.") };
+    let table_html = table_html.replacen("\t</tbody>\n\n\t<tfoot>", &format!("\t</tbody>\n\t<tbody id=\"the-extra-comment-list\" data-wp-lists=\"list:comment\" style=\"display: none;\">\n\t\t<tr class=\"no-items\"><td class=\"colspanchange\" colspan=\"{ncols}\">{no_items}</td></tr>\t</tbody>\n\n\t<tfoot>"), 1);
     let heading = tr("Comments");
     // The title of the page: with the number of comments in moderation, of the post when one is chosen.
     let post_filter = request.request("p").and_then(|p| p.parse::<u64>().ok()).filter(|id| *id != 0);
@@ -431,16 +435,44 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
             if moderated > 0 { sprintf(&tr("Comments (%s)"), &[&site.number_i18n(moderated)]) } else { tr("Comments") }
         }
     };
-    let mut h = format!("<div class=\"wrap\">\n<h1 class=\"wp-heading-inline\">\n{}</h1>\n\n", esc_html(&heading));
+    let mut h = String::new();
+    let mut view_item = None;
+    match post_id.and_then(|id| Some(id)) {
+        Some(id) => {
+            let post = db.post(id).await.ok().flatten();
+            let name = match &post {
+                Some(post) => {
+                    let name = rustpress_blocks::content::the_title_for(site, post);
+                    let name = if post.post_title.is_empty() { tr("(no title)") } else { name };
+                    let chars: Vec<char> = name.chars().collect();
+                    if chars.len() > 50 { format!("{}&hellip;", chars[..50].iter().collect::<String>().trim_end()) } else { name }
+                }
+                None => String::new(),
+            };
+            let edit = post.as_ref().map_or_else(String::new, |post| ctx.admin_url(&format!("post.php?post={}&amp;action=edit", post.id)));
+            h.push_str(&format!("<div class=\"wrap\">\n<h1 class=\"wp-heading-inline\">\n{}</h1>\n", sprintf(&tr("Comments on &#8220;%s&#8221;"), &[&format!("<a href=\"{edit}\">{name}</a>")])));
+            if let Some(post) = &post {
+                let link = site.permalink(post).await.unwrap_or_default();
+                let label = if post.post_type == "page" { tr("View Page") } else { tr("View Post") };
+                h.push_str(&format!("<a href=\"{}\" class=\"comments-view-item-link\">{}</a>\n", esc_url(&link), label));
+                view_item = Some((label, link));
+            }
+        }
+        None => h.push_str(&format!("<div class=\"wrap\">\n<h1 class=\"wp-heading-inline\">\n{}</h1>\n\n", esc_html(&heading))),
+    }
     if !search.is_empty() {
         h.push_str(&format!("<span class=\"subtitle\">{}</span>\n", sprintf(&tr("Search results for: %s"), &[&format!("<strong>{}</strong>", esc_html(&search))])));
     }
-    h.push_str("\n<hr class=\"wp-header-end\">\n\n");
+    h.push_str(if post_id.is_some() && search.is_empty() { "<hr class=\"wp-header-end\">\n\n" } else { "\n<hr class=\"wp-header-end\">\n\n" });
     h.push_str(&notice(ctx));
     h.push('\n');
     h.push_str(&views(&tr("Filter comments list"), &links));
+    let p_input = match post_id {
+        Some(id) => format!("<input type=\"hidden\" name=\"p\" value=\"{id}\" />\n"),
+        None => "\t\t\n".to_owned(),
+    };
     h.push_str(&format!(
-        "\n<form id=\"comments-form\" method=\"get\">\n\n{}\t\t\n<input type=\"hidden\" name=\"comment_status\" value=\"{}\" />\n<input type=\"hidden\" name=\"pagegen_timestamp\" value=\"{}\" />\n\n<input type=\"hidden\" name=\"_total\" value=\"{total}\" />\n<input type=\"hidden\" name=\"_per_page\" value=\"{per_page}\" />\n<input type=\"hidden\" name=\"_page\" value=\"{paged}\" />\n\n\n{}</form>\n",
+        "\n<form id=\"comments-form\" method=\"get\">\n\n{}{p_input}<input type=\"hidden\" name=\"comment_status\" value=\"{}\" />\n<input type=\"hidden\" name=\"pagegen_timestamp\" value=\"{}\" />\n\n<input type=\"hidden\" name=\"_total\" value=\"{total}\" />\n<input type=\"hidden\" name=\"_per_page\" value=\"{per_page}\" />\n<input type=\"hidden\" name=\"_page\" value=\"{paged}\" />\n\n\n{}</form>\n",
         if has_items || !search.is_empty() {
             let mut sort = String::new();
             if let Some(by) = request.request("orderby").filter(|v| !v.is_empty()) {
@@ -459,8 +491,10 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     ));
     h.push_str("</div>
 ");
-    h.push_str(&reply_form(ctx));
-    let screen = Screen { file: "edit-comments.php".into(), parent_file: "edit-comments.php".into(), submenu_file: Some("edit-comments.php".into()), title, help: Some(help(ctx)), ..Default::default() };
+    // The reply form spans the columns of the list.
+    let reply = reply_form(ctx);
+    h.push_str(&if post_id.is_some() { reply.replace("colspan=\"5\"", "colspan=\"4\"") } else { reply });
+    let screen = Screen { file: "edit-comments.php".into(), parent_file: "edit-comments.php".into(), submenu_file: Some("edit-comments.php".into()), title, help: Some(help(ctx)), view_item, ..Default::default() };
     render(ctx, &screen, &h, &Assets { scripts: vec!["admin-comments".into(), "wp-lists".into()], late_scripts: vec!["wplink".into(), "jquery-ui-autocomplete".into()], ..Default::default() }).await
 }
 
@@ -597,10 +631,16 @@ async fn bulk(ctx: &Ctx<'_>) -> Option<AdminResponse> {
 pub async fn comment_php(ctx: &Ctx<'_>) -> AdminResponse {
     let request = ctx.request;
     let tr = |s: &str| ctx.tr(s);
-    let action = request.request("action").unwrap_or("editcomment").to_owned();
+    let action = request.request("action").unwrap_or_default().to_owned();
+    if !matches!(action.as_str(), "editcomment" | "editedcomment" | "approvecomment" | "unapprovecomment" | "spamcomment" | "unspamcomment" | "trashcomment" | "untrashcomment" | "deletecomment") {
+        return super::common::die_plain(ctx, "Unknown action.");
+    }
     let id: u64 = request.request("c").or(request.request("comment_ID")).and_then(|v| v.parse().ok()).unwrap_or(0);
     let Some(comment) = ctx.env.db.comment_any(id).await.ok().flatten() else {
-        return die(ctx.env, 200, "WordPress &rsaquo; Error", &format!("<p>{}</p>", tr("Invalid comment ID.")));
+        // `comment_footer_die()`: the message in the frame of the administration.
+        let content = format!("<div class='wrap'>\n<p>{} <a href=\"javascript:history.go(-1)\">{}</a>.</p>\n</div>\n", tr("Invalid comment ID."), tr("Go back"));
+        let screen = Screen { file: "comment.php".into(), parent_file: "edit-comments.php".into(), submenu_file: Some("edit-comments.php".into()), title: tr("Edit Comment"), ..Default::default() };
+        return render(ctx, &screen, &content, &Assets::default()).await;
     };
     if !ctx.can("edit_posts") || !ctx.can("moderate_comments") && !ctx.can("edit_comment") && !ctx.can("edit_others_posts") {
         return forbidden(ctx, "Sorry, you are not allowed to edit comments on this post.");

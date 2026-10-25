@@ -23,6 +23,11 @@ text = re.sub(r'(id="(?:_wpnonce[\w-]*|_inline_edit|[\w-]*nonce)" name="[\w-]+" 
 text = re.sub(r'(name="_wp_unfiltered_html_comment" value=")[0-9a-f]{10}', r"\g<1>N", text)
 text = re.sub(r"<code>\d{4}-\d{2}-\d{2} [\d:]{8}</code>", "<code>TIME</code>", text)
 # The current time in the date fields, and `antispambot()` (random per request).
+text = re.sub(r'(name="pagegen_timestamp" value=")[^"]*', r"\g<1>T", text)
+text = re.sub(r"(id='post_ID' name='post_ID' value=')\d+", r"\g<1>ID", text)
+text = re.sub(r"(<kbd>)[A-Za-z0-9]{8}(</kbd>)", r"\g<1>RAND\g<2>", text)
+text = re.sub(r'data-pw="[^"]*"', 'data-pw="PW"', text)
+text = re.sub(r"Maximum upload file size: \d+ MB", "Maximum upload file size: N MB", text)
 text = re.sub(r'(id="(?:ss|mn|hh)" name="(?:ss|mn|hh)" value=")\d\d', r"\g<1>00", text)
 
 

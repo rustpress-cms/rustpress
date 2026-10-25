@@ -123,7 +123,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     h.push_str(&tr("An application would like to connect to your account."));
     h.push_str("</h2>\n\t\t");
     if app_name.is_empty() {
-        h.push_str(&format!("<p>{}</p>", tr("Would you like to give this application access to your account? You should only do this if you trust the application in question.")));
+        h.push_str(&format!("			<p>{}</p>", tr("Would you like to give this application access to your account? You should only do this if you trust the application in question.")));
     } else {
         h.push_str(&format!("\t\t\t<p>\n\t\t\t\t{}\t\t\t</p>\n\t\t", sprintf(&tr("Would you like to give the application identifying itself as %s access to your account? You should only do this if you trust the application in question."), &[&format!("<strong>{}</strong>", esc_html(&app_name))])));
     }

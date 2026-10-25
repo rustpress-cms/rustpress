@@ -73,11 +73,11 @@ fn color_picker(ctx: &Ctx<'_>, current: &str) -> String {
             tr(name)
         ));
         for shade in shades {
-            out.push_str(&format!("\t\t\t\t\t\t\t\t\t<div class=\"color-palette-shade\" style=\"background-color: {shade}\">&nbsp;</div>\n\t\t\t\t\t"));
+            out.push_str(&format!("\t\t\t\t\t\t\t\t\t<div class=\"color-palette-shade\" style=\"background-color: {shade}\">&nbsp;</div>\n\t"));
         }
-        out.push_str("\t\t\t\t</div>\n\t\t\t</div>\n\t\t");
+        out.push_str("\t\t\t\t\t\t\t\t</div>\n\t\t\t</div>\n\t\t\t");
     }
-    out.push_str("\t\t</fieldset>\n");
+    out.push_str("\t</fieldset>\n");
     out
 }
 
@@ -162,14 +162,14 @@ async fn form_on(ctx: &Ctx<'_>, user: &User, own: bool, errors: &[String], file:
     let comment_shortcuts = meta(ctx, id, "comment_shortcuts").await;
     let syntax = meta(ctx, id, "syntax_highlighting").await;
     let infinite = meta(ctx, id, "media_infinite_scrolling").await;
-    let heading = if own { tr("Profile") } else { sprintf(&tr("Edit User %s"), &[&esc_html(&user.user_login)]) };
+    let heading = if own { tr("Profile") } else { sprintf(&tr("Edit User %s"), &[&esc_html(&user.display_name)]) };
     let action_url = ctx.admin_url(if own { "profile.php" } else { "user-edit.php" });
     let mut h = String::from("\t\t<div class=\"wrap\" id=\"profile-page\">\n");
     h.push_str(&format!("\t\t\t<h1 class=\"wp-heading-inline\">\n\t\t\t\t\t{heading}\t\t\t</h1>\n\n\t\t\t"));
     if !own && ctx.can("create_users") {
-        h.push_str(&format!("\t\t\t\t\t\t\t\t<a href=\"user-new.php\" class=\"page-title-action\">{}</a>\n\t\t\t\t\t\t\t\n", tr("Add User")));
+        h.push_str(&format!("\t\t\t\t\t\t\t\t\t<a href=\"user-new.php\" class=\"page-title-action\">{}</a>\n\t\t\t\t\t\t\t\n", tr("Add User")));
     }
-    h.push_str("\t\t\t<hr class=\"wp-header-end\">\n\n");
+    h.push_str(if !own && ctx.can("create_users") { "\t\t\t<hr class=\"wp-header-end\">\n\n" } else { "<hr class=\"wp-header-end\">\n\n" });
     if request.get("updated").is_some() {
         let message = if own { tr("<strong>Profile updated.</strong>") } else { tr("<strong>User updated.</strong>") };
         h.push_str(&format!("<div id=\"message\" class=\"updated notice is-dismissible\"><p>{message}</p>\n"));
@@ -182,7 +182,7 @@ async fn form_on(ctx: &Ctx<'_>, user: &User, own: bool, errors: &[String], file:
         h.push_str(&format!("<div class=\"error\"><ul>\n{}</ul></div>\n", errors.iter().map(|e| format!("\t<li>{e}</li>\n")).collect::<String>()));
     }
     h.push_str(&format!(
-        "\t\t\t<form id=\"your-profile\" action=\"{}\" method=\"post\" novalidate=\"novalidate\"\n\t\t\t\t\t\t\t\t>\n\t\t\t\t{}\t\t\t\t<p>\n\t\t\t\t\t<input type=\"hidden\" name=\"from\" value=\"profile\" />\n\t\t\t\t\t<input type=\"hidden\" name=\"checkuser_id\" value=\"{}\" />\n\t\t\t\t</p>\n\n",
+        "\t\t\t<form id=\"your-profile\" action=\"{}\" method=\"post\" novalidate=\"novalidate\"\n\t\t\t\t\t\t\t\t>\n\t\t\t\t{}\t\t\t\t\t\t\t\t<p>\n\t\t\t\t\t<input type=\"hidden\" name=\"from\" value=\"profile\" />\n\t\t\t\t\t<input type=\"hidden\" name=\"checkuser_id\" value=\"{}\" />\n\t\t\t\t</p>\n\n",
         esc_url(&action_url),
         ctx.nonce_field(&format!("update-user_{id}")),
         ctx.user.id
@@ -243,7 +243,7 @@ async fn form_on(ctx: &Ctx<'_>, user: &User, own: bool, errors: &[String], file:
         let roles = super::users::roles_of(ctx, id).await;
         let current = roles.first().map(|(s, _)| s.clone()).unwrap_or_default();
         h.push_str(&format!(
-            "\t\t\t\t\t\t\t<tr class=\"user-role-wrap\">\n\t\t\t\t\t\t\t<th><label for=\"role\">{}</label></th>\n\t\t\t\t\t\t\t<td>\n\t\t\t\t\t\t\t\t<select name=\"role\" id=\"role\">\n\t\t\t\t\t\t\t\t\t{}<option value=\"\">&mdash; {} &mdash;</option>\t\t\t\t\t\t\t</select>\n\t\t\t\t\t\t\t</td>\n\t\t\t\t\t\t</tr>\n\t\t\t\t\t\n",
+            "\t\t\t\t\t\t\t\t\t\t\t<tr class=\"user-role-wrap\">\n\t\t\t\t\t\t\t<th><label for=\"role\">{}</label></th>\n\t\t\t\t\t\t\t<td>\n\t\t\t\t\t\t\t\t<select name=\"role\" id=\"role\">\n\t\t\t\t\t\t\t\t\t{}<option value=\"\">&mdash; {} &mdash;</option>\t\t\t\t\t\t\t</select>\n\t\t\t\t\t\t\t</td>\n\t\t\t\t\t\t</tr>\n\t\t\t\t\t\n",
             tr("Role"),
             role_options(&names, ctx, &current),
             tr("No role for this site")
@@ -285,7 +285,7 @@ async fn form_on(ctx: &Ctx<'_>, user: &User, own: bool, errors: &[String], file:
         choice_html.push_str(&format!("\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<option {}>{}</option>\n", if *choice == user.display_name { " selected='selected'" } else { "" }, esc_html(choice)));
     }
     h.push_str(&format!(
-        "\t\t\t\t\t<tr class=\"user-display-name-wrap\">\n\t\t\t\t\t\t<th>\n\t\t\t\t\t\t\t<label for=\"display_name\">{}</label>\n\t\t\t\t\t\t</th>\n\t\t\t\t\t\t<td>\n\t\t\t\t\t\t\t<select name=\"display_name\" id=\"display_name\">\n{choice_html}\t\t\t\t\t\t\t</select>\n\t\t\t\t\t\t</td>\n\t\t\t\t\t</tr>\n\t\t\t\t</table>\n\n",
+        "\t\t\t\t\t<tr class=\"user-display-name-wrap\">\n\t\t\t\t\t\t<th>\n\t\t\t\t\t\t\t<label for=\"display_name\">{}</label>\n\t\t\t\t\t\t</th>\n\t\t\t\t\t\t<td>\n\t\t\t\t\t\t\t<select name=\"display_name\" id=\"display_name\">\n\t\t\t\t\t\t\t\t{choice_html}\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t</select>\n\t\t\t\t\t\t</td>\n\t\t\t\t\t</tr>\n\t\t\t\t</table>\n\n",
         tr("Display name publicly as")
     ));
 
@@ -322,7 +322,7 @@ async fn form_on(ctx: &Ctx<'_>, user: &User, own: bool, errors: &[String], file:
         tr("Share a little biographical information to fill out your profile. This may be shown publicly.")
     ));
     h.push_str(&format!(
-        "\t\t\t\t\t\t\t\t\t\t\t<tr class=\"user-profile-picture\">\n\t\t\t\t\t\t\t<th>{}</th>\n\t\t\t\t\t\t\t<td>\n\t\t\t\t\t\t\t\t{}\n\t\t\t\t\t\t\t\t<p class=\"description\">\n\t\t\t\t\t\t\t\t\t{}\t\t\t\t\t\t\t\t</p>\n\t\t\t\t\t\t\t</td>\n\t\t\t\t\t\t</tr>\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t</table>\n\n",
+        "\t\t\t\t\t\t\t\t\t\t\t<tr class=\"user-profile-picture\">\n\t\t\t\t\t\t\t<th>{}</th>\n\t\t\t\t\t\t\t<td>\n\t\t\t\t\t\t\t\t{}\t\t\t\t\t\t\t\t<p class=\"description\">\n\t\t\t\t\t\t\t\t\t{}\t\t\t\t\t\t\t\t</p>\n\t\t\t\t\t\t\t</td>\n\t\t\t\t\t\t</tr>\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t</table>\n\n",
         tr("Profile Picture"),
         avatar(ctx, &user.user_email, 96),
         if own { tr("<a href=\"https://gravatar.com/\">You can change your profile picture on Gravatar</a>.") } else { String::new() }
@@ -356,6 +356,14 @@ async fn form_on(ctx: &Ctx<'_>, user: &User, own: bool, errors: &[String], file:
             tr("Did you lose your phone or leave your account logged in at a public computer? You can log out everywhere else, and stay logged in here.")
         ));
     }
+    if !own && ctx.can("edit_users") {
+        h.push_str(&format!(
+            "\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<tr class=\"user-generate-reset-link-wrap hide-if-no-js\">\n\t\t\t\t\t\t\t\t\t<th>{}</th>\n\t\t\t\t\t\t\t\t\t<td>\n\t\t\t\t\t\t\t\t\t\t<div class=\"generate-reset-link\">\n\t\t\t\t\t\t\t\t\t\t\t<button type=\"button\" class=\"button button-secondary\" id=\"generate-reset-link\">\n\t\t\t\t\t\t\t\t\t\t\t\t{}\t\t\t\t\t\t\t\t\t\t\t</button>\n\t\t\t\t\t\t\t\t\t\t</div>\n\t\t\t\t\t\t\t\t\t\t<p class=\"description\">\n\t\t\t\t\t\t\t\t\t\t\t{}\t\t\t\t\t\t\t\t\t\t</p>\n\t\t\t\t\t\t\t\t\t</td>\n\t\t\t\t\t\t\t\t</tr>\n",
+            tr("Password Reset"),
+            tr("Send Reset Link"),
+            sprintf(&tr("Send %s a link to reset their password. This will not change their password, nor will it force a change."), &[&user.display_name])
+        ));
+    }
     h.push_str("\t\t\t\t\t\t\t\t\t\t\t\t\t</table>\n\n");
     // `wp_is_application_passwords_available_for_user()`: needs HTTPS (or a local environment), which RustPress cannot assume.
     let app_passwords = own || ctx.can("edit_users");
@@ -372,7 +380,7 @@ async fn form_on(ctx: &Ctx<'_>, user: &User, own: bool, errors: &[String], file:
             rustpress_core::i18n::sprintf(&tr("If this is a development website, you can <a href=\"%s\">set the environment type accordingly</a> to enable application passwords."), &["https://developer.wordpress.org/apis/wp-config-php/#wp-environment-type"])
         ));
     }
-    h.push_str(&format!("\t\t\t\t<input type=\"hidden\" name=\"action\" value=\"update\" />\n\t\t\t\t<input type=\"hidden\" name=\"user_id\" id=\"user_id\" value=\"{id}\" />\n\n\t\t\t\t<p class=\"submit\"><input type=\"submit\" name=\"submit\" id=\"submit\" class=\"button button-primary\" value=\"{}\"  /></p>\n\t\t\t</form>\n\t\t</div>\n\t\t<script>\n\tif (window.location.hash == '#password') {{\n\t\tdocument.getElementById('pass1').focus();\n\t}}\n</script>\n\n<script>\n\tjQuery( function( $ ) {{\n\t\tvar languageSelect = $( '#locale' );\n\t\t$( 'form' ).on( 'submit', function() {{\n\t\t\t/*\n\t\t\t * Don't show a spinner for English and installed languages,\n\t\t\t * as there is nothing to download.\n\t\t\t */\n\t\t\tif ( ! languageSelect.find( 'option:selected' ).data( 'installed' ) ) {{\n\t\t\t\t$( '#submit', this ).after( '<span class=\"spinner language-install-spinner is-active\" />' );\n\t\t\t}}\n\t\t}});\n\t}} );\n</script>\n\n", if own { tr("Update Profile") } else { tr("Update User") }));
+    h.push_str(&format!("<input type=\"hidden\" name=\"action\" value=\"update\" />\n\t\t\t\t<input type=\"hidden\" name=\"user_id\" id=\"user_id\" value=\"{id}\" />\n\n\t\t\t\t<p class=\"submit\"><input type=\"submit\" name=\"submit\" id=\"submit\" class=\"button button-primary\" value=\"{}\"  /></p>\n\t\t\t</form>\n\t\t</div>\n\t\t<script>\n\tif (window.location.hash == '#password') {{\n\t\tdocument.getElementById('pass1').focus();\n\t}}\n</script>\n\n<script>\n\tjQuery( function( $ ) {{\n\t\tvar languageSelect = $( '#locale' );\n\t\t$( 'form' ).on( 'submit', function() {{\n\t\t\t/*\n\t\t\t * Don't show a spinner for English and installed languages,\n\t\t\t * as there is nothing to download.\n\t\t\t */\n\t\t\tif ( ! languageSelect.find( 'option:selected' ).data( 'installed' ) ) {{\n\t\t\t\t$( '#submit', this ).after( '<span class=\"spinner language-install-spinner is-active\" />' );\n\t\t\t}}\n\t\t}});\n\t}} );\n</script>\n\n", if own { tr("Update Profile") } else { tr("Update User") }));
     if app_available {
         h.push_str(&super::pages::translate_html(ctx, APP_PASSWORDS_TEMPLATES).replace("{{SITE}}", ctx.site().settings.siteurl.trim_end_matches('/')));
     }
@@ -420,13 +428,13 @@ pub async fn user_edit(ctx: &Ctx<'_>) -> AdminResponse {
     let tr = |s: &str| ctx.tr(s);
     let id: u64 = ctx.request.request("user_id").and_then(|v| v.parse().ok()).unwrap_or(0);
     if id == 0 {
-        return super::die(ctx.env, 200, "WordPress &rsaquo; Error", &format!("<p>{}</p>", tr("Invalid user ID.")));
+        return super::common::die_plain(ctx, "Invalid user ID.");
     }
     if id != ctx.user.id && !ctx.can("edit_users") {
-        return super::die(ctx.env, 403, "WordPress &rsaquo; Error", &format!("<p>{}</p>", tr("Sorry, you are not allowed to edit this user.")));
+        return super::common::die_plain(ctx, "Sorry, you are not allowed to edit this user.");
     }
     let Some(user) = ctx.env.db.user(id).await.ok().flatten() else {
-        return super::die(ctx.env, 200, "WordPress &rsaquo; Error", &format!("<p>{}</p>", tr("Invalid user ID.")));
+        return super::common::die_plain(ctx, "Invalid user ID.");
     };
     let own = id == ctx.user.id;
     if ctx.request.post && ctx.request.post_field("action") == Some("update") {
@@ -524,7 +532,7 @@ async fn save(ctx: &Ctx<'_>, id: u64, own: bool) -> AdminResponse {
 pub async fn user_new(ctx: &Ctx<'_>) -> AdminResponse {
     let tr = |s: &str| ctx.tr(s);
     if !ctx.can("create_users") {
-        return super::die(ctx.env, 403, "WordPress &rsaquo; Error", &format!("<p>{}</p>", tr("Sorry, you are not allowed to add users to this network.")));
+        return super::common::forbidden_heading(ctx, "Sorry, you are not allowed to create users.");
     }
     let request = ctx.request;
     let mut errors: Vec<String> = Vec::new();
@@ -594,9 +602,9 @@ pub async fn user_new(ctx: &Ctx<'_>) -> AdminResponse {
     h.push_str(&format!("\t\t<tr class=\"form-field\">\n\t\t<th scope=\"row\"><label for=\"first_name\">{} </label></th>\n\t\t<td><input name=\"first_name\" type=\"text\" id=\"first_name\" value=\"{}\" /></td>\n\t</tr>\n", tr("First Name"), esc_attr(&submitted("first_name"))));
     h.push_str(&format!("\t<tr class=\"form-field\">\n\t\t<th scope=\"row\"><label for=\"last_name\">{} </label></th>\n\t\t<td><input name=\"last_name\" type=\"text\" id=\"last_name\" value=\"{}\" /></td>\n\t</tr>\n", tr("Last Name"), esc_attr(&submitted("last_name"))));
     h.push_str(&format!("\t<tr class=\"form-field\">\n\t\t<th scope=\"row\"><label for=\"url\">{}</label></th>\n\t\t<td><input name=\"url\" type=\"url\" id=\"url\" class=\"code\" value=\"{}\" /></td>\n\t</tr>\n", tr("Website"), esc_attr(&submitted("url"))));
-    h.push_str(&format!("\t\t\t<tr class=\"form-field user-language-wrap\">\n\t\t\t<th scope=\"row\">\n\t\t\t\t<label for=\"locale\">\n\t\t\t\t\t\t\t\t\t\t{}<span class=\"dashicons dashicons-translation\" aria-hidden=\"true\"></span>\n\t\t\t\t</label>\n\t\t\t</th>\n\t\t\t<td>\n\t\t\t\t{}\t\t\t</td>\n\t\t</tr>\n", tr("Language"), language_select(ctx, "site-default", true, false)));
+    h.push_str(&format!("\t\t\t\t<tr class=\"form-field user-language-wrap\">\n\t\t\t<th scope=\"row\">\n\t\t\t\t<label for=\"locale\">\n\t\t\t\t\t\t\t\t\t\t{}<span class=\"dashicons dashicons-translation\" aria-hidden=\"true\"></span>\n\t\t\t\t</label>\n\t\t\t</th>\n\t\t\t<td>\n\t\t\t\t{}\t\t\t</td>\n\t\t</tr>\n", tr("Language"), language_select(ctx, "site-default", true, false)));
     h.push_str(&format!(
-        "\t\t<tr class=\"form-field form-required user-pass1-wrap\">\n\t\t<th scope=\"row\">\n\t\t\t<label for=\"pass1\">\n\t\t\t\t{}\t\t\t\t<span class=\"description hide-if-js\">{}</span>\n\t\t\t</label>\n\t\t</th>\n\t\t<td>\n\t\t\t<input type=\"hidden\" value=\" \" /><!-- #24364 workaround -->\n\t\t\t<button type=\"button\" class=\"button wp-generate-pw hide-if-no-js\">{}</button>\n\t\t\t<div class=\"wp-pwd\">\n\t\t\t\t\t\t\t\t<div class=\"password-input-wrapper\">\n\t\t\t\t\t<input type=\"password\" name=\"pass1\" id=\"pass1\" class=\"regular-text ltr\" autocomplete=\"new-password\" spellcheck=\"false\" data-reveal=\"1\" data-pw=\"{}\" aria-describedby=\"pass-strength-result\" />\n\t\t\t\t\t<div style=\"display:none\" id=\"pass-strength-result\" aria-live=\"polite\"></div>\n\t\t\t\t</div>\n\t\t\t\t<button type=\"button\" class=\"button wp-hide-pw user-new-password-toggle hide-if-no-js\" data-toggle=\"0\" aria-label=\"{}\">\n\t\t\t\t\t<span class=\"dashicons dashicons-hidden\" aria-hidden=\"true\"></span>\n\t\t\t\t\t<span class=\"text\">{}</span>\n\t\t\t\t</button>\n\t\t\t</div>\n\t\t</td>\n\t</tr>\n",
+        "\t\t\t<tr class=\"form-field form-required user-pass1-wrap\">\n\t\t<th scope=\"row\">\n\t\t\t<label for=\"pass1\">\n\t\t\t\t{}\t\t\t\t<span class=\"description hide-if-js\">{}</span>\n\t\t\t</label>\n\t\t</th>\n\t\t<td>\n\t\t\t<input type=\"hidden\" value=\" \" /><!-- #24364 workaround -->\n\t\t\t<button type=\"button\" class=\"button wp-generate-pw hide-if-no-js\">{}</button>\n\t\t\t<div class=\"wp-pwd\">\n\t\t\t\t\t\t\t\t<div class=\"password-input-wrapper\">\n\t\t\t\t\t<input type=\"password\" name=\"pass1\" id=\"pass1\" class=\"regular-text ltr\" autocomplete=\"new-password\" spellcheck=\"false\" data-reveal=\"1\" data-pw=\"{}\" aria-describedby=\"pass-strength-result\" />\n\t\t\t\t\t<div style=\"display:none\" id=\"pass-strength-result\" aria-live=\"polite\"></div>\n\t\t\t\t</div>\n\t\t\t\t<button type=\"button\" class=\"button wp-hide-pw user-new-password-toggle hide-if-no-js\" data-toggle=\"0\" aria-label=\"{}\">\n\t\t\t\t\t<span class=\"dashicons dashicons-hidden\" aria-hidden=\"true\"></span>\n\t\t\t\t\t<span class=\"text\">{}</span>\n\t\t\t\t</button>\n\t\t\t</div>\n\t\t</td>\n\t</tr>\n",
         tr("Password"),
         tr("(required)"),
         tr("Generate password"),
@@ -615,7 +623,7 @@ pub async fn user_new(ctx: &Ctx<'_>) -> AdminResponse {
     h.push_str(&format!(
         "\t<tr>\n\t\t<th scope=\"row\">{}</th>\n\t\t<td>\n\t\t\t<input type=\"checkbox\" name=\"send_user_notification\" id=\"send_user_notification\" value=\"1\" {} />\n\t\t\t<label for=\"send_user_notification\">{}</label>\n\t\t</td>\n\t</tr>\n",
         tr("Send User Notification"),
-        checked(true).trim_start(),
+        checked(true),
         tr("Send the new user an email about their account")
     ));
     h.push_str(&format!("\t\t\t<tr class=\"form-field\">\n\t\t<th scope=\"row\"><label for=\"role\">{}</label></th>\n\t\t<td><select name=\"role\" id=\"role\">\n\t\t\t{}\t\t\t</select>\n\t\t</td>\n\t</tr>\n", tr("Role"), role_options(&names, ctx, &default_role)));

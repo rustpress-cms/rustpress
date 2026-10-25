@@ -42,7 +42,7 @@ async fn pages_dropdown(ctx: &Ctx<'_>, selected_id: u64) -> String {
 /// `wp-admin/privacy-policy-guide.php`.
 pub async fn guide(ctx: &Ctx<'_>) -> AdminResponse {
     if !ctx.can("manage_privacy_options") {
-        return die(ctx.env, 403, "WordPress &rsaquo; Error", &format!("<p>{}</p>", ctx.tr("Sorry, you are not allowed to manage privacy options on this site.")));
+        return super::common::die_plain(ctx, "Sorry, you are not allowed to manage privacy options on this site.");
     }
     let baked = super::pages::load(ctx, "privacy-policy-guide");
     let screen = Screen {

@@ -69,7 +69,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     let tr = |s: &str| ctx.tr(s);
     let site = ctx.site();
     if !ctx.can("list_users") {
-        return forbidden(ctx, "Sorry, you are not allowed to list users.");
+        return super::common::forbidden_heading(ctx, "Sorry, you are not allowed to list users.");
     }
     let action = {
         let a = request.request("action").unwrap_or_default();

@@ -11,6 +11,11 @@ pub fn forbidden(ctx: &Ctx<'_>, message: &str) -> AdminResponse {
     die(ctx.env, 403, "WordPress &rsaquo; Error", &format!("<p>{}</p>", ctx.tr(message)))
 }
 
+/// `wp_die( $message )`: a plain message and the status 500 of a call without one.
+pub fn die_plain(ctx: &Ctx<'_>, message: &str) -> AdminResponse {
+    die(ctx.env, 500, "WordPress &rsaquo; Error", &ctx.tr(message))
+}
+
 /// `wp_die()` with the 403 and the heading of `You need a higher level of permission.`
 pub fn forbidden_heading(ctx: &Ctx<'_>, message: &str) -> AdminResponse {
     die(ctx.env, 403, "WordPress &rsaquo; Error", &format!("<h1>{}</h1><p>{}</p>", ctx.tr("You need a higher level of permission."), ctx.tr(message)))

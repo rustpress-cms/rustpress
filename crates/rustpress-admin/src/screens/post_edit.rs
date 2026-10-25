@@ -655,7 +655,7 @@ async fn form(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, is_new: bool) -> Admi
 pub async fn post_new(ctx: &Ctx<'_>) -> AdminResponse {
     let post_type = ctx.request.get("post_type").filter(|t| !t.is_empty()).unwrap_or("post").to_owned();
     let Some(info) = type_info(ctx, &post_type) else {
-        return die(ctx.env, 400, "WordPress &rsaquo; Error", &format!("<p>{}</p>", ctx.tr("Invalid post type.")));
+        return super::common::die_plain(ctx, "Invalid post type.");
     };
     if !ctx.can(if info.name == "page" { "edit_pages" } else { "edit_posts" }) {
         return die(ctx.env, 403, "WordPress &rsaquo; Error", &format!("<h1>{}</h1><p>{}</p>", ctx.tr("You need a higher level of permission."), ctx.tr("Sorry, you are not allowed to create posts as this user.")));
@@ -708,8 +708,12 @@ pub async fn post_php(ctx: &Ctx<'_>) -> AdminResponse {
     match action.as_str() {
         "post-quickdraft-save" => super::dashboard::quickdraft_save(ctx).await,
         "edit" => {
+            // `post.php?action=edit` without a post goes to `post.php`, which goes to the list.
+            if post_id == 0 {
+                return redirect(&ctx.admin_url("post.php"));
+            }
             let Some(post) = post else {
-                return die(ctx.env, 404, "WordPress &rsaquo; Error", &format!("<p>{}</p>", tr("You attempted to edit an item that does not exist. Perhaps it was deleted?")));
+                return die(ctx.env, 404, "WordPress &rsaquo; Error", &tr("You attempted to edit an item that does not exist. Perhaps it was deleted?"));
             };
             if post.post_type == "attachment" {
                 if !(ctx.can("edit_posts") && (post.post_author == ctx.user.id || ctx.can("edit_others_posts"))) {

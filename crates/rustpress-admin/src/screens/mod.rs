@@ -242,6 +242,12 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse
         return die(env, 500, "WordPress &rsaquo; Error", "<p>The user could not be loaded.</p>");
     };
     let ctx = Ctx { env, request, user, token: session.token.clone() };
+    // `user_can_access_admin_page()`: the pages of the menu are only for those the menu is for.
+    if let Some(capabilities) = menu_capabilities(&request.file) {
+        if !capabilities.iter().any(|capability| ctx.can(capability)) {
+            return die(env, 403, "WordPress &rsaquo; Error", &ctx.tr("Sorry, you are not allowed to access this page."));
+        }
+    }
     let mut response = match request.file.as_str() {
         "" | "index.php" => dashboard::page(&ctx).await,
         "options-general.php" => general::page(&ctx).await,
@@ -288,6 +294,27 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse
     cookies.extend(std::mem::take(&mut response.cookies));
     response.cookies = cookies;
     response
+}
+
+/// The capabilities (any of them) the menu of WordPress asks for a page.
+fn menu_capabilities(file: &str) -> Option<&'static [&'static str]> {
+    Some(match file {
+        "options-general.php" | "options-writing.php" | "options-reading.php" | "options-discussion.php" | "options-media.php" | "options-permalink.php" | "options-connectors.php" => &["manage_options"],
+        "options-privacy.php" => &["manage_privacy_options"],
+        "plugins.php" => &["activate_plugins"],
+        "plugin-install.php" => &["install_plugins"],
+        "plugin-editor.php" => &["edit_plugins"],
+        "themes.php" => &["switch_themes", "edit_theme_options"],
+        "theme-editor.php" => &["edit_themes"],
+        "site-editor.php" | "font-library.php" => &["edit_theme_options"],
+        "import.php" => &["import"],
+        "export.php" => &["export"],
+        "site-health.php" => &["view_site_health_checks"],
+        "update-core.php" => &["update_core"],
+        "export-personal-data.php" => &["export_others_personal_data"],
+        "erase-personal-data.php" => &["erase_others_personal_data"],
+        _ => return None,
+    })
 }
 
 /// A screen of WordPress that RustPress does not have yet.

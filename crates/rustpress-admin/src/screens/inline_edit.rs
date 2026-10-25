@@ -1,15 +1,12 @@
 //! `WP_Posts_List_Table::inline_edit()`: the hidden Quick Edit and Bulk Edit rows of the posts list.
-//! The frame comes from the markup of WordPress (`inline_edit_post.tpl`, `inline_edit_page.tpl`); the author,
-//! category, parent and template lists are made here.
+//! The frame is the PHP template of WordPress turned into `inline_edit.tpl`; the author, term, parent and template
+//! lists are made here.
 
 use rustpress_core::formatting::{esc_attr, esc_html};
 use rustpress_db::{Order, OrderBy, Post, PostQuery, User, UserListQuery};
 
 use super::Ctx;
 use super::posts::TypeInfo;
-
-const POST_FORM: &str = include_str!("inline_edit_post.tpl");
-const PAGE_FORM: &str = include_str!("inline_edit_page.tpl");
 
 /// `touch_time( 1, 1, 0, 1 )`: the date fields without IDs and hidden copies.
 fn touch_time(ctx: &Ctx<'_>, date: &str) -> String {
@@ -67,36 +64,6 @@ async fn authors(ctx: &Ctx<'_>, info: &TypeInfo, bulk: bool) -> String {
     out
 }
 
-/// `wp_terms_checklist( 0, array( 'taxonomy' => 'category' ) )`.
-async fn categories(ctx: &Ctx<'_>) -> String {
-    let terms = ctx.env.db.terms("category").await.unwrap_or_default();
-    let mut popular: Vec<&rustpress_db::Term> = terms.iter().filter(|t| t.count > 0).collect();
-    popular.sort_by(|a, b| b.count.cmp(&a.count).then(a.name.cmp(&b.name)));
-    popular.truncate(10);
-    let popular_ids: Vec<u64> = popular.iter().map(|t| t.term_id).collect();
-    fn tree(terms: &[rustpress_db::Term], parent: u64, popular: &[u64], out: &mut String) {
-        let mut children: Vec<&rustpress_db::Term> = terms.iter().filter(|t| t.parent == parent).collect();
-        children.sort_by_key(|t| t.name.to_lowercase());
-        for term in children {
-            let class = if popular.contains(&term.term_id) { " class=\"popular-category\"" } else { "" };
-            out.push_str(&format!(
-                "\n<li id='in-category-{id}-1'{class}><label class=\"selectit\"><input value=\"{id}\" type=\"checkbox\" name=\"post_category[]\" id=\"in-category-{id}-2\" /> {}</label>",
-                esc_html(&term.name),
-                id = term.term_id
-            ));
-            if terms.iter().any(|t| t.parent == term.term_id) {
-                out.push_str("<ul class='children'>\n");
-                tree(terms, term.term_id, popular, out);
-                out.push_str("</ul>\n");
-            }
-            out.push_str("</li>\n");
-        }
-    }
-    let mut out = String::from("\t\t\t\t\t\t\t");
-    tree(&terms, 0, &popular_ids, &mut out);
-    out
-}
-
 /// `wp_dropdown_pages()` for the parent of a page.
 async fn parents(ctx: &Ctx<'_>, info: &TypeInfo, bulk: bool) -> String {
     let query = PostQuery { post_types: vec![info.name.clone()], statuses: vec!["publish".into()], limit: Some(100_000), order_by: OrderBy::MenuOrderTitle, order: Order::Asc, ..Default::default() };
@@ -143,46 +110,279 @@ fn page_templates(ctx: &Ctx<'_>, info: &TypeInfo) -> Vec<(String, String)> {
     out
 }
 
-/// The two rows, for the `post` form (categories) or the `page` form (parent, order, template).
-pub async fn inline_edit(ctx: &Ctx<'_>, info: &TypeInfo, first: Option<&Post>, columns: usize, hierarchical_taxonomies: bool) -> String {
-    let form = if hierarchical_taxonomies { POST_FORM } else { PAGE_FORM };
+/// `wp_terms_checklist( 0, array( 'taxonomy' => $taxonomy ) )`.
+async fn checklist(ctx: &Ctx<'_>, taxonomy: &str) -> String {
+    let terms = ctx.env.db.terms(taxonomy).await.unwrap_or_default();
+    let mut popular: Vec<&rustpress_db::Term> = terms.iter().filter(|t| t.count > 0).collect();
+    popular.sort_by(|a, b| b.count.cmp(&a.count).then(a.name.cmp(&b.name)));
+    popular.truncate(10);
+    let popular_ids: Vec<u64> = popular.iter().map(|t| t.term_id).collect();
+    let input = if taxonomy == "category" { "post_category[]".to_owned() } else { format!("tax_input[{taxonomy}][]") };
+    fn tree(terms: &[rustpress_db::Term], parent: u64, popular: &[u64], taxonomy: &str, input: &str, out: &mut String) {
+        let mut children: Vec<&rustpress_db::Term> = terms.iter().filter(|t| t.parent == parent).collect();
+        children.sort_by_key(|t| t.name.to_lowercase());
+        for term in children {
+            let class = if popular.contains(&term.term_id) { " class=\"popular-category\"" } else { "" };
+            out.push_str(&format!(
+                "\n<li id='in-{taxonomy}-{id}-1'{class}><label class=\"selectit\"><input value=\"{id}\" type=\"checkbox\" name=\"{input}\" id=\"in-{taxonomy}-{id}-2\" /> {}</label>",
+                esc_html(&term.name),
+                id = term.term_id
+            ));
+            if terms.iter().any(|t| t.parent == term.term_id) {
+                out.push_str("<ul class='children'>\n");
+                tree(terms, term.term_id, popular, taxonomy, input, out);
+                out.push_str("</ul>\n");
+            }
+            out.push_str("</li>\n");
+        }
+    }
+    let mut out = String::new();
+    tree(&terms, 0, &popular_ids, taxonomy, &input, &mut out);
+    out
+}
+
+/// The template of `inline_edit()`, translated from the PHP: `{{NAME}}` is a value, `{{if FLAG}}` / `{{else}}` /
+/// `{{end}}` a condition, `{{each LIST}}` a loop; the text between keeps the whitespace of the PHP output.
+const FORM: &str = include_str!("inline_edit.tpl");
+
+enum Node {
+    Text(String),
+    Var(String),
+    If(String, Vec<Node>, Vec<Node>),
+    Each(String, Vec<Node>),
+}
+
+enum Tok {
+    Text(String),
+    Tag(String),
+}
+
+fn tokenize(template: &str) -> Vec<Tok> {
+    let mut toks = Vec::new();
+    let mut rest = template;
+    while let Some(start) = rest.find('\u{E000}') {
+        toks.push(Tok::Text(rest[..start].to_owned()));
+        let after = &rest[start + '\u{E000}'.len_utf8()..];
+        let end = after.find('\u{E001}').unwrap_or(after.len());
+        toks.push(Tok::Tag(after[..end].to_owned()));
+        rest = after.get(end + '\u{E001}'.len_utf8()..).unwrap_or("");
+    }
+    toks.push(Tok::Text(rest.to_owned()));
+    toks
+}
+
+/// Parses up to `{{else}}` / `{{end}}` / the end; returns what stopped it.
+fn parse(toks: &[Tok], pos: &mut usize) -> (Vec<Node>, &'static str) {
+    let mut nodes = Vec::new();
+    while *pos < toks.len() {
+        let tok = &toks[*pos];
+        *pos += 1;
+        match tok {
+            Tok::Text(text) => nodes.push(Node::Text(text.clone())),
+            Tok::Tag(tag) => {
+                if tag == "end" {
+                    return (nodes, "end");
+                }
+                if tag == "else" {
+                    return (nodes, "else");
+                }
+                if let Some(flag) = tag.strip_prefix("if ") {
+                    let (then, stop) = parse(toks, pos);
+                    let other = if stop == "else" { parse(toks, pos).0 } else { Vec::new() };
+                    nodes.push(Node::If(flag.to_owned(), then, other));
+                } else if let Some(list) = tag.strip_prefix("each ") {
+                    nodes.push(Node::Each(list.to_owned(), parse(toks, pos).0));
+                } else {
+                    nodes.push(Node::Var(tag.clone()));
+                }
+            }
+        }
+    }
+    (nodes, "eof")
+}
+
+/// The flags, values and lists one part of the template sees.
+#[derive(Default)]
+struct Scope {
+    flags: std::collections::HashSet<&'static str>,
+    vars: std::collections::HashMap<&'static str, String>,
+    lists: std::collections::HashMap<&'static str, Vec<Scope>>,
+}
+
+impl Scope {
+    fn flag(&mut self, name: &'static str, on: bool) {
+        if on {
+            self.flags.insert(name);
+        }
+    }
+
+    fn var(&mut self, name: &'static str, value: impl Into<String>) {
+        self.vars.insert(name, value.into());
+    }
+}
+
+fn render(nodes: &[Node], scopes: &[&Scope], out: &mut String) {
+    for node in nodes {
+        match node {
+            Node::Text(text) => out.push_str(text),
+            Node::Var(name) => {
+                if let Some(value) = scopes.iter().rev().find_map(|s| s.vars.get(name.as_str())) {
+                    out.push_str(value);
+                }
+            }
+            Node::If(flag, then, other) => {
+                let on = scopes.iter().any(|s| s.flags.contains(flag.as_str()));
+                render(if on { then } else { other }, scopes, out);
+            }
+            Node::Each(list, body) => {
+                if let Some(items) = scopes.iter().rev().find_map(|s| s.lists.get(list.as_str())) {
+                    for item in items {
+                        let mut inner: Vec<&Scope> = scopes.to_vec();
+                        inner.push(item);
+                        render(body, &inner, out);
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Quick Edit and Bulk Edit rows (`WP_Posts_List_Table::inline_edit()`).
+pub async fn inline_edit(ctx: &Ctx<'_>, info: &TypeInfo, first: Option<&Post>, columns: usize, taxonomies: &[(String, bool)]) -> String {
+    let site = ctx.site();
+    let supports = |feature: &str| site.post_type_supports(&info.name, feature);
+    let is_page = info.name == "page";
+    let can_publish = ctx.can(if is_page { "publish_pages" } else { "publish_posts" });
+    let can_edit_others = ctx.can(if is_page { "edit_others_pages" } else { "edit_others_posts" });
+    let hier: Vec<&str> = taxonomies.iter().filter(|(name, h)| *h && name != "post_format").map(|(name, _)| name.as_str()).collect();
+    let flat: Vec<&str> = taxonomies.iter().filter(|(name, h)| !*h && name != "post_format" && !name.starts_with("wp_")).map(|(name, _)| name.as_str()).collect();
     let date = match first {
         // `touch_time()`: a draft that has no date of its own shows the current time.
         Some(post) if !post.post_date.is_empty() && post.post_date != "0000-00-00 00:00:00" && !(matches!(post.post_status.as_str(), "draft" | "pending") && (post.post_date_gmt.is_empty() || post.post_date_gmt == "0000-00-00 00:00:00")) => post.post_date.clone(),
         _ => ctx.site().date("Y-m-d H:i:s", ctx.env.now),
     };
-    let can_edit_others = ctx.can(if info.name == "page" { "edit_others_pages" } else { "edit_others_posts" });
-    let (quick, bulk) = if can_edit_others { (authors(ctx, info, false).await, authors(ctx, info, true).await) } else { (String::new(), String::new()) };
-    let mut html = super::pages::translate_html(ctx, &form.replace("\r\n", "\n"));
-    if !can_edit_others {
-        html = html.replace("<label class=\"inline-edit-author\"><span class=\"title\">Author</span>{{AUTHORS}}</label>", "").replace("<label class=\"inline-edit-author\"><span class=\"title\">Author</span>{{AUTHORS_BULK}}</label>", "");
-    }
-    let templates: String = page_templates(ctx, info).iter().map(|(name, title)| format!("\n\t<option value='{}' >{}</option>", esc_attr(name), esc_html(title))).collect();
-    let templates = format!("\t\t\t\t\t\t\t{templates}");
-    if hierarchical_taxonomies {
-        html = html.replace("{{CATEGORIES}}", &categories(ctx).await);
-    } else {
-        html = html.replace("{{PARENT}}", &parents(ctx, info, false).await).replace("{{PARENT_BULK}}", &parents(ctx, info, true).await);
-    }
-    // Without templates the select is left out altogether.
-    if page_templates(ctx, info).is_empty() {
-        let mut cleaned = String::new();
-        let mut rest = html.as_str();
-        while let Some(start) = rest.find("<label>\n\t\t\t\t\t\t<span class=\"title\">Template</span>") {
-            cleaned.push_str(&rest[..start]);
-            let end = rest[start..].find("</label>\n").map_or(rest.len(), |i| start + i + "</label>\n".len());
-            rest = &rest[end..];
+    let templates = page_templates(ctx, info);
+    let template_options: String = templates.iter().map(|(name, title)| format!("\n\t<option value='{}' >{}</option>", esc_attr(name), esc_html(title))).collect();
+
+    // The template with the words translated; the markers are kept apart from the text for that.
+    let marked = FORM.replace("\r\n", "\n").replace("{{", "\u{E000}").replace("}}", "\u{E001}");
+    let translated = super::pages::translate_html(ctx, &marked);
+    let (loop_start, loop_end) = ("\u{E000}LOOP\u{E001}", "\u{E000}ENDLOOP\u{E001}");
+    let (head, rest) = translated.split_once(loop_start).unwrap_or((&translated, ""));
+    let (body, foot) = rest.split_once(loop_end).unwrap_or((rest, ""));
+    let body_nodes = parse(&tokenize(body), &mut 0).0;
+
+    let hclass = if hier.is_empty() { "page" } else { "post" };
+    let mut html = head.trim_start_matches("\n\t\t").to_owned();
+    for bulk in [false, true] {
+        let mut scope = Scope::default();
+        scope.flag("BULK", bulk);
+        scope.flag("QUICK", !bulk);
+        scope.flag("TITLE", supports("title"));
+        scope.flag("VIEWABLE", site.is_post_type_viewable(&info.name));
+        scope.flag("QUICK_PUBLISH", !bulk && can_publish);
+        scope.flag("HIER_TAX", !bulk && !hier.is_empty());
+        scope.flag("PAGE_ATTR", supports("page-attributes"));
+        scope.flag("HIERARCHICAL", info.hierarchical);
+        scope.flag("HAS_TEMPLATES", !templates.is_empty());
+        scope.flag("FLAT_TAX", !bulk && !flat.is_empty());
+        scope.flag("COMMENTS", supports("comments"));
+        scope.flag("TRACKBACKS", supports("trackbacks"));
+        scope.flag("COMMENTS_OR_PINGS", supports("comments") || supports("trackbacks"));
+        scope.flag("STICKY", info.name == "post" && can_publish && can_edit_others);
+        scope.flag("FORMATS", bulk && supports("post-formats"));
+        scope.flag("QUICK_NOAUTHOR", !bulk && !supports("author"));
+        let classes = if bulk {
+            format!("inline-edit-row inline-edit-row-{hclass} bulk-edit-row bulk-edit-row-{hclass} bulk-edit-{}", info.name)
+        } else {
+            format!("inline-edit-row inline-edit-row-{hclass} quick-edit-row quick-edit-row-{hclass} inline-edit-{}", info.name)
+        };
+        scope.var("ID", if bulk { "bulk-edit" } else { "inline-edit" });
+        scope.var("CLASSES", classes);
+        scope.var("COLSPAN", columns.to_string());
+        scope.var("BQ", if bulk { "bulk" } else { "quick" });
+        scope.var("LEGEND", ctx.tr(if bulk { "Bulk Edit" } else { "Quick Edit" }));
+        scope.var("DATE", touch_time(ctx, &date));
+        // `wp_dropdown_users()` for the authors: only a user who may edit the posts of others gets it.
+        let authors_label = |dropdown: String| format!("<label class=\"inline-edit-author\"><span class=\"title\">{}</span>{dropdown}</label>", ctx.tr("Author"));
+        let authors_html = if supports("author") && can_edit_others { authors_label(authors(ctx, info, bulk).await) } else { String::new() };
+        scope.var("AUTHOR_QUICK", if bulk { String::new() } else { authors_html.clone() });
+        scope.var("AUTHOR_BULK", if bulk { authors_html } else { String::new() });
+        // `get_default_post_to_edit()` has no author yet.
+        scope.var("POST_AUTHOR", "");
+        scope.var("PARENT", if info.hierarchical { format!("{}\n", parents(ctx, info, bulk).await) } else { String::new() });
+        scope.var("MENU_ORDER", "0");
+        scope.var("DEFAULT_TEMPLATE", esc_html(&ctx.tr("Default template")));
+        scope.var("TEMPLATES", template_options.clone());
+        scope.var("STANDARD", esc_html(&ctx.tr("Standard")));
+        scope.var("NONCE_FIELD", format!("<input type=\"hidden\" id=\"_inline_edit\" name=\"_inline_edit\" value=\"{}\" />", ctx.create_nonce("inlineeditnonce")));
+        scope.var("SUBMIT", format!("<input type=\"submit\" name=\"bulk_edit\" id=\"bulk_edit\" class=\"button button-primary\" value=\"{}\"  />", esc_attr(&ctx.tr("Update"))));
+        scope.var("M", "list");
+        scope.var("SCREEN_ID", format!("edit-{}", info.name));
+        scope.var("NOTICE", "<div class=\"notice notice-error notice-alt inline hidden\"><p class=\"error\"></p></div>");
+        if !bulk {
+            let mut items = Vec::new();
+            for name in &hier {
+                let mut item = Scope::default();
+                item.var("TAX_LABEL", esc_html(&site.taxonomy_label(name)));
+                item.var("TAX_INPUT", if *name == "category" { "post_category[]".to_owned() } else { format!("tax_input[{}][]", esc_attr(name)) });
+                item.var("TAX_NAME", esc_attr(name));
+                item.var("TAX_CHECKLIST", checklist(ctx, name).await);
+                items.push(item);
+            }
+            scope.lists.insert("HIER", items);
+            let mut items = Vec::new();
+            for name in &flat {
+                let mut item = Scope::default();
+                // `assign_terms` of a taxonomy is `edit_posts` unless it says otherwise.
+                item.flag("ITEM_CAN", ctx.can("edit_posts"));
+                item.var("TAX_LABEL", esc_html(&site.taxonomy_label(name)));
+                item.var("TAX_NAME", esc_attr(name));
+                item.var("TAX_COMMAS", esc_html(&ctx.tr("Separate tags with commas")));
+                items.push(item);
+            }
+            scope.lists.insert("FLAT", items);
         }
-        cleaned.push_str(rest);
-        html = cleaned;
+        let mut statuses: Vec<(&str, String)> = Vec::new();
+        if bulk {
+            statuses.push(("-1", ctx.tr("&mdash; No Change &mdash;")));
+        }
+        if can_publish {
+            statuses.push(("publish", ctx.tr("Published")));
+            statuses.push(("future", ctx.tr("Scheduled")));
+            if bulk {
+                statuses.push(("private", ctx.tr("Private")));
+            }
+        }
+        statuses.push(("pending", ctx.tr("Pending Review")));
+        statuses.push(("draft", ctx.tr("Draft")));
+        scope.lists.insert(
+            "STATUS",
+            statuses
+                .into_iter()
+                .map(|(value, text)| {
+                    let mut item = Scope::default();
+                    item.var("VALUE", esc_attr(value));
+                    item.var("TEXT", esc_attr(&text));
+                    item
+                })
+                .collect(),
+        );
+        // The formats of the theme, by name.
+        scope.lists.insert(
+            "FORMAT_LIST",
+            ["aside", "audio", "chat", "gallery", "image", "link", "quote", "status", "video"]
+                .into_iter()
+                .map(|format| {
+                    let mut item = Scope::default();
+                    item.var("VALUE", esc_attr(format));
+                    item.var("TEXT", esc_html(&ctx.tr(&format!("{}{}", format[..1].to_uppercase(), &format[1..]))));
+                    item
+                })
+                .collect(),
+        );
+        render(&body_nodes, &[&scope], &mut html);
     }
-    html = html
-        .replace("{{COLSPAN}}", &columns.to_string())
-        .replace("{{DATE}}", &touch_time(ctx, &date))
-        .replace("{{AUTHORS}}", &quick)
-        .replace("{{AUTHORS_BULK}}", &bulk)
-        .replace("{{TEMPLATES}}", &templates)
-        .replace("{{MENU_ORDER}}", &first.map_or(0, |p| p.menu_order).to_string())
-        .replace("{{NONCE}}", &ctx.create_nonce("inlineeditnonce"));
+    html.push_str(foot);
     format!("\t\t{html}\n\t\t\n")
 }
