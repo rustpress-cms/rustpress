@@ -6,6 +6,7 @@
 //! with the same 401 errors WordPress gives to anonymous requests.
 
 mod comments;
+pub mod edit;
 mod error;
 mod fields;
 mod media;
@@ -65,11 +66,17 @@ pub(crate) struct Resp {
     pub alternate: Option<String>,
     /// A response that is sent as XML instead of JSON (`oembed/1.0/embed?format=xml`).
     pub xml: Option<String>,
+    /// The status when it is not 200 (`201` after creating something).
+    pub status: Option<u16>,
+    /// The `Allow` header of an authenticated response (default: `GET`).
+    pub allow: Option<String>,
+    /// The `Location` header of a created item.
+    pub location: Option<String>,
 }
 
 impl Resp {
     pub fn item(data: Value) -> Self {
-        Self { data, total: None, total_pages: None, link: None, alternate: None, xml: None }
+        Self { data, total: None, total_pages: None, link: None, alternate: None, xml: None, status: None, allow: None, location: None }
     }
 }
 
@@ -82,11 +89,15 @@ pub struct Rest<'a> {
     pub(crate) blank: QueryResult,
     /// The render state that PHP keeps in static variables for the whole request (unique ids, ...).
     pub(crate) state: std::sync::Mutex<rustpress_blocks::env::State>,
+    /// The signed-in user of this request, when there is one.
+    pub(crate) access: Option<edit::Access<'a>>,
+    /// The body of a request that is not a plain GET.
+    pub(crate) request: Option<edit::Request>,
 }
 
 impl<'a> Rest<'a> {
     pub fn new(site: &'a Site, theme: &'a Theme, registry: &'a Registry) -> Self {
-        Self { site, theme, registry, blank: QueryResult::blank(), state: Default::default() }
+        Self { site, theme, registry, blank: QueryResult::blank(), state: Default::default(), access: None, request: None }
     }
 
     /// Handles `GET <route>?<query>`; `route` is the part after `/wp-json` (`/wp/v2/posts`).
@@ -100,13 +111,34 @@ impl<'a> Rest<'a> {
             blank.url_path = "/".to_owned();
             blank.raw_query = if query.is_empty() { format!("rest_route={route}") } else { format!("rest_route={route}&{query}") };
         }
-        let scoped = Rest { site: self.site, theme: self.theme, registry: self.registry, blank, state: Default::default() };
+        let scoped = Rest { site: self.site, theme: self.theme, registry: self.registry, blank, state: Default::default(), access: None, request: None };
+        scoped.handle_request(route, query).await
+    }
+
+    /// Handles a request of a signed-in user (or with a body): `method`, the route after `/wp-json`, the
+    /// query string and the body.
+    pub async fn handle_as(&self, route: &str, query: &str, access: Option<edit::Access<'_>>, request: edit::Request) -> Result<Reply> {
+        let mut blank = QueryResult::blank();
+        if self.site.uses_pretty_permalinks() {
+            blank.url_path = format!("/wp-json{route}");
+            blank.raw_query = query.to_owned();
+        } else {
+            blank.url_path = "/".to_owned();
+            blank.raw_query = if query.is_empty() { format!("rest_route={route}") } else { format!("rest_route={route}&{query}") };
+        }
+        let scoped = Rest { site: self.site, theme: self.theme, registry: self.registry, blank, state: Default::default(), access, request: Some(request) };
         scoped.handle_request(route, query).await
     }
 
     async fn handle_request(&self, route: &str, query: &str) -> Result<Reply> {
         let params = Params::parse(query);
-        let outcome = self.dispatch(route, &params).await?;
+        let outcome = match &self.request {
+            Some(_) => match self.dispatch_edit(route, &params).await? {
+                Some(outcome) => outcome,
+                None => self.dispatch(route, &params).await?,
+            },
+            None => self.dispatch(route, &params).await?,
+        };
         let mut headers = vec![
             ("X-Robots-Tag".to_owned(), "noindex".to_owned()),
             ("X-Content-Type-Options".to_owned(), "nosniff".to_owned()),
@@ -119,6 +151,7 @@ impl<'a> Rest<'a> {
         let (mut status, mut data) = match outcome {
             Ok(resp) => {
                 xml_body = resp.xml.clone();
+                let allow = resp.allow.clone().unwrap_or_else(|| "GET".to_owned());
                 let response_link = resp.link.clone().or_else(|| resp.alternate.as_ref().map(|url| format!("<{url}>; rel=\"alternate\"; type=text/html")));
                 if let Some(total) = resp.total {
                     response_headers.push(("X-WP-Total".to_owned(), total.to_string()));
@@ -129,7 +162,7 @@ impl<'a> Rest<'a> {
                 if let Some(link) = &response_link {
                     response_headers.push(("Link".to_owned(), link.clone()));
                 }
-                response_headers.push(("Allow".to_owned(), "GET".to_owned()));
+                response_headers.push(("Allow".to_owned(), allow.clone()));
                 let link = response_link.unwrap_or_else(|| self.root_link());
                 headers.insert(1, ("Link".to_owned(), link));
                 if let Some(total) = resp.total {
@@ -138,14 +171,17 @@ impl<'a> Rest<'a> {
                 if let Some(pages) = resp.total_pages {
                     headers.push(("X-WP-TotalPages".to_owned(), pages.to_string()));
                 }
-                headers.push(("Allow".to_owned(), "GET".to_owned()));
-                (200, resp.data)
+                headers.push(("Allow".to_owned(), allow));
+                if let Some(location) = &resp.location {
+                    headers.push(("Location".to_owned(), location.clone()));
+                }
+                (resp.status.unwrap_or(200), resp.data)
             }
             Err(e) => {
                 headers.insert(1, ("Link".to_owned(), self.root_link()));
                 if e.passed_permission_check() {
-                    headers.push(("Allow".to_owned(), "GET".to_owned()));
-                    response_headers.push(("Allow".to_owned(), "GET".to_owned()));
+                    headers.push(("Allow".to_owned(), self.allow_for(route)));
+                    response_headers.push(("Allow".to_owned(), self.allow_for(route)));
                 }
                 (e.status, e.to_value(self.site))
             }
@@ -162,7 +198,7 @@ impl<'a> Rest<'a> {
         if let Some(xml) = xml_body {
             return Ok(Reply { status, headers, body: xml });
         }
-        if status == 200 {
+        if status == 200 || status == 201 {
             if params.truthy("_embed") {
                 self.embed_all(&mut data).await?;
             }

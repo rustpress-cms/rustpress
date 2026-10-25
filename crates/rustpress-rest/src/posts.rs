@@ -78,7 +78,7 @@ impl Rest<'_> {
         })
     }
 
-    async fn run_posts(&self, kind: Kind<'_>, params: &Params, mut query: PostQuery) -> Result<Outcome> {
+    pub(crate) async fn run_posts(&self, kind: Kind<'_>, params: &Params, mut query: PostQuery) -> Result<Outcome> {
         let per_page = query.limit.unwrap_or(10);
         let page = match params.integer("page", 1, 1, None) {
             Ok(p) => p,
@@ -106,7 +106,7 @@ impl Rest<'_> {
     }
 
     /// Translates the request parameters into a database query.
-    async fn post_query(&self, kind: Kind<'_>, params: &Params) -> Result<std::result::Result<PostQuery, RestError>> {
+    pub(crate) async fn post_query(&self, kind: Kind<'_>, params: &Params) -> Result<std::result::Result<PostQuery, RestError>> {
         macro_rules! try_param {
             ($e:expr) => {
                 match $e {
@@ -397,7 +397,7 @@ impl Rest<'_> {
     }
 
     /// `prepare_links()`.
-    async fn post_links(&self, post: &Post, kind: Kind<'_>, featured: u64) -> Result<Value> {
+    pub(crate) async fn post_links(&self, post: &Post, kind: Kind<'_>, featured: u64) -> Result<Value> {
         let base = format!("wp/v2/{}", kind.base());
         let mut links = Links::new();
         links.self_link(self.rest_url(&format!("{base}/{}", post.id)));

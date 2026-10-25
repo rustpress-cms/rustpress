@@ -138,6 +138,34 @@ fn cookies_of(headers: &HeaderMap) -> Vec<(String, String)> {
     out
 }
 
+/// The user of a REST request, from the cookie of the sign-in and the `wp_rest` nonce.
+pub enum RestAuth {
+    /// No cookie, or a cookie without a nonce: the request is anonymous.
+    Anonymous,
+    /// The cookie and the nonce are valid.
+    User(rustpress_auth::CurrentUser),
+    /// A cookie with a nonce that does not match.
+    BadNonce,
+}
+
+pub async fn rest_auth(loaded: &Loaded, headers: &HeaderMap, query: &str, body_nonce: Option<&str>) -> RestAuth {
+    let Some(parts) = &loaded.admin else { return RestAuth::Anonymous };
+    let scheme = rustpress_auth::Scheme::LoggedIn;
+    let name = parts.auth.cookie_name(scheme);
+    let cookies = cookies_of(headers);
+    let Some(cookie) = cookies.iter().find(|(k, _)| *k == name).map(|(_, v)| v.clone()) else { return RestAuth::Anonymous };
+    let at = now();
+    let Some(session) = parts.auth.validate_cookie(&loaded.site.db, &cookie, scheme, at, false).await.ok().flatten() else { return RestAuth::Anonymous };
+    let nonce = headers.get("x-wp-nonce").and_then(|v| v.to_str().ok()).map(str::to_owned).or_else(|| pairs_of(query).into_iter().find(|(k, _)| k == "_wpnonce").map(|(_, v)| v)).or_else(|| body_nonce.map(str::to_owned));
+    let Some(nonce) = nonce else { return RestAuth::Anonymous };
+    let Ok(user) = rustpress_auth::CurrentUser::load(&loaded.site.db, &parts.roles, &session.user).await else { return RestAuth::Anonymous };
+    if parts.auth.verify_nonce(&nonce, "wp_rest", user.id, &session.token, at).is_some() { RestAuth::User(user) } else { RestAuth::BadNonce }
+}
+
+pub fn pairs_of_public(text: &str) -> Vec<(String, String)> {
+    pairs_of(text)
+}
+
 /// `a=1&b=2` as decoded pairs.
 fn pairs_of(text: &str) -> Vec<(String, String)> {
     text.split('&')

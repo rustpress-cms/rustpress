@@ -1,7 +1,7 @@
 # Screenshot of a wp-admin page of the dev server (:3001) or the reference (:8080, -Ref) with headless Edge, signed
 # in as rpadmin (cookies are set through the DevTools protocol).
 #   dev/shot.ps1 -Page options-general.php -Out C:\path\shot.png [-Ref] [-Width 1400] [-Height 1000] [-Full]
-param([string]$Page, [string]$Out, [switch]$Ref, [int]$Width = 1400, [int]$Height = 1000, [switch]$Full, [int]$Wait = 2)
+param([string]$Page, [string]$Out, [switch]$Ref, [int]$Width = 1400, [int]$Height = 1000, [switch]$Full, [int]$Wait = 2, [switch]$Log, [string]$Eval = '')
 $port = if ($Ref) { 8080 } else { 3001 }
 $name = if ($Ref) { 'ref' } else { 'rp' }
 
@@ -40,17 +40,41 @@ try {
         $ws.SendAsync([ArraySegment[byte]]::new($bytes), 'Text', $true, [Threading.CancellationToken]::None).Wait()
         return $script:id
     }
+    $script:pending = $null
+    $script:problems = New-Object System.Collections.Generic.List[string]
+    $script:requests = New-Object System.Collections.Generic.List[string]
+    $script:buffer = New-Object byte[] 262144
+    function Next-Message($timeoutMs) {
+        $builder = New-Object Text.StringBuilder
+        do {
+            if (-not $script:pending) { $script:pending = $ws.ReceiveAsync([ArraySegment[byte]]::new($script:buffer), [Threading.CancellationToken]::None) }
+            if (-not $script:pending.Wait([Math]::Max(1, $timeoutMs))) { return $null }
+            $task = $script:pending
+            $script:pending = $null
+            [void]$builder.Append([Text.Encoding]::UTF8.GetString($script:buffer, 0, $task.Result.Count))
+        } until ($task.Result.EndOfMessage)
+        return ($builder.ToString() | ConvertFrom-Json)
+    }
+    function Note-Problem($obj) {
+        switch ($obj.method) {
+            'Runtime.consoleAPICalled' {
+                if ($obj.params.type -in 'error', 'warning') {
+                    $text = "console.$($obj.params.type): " + (($obj.params.args | ForEach-Object { if ($_.value) { $_.value } else { $_.description } }) -join ' ')
+                    $script:problems.Add($text.Substring(0, [Math]::Min(500, $text.Length)))
+                }
+            }
+            'Runtime.exceptionThrown' { $script:problems.Add('exception: ' + $obj.params.exceptionDetails.text + ' ' + $obj.params.exceptionDetails.exception.description) }
+            'Network.requestWillBeSent' { if ($obj.params.request.url -match 'wp-json|rest_route|admin-ajax') { $script:requests.Add("$($obj.params.request.method) $($obj.params.request.url)") } }
+            'Network.responseReceived' { if ($obj.params.response.status -ge 400) { $script:problems.Add("HTTP $($obj.params.response.status) $($obj.params.response.url)") } }
+            'Network.loadingFailed' { if ($obj.params.errorText -ne 'net::ERR_ABORTED') { $script:problems.Add("failed: $($obj.params.errorText) $($obj.params.requestId)") } }
+        }
+    }
     function Receive-Until($wantedId, $wantedEvent, $timeoutSec) {
         $deadline = (Get-Date).AddSeconds($timeoutSec)
-        $buffer = New-Object byte[] 65536
         while ((Get-Date) -lt $deadline) {
-            $builder = New-Object Text.StringBuilder
-            do {
-                $task = $ws.ReceiveAsync([ArraySegment[byte]]::new($buffer), [Threading.CancellationToken]::None)
-                if (-not $task.Wait([Math]::Max(100, [int](($deadline - (Get-Date)).TotalMilliseconds)))) { return $null }
-                [void]$builder.Append([Text.Encoding]::UTF8.GetString($buffer, 0, $task.Result.Count))
-            } until ($task.Result.EndOfMessage)
-            $obj = $builder.ToString() | ConvertFrom-Json
+            $obj = Next-Message ([int](($deadline - (Get-Date)).TotalMilliseconds))
+            if (-not $obj) { return $null }
+            Note-Problem $obj
             if ($wantedId -and $obj.id -eq $wantedId) { return $obj }
             if ($wantedEvent -and $obj.method -eq $wantedEvent) { return $obj }
         }
@@ -58,6 +82,7 @@ try {
     }
     [void](Send-Cdp 'Page.enable' @{}); [void](Receive-Until 1 $null 5)
     [void](Send-Cdp 'Network.enable' @{}); [void](Receive-Until 2 $null 5)
+    [void](Send-Cdp 'Runtime.enable' @{}); [void](Receive-Until 3 $null 5)
     foreach ($c in $cookies) {
         $i = Send-Cdp 'Network.setCookie' @{ name = $c.name; value = $c.value; domain = 'localhost'; path = $c.path; httpOnly = $true }
         [void](Receive-Until $i $null 5)
@@ -66,7 +91,18 @@ try {
     [void](Receive-Until $script:id $null 5)
     [void](Send-Cdp 'Page.navigate' @{ url = "http://localhost:$port/wp-admin/$Page" })
     [void](Receive-Until $null 'Page.loadEventFired' 40)
-    Start-Sleep -Seconds $Wait
+    # Let the page settle; console errors and failed requests are noted on the way.
+    [void](Receive-Until $null 'never' $Wait)
+    if ($Eval) {
+        $i = Send-Cdp 'Runtime.evaluate' @{ expression = $Eval; awaitPromise = $true; returnByValue = $true }
+        $r = Receive-Until $i $null 20
+        $script:problems.Add('eval: ' + ($r.result.result | ConvertTo-Json -Depth 5 -Compress))
+    }
+    if ($Log) {
+        $script:problems | Select-Object -Unique | ForEach-Object { Write-Host $_ }
+        Write-Host '--- REST/Ajax requests:'
+        $script:requests | ForEach-Object { Write-Host ($_ -replace 'http://localhost:\d+', '') }
+    }
     $params = @{ format = 'png' }
     if ($Full) {
         $i = Send-Cdp 'Page.getLayoutMetrics' @{}

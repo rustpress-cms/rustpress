@@ -48,6 +48,10 @@ impl Links {
         self
     }
 
+    pub fn push_raw(&mut self, rel: &str, link: Value) {
+        self.push(rel, link);
+    }
+
     fn push(&mut self, rel: &str, link: Value) {
         match self.map.get_mut(rel) {
             Some(Value::Array(items)) => items.push(link),

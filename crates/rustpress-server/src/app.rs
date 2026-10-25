@@ -121,6 +121,10 @@ async fn handle(axum::extract::State(app): axum::extract::State<Arc<App>>, reque
         Ok(response) => return response,
         Err(request) => request,
     };
+    let request = match rest_edit_route(&app, request).await {
+        Ok(response) => return response,
+        Err(request) => request,
+    };
     if !matches!(*request.method(), Method::GET | Method::HEAD) {
         let mut response = text(StatusCode::METHOD_NOT_ALLOWED, "RustPress is read-only: only GET and HEAD are supported.\n");
         response.headers_mut().insert(header::ALLOW, HeaderValue::from_static("GET, HEAD"));
@@ -329,6 +333,78 @@ fn redirect(location: &str) -> Response<Body> {
         response.headers_mut().insert(header::LOCATION, value);
     }
     response
+}
+
+/// REST requests of signed-in users and every request with a body: the authenticated layer of the REST API.
+#[allow(clippy::result_large_err)]
+async fn rest_edit_route(app: &Arc<App>, request: Request<Body>) -> std::result::Result<Response<Body>, Request<Body>> {
+    if app.writer.is_none() {
+        return Err(request);
+    }
+    let loaded = app.current().await;
+    let path = request.uri().path().to_owned();
+    let query = request.uri().query().unwrap_or("").to_owned();
+    let Some((route, rest_query)) = rest_route(&loaded.site.settings.home_path(), &path, &query) else { return Err(request) };
+    let (parts, body) = request.into_parts();
+    let mut method = parts.method.as_str().to_owned();
+    if let Some(over) = parts.headers.get("x-http-method-override").and_then(|v| v.to_str().ok()) {
+        method = over.to_uppercase();
+    }
+    let is_read = matches!(method.as_str(), "GET" | "HEAD");
+    let has_nonce = parts.headers.contains_key("x-wp-nonce") || rest_query.contains("_wpnonce=");
+    if is_read && !has_nonce {
+        return Err(Request::from_parts(parts, Body::empty()));
+    }
+    let bytes = axum::body::to_bytes(body, 256 * 1024 * 1024).await.unwrap_or_default();
+    let content_type = parts.headers.get(header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).unwrap_or_default().to_owned();
+    let rest_body = if bytes.is_empty() {
+        rustpress_rest::edit::Body::None
+    } else if let Some(boundary) = rustpress_admin::multipart::boundary(&content_type) {
+        let (fields, files) = rustpress_admin::multipart::parse(&boundary, &bytes);
+        rustpress_rest::edit::Body::Multipart { fields, files: files.into_iter().map(|f| rustpress_rest::edit::UploadedPart { field: f.field, filename: f.filename, content_type: f.content_type, bytes: f.bytes }).collect() }
+    } else if content_type.starts_with("application/json") {
+        serde_json::from_slice(&bytes).map_or(rustpress_rest::edit::Body::None, rustpress_rest::edit::Body::Json)
+    } else if content_type.starts_with("application/x-www-form-urlencoded") {
+        rustpress_rest::edit::Body::Form(crate::admin::pairs_of_public(&String::from_utf8_lossy(&bytes)))
+    } else {
+        let disposition = parts.headers.get("content-disposition").and_then(|v| v.to_str().ok()).unwrap_or_default().to_owned();
+        rustpress_rest::edit::Body::Raw { bytes: bytes.to_vec(), content_type, disposition }
+    };
+    let form_nonce = match &rest_body {
+        rustpress_rest::edit::Body::Form(pairs) => pairs.iter().find(|(k, _)| k == "_wpnonce").map(|(_, v)| v.clone()),
+        rustpress_rest::edit::Body::Json(value) => value.get("_wpnonce").and_then(|v| v.as_str()).map(str::to_owned),
+        _ => None,
+    };
+    let auth = crate::admin::rest_auth(&loaded, &parts.headers, &rest_query, form_nonce.as_deref()).await;
+    let user = match auth {
+        crate::admin::RestAuth::User(user) => Some(user),
+        crate::admin::RestAuth::BadNonce => {
+            let body = r#"{"code":"rest_cookie_invalid_nonce","message":"Cookie check failed","data":{"status":403}}"#;
+            let mut response = Response::new(Body::from(body));
+            *response.status_mut() = StatusCode::FORBIDDEN;
+            response.headers_mut().insert(header::CONTENT_TYPE, HeaderValue::from_static("application/json; charset=UTF-8"));
+            return Ok(response);
+        }
+        crate::admin::RestAuth::Anonymous => None,
+    };
+    if user.is_none() && is_read {
+        return Err(Request::from_parts(parts, Body::empty()));
+    }
+    let uploads = app.config.wp_root.join("wp-content").join("uploads");
+    let access = user.map(|user| rustpress_rest::edit::Access { user, writer: app.writer.as_ref(), now: crate::admin::now(), uploads });
+    let rest = Rest::new(&loaded.site, &loaded.theme, &loaded.registry);
+    let reply = rest.handle_as(&route, &rest_query, access, rustpress_rest::edit::Request { method, body: rest_body }).await;
+    let response = match reply {
+        Ok(reply) => rest_response(reply),
+        Err(e) => {
+            tracing::error!(error = %e, path = path.as_str(), "rest request failed");
+            text(StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error\n")
+        }
+    };
+    if !is_read {
+        app.reload_now().await;
+    }
+    Ok(response)
 }
 
 /// `(route, query)` when the request addresses the REST API (`/wp-json/...` or `?rest_route=`).

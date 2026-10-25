@@ -646,6 +646,17 @@ impl Content<'_> {
         Ok(())
     }
 
+    /// Removes the autosave of the current user: saving the post makes it obsolete.
+    pub async fn delete_user_autosave(&self, post_id: u64) -> Result<()> {
+        let query = rustpress_db::PostQuery { post_types: vec!["revision".into()], statuses: vec!["inherit".into()], parent: Some(post_id), ..Default::default() };
+        let name = format!("{post_id}-autosave-v1");
+        for revision in self.db.posts(&query).await?.into_iter().filter(|r| r.post_name == name && r.post_author == self.user.id) {
+            self.writer.execute(format!("DELETE FROM {} WHERE post_id = {}", self.writer.table("postmeta"), revision.id)).await?;
+            self.writer.delete_rows("posts", "ID", revision.id).await?;
+        }
+        Ok(())
+    }
+
     // ------------------------------------------------------------------ terms
 
     /// Finds a term of a taxonomy by ID, name or slug, or makes it (`wp_insert_term()`); returns its `term_taxonomy_id`.

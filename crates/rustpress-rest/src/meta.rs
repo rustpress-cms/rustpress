@@ -20,25 +20,25 @@ const HIDDEN_TAXONOMIES: [&str; 4] = ["post_format", "link_category", "wp_theme"
 const HIDDEN_POST_TYPES: [&str; 5] = ["revision", "customize_changeset", "oembed_cache", "user_request", "custom_css"];
 
 /// A post type as `wp/v2/types` describes it.
-struct TypeEntry {
-    name: String,
-    label: String,
-    description: String,
-    hierarchical: bool,
-    has_archive: Value,
-    icon: Value,
-    taxonomies: Vec<String>,
-    rest_base: String,
+pub(crate) struct TypeEntry {
+    pub(crate) name: String,
+    pub(crate) label: String,
+    pub(crate) description: String,
+    pub(crate) hierarchical: bool,
+    pub(crate) has_archive: Value,
+    pub(crate) icon: Value,
+    pub(crate) taxonomies: Vec<String>,
+    pub(crate) rest_base: String,
 }
 
 /// A taxonomy as `wp/v2/taxonomies` describes it.
-struct TaxonomyEntry {
-    name: String,
-    label: String,
-    description: String,
-    types: Vec<String>,
-    hierarchical: bool,
-    rest_base: String,
+pub(crate) struct TaxonomyEntry {
+    pub(crate) name: String,
+    pub(crate) label: String,
+    pub(crate) description: String,
+    pub(crate) types: Vec<String>,
+    pub(crate) hierarchical: bool,
+    pub(crate) rest_base: String,
 }
 
 fn embed_only(data: &mut Map<String, Value>, keep: &[&str]) {
@@ -108,7 +108,7 @@ impl Rest<'_> {
     }
 
     /// Every post type with REST routes, in registration order.
-    fn type_entries(&self) -> Vec<TypeEntry> {
+    pub(crate) fn type_entries(&self) -> Vec<TypeEntry> {
         let mut all = self.core_types();
         for info in self.site.types.post_types.iter().filter(|t| t.show_in_rest) {
             // `has_archive` is what the registration said: `true`, or the slug without the permalink front.
@@ -133,7 +133,7 @@ impl Rest<'_> {
         all
     }
 
-    fn prepare_type(&self, entry: &TypeEntry, context: &str) -> Value {
+    pub(crate) fn prepare_type(&self, entry: &TypeEntry, context: &str) -> Value {
         let mut data = Map::new();
         data.insert("description".into(), Value::from(entry.description.clone()));
         data.insert("hierarchical".into(), Value::Bool(entry.hierarchical));
@@ -186,7 +186,7 @@ impl Rest<'_> {
 
     // ------------------------------------------------------------------------- taxonomies
 
-    fn taxonomy_entries(&self) -> Vec<TaxonomyEntry> {
+    pub(crate) fn taxonomy_entries(&self) -> Vec<TaxonomyEntry> {
         let s = self.site;
         let mut all = vec![
             TaxonomyEntry { name: "category".into(), label: s.trx("Categories", "taxonomy general name"), description: String::new(), types: vec!["post".into()], hierarchical: true, rest_base: "categories".into() },
@@ -207,7 +207,7 @@ impl Rest<'_> {
         all
     }
 
-    fn prepare_taxonomy(&self, entry: &TaxonomyEntry, context: &str) -> Value {
+    pub(crate) fn prepare_taxonomy(&self, entry: &TaxonomyEntry, context: &str) -> Value {
         let mut data = Map::new();
         data.insert("name".into(), Value::from(entry.label.clone()));
         data.insert("slug".into(), Value::from(entry.name.clone()));
