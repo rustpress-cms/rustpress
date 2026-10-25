@@ -15,10 +15,6 @@ aspect = "bytes"
 reason = "Der Routenindex von /wp-json/ listet nur die Routen, die RustPress selbst bedient (eine Teilmenge)."
 
 [[deviation]]
-path = '^/wp-json/wp/v2/(types|taxonomies|statuses|search|settings|block)'
-reason = "Diese REST-Routen sind noch nicht umgesetzt (siehe PLAN.md)."
-
-[[deviation]]
 path = '[?&]feed='
 reason = "Die Referenz auf Port 8080 verliert beim Kanonisieren den Port (WordPress-Eigenheit) und leitet ?feed=… deshalb nicht um; RustPress leitet wie WordPress auf /feed/ um."
 
@@ -43,10 +39,6 @@ reason = "Beiträge mit exakt gleichem Datum (hier gleich-a/gleich-b) haben in M
 path = '^/[?]rest_route=/$'
 aspect = "bytes"
 reason = "Der Routenindex listet nur die Routen, die RustPress selbst bedient (eine Teilmenge)."
-
-[[deviation]]
-path = '^/[?]rest_route=/wp/v2/(types|taxonomies|statuses|search|settings|block)'
-reason = "Diese REST-Routen sind noch nicht umgesetzt (siehe PLAN.md)."
 
 [[deviation]]
 path = '^/(robots[.]txt|favicon[.]ico)$'

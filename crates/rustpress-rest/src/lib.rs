@@ -9,6 +9,7 @@ mod comments;
 mod error;
 mod fields;
 mod media;
+mod meta;
 mod params;
 mod posts;
 mod terms;
@@ -35,6 +36,12 @@ pub enum Error {
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
+
+/// What a route of a plugin or theme serves.
+enum Custom {
+    PostType(String),
+    Taxonomy(String),
+}
 
 /// The result of one request: status, headers (without `Content-Length`) and the JSON text.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -157,16 +164,60 @@ impl<'a> Rest<'a> {
             }
             ["wp", "v2", "media"] => self.media_collection(params).await,
             ["wp", "v2", "media", id] => self.media_item(id, params).await,
-            ["wp", "v2", "categories"] => self.terms_collection("category", params).await,
-            ["wp", "v2", "categories", id] => self.terms_item("category", id, params).await,
-            ["wp", "v2", "tags"] => self.terms_collection("post_tag", params).await,
-            ["wp", "v2", "tags", id] => self.terms_item("post_tag", id, params).await,
+            ["wp", "v2", "categories"] => self.terms_collection(&terms::Tax::category(), params).await,
+            ["wp", "v2", "categories", id] => self.terms_item(&terms::Tax::category(), id, params).await,
+            ["wp", "v2", "tags"] => self.terms_collection(&terms::Tax::tag(), params).await,
+            ["wp", "v2", "tags", id] => self.terms_item(&terms::Tax::tag(), id, params).await,
             ["wp", "v2", "users"] => self.users_collection(params).await,
             ["wp", "v2", "users", "me"] => Ok(Err(RestError::new("rest_not_logged_in", "You are not currently logged in.", 401))),
             ["wp", "v2", "users", id] => self.users_item(id, params).await,
             ["wp", "v2", "comments"] => self.comments_collection(params).await,
             ["wp", "v2", "comments", id] => self.comments_item(id, params).await,
+            ["wp", "v2", "types"] => Ok(self.types_collection(params)),
+            ["wp", "v2", "types", name] => Ok(self.types_item(name, params)),
+            ["wp", "v2", "taxonomies"] => Ok(self.taxonomies_collection(params)),
+            ["wp", "v2", "taxonomies", name] => Ok(self.taxonomies_item(name, params)),
+            ["wp", "v2", "statuses"] => Ok(self.statuses_collection(params)),
+            ["wp", "v2", "statuses", slug] => Ok(self.statuses_item(slug, params)),
+            ["wp", "v2", "search"] => self.search(params).await,
+            ["wp", "v2", base @ ("blocks" | "navigation")] | ["wp", "v2", base @ ("blocks" | "navigation"), _] => {
+                let info = meta::core_post_type(base);
+                match segments.get(3) {
+                    None => self.posts_collection(posts::Kind::Custom(&info), params).await,
+                    Some(id) => self.posts_item(posts::Kind::Custom(&info), id, params).await,
+                }
+            }
+            ["wp", "v2", rest @ ..] if meta::denied(rest, params).is_some() => Ok(Err(meta::denied(rest, params).unwrap_or_else(|| RestError::new("rest_no_route", "No route was found matching the URL and request method.", 404)))),
+            ["wp", "v2", base] | ["wp", "v2", base, _] if self.custom_route(base).is_some() => self.custom_route_dispatch(base, segments.get(3).copied(), params).await,
             _ => Ok(Err(RestError::new("rest_no_route", "No route was found matching the URL and request method.", 404))),
+        }
+    }
+
+    /// The post type or taxonomy of a custom route (`wp/v2/book`, `wp/v2/genre`).
+    fn custom_route(&self, base: &str) -> Option<Custom> {
+        if let Some(info) = self.site.types.post_types.iter().find(|t| t.show_in_rest && t.rest_base() == base) {
+            return Some(Custom::PostType(info.name.clone()));
+        }
+        self.site.types.taxonomies.iter().find(|t| t.show_in_rest && t.rest_base() == base).map(|t| Custom::Taxonomy(t.name.clone()))
+    }
+
+    async fn custom_route_dispatch(&self, base: &str, id: Option<&str>, params: &Params) -> Result<Outcome> {
+        match self.custom_route(base) {
+            Some(Custom::PostType(name)) => {
+                let Some(info) = self.site.types.post_type(&name) else { return Ok(Err(RestError::new("rest_no_route", "No route was found matching the URL and request method.", 404))) };
+                match id {
+                    None => self.posts_collection(posts::Kind::Custom(info), params).await,
+                    Some(id) => self.posts_item(posts::Kind::Custom(info), id, params).await,
+                }
+            }
+            Some(Custom::Taxonomy(name)) => {
+                let Some(tax) = self.tax(&name) else { return Ok(Err(RestError::new("rest_no_route", "No route was found matching the URL and request method.", 404))) };
+                match id {
+                    None => self.terms_collection(&tax, params).await,
+                    Some(id) => self.terms_item(&tax, id, params).await,
+                }
+            }
+            None => Ok(Err(RestError::new("rest_no_route", "No route was found matching the URL and request method.", 404))),
         }
     }
 

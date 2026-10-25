@@ -74,6 +74,12 @@ pub struct LinkParams<'a> {
 
 /// `Link: <...>; rel="prev", <...>; rel="next"` for a paged collection.
 pub fn link_header(rest: &Rest<'_>, route: &str, params: &Params, shape: &LinkParams<'_>, page: u64, max_pages: u64) -> Option<String> {
+    link_header_with(rest, route, params, shape, page, max_pages, true)
+}
+
+/// [link_header], where `clamp_prev` keeps the previous page within the last page (the search
+/// controller does not).
+pub fn link_header_with(rest: &Rest<'_>, route: &str, params: &Params, shape: &LinkParams<'_>, page: u64, max_pages: u64, clamp_prev: bool) -> Option<String> {
     let mut pairs: Vec<(String, String)> = Vec::new();
     for (key, value) in parse_qs(params.raw()) {
         let name = key.trim_end_matches("[]").to_owned();
@@ -120,7 +126,7 @@ pub fn link_header(rest: &Rest<'_>, route: &str, params: &Params, shape: &LinkPa
     };
     let mut parts = Vec::new();
     if page > 1 {
-        parts.push(format!("<{}>; rel=\"prev\"", url_for((page - 1).min(max_pages))));
+        parts.push(format!("<{}>; rel=\"prev\"", url_for(if clamp_prev { (page - 1).min(max_pages) } else { page - 1 })));
     }
     if max_pages > page {
         parts.push(format!("<{}>; rel=\"next\"", url_for(page + 1)));

@@ -117,6 +117,10 @@ async fn page(app: &App, uri: &axum::http::Uri, request_headers: &axum::http::He
         // `WP::send_headers()` ran before the redirect and already set the content type.
         let mut response = redirect(&target);
         singular_headers(&mut response, &result, &loaded);
+        // `WP::handle_404()` ran before the redirect and already asked for no caching.
+        if result.flags.is_404 && !result.parse_error_404 {
+            no_cache(response.headers_mut());
+        }
         if !result.flags.is_feed {
             response.headers_mut().insert(header::CONTENT_TYPE, HeaderValue::from_static("text/html; charset=UTF-8"));
         }

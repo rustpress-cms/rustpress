@@ -6,6 +6,16 @@ use serde_json::Value;
 
 /// Encodes like PHP's `json_encode` with no flags: `/` is escaped, non-ASCII
 /// becomes `\uXXXX`, empty objects become `[]` (an empty PHP array).
+/// The key of the marker object [empty_object] returns.
+const EMPTY_OBJECT_KEY: &str = "\u{0}empty object";
+
+/// A value that is encoded as `{}`; PHP only prints an empty array as `{}` when it was cast to an object.
+pub fn empty_object() -> Value {
+    let mut map = serde_json::Map::new();
+    map.insert(EMPTY_OBJECT_KEY.to_owned(), Value::Null);
+    Value::Object(map)
+}
+
 pub fn encode(value: &Value) -> String {
     let mut out = String::new();
     write(&mut out, value);
@@ -30,6 +40,10 @@ fn write(out: &mut String, value: &Value) {
             out.push(']');
         }
         Value::Object(map) => {
+            if map.len() == 1 && map.contains_key(EMPTY_OBJECT_KEY) {
+                out.push_str("{}");
+                return;
+            }
             if map.is_empty() {
                 out.push_str("[]");
                 return;

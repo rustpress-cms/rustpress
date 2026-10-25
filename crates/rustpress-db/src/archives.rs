@@ -113,6 +113,12 @@ impl Db {
 }
 
 impl Db {
+    /// The taxonomies in which some term has a parent.
+    pub async fn taxonomies_with_parents(&self) -> Result<Vec<String>> {
+        let sql = format!("SELECT DISTINCT taxonomy FROM {} WHERE parent <> 0 ORDER BY taxonomy", self.prefix.table("term_taxonomy"));
+        Ok(sqlx::query_scalar(AssertSqlSafe(sql)).fetch_all(&self.pool).await?)
+    }
+
     /// `(taxonomy, post_type)` pairs that have at least one relationship.
     pub async fn taxonomy_post_types(&self) -> Result<Vec<(String, String)>> {
         let sql = format!(

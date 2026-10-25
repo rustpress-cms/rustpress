@@ -63,7 +63,9 @@ impl Site {
             "page" => return self.page_link(post).await,
             "attachment" => return self.attachment_link(post).await,
             "post" => {}
-            other => return self.custom_permalink(post, other).await,
+            // The types WordPress registers itself (`wp_navigation`, ...) are linked like posts.
+            other if !crate::types::is_internal_post_type(other) => return self.custom_permalink(post, other).await,
+            _ => {}
         }
         let structure = &self.settings.permalink_structure;
         let unpublished = matches!(post.post_status.as_str(), "draft" | "pending" | "auto-draft" | "future");
@@ -207,7 +209,7 @@ impl Site {
             return Ok(self.user_trailingslashit(&self.home_url(&format!("{}type/{slug}", self.front()))));
         }
         if let Some(info) = self.types.taxonomy(&term.taxonomy) {
-            let tail = if info.hierarchical { self.term_path(term).await? } else { term.slug.clone() };
+            let tail = if info.rewrite_hierarchical { self.term_path(term).await? } else { term.slug.clone() };
             return Ok(self.user_trailingslashit(&self.home_url(&format!("{}/{tail}", info.slug))));
         }
         let base = match term.taxonomy.as_str() {

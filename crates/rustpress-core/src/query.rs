@@ -90,6 +90,9 @@ pub struct QueryResult {
     /// The request path as received (percent-encoded) and its raw query string.
     pub url_path: String,
     pub raw_query: String,
+    /// The 404 was decided while parsing the query (an impossible date), not by `handle_404()`;
+    /// only the latter asks for no caching.
+    pub parse_error_404: bool,
 }
 
 impl QueryResult {
@@ -106,6 +109,7 @@ impl QueryResult {
             matched_rule,
             url_path: String::new(),
             raw_query: String::new(),
+            parse_error_404: false,
         }
     }
 
@@ -236,12 +240,14 @@ impl Site {
             }
             if day != 0 {
                 if month != 0 && year != 0 && !valid_date(year, month, day) {
+                    r.parse_error_404 = true;
                     return Ok(r.into_404());
                 }
                 f.is_day = true;
                 f.is_date = true;
             } else if month != 0 {
                 if month > 12 {
+                    r.parse_error_404 = true;
                     return Ok(r.into_404());
                 }
                 f.is_month = true;
@@ -304,7 +310,7 @@ impl Site {
             let custom_tax = self.types.taxonomies.iter().find_map(|t| {
                 v.get(&t.name).map(|term| {
                     // A hierarchical rewrite passes the whole path; the last segment is the term.
-                    let term = if t.hierarchical { term.rsplit('/').next().unwrap_or(term) } else { term };
+                    let term = if t.rewrite_hierarchical { term.rsplit('/').next().unwrap_or(term) } else { term };
                     (t.name.clone(), term.to_owned())
                 })
             });
@@ -553,10 +559,18 @@ impl Site {
                 .await?
                 .pop()
         } else {
+            // `?p=ID` finds only the post type being asked for (`post` unless `post_type` says
+            // otherwise); a page or custom type behind `?p=` is a 404 that `redirect_canonical()` fixes.
+            let by_attachment_id = v.u64("p").is_none();
+            let wanted = v.get("post_type").unwrap_or("post");
             let id = v.u64("p").or(v.u64("attachment_id")).unwrap_or(0);
             self.db.post(id).await?.filter(|p| {
                 !is_internal_post_type(&p.post_type)
-                    && (p.post_status == "publish" || (p.post_type == "attachment" && p.post_status == "inherit"))
+                    && if by_attachment_id {
+                        p.post_type == "attachment" && matches!(p.post_status.as_str(), "publish" | "inherit")
+                    } else {
+                        p.post_type == wanted && p.post_status == "publish"
+                    }
             })
         };
         if let Some(post) = &post {

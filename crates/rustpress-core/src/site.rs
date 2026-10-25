@@ -28,7 +28,8 @@ impl Site {
             let post_types = site.db.used_post_types().await?;
             let taxonomies = site.db.used_taxonomies().await?;
             let relations = site.db.taxonomy_post_types().await?;
-            site.types = crate::types::Types::infer(&site.rewrite, &post_types, &taxonomies, &relations);
+            let with_parents = site.db.taxonomies_with_parents().await?;
+            site.types = crate::types::Types::infer(&site.rewrite, &post_types, &taxonomies, &relations, &with_parents);
         }
         Ok(site)
     }
@@ -62,6 +63,11 @@ impl Site {
             "attachment" => self.trx("Media", "post type general name"),
             other => self.types.post_type(other).map_or_else(|| other.to_owned(), |t| t.plural_label()),
         }
+    }
+
+    /// `is_post_type_viewable( $post_type )`.
+    pub fn is_post_type_viewable(&self, post_type: &str) -> bool {
+        self.types.is_viewable(post_type, !self.rewrite.is_empty())
     }
 
     /// `post_type_supports( $post_type, $feature )`.

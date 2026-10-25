@@ -3,6 +3,7 @@
 use rustpress_blocks::content::{post_class, the_content, the_title_for};
 use rustpress_blocks::excerpt::get_the_excerpt;
 use rustpress_core::formatting::{convert_chars, wpautop};
+use rustpress_core::types::PostTypeInfo;
 use rustpress_db::{OrderBy, Order, Post, PostQuery};
 use serde_json::{Map, Value, json};
 use std::sync::Arc;
@@ -12,19 +13,28 @@ use crate::params::Params;
 use crate::util::{LinkParams, Links, env, link_header, rfc3339};
 use crate::{Outcome, Resp, Rest, Result};
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum Kind {
+#[derive(Clone, Copy)]
+pub enum Kind<'a> {
     Post,
     Page,
     Attachment,
+    /// A post type of a plugin or theme, as far as it is known.
+    Custom(&'a PostTypeInfo),
 }
 
-impl Kind {
-    pub fn name(self) -> &'static str {
+impl PartialEq for Kind<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        self.name() == other.name()
+    }
+}
+
+impl<'a> Kind<'a> {
+    pub fn name(self) -> &'a str {
         match self {
             Kind::Post => "post",
             Kind::Page => "page",
             Kind::Attachment => "attachment",
+            Kind::Custom(info) => &info.name,
         }
     }
 
@@ -33,11 +43,20 @@ impl Kind {
         if self == Kind::Attachment { "inherit" } else { "publish" }
     }
 
-    pub fn base(self) -> &'static str {
+    pub fn base(self) -> &'a str {
         match self {
             Kind::Post => "posts",
             Kind::Page => "pages",
             Kind::Attachment => "media",
+            Kind::Custom(info) => info.rest_base(),
+        }
+    }
+
+    pub fn hierarchical(self) -> bool {
+        match self {
+            Kind::Post => false,
+            Kind::Page | Kind::Attachment => true,
+            Kind::Custom(info) => info.hierarchical,
         }
     }
 }
@@ -49,7 +68,7 @@ const POST_ARRAYS: &[&str] = &["author", "author_exclude", "exclude", "include",
 const EMBED_FIELDS: &[&str] = &["id", "date", "slug", "type", "link", "title", "excerpt", "author", "featured_media", "_links"];
 
 impl Rest<'_> {
-    pub(crate) async fn posts_collection(&self, kind: Kind, params: &Params) -> Result<Outcome> {
+    pub(crate) async fn posts_collection(&self, kind: Kind<'_>, params: &Params) -> Result<Outcome> {
         if params.get("context") == Some("edit") {
             return Ok(Err(RestError::new("rest_forbidden_context", "Sorry, you are not allowed to edit posts in this post type.", 401)));
         }
@@ -59,7 +78,7 @@ impl Rest<'_> {
         })
     }
 
-    async fn run_posts(&self, kind: Kind, params: &Params, mut query: PostQuery) -> Result<Outcome> {
+    async fn run_posts(&self, kind: Kind<'_>, params: &Params, mut query: PostQuery) -> Result<Outcome> {
         let per_page = query.limit.unwrap_or(10);
         let page = match params.integer("page", 1, 1, None) {
             Ok(p) => p,
@@ -87,7 +106,7 @@ impl Rest<'_> {
     }
 
     /// Translates the request parameters into a database query.
-    async fn post_query(&self, kind: Kind, params: &Params) -> Result<std::result::Result<PostQuery, RestError>> {
+    async fn post_query(&self, kind: Kind<'_>, params: &Params) -> Result<std::result::Result<PostQuery, RestError>> {
         macro_rules! try_param {
             ($e:expr) => {
                 match $e {
@@ -101,7 +120,7 @@ impl Rest<'_> {
         let offset = try_param!(params.integer("offset", 0, 0, None));
         let order = try_param!(params.one_of("order", &["asc", "desc"], "desc"));
         let mut orderby_values = vec!["author", "date", "id", "include", "modified", "parent", "relevance", "slug", "include_slugs", "title"];
-        if kind == Kind::Page {
+        if kind == Kind::Page || self.supports(kind, "page-attributes") {
             orderby_values.push("menu_order");
         }
         let orderby = try_param!(params.one_of("orderby", &orderby_values, "date"));
@@ -140,17 +159,19 @@ impl Rest<'_> {
         query.ids = include;
         query.exclude_ids = params.id_list("exclude").unwrap_or_default();
         query.names = params.list("slug").unwrap_or_default();
-        query.author_in = params.id_list("author").unwrap_or_default();
-        query.author_not_in = params.id_list("author_exclude").unwrap_or_default();
+        if self.supports(kind, "author") {
+            query.author_in = params.id_list("author").unwrap_or_default();
+            query.author_not_in = params.id_list("author_exclude").unwrap_or_default();
+        }
         if kind == Kind::Attachment {
             query.mime_prefix = params.get("media_type").filter(|t| matches!(*t, "image" | "video" | "audio" | "application")).map(str::to_owned);
             query.mime_type = params.get("mime_type").map(str::to_owned);
         }
-        if kind != Kind::Post {
+        if kind != Kind::Post && kind.hierarchical() {
             query.parent_in = params.id_list("parent").unwrap_or_default();
             query.parent_not_in = params.id_list("parent_exclude").unwrap_or_default();
         }
-        if kind == Kind::Page {
+        if kind == Kind::Page || self.supports(kind, "page-attributes") {
             query.menu_order = params.get("menu_order").and_then(|v| v.parse().ok());
         }
         if let Some(search) = search {
@@ -196,10 +217,38 @@ impl Rest<'_> {
                 }
             }
         }
+        if let Kind::Custom(info) = kind {
+            for tax in self.taxonomies_of(&info.name) {
+                for (key, exclude) in [(tax.base.clone(), false), (format!("{}_exclude", tax.base), true)] {
+                    let Some(ids) = params.id_list(&key) else { continue };
+                    let mut taxonomy_ids = Vec::new();
+                    for id in ids {
+                        if let Some(term) = self.site.db.term_by_id(Some(&tax.name), id).await? {
+                            taxonomy_ids.push(term.term_taxonomy_id);
+                        }
+                    }
+                    if exclude {
+                        query.tax_not.extend(taxonomy_ids);
+                    } else if taxonomy_ids.is_empty() {
+                        query.ids = vec![0];
+                    } else {
+                        query.tax_groups.push(taxonomy_ids);
+                    }
+                }
+            }
+        }
         Ok(Ok(query))
     }
 
-    pub(crate) async fn posts_item(&self, kind: Kind, id: &str, params: &Params) -> Result<Outcome> {
+    /// `post_type_supports()` for the type of a REST request.
+    pub(crate) fn supports(&self, kind: Kind<'_>, feature: &str) -> bool {
+        match kind {
+            Kind::Custom(info) => info.supports(feature),
+            _ => self.site.post_type_supports(kind.name(), feature),
+        }
+    }
+
+    pub(crate) async fn posts_item(&self, kind: Kind<'_>, id: &str, params: &Params) -> Result<Outcome> {
         let Ok(id) = id.parse::<u64>() else {
             return Ok(Err(RestError::new("rest_no_route", "No route was found matching the URL and request method.", 404)));
         };
@@ -228,7 +277,7 @@ impl Rest<'_> {
     }
 
     /// Revisions and autosaves are for editors only.
-    pub(crate) async fn revisions_denied(&self, kind: Kind, parent: &str, what: &str) -> Result<Outcome> {
+    pub(crate) async fn revisions_denied(&self, kind: Kind<'_>, parent: &str, what: &str) -> Result<Outcome> {
         let post = match parent.parse::<u64>() {
             Ok(id) => self.site.db.post(id).await?,
             Err(_) => None,
@@ -240,7 +289,7 @@ impl Rest<'_> {
     }
 
     /// `prepare_item_for_response()` for the `view` and `embed` contexts.
-    pub(crate) async fn prepare_post(&self, post: &Post, kind: Kind, context: &str, params: &Params) -> Result<Value> {
+    pub(crate) async fn prepare_post(&self, post: &Post, kind: Kind<'_>, context: &str, params: &Params) -> Result<Value> {
         let env = env(self);
         let shared = Arc::new(post.clone());
         let protected = !post.post_password.is_empty();
@@ -263,38 +312,59 @@ impl Rest<'_> {
 
         // The REST API shows titles without the "Protected:" / "Private:" prefixes.
         let plain = Post { post_password: String::new(), post_status: "publish".into(), ..post.clone() };
-        data.insert("title".into(), json!({"rendered": the_title_for(self.site, &plain)}));
+        let custom = matches!(kind, Kind::Custom(_));
+        // The properties of a custom type follow what it supports.
+        let has = |feature: &str| !custom || self.supports(kind, feature);
+        if has("title") {
+            data.insert("title".into(), json!({"rendered": the_title_for(self.site, &plain)}));
+        }
 
         let hidden = protected && !unlocked;
-        let content = if hidden { String::new() } else { the_content(&env, &shared, &post.post_content).await? };
-        data.insert("content".into(), json!({"rendered": content, "protected": protected}));
-        let excerpt = if hidden {
-            String::new()
-        } else {
-            let raw = get_the_excerpt(&env, &shared).await?;
-            wpautop(&convert_chars(&self.site.texturize(&raw)))
-        };
-        data.insert("excerpt".into(), json!({"rendered": excerpt, "protected": protected}));
-        data.insert("author".into(), Value::from(post.post_author));
+        if has("editor") {
+            let content = if hidden { String::new() } else { the_content(&env, &shared, &post.post_content).await? };
+            data.insert("content".into(), json!({"rendered": content, "protected": protected}));
+        }
+        if has("excerpt") {
+            let excerpt = if hidden {
+                String::new()
+            } else {
+                let raw = get_the_excerpt(&env, &shared).await?;
+                wpautop(&convert_chars(&self.site.texturize(&raw)))
+            };
+            data.insert("excerpt".into(), json!({"rendered": excerpt, "protected": protected}));
+        }
+        if has("author") {
+            data.insert("author".into(), Value::from(post.post_author));
+        }
         let featured = meta_value("_thumbnail_id").and_then(|v| v.parse::<u64>().ok()).unwrap_or(0);
-        data.insert("featured_media".into(), Value::from(featured));
-        if kind == Kind::Page {
+        if has("thumbnail") {
+            data.insert("featured_media".into(), Value::from(featured));
+        }
+        if kind == Kind::Page || kind.hierarchical() && custom {
             data.insert("parent".into(), Value::from(post.post_parent));
+        }
+        if kind == Kind::Page || (custom && has("page-attributes")) {
             data.insert("menu_order".into(), Value::from(post.menu_order));
         }
-        data.insert("comment_status".into(), Value::from(post.comment_status.clone()));
-        data.insert("ping_status".into(), Value::from(post.ping_status.clone()));
+        if has("comments") {
+            data.insert("comment_status".into(), Value::from(post.comment_status.clone()));
+            data.insert("ping_status".into(), Value::from(post.ping_status.clone()));
+        }
         if kind == Kind::Post {
             data.insert("sticky".into(), Value::Bool(self.site.settings.sticky_posts.contains(&post.id)));
         }
         let template = meta_value("_wp_page_template").filter(|t| !t.is_empty() && t != "default").unwrap_or_default();
         data.insert("template".into(), Value::from(template));
-        if kind == Kind::Post {
+        if kind == Kind::Post || (custom && has("post-formats")) {
             let formats = self.site.db.terms_for_post(post.id, Some("post_format")).await?;
             let format = formats.first().and_then(|t| t.slug.strip_prefix("post-format-")).unwrap_or("standard").to_owned();
             data.insert("format".into(), Value::from(format));
         }
-        data.insert("meta".into(), json!({"footnotes": meta_value("footnotes").unwrap_or_default()}));
+        if !custom {
+            data.insert("meta".into(), json!({"footnotes": meta_value("footnotes").unwrap_or_default()}));
+        } else if has("custom-fields") {
+            data.insert("meta".into(), Value::Array(Vec::new()));
+        }
         if kind == Kind::Post {
             for (base, taxonomy) in [("categories", "category"), ("tags", "post_tag")] {
                 let mut terms = self.site.db.terms_for_post(post.id, Some(taxonomy)).await?;
@@ -302,7 +372,17 @@ impl Rest<'_> {
                 data.insert(base.into(), Value::from(terms.iter().map(|t| t.term_id).collect::<Vec<_>>()));
             }
         }
-        data.insert("class_list".into(), Value::from(post_class(&env, post, &[], false, false).await?));
+        if let Kind::Custom(info) = kind {
+            for tax in self.taxonomies_of(&info.name) {
+                let mut terms = self.site.db.terms_for_post(post.id, Some(&tax.name)).await?;
+                terms.sort_by_key(|t| (t.name.to_lowercase(), t.term_id));
+                data.insert(tax.base.clone(), Value::from(terms.iter().map(|t| t.term_id).collect::<Vec<_>>()));
+            }
+        }
+        // `class_list` belongs to the types that have pages of their own.
+        if !matches!(kind, Kind::Custom(info) if !info.public) {
+            data.insert("class_list".into(), Value::from(post_class(&env, post, &[], false, false).await?));
+        }
 
         data.insert("_links".into(), self.post_links(post, kind, featured).await?);
         if context == "embed" {
@@ -317,25 +397,30 @@ impl Rest<'_> {
     }
 
     /// `prepare_links()`.
-    async fn post_links(&self, post: &Post, kind: Kind, featured: u64) -> Result<Value> {
+    async fn post_links(&self, post: &Post, kind: Kind<'_>, featured: u64) -> Result<Value> {
         let base = format!("wp/v2/{}", kind.base());
         let mut links = Links::new();
         links.self_link(self.rest_url(&format!("{base}/{}", post.id)));
         links.add("collection", vec![], self.rest_url(&base));
         links.add("about", vec![], self.rest_url(&format!("wp/v2/types/{}", kind.name())));
-        if post.post_author != 0 {
+        let builtin = matches!(kind, Kind::Post | Kind::Page);
+        if (builtin || self.supports(kind, "author")) && post.post_author != 0 {
             links.embeddable("author", self.rest_url(&format!("wp/v2/users/{}", post.post_author)));
         }
-        links.embeddable("replies", rustpress_core::urls::add_query_arg(&self.rest_url("wp/v2/comments"), "post", &post.id.to_string()));
-
-        let revisions = self.site.db.posts(&PostQuery { post_types: vec!["revision".into()], statuses: vec!["inherit".into()], parent: Some(post.id), order_by: OrderBy::Id, order: Order::Desc, ..Default::default() }).await?;
-        let revisions_base = self.rest_url(&format!("{base}/{}/revisions", post.id));
-        links.add("version-history", vec![("count", Value::from(revisions.len()))], revisions_base.clone());
-        if let Some(latest) = revisions.first() {
-            links.add("predecessor-version", vec![("id", Value::from(latest.id))], format!("{}/{}", self.rest_url(&format!("{base}/{}/revisions", post.id)), latest.id));
+        if builtin || self.supports(kind, "comments") {
+            links.embeddable("replies", rustpress_core::urls::add_query_arg(&self.rest_url("wp/v2/comments"), "post", &post.id.to_string()));
         }
-        if kind == Kind::Page && post.post_parent != 0 {
-            links.embeddable("up", self.rest_url(&format!("wp/v2/pages/{}", post.post_parent)));
+
+        if builtin || self.supports(kind, "revisions") {
+            let revisions = self.site.db.posts(&PostQuery { post_types: vec!["revision".into()], statuses: vec!["inherit".into()], parent: Some(post.id), order_by: OrderBy::Id, order: Order::Desc, ..Default::default() }).await?;
+            let revisions_base = self.rest_url(&format!("{base}/{}/revisions", post.id));
+            links.add("version-history", vec![("count", Value::from(revisions.len()))], revisions_base.clone());
+            if let Some(latest) = revisions.first() {
+                links.add("predecessor-version", vec![("id", Value::from(latest.id))], format!("{}/{}", self.rest_url(&format!("{base}/{}/revisions", post.id)), latest.id));
+            }
+        }
+        if (kind == Kind::Page || matches!(kind, Kind::Custom(info) if info.hierarchical)) && post.post_parent != 0 {
+            links.embeddable("up", self.rest_url(&format!("{base}/{}", post.post_parent)));
         }
         if featured != 0
             && let Some(media) = self.site.db.post(featured).await?
@@ -349,6 +434,14 @@ impl Rest<'_> {
                     "wp:term",
                     vec![("taxonomy", Value::from(taxonomy)), ("embeddable", Value::Bool(true))],
                     rustpress_core::urls::add_query_arg(&self.rest_url(route), "post", &post.id.to_string()),
+                );
+            }
+        } else if let Kind::Custom(info) = kind {
+            for tax in self.taxonomies_of(&info.name) {
+                links.add(
+                    "wp:term",
+                    vec![("taxonomy", Value::from(tax.name.clone())), ("embeddable", Value::Bool(true))],
+                    rustpress_core::urls::add_query_arg(&self.rest_url(&format!("wp/v2/{}", tax.base)), "post", &post.id.to_string()),
                 );
             }
         }

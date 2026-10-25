@@ -96,11 +96,13 @@ pub struct RestError {
     pub message: Msg,
     pub status: u16,
     param: Option<Box<ParamError>>,
+    /// The error comes from the endpoint itself, after its permission check passed.
+    after_permission: bool,
 }
 
 impl RestError {
     pub fn new(code: &str, message: impl Into<Msg>, status: u16) -> Self {
-        Self { code: code.to_owned(), message: message.into(), status, param: None }
+        Self { code: code.to_owned(), message: message.into(), status, param: None, after_permission: false }
     }
 
     /// `rest_invalid_param` for one parameter.
@@ -119,7 +121,8 @@ impl RestError {
     /// validating parameters or from the endpoint itself. WordPress then still sends `Allow: GET`
     /// (`rest_send_allow_header()`); errors of the permission check and unknown routes have none.
     pub fn passed_permission_check(&self) -> bool {
-        !matches!(
+        self.after_permission
+            || !matches!(
             self.code.as_str(),
             "rest_no_route"
                 | "rest_forbidden_context"
@@ -133,7 +136,26 @@ impl RestError {
                 | "rest_user_invalid_id"
                 | "rest_user_cannot_view"
                 | "rest_not_logged_in"
+                | "rest_cannot_view"
+                | "rest_forbidden"
+                | "rest_cannot_read_status"
+                | "rest_status_invalid"
+                | "rest_block_type_cannot_view"
+                | "rest_cannot_view_active_theme"
+                | "rest_cannot_view_themes"
+                | "rest_cannot_view_plugins"
+                | "rest_cannot_manage_widgets"
+                | "rest_cannot_manage_templates"
+                | "rest_cannot_read_global_styles"
+                | "rest_block_directory_cannot_view"
+                | "rest_pattern_directory_cannot_view"
         )
+    }
+
+    /// Marks an error that the endpoint callback returned (WordPress then still sends `Allow`).
+    pub fn after_permission_check(mut self) -> Self {
+        self.after_permission = true;
+        self
     }
 
     pub fn to_value(&self, site: &Site) -> Value {

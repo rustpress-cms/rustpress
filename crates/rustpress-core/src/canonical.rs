@@ -143,11 +143,6 @@ fn lowercase_octets(s: &str) -> String {
     out
 }
 
-/// `is_post_type_viewable()` for the types without a registry here.
-fn public_type(post_type: &str) -> bool {
-    !matches!(post_type, "revision" | "nav_menu_item" | "customize_changeset" | "oembed_cache" | "user_request") && !post_type.starts_with("wp_")
-}
-
 const PUNCTUATION: &[&str] = &[" ", "%20", "!", "%21", "\"", "%22", "'", "%27", "(", "%28", ")", "%29", ",", "%2C", ".", "%2E", ";", "%3B", "{", "%7B", "}", "%7D", "%E2%80%9C", "%E2%80%9D"];
 
 fn punctuation_pattern() -> String {
@@ -205,7 +200,7 @@ impl Site {
 
     /// `is_post_publicly_viewable()`.
     async fn publicly_viewable(&self, post: &Post) -> Result<bool> {
-        if !public_type(&post.post_type) {
+        if !self.is_post_type_viewable(&post.post_type) {
             return Ok(false);
         }
         let status = if post.post_type == "attachment" && post.post_status == "inherit" {
@@ -230,7 +225,7 @@ impl Site {
             return Ok(None);
         }
         let post_type = q.vars.get("post_type").filter(|t| !t.is_empty());
-        if post_type.is_some_and(|t| !public_type(t)) {
+        if post_type.is_some_and(|t| !self.is_post_type_viewable(t)) {
             return Ok(None);
         }
         let num = |key: &str| q.vars.u64(key).filter(|v| *v != 0).map(|v| v as u32);
@@ -278,7 +273,7 @@ impl Site {
             let post_id = qv("p").max(qv("page_id")).max(qv("attachment_id"));
             if post_id != 0
                 && let Some(post) = self.db.post(post_id).await?
-                    && public_type(&post.post_type) && post.post_status != "auto-draft" {
+                    && self.is_post_type_viewable(&post.post_type) && post.post_status != "auto-draft" {
                         let url = join_pair(&self.permalink(&post).await?);
                         rquery = remove_args_if_not_in_url(&rquery, &["p", "page_id", "attachment_id", "pagename", "name", "post_type"], &url);
                         redirect_url = Some(url);
@@ -392,8 +387,10 @@ impl Site {
                     }
                 }
             } else if f.is_category || f.is_tag || f.is_tax {
+                let custom_vars: Vec<&str> = self.types.taxonomies.iter().map(|t| t.name.as_str()).collect();
                 let term_count = ["cat", "category_name", "tag", "term"]
                     .iter()
+                    .chain(custom_vars.iter())
                     .filter_map(|k| q.vars.get(k))
                     .map(|v| v.split([',', '+']).filter(|s| !s.is_empty()).count())
                     .sum::<usize>();
@@ -404,6 +401,9 @@ impl Site {
                             remove.extend(["category_name", "cat"]);
                         } else if f.is_tag {
                             remove.extend(["tag", "tag_id"]);
+                        } else {
+                            // A custom taxonomy has a query variable of its own.
+                            remove.push(&term.taxonomy);
                         }
                         let all_from_get = q.vars.iter().all(|(k, _)| get.has(k));
                         if all_from_get {

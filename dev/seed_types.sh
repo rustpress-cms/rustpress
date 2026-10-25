@@ -23,7 +23,7 @@ for i in 1 2 3; do
   wp post meta add "$id" isbn "978-3-16-14841$i-0" >/dev/null
 done
 parent=$(wp post create --post_type=event --post_title="Sommerfest" --post_name="sommerfest" --post_status=publish --post_author=1 --post_content="Fest im Sommer." --porcelain)
-wp post create --post_type=event --post_title="Aufbau" --post_name="aufbau" --post_parent="$parent" --post_status=publish --post_author=1 --post_content="Aufbau am Vortag." >/dev/null
+wp post create --post_type=event --post_title="Aufbau" --post_name="aufbau" --post_parent="$parent" --menu_order=1 --post_status=publish --post_author=1 --post_content="Aufbau am Vortag." >/dev/null
 wp post create --post_type=secret --post_title="Geheimnis" --post_name="geheimnis" --post_status=publish --post_author=1 --post_content="nicht oeffentlich" >/dev/null
 wp rewrite flush --hard >/dev/null 2>&1 || wp rewrite flush >/dev/null
 wp option update rustpress_seeded_types 1 >/dev/null

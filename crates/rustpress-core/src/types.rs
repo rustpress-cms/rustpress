@@ -25,7 +25,7 @@ const BUILT_IN_TAXONOMIES: [&str; 6] = ["category", "post_tag", "nav_menu", "lin
 
 /// Post types without a frontend of their own.
 pub fn is_internal_post_type(post_type: &str) -> bool {
-    matches!(post_type, "revision" | "nav_menu_item" | "customize_changeset" | "oembed_cache" | "user_request")
+    matches!(post_type, "revision" | "nav_menu_item" | "customize_changeset" | "oembed_cache" | "user_request" | "custom_css")
         || post_type.starts_with("wp_")
 }
 
@@ -51,11 +51,22 @@ pub struct PostTypeInfo {
     /// `publicly_queryable`: the type has pages of its own.
     pub queryable: bool,
     pub exclude_from_search: bool,
+    pub description: String,
+    pub menu_icon: Option<String>,
 }
 
 impl PostTypeInfo {
+    /// A type WordPress registers itself, with the details the REST API needs.
+    pub fn core(name: &str, rest_base: &str) -> Self {
+        let mut info = Self::new(name, name.to_owned(), None, false);
+        info.registered = true;
+        info.rest_base = Some(rest_base.to_owned());
+        info.show_in_rest = true;
+        info
+    }
+
     fn new(name: &str, slug: String, archive_slug: Option<String>, hierarchical: bool) -> Self {
-        Self { name: name.to_owned(), slug, archive_slug, hierarchical, label: None, singular: None, show_in_rest: false, rest_base: None, supports: None, registered: false, public: true, queryable: true, exclude_from_search: false }
+        Self { name: name.to_owned(), slug, archive_slug, hierarchical, label: None, singular: None, show_in_rest: false, rest_base: None, supports: None, registered: false, public: true, queryable: true, exclude_from_search: false, description: String::new(), menu_icon: None }
     }
 
     /// `$post_type_object->labels->name`.
@@ -87,7 +98,11 @@ impl PostTypeInfo {
 pub struct TaxonomyInfo {
     pub name: String,
     pub slug: String,
+    /// `hierarchical`: terms have parents. The rewrite rules do not say; registrations do, and the
+    /// terms themselves are the fallback.
     pub hierarchical: bool,
+    /// `rewrite['hierarchical']`: term links carry the path of the ancestors.
+    pub rewrite_hierarchical: bool,
     /// Post types that have objects in the taxonomy.
     pub object_types: Vec<String>,
     pub label: Option<String>,
@@ -96,6 +111,7 @@ pub struct TaxonomyInfo {
     pub rest_base: Option<String>,
     pub public: bool,
     pub queryable: bool,
+    pub description: String,
 }
 
 impl TaxonomyInfo {
@@ -118,6 +134,8 @@ impl TaxonomyInfo {
 pub struct Types {
     pub post_types: Vec<PostTypeInfo>,
     pub taxonomies: Vec<TaxonomyInfo>,
+    /// Post types that exist but have no pages of their own (not publicly queryable).
+    pub hidden_post_types: Vec<String>,
 }
 
 /// The text of a rewrite pattern before its first group, without the trailing slash.
@@ -132,7 +150,7 @@ fn query_of(query: &str) -> &str {
 
 impl Types {
     /// Infers the custom types that are in use from the stored rewrite rules.
-    pub fn infer(rules: &RewriteRules, used_post_types: &[String], used_taxonomies: &[String], relations: &[(String, String)]) -> Self {
+    pub fn infer(rules: &RewriteRules, used_post_types: &[String], used_taxonomies: &[String], relations: &[(String, String)], with_parents: &[String]) -> Self {
         let mut types = Self::default();
         for name in used_post_types {
             if BUILT_IN_POST_TYPES.contains(&name.as_str()) || is_internal_post_type(name) {
@@ -152,6 +170,7 @@ impl Types {
                 }
             }
             if single.is_none() && archive_slug.is_none() {
+                types.hidden_post_types.push(name.clone());
                 continue;
             }
             let (slug, hierarchical) = match single {
@@ -169,7 +188,8 @@ impl Types {
                 types.taxonomies.push(TaxonomyInfo {
                     name: name.clone(),
                     slug: literal_prefix(pattern).to_owned(),
-                    hierarchical: pattern.contains("(.+?)"),
+                    hierarchical: with_parents.contains(name),
+                    rewrite_hierarchical: pattern.contains("(.+?)"),
                     object_types: relations.iter().filter(|(t, _)| t == name).map(|(_, p)| p.clone()).collect(),
                     label: None,
                     singular: None,
@@ -177,6 +197,7 @@ impl Types {
                     rest_base: None,
                     public: true,
                     queryable: true,
+                    description: String::new(),
                 });
             }
         }
@@ -205,10 +226,12 @@ impl Types {
             if reg.taxonomy {
                 if let Some(t) = self.taxonomies.iter_mut().find(|t| t.name == reg.name) {
                     t.label = label;
+                    t.description = text("description").unwrap_or_default();
                     t.singular = singular;
                     t.show_in_rest = show_in_rest;
                     t.rest_base = rest_base;
                     t.public = flag("public", true);
+                    t.hierarchical = flag("hierarchical", t.hierarchical);
                     t.queryable = flag("publicly_queryable", t.public);
                     for object_type in &reg.object_types {
                         if !t.object_types.contains(object_type) {
@@ -218,6 +241,8 @@ impl Types {
                 }
             } else if let Some(t) = self.post_types.iter_mut().find(|t| t.name == reg.name) {
                 t.registered = true;
+                t.description = text("description").unwrap_or_default();
+                t.menu_icon = text("menu_icon");
                 t.label = label;
                 t.singular = singular;
                 t.show_in_rest = show_in_rest;
@@ -234,8 +259,20 @@ impl Types {
             }
         }
         // Types that cannot be requested on the frontend have no pages, whatever their rules say.
+        let hidden: Vec<String> = self.post_types.iter().filter(|t| !t.queryable).map(|t| t.name.clone()).collect();
+        self.hidden_post_types.extend(hidden);
         self.post_types.retain(|t| t.queryable);
         self.taxonomies.retain(|t| t.queryable);
+    }
+
+    /// `is_post_type_viewable()`: the built-in public types and the custom ones with pages. Without
+    /// rewrite rules (plain permalinks) nothing is known about custom types, and they all count.
+    pub fn is_viewable(&self, name: &str, rules_known: bool) -> bool {
+        match name {
+            "post" | "page" | "attachment" => true,
+            _ if is_internal_post_type(name) => false,
+            _ => !rules_known || self.post_type(name).is_some(),
+        }
     }
 
     pub fn post_type(&self, name: &str) -> Option<&PostTypeInfo> {
@@ -418,7 +455,7 @@ mod tests {
     #[test]
     fn registrations_fill_in_labels() {
         let r = rules(&[("buecher/([^/]+)(?:/([0-9]+))?/?$", "index.php?book=$matches[1]&page=$matches[2]")]);
-        let mut types = Types::infer(&r, &["book".to_owned()], &[], &[]);
+        let mut types = Types::infer(&r, &["book".to_owned()], &[], &[], &[]);
         types.apply(&scan_source("register_post_type( 'book', array( 'label' => 'Buecher', 'public' => true, 'show_in_rest' => true, 'supports' => array( 'title' ) ) );"));
         let book = types.post_type("book").unwrap();
         assert_eq!((book.plural_label().as_str(), book.singular_label().as_str()), ("Buecher", "Buecher"));
@@ -436,7 +473,7 @@ mod tests {
             ("genre/(.+?)/?$", "index.php?genre=$matches[1]"),
         ]);
         let names = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
-        let types = Types::infer(&r, &names(&["post", "book", "event", "secret", "wp_template"]), &names(&["category", "genre", "hidden"]), &[("genre".to_owned(), "book".to_owned())]);
+        let types = Types::infer(&r, &names(&["post", "book", "event", "secret", "wp_template"]), &names(&["category", "genre", "hidden"]), &[("genre".to_owned(), "book".to_owned())], &names(&["genre"]));
         assert_eq!(types.post_types.len(), 2);
         let book = types.post_type("book").unwrap();
         assert_eq!((book.slug.as_str(), book.archive_slug.as_deref(), book.hierarchical), ("buecher", Some("buecher"), false));
@@ -444,7 +481,7 @@ mod tests {
         assert_eq!((event.slug.as_str(), event.archive_slug.as_deref(), event.hierarchical), ("termine", Some("kalender"), true));
         assert!(types.post_type("secret").is_none());
         let genre = types.taxonomy("genre").unwrap();
-        assert_eq!((genre.slug.as_str(), genre.hierarchical), ("genre", true));
+        assert_eq!((genre.slug.as_str(), genre.hierarchical, genre.rewrite_hierarchical), ("genre", true, true));
         assert_eq!(genre.object_types, ["book"]);
         assert!(types.taxonomy("hidden").is_none());
         assert_eq!(types.public_post_types(), ["post", "page", "attachment", "book", "event"]);
