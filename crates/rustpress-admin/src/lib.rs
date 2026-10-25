@@ -10,6 +10,7 @@ pub mod list_table;
 pub mod login;
 pub mod menu;
 pub mod multipart;
+pub mod plugins;
 pub mod registry;
 pub mod screens;
 pub mod scripts;
