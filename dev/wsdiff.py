@@ -21,8 +21,9 @@ def tokens(path):
 def main():
     failed = False
     for screen in sys.argv[1:]:
-        a = tokens(os.path.join(TEMP, f'ac_ref_{screen}.html'))
-        b = tokens(os.path.join(TEMP, f'ac_rp_{screen}.html'))
+        safe = re.sub(r'[?&=/]', '_', screen)
+        a = tokens(os.path.join(TEMP, f'ac_ref_{safe}.html'))
+        b = tokens(os.path.join(TEMP, f'ac_rp_{safe}.html'))
         ops = [op for op in difflib.SequenceMatcher(None, a, b, autojunk=False).get_opcodes() if op[0] != 'equal']
         if not ops:
             print(f'same markup  {screen}')

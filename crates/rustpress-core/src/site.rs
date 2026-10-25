@@ -67,7 +67,7 @@ impl Site {
             "post" => self.trx("Posts", "post type general name"),
             "page" => self.trx("Pages", "post type general name"),
             "attachment" => self.trx("Media", "post type general name"),
-            other => self.types.post_type(other).map_or_else(|| other.to_owned(), |t| t.plural_label()),
+            other => self.types.post_type(other).or_else(|| self.types.rewrite_post_types().iter().find(|t| t.name == other)).map_or_else(|| other.to_owned(), |t| t.plural_label()),
         }
     }
 

@@ -182,7 +182,7 @@ impl Db {
     /// The authors of posts of the type, ordered by display name.
     pub async fn export_authors_of_type(&self, post_type: &str) -> Result<Vec<crate::models::User>> {
         let sql = format!(
-            "SELECT {} FROM {} WHERE ID IN (SELECT DISTINCT post_author FROM {} WHERE post_type = ? AND post_status != 'auto-draft') ORDER BY display_name ASC",
+            "SELECT {} FROM {} WHERE ID IN (SELECT DISTINCT post_author FROM {} WHERE post_type = ?) ORDER BY display_name ASC",
             crate::models::USER_COLUMNS,
             self.prefix.table("users"),
             self.prefix.table("posts")

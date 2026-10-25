@@ -52,9 +52,9 @@ fn avatar(ctx: &Ctx<'_>, email: &str, size: u64) -> String {
     format!("<img alt='' src='{}' srcset='{} 2x' class='avatar avatar-{size} photo' height='{size}' width='{size}' loading='lazy' decoding='async'/>", url(size), url(size * 2))
 }
 
-fn language_select(ctx: &Ctx<'_>, current: &str, with_site_default: bool) -> String {
+fn language_select(ctx: &Ctx<'_>, current: &str, with_site_default: bool, show_available: bool) -> String {
     let installed: Vec<&str> = ctx.env.languages.iter().map(|l| l.locale.as_str()).collect();
-    let available: Vec<&(String, String, String)> = if ctx.can("update_core") || ctx.can("install_plugins") || ctx.can("install_themes") { ctx.env.available_translations.iter().filter(|(locale, _, _)| !installed.contains(&locale.as_str())).collect() } else { Vec::new() };
+    let available: Vec<&(String, String, String)> = if show_available && (ctx.can("update_core") || ctx.can("install_plugins") || ctx.can("install_themes")) { ctx.env.available_translations.iter().filter(|(locale, _, _)| !installed.contains(&locale.as_str())).collect() } else { Vec::new() };
     let groups = !available.is_empty();
     let mut options = String::new();
     if groups {
@@ -180,7 +180,7 @@ async fn form(ctx: &Ctx<'_>, user: &User, own: bool, errors: &[String]) -> Admin
     h.push_str(&format!(
         "\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<tr class=\"user-language-wrap\">\n\t\t\t\t\t\t<th scope=\"row\">\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t<label for=\"locale\">{}<span class=\"dashicons dashicons-translation\" aria-hidden=\"true\"></span></label>\n\t\t\t\t\t\t</th>\n\t\t\t\t\t\t<td>\n\t\t\t\t\t\t\t{}\t\t\t\t\t\t</td>\n\t\t\t\t\t</tr>\n\t\t\t\t\t\n\t\t\t\t\t\n\t\t\t\t</table>\n\t\t\t\t\n",
         tr("Language"),
-        language_select(ctx, &locale, true)
+        language_select(ctx, &locale, true, true)
     ));
 
     // Name
@@ -536,7 +536,7 @@ pub async fn user_new(ctx: &Ctx<'_>) -> AdminResponse {
     h.push_str(&format!("\t\t<tr class=\"form-field\">\n\t\t<th scope=\"row\"><label for=\"first_name\">{} </label></th>\n\t\t<td><input name=\"first_name\" type=\"text\" id=\"first_name\" value=\"{}\" /></td>\n\t</tr>\n", tr("First Name"), esc_attr(&submitted("first_name"))));
     h.push_str(&format!("\t<tr class=\"form-field\">\n\t\t<th scope=\"row\"><label for=\"last_name\">{} </label></th>\n\t\t<td><input name=\"last_name\" type=\"text\" id=\"last_name\" value=\"{}\" /></td>\n\t</tr>\n", tr("Last Name"), esc_attr(&submitted("last_name"))));
     h.push_str(&format!("\t<tr class=\"form-field\">\n\t\t<th scope=\"row\"><label for=\"url\">{}</label></th>\n\t\t<td><input name=\"url\" type=\"url\" id=\"url\" class=\"code\" value=\"{}\" /></td>\n\t</tr>\n", tr("Website"), esc_attr(&submitted("url"))));
-    h.push_str(&format!("\t\t\t<tr class=\"form-field user-language-wrap\">\n\t\t\t<th scope=\"row\">\n\t\t\t\t<label for=\"locale\">\n\t\t\t\t\t\t\t\t\t\t{}<span class=\"dashicons dashicons-translation\" aria-hidden=\"true\"></span>\n\t\t\t\t</label>\n\t\t\t</th>\n\t\t\t<td>\n\t\t\t\t{}\t\t\t</td>\n\t\t</tr>\n", tr("Language"), language_select(ctx, "site-default", true)));
+    h.push_str(&format!("\t\t\t<tr class=\"form-field user-language-wrap\">\n\t\t\t<th scope=\"row\">\n\t\t\t\t<label for=\"locale\">\n\t\t\t\t\t\t\t\t\t\t{}<span class=\"dashicons dashicons-translation\" aria-hidden=\"true\"></span>\n\t\t\t\t</label>\n\t\t\t</th>\n\t\t\t<td>\n\t\t\t\t{}\t\t\t</td>\n\t\t</tr>\n", tr("Language"), language_select(ctx, "site-default", true, false)));
     h.push_str(&format!(
         "\t\t<tr class=\"form-field form-required user-pass1-wrap\">\n\t\t<th scope=\"row\">\n\t\t\t<label for=\"pass1\">\n\t\t\t\t{}\t\t\t\t<span class=\"description hide-if-js\">{}</span>\n\t\t\t</label>\n\t\t</th>\n\t\t<td>\n\t\t\t<input type=\"hidden\" value=\" \" /><!-- #24364 workaround -->\n\t\t\t<button type=\"button\" class=\"button wp-generate-pw hide-if-no-js\">{}</button>\n\t\t\t<div class=\"wp-pwd\">\n\t\t\t\t\t\t\t\t<div class=\"password-input-wrapper\">\n\t\t\t\t\t<input type=\"password\" name=\"pass1\" id=\"pass1\" class=\"regular-text ltr\" autocomplete=\"new-password\" spellcheck=\"false\" data-reveal=\"1\" data-pw=\"{}\" aria-describedby=\"pass-strength-result\" />\n\t\t\t\t\t<div style=\"display:none\" id=\"pass-strength-result\" aria-live=\"polite\"></div>\n\t\t\t\t</div>\n\t\t\t\t<button type=\"button\" class=\"button wp-hide-pw user-new-password-toggle hide-if-no-js\" data-toggle=\"0\" aria-label=\"{}\">\n\t\t\t\t\t<span class=\"dashicons dashicons-hidden\" aria-hidden=\"true\"></span>\n\t\t\t\t\t<span class=\"text\">{}</span>\n\t\t\t\t</button>\n\t\t\t</div>\n\t\t</td>\n\t</tr>\n",
         tr("Password"),

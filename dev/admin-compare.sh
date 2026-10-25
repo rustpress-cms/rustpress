@@ -11,8 +11,9 @@ norm() { python3 "$(dirname "$0")/admin_norm.py"; }
 login ref 8080; login rp 3001
 rc=0
 for screen in "$@"; do
-  curl -s -b "$T/ac_ref.txt" "http://localhost:8080/wp-admin/$screen" | norm > "$T/ac_ref_$screen.html"
-  curl -s -b "$T/ac_rp.txt" "http://localhost:3001/wp-admin/$screen" | norm > "$T/ac_rp_$screen.html"
-  if diff -q "$T/ac_ref_$screen.html" "$T/ac_rp_$screen.html" > /dev/null; then echo "identical  $screen"; else echo "DIFFERENT  $screen ($(diff "$T/ac_ref_$screen.html" "$T/ac_rp_$screen.html" | grep -c '^[<>]') lines)"; rc=1; fi
+  safe=$(printf %s "$screen" | tr '?&=/' '____')
+  curl -s -b "$T/ac_ref.txt" "http://localhost:8080/wp-admin/$screen" | norm > "$T/ac_ref_$safe.html"
+  curl -s -b "$T/ac_rp.txt" "http://localhost:3001/wp-admin/$screen" | norm > "$T/ac_rp_$safe.html"
+  if diff -q "$T/ac_ref_$safe.html" "$T/ac_rp_$safe.html" > /dev/null; then echo "identical  $screen"; else echo "DIFFERENT  $screen ($(diff "$T/ac_ref_$safe.html" "$T/ac_rp_$safe.html" | grep -c '^[<>]') lines)"; rc=1; fi
 done
 exit $rc
