@@ -1,5 +1,5 @@
 use sqlx::AssertSqlSafe;
-use crate::models::{USER_COLUMNS, User};
+use crate::models::{AUTH_USER_COLUMNS, AuthUser, USER_COLUMNS, User};
 use crate::{Db, Result};
 
 impl Db {
@@ -40,5 +40,27 @@ impl Db {
     pub async fn user_meta(&self, user_id: u64, key: &str) -> Result<Option<String>> {
         let sql = format!("SELECT meta_value FROM {} WHERE user_id = ? AND meta_key = ? ORDER BY umeta_id LIMIT 1", self.prefix.table("usermeta"));
         Ok(sqlx::query_scalar::<_, Option<String>>(AssertSqlSafe(sql)).bind(user_id).bind(key).fetch_optional(&self.pool).await?.flatten())
+    }
+}
+impl Db {
+    /// The table prefix (`wp_`), for option and meta keys that contain it.
+    pub fn table_prefix(&self) -> &str {
+        self.prefix.as_str()
+    }
+
+    /// A user with the password hash, for signing in. Only the authentication code asks for this.
+    pub async fn auth_user_by_login(&self, login: &str) -> Result<Option<AuthUser>> {
+        let sql = format!("SELECT {AUTH_USER_COLUMNS} FROM {} WHERE user_login = ?", self.prefix.table("users"));
+        Ok(sqlx::query_as(AssertSqlSafe(sql)).bind(login).fetch_optional(&self.pool).await?)
+    }
+
+    pub async fn auth_user_by_id(&self, id: u64) -> Result<Option<AuthUser>> {
+        let sql = format!("SELECT {AUTH_USER_COLUMNS} FROM {} WHERE ID = ?", self.prefix.table("users"));
+        Ok(sqlx::query_as(AssertSqlSafe(sql)).bind(id).fetch_optional(&self.pool).await?)
+    }
+
+    pub async fn auth_user_by_email(&self, email: &str) -> Result<Option<AuthUser>> {
+        let sql = format!("SELECT {AUTH_USER_COLUMNS} FROM {} WHERE user_email = ?", self.prefix.table("users"));
+        Ok(sqlx::query_as(AssertSqlSafe(sql)).bind(email).fetch_optional(&self.pool).await?)
     }
 }

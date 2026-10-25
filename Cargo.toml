@@ -4,6 +4,7 @@ members = [
     "crates/rustpress-phpser",
     "crates/rustpress-db",
     "crates/rustpress-core",
+    "crates/rustpress-auth",
     "crates/rustpress-blocks",
     "crates/rustpress-theme",
     "crates/rustpress-rest",
@@ -20,12 +21,18 @@ license = "GPL-2.0-or-later"
 rustpress-phpser = { path = "crates/rustpress-phpser" }
 rustpress-db = { path = "crates/rustpress-db" }
 rustpress-core = { path = "crates/rustpress-core" }
+rustpress-auth = { path = "crates/rustpress-auth" }
 rustpress-blocks = { path = "crates/rustpress-blocks" }
 rustpress-theme = { path = "crates/rustpress-theme" }
 rustpress-rest = { path = "crates/rustpress-rest" }
 rustpress-server = { path = "crates/rustpress-server" }
 
 axum = "0.8"
+base64 = "0.22"
+bcrypt = "0.17"
+hmac = "0.12"
+md-5 = "0.10"
+subtle = "2"
 chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
 chrono-tz = "0.10"
 fancy-regex = "0.20"

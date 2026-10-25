@@ -1,0 +1,44 @@
+{
+    "siteurl": "http:\/\/localhost:8080",
+    "cookiehash": "37d007a56d816107ce5b52c10342db37",
+    "now": 1792914802,
+    "password": "rustpress-dev",
+    "hash_wp": "$wp$2y$10$zE8wftNgJizG3kbfGE6c3.Hjt\/edB\/ykD1iRcDC9QtkCkfvKMbFwi",
+    "hash_phpass": "$P$BkA7\/1qTFRl2i\/he3\/UrIIueD3SsoC0",
+    "hash_md5": "555c833bcb353e8d6aa1eeb6cb46eae1",
+    "hash_bcrypt": "$2y$10$cn\/1uA7c1fh01ZGw0lrKvOM2l8aVqgI8zReZaeCRAqEBISeX\/td4q",
+    "users": [
+        {
+            "id": 3,
+            "login": "rpadmin",
+            "stored_hash_prefix": "$wp$",
+            "expiration": 1793174003,
+            "token": "zKSGN5xQaOmJIabVtv8dvLU5SayvkZRLvBCIw9xgH1w",
+            "cookies": {
+                "auth": "rpadmin|1793174003|zKSGN5xQaOmJIabVtv8dvLU5SayvkZRLvBCIw9xgH1w|878954d151827f4b73fc56ab81e2e3922bdd3b9a3f13d750b36508aab1ec8c71",
+                "secure_auth": "rpadmin|1793174003|zKSGN5xQaOmJIabVtv8dvLU5SayvkZRLvBCIw9xgH1w|6dcd7c4227609549a4bf3a2d0afea40f68f90f67452fb5479ac72c33924f4ef2",
+                "logged_in": "rpadmin|1793174003|zKSGN5xQaOmJIabVtv8dvLU5SayvkZRLvBCIw9xgH1w|46d82731e2df457e103431b4783fa4fc78f1a42d4d432fd3794d7dee5488377d"
+            },
+            "nonces": {
+                "wp_rest": "c7399ac02f",
+                "other": "85cdcb4e1d"
+            }
+        },
+        {
+            "id": 4,
+            "login": "rpeditor",
+            "stored_hash_prefix": "$wp$",
+            "expiration": 1793174003,
+            "token": "qP4vQGyBjnQAVbOKrgDu457X2N98qIYaqcXPD9ts8WV",
+            "cookies": {
+                "auth": "rpeditor|1793174003|qP4vQGyBjnQAVbOKrgDu457X2N98qIYaqcXPD9ts8WV|b2429ee54975b9be82b2b8130e0ff9669bf0017dadc6c977e1b155cd943a3dd4",
+                "secure_auth": "rpeditor|1793174003|qP4vQGyBjnQAVbOKrgDu457X2N98qIYaqcXPD9ts8WV|5117a841585dbdc7cd6a951a39680abe831c9960695d1f65bec9e50a3a1b84d7",
+                "logged_in": "rpeditor|1793174003|qP4vQGyBjnQAVbOKrgDu457X2N98qIYaqcXPD9ts8WV|32d41398536113fd15054aac076f9dac9e9880a9f8bf67c540bf52b1315e2a56"
+            },
+            "nonces": {
+                "wp_rest": "8f1b15cacd",
+                "other": "de6412254e"
+            }
+        }
+    ]
+}

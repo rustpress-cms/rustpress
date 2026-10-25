@@ -1,0 +1,22 @@
+[package]
+name = "rustpress-auth"
+description = "Passwords, cookies, sessions, nonces and capabilities, compatible with WordPress"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[dependencies]
+rustpress-db.workspace = true
+rustpress-phpser.workspace = true
+base64.workspace = true
+bcrypt.workspace = true
+hmac.workspace = true
+md-5.workspace = true
+regex.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+subtle.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true

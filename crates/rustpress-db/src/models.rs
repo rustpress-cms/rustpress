@@ -75,6 +75,26 @@ pub struct User {
 pub(crate) const USER_COLUMNS: &str = "ID, user_login, user_nicename, user_email, user_url, \
     CAST(user_registered AS CHAR) AS user_registered, display_name";
 
+/// A user row including the password hash. `Debug` leaves the hash out.
+#[derive(Clone, FromRow)]
+pub struct AuthUser {
+    #[sqlx(rename = "ID")]
+    pub id: u64,
+    pub user_login: String,
+    pub user_pass: String,
+    pub user_nicename: String,
+    pub user_email: String,
+    pub display_name: String,
+}
+
+impl std::fmt::Debug for AuthUser {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AuthUser").field("id", &self.id).field("user_login", &self.user_login).finish_non_exhaustive()
+    }
+}
+
+pub(crate) const AUTH_USER_COLUMNS: &str = "ID, user_login, user_pass, user_nicename, user_email, display_name";
+
 #[derive(Debug, Clone, FromRow)]
 pub struct Comment {
     #[sqlx(rename = "comment_ID")]

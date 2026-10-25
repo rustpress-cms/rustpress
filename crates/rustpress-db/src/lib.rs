@@ -21,7 +21,7 @@ use sqlx::mysql::{MySqlPool, MySqlPoolOptions};
 
 pub use archives::{ArchiveKind, ArchiveRow};
 pub use comments::{CommentOrder, CommentQuery};
-pub use models::{Comment, Post, PostMeta, Term, User};
+pub use models::{AuthUser, Comment, Post, PostMeta, Term, User};
 pub use posts::{Order, OrderBy, PostQuery};
 
 #[derive(Debug, thiserror::Error)]
@@ -46,6 +46,10 @@ impl Prefix {
     }
 
     /// `prefix.table("posts")` is `wp_posts` for the default prefix.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
     pub(crate) fn table(&self, name: &str) -> String {
         format!("`{}{name}`", self.0)
     }
