@@ -140,6 +140,10 @@ pub struct Types {
     pub taxonomies: Vec<TaxonomyInfo>,
     /// Post types that exist but have no pages of their own (not publicly queryable).
     pub hidden_post_types: Vec<String>,
+    /// Every type with rewrite rules in registration order, also the ones without pages of their own: the rules of a
+    /// changed permalink structure are built from them. Empty until [Types::apply] ran.
+    rewrite_post_types: Vec<PostTypeInfo>,
+    rewrite_taxonomies: Vec<TaxonomyInfo>,
 }
 
 /// The text of a rewrite pattern before its first group, without the trailing slash.
@@ -300,6 +304,8 @@ impl Types {
                 t.queryable = flag("publicly_queryable", public);
             }
         }
+        self.rewrite_post_types = self.post_types.clone();
+        self.rewrite_taxonomies = self.taxonomies.clone();
         // Types that cannot be requested on the frontend have no pages, whatever their rules say.
         let hidden: Vec<String> = self.post_types.iter().filter(|t| !t.queryable).map(|t| t.name.clone()).collect();
         self.hidden_post_types.extend(hidden);
@@ -315,6 +321,16 @@ impl Types {
             _ if is_internal_post_type(name) => false,
             _ => self.post_type(name).is_some() || (!rules_known && !self.hidden_post_types.iter().any(|h| h == name)),
         }
+    }
+
+    /// The post types that have rewrite rules, with the ones that have no pages.
+    pub fn rewrite_post_types(&self) -> &[PostTypeInfo] {
+        if self.rewrite_post_types.is_empty() { &self.post_types } else { &self.rewrite_post_types }
+    }
+
+    /// The taxonomies that have rewrite rules, with the ones that have no pages.
+    pub fn rewrite_taxonomies(&self) -> &[TaxonomyInfo] {
+        if self.rewrite_taxonomies.is_empty() { &self.taxonomies } else { &self.rewrite_taxonomies }
     }
 
     pub fn post_type(&self, name: &str) -> Option<&PostTypeInfo> {

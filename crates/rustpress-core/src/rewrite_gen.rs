@@ -235,7 +235,7 @@ impl Generator<'_> {
                         page = true;
                     }
                 }
-                if !post && let Some(ptype) = self.input.types.post_types.iter().find(|t| struct_.contains(&format!("%{}%", t.name))) {
+                if !post && let Some(ptype) = self.input.types.rewrite_post_types().iter().find(|t| struct_.contains(&format!("%{}%", t.name))) {
                     post = true;
                     page = ptype.hierarchical;
                 }
@@ -360,18 +360,18 @@ pub fn rewrite_rules(input: &RewriteInput<'_>) -> Vec<(String, String)> {
 
     // The built-in taxonomies: `create_initial_taxonomies()`.
     g.tags.add("%category%", "(.+?)", "category_name=");
-    let category_base = input.category_base.trim_matches('/');
-    let tag_base = input.tag_base.trim_matches('/');
+    let category_base = taxonomy_base(input.category_base);
+    let tag_base = taxonomy_base(input.tag_base);
     let using_index = g.using_index_permalinks();
-    extra.push(g.permastruct("category", if category_base.is_empty() { "category" } else { category_base }, category_base.is_empty() || using_index, EP_CATEGORIES, true));
+    extra.push(g.permastruct("category", if category_base.is_empty() { "category" } else { &category_base }, category_base.is_empty() || using_index, EP_CATEGORIES, true));
     g.tags.add("%post_tag%", "([^/]+)", "tag=");
-    extra.push(g.permastruct("post_tag", if tag_base.is_empty() { "tag" } else { tag_base }, tag_base.is_empty() || using_index, EP_TAGS, true));
+    extra.push(g.permastruct("post_tag", if tag_base.is_empty() { "tag" } else { &tag_base }, tag_base.is_empty() || using_index, EP_TAGS, true));
     g.tags.add("%post_format%", "([^/]+)", "post_format=");
     extra.push(g.permastruct("post_format", "type", true, EP_NONE, true));
 
     // Custom post types: `WP_Post_Type::add_rewrite_rules()`.
     let mut type_permastructs = Vec::new();
-    for ptype in &input.types.post_types {
+    for ptype in input.types.rewrite_post_types() {
         let (slug, with_front) = g.without_old_front(&ptype.slug);
         let slug = slug.trim_matches('/').to_owned();
         let regex = if ptype.hierarchical { "(.+?)" } else { "([^/]+)" };
@@ -396,7 +396,7 @@ pub fn rewrite_rules(input: &RewriteInput<'_>) -> Vec<(String, String)> {
     extra.extend(type_permastructs);
 
     // Custom taxonomies: `WP_Taxonomy::add_rewrite_rules()`.
-    for taxonomy in &input.types.taxonomies {
+    for taxonomy in input.types.rewrite_taxonomies() {
         let (slug, with_front) = g.without_old_front(&taxonomy.slug);
         let slug = slug.trim_matches('/').to_owned();
         let regex = if taxonomy.rewrite_hierarchical { "(.+?)" } else { "([^/]+)" };
@@ -447,6 +447,14 @@ pub fn rewrite_rules(input: &RewriteInput<'_>) -> Vec<(String, String)> {
     let mut rules = top.merge(robots).merge(favicon).merge(sitemap).merge(deprecated).merge(registration).merge(root_rewrite).merge(comments_rewrite).merge(search_rewrite).merge(author_rewrite).merge(date_rewrite);
     rules = if verbose_page_rules { rules.merge(page_rewrite).merge(post_rewrite) } else { rules.merge(post_rewrite).merge(page_rewrite) };
     rules.0
+}
+
+/// `_wp_filter_taxonomy_base()`, the filter on `get_option( 'category_base' )` and `'tag_base'`.
+pub fn taxonomy_base(base: &str) -> String {
+    if base.is_empty() {
+        return String::new();
+    }
+    base.strip_prefix("/index.php/").unwrap_or(base).trim_matches('/').to_owned()
 }
 
 /// The option value: `serialize( array( regex => query ) )`.

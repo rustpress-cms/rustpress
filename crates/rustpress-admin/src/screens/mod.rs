@@ -30,6 +30,7 @@ pub mod general;
 pub mod notices;
 pub mod options;
 pub mod pages;
+mod permalink;
 pub mod post_edit;
 pub mod plugins;
 mod inline_edit;
@@ -258,6 +259,7 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse
         "tools.php" => pages::tools(&ctx).await,
         "import.php" => pages::import(&ctx).await,
         "export.php" => export::page(&ctx).await,
+        "options-permalink.php" => permalink::page(&ctx).await,
         "options-privacy.php" => privacy::page(&ctx).await,
         "themes.php" => themes::page(&ctx).await,
         "site-editor.php" => site_editor::page(&ctx).await,
