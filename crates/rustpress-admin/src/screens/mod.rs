@@ -16,8 +16,11 @@ use crate::registry::LoaderEnv;
 
 pub mod ajax;
 pub mod ajax_comments;
+pub mod ajax_media;
 pub mod ajax_terms;
 pub mod comments;
+pub mod media_lib;
+pub mod media_ui;
 pub mod common;
 pub mod dashboard;
 pub mod editor;
@@ -62,6 +65,8 @@ pub struct AdminRequest {
     pub file: String,
     pub query: Vec<(String, String)>,
     pub form: Vec<(String, String)>,
+    /// Uploaded files of a multipart form.
+    pub files: Vec<crate::multipart::FilePart>,
     pub cookies: Vec<(String, String)>,
     /// `$_SERVER['REQUEST_URI']`: path and query string.
     pub request_uri: String,
@@ -201,7 +206,7 @@ pub fn die(env: &AdminEnv<'_>, status: u16, title: &str, message: &str) -> Admin
 
 /// Handles a request to a file in `wp-admin`.
 pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse {
-    if request.file == "admin-ajax.php" {
+    if request.file == "admin-ajax.php" || request.file == "async-upload.php" {
         return ajax::handle(env, request).await;
     }
     // The signed-in user: the `auth` cookie of this connection's scheme.
@@ -228,6 +233,8 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse
         "options.php" => options::handle(&ctx).await,
         "edit-tags.php" => terms::page(&ctx).await,
         "term.php" => terms::edit_page(&ctx).await,
+        "upload.php" => media_lib::upload_php(&ctx).await,
+        "media-new.php" => media_lib::media_new(&ctx).await,
         "edit-comments.php" => comments::page(&ctx).await,
         "comment.php" => comments::comment_php(&ctx).await,
         "users.php" => users::page(&ctx).await,

@@ -165,10 +165,10 @@ async fn admin_route(app: &Arc<App>, request: Request<Body>) -> std::result::Res
     }
     let request_uri = request.uri().path_and_query().map(|p| p.as_str().to_owned()).unwrap_or_default();
     let (parts, body) = request.into_parts();
-    let bytes = axum::body::to_bytes(body, 1024 * 1024).await.unwrap_or_default();
+    let bytes = axum::body::to_bytes(body, 256 * 1024 * 1024).await.unwrap_or_default();
     let body_text = String::from_utf8_lossy(&bytes).into_owned();
     if let Some(file) = admin_file {
-        let response = crate::admin::admin_page(&loaded, &app.config, app.writer.as_ref(), &file, post, &request_uri, &query, &body_text, &parts.headers).await;
+        let response = crate::admin::admin_page(&loaded, &app.config, app.writer.as_ref(), &file, post, &request_uri, &query, &bytes, &parts.headers).await;
         if post {
             app.reload_now().await;
         }

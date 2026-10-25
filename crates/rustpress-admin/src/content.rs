@@ -7,6 +7,7 @@ use rustpress_core::slug::sanitize_title;
 use rustpress_db::{Db, Post, SlugScope, Val, Writer};
 use rustpress_phpser::{Key, Value};
 
+mod attachments;
 mod comments;
 mod terms;
 mod users;

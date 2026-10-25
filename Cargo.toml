@@ -52,5 +52,10 @@ toml = "1"
 tower = { version = "0.5", features = ["util"] }
 tower-http = { version = "0.6", features = ["fs", "trace"] }
 http-body-util = "0.1"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "webp"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Image work and the other dependencies are too slow without optimization when the server runs from a debug build.
+[profile.dev.package."*"]
+opt-level = 2

@@ -196,7 +196,7 @@ pub async fn login_page(loaded: &Loaded, writer: Option<&rustpress_db::Writer>, 
 
 /// A file in `wp-admin` (`index.php`, `options-general.php`, ...).
 #[allow(clippy::too_many_arguments)]
-pub async fn admin_page(loaded: &Loaded, config: &Config, writer: Option<&rustpress_db::Writer>, file: &str, method_post: bool, request_uri: &str, query: &str, body: &str, headers: &HeaderMap) -> Response<Body> {
+pub async fn admin_page(loaded: &Loaded, config: &Config, writer: Option<&rustpress_db::Writer>, file: &str, method_post: bool, request_uri: &str, query: &str, body: &[u8], headers: &HeaderMap) -> Response<Body> {
     let Some(parts) = &loaded.admin else { return plain(StatusCode::NOT_FOUND, "Not Found") };
     let themes = config.wp_root.join("wp-content").join("themes");
     let block_theme = [&loaded.site.settings.stylesheet, &loaded.site.settings.template].iter().any(|t| themes.join(t.as_str()).join("templates").join("index.html").is_file());
@@ -213,11 +213,20 @@ pub async fn admin_page(loaded: &Loaded, config: &Config, writer: Option<&rustpr
         available_translations: Vec::new(),
         block_theme,
     };
+    let content_type = headers.get(header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).unwrap_or_default();
+    let (form, files) = if !method_post {
+        (Vec::new(), Vec::new())
+    } else if let Some(boundary) = rustpress_admin::multipart::boundary(content_type) {
+        rustpress_admin::multipart::parse(&boundary, body)
+    } else {
+        (pairs_of(&String::from_utf8_lossy(body)), Vec::new())
+    };
     let request = rustpress_admin::screens::AdminRequest {
         post: method_post,
         file: file.to_owned(),
         query: pairs_of(query),
-        form: if method_post { pairs_of(body) } else { Vec::new() },
+        form,
+        files,
         cookies: cookies_of(headers),
         request_uri: request_uri.to_owned(),
         remote_addr: None,

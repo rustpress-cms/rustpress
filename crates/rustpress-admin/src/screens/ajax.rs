@@ -98,7 +98,7 @@ async fn autosave(env: &AdminEnv<'_>, user: &CurrentUser, token: &str, fields: &
 
 /// Handles a request to `admin-ajax.php`.
 pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse {
-    let action = request.request("action").unwrap_or_default().to_owned();
+    let action = if request.file == "async-upload.php" { "async-upload".to_owned() } else { request.request("action").unwrap_or_default().to_owned() };
     let (scheme, name) = if env.https { (Scheme::SecureAuth, env.auth.cookie_name(Scheme::SecureAuth)) } else { (Scheme::Auth, env.auth.cookie_name(Scheme::Auth)) };
     let session = match request.cookie(&name) {
         Some(cookie) => env.auth.validate_cookie(env.db, cookie, scheme, env.now, false).await.ok().flatten(),
@@ -223,6 +223,7 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse
         }
         "add-tag" | "inline-save-tax" | "delete-tag" => super::ajax_terms::handle(env, request, &user, &session.token, &action).await,
         "dim-comment" | "delete-comment" | "replyto-comment" | "edit-comment" => super::ajax_comments::handle(env, request, &user, &session.token, &action).await,
+        "query-attachments" | "get-attachment" | "save-attachment" | "delete-post" | "upload-attachment" | "async-upload" | "set-attachment-thumbnail" => super::ajax_media::handle(env, request, &user, &session.token, &action).await,
         "date_format" | "time_format" => {
             let format = rustpress_core::formatting::strip_tags(request.post_field("date").unwrap_or_default());
             text(200, &env.site.date(&format, env.now))

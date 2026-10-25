@@ -141,6 +141,12 @@ pub struct Assets {
     pub head: String,
     /// Printed after the scripts of the footer (`admin_print_footer_scripts`, late).
     pub footer: String,
+    /// Printed before the scripts of the footer (`admin_footer`: the media templates).
+    pub pre_footer: String,
+    /// `wp_localize_script()`: `(handle, object name, data)`.
+    pub localize: Vec<(String, String, serde_json::Value)>,
+    /// `wp_add_inline_script()`: `(handle, code, position)`.
+    pub inline: Vec<(String, String, String)>,
 }
 
 /// `wp-admin/admin-header.php` to `admin-footer.php` around `content` (the inside of `.wrap`, with
@@ -159,6 +165,13 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
 
     // Styles of the head.
     let mut styles = default_styles(&env.loader);
+    // The styles a screen asks for (`wp_enqueue_media()`) are enqueued before `admin-header.php` adds its own.
+    if !assets.styles.is_empty() {
+        styles.enqueue("admin-bar");
+        for handle in &assets.styles {
+            styles.enqueue(handle);
+        }
+    }
     for handle in [
         "dashicons", "admin-bar", "common", "forms", "admin-menu", "dashboard", "list-tables", "edit", "revisions", "media", "themes", "about", "nav-menus", "wp-pointer", "widgets", "site-icon", "l10n", "wp-base-styles", "wp-tooltip", "buttons",
         "wp-auth-check", "wp-theme", "wp-components", "wp-commands",
@@ -181,6 +194,12 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
     scripts.enqueue("utils");
     for handle in ["common", "admin-bar", "svg-painter", "heartbeat", "wp-auth-check"] {
         scripts.enqueue(handle);
+    }
+    for (handle, object, data) in &assets.localize {
+        scripts.localize(handle, object, data);
+    }
+    for (handle, code, position) in &assets.inline {
+        scripts.add_inline_script(handle, code, position);
     }
     for handle in &assets.scripts {
         scripts.enqueue(handle);
@@ -271,6 +290,7 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
         again = tr("Please log in again."),
         note = tr("The login page will open in a new tab. After logging in you can close it and return to this page.")
     ));
+    out.push_str(&assets.pre_footer);
     out.push_str(&footer_scripts);
     out.push_str(&assets.footer);
     out.push_str("\n</body>\n</html>");

@@ -1,7 +1,7 @@
 # Screenshot of a wp-admin page of the dev server (:3001) or the reference (:8080, -Ref) with headless Edge, signed
 # in as rpadmin (cookies are set through the DevTools protocol).
 #   dev/shot.ps1 -Page options-general.php -Out C:\path\shot.png [-Ref] [-Width 1400] [-Height 1000] [-Full]
-param([string]$Page, [string]$Out, [switch]$Ref, [int]$Width = 1400, [int]$Height = 1000, [switch]$Full)
+param([string]$Page, [string]$Out, [switch]$Ref, [int]$Width = 1400, [int]$Height = 1000, [switch]$Full, [int]$Wait = 2)
 $port = if ($Ref) { 8080 } else { 3001 }
 $name = if ($Ref) { 'ref' } else { 'rp' }
 
@@ -66,7 +66,7 @@ try {
     [void](Receive-Until $script:id $null 5)
     [void](Send-Cdp 'Page.navigate' @{ url = "http://localhost:$port/wp-admin/$Page" })
     [void](Receive-Until $null 'Page.loadEventFired' 40)
-    Start-Sleep -Seconds 2
+    Start-Sleep -Seconds $Wait
     $params = @{ format = 'png' }
     if ($Full) {
         $i = Send-Cdp 'Page.getLayoutMetrics' @{}
