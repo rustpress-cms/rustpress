@@ -435,7 +435,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     let mut custom = String::new();
     const CORE_TYPES: &[&str] = &["post", "page", "attachment", "wp_block", "wp_template", "wp_template_part", "wp_navigation", "wp_global_styles", "wp_font_family", "wp_font_face"];
     for name in exportable_types(ctx).await.iter().filter(|n| !CORE_TYPES.contains(&n.as_str())) {
-        let label = ctx.site().types.post_types.iter().find(|t| &t.name == name).and_then(|t| t.label.clone()).unwrap_or_else(|| name.clone());
+        let label = ctx.site().types.post_type(name).or_else(|| ctx.site().types.rewrite_post_types().iter().find(|t| &t.name == name)).and_then(|t| t.label.clone()).unwrap_or_else(|| name.clone());
         custom.push_str(&format!("<p><label><input type=\"radio\" name=\"content\" value=\"{}\" /> {}</label></p>
 ", esc_attr(name), esc_html(&label)));
     }
