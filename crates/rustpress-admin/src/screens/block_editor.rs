@@ -397,6 +397,23 @@ pub(super) fn block_styles_script(ctx: &Ctx<'_>) -> String {
 ")
 }
 
+/// What the editors print in the head besides their styles: the inline CSS of the block styles of the theme (twice, as
+/// WordPress registers it twice) and the custom properties of the global styles.
+pub(super) fn editor_head_styles(ctx: &Ctx<'_>, assets: &mut Assets) {
+    let env = ctx.env;
+    for _ in 0..2 {
+        for code in env.theme.registered_block_style_inline_styles() {
+            assets.inline_styles.push(("wp-edit-blocks".into(), code));
+        }
+    }
+    let global = rustpress_theme::global_styles::GlobalStyles::new(&env.theme.json, env.registry);
+    let (variables, _, _) = global.editor_stylesheets();
+    if !variables.is_empty() {
+        assets.inline_styles.push(("global-styles-css-custom-properties".into(), variables));
+        assets.styles.push("global-styles-css-custom-properties".into());
+    }
+}
+
 pub(super) async fn shared_inline(ctx: &Ctx<'_>, assets: &mut Assets, preloaded: &Value) {
     let site = ctx.site();
     let root = site.site_url("wp-json/");
@@ -471,10 +488,12 @@ pub async fn render_editor(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo) -> Admin
         scripts: ["heartbeat", "wp-edit-post", "media-editor", "media-audiovideo", "mce-view", "image-edit", "imgareaselect", "quicktags", "wplink", "jquery-ui-autocomplete", "thickbox", "media-upload", "wp-block-styles", "wp-block-directory", "wp-format-library"].iter().map(|s| (*s).to_owned()).collect(),
         editor_modules: true,
         no_emoji: true,
-        styles: ["media-views", "editor-buttons", "wp-edit-post", "wp-format-library", "wp-block-directory", "wp-edit-blocks", "wp-commands"].iter().map(|s| (*s).to_owned()).collect(),
+        styles: ["media-views", "editor-buttons", "wp-edit-post", "wp-block-directory", "wp-format-library", "wp-edit-blocks", "wp-commands"].iter().map(|s| (*s).to_owned()).collect(),
+        head_early: "\t<script>\n\t\tif ( typeof performance !== 'undefined' && performance.navigation && performance.navigation.type === 2 ) {\n\t\t\tdocument.location.reload( true );\n\t\t}\n\t</script>\n".into(),
         ..Default::default()
     };
     super::media_ui::enqueue(ctx, &mut assets, post.id).await;
+    editor_head_styles(ctx, &mut assets);
     assets.inline.push(("wp-block-styles".into(), block_styles_script(ctx), "after".into()));
     // Post locks: the heartbeat checks every ten seconds, and the meta box loader nonces are renewed.
     assets.inline.push(("heartbeat".into(), "jQuery( function() {
@@ -528,10 +547,10 @@ pub async fn render_editor(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo) -> Admin
         referer = esc_url(&ctx.request.request_uri),
         no_js = sprintf(&tr("The block editor requires JavaScript. Please enable JavaScript in your browser settings, or install the <a href=\"%s\">Classic Editor plugin</a>."), &[&classic_link]),
     );
-    let title = sprintf(&tr("Edit %s &#8220;%s&#8221;"), &[&info.singular, &esc_html(&post.post_title)]);
+    let title = if is_new { heading.clone() } else { sprintf(&tr("Edit %s &#8220;%s&#8221;"), &[&info.singular, &esc_html(&post.post_title)]) };
     let view = if post.post_status == "auto-draft" { None } else { site.permalink(post).await.ok().map(|url| (sprintf(&tr("View %s"), &[&info.singular]), url)) };
     let screen = Screen {
-        file: "post.php".into(),
+        file: if is_new { "post-new.php".into() } else { "post.php".into() },
         parent_file: if post.post_type == "post" { "edit.php".into() } else { format!("edit.php?post_type={}", post.post_type) },
         submenu_file: Some(match (post.post_status == "auto-draft", post.post_type == "post") {
             (true, true) => "post-new.php".into(),
@@ -545,6 +564,7 @@ pub async fn render_editor(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo) -> Admin
         view_item: view,
         fullscreen: true,
         body_classes: vec!["block-editor-page".into(), "wp-embed-responsive".into()],
+        ..Default::default()
     };
     let _ = env;
     render(ctx, &screen, &content, &assets).await

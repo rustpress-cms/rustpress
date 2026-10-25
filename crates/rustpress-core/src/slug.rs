@@ -18,10 +18,13 @@ pub fn sanitize_title(input: &str) -> String {
     }
     // An already percent-encoded input (`caf%C3%A9`) is normalised to lowercase hex.
     let mut out = String::with_capacity(encoded.len());
-    for ch in encoded.chars() {
+    let chars: Vec<char> = encoded.chars().collect();
+    for (i, ch) in chars.iter().copied().enumerate() {
         match ch {
             '.' | '/' | ' ' | '\t' | '\n' | '\r' => out.push('-'),
-            'a'..='z' | '0'..='9' | '%' | '_' | '-' => out.push(ch),
+            'a'..='z' | '0'..='9' | '_' | '-' => out.push(ch),
+            // A percent sign stays only as part of an octet (`%c3`).
+            '%' if chars.get(i + 1).is_some_and(char::is_ascii_hexdigit) && chars.get(i + 2).is_some_and(char::is_ascii_hexdigit) => out.push(ch),
             _ => {}
         }
     }
@@ -54,5 +57,7 @@ mod tests {
     fn non_ascii_is_stored_percent_encoded() {
         assert_eq!(sanitize_title("café"), "caf%c3%a9");
         assert_eq!(sanitize_title("caf%C3%A9"), "caf%c3%a9");
+        assert_eq!(sanitize_title("100%;U+0"), "100u0");
+        assert_eq!(sanitize_title("100%;U+0"), "100u0");
     }
 }

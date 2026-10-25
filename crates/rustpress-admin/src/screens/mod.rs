@@ -43,6 +43,7 @@ mod quick_edit;
 pub mod posts;
 pub mod privacy;
 pub mod settings;
+pub mod boot_page;
 pub mod site_editor;
 mod site_health;
 pub mod terms;
@@ -266,8 +267,10 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse
         "export.php" => export::page(&ctx).await,
         "options-permalink.php" => permalink::page(&ctx).await,
         "options-privacy.php" => privacy::page(&ctx).await,
+        "privacy-policy-guide.php" => privacy::guide(&ctx).await,
         "themes.php" => themes::page(&ctx).await,
         "site-editor.php" => site_editor::page(&ctx).await,
+        "font-library.php" => boot_page::font_library(&ctx).await,
         "plugins.php" => plugins::page(&ctx).await,
         "plugin-install.php" => install::plugin_install(&ctx).await,
         "theme-install.php" => install::theme_install(&ctx).await,
@@ -324,6 +327,7 @@ pub async fn render(ctx: &Ctx<'_>, screen: &Screen, content: &str, assets: &Asse
         now: env.now,
         secure: env.https,
         request_uri: ctx.request.request_uri.clone(),
+        head_styles: format!("{}{}{}", include_str!("../data/head_styles.html"), rustpress_theme::document::font_faces(env.theme), rustpress_theme::document::font_faces_from_style_variations(env.theme)),
     };
     // What the command palette's scripts need on every screen: the fetch layer, the data and preferences persistence.
     let mut assets = assets.clone();

@@ -97,6 +97,8 @@ impl Site {
             "post" => matches!(feature, "title" | "editor" | "author" | "thumbnail" | "excerpt" | "trackbacks" | "custom-fields" | "comments" | "revisions" | "post-formats"),
             "page" => matches!(feature, "title" | "editor" | "author" | "thumbnail" | "page-attributes" | "custom-fields" | "comments" | "revisions" | "excerpt"),
             "attachment" => matches!(feature, "title" | "author" | "comments"),
+            "wp_font_family" => feature == "title",
+            "wp_font_face" => false,
             other => self.types.post_type(other).is_none_or(|t| t.supports(feature)),
         }
     }

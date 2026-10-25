@@ -168,6 +168,7 @@ pub async fn reading(ctx: &Ctx<'_>) -> AdminResponse {
     h.push_str("</form>\n</div>\n");
     let overview = format!("<p>{}</p><p>{}</p>", tr("This screen contains the settings that affect the display of your content."), tr("You must click the Save Changes button at the bottom of the screen for new settings to take effect."));
     let assets = Assets {
+        head: "<script>\n\tjQuery( function($) {\n\t\tvar section = $('#front-static-pages'),\n\t\t\tstaticPage = section.find('input:radio[value=\"page\"]'),\n\t\t\tselects = section.find('select'),\n\t\t\tcheck_disabled = function(){\n\t\t\t\tselects.prop( 'disabled', ! staticPage.prop('checked') );\n\t\t\t};\n\t\tcheck_disabled();\n\t\tsection.find( 'input:radio' ).on( 'change', check_disabled );\n\t} );\n</script>\n".into(),
         footer: "<script>\n\tjQuery( function($) {\n\t\tvar $showOnFront = $( 'input[name=\"show_on_front\"]' ),\n\t\t\t$pageSelects = $( '#page_on_front, #page_for_posts' );\n\t\t$showOnFront.on( 'change', function() {\n\t\t\t$pageSelects.prop( 'disabled', 'page' !== $showOnFront.filter( ':checked' ).val() );\n\t\t}).trigger( 'change' );\n\t});\n</script>\n".into(),
         ..Default::default()
     };

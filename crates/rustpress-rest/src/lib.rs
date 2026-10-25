@@ -286,6 +286,7 @@ impl<'a> Rest<'a> {
                     Some(id) => self.posts_item(posts::Kind::Custom(&info), id, params).await,
                 }
             }
+            ["wp", "v2", "font-families" | "font-collections", ..] => self.fonts_route(&segments, "GET", &edit::Args::default(), params).await,
             ["wp", "v2", rest @ ..] if meta::denied(rest, params).is_some() => Ok(Err(meta::denied(rest, params).unwrap_or_else(|| RestError::new("rest_no_route", "No route was found matching the URL and request method.", 404)))),
             ["wp", "v2", base] | ["wp", "v2", base, _] if self.custom_route(base).is_some() => self.custom_route_dispatch(base, segments.get(3).copied(), params).await,
             _ => Ok(Err(RestError::new("rest_no_route", "No route was found matching the URL and request method.", 404))),

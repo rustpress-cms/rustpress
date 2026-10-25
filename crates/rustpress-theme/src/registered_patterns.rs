@@ -209,6 +209,30 @@ fn php_literal(text: &str) -> Option<(String, &str)> {
 }
 
 impl Theme {
+    /// The `inline_style` of every `register_block_style()` of the theme, in the order of registration.
+    pub fn registered_block_style_inline_styles(&self) -> Vec<String> {
+        let mut dirs = vec![self.stylesheet_dir().to_path_buf()];
+        if self.template_dir() != self.stylesheet_dir() {
+            dirs.push(self.template_dir().to_path_buf());
+        }
+        let mut out = Vec::new();
+        for dir in &dirs {
+            let Ok(source) = std::fs::read_to_string(dir.join("functions.php")) else { continue };
+            let domain = crate::theme_headers::text_domain(dir);
+            let mut rest = source.as_str();
+            while let Some(at) = rest.find("register_block_style(") {
+                rest = &rest[at + "register_block_style(".len()..];
+                let Some((_, after)) = php_literal(rest) else { continue };
+                let end = after.find("register_block_style(").unwrap_or(after.len());
+                let inline = self.php_array_text(&after[..end], "inline_style", &domain);
+                if !inline.is_empty() {
+                    out.push(inline);
+                }
+            }
+        }
+        out
+    }
+
     /// The text of `'key' => __( 'text', 'domain' )`, `_x( 'text', 'context', 'domain' )` or `'text'` after `from`.
     fn php_array_text(&self, from: &str, key: &str, default_domain: &str) -> String {
         let Some(at) = from.find(&format!("'{key}'")) else { return String::new() };

@@ -110,10 +110,12 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     let mut assets = Assets {
         editor_modules: true,
         scripts: ["wp-edit-site", "wp-format-library"].iter().map(|s| (*s).to_owned()).collect(),
-        styles: ["wp-edit-site", "wp-format-library", "wp-block-directory", "wp-edit-blocks", "wp-commands"].iter().map(|s| (*s).to_owned()).collect(),
+        styles: ["wp-edit-site", "wp-format-library", "wp-edit-blocks", "wp-commands"].iter().map(|s| (*s).to_owned()).collect(),
         ..Default::default()
     };
     super::media_ui::enqueue(ctx, &mut assets, 0).await;
+    assets.styles.push("wp-block-directory".into());
+    super::block_editor::editor_head_styles(ctx, &mut assets);
     assets.early_scripts = std::mem::take(&mut assets.scripts);
     assets.early_scripts.push("wp-block-styles".into());
     assets.early_scripts.push("wp-block-directory".into());

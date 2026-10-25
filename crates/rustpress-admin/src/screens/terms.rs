@@ -195,7 +195,8 @@ fn screen_for(info: &TaxInfo, title: String, help: Help, file: &str) -> Screen {
         "post" => format!("edit-tags.php?taxonomy={}", info.name),
         other => format!("edit-tags.php?taxonomy={}&post_type={other}", info.name),
     };
-    Screen { file: file.into(), parent_file: parent, submenu_file: Some(submenu), post_type: info.post_type.clone(), title, help: Some(help), ..Default::default() }
+    let id = format!("edit-{}", info.name);
+    Screen { file: file.into(), parent_file: parent, submenu_file: Some(submenu), post_type: info.post_type.clone(), id, title, help: Some(help), ..Default::default() }
 }
 
 /// `edit-tags.php`.

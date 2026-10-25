@@ -26,8 +26,26 @@ fn style_header(css: &str, key: &str) -> Option<String> {
     })
 }
 
+/// PHP's `empty()` of a decoded `settings` or `styles` value: those answer with an empty object.
+fn is_empty_config(value: &Value) -> bool {
+    match value {
+        Value::Null => true,
+        Value::Array(a) => a.is_empty(),
+        Value::Object(o) => o.is_empty(),
+        _ => false,
+    }
+}
+
+/// `get_allowed_block_template_part_areas()`: `(area, label, description, icon, tag)`.
+const PART_AREAS: [(&str, &str, &str, &str, &str); 4] = [
+    ("uncategorized", "General", "General templates often perform a specific role like displaying post content, and are not tied to any particular area.", "layout", "div"),
+    ("header", "Header", "The Header template defines a page area that typically contains a title, logo, and main navigation.", "header", "header"),
+    ("footer", "Footer", "The Footer template defines a page area that typically contains site credits, social links, or any other combination of blocks.", "footer", "footer"),
+    ("navigation-overlay", "Navigation Overlay", "The Navigation Overlay template defines an overlay area that typically contains navigation links and can be toggled open and closed.", "navigation-overlay", "div"),
+];
+
 impl Rest<'_> {
-    fn theme_object(&self) -> Value {
+    async fn theme_object(&self) -> Value {
         let dir = self.theme.stylesheet_dir().to_path_buf();
         let css = std::fs::read_to_string(dir.join("style.css")).unwrap_or_default();
         let header = |key: &str| style_header(&css, key).unwrap_or_default();
@@ -48,8 +66,20 @@ impl Rest<'_> {
             "post-thumbnails": true, "responsive-embeds": true, "title-tag": false, "wp-block-styles": false
         });
         let mut links = Links::new();
-        links.add("self", vec![], self.rest_url(&format!("wp/v2/themes/{}", self.theme.stylesheet)));
+        links.push_raw("self", json!({"href": self.rest_url(&format!("wp/v2/themes/{}", self.theme.stylesheet)), "targetHints": {"allow": ["GET"]}}));
         links.add("collection", vec![], self.rest_url("wp/v2/themes"));
+        let query = rustpress_db::PostQuery { post_types: vec!["wp_global_styles".into()], statuses: vec!["publish".into(), "draft".into()], names: vec![format!("wp-global-styles-{}", rustpress_core::slug::sanitize_title(&self.theme.stylesheet))], limit: Some(1), ..Default::default() };
+        if let Some(post) = self.site.db.posts(&query).await.ok().and_then(|posts| posts.into_iter().next()) {
+            links.add("wp:user-global-styles", vec![], self.rest_url(&format!("wp/v2/global-styles/{}", post.id)));
+        }
+        if self.can("edit_theme_options") {
+            links.push_raw("wp:export-theme", json!({"targetHints": {"allow": ["GET"]}, "href": self.rest_url("wp-block-editor/v1/export")}));
+        }
+        let template_types: Vec<Value> = self.default_template_types().into_iter().map(|(slug, title, description)| json!({"title": title, "description": description, "slug": slug})).collect();
+        let part_areas: Vec<Value> = PART_AREAS
+            .iter()
+            .map(|(area, label, description, icon, tag)| json!({"area": area, "label": self.site.tr(label), "description": self.site.tr(description), "icon": icon, "area_tag": tag}))
+            .collect();
         let mut theme = json!({
             "stylesheet": self.theme.stylesheet,
             "template": self.theme.template,
@@ -69,7 +99,8 @@ impl Rest<'_> {
             "is_block_theme": true,
             "stylesheet_uri": content_url,
             "template_uri": content_url,
-            "default_template_types": [],
+            "default_template_types": template_types,
+            "default_template_part_areas": part_areas,
         });
         if let Value::Object(map) = &mut theme {
             map.insert("_links".into(), links.finish());
@@ -82,13 +113,13 @@ impl Rest<'_> {
         let get = method == "GET";
         let outcome = match segments {
             ["wp", "v2", "themes"] if get && self.can("edit_theme_options") => {
-                let list = if args.str("status").as_deref() == Some("active") || args.str("status").is_none() { vec![self.theme_object()] } else { Vec::new() };
+                let list = if args.str("status").as_deref() == Some("active") || args.str("status").is_none() { vec![self.theme_object().await] } else { Vec::new() };
                 let mut resp = Resp::item(Value::Array(list));
                 resp.allow = Some("GET".to_owned());
                 Ok(resp)
             }
-            ["wp", "v2", "themes", name] if get && self.can("edit_theme_options") && *name == self.theme.stylesheet => Ok(Resp::item(self.theme_object())),
-            ["wp", "v2", "plugins"] | ["wp", "v2", "sidebars"] | ["wp", "v2", "widgets"] | ["wp", "v2", "menus"] | ["wp", "v2", "menu-items"] | ["wp", "v2", "widget-types"] | ["wp", "v2", "menu-locations"] | ["wp", "v2", "font-families"] | ["wp", "v2", "pattern-directory", "patterns"] | ["wp", "v2", "block-directory", "search"] if get => empty_list(),
+            ["wp", "v2", "themes", name] if get && self.can("edit_theme_options") && *name == self.theme.stylesheet => Ok(Resp::item(self.theme_object().await)),
+            ["wp", "v2", "plugins"] | ["wp", "v2", "sidebars"] | ["wp", "v2", "widgets"] | ["wp", "v2", "menus"] | ["wp", "v2", "menu-items"] | ["wp", "v2", "widget-types"] | ["wp", "v2", "menu-locations"] | ["wp", "v2", "pattern-directory", "patterns"] | ["wp", "v2", "block-directory", "search"] if get => empty_list(),
             ["wp", "v2", "block-types"] | ["wp", "v2", "block-types", _] | ["wp", "v2", "block-types", _, _] if get => empty_list(),
             ["wp", "v2", "block-patterns", "patterns"] if get => Ok(Resp::item(self.patterns_json())),
             ["wp", "v2", "block-patterns", "categories"] if get => Ok(Resp::item(self.pattern_categories())),
@@ -165,13 +196,17 @@ impl Rest<'_> {
         self_link.insert("targetHints".into(), json!({"allow": ["GET", "POST", "PUT", "PATCH"]}));
         links.push_raw("self", Value::Object(self_link));
         links.add("about", vec![], self.rest_url("wp/v2/types/wp_global_styles"));
-        links.add("version-history", vec![("count", json!(0))], self.rest_url(&format!("wp/v2/global-styles/{id}/revisions")));
+        let revisions = self.site.db.revision_ids(id).await?.len();
+        links.add("version-history", vec![("count", json!(revisions))], self.rest_url(&format!("wp/v2/global-styles/{id}/revisions")));
         links.add("wp:action-publish", vec![], self.rest_url(&format!("wp/v2/global-styles/{id}")));
+        if self.can("edit_css") || self.can("edit_theme_options") {
+            links.add("wp:action-edit-css", vec![], self.rest_url(&format!("wp/v2/global-styles/{id}")));
+        }
         let body = json!({
             "id": id,
             "title": {"raw": if post.post_title.is_empty() { "Custom Styles".to_owned() } else { post.post_title.clone() }, "rendered": if post.post_title.is_empty() { "Custom Styles".to_owned() } else { post.post_title.clone() }},
-            "settings": stored.get("settings").cloned().filter(|v| !v.is_null()).unwrap_or_else(|| json!({})),
-            "styles": stored.get("styles").cloned().filter(|v| !v.is_null()).unwrap_or_else(|| json!({})),
+            "settings": stored.get("settings").cloned().filter(|v| !is_empty_config(v)).unwrap_or_else(rustpress_blocks::php_json::empty_object),
+            "styles": stored.get("styles").cloned().filter(|v| !is_empty_config(v)).unwrap_or_else(rustpress_blocks::php_json::empty_object),
             "_links": links.finish(),
         });
         let mut resp = Resp::item(body);

@@ -397,8 +397,33 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
 
     let no_items = if status_param == "moderated" { tr("No comments awaiting moderation.") } else { tr("No comments found.") };
     let table_html = table_html.replacen("\t</tbody>\n\n\t<tfoot>", &format!("\t</tbody>\n\t<tbody id=\"the-extra-comment-list\" data-wp-lists=\"list:comment\" style=\"display: none;\">\n\t\t<tr class=\"no-items\"><td class=\"colspanchange\" colspan=\"5\">{no_items}</td></tr>\t</tbody>\n\n\t<tfoot>"), 1);
-    let title = tr("Comments");
-    let mut h = format!("<div class=\"wrap\">\n<h1 class=\"wp-heading-inline\">\n{}</h1>\n\n", esc_html(&title));
+    let heading = tr("Comments");
+    // The title of the page: with the number of comments in moderation, of the post when one is chosen.
+    let post_filter = request.request("p").and_then(|p| p.parse::<u64>().ok()).filter(|id| *id != 0);
+    let title = match post_filter {
+        Some(post_id) => {
+            let moderated = ctx.env.db.count_comments_for_post_with_status(post_id, "0").await.unwrap_or(0);
+            let post_title = match ctx.env.db.post(post_id).await.ok().flatten() {
+                Some(post) => {
+                    let name = rustpress_blocks::content::the_title_for(site, &post);
+                    let name = if post.post_title.is_empty() { tr("(no title)") } else { name };
+                    let chars: Vec<char> = name.chars().collect();
+                    if chars.len() > 50 { format!("{}&hellip;", chars[..50].iter().collect::<String>().trim_end()) } else { name }
+                }
+                None => String::new(),
+            };
+            if moderated > 0 {
+                sprintf(&tr("Comments (%1$s) on &#8220;%2$s&#8221;"), &[&site.number_i18n(moderated), &post_title])
+            } else {
+                sprintf(&tr("Comments on &#8220;%s&#8221;"), &[&post_title])
+            }
+        }
+        None => {
+            let moderated = ctx.env.db.count_comments_with_status("0").await.unwrap_or(0);
+            if moderated > 0 { sprintf(&tr("Comments (%s)"), &[&site.number_i18n(moderated)]) } else { tr("Comments") }
+        }
+    };
+    let mut h = format!("<div class=\"wrap\">\n<h1 class=\"wp-heading-inline\">\n{}</h1>\n\n", esc_html(&heading));
     if !search.is_empty() {
         h.push_str(&format!("<span class=\"subtitle\">{}</span>\n", sprintf(&tr("Search results for: %s"), &[&format!("<strong>{}</strong>", esc_html(&search))])));
     }

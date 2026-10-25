@@ -6,6 +6,7 @@ mod app_passwords;
 mod block_renderer;
 mod caps;
 mod editor;
+mod fonts;
 mod icons;
 mod media;
 mod navigation;
@@ -221,6 +222,9 @@ impl Rest<'_> {
         let body = self.request.as_ref().map(|r| r.body.clone()).unwrap_or_default();
         let args = Args::new(params, &body);
         let get = method == "GET";
+        if let ["wp", "v2", "font-families" | "font-collections", ..] = segments.as_slice() {
+            return self.fonts_route(&segments, &method, &args, params).await.map(Some);
+        }
         if self.access.is_none() && get {
             return Ok(None);
         }

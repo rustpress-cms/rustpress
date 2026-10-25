@@ -19,6 +19,12 @@ impl Db {
         let count: i64 = sqlx::query_scalar(AssertSqlSafe(sql)).bind(approved).fetch_one(&self.pool).await?;
         Ok(count as u64)
     }
+    /// The comments of one post with a `comment_approved` value (`wp_count_comments( $post_id )`).
+    pub async fn count_comments_for_post_with_status(&self, post_id: u64, approved: &str) -> Result<u64> {
+        let sql = format!("SELECT COUNT(*) FROM {} WHERE comment_post_ID = ? AND comment_approved = ?", self.prefix.table("comments"));
+        let count: i64 = sqlx::query_scalar(AssertSqlSafe(sql)).bind(post_id).bind(approved).fetch_one(&self.pool).await?;
+        Ok(count as u64)
+    }
     /// `wp_count_posts()`: `(status, count)` for a post type.
     pub async fn post_status_counts(&self, post_type: &str) -> Result<Vec<(String, u64)>> {
         let sql = format!("SELECT post_status, COUNT(*) FROM {} WHERE post_type = ? GROUP BY post_status", self.prefix.table("posts"));

@@ -349,9 +349,15 @@ pub(crate) fn script_modules(wp_root: &Path, site: &Site, ids: &[String]) -> (St
 
 /// `@font-face` rules for the font families that ship font files.
 pub fn font_faces(theme: &Theme) -> String {
-    let settings = theme.json.settings();
-    let Some(families) = settings.get("typography").and_then(|t| t.get("fontFamilies")).and_then(Value::as_array) else { return String::new() };
-    font_faces_of(theme, families)
+    // `WP_Font_Face_Resolver::get_fonts_from_theme_json()`: the families of every origin (theme, then the user's fonts).
+    let settings = theme.json.settings_by_origin();
+    let Some(origins) = settings.get("typography").and_then(|t| t.get("fontFamilies")) else { return String::new() };
+    let families: Vec<Value> = match origins {
+        Value::Array(list) => list.clone(),
+        Value::Object(map) => ["default", "theme", "custom"].iter().filter_map(|origin| map.get(*origin).and_then(Value::as_array)).flatten().cloned().collect(),
+        _ => return String::new(),
+    };
+    font_faces_of(theme, &families)
 }
 
 /// `wp_print_font_faces_from_style_variations()`: the fonts the style variations of the theme add.

@@ -45,6 +45,10 @@ impl Styles {
         self.deps.add(handle, src.map(str::to_owned), deps.iter().map(|d| (*d).to_owned()).collect(), ver, media.map(|m| Arg::Text(m.to_owned())))
     }
 
+    pub fn is_registered(&self, handle: &str) -> bool {
+        self.deps.is_registered(handle)
+    }
+
     pub fn enqueue(&mut self, handle: &str) {
         self.deps.enqueue(handle);
     }

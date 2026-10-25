@@ -39,6 +39,24 @@ async fn pages_dropdown(ctx: &Ctx<'_>, selected_id: u64) -> String {
     out
 }
 
+/// `wp-admin/privacy-policy-guide.php`.
+pub async fn guide(ctx: &Ctx<'_>) -> AdminResponse {
+    if !ctx.can("manage_privacy_options") {
+        return die(ctx.env, 403, "WordPress &rsaquo; Error", &format!("<p>{}</p>", ctx.tr("Sorry, you are not allowed to manage privacy options on this site.")));
+    }
+    let baked = super::pages::load(ctx, "privacy-policy-guide");
+    let screen = Screen {
+        file: "privacy-policy-guide.php".into(),
+        parent_file: "privacy-policy-guide.php".into(),
+        submenu_file: None,
+        title: ctx.tr("Privacy Policy Guide"),
+        help: Some(baked.help),
+        early_classes: vec!["privacy-settings ".into()],
+        ..Default::default()
+    };
+    render(ctx, &screen, &baked.content, &Assets { scripts: vec!["privacy-tools".into()], ..Default::default() }).await
+}
+
 pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     let tr = |s: &str| ctx.tr(s);
     let site = ctx.site();
@@ -46,10 +64,9 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         return die(ctx.env, 403, "WordPress &rsaquo; Error", &format!("<p>{}</p>", tr("Sorry, you are not allowed to manage privacy options on this site.")));
     }
     let assets = Assets { scripts: vec!["privacy-tools".into()], ..Default::default() };
-    let screen = |title: &str, help: crate::chrome::Help| Screen { file: "options-privacy.php".into(), parent_file: "options-general.php".into(), submenu_file: Some("options-privacy.php".into()), title: tr(title), help: Some(help), body_classes: vec!["privacy-settings".into()], ..Default::default() };
+    let screen = |title: &str, help: crate::chrome::Help| Screen { file: "options-privacy.php".into(), parent_file: "options-general.php".into(), submenu_file: Some("options-privacy.php".into()), title: tr(title), help: Some(help), early_classes: vec!["privacy-settings ".into()], ..Default::default() };
     if ctx.request.get("tab") == Some("policyguide") {
-        let baked = super::pages::load(ctx, "privacy-policy-guide");
-        return render(ctx, &screen("Privacy", baked.help), &baked.content, &assets).await;
+        return redirect(&ctx.admin_url("privacy-policy-guide.php"));
     }
 
     let request = ctx.request;
