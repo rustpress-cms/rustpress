@@ -15,6 +15,8 @@ use crate::menu::{AdminMenu, MenuContext};
 use crate::registry::LoaderEnv;
 
 pub mod ajax;
+pub mod ajax_terms;
+pub mod common;
 pub mod dashboard;
 pub mod editor;
 pub mod general;
@@ -22,6 +24,8 @@ pub mod notices;
 pub mod options;
 pub mod post_edit;
 pub mod posts;
+pub mod settings;
+pub mod terms;
 pub mod timezones;
 
 /// The answer of a screen is the one of the sign-in page: status, headers, cookies, body.
@@ -210,10 +214,16 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse
     let mut response = match request.file.as_str() {
         "" | "index.php" => dashboard::page(&ctx).await,
         "options-general.php" => general::page(&ctx).await,
+        "options-writing.php" => settings::writing(&ctx).await,
+        "options-reading.php" => settings::reading(&ctx).await,
+        "options-discussion.php" => settings::discussion(&ctx).await,
+        "options-media.php" => settings::media(&ctx).await,
         "edit.php" => posts::page(&ctx).await,
         "post.php" => post_edit::post_php(&ctx).await,
         "post-new.php" => post_edit::post_new(&ctx).await,
         "options.php" => options::handle(&ctx).await,
+        "edit-tags.php" => terms::page(&ctx).await,
+        "term.php" => terms::edit_page(&ctx).await,
         other => unavailable(&ctx, other).await,
     };
     let mut cookies = user_settings_cookies(env, request, ctx.user.id).await;

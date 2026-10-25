@@ -197,6 +197,16 @@ impl Writer {
         Ok(sqlx::query(AssertSqlSafe(sql)).execute(&self.pool).await?.rows_affected())
     }
 
+    /// The first column of a query as numbers.
+    pub async fn column_u64(&self, sql: &str) -> Result<Vec<u64>> {
+        Ok(sqlx::query_scalar(AssertSqlSafe(sql.to_owned())).fetch_all(&self.pool).await?)
+    }
+
+    /// The first column of a query as text.
+    pub async fn column_string(&self, sql: &str) -> Result<Vec<String>> {
+        Ok(sqlx::query_scalar(AssertSqlSafe(sql.to_owned())).fetch_all(&self.pool).await?)
+    }
+
     /// The table name with its prefix, for statements built by the caller.
     pub fn table(&self, name: &str) -> String {
         self.prefix.table(name)

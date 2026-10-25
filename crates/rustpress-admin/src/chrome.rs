@@ -45,6 +45,27 @@ pub struct Help {
 
 /// `WP_Screen::render_screen_meta()` with the help tabs and the Help button.
 fn screen_meta(help: &Help, label: &str) -> String {
+    if help.tabs.is_empty() {
+        // A screen without help tabs: the empty wrapper and no Help button.
+        return "		<div id=\"screen-meta\" class=\"metabox-prefs\">
+
+			<div id=\"contextual-help-wrap\" class=\"hidden no-sidebar\" tabindex=\"-1\" aria-label=\"Contextual Help Tab\">
+				<div id=\"contextual-help-back\"></div>
+				<div id=\"contextual-help-columns\">
+					<div class=\"contextual-help-tabs\">
+						<ul>
+												</ul>
+					</div>
+
+					
+					<div class=\"contextual-help-tabs-wrap\">
+											</div>
+				</div>
+			</div>
+				</div>
+		
+".to_owned();
+    }
     let mut tabs = String::new();
     let mut panels = String::new();
     for (index, tab) in help.tabs.iter().enumerate() {

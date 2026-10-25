@@ -11,6 +11,7 @@ pub mod list_table;
 pub mod login;
 pub mod menu;
 pub mod registry;
+pub mod sanitize;
 pub mod screens;
 pub mod scripts;
 pub mod styles;

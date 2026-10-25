@@ -7,6 +7,9 @@ use rustpress_core::slug::sanitize_title;
 use rustpress_db::{Db, Post, SlugScope, Val, Writer};
 use rustpress_phpser::{Key, Value};
 
+mod terms;
+pub use terms::TermData;
+
 /// What goes wrong when writing content.
 #[derive(Debug)]
 pub enum ContentError {

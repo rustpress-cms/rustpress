@@ -252,7 +252,9 @@ impl Table<'_> {
         out.push_str("		</div>
 		");
         out.push_str(extra);
-        out.push_str("		");
+        if !extra.is_empty() {
+            out.push_str("		");
+        }
         if which == "top" && self.total_pages() > 1 {
             out.push_str(&format!("<h2 class='screen-reader-text'>{}</h2>", self.heading_pagination()));
         }
@@ -289,8 +291,8 @@ impl Table<'_> {
 
 ");
         let data_lists = if self.singular.is_empty() { String::new() } else { format!(" data-wp-lists='list:{}'", self.singular) };
-        out.push_str(&format!("	<tbody id=\"the-list\"{data_lists}
-				>
+        out.push_str(&format!("	<tbody id=\"the-list\"
+		{data_lists}		>
 		"));
         out.push_str(rows);
         out.push_str("	</tbody>

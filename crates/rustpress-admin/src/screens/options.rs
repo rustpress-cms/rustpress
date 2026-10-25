@@ -120,7 +120,7 @@ fn sanitize(ctx: &Ctx<'_>, option: &str, value: &str) -> Result<String, String> 
             if value == "0" || value.is_empty() { "closed".to_owned() } else { value.to_owned() }
         }
         "blogname" | "blogdescription" => esc_html(value),
-        "blog_public" => value.trim().parse::<i64>().unwrap_or(0).to_string(),
+        "blog_public" => value.trim().parse::<i64>().unwrap_or(1).to_string(),
         "date_format" | "time_format" | "mailserver_url" | "mailserver_login" | "mailserver_pass" | "upload_path" => strip_tags(value),
         "gmt_offset" => {
             if value.trim().parse::<f64>().is_ok() { value.chars().filter(|c| c.is_ascii_digit() || matches!(c, ':' | '.' | '-')).collect() } else { String::new() }
@@ -290,7 +290,8 @@ pub async fn handle(ctx: &Ctx<'_>) -> AdminResponse {
     let mut admin_email_changed: Option<String> = None;
     for option in options {
         let supplied = field(&form, option);
-        let value = supplied.clone().unwrap_or_default().trim().to_owned();
+        // `blog_public` is 1 when its checkbox is not sent.
+        let value = if option == "blog_public" && supplied.is_none() { "1".to_owned() } else { supplied.clone().unwrap_or_default().trim().to_owned() };
         // A checkbox that is not sent stores its empty value.
         let new = match sanitize(ctx, option, &value) {
             Ok(new) => new,

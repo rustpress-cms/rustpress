@@ -6,7 +6,7 @@ use super::{AdminEnv, AdminRequest, AdminResponse};
 use crate::content::{Content, PostData};
 use rustpress_auth::{CurrentUser, Scheme};
 
-fn headers(content_type: &str) -> Vec<(String, String)> {
+pub(super) fn headers(content_type: &str) -> Vec<(String, String)> {
     vec![
         ("Expires".into(), "Wed, 11 Jan 1984 05:00:00 GMT".into()),
         ("Cache-Control".into(), "no-cache, must-revalidate, max-age=0, no-store, private".into()),
@@ -221,6 +221,7 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse
             write_meta(format!("manage{page}columnshidden"), String::from_utf8_lossy(&rustpress_phpser::serialize(&value)).into_owned()).await;
             text(200, "1")
         }
+        "add-tag" | "inline-save-tax" | "delete-tag" => super::ajax_terms::handle(env, request, &user, &session.token, &action).await,
         "date_format" | "time_format" => {
             let format = rustpress_core::formatting::strip_tags(request.post_field("date").unwrap_or_default());
             text(200, &env.site.date(&format, env.now))
