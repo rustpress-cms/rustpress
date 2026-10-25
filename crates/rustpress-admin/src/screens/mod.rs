@@ -21,6 +21,7 @@ mod ajax_misc;
 pub mod ajax_terms;
 mod bare_pages;
 mod file_editor;
+mod privacy_requests;
 mod site_health_info;
 mod attachment_edit;
 mod authorize_app;
@@ -325,6 +326,8 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse
         "authorize-application.php" => authorize_app::page(&ctx).await,
         "about.php" | "credits.php" | "freedoms.php" | "contribute.php" => pages::about(&ctx, &request.file).await,
         "site-health.php" => site_health::page(&ctx).await,
+        "export-personal-data.php" => privacy_requests::page(&ctx, privacy_requests::Kind::Export).await,
+        "erase-personal-data.php" => privacy_requests::page(&ctx, privacy_requests::Kind::Erase).await,
         "update-core.php" => update_core::page(&ctx).await,
         other => unavailable(&ctx, other).await,
     };

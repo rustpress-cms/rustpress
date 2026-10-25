@@ -15,25 +15,23 @@ use crate::list_table::{Column, Table, row_actions};
 pub fn human_time_diff(ctx: &Ctx<'_>, from: i64, to: i64) -> String {
     let site = ctx.site();
     let diff = (to - from).abs();
-    if diff < 3600 {
-        let mins = ((diff as f64 / 60.0).round() as i64).max(1);
-        sprintf(&site.trn("%s min", "%s mins", mins), &[&mins.to_string()])
+    let round = |n: f64| (n.round() as i64).max(1);
+    let (count, singular, plural) = if diff < 60 {
+        (diff.max(1), "%s second", "%s seconds")
+    } else if diff < 3600 {
+        (round(diff as f64 / 60.0), "%s minute", "%s minutes")
     } else if diff < 86_400 {
-        let hours = ((diff as f64 / 3600.0).round() as i64).max(1);
-        sprintf(&site.trn("%s hour", "%s hours", hours), &[&hours.to_string()])
+        (round(diff as f64 / 3600.0), "%s hour", "%s hours")
     } else if diff < 7 * 86_400 {
-        let days = ((diff as f64 / 86_400.0).round() as i64).max(1);
-        sprintf(&site.trn("%s day", "%s days", days), &[&days.to_string()])
+        (round(diff as f64 / 86_400.0), "%s day", "%s days")
     } else if diff < 30 * 86_400 {
-        let weeks = ((diff as f64 / (7.0 * 86_400.0)).round() as i64).max(1);
-        sprintf(&site.trn("%s week", "%s weeks", weeks), &[&weeks.to_string()])
+        (round(diff as f64 / (7.0 * 86_400.0)), "%s week", "%s weeks")
     } else if diff < 365 * 86_400 {
-        let months = ((diff as f64 / (30.0 * 86_400.0)).round() as i64).max(1);
-        sprintf(&site.trn("%s month", "%s months", months), &[&months.to_string()])
+        (round(diff as f64 / (30.0 * 86_400.0)), "%s month", "%s months")
     } else {
-        let years = ((diff as f64 / (365.0 * 86_400.0)).round() as i64).max(1);
-        sprintf(&site.trn("%s year", "%s years", years), &[&years.to_string()])
-    }
+        (round(diff as f64 / (365.0 * 86_400.0)), "%s year", "%s years")
+    };
+    sprintf(&site.trn(singular, plural, count), &[&count.to_string()])
 }
 
 fn help(ctx: &Ctx<'_>) -> Help {
