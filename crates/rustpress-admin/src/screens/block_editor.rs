@@ -1,7 +1,7 @@
 //! The block editor of `post.php` and `post-new.php` (`edit-form-blocks.php`): the page around the JavaScript editor,
 //! the REST responses it starts with and its settings.
 
-use rustpress_core::formatting::{esc_attr, esc_html};
+use rustpress_core::formatting::{esc_attr, esc_html, esc_url};
 use rustpress_core::i18n::sprintf;
 use rustpress_db::Post;
 use rustpress_rest::edit::{Access, Body, Request};
@@ -208,14 +208,46 @@ async fn editor_settings(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo) -> Value {
     settings.insert("enableCustomLineHeight".into(), json!(true));
     settings.insert("enableCustomSpacing".into(), json!(true));
     settings.insert("enableCustomUnits".into(), json!(["%", "px", "em", "rem", "vh", "vw"]));
-    settings.insert("availableTemplates".into(), json!([]));
+    // The page templates of the theme (`customTemplates` of theme.json that apply to this type).
+    let mut templates = Map::new();
+    for template in theme.json.custom_templates() {
+        let types: Vec<&str> = template.get("postTypes").and_then(Value::as_array).map(|a| a.iter().filter_map(Value::as_str).collect()).unwrap_or_else(|| vec!["page"]);
+        if !types.contains(&post.post_type.as_str()) {
+            continue;
+        }
+        let (Some(name), Some(title)) = (template.get("name").and_then(Value::as_str), template.get("title").and_then(Value::as_str)) else { continue };
+        templates.insert(name.to_owned(), json!(ctx.tr(title)));
+    }
+    if templates.is_empty() {
+        settings.insert("availableTemplates".into(), json!([]));
+    } else {
+        let mut all = Map::new();
+        all.insert(String::new(), json!(ctx.tr("Default template")));
+        all.extend(templates);
+        settings.insert("availableTemplates".into(), Value::Object(all));
+    }
     settings.insert("disablePostFormats".into(), json!(false));
     settings.insert("titlePlaceholder".into(), json!(ctx.tr("Add title")));
     settings.insert("bodyPlaceholder".into(), json!(ctx.tr("Type / to choose a block")));
     settings.insert("autosaveInterval".into(), json!(60));
     settings.insert("richEditingEnabled".into(), json!(super::editor::can_richedit(ctx, Some("true"))));
-    let lock = format!("{}:{}", env.now, ctx.user.id);
-    settings.insert("postLock".into(), json!({"isLocked": false, "activePostLock": lock}));
+    // `wp_check_post_lock()` and `wp_set_post_lock()`.
+    let holder = super::ajax::post_lock_holder(env, &ctx.user, post.id).await;
+    if let Some(holder) = holder {
+        let user = ctx.env.db.user(holder).await.ok().flatten();
+        let mut details = Map::new();
+        details.insert("name".into(), json!(user.map(|u| u.display_name).unwrap_or_default()));
+        if site.show_avatars() {
+            details.insert("avatar".into(), json!(rustpress_blocks::content::avatar_url(&site.options, &ctx.env.db.user(holder).await.ok().flatten().map(|u| u.user_email).unwrap_or_default(), 128)));
+        }
+        settings.insert("postLock".into(), json!({"isLocked": true, "user": Value::Object(details)}));
+    } else {
+        let lock = format!("{}:{}", env.now, ctx.user.id);
+        if let Some(writer) = env.writer {
+            let _ = writer.update_post_meta(post.id, "_edit_lock", &lock).await;
+        }
+        settings.insert("postLock".into(), json!({"isLocked": false, "activePostLock": lock}));
+    }
     settings.insert("postLockUtils".into(), json!({"nonce": ctx.create_nonce(&format!("lock-post_{}", post.id)), "unlockNonce": ctx.create_nonce(&format!("update-post_{}", post.id)), "ajaxUrl": ctx.admin_url("admin-ajax.php")}));
     settings.insert("supportsLayout".into(), json!(true));
     settings.insert("supportsTemplateMode".into(), json!(env.block_theme));
@@ -333,7 +365,12 @@ pub async fn render_editor(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo) -> Admin
     let settings = editor_settings(ctx, post, info).await;
     let root = site.site_url("wp-json/");
     let nonce = ctx.create_nonce("wp_rest");
-    let heading = sprintf(&tr("Edit %s"), &[&info.singular]);
+    let is_new = post.post_status == "auto-draft";
+    let heading = if is_new {
+        if info.hierarchical { tr("Add Page") } else { tr("Add Post") }
+    } else {
+        sprintf(&tr("Edit %s"), &[&info.singular])
+    };
 
     let mut assets = Assets {
         scripts: ["wp-edit-post", "wp-format-library", "wp-core-commands", "media-editor", "media-audiovideo", "mce-view", "image-edit", "imgareaselect", "quicktags", "wplink", "jquery-ui-autocomplete", "thickbox", "media-upload"].iter().map(|s| (*s).to_owned()).collect(),
@@ -341,11 +378,29 @@ pub async fn render_editor(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo) -> Admin
         ..Default::default()
     };
     super::media_ui::enqueue(ctx, &mut assets, post.id).await;
+    // A new post starts with what the form is made of (`get_default_post_to_edit()` empties the title).
+    let initial_edits = if is_new {
+        let mut edits = Map::new();
+        for (feature, key) in [("title", "title"), ("editor", "content"), ("excerpt", "excerpt")] {
+            if site.post_type_supports(&post.post_type, feature) {
+                let value = match key {
+                    "content" => post.post_content.clone(),
+                    "excerpt" => post.post_excerpt.clone(),
+                    _ => String::new(),
+                };
+                edits.insert(key.to_owned(), json!(value));
+            }
+        }
+        Value::Object(edits)
+    } else {
+        json!([])
+    };
     let init = format!(
-        "( function() {{\n\twindow._wpLoadBlockEditor = new Promise( function( resolve ) {{\n\t\twp.domReady( function() {{\n\t\t\tresolve( wp.editPost.initializeEditor( 'editor', {}, {}, {}, [] ) );\n\t\t}} );\n\t}} );\n}} )();\nwindow._wpLoadBlockEditor.then( function() {{\n\t\twp.data.dispatch( 'core/edit-post' ).setAvailableMetaBoxesPerLocation( {{\"side\":[],\"normal\":[],\"advanced\":[]}} );\n\t}} );",
+        "( function() {{\n\twindow._wpLoadBlockEditor = new Promise( function( resolve ) {{\n\t\twp.domReady( function() {{\n\t\t\tresolve( wp.editPost.initializeEditor( 'editor', {}, {}, {}, {} ) );\n\t\t}} );\n\t}} );\n}} )();\nwindow._wpLoadBlockEditor.then( function() {{\n\t\twp.data.dispatch( 'core/edit-post' ).setAvailableMetaBoxesPerLocation( {{\"side\":[],\"normal\":[],\"advanced\":[]}} );\n\t}} );",
         json!(post.post_type),
         post.id,
-        inline_json(&settings)
+        inline_json(&settings),
+        inline_json(&initial_edits)
     );
     // The fetch layer: root URL, nonce and the answers the editor starts with.
     assets.inline.retain(|(handle, _, _)| handle != "wp-api-fetch");
@@ -398,22 +453,36 @@ pub async fn render_editor(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo) -> Admin
         "after".into(),
     ));
 
+    let classic_link = esc_url(&ctx.admin_url(&format!("update.php?action=install-plugin&plugin=classic-editor&_wpnonce={}", ctx.create_nonce("install-plugin_classic-editor")))).replace("&#038;", "&amp;");
     let content = format!(
-        "<div class=\"block-editor\">\n\t<h1 class=\"screen-reader-text hide-if-no-js\">{heading}</h1>\n\t<div id=\"editor\" class=\"block-editor__container hide-if-no-js\"></div>\n\t<div id=\"metaboxes\" class=\"hidden\">\n\t\t\t<form class=\"metabox-base-form\">\n\t{nonce_field}\t<input type=\"hidden\" id=\"user-id\" name=\"user_ID\" value=\"{user}\" />\n\t<input type=\"hidden\" id=\"hiddenaction\" name=\"action\" value=\"editpost\" />\n\t<input type=\"hidden\" id=\"originalaction\" name=\"originalaction\" value=\"editpost\" />\n\t<input type=\"hidden\" id=\"post_type\" name=\"post_type\" value=\"{pt}\" />\n\t<input type=\"hidden\" id=\"original_post_status\" name=\"original_post_status\" value=\"{status}\" />\n\t<input type=\"hidden\" id=\"referredby\" name=\"referredby\" value=\"\" />\n\n\t<input type=\"hidden\" name=\"_wp_original_http_referer\" value=\"\" /><input type='hidden' id='post_ID' name='post_ID' value='{id}' />\t</form>\n\t\t\t<form class=\"metabox-location-side\" onsubmit=\"return false;\">\n\t\t\t<div id=\"poststuff\" class=\"sidebar-open\">\n\t\t\t\t<div id=\"postbox-container-2\" class=\"postbox-container\">\n\t\t\t\t\t<div id=\"side-sortables\" class=\"meta-box-sortables\"></div>\t\t\t\t</div>\n\t\t\t</div>\n\t\t</form>\n\t\t\t<form class=\"metabox-location-normal\" onsubmit=\"return false;\">\n\t\t\t<div id=\"poststuff\" class=\"sidebar-open\">\n\t\t\t\t<div id=\"postbox-container-2\" class=\"postbox-container\">\n\t\t\t\t\t<div id=\"normal-sortables\" class=\"meta-box-sortables\"></div>\t\t\t\t</div>\n\t\t\t</div>\n\t\t</form>\n\t\t\t<form class=\"metabox-location-advanced\" onsubmit=\"return false;\">\n\t\t\t<div id=\"poststuff\" class=\"sidebar-open\">\n\t\t\t\t<div id=\"postbox-container-2\" class=\"postbox-container\">\n\t\t\t\t\t<div id=\"advanced-sortables\" class=\"meta-box-sortables\"></div>\t\t\t\t</div>\n\t\t\t</div>\n\t\t</form>\n\t\t\t</div>\n\n\t\t<div class=\"wrap hide-if-js block-editor-no-js\">\n\t\t<h1 class=\"wp-heading-inline\">{heading}</h1>\n\t\t<div class=\"notice notice-error\"><p>{no_js}</p></div>\t</div>\n</div>\n",
+        "
+<div class=\"block-editor\">\n\t<h1 class=\"screen-reader-text hide-if-no-js\">{heading}</h1>\n\t<div id=\"editor\" class=\"block-editor__container hide-if-no-js\"></div>\n\t<div id=\"metaboxes\" class=\"hidden\">\n\t\t\t<form class=\"metabox-base-form\">\n\t{nonce_field}\t<input type=\"hidden\" id=\"user-id\" name=\"user_ID\" value=\"{user}\" />\n\t<input type=\"hidden\" id=\"hiddenaction\" name=\"action\" value=\"editpost\" />\n\t<input type=\"hidden\" id=\"originalaction\" name=\"originalaction\" value=\"editpost\" />\n\t<input type=\"hidden\" id=\"post_type\" name=\"post_type\" value=\"{pt}\" />\n\t<input type=\"hidden\" id=\"original_post_status\" name=\"original_post_status\" value=\"{status}\" />\n\t<input type=\"hidden\" id=\"referredby\" name=\"referredby\" value=\"\" />\n\n\t<input type=\"hidden\" name=\"_wp_original_http_referer\" value=\"\" />{auto_draft}<input type='hidden' id='post_ID' name='post_ID' value='{id}' /><input type=\"hidden\" id=\"meta-box-order-nonce\" name=\"meta-box-order-nonce\" value=\"{order_nonce}\" /><input type=\"hidden\" id=\"closedpostboxesnonce\" name=\"closedpostboxesnonce\" value=\"{closed_nonce}\" /><input type=\"hidden\" id=\"samplepermalinknonce\" name=\"samplepermalinknonce\" value=\"{sample_nonce}\" />\t</form>\n\t<form id=\"toggle-custom-fields-form\" method=\"post\" action=\"{post_php}\">\n\t\t<input type=\"hidden\" id=\"toggle-custom-fields-nonce\" name=\"toggle-custom-fields-nonce\" value=\"{toggle_nonce}\" /><input type=\"hidden\" name=\"_wp_http_referer\" value=\"{referer}\" />\t\t<input type=\"hidden\" name=\"action\" value=\"toggle-custom-fields\" />\n\t</form>\n\t\t\t<form class=\"metabox-location-side\" onsubmit=\"return false;\">\n\t\t\t<div id=\"poststuff\" class=\"sidebar-open\">\n\t\t\t\t<div id=\"postbox-container-2\" class=\"postbox-container\">\n\t\t\t\t\t<div id=\"side-sortables\" class=\"meta-box-sortables\"></div>\t\t\t\t</div>\n\t\t\t</div>\n\t\t</form>\n\t\t\t<form class=\"metabox-location-normal\" onsubmit=\"return false;\">\n\t\t\t<div id=\"poststuff\" class=\"sidebar-open\">\n\t\t\t\t<div id=\"postbox-container-2\" class=\"postbox-container\">\n\t\t\t\t\t<div id=\"normal-sortables\" class=\"meta-box-sortables\"></div>\t\t\t\t</div>\n\t\t\t</div>\n\t\t</form>\n\t\t\t<form class=\"metabox-location-advanced\" onsubmit=\"return false;\">\n\t\t\t<div id=\"poststuff\" class=\"sidebar-open\">\n\t\t\t\t<div id=\"postbox-container-2\" class=\"postbox-container\">\n\t\t\t\t\t<div id=\"advanced-sortables\" class=\"meta-box-sortables\"></div>\t\t\t\t</div>\n\t\t\t</div>\n\t\t</form>\n\t\t\t</div>\n\n\t\t<div class=\"wrap hide-if-js block-editor-no-js\">\n\t\t<h1 class=\"wp-heading-inline\">{heading}</h1>\n\t\t<div class=\"notice notice-error\"><p>{no_js}</p></div>\t</div>\n</div>\n",
         heading = esc_html(&heading),
         nonce_field = ctx.nonce_field(&format!("update-post_{}", post.id)),
         user = ctx.user.id,
         pt = esc_attr(&post.post_type),
         status = esc_attr(&post.post_status),
         id = post.id,
-        no_js = tr("The block editor requires JavaScript. Please enable JavaScript in your browser settings, or install the Classic Editor plugin."),
+        auto_draft = if is_new { "<input type='hidden' id='auto_draft' name='auto_draft' value='1' />" } else { "" },
+        order_nonce = ctx.create_nonce("meta-box-order"),
+        closed_nonce = ctx.create_nonce("closedpostboxes"),
+        sample_nonce = ctx.create_nonce("samplepermalink"),
+        toggle_nonce = ctx.create_nonce("toggle-custom-fields"),
+        post_php = esc_url(&ctx.admin_url("post.php")),
+        referer = esc_url(&ctx.request.request_uri),
+        no_js = sprintf(&tr("The block editor requires JavaScript. Please enable JavaScript in your browser settings, or install the <a href=\"%s\">Classic Editor plugin</a>."), &[&classic_link]),
     );
     let title = sprintf(&tr("Edit %s &#8220;%s&#8221;"), &[&info.singular, &esc_html(&post.post_title)]);
-    let view = site.permalink(post).await.ok().map(|url| (sprintf(&tr("View %s"), &[&info.singular]), url));
+    let view = if post.post_status == "auto-draft" { None } else { site.permalink(post).await.ok().map(|url| (sprintf(&tr("View %s"), &[&info.singular]), url)) };
     let screen = Screen {
         file: "post.php".into(),
         parent_file: if post.post_type == "post" { "edit.php".into() } else { format!("edit.php?post_type={}", post.post_type) },
-        submenu_file: Some(if post.post_type == "post" { "edit.php".into() } else { format!("edit.php?post_type={}", post.post_type) }),
+        submenu_file: Some(match (post.post_status == "auto-draft", post.post_type == "post") {
+            (true, true) => "post-new.php".into(),
+            (true, false) => format!("post-new.php?post_type={}", post.post_type),
+            (false, true) => "edit.php".into(),
+            (false, false) => format!("edit.php?post_type={}", post.post_type),
+        }),
         post_type: post.post_type.clone(),
         title,
         help: Some(crate::chrome::Help::default()),

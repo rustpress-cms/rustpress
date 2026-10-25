@@ -25,7 +25,9 @@ def help_of(page_html):
     start = page_html.find('<div id="contextual-help-wrap"')
     if start < 0:
         return {"tabs": [], "sidebar": ""}
-    end = page_html.index('<div id="screen-meta-links">', start)
+    end = page_html.find('<div id="screen-meta-links">', start)
+    if end < 0:
+        end = page_html.index('<!-- wpbody-content -->') if False else len(page_html)
     block = page_html[start:end]
     tabs = []
     for m in re.finditer(r'<li id="tab-link-([^"]+)"[^>]*>\s*<a href="[^"]*" aria-controls="[^"]*">\s*(.*?)\s*</a>', block, re.S):
@@ -41,7 +43,14 @@ def help_of(page_html):
 
 def content_of(page_html):
     # After the toolbar of the screen meta (the help button), where the page itself begins.
-    meta = page_html.index('<div id="screen-meta-links">')
+    meta = page_html.find('<div id="screen-meta-links">')
+    if meta < 0:
+        # No help button: the screen meta ends with its closing tags.
+        meta = page_html.index('<div id="screen-meta"')
+        m = re.compile(r"</div>\s*</div>\s*</div>\s*</div>\n\t\t").search(page_html, meta)
+        start = m.end()
+        end = page_html.index('<div class="clear"></div></div><!-- wpbody-content -->')
+        return page_html[start:end].replace(f"http://localhost:{PORT}", "{{site}}")
     m = re.compile(r"</button>\s*</div>\s*</div>\n\t\t").search(page_html, meta)
     start = m.end() if m else page_html.index('<div class="wrap')
     end = page_html.index('<div class="clear"></div></div><!-- wpbody-content -->')
@@ -51,9 +60,12 @@ def content_of(page_html):
 
 def main():
     os.makedirs(ROOT, exist_ok=True)
-    for page in sys.argv[1:]:
+    for arg in sys.argv[1:]:
+        # `name=page.php?query` bakes a screen under another name.
+        name, _, page = arg.partition("=") if "=" in arg and not arg.startswith("?") and arg.index("=") < arg.find(".php") else (None, "", arg)
+        page = page or arg
         page_html = fetch(page)
-        name = page.split("?")[0].replace(".php", "").replace("/", "-")
+        name = name or page.split("?")[0].replace(".php", "").replace("/", "-")
         data = {"help": help_of(page_html), "content": content_of(page_html)}
         path = os.path.join(ROOT, name + ".json")
         with open(path, "w", encoding="utf-8", newline="\n") as f:

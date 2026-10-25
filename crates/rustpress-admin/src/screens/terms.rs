@@ -535,7 +535,8 @@ pub async fn edit_page(ctx: &Ctx<'_>) -> AdminResponse {
     if let Ok(link) = site.term_link(&term).await {
         screen.view_item = Some((sprintf(&tr("View %s"), &[&info.singular]), link));
     }
-    render(ctx, &screen, &h, &Assets::default()).await
+    // The empty help of the screen ends without a line break.
+    render(ctx, &screen, &format!("\n{h}"), &Assets::default()).await
 }
 
 /// `edit-tags.php?action=editedtag`: saves the edit form of `term.php`.

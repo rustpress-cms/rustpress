@@ -32,6 +32,7 @@ pub mod options;
 pub mod pages;
 pub mod post_edit;
 pub mod posts;
+pub mod privacy;
 pub mod settings;
 pub mod terms;
 pub mod user_edit;
@@ -250,6 +251,7 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse
         "tools.php" => pages::tools(&ctx).await,
         "import.php" => pages::import(&ctx).await,
         "export.php" => export::page(&ctx).await,
+        "options-privacy.php" => privacy::page(&ctx).await,
         other => unavailable(&ctx, other).await,
     };
     let mut cookies = user_settings_cookies(env, request, ctx.user.id).await;

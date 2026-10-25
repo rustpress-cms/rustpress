@@ -431,7 +431,7 @@ async fn recent_drafts(ctx: &Ctx<'_>) -> String {
     let length: usize = site.trx("10", "draft_length").trim().parse().unwrap_or(10);
     for draft in drafts.iter().take(3) {
         let title = draft_or_title(ctx, draft);
-        let url = esc_url(&ctx.admin_url(&format!("post.php?post={}&action=edit", draft.id))).replace("&#038;", "&amp;");
+        let url = esc_url(&ctx.admin_url(&format!("post.php?post={}&action=edit", draft.id)));
         let ts = site.timezone.local_timestamp(&draft.post_date).unwrap_or(0);
         out.push_str(&format!(
             "<li>\n<div class=\"draft-title\"><a href=\"{url}\" aria-label=\"{}\">{title}</a><time datetime=\"{}\">{}</time></div>",

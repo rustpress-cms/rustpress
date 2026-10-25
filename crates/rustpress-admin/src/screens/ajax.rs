@@ -49,7 +49,7 @@ fn heartbeat_data(request: &AdminRequest) -> Map<String, Json> {
 }
 
 /// The user who has taken over the edit lock of a post, if somebody else holds it (`wp_check_post_lock()`).
-async fn post_lock_holder(env: &AdminEnv<'_>, user: &CurrentUser, post_id: u64) -> Option<u64> {
+pub(super) async fn post_lock_holder(env: &AdminEnv<'_>, user: &CurrentUser, post_id: u64) -> Option<u64> {
     let lock = env.db.post_meta_value(post_id, "_edit_lock").await.ok().flatten()?;
     let (time, holder) = lock.split_once(':')?;
     let (time, holder): (i64, u64) = (time.parse().ok()?, holder.parse().ok()?);

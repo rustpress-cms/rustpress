@@ -18,6 +18,7 @@ fn source(name: &str) -> &'static str {
         "import" => include_str!("../data/pages/import.json"),
         "export" => include_str!("../data/pages/export.json"),
         "options-privacy" => include_str!("../data/pages/options-privacy.json"),
+        "privacy-policy-guide" => include_str!("../data/pages/privacy-policy-guide.json"),
         "options-permalink" => include_str!("../data/pages/options-permalink.json"),
         "plugins" => include_str!("../data/pages/plugins.json"),
         "themes" => include_str!("../data/pages/themes.json"),
