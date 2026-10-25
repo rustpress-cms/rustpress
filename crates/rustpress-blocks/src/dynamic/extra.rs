@@ -195,7 +195,7 @@ pub(super) async fn latest_comments(bc: &BlockCtx<'_>) -> Result<String> {
         None => bc.attr_str("displayContent").unwrap_or("excerpt").to_owned(),
     };
     let number = bc.attr_u64("commentsToShow").unwrap_or(5);
-    let comments = site.db.comments_query(&rustpress_db::CommentQuery { limit: Some(number), ..rustpress_db::CommentQuery::default() }).await?;
+    let comments = site.db.comments_query(&rustpress_db::CommentQuery { limit: Some(number), types: Vec::new(), ..rustpress_db::CommentQuery::default() }).await?;
     let mut items = String::new();
     let (avatar, date) = (flag(bc, "displayAvatar"), flag(bc, "displayDate"));
     for comment in &comments {
@@ -222,7 +222,7 @@ pub(super) async fn latest_comments(bc: &BlockCtx<'_>) -> Result<String> {
         let (link, title) = match &post {
             Some(post) => {
                 let title = the_title_for(site, post);
-                (format!("{}#comment-{}", site.permalink(post).await?, comment.comment_id), if title.is_empty() { site.tr("(no title)") } else { title })
+                (crate::comment_pages::comment_link(env, comment, None).await?, if title.is_empty() { site.tr("(no title)") } else { title })
             }
             None => (String::new(), site.tr("(no title)")),
         };

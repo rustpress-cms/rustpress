@@ -441,7 +441,7 @@ fn number_format(n: u64) -> String {
 }
 
 /// `paginate_links()` with `prev_next = false`.
-fn paginate_links(base: &str, format: &str, total: u64, current: u64, mid_size: u64, add_args: &[(String, String)]) -> Option<String> {
+pub(super) fn paginate_links(base: &str, format: &str, total: u64, current: u64, mid_size: u64, add_args: &[(String, String)], fragment: &str) -> Option<String> {
     if total < 2 {
         return None;
     }
@@ -458,6 +458,7 @@ fn paginate_links(base: &str, format: &str, total: u64, current: u64, mid_size: 
             for (k, v) in add_args {
                 link = add_query_arg(&link, k, v);
             }
+            link.push_str(fragment);
             links.push(format!("<a class=\"page-numbers\" href=\"{}\">{}</a>", esc_url(&link), number_format(n)));
             dots = true;
         } else if dots {
@@ -502,7 +503,7 @@ pub(super) async fn pagination_numbers(bc: &BlockCtx<'_>) -> Result<String> {
             "?paged=%#%".to_owned()
         };
         let args: Vec<(String, String)> = QueryVars::parse(query).iter().filter(|(k, _)| *k != "paged").map(|(k, v)| (k.to_owned(), url_encode(v))).collect();
-        paginate_links(&base, &format, total, q.paged.max(1), mid_size, &args)
+        paginate_links(&base, &format, total, q.paged.max(1), mid_size, &args, "")
     } else {
         let page = custom_page(bc);
         let data = custom_query(bc, page).await?;
@@ -515,7 +516,7 @@ pub(super) async fn pagination_numbers(bc: &BlockCtx<'_>) -> Result<String> {
         if let Some(paged) = QueryVars::parse(&q.raw_query).u64("paged") {
             args = vec![("paged".to_owned(), paged.to_string())];
         }
-        paginate_links("%_%", &format!("?{key}=%#%"), total, page.max(1), mid_size, &args)
+        paginate_links("%_%", &format!("?{key}=%#%"), total, page.max(1), mid_size, &args, "")
     };
     let Some(mut content) = content else { return Ok(String::new()) };
     if content.is_empty() {
@@ -561,7 +562,7 @@ mod tests {
 
     #[test]
     fn paginate_links_with_current_page_and_dots() {
-        let out = paginate_links("http://x/%_%", "page/%#%/", 10, 5, 1, &[]).unwrap();
+        let out = paginate_links("http://x/%_%", "page/%#%/", 10, 5, 1, &[], "").unwrap();
         assert_eq!(
             out,
             "<a class=\"page-numbers\" href=\"http://x/\">1</a>\n<span class=\"page-numbers dots\">&hellip;</span>\n<a class=\"page-numbers\" href=\"http://x/page/4/\">4</a>\n<span aria-current=\"page\" class=\"page-numbers current\">5</span>\n<a class=\"page-numbers\" href=\"http://x/page/6/\">6</a>\n<span class=\"page-numbers dots\">&hellip;</span>\n<a class=\"page-numbers\" href=\"http://x/page/10/\">10</a>"
@@ -570,9 +571,9 @@ mod tests {
 
     #[test]
     fn paginate_links_keeps_extra_query_arguments() {
-        let out = paginate_links("http://x/%_%", "page/%#%/", 2, 1, 2, &[("s".to_owned(), "Beitrag".to_owned())]).unwrap();
+        let out = paginate_links("http://x/%_%", "page/%#%/", 2, 1, 2, &[("s".to_owned(), "Beitrag".to_owned())], "").unwrap();
         assert!(out.contains("href=\"http://x/page/2/?s=Beitrag\""), "{out}");
-        assert!(paginate_links("http://x/%_%", "page/%#%/", 1, 1, 2, &[]).is_none());
+        assert!(paginate_links("http://x/%_%", "page/%#%/", 1, 1, 2, &[], "").is_none());
     }
 
     #[test]

@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use rustpress_db::Post;
 
-use crate::content::{context_for_post, get_the_content, has_blocks, post_password_required, the_content_for_excerpt};
+use crate::content::{context_for_post, has_blocks, post_password_required, the_content_for_excerpt};
 use crate::env::{Context, Env};
 use crate::parser::{Block, parse_blocks};
 use crate::Result;
@@ -33,7 +33,9 @@ pub async fn get_the_excerpt_with(env: &Env<'_>, post: &Arc<Post>, length: usize
     if !post.post_excerpt.trim().is_empty() {
         return Ok(post.post_excerpt.clone());
     }
-    let content = get_the_content(env, post, 1, true);
+    // `wp_trim_excerpt()` calls `get_the_content( '' )`; `$more` is on for single posts, pages and feeds only.
+    let on = env.query.flags.is_singular() || env.query.flags.is_feed;
+    let content = crate::content::get_the_content_with(env, post, 1, on, true);
     let content = rustpress_core::shortcodes::strip_shortcodes(&content);
     let content = excerpt_remove_blocks(env, post, &content).await?;
     let html = the_content_for_excerpt(env, post, &content).await?.replace("]]>", "]]&gt;");

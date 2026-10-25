@@ -98,6 +98,7 @@ struct Ctx<'a> {
     env: Env<'a>,
     kind: Kind,
     version: String,
+    wp_root: std::path::PathBuf,
 }
 
 impl Ctx<'_> {
@@ -147,7 +148,10 @@ impl Ctx<'_> {
     /// `get_the_content_feed()`.
     async fn content(&self, post: &Arc<Post>) -> Result<String> {
         let raw = get_the_content(&self.env, post, 1, true);
-        Ok(the_content(&self.env, post, &raw).await?.replace("]]>", "]]&gt;"))
+        let content = the_content(&self.env, post, &raw).await?.replace("]]>", "]]&gt;");
+        // `the_content_feed`: `wp_staticize_emoji()`.
+        let formatting = std::fs::read_to_string(self.wp_root.join("wp-includes").join("formatting.php")).unwrap_or_default();
+        Ok(rustpress_core::text::staticize_emoji(&content, &formatting))
     }
 
     fn enclosures(&self, meta: &[rustpress_db::PostMeta], post: &Post) -> String {
@@ -185,10 +189,22 @@ fn comment_author(site: &Site, c: &Comment) -> String {
 
 /// `get_feed_build_date()`.
 async fn build_date(site: &Site, q: &QueryResult, comments: &[Comment], comment_feed: bool) -> Result<String> {
-    // The posts of a site-wide comment feed do not take part in the comparison.
-    let posts = if comment_feed && !q.flags.is_singular() { &[][..] } else { &q.posts[..] };
-    let mut times: Vec<String> = posts.iter().map(|p| p.post_modified_gmt.clone()).collect();
-    if !q.posts.is_empty() {
+    // A site-wide comment feed compares the posts its comments belong to.
+    let mut times: Vec<String> = Vec::new();
+    if comment_feed && !q.flags.is_singular() {
+        let mut seen: Vec<u64> = Vec::new();
+        for comment in comments {
+            if !seen.contains(&comment.comment_post_id) {
+                seen.push(comment.comment_post_id);
+                if let Some(post) = site.db.post(comment.comment_post_id).await? {
+                    times.push(post.post_modified_gmt);
+                }
+            }
+        }
+    } else {
+        times.extend(q.posts.iter().map(|p| p.post_modified_gmt.clone()));
+    }
+    if !q.posts.is_empty() || (comment_feed && !comments.is_empty()) {
         if comment_feed {
             times.extend(comments.iter().map(|c| c.comment_date_gmt.clone()));
         }
@@ -219,7 +235,7 @@ pub async fn render_feed(theme: &Theme, site: &Site, q: &QueryResult, registry: 
         return Ok(None);
     }
 
-    let ctx = Ctx { site, env: Env::new(site, q, theme, registry), kind, version: wp_version(&theme.wp_root) };
+    let ctx = Ctx { site, env: Env::new(site, q, theme, registry), kind, version: wp_version(&theme.wp_root), wp_root: theme.wp_root.clone() };
     // The feed templates run their `while ( have_posts() )` loop on the main query.
     ctx.env.with_state(|s| s.media.in_main_loop = true);
     let self_url = format!("{}{}", site.settings.home.trim_end_matches('/').split("://").next().map_or(String::new(), |s| format!("{s}://")) + site.settings.home.trim_end_matches('/').split("://").nth(1).unwrap_or("").split('/').next().unwrap_or(""), request_uri);
@@ -385,8 +401,8 @@ async fn rss2_comments(c: &Ctx<'_>, q: &QueryResult, comments: &[Comment], self_
     out.push('\n');
     for comment in comments {
         let Some(comment_post) = c.site.db.post(comment.comment_post_id).await? else { continue };
-        let permalink = c.site.permalink(&comment_post).await?;
-        let comment_link = esc_url(&format!("{permalink}#comment-{}", comment.comment_id));
+        let _permalink = ();
+        let comment_link = esc_url(&rustpress_blocks::comment_pages::comment_link(&c.env, comment, None).await?);
         let author = ent2ncr(&comment_author(c.site, comment));
         let item_title = if singular {
             ent2ncr(&sprintf(&c.site.tr("By: %s"), &[&author]))
@@ -407,8 +423,8 @@ async fn rss2_comments(c: &Ctx<'_>, q: &QueryResult, comments: &[Comment], self_
         } else {
             out.push_str(&format!(
                 "\t\t\t<description><![CDATA[{}]]></description>\n\t\t\t<content:encoded><![CDATA[{}]]></content:encoded>\n\t\t",
-                esc_html(&ent2ncr(&comment.comment_content)),
-                comment_text(c.site, &comment.comment_content)
+                esc_html(&ent2ncr(&feed_comment_text(c, comment).await?)),
+                comment_text(c.site, &feed_comment_text(c, comment).await?)
             ));
         }
         out.push_str("\n\t\t\t</item>\n\t");
@@ -449,7 +465,7 @@ async fn atom_comments(c: &Ctx<'_>, q: &QueryResult, comments: &[Comment], _self
     for comment in comments {
         let Some(comment_post) = c.site.db.post(comment.comment_post_id).await? else { continue };
         let permalink = c.site.permalink(&comment_post).await?;
-        let comment_link = esc_url(&format!("{permalink}#comment-{}", comment.comment_id));
+        let comment_link = esc_url(&rustpress_blocks::comment_pages::comment_link(&c.env, comment, None).await?);
         let author = ent2ncr(&comment_author(c.site, comment));
         let item_title = if singular {
             ent2ncr(&sprintf(&c.site.tr("By: %s"), &[&author]))
@@ -469,7 +485,7 @@ async fn atom_comments(c: &Ctx<'_>, q: &QueryResult, comments: &[Comment], _self
         if post_password_required(&comment_post) {
             out.push_str(&format!("\t\t\t<content type=\"html\" xml:base=\"{comment_link}\"><![CDATA[{}]]></content>\n\t\t", protected_form(c, &comment_post)));
         } else {
-            out.push_str(&format!("\t\t\t<content type=\"html\" xml:base=\"{comment_link}\"><![CDATA[{}]]></content>\n\t\t", comment_text(c.site, &comment.comment_content)));
+            out.push_str(&format!("\t\t\t<content type=\"html\" xml:base=\"{comment_link}\"><![CDATA[{}]]></content>\n\t\t", comment_text(c.site, &feed_comment_text(c, comment).await?)));
         }
         out.push_str("\n\t\t");
         if comment.comment_parent == 0 {
@@ -482,7 +498,7 @@ async fn atom_comments(c: &Ctx<'_>, q: &QueryResult, comments: &[Comment], _self
             out.push_str(&format!(
                 "\t\t\t<thr:in-reply-to ref=\"{}\" href=\"{}\" type=\"text/html\" />\n\t\t\t",
                 esc_url(&format!("{}#comment-{}", comment_post.guid, parent.comment_id)),
-                format_args!("{permalink}#comment-{}", parent.comment_id)
+                esc_url(&rustpress_blocks::comment_pages::comment_link(&c.env, &parent, None).await?)
             ));
         }
         out.push_str("\t</entry>\n\t");
@@ -498,4 +514,18 @@ fn queried_post(q: &QueryResult) -> Option<&Post> {
         Queried::Post(p) => Some(p),
         _ => None,
     }
+}
+
+
+/// `get_comment_text()` in a comment feed: a reply starts with a link to its parent.
+async fn feed_comment_text(c: &Ctx<'_>, comment: &rustpress_db::Comment) -> Result<String> {
+    let mut text = comment.comment_content.clone();
+    if comment.comment_parent != 0
+        && let Some(parent) = c.site.db.comment(comment.comment_parent).await?
+    {
+        let link = esc_url(&rustpress_blocks::comment_pages::comment_link(&c.env, &parent, None).await?);
+        let name = comment_author(c.site, &parent);
+        text = format!("{}\n\n{text}", sprintf(&ent2ncr(&c.site.tr("In reply to %s.")), &[&format!("<a href=\"{link}\">{name}</a>")]));
+    }
+    Ok(text)
 }

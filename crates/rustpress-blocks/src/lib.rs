@@ -5,6 +5,7 @@
 //! ([`supports`], [`layout`], [`elements`], [`dimensions`]) and the server-side
 //! blocks in [`dynamic`].
 
+pub mod comment_pages;
 pub mod content;
 pub mod dimensions;
 pub mod dynamic;
@@ -18,6 +19,7 @@ pub mod html;
 pub mod images;
 pub mod interactivity;
 pub mod layout;
+pub mod media_shortcodes;
 pub mod legacy_comments;
 pub mod parser;
 pub mod php_json;

@@ -60,6 +60,10 @@ async fn do_shortcode_tag(env: &Env<'_>, post: Option<&Arc<Post>>, text: &str, m
     let output = match m.name.as_str() {
         "caption" | "wp_caption" => Some(img_caption_shortcode(env, post, atts, m.content.as_deref().unwrap_or("")).await?),
         "gallery" => Some(gallery_shortcode(env, post, atts).await?),
+        "audio" => Some(crate::media_shortcodes::audio(env, post.map_or(0, |p| p.id), &atts).unwrap_or_default()),
+        "video" => Some(crate::media_shortcodes::video(env, post.map_or(0, |p| p.id), &atts, m.content.as_deref().unwrap_or("")).unwrap_or_default()),
+        // `WP_Embed` registers `[embed]` as `__return_false`; the real work happens before `wpautop()`.
+        "embed" => Some(String::new()),
         _ => None,
     };
     let Some(output) = output else { return Ok(text[m.start..m.end].to_owned()) };
@@ -273,4 +277,27 @@ async fn gallery_shortcode(env: &Env<'_>, post: Option<&Arc<Post>>, mut atts: At
     }
     output.push_str("\n\t\t</div>\n");
     Ok(output)
+}
+
+
+/// `WP_Embed::run_shortcode()` (`the_content` priority 8): `[embed]` runs before the blocks and `wpautop()`.
+pub fn run_embed_shortcodes(content: &str) -> String {
+    if !content.contains("[embed") {
+        return content.to_owned();
+    }
+    let tags = ["embed"];
+    let content = shortcodes::protect_html(content, true);
+    let mut out = String::with_capacity(content.len());
+    let mut at = 0;
+    while let Some(m) = shortcodes::find(&content, at, &tags) {
+        out.push_str(&content[at..m.start]);
+        if m.open_escape && m.close_escape {
+            out.push_str(&content[m.start + 1..m.end - 1]);
+        } else {
+            out.push_str(&format!("{}{}{}", if m.open_escape { "[" } else { "" }, crate::media_shortcodes::embed(m.content.as_deref().unwrap_or("")), if m.close_escape { "]" } else { "" }));
+        }
+        at = m.end;
+    }
+    out.push_str(&content[at..]);
+    shortcodes::unescape_invalid(&out)
 }

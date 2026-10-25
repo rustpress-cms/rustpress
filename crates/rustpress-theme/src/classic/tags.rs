@@ -77,6 +77,45 @@ pub fn posts_pagination(site: &Site, q: &QueryResult, args: &Pagination) -> Stri
     navigation_markup(&links.join("\n"), "pagination", &title, &title)
 }
 
+/// `the_comments_pagination()`: the links to the other pages of comments.
+pub fn comments_pagination(site: &Site, permalink: &str, request_uri: &str, current: u64, total: u64, prev_text: &str, next_text: &str) -> String {
+    if total < 2 {
+        return String::new();
+    }
+    let page_link = |n: u64| {
+        let base = if site.uses_pretty_permalinks() {
+            site.user_trailingslashit(&format!("{}comment-page-{n}", rustpress_core::urls::trailingslashit(permalink)))
+        } else {
+            rustpress_core::urls::add_query_arg(request_uri, "cpage", &n.to_string())
+        };
+        esc_url(&format!("{base}#comments"))
+    };
+    let (mid_size, end_size) = (2, 1);
+    let mut links: Vec<String> = Vec::new();
+    if current > 1 {
+        links.push(format!("<a class=\"prev page-numbers\" href=\"{}\">{prev_text}</a>", page_link(current - 1)));
+    }
+    let mut dots = false;
+    for n in 1..=total {
+        let label = site.number_i18n(n);
+        if n == current {
+            links.push(format!("<span aria-current=\"page\" class=\"page-numbers current\">{label}</span>"));
+            dots = true;
+        } else if n <= end_size || (n + mid_size >= current && n <= current + mid_size) || n > total.saturating_sub(end_size) {
+            links.push(format!("<a class=\"page-numbers\" href=\"{}\">{label}</a>", page_link(n)));
+            dots = true;
+        } else if dots {
+            links.push("<span class=\"page-numbers dots\">&hellip;</span>".to_owned());
+            dots = false;
+        }
+    }
+    if current < total {
+        links.push(format!("<a class=\"next page-numbers\" href=\"{}\">{next_text}</a>", page_link(current + 1)));
+    }
+    let title = site.tr("Comments pagination");
+    navigation_markup(&links.join("\n"), "comments-pagination", &title, &title)
+}
+
 /// `get_the_category_list( $separator )`: categories sorted by name.
 pub async fn category_list(site: &Site, post: &Post, separator: &str) -> Result<String> {
     let mut terms = site.db.terms_for_post(post.id, Some("category")).await?;

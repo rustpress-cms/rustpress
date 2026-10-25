@@ -18,6 +18,7 @@ pub mod shortcodes;
 pub mod settings;
 pub mod site;
 pub mod sitemap;
+pub mod text;
 pub mod slug;
 pub mod urls;
 

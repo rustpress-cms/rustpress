@@ -15,6 +15,8 @@ pub struct ListArgs {
     /// The reply link text (already with the theme's icon).
     pub reply_text: String,
     pub short_ping: bool,
+    /// The comment page being shown (`get_query_var( 'cpage' )` in the loop): links to comments name it.
+    pub cpage: Option<u64>,
 }
 
 /// The counters `get_comment_class()` keeps in globals.
@@ -34,7 +36,11 @@ pub async fn list_comments(site: &Site, env: &crate::env::Env<'_>, post: &Post, 
     let max_depth: i64 = if site.options.get("thread_comments") == Some("1") { site.options.u64("thread_comments_depth", 5) as i64 } else { -1 };
     let mut out = String::new();
     let mut counters = Counters::default();
-    let top: Vec<&Comment> = comments.iter().filter(|c| c.comment_parent == 0 || !comments.iter().any(|p| p.comment_id == c.comment_parent)).collect();
+    let mut top: Vec<&Comment> = comments.iter().filter(|c| c.comment_parent == 0 || !comments.iter().any(|p| p.comment_id == c.comment_parent)).collect();
+    // `reverse_top_level` follows the `comment_order` option.
+    if site.options.get("comment_order") == Some("desc") {
+        top.reverse();
+    }
     for comment in top {
         display(site, env, post, comments, comment, 0, max_depth, args, &mut counters, &mut out).await?;
     }
@@ -140,18 +146,31 @@ async fn start_element(
     out: &mut String,
 ) -> Result<()> {
     let class = comment_class(site, post, comment, depth, if has_children { "parent" } else { "" }, counters);
-    let avatar = if args.avatar_size != 0 { get_avatar(env, &comment.comment_author_email, args.avatar_size, "", "", "") } else { String::new() };
+    // `Walker_Comment::ping()`
+    if args.short_ping && matches!(comment.comment_type.as_str(), "pingback" | "trackback") {
+        out.push_str(&format!(
+            "\t<li id=\"comment-{}\" class=\"{class}\">\n\t\t<div class=\"comment-body\">\n\t\t\t{} {} \t\t</div>\n\t",
+            comment.comment_id,
+            site.tr("Pingback:"),
+            comment_author_link(site, comment)
+        ));
+        return Ok(());
+    }
+    // `get_avatar()` answers `false` for pingbacks and trackbacks (`get_avatar_comment_types()`).
+    let has_avatar_type = comment.comment_type.is_empty() || comment.comment_type == "comment";
+    let avatar = if args.avatar_size != 0 && has_avatar_type { get_avatar(env, &comment.comment_author_email, args.avatar_size, "", "", "") } else { String::new() };
     let says = rustpress_core::i18n::sprintf(&site.tr("%s <span class=\"says\">says:</span>"), &[&format!("<b class=\"fn\">{}</b>", comment_author_link(site, comment))]);
     let ts = site.timezone.local_timestamp(&comment.comment_date).unwrap_or(0);
     let date = site.date(&site.options.string("date_format", "F j, Y"), ts);
     let time = site.date(&site.options.string("time_format", "g:i a"), ts);
     let when = rustpress_core::i18n::sprintf(&site.tr("%1$s at %2$s"), &[&date, &time]);
-    let link = format!("{}#comment-{}", site.permalink(post).await?, comment.comment_id);
+    let link = crate::comment_pages::comment_link(env, comment, args.cpage).await?;
     let text = comment_text(site, &comment.comment_content);
     let reply = if comments_open(post) && (max_depth <= 0 || depth < max_depth) {
         let author = comment_author(site, comment);
         let reply_to = rustpress_core::i18n::sprintf(&site.tr("Reply to %s"), &[&author]);
-        let href = format!("{}#respond", esc_url(&add_query_arg(&site.permalink(post).await?, "replytocom", &comment.comment_id.to_string())));
+        let base = if site.options.get("page_comments") == Some("1") { link.replace(&format!("#comment-{}", comment.comment_id), "") } else { site.permalink(post).await? };
+        let href = format!("{}#respond", esc_url(&add_query_arg(&base, "replytocom", &comment.comment_id.to_string())));
         format!(
             "<div class=\"reply\"><a rel=\"nofollow\" class=\"comment-reply-link\" href=\"{href}\" data-commentid=\"{id}\" data-postid=\"{post_id}\" data-belowelement=\"div-comment-{id}\" data-respondelement=\"respond\" data-replyto=\"{to}\" aria-label=\"{to}\">{text}</a></div>",
             id = comment.comment_id,
@@ -228,7 +247,8 @@ pub async fn compat_comments_template(site: &Site, env: &crate::env::Env<'_>, po
     if crate::content::post_password_required(post) {
         return Ok(format!("\t\t<p class=\"nocomments\">{}</p>\n\t", site.tr("This post is password protected. Enter the password to view comments.")));
     }
-    let comments = site.db.approved_comments(post.id).await?;
+    let page = crate::comment_pages::comments_for_template(env, post.id).await?;
+    let comments = page.comments.clone();
     let mut out = String::from("\n<!-- You can start editing here. -->\n\n");
     if !comments.is_empty() {
         let title = format!("&#8220;{}&#8221;", the_title_for(site, post));
@@ -238,8 +258,11 @@ pub async fn compat_comments_template(site: &Site, env: &crate::env::Env<'_>, po
         } else {
             rustpress_core::i18n::sprintf(&site.trn("%1$s response to %2$s", "%1$s responses to %2$s", count), &[&site.number_i18n(count.max(0) as u64), &title])
         };
-        let navigation = "\t<div class=\"navigation\">\n\t\t<div class=\"alignleft\"></div>\n\t\t<div class=\"alignright\"></div>\n\t</div>\n";
-        let args = ListArgs { avatar_size: 32, reply_text: site.trx("Reply", "verb"), short_ping: false };
+        let permalink = site.permalink(post).await?;
+        let previous = crate::comment_pages::previous_link(env, &site.tr("&laquo; Older Comments"), page.page, &permalink, "").await.unwrap_or_default();
+        let next = crate::comment_pages::next_link(env, &site.tr("Newer Comments &raquo;"), page.page, page.max_pages, &permalink, "").unwrap_or_default();
+        let navigation = format!("\t<div class=\"navigation\">\n\t\t<div class=\"alignleft\">{previous}</div>\n\t\t<div class=\"alignright\">{next}</div>\n\t</div>\n");
+        let args = ListArgs { avatar_size: 32, reply_text: site.trx("Reply", "verb"), short_ping: false, cpage: Some(page.page) };
         out.push_str(&format!("\t<h3 id=\"comments\">\n\t\t{heading}\t</h3>\n\n{navigation}\n\t<ol class=\"commentlist\">\n\t"));
         out.push_str(&list_comments(site, env, post, &comments, &args).await?);
         out.push_str(&format!("\t</ol>\n\n{navigation}\n"));

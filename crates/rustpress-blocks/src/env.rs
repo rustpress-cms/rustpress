@@ -144,6 +144,13 @@ pub struct State {
     /// `do_blocks()` took `wpautop` off the `the_content` filter and `_restore_wpautop_hook()` put it back
     /// behind `shortcode_unautop`: from then on the paragraphs are made after the shortcodes were unwrapped.
     pub wpautop_late: bool,
+    /// `set_query_var( 'cpage' )` of `comments_template()`: the page of comments it showed.
+    pub cpage_override: u64,
+    /// Instances of `[audio]` and `[video]`, and the assets they pull in.
+    pub audio_instances: u64,
+    pub video_instances: u64,
+    pub mediaelement: bool,
+    pub vimeo: bool,
     /// Duotone filters used on the page.
     pub duotone: crate::duotone::DuotoneState,
     /// `static $instance` of `gallery_shortcode()`.

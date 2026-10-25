@@ -118,7 +118,10 @@ impl Rest<'_> {
     async fn prepare_comment(&self, comment: &Comment, context: &str) -> Result<Value> {
         let post = self.site.db.post(comment.comment_post_id).await?;
         let link = match &post {
-            Some(post) => format!("{}#comment-{}", self.site.permalink(post).await?, comment.comment_id),
+            Some(_) => {
+                let env = crate::util::env(self);
+                rustpress_blocks::comment_pages::comment_link(&env, comment, None).await?
+            }
             None => String::new(),
         };
         let mut data = Map::new();

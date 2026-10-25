@@ -269,14 +269,14 @@ async fn recent_comments(s: &Services<'_>, sidebar: &Sidebar, before: &str, sett
         n if n > 0 => n as u64,
         _ => 5,
     };
-    let comments = site.db.comments_query(&CommentQuery { limit: Some(number), ..CommentQuery::default() }).await?;
+    let comments = site.db.comments_query(&CommentQuery { limit: Some(number), types: Vec::new(), ..CommentQuery::default() }).await?;
     let mut items = String::new();
     for comment in &comments {
         let Some(post) = site.db.post(comment.comment_post_id).await? else { continue };
         let name = if comment.comment_author.is_empty() { site.tr("Anonymous") } else { comment.comment_author.clone() };
         let url = comment.comment_author_url.trim();
         let author = if url.is_empty() || url == "http://" || url == "https://" { name } else { format!("<a href=\"{}\" class=\"url\" rel=\"ugc external nofollow\">{name}</a>", esc_url(url)) };
-        let link = format!("{}#comment-{}", site.permalink(&post).await?, comment.comment_id);
+        let link = rustpress_blocks::comment_pages::comment_link(s.env, comment, None).await?;
         let line = rustpress_core::i18n::sprintf(&site.trx("%1$s on %2$s", "widgets"), &[&format!("<span class=\"comment-author-link\">{author}</span>"), &format!("<a href=\"{}\">{}</a>", esc_url(&link), rustpress_blocks::content::the_title_for(site, &post))]);
         items.push_str(&format!("<li class=\"recentcomments\">{line}</li>"));
     }

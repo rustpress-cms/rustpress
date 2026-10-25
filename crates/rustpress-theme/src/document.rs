@@ -260,6 +260,8 @@ struct Sheet {
     extra: Vec<String>,
     /// Right-to-left languages print `<handle>-rtl-css` with this URL instead of the stylesheet's own.
     rtl_link: Option<String>,
+    /// Never inlined (it has no `path` data): MediaElement.
+    linked: bool,
 }
 
 /// The right-to-left variant of a stylesheet (`style.min.css` -> `style-rtl.min.css`): its file and URL,
@@ -384,7 +386,7 @@ fn font_faces(theme: &Theme) -> String {
     if css.is_empty() { String::new() } else { format!("<style class=\"wp-fonts-local\">\n{css}</style>\n") }
 }
 
-pub(crate) async fn discovery_links(site: &Site, q: &QueryResult, version: &str) -> Result<String> {
+pub(crate) async fn discovery_links(site: &Site, q: &QueryResult, version: &str, cpage_override: u64) -> Result<String> {
     let mut out = format!("<link rel=\"https://api.w.org/\" href=\"{}\" />", esc_url(&site.rest_url("/")));
     if let Some(route) = crate::head::queried_rest_route(q) {
         out.push_str(&format!("<link rel=\"alternate\" title=\"JSON\" type=\"application/json\" href=\"{}\" />", esc_url(&site.rest_url(&route))));
@@ -393,8 +395,20 @@ pub(crate) async fn discovery_links(site: &Site, q: &QueryResult, version: &str)
     out.push_str(&format!("<meta name=\"generator\" content=\"WordPress {version}\" />\n"));
     if q.flags.is_singular()
         && let Queried::Post(post) = &q.queried {
+            // `wp_get_canonical_url()`: a later page of the post or of its comments is part of the address.
+            let mut canonical = site.permalink(post).await?;
+            if q.queried_object_id() == post.id {
+                let page = q.vars.u64("page").unwrap_or(0);
+                if page >= 2 {
+                    canonical = if site.uses_pretty_permalinks() { format!("{}{}", rustpress_core::urls::trailingslashit(&canonical), site.user_trailingslashit(&page.to_string())) } else { rustpress_core::urls::add_query_arg(&canonical, "page", &page.to_string()) };
+                }
+                let cpage = q.vars.u64("cpage").filter(|c| *c != 0).unwrap_or(cpage_override);
+                if cpage != 0 {
+                    canonical = rustpress_blocks::comment_pages::pagenum_link(site, &site.permalink(post).await?, cpage, 0);
+                }
+            }
             out.push_str(&format!("<link rel=\"canonical\" href=\"{}\" />
-", esc_url(&site.permalink(post).await?)));
+", esc_url(&canonical)));
             let settings = &site.settings;
             let shortlink = if post.post_type == "page" && settings.show_on_front == rustpress_core::settings::ShowOnFront::Page && settings.page_on_front == post.id { site.home_url("/") } else { site.home_url(&format!("?p={}", post.id)) };
             out.push_str(&format!("<link rel='shortlink' href='{}' />
@@ -515,6 +529,34 @@ pub(crate) fn emoji_detection_script(site: &Site, wp_root: &Path, version: &str)
     )
 }
 
+/// The scripts `wp_enqueue_script( 'wp-mediaelement' )` brings to the footer.
+fn mediaelement_scripts(site: &Site, wp_root: &std::path::Path, includes_url: &str, version: &str, vimeo: bool) -> String {
+    // The strings of `mejsL10n` are read from WordPress's own script-loader and translated.
+    let mut strings = serde_json::Map::new();
+    if let Ok(php) = std::fs::read_to_string(wp_root.join("wp-includes").join("script-loader.php"))
+        && let Ok(re) = regex::Regex::new(r"'(mejs\.[a-z-]+)'\s*=>\s*__\(\s*'((?:[^'\\]|\\.)*)'\s*\)")
+    {
+        for c in re.captures_iter(&php) {
+            strings.insert(c[1].to_owned(), serde_json::Value::from(site.tr(&c[2].replace("\\'", "'"))));
+        }
+    }
+    let language = site.locale().split(['_', '-']).next().unwrap_or("en").to_lowercase();
+    let l10n = rustpress_blocks::php_json::encode(&serde_json::json!({ "language": language, "strings": strings })).replace('<', "\\u003C").replace('>', "\\u003E");
+    let settings = rustpress_blocks::php_json::encode(&serde_json::json!({
+        "pluginPath": "/wp-includes/js/mediaelement/", "classPrefix": "mejs-", "stretching": "responsive",
+        "audioShortcodeLibrary": "mediaelement", "videoShortcodeLibrary": "mediaelement"
+    })).replace("\\/", "/");
+    let mut out = format!("<script id=\"mediaelement-core-js-before\">\nvar mejsL10n = {};\n//# sourceURL=mediaelement-core-js-before\n</script>\n", l10n.replace("\\/", "/"));
+    out.push_str(&format!("<script id=\"mediaelement-core-js\" src=\"{includes_url}/js/mediaelement/mediaelement-and-player.min.js?ver=4.2.17\"></script>\n"));
+    out.push_str(&format!("<script id=\"mediaelement-migrate-js\" src=\"{includes_url}/js/mediaelement/mediaelement-migrate.min.js?ver={version}\"></script>\n"));
+    out.push_str(&format!("<script id=\"mediaelement-js-extra\">\nvar _wpmejsSettings = {settings};\n//# sourceURL=mediaelement-js-extra\n</script>\n"));
+    out.push_str(&format!("<script id=\"wp-mediaelement-js\" src=\"{includes_url}/js/mediaelement/wp-mediaelement.min.js?ver={version}\"></script>\n"));
+    if vimeo {
+        out.push_str(&format!("<script id=\"mediaelement-vimeo-js\" src=\"{includes_url}/js/mediaelement/renderers/vimeo.min.js?ver=4.2.17\"></script>\n"));
+    }
+    out
+}
+
 /// Renders a request into a complete HTML document.
 pub async fn render_document(theme: &Theme, site: &Site, query: &QueryResult, registry: &Registry) -> Result<Document> {
     if crate::classic::is_ported(theme) {
@@ -531,6 +573,14 @@ pub async fn render_document(theme: &Theme, site: &Site, query: &QueryResult, re
     let mut sheets: Vec<Sheet> = Vec::new();
     let mut handles: Vec<String> = Vec::new();
     for name in &state.used_blocks {
+        if name == "wp:mediaelement" {
+            for handle in ["mediaelement", "wp-mediaelement"] {
+                if !handles.iter().any(|h| h == handle) {
+                    handles.push(handle.to_owned());
+                }
+            }
+            continue;
+        }
         let Some(block_type) = registry.get(name) else { continue };
         for handle in &block_type.styles {
             if !handles.contains(handle) {
@@ -546,6 +596,15 @@ pub async fn render_document(theme: &Theme, site: &Site, query: &QueryResult, re
         }
     }
     for handle in &handles {
+        if let Some((file, ver)) = match handle.as_str() {
+            "mediaelement" => Some(("mediaelementplayer-legacy.min.css", "4.2.17".to_owned())),
+            "wp-mediaelement" => Some(("wp-mediaelement.min.css", version.clone())),
+            _ => None,
+        } {
+            let path = wp_root.join("wp-includes").join("js").join("mediaelement").join(file);
+            sheets.push(Sheet { id: handle.clone(), file: Some((path, format!("{includes_url}/js/mediaelement/{file}?ver={ver}"))), inline: None, extra: Vec::new(), rtl_link: None, linked: true });
+            continue;
+        }
         let Some(slug) = handle.strip_prefix("wp-block-") else { continue };
         // `wp-block-group-theme` is the `theme.min.css` of the group block.
         let (slug, file_name) = match slug.strip_suffix("-theme") {
@@ -561,12 +620,12 @@ pub async fn render_document(theme: &Theme, site: &Site, query: &QueryResult, re
                 Some((rtl_path, rtl_url)) => (rtl_path, Some(rtl_url)),
                 None => (path, None),
             };
-            sheets.push(Sheet { id: handle.clone(), file: Some((path, url)), inline: None, extra: Vec::new(), rtl_link });
+            sheets.push(Sheet { id: handle.clone(), file: Some((path, url)), inline: None, extra: Vec::new(), rtl_link, linked: false });
             // Stylesheets the theme enqueues for this block (`wp_enqueue_block_style()`) follow it.
             for extra in theme.block_stylesheets().iter().filter(|s| file_name == "style.min.css" && s.block.strip_prefix("core/") == Some(slug) && state.rendered_blocks.contains(&s.block)) {
                 if let Some(file) = theme.theme_file(&extra.path) {
                     let url = format!("{}/{}?ver={}", theme.template_directory_uri(), extra.path, theme.version());
-                    sheets.push(Sheet { id: extra.handle.clone(), file: Some((file, url)), inline: None, extra: Vec::new(), rtl_link: None });
+                    sheets.push(Sheet { id: extra.handle.clone(), file: Some((file, url)), inline: None, extra: Vec::new(), rtl_link: None, linked: false });
                 }
             }
         }
@@ -574,13 +633,13 @@ pub async fn render_document(theme: &Theme, site: &Site, query: &QueryResult, re
     // With block style variations WordPress queues the emoji style later.
     let has_variations = state.inline_styles.iter().any(|(handle, _)| handle == "block-style-variation-styles");
     if !has_variations {
-        sheets.push(Sheet { id: "wp-emoji-styles".into(), file: None, inline: Some(EMOJI_CSS.into()), extra: Vec::new(), rtl_link: None });
+        sheets.push(Sheet { id: "wp-emoji-styles".into(), file: None, inline: Some(EMOJI_CSS.into()), extra: Vec::new(), rtl_link: None, linked: false });
     }
     let common = wp_root.join("wp-includes").join("css").join("dist").join("block-library").join("common.min.css");
     if common.is_file() {
         let url = format!("{includes_url}/css/dist/block-library/common.min.css?ver={version}");
         let rtl_link = rtl_variant(rtl, &common, &url).map(|(_, rtl_url)| rtl_url);
-        sheets.push(Sheet { id: "wp-block-library".into(), file: Some((common, url)), inline: None, extra: Vec::new(), rtl_link });
+        sheets.push(Sheet { id: "wp-block-library".into(), file: Some((common, url)), inline: None, extra: Vec::new(), rtl_link, linked: false });
     }
     // The inline CSS of the theme's block styles goes to the block's own stylesheet when it has one (and is
     // dropped if the block is not on the page), else to the common block stylesheet.
@@ -592,7 +651,7 @@ pub async fn render_document(theme: &Theme, site: &Site, query: &QueryResult, re
         }
     }
     // Smallest files first until the inline budget is used up.
-    let mut by_size: Vec<(usize, u64)> = sheets.iter().enumerate().filter_map(|(i, s)| s.file.as_ref().and_then(|(p, _)| std::fs::metadata(p).ok()).map(|m| (i, m.len()))).collect();
+    let mut by_size: Vec<(usize, u64)> = sheets.iter().enumerate().filter_map(|(i, s)| s.file.as_ref().filter(|_| !s.linked).and_then(|(p, _)| std::fs::metadata(p).ok()).map(|m| (i, m.len()))).collect();
     // The skip link and the theme's own stylesheet are enqueued later but compete for the same budget.
     const SKIP_LINK: usize = usize::MAX;
     const THEME_STYLE: usize = usize::MAX - 1;
@@ -711,6 +770,11 @@ pub async fn render_document(theme: &Theme, site: &Site, query: &QueryResult, re
     let modules: Vec<String> = state.script_modules.iter().cloned().collect();
     let (importmap, preloads, module_scripts) = script_modules(wp_root, site, &modules);
     let mut footer_scripts = format!("{}{}{module_scripts}", speculation_rules(site, theme), rustpress_blocks::duotone::footer_svgs(&state.duotone));
+    // MediaElement: jQuery in the head, the player scripts in the footer.
+    let styles = if state.mediaelement { format!("{styles}<script id=\"jquery-core-js\" src=\"{includes_url}/js/jquery/jquery.min.js?ver=3.7.1\"></script>\n<script id=\"jquery-migrate-js\" src=\"{includes_url}/js/jquery/jquery-migrate.min.js?ver=3.4.1\"></script>\n") } else { styles };
+    if state.mediaelement {
+        footer_scripts.push_str(&mediaelement_scripts(site, wp_root, &includes_url, &version, state.vimeo));
+    }
     if state.scripts.iter().any(|s| s == "comment-reply") {
         footer_scripts.push_str(&format!("<script async data-wp-strategy=\"async\" fetchpriority=\"low\" id=\"comment-reply-js\" src=\"{includes_url}/js/comment-reply.min.js?ver={version}\"></script>\n"));
     }
@@ -727,7 +791,7 @@ pub async fn render_document(theme: &Theme, site: &Site, query: &QueryResult, re
         esc_html(&title),
         crate::head::feed_links(site, query).await?,
         oembed_links(site, query).await?,
-        discovery_links(site, query, &version).await?,
+        discovery_links(site, query, &version, state.cpage_override).await?,
     );
     let html = format!(
         "<!DOCTYPE html>\n<html {}lang=\"{}\">\n<head>\n\t{head}</head>\n\n<body class=\"{}\">\n\n{}\n{footer_scripts}</body>\n</html>\n",

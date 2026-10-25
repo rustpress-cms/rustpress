@@ -144,19 +144,21 @@ pub(super) async fn comment_template(bc: &BlockCtx<'_>) -> Result<String> {
     if post_password_required(&post) {
         return Ok(String::new());
     }
-    let mut comments = bc.env.site.db.approved_comments(post_id).await?;
+    let page = crate::comment_pages::comments_for_post(bc.env, post_id).await?;
+    let comments = page.comments;
     if comments.is_empty() {
         return Ok(String::new());
     }
     let options = &bc.env.site.options;
     let threaded = options.get("thread_comments") == Some("1");
     let max_depth = options.u64("thread_comments_depth", 5);
-    if options.get("comment_order") == Some("desc") {
-        comments.reverse();
-    }
     let wrapper = bc.wrapper_attributes(&[]);
     let mut state = ListState { alt: 0, thread_alt: 0 };
-    let roots: Vec<&Comment> = if threaded { comments.iter().filter(|c| c.comment_parent == 0 || !comments.iter().any(|p| p.comment_id == c.comment_parent)).collect() } else { comments.iter().collect() };
+    let mut roots: Vec<&Comment> = if threaded { comments.iter().filter(|c| c.comment_parent == 0 || !comments.iter().any(|p| p.comment_id == c.comment_parent)).collect() } else { comments.iter().collect() };
+    // `array_reverse()` of the top-level comments only; replies keep their order.
+    if options.get("comment_order") == Some("desc") {
+        roots.reverse();
+    }
     let html = render_comments(bc, &comments, &roots, threaded, 1, max_depth, &mut state).await?;
     Ok(format!("<ol {wrapper}>{html}</ol>"))
 }
@@ -265,12 +267,7 @@ pub(super) async fn comment_date(bc: &BlockCtx<'_>) -> Result<String> {
 }
 
 async fn comment_link(bc: &BlockCtx<'_>, comment: &Comment) -> Result<String> {
-    let post = bc.env.site.db.post(comment.comment_post_id).await?;
-    let base = match post {
-        Some(p) => bc.env.site.permalink(&p).await?,
-        None => String::new(),
-    };
-    Ok(format!("{base}#comment-{}", comment.comment_id))
+    crate::comment_pages::comment_link(bc.env, comment, None).await
 }
 
 pub(super) async fn comment_reply_link(bc: &BlockCtx<'_>) -> Result<String> {
@@ -294,7 +291,11 @@ pub(super) async fn comment_reply_link(bc: &BlockCtx<'_>) -> Result<String> {
     if !comments_open(&post) {
         return Ok(String::new());
     }
-    let permalink = bc.env.site.permalink(&post).await?;
+    let permalink = if crate::comment_pages::paginated(bc.env) {
+        comment_link(bc, &comment).await?.replace(&format!("#comment-{}", comment.comment_id), "")
+    } else {
+        bc.env.site.permalink(&post).await?
+    };
     let author = comment_author(bc.env.site, &comment);
     let reply_to = rustpress_core::i18n::sprintf(&bc.env.site.tr("Reply to %s"), &[&author]);
     let data = format!(
@@ -361,6 +362,10 @@ pub(super) async fn avatar(bc: &BlockCtx<'_>) -> Result<String> {
     } else {
         comment.comment_author_email.clone()
     };
+    // `get_avatar_comment_types()`: only plain comments have avatars.
+    if !comment.comment_type.is_empty() && comment.comment_type != "comment" {
+        return Ok(format!("<div {wrapper}></div>"));
+    }
     let mut avatar = avatar_img(bc, &email, size, &alt, &image_classes, &image_styles);
     if bc.attr_bool("isLink") && !comment.comment_author_url.is_empty() {
         let label = if bc.attr_str("linkTarget") == Some("_blank") { format!("aria-label=\"{}\"", esc_attr(&rustpress_core::i18n::sprintf(&bc.env.site.tr("(%s website link, opens in a new tab)"), &[&comment.comment_author]))) } else { String::new() };
@@ -375,8 +380,74 @@ pub(super) async fn avatar(bc: &BlockCtx<'_>) -> Result<String> {
 
 // ------------------------------------------------------------ comments pagination
 
-/// `core/comments-pagination`: the wrapper around the previous/numbers/next blocks, which
-/// render nothing while all comments fit on one page (comments are not split into pages yet).
+
+/// `get_comments_pagination_arrow()`.
+fn pagination_arrow(bc: &BlockCtx<'_>, kind: &str) -> Option<String> {
+    let setting = bc.context.get("comments/paginationArrow").and_then(Value::as_str).filter(|s| !s.is_empty())?;
+    let arrow = match (setting, kind) {
+        ("arrow", "next") => "→",
+        ("arrow", _) => "←",
+        ("chevron", "next") => "»",
+        ("chevron", _) => "«",
+        _ => return None,
+    };
+    Some(format!("<span class='wp-block-comments-pagination-{kind}-arrow is-arrow-{setting}' aria-hidden='true'>{arrow}</span>"))
+}
+
+/// The page the pagination blocks work on: `(page, max pages)` (`build_comment_query_vars_from_block()`).
+async fn pagination_state(bc: &BlockCtx<'_>) -> Result<Option<(Option<u64>, u64, String)>> {
+    let Some(post_id) = bc.context.post_id().filter(|id| *id != 0) else { return Ok(None) };
+    let Some(post) = global_post(bc).await? else { return Ok(None) };
+    let page = crate::comment_pages::comments_for_post(bc.env, post_id).await?;
+    let permalink = bc.env.site.permalink(&post).await?;
+    Ok(Some(((page.page != 0).then_some(page.page), page.max_pages, permalink)))
+}
+
+pub(super) async fn comments_pagination_previous(bc: &BlockCtx<'_>) -> Result<String> {
+    let Some((paged, _, permalink)) = pagination_state(bc).await? else { return Ok(String::new()) };
+    if !bc.env.query.flags.is_singular() {
+        return Ok(String::new());
+    }
+    let mut label = bc.attr_str("label").filter(|l| !l.is_empty()).map(str::to_owned).unwrap_or_else(|| bc.env.site.tr("Older Comments"));
+    if let Some(arrow) = pagination_arrow(bc, "previous") {
+        label = format!("{arrow}{label}");
+    }
+    let page = paged.unwrap_or_else(|| bc.env.query.vars.u64("cpage").unwrap_or(0));
+    let attributes = bc.wrapper_attributes(&[]);
+    Ok(crate::comment_pages::previous_link(bc.env, &label, page, &permalink, &attributes).await.unwrap_or_default())
+}
+
+pub(super) async fn comments_pagination_next(bc: &BlockCtx<'_>) -> Result<String> {
+    let Some((paged, max_page, permalink)) = pagination_state(bc).await? else { return Ok(String::new()) };
+    if !bc.env.query.flags.is_singular() {
+        return Ok(String::new());
+    }
+    let mut label = bc.attr_str("label").filter(|l| !l.is_empty()).map(str::to_owned).unwrap_or_else(|| bc.env.site.tr("Newer Comments"));
+    if let Some(arrow) = pagination_arrow(bc, "next") {
+        label.push_str(&arrow);
+    }
+    let page = paged.unwrap_or_else(|| bc.env.query.vars.u64("cpage").unwrap_or(0));
+    let attributes = bc.wrapper_attributes(&[]);
+    Ok(crate::comment_pages::next_link(bc.env, &label, page, max_page, &permalink, &attributes).unwrap_or_default())
+}
+
+pub(super) async fn comments_pagination_numbers(bc: &BlockCtx<'_>) -> Result<String> {
+    let Some((paged, max_page, permalink)) = pagination_state(bc).await? else { return Ok(String::new()) };
+    if !bc.env.query.flags.is_singular() {
+        return Ok(String::new());
+    }
+    let site = bc.env.site;
+    let base = if site.uses_pretty_permalinks() {
+        site.user_trailingslashit(&format!("{}comment-page-%#%", rustpress_core::urls::trailingslashit(&permalink)))
+    } else {
+        add_query_arg(&permalink, "cpage", "%#%")
+    };
+    let current = paged.unwrap_or(1);
+    let Some(links) = super::query::paginate_links(&base, "", max_page, current, 1, &[], "#comments") else { return Ok(String::new()) };
+    Ok(format!("<div {}>{links}</div>", bc.wrapper_attributes(&[])))
+}
+
+/// `core/comments-pagination`: the wrapper around the previous/numbers/next blocks.
 pub(super) async fn comments_pagination(bc: &BlockCtx<'_>) -> Result<String> {
     if bc.content.trim().is_empty() {
         return Ok(String::new());

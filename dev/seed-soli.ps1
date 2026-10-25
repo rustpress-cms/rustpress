@@ -64,7 +64,14 @@ INSERT INTO wp_comments (comment_ID, comment_post_ID, comment_author, comment_au
  (9002, 61, 'Bernd', 'bernd@example.com', '', '127.0.0.1', '2026-10-02 11:30:00', '2026-10-02 09:30:00', 'Antwort auf den ersten Kommentar.', 0, '1', 'test', 'comment', 9001, 0),
  (9003, 61, '', '', '', '127.0.0.1', '2026-10-03 12:00:00', '2026-10-03 10:00:00', 'Anonymer Kommentar', 0, '1', 'test', 'comment', 0, 0),
  (9004, 61, 'Carla', 'carla@example.com', '', '127.0.0.1', '2026-10-04 12:00:00', '2026-10-04 10:00:00', 'Noch nicht freigegeben', 0, '0', 'test', 'comment', 0, 0),
- (9005, 41, 'Dora', 'dora@example.com', 'https://dora.example', '127.0.0.1', '2026-10-05 12:00:00', '2026-10-05 10:00:00', 'Kommentar auf einer Seite', 0, '1', 'test', 'comment', 0, 0);
+ (9005, 41, 'Dora', 'dora@example.com', 'https://dora.example', '127.0.0.1', '2026-10-05 12:00:00', '2026-10-05 10:00:00', 'Kommentar auf einer Seite', 0, '1', 'test', 'comment', 0, 0),
+ (9006, 61, 'Anderes Blog', '', 'https://blog.example/post', '127.0.0.1', '2026-10-06 12:00:00', '2026-10-06 10:00:00', 'Ein Pingback', 0, '1', 'test', 'pingback', 0, 0),
+ (9007, 61, 'Eva', 'eva@example.com', '', '127.0.0.1', '2026-10-07 12:00:00', '2026-10-07 10:00:00', 'Siebter Kommentar mit Link http://example.com/seite und :) Smiley.', 0, '1', 'test', 'comment', 0, 0),
+ (9008, 61, 'Fritz', 'fritz@example.com', '', '127.0.0.1', '2026-10-08 12:00:00', '2026-10-08 10:00:00', 'Antwort auf Eva', 0, '1', 'test', 'comment', 9007, 0),
+ (9009, 61, 'Gerda', 'gerda@example.com', '', '127.0.0.1', '2026-10-09 12:00:00', '2026-10-09 10:00:00', 'Noch einer', 0, '1', 'test', 'comment', 0, 0);
+UPDATE wp_options SET option_value = '1' WHERE option_name = 'page_comments';
+UPDATE wp_options SET option_value = '3' WHERE option_name = 'comments_per_page';
+UPDATE wp_options SET option_value = '1' WHERE option_name = 'use_smilies';
 UPDATE wp_posts SET comment_count = (SELECT COUNT(*) FROM wp_comments c WHERE c.comment_post_ID = wp_posts.ID AND c.comment_approved = '1') WHERE ID IN (61, 41);
 "@)
 $file = Join-Path $env:TEMP 'seed-soli.sql'

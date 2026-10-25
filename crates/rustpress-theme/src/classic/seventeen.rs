@@ -595,10 +595,14 @@ async fn main_template(ctx: &Ctx<'_>) -> Result<String> {
             content_part(ctx, &post).await?
         });
         if (f.is_single || f.is_page) && (comments::comments_open(&post) || post.comment_count > 0) {
-            let args = comments::ListArgs { avatar_size: 100, reply_text: format!("{}{}", svg("mail-reply", false), t(ctx, "Reply")), short_ping: true };
+            let args = comments::ListArgs { avatar_size: 100, reply_text: format!("{}{}", svg("mail-reply", false), t(ctx, "Reply")), short_ping: true, cpage: None };
             let text = |s: &str| t(ctx, s);
             let text_x = |s: &str, c: &str| tx(ctx, s, c);
-            loop_html.push_str(&comments::comments_template(ctx.site, &ctx.env, &post, &args, &ctx.request_uri(), &text, &text_x).await?);
+            let pagination = comments::PaginationText {
+                prev_text: format!("{}<span class=\"screen-reader-text\">{}</span>", svg("arrow-left", false), t(ctx, "Previous")),
+                next_text: format!("<span class=\"screen-reader-text\">{}</span>{}", t(ctx, "Next"), svg("arrow-right", false)),
+            };
+            loop_html.push_str(&comments::comments_template(ctx.site, &ctx.env, &post, &args, &ctx.request_uri(), &pagination, &text, &text_x).await?);
         }
         if f.is_single {
             loop_html.push_str(&post_navigation(ctx, &post).await?);
@@ -797,7 +801,7 @@ async fn head(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State, registry: &Re
         out.push_str(&format!("<script data-wp-strategy=\"defer\" defer id=\"twentyseventeen-navigation-js\" src=\"{theme_uri}/assets/js/navigation.js?ver=20210122\"></script>\n"));
     }
 
-    out.push_str(&discovery_links(site, q, &version).await?);
+    out.push_str(&discovery_links(site, q, &version, 0).await?);
     // `twentyseventeen_pingback_header()`.
     if let (true, Queried::Post(post)) = (q.flags.is_singular(), &q.queried)
         && post.ping_status == "open"

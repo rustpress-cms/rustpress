@@ -42,8 +42,11 @@ fn title_with_prefixes(post: &Post, protected: &str, private: &str, texturize: i
 
 /// The `comment_text` filter chain for the standard filters.
 pub fn comment_text(site: &rustpress_core::Site, raw: &str) -> String {
-    let mut text = site.texturize(raw);
+    let host = site.settings.home.split_once("://").map_or("", |(_, rest)| rest.split(['/', ':']).next().unwrap_or(""));
+    let mut text = rustpress_core::text::make_clickable(raw, &rustpress_core::text::Clickable { home_host: host, comment: true });
+    text = site.texturize(&text);
     text = convert_chars(&text);
+    text = smilies(site, &text);
     text = wpautop(&text);
     capital_p_dangit(&text, false)
 }
@@ -129,6 +132,11 @@ pub fn has_blocks(content: &str) -> bool {
 /// `get_the_content()`: page selection (`<!--nextpage-->`), the `<!--more-->`
 /// teaser and the password form.
 pub fn get_the_content(env: &Env<'_>, post: &Post, page: u64, singular: bool) -> String {
+    get_the_content_with(env, post, page, singular, false)
+}
+
+/// [`get_the_content`]; `no_more_link` is `get_the_content( ' )`: the teaser without a link to the rest.
+pub fn get_the_content_with(env: &Env<'_>, post: &Post, page: u64, singular: bool, no_more_link: bool) -> String {
     if post_password_required(post) {
         return password_form(env, post);
     }
@@ -138,6 +146,10 @@ pub fn get_the_content(env: &Env<'_>, post: &Post, page: u64, singular: bool) ->
         .replace("\n<!--nextpage-->", "<!--nextpage-->")
         .replace("<!--nextpage-->\n", "<!--nextpage-->");
     let pages: Vec<&str> = content.split("<!--nextpage-->").collect();
+    // `WP_Query::generate_postdata()`: `$more` is on for the queried post or page, in feeds and on later pages of a post.
+    let q = env.query;
+    let _ = singular;
+    let singular = (q.queried_object_id() == post.id && (q.flags.is_page || q.flags.is_single)) || q.flags.is_feed || (pages.len() > 1 && page > 1);
     let index = (page.max(1) as usize).min(pages.len()) - 1;
     let page_content = pages[index].to_owned();
 
@@ -163,9 +175,19 @@ pub fn get_the_content(env: &Env<'_>, post: &Post, page: u64, singular: bool) ->
         let mut output = teaser;
         if singular {
             output.push_str(&format!("<span id=\"more-{}\"></span>{rest}", post.id));
-        } else {
-            let text = if custom_text.is_empty() { "Continue reading".to_owned() } else { custom_text };
-            output.push_str(&format!(" <a href=\"#more-{id}\" class=\"more-link\">{text}</a>", id = post.id));
+        } else if !no_more_link {
+            // `$more_link_text`: the default names the post for screen readers; a custom one comes from the tag.
+            let text = if custom_text.is_empty() {
+                let title = rustpress_core::formatting::esc_attr(&rustpress_core::formatting::strip_tags(&the_title_for(env.site, post)));
+                format!(
+                    "<span aria-label=\"{}\">{}</span>",
+                    rustpress_core::i18n::sprintf(&env.site.tr("Continue reading %s"), &[&title]),
+                    env.site.tr("(more&hellip;)")
+                )
+            } else {
+                rustpress_core::formatting::strip_tags(&custom_text)
+            };
+            output.push_str(&format!(" <a href=\"{}#more-{id}\" class=\"more-link\">{text}</a>", permalink_sync(env, post), id = post.id));
         }
         return output;
     }
@@ -241,7 +263,7 @@ pub async fn the_content_for_excerpt(env: &Env<'_>, post: &Arc<Post>, rendered: 
 }
 
 async fn apply_the_content(env: &Env<'_>, post: &Arc<Post>, raw: &str, prefix: &str, filter_tags: bool) -> Result<String> {
-    let raw = raw.replace("]]>", "]]&gt;");
+    let raw = crate::shortcodes::run_embed_shortcodes(raw).replace("]]>", "]]&gt;");
     let blocks = has_blocks(&raw);
     let mut out = env.render_markup(&raw, &context_for_post(post)).await?;
     out = env.site.texturize(&out);
@@ -264,7 +286,13 @@ async fn apply_the_content(env: &Env<'_>, post: &Arc<Post>, raw: &str, prefix: &
         out = format!("{prefix}{out}");
     }
     out = crate::shortcodes::do_shortcode(env, Some(post), &out).await?;
-    if filter_tags { images::filter_content_tags(env, &out, "the_content").await } else { Ok(out) }
+    let out = if filter_tags { images::filter_content_tags(env, &out, "the_content").await? } else { out };
+    Ok(smilies(env.site, &out))
+}
+
+/// `convert_smilies()` when the `use_smilies` option is on.
+pub fn smilies(site: &rustpress_core::Site, text: &str) -> String {
+    if site.options.get("use_smilies") == Some("1") { rustpress_core::text::convert_smilies(text, &site.site_url("wp-includes")) } else { text.to_owned() }
 }
 
 /// `sanitize_html_class`.

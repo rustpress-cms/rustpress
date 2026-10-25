@@ -193,6 +193,10 @@ impl<'a> Rest<'a> {
         let query: String = query.split('&').filter(|p| !p.starts_with("rest_route=") && !p.is_empty()).collect::<Vec<_>>().join("&");
         let mut params = Params::parse(&query);
         params.set("context", "embed");
+        // `WP_REST_Server::embed_links()`: embedded collections are not cut at the default of 10.
+        if params.get("per_page").is_none_or(|p| p.is_empty() || p == "0") {
+            params.set("per_page", "100");
+        }
         self.dispatch(&route, &params).await
     }
 

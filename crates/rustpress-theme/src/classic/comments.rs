@@ -10,12 +10,21 @@ use crate::Result;
 
 pub use rustpress_blocks::legacy_comments::{ListArgs, comments_open};
 
+/// The text of the pagination links of the comment list (`the_comments_pagination()` arguments).
+pub struct PaginationText {
+    pub prev_text: String,
+    pub next_text: String,
+}
+
 /// `comments.php` of Twenty Seventeen around the list and the form.
-pub async fn comments_template(site: &Site, env: &rustpress_blocks::Env<'_>, post: &Post, args: &ListArgs, request_uri: &str, theme_text: &(dyn Fn(&str) -> String + Sync), theme_text_x: &(dyn Fn(&str, &str) -> String + Sync)) -> Result<String> {
+#[allow(clippy::too_many_arguments)]
+pub async fn comments_template(site: &Site, env: &rustpress_blocks::Env<'_>, post: &Post, args: &ListArgs, request_uri: &str, pagination: &PaginationText, theme_text: &(dyn Fn(&str) -> String + Sync), theme_text_x: &(dyn Fn(&str, &str) -> String + Sync)) -> Result<String> {
     if rustpress_blocks::content::post_password_required(post) {
         return Ok(String::new());
     }
-    let comments = site.db.approved_comments(post.id).await?;
+    let page = rustpress_blocks::comment_pages::comments_for_template(env, post.id).await?;
+    let comments = page.comments.clone();
+    let args = &ListArgs { avatar_size: args.avatar_size, reply_text: args.reply_text.clone(), short_ping: args.short_ping, cpage: Some(page.page) };
     let count = post.comment_count;
     let mut out = String::from("\n<div id=\"comments\" class=\"comments-area\">\n\n\t");
     if !comments.is_empty() {
@@ -29,6 +38,7 @@ pub async fn comments_template(site: &Site, env: &rustpress_blocks::Env<'_>, pos
         out.push_str(&format!("\t\t<h2 class=\"comments-title\">\n\t\t\t{heading}\t\t</h2>\n\n\t\t<ol class=\"comment-list\">\n\t\t\t"));
         out.push_str(&list_comments(site, env, post, &comments, args).await?);
         out.push_str("\t\t</ol>\n\n\t\t");
+        out.push_str(&super::tags::comments_pagination(site, &site.permalink(post).await?, request_uri, page.page, page.max_pages, &pagination.prev_text, &pagination.next_text));
     }
     if !comments_open(post) && count != 0 {
         out.push_str(&format!("\n\n\t\t<p class=\"no-comments\">{}</p>\n\t\t", theme_text("Comments are closed.")));
