@@ -271,7 +271,16 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         "site_status": {"direct": direct, "async": [], "issues": issues},
     });
     let baked = super::pages::load(ctx, "site-health");
+    let debug_tab = ctx.request.get("tab") == Some("debug");
+    let content = if debug_tab {
+        // The header is the one of the status tab with the other tab marked; the body is the information.
+        let end = baked.content.find("<div class=\"health-check-body").unwrap_or(baked.content.len());
+        let header = baked.content[..end].replace("class=\"health-check-tab active\">Status</a>", "class=\"health-check-tab \">Status</a>").replace("class=\"health-check-tab \">Info</a>", "class=\"health-check-tab active\">Info</a>");
+        format!("{header}{}", super::site_health_info::body(ctx).await)
+    } else {
+        format!("{}\n", baked.content.trim_end_matches('\n'))
+    };
     let assets = Assets { scripts: vec!["site-health".into()], styles: vec!["site-health".into()], localize: vec![("site-health".into(), "SiteHealth".into(), data)], ..Default::default() };
     let screen = Screen { file: "site-health.php".into(), parent_file: "tools.php".into(), submenu_file: Some("site-health.php".into()), title: sprintf(&tr("Site Health - %s"), &[&if ctx.request.get("tab") == Some("debug") { tr("Info") } else { tr("Status") }]), help: Some(baked.help), early_classes: vec!["site-health".into()], ..Default::default() };
-    render(ctx, &screen, &format!("{}\n", baked.content.trim_end_matches('\n')), &assets).await
+    render(ctx, &screen, &content, &assets).await
 }

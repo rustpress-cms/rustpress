@@ -21,6 +21,7 @@ mod ajax_misc;
 pub mod ajax_terms;
 mod bare_pages;
 mod file_editor;
+mod site_health_info;
 mod attachment_edit;
 mod authorize_app;
 pub mod block_editor;

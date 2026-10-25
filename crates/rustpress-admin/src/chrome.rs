@@ -34,6 +34,8 @@ pub struct Screen {
     pub body_classes: Vec<String>,
     /// Classes of the `admin_body_class` filter: they come right after `no-js`.
     pub early_classes: Vec<String>,
+    /// The content has no indentation of its own: the frame leaves none either.
+    pub flush_content: bool,
 }
 
 impl Screen {
@@ -97,7 +99,7 @@ fn screen_meta(help: &Help, label: &str) -> String {
 				</div>
 			</div>
 				</div>
-".to_owned();
+		".to_owned();
     }
     let mut tabs = String::new();
     let mut panels = String::new();
@@ -630,7 +632,15 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
     out.push_str(&adminbar::render_admin(site, env.user, &bar));
     out.push_str("\n<div id=\"wpbody\" role=\"main\">\n\n<div id=\"wpbody-content\">\n");
     match &screen.help {
-        Some(help) => out.push_str(&screen_meta(help, &tr("Help"))),
+        Some(help) => {
+            let mut meta = screen_meta(help, &tr("Help"));
+            // A page that starts at the left edge needs none of the indentation the frame leaves.
+            if screen.flush_content && meta.ends_with("</div>
+		") {
+                meta.truncate(meta.len() - 2);
+            }
+            out.push_str(&meta);
+        }
         None => out.push_str("\t\t"),
     }
     out.push_str(content);

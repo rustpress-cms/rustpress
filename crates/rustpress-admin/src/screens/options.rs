@@ -247,7 +247,7 @@ async fn all_settings(ctx: &Ctx<'_>) -> AdminResponse {
         rustpress_core::formatting::esc_attr(&to_update.join(",")),
         crate::list_table::submit_button(&tr("Save Changes"), "primary", "Update", "Update").trim_end_matches('\n')
     ));
-    let screen = Screen { file: "options.php".into(), parent_file: "options-general.php".into(), submenu_file: None, title: tr("All Settings"), help: Some(crate::chrome::Help { tabs: Vec::new(), sidebar: String::new() }), ..Default::default() };
+    let screen = Screen { file: "options.php".into(), parent_file: "options-general.php".into(), submenu_file: None, title: tr("All Settings"), help: Some(crate::chrome::Help { tabs: Vec::new(), sidebar: String::new() }), flush_content: true, ..Default::default() };
     render(ctx, &screen, &h, &Assets::default()).await
 }
 

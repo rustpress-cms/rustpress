@@ -55,6 +55,12 @@ fn natural_cmp(a: &str, b: &str) -> std::cmp::Ordering {
 }
 
 pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUser, token: &str, action: &str) -> AdminResponse {
+    if action == "health-check-get-sizes" {
+        if !nonce_ok_early(env, request, user, token) || !user.can("view_site_health_checks") {
+            return super::ajax::json(403, &json!({"success": false}));
+        }
+        return super::ajax::json(200, &super::site_health_info::sizes(env).await);
+    }
     if action == "edit-theme-plugin-file" {
         return super::file_editor::ajax_edit(env, request, user, token).await;
     }
@@ -445,4 +451,10 @@ pub async fn attach(ctx: &Ctx<'_>, ids: &[u64], parent: u64) -> u64 {
         }
     }
     count
+}
+
+/// The nonce of the Site Health results (`check_ajax_referer( 'health-check-site-status-result' )`).
+fn nonce_ok_early(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUser, token: &str) -> bool {
+    let nonce = request.request("_ajax_nonce").or(request.request("_wpnonce")).unwrap_or_default();
+    env.auth.verify_nonce(nonce, "health-check-site-status-result", user.id, token, env.now).is_some()
 }
