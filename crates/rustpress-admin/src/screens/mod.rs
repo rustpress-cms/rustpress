@@ -39,6 +39,7 @@ pub mod privacy;
 pub mod settings;
 pub mod site_editor;
 pub mod terms;
+mod update_core;
 pub mod themes;
 pub mod user_edit;
 pub mod users;
@@ -260,6 +261,7 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse
         "themes.php" => themes::page(&ctx).await,
         "site-editor.php" => site_editor::page(&ctx).await,
         "plugins.php" => plugins::page(&ctx).await,
+        "update-core.php" => update_core::page(&ctx).await,
         other => unavailable(&ctx, other).await,
     };
     let mut cookies = user_settings_cookies(env, request, ctx.user.id).await;

@@ -169,6 +169,8 @@ pub struct Assets {
     pub editor_modules: bool,
     /// The post editor prints no emoji detection script.
     pub no_emoji: bool,
+    /// The update screens print neither the heartbeat nor the session check (`wp_auth_check_load()`).
+    pub no_auth_check: bool,
 }
 
 /// `print_emoji_detection_script()`: the settings and the detection script, inline.
@@ -335,7 +337,8 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
     for (handle, code, position) in &assets.inline {
         scripts.add_inline_script(handle, code, position);
     }
-    for handle in ["svg-painter", "heartbeat", "wp-auth-check"] {
+    let always: &[&str] = if assets.no_auth_check { &["svg-painter"] } else { &["svg-painter", "heartbeat", "wp-auth-check"] };
+    for handle in always {
         scripts.enqueue(handle);
     }
     // `wp_enqueue_command_palette_assets()` runs for every screen, last.
@@ -446,15 +449,17 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
         rustpress_core::i18n::sprintf(&tr("Version %s"), &[&version])
     ));
     out.push_str(&assets.pre_footer);
-    out.push_str(&format!(
-        "\t\t<div id=\"wp-auth-check-wrap\" class=\"hidden\">\n\t<div id=\"wp-auth-check-bg\"></div>\n\t<div id=\"wp-auth-check\">\n\t<button type=\"button\" class=\"wp-auth-check-close button-link\"><span class=\"screen-reader-text\">\n\t\t{close}\t</span></button>\n\t\t\t<div id=\"wp-auth-check-form\" class=\"loading\" data-src=\"{src}\"></div>\n\t\t\t<div class=\"wp-auth-fallback\">\n\t\t<p><b class=\"wp-auth-fallback-expired\" tabindex=\"0\">{expired}</b></p>\n\t\t<p><a href=\"{login}\" target=\"_blank\">{again}</a>\n\t\t{note}</p>\n\t</div>\n\t</div>\n\t</div>\n\t",
-        close = tr("Close dialog"),
-        src = esc_url(&format!("{}?interim-login=1&wp_lang={}", site.site_url("wp-login.php"), if site.locale() == "en_US" { String::new() } else { site.locale() })),
-        expired = tr("Session expired"),
-        login = esc_url(&site.site_url("wp-login.php")),
-        again = tr("Please log in again."),
-        note = tr("The login page will open in a new tab. After logging in you can close it and return to this page.")
-    ));
+    if !assets.no_auth_check {
+        out.push_str(&format!(
+            "\t\t<div id=\"wp-auth-check-wrap\" class=\"hidden\">\n\t<div id=\"wp-auth-check-bg\"></div>\n\t<div id=\"wp-auth-check\">\n\t<button type=\"button\" class=\"wp-auth-check-close button-link\"><span class=\"screen-reader-text\">\n\t\t{close}\t</span></button>\n\t\t\t<div id=\"wp-auth-check-form\" class=\"loading\" data-src=\"{src}\"></div>\n\t\t\t<div class=\"wp-auth-fallback\">\n\t\t<p><b class=\"wp-auth-fallback-expired\" tabindex=\"0\">{expired}</b></p>\n\t\t<p><a href=\"{login}\" target=\"_blank\">{again}</a>\n\t\t{note}</p>\n\t</div>\n\t</div>\n\t</div>\n\t",
+            close = tr("Close dialog"),
+            src = esc_url(&format!("{}?interim-login=1&wp_lang={}", site.site_url("wp-login.php"), if site.locale() == "en_US" { String::new() } else { site.locale() })),
+            expired = tr("Session expired"),
+            login = esc_url(&site.site_url("wp-login.php")),
+            again = tr("Please log in again."),
+            note = tr("The login page will open in a new tab. After logging in you can close it and return to this page.")
+        ));
+    }
     out.push_str(&script_modules(env, assets.editor_modules));
     out.push_str(&footer_styles);
     out.push_str(&footer_scripts);
