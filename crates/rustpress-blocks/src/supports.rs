@@ -143,6 +143,18 @@ fn typography_preset_value(value: &Value, property: &str) -> Value {
     }
 }
 
+/// `wp_render_typography_support()`: a custom font size in the saved markup becomes fluid.
+pub fn render_typography_support(env: &crate::env::Env<'_>, attrs: &Map<String, Value>, content: String) -> String {
+    let Some(size) = attrs.get("style").and_then(|s| s.get("typography")).and_then(|t| t.get("fontSize")).and_then(Value::as_str) else { return content };
+    let fluid = crate::fluid::fluid_font_size(size, None, env.theme.global_settings());
+    if fluid.is_empty() || fluid == size {
+        return content;
+    }
+    let Ok(pattern) = regex::Regex::new(&format!(r"font-size\s*:\s*{}\s*;?", regex::escape(size))) else { return content };
+    let replacement = format!("font-size:{};", rustpress_core::formatting::esc_attr(&fluid));
+    pattern.replace(&content, regex::NoExpand(&replacement)).into_owned()
+}
+
 fn typography(bt: &BlockType, attrs: &Map<String, Value>, settings: Option<&Value>) -> Attrs {
     let Some(support) = bt.support(&["typography"]).filter(|v| !crate::style_engine::is_empty(v)) else { return Vec::new() };
     if bt.skips_serialization("typography", None) {

@@ -110,26 +110,16 @@ impl CssStore {
         &self.rules
     }
 
-    /// `.a{x:y;}.b{...}` with rules inside the same `@media` group wrapped together.
+    /// `.a{x:y;}.b{...}` in the order the rules were added; a rule of a group (`@container ...`) is wrapped on its own.
     pub fn compile(&self) -> String {
         let mut out = String::new();
-        let mut groups: Vec<&str> = Vec::new();
-        for rule in self.rules.iter().filter(|r| r.rules_group.is_none()) {
-            out.push_str(&rule_css(rule));
-        }
         for rule in &self.rules {
-            if let Some(group) = &rule.rules_group
-                && !groups.contains(&group.as_str()) {
-                    groups.push(group);
-                }
-        }
-        for group in groups {
-            out.push_str(group);
-            out.push('{');
-            for rule in self.rules.iter().filter(|r| r.rules_group.as_deref() == Some(group)) {
-                out.push_str(&rule_css(rule));
+            let css = rule_css(rule);
+            match &rule.rules_group {
+                Some(group) if !css.is_empty() => out.push_str(&format!("{group}{{{css}}}")),
+                Some(_) => {}
+                None => out.push_str(&css),
             }
-            out.push('}');
         }
         out
     }
@@ -154,6 +144,8 @@ pub struct State {
     /// `do_blocks()` took `wpautop` off the `the_content` filter and `_restore_wpautop_hook()` put it back
     /// behind `shortcode_unautop`: from then on the paragraphs are made after the shortcodes were unwrapped.
     pub wpautop_late: bool,
+    /// Duotone filters used on the page.
+    pub duotone: crate::duotone::DuotoneState,
     /// `static $instance` of `gallery_shortcode()`.
     pub gallery_instances: u64,
     /// Patterns being rendered right now (recursion guard).

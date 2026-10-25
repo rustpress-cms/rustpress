@@ -93,10 +93,8 @@ impl Theme {
         let core = read_file(&wp_root.join("wp-includes").join("theme.json")).unwrap_or_default();
         let parent = read_file(&template_dir.join("theme.json"));
         let child = if stylesheet != template { read_file(&stylesheet_dir.join("theme.json")) } else { None };
-        let mut partials = Vec::new();
-        for dir in [&template_dir, &stylesheet_dir] {
-            partials.extend(read_partials(&dir.join("styles").join("blocks")));
-        }
+        // Block style variations: every `styles/**.json` that names `blockTypes` (a child theme's file wins by name).
+        let partials = read_partials(&[stylesheet_dir.join("styles"), template_dir.join("styles")]);
         let blocks_data = Registry::new(wp_root.join("wp-includes").join("blocks")).block_data();
         let json = ThemeJson::with_layers(core, blocks_data, parent, child, user, &partials);
 
@@ -328,12 +326,39 @@ impl ThemeAccess for Theme {
     }
 }
 
-/// Block style variation partials (`styles/blocks/*.json`).
-fn read_partials(dir: &Path) -> Vec<Value> {
-    let Ok(entries) = std::fs::read_dir(dir) else { return Vec::new() };
-    let mut files: Vec<PathBuf> = entries.flatten().map(|e| e.path()).filter(|p| p.extension().and_then(|e| e.to_str()) == Some("json")).collect();
+/// All `.json` files below a directory, recursively.
+fn json_files(dir: &Path, out: &mut Vec<PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            json_files(&path, out);
+        } else if path.extension().and_then(|e| e.to_str()) == Some("json") {
+            out.push(path);
+        }
+    }
+}
+
+/// Block style variation partials (`WP_Theme_JSON_Resolver::get_style_variations( 'block' )`): the files of
+/// `styles/` (any depth) that declare `blockTypes`, sorted by path; the first directory (the child theme) wins
+/// for files with the same name.
+fn read_partials(style_dirs: &[PathBuf]) -> Vec<Value> {
+    let mut files: Vec<PathBuf> = Vec::new();
+    for (i, dir) in style_dirs.iter().enumerate() {
+        if i > 0 && style_dirs[0] == *dir {
+            continue;
+        }
+        let mut found = Vec::new();
+        json_files(dir, &mut found);
+        for path in found {
+            if i > 0 && files.iter().any(|f| f.file_name() == path.file_name()) {
+                continue;
+            }
+            files.push(path);
+        }
+    }
     files.sort();
-    files.iter().filter_map(|p| read_file(p)).collect()
+    files.iter().filter_map(|p| read_file(p)).filter(|v| v.get("blockTypes").is_some()).collect()
 }
 
 /// Patterns a classic block theme registers from `inc/block-patterns.php`:

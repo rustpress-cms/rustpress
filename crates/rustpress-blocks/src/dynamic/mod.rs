@@ -92,6 +92,7 @@ pub fn is_dynamic(name: &str) -> bool {
             | "core/term-description"
             | "core/block"
             | "core/post-comments"
+            | "core/social-link"
     )
 }
 
@@ -161,6 +162,7 @@ pub fn render<'a>(bc: &'a BlockCtx<'a>) -> BoxFuture<'a, Result<String>> {
             "core/term-description" => Box::pin(extra::term_description(bc)).await,
             "core/block" => Box::pin(extra::reusable_block(bc)).await,
             "core/post-comments" => Box::pin(comments::legacy(bc)).await,
+            "core/social-link" => extra::social_link(bc),
             _ => Ok(bc.content.clone()),
         }
     })

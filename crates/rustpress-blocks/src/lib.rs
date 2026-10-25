@@ -8,6 +8,7 @@
 pub mod content;
 pub mod dimensions;
 pub mod dynamic;
+pub mod duotone;
 pub mod elements;
 pub mod excerpt;
 pub mod fluid;

@@ -1,8 +1,12 @@
 use rustpress_server::{App, Config};
 use tracing_subscriber::EnvFilter;
 
-#[tokio::main]
-async fn main() {
+fn main() {
+    let runtime = tokio::runtime::Builder::new_multi_thread().enable_all().thread_stack_size(16 * 1024 * 1024).build().expect("tokio runtime");
+    runtime.block_on(async { runtime.spawn(run_server()).await.expect("server task") });
+}
+
+async fn run_server() {
     tracing_subscriber::fmt().with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"))).init();
     if let Err(message) = run().await {
         eprintln!("rustpress: {message}");

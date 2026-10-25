@@ -128,21 +128,14 @@ pub(super) async fn categories(bc: &BlockCtx<'_>) -> Result<String> {
 
 // ------------------------------------------------------------------- tag cloud
 
-/// `floatval()`: the leading number.
-fn floatval(s: &str) -> f64 {
-    let s = s.trim_start();
-    let end = s.char_indices().find(|(i, c)| !(c.is_ascii_digit() || *c == '.' || (*i == 0 && (*c == '-' || *c == '+')))).map_or(s.len(), |(i, _)| i);
-    s[..end].parse().unwrap_or(0.0)
-}
-
 pub(super) async fn tag_cloud(bc: &BlockCtx<'_>) -> Result<String> {
     let smallest = bc.attr_str("smallestFontSize").unwrap_or("8pt").to_owned();
     let largest = bc.attr_str("largestFontSize").unwrap_or("22pt").to_owned();
     let unit = Regex::new(r"(?i)^[0-9.]+([a-z%]+)$").ok().and_then(|re| re.captures(&smallest).map(|c| c[1].to_owned())).unwrap_or_else(|| "pt".to_owned());
     let args = TagCloud {
         taxonomy: bc.attr_str("taxonomy").filter(|t| !t.is_empty()).unwrap_or("post_tag").to_owned(),
-        smallest: floatval(&smallest),
-        largest: floatval(&largest),
+        smallest: general::floatval(&smallest),
+        largest: general::floatval(&largest),
         unit,
         number: bc.attr_u64("numberOfTags").unwrap_or(45),
         show_count: flag(bc, "showTagCounts"),
@@ -628,4 +621,77 @@ pub(super) async fn reusable_block(bc: &BlockCtx<'_>) -> Result<String> {
     let result = bc.env.render_markup(&post.post_content, bc.available).await;
     bc.env.with_state(|s| s.active_patterns.remove(&seen));
     result
+}
+
+// -------------------------------------------------------------------- social link
+
+/// `block_core_social_link_services()`: `(key, name, icon)` read from WordPress's own `social-link.php`.
+fn social_services(bc: &BlockCtx<'_>) -> &'static [(String, String, String)] {
+    static SERVICES: std::sync::OnceLock<Vec<(String, String, String)>> = std::sync::OnceLock::new();
+    SERVICES.get_or_init(|| {
+        let Ok(php) = std::fs::read_to_string(bc.env.registry.blocks_dir().join("social-link.php")) else { return Vec::new() };
+        let unescape = |s: &str| s.replace("\\'", "'").replace("\\\\", "\\");
+        let Ok(re) = Regex::new(r"'([a-z0-9]+)'\s*=>\s*array\(\s*'name'\s*=>\s*_x\(\s*'((?:[^'\\]|\\.)*)'\s*,\s*'[^']*'\s*\),\s*'icon'\s*=>\s*'((?:[^'\\]|\\.)*)',?\s*\)") else { return Vec::new() };
+        re.captures_iter(&php).map(|c| (c[1].to_owned(), unescape(&c[2]), unescape(&c[3]))).collect()
+    })
+}
+
+pub(super) fn social_link(bc: &BlockCtx<'_>) -> Result<String> {
+    let site = bc.env.site;
+    let services = social_services(bc);
+    let service = bc.attr_str("service").filter(|s| !s.is_empty()).unwrap_or("Icon");
+    let Some(url) = bc.attr_str("url").map(str::trim).filter(|u| !u.is_empty() && *u != "0") else { return Ok(String::new()) };
+    let lookup = |key: &str| services.iter().find(|(k, _, _)| k == key);
+    let fallback = lookup("share");
+    let entry = lookup(service).or(fallback);
+    let label = bc.attr_str("label").map(str::trim).filter(|l| !l.is_empty()).map(str::to_owned);
+    let name = label.unwrap_or_else(|| entry.map(|(_, name, _)| site.trx(name, "social link block variation name")).unwrap_or_default());
+    let icon = entry.map(|(_, _, icon)| icon.as_str()).unwrap_or_default();
+    let rel = bc.attr_str("rel").unwrap_or_default();
+    let show_labels = bc.context.get("showLabels").and_then(Value::as_bool).unwrap_or(false);
+    let open_in_new_tab = bc.context.get("openInNewTab").and_then(Value::as_bool).unwrap_or(false);
+
+    let mut url = url.to_owned();
+    if url.contains('@') && !url.contains("://") && !url.contains(' ') && !url.starts_with("mailto:") {
+        url = format!("mailto:{url}");
+    }
+    let has_scheme = Regex::new(r"^[A-Za-z][A-Za-z0-9+.-]*:").is_ok_and(|re| re.is_match(&url));
+    if !has_scheme && !url.starts_with("//") && !url.starts_with('#') {
+        url = format!("https://{url}");
+    }
+
+    let present = |key: &str| bc.context.get(key).filter(|v| !v.is_null()).map(|v| v.as_str().map_or_else(|| v.to_string(), str::to_owned));
+    let mut classes = format!("wp-social-link wp-social-link-{service} ");
+    let mut named = Vec::new();
+    if let Some(color) = present("iconColor") {
+        named.push(format!("has-{color}-color"));
+    }
+    if let Some(color) = present("iconBackgroundColor") {
+        named.push(format!("has-{color}-background-color"));
+    }
+    classes.push_str(&named.join(" "));
+    let mut style = String::new();
+    if let Some(value) = present("iconColorValue") {
+        style.push_str(&format!("color:{value};"));
+    }
+    if let Some(value) = present("iconBackgroundColorValue") {
+        style.push_str(&format!("background-color:{value};"));
+    }
+    let wrapper = bc.wrapper_attributes(&[("class", classes.trim_end().to_owned()), ("style", style)]);
+    let label_class = if show_labels { "" } else { " screen-reader-text" };
+    let mut link = format!("<li {wrapper}><a href=\"{}\" class=\"wp-block-social-link-anchor\">{icon}<span class=\"wp-block-social-link-label{label_class}\">{}</span></a></li>", esc_url(&url), esc_html(&name));
+    let extra = if open_in_new_tab {
+        Some(format!(" rel=\"{}\" target=\"_blank\"", esc_attr(format!("{rel} noopener nofollow").trim())))
+    } else if !rel.is_empty() {
+        Some(format!(" rel=\"{}\"", esc_attr(rel.trim())))
+    } else {
+        None
+    };
+    if let Some(extra) = extra
+        && let Some(at) = link.find("class=\"wp-block-social-link-anchor\"")
+    {
+        let end = at + "class=\"wp-block-social-link-anchor\"".len();
+        link.insert_str(end, &extra);
+    }
+    Ok(link)
 }

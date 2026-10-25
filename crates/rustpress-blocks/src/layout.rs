@@ -263,8 +263,9 @@ pub fn get_layout_style(
     any
 }
 
-/// Child layout rules (`selfStretch`, grid placement) without the responsive container query.
-fn child_layout_rules(selector: &str, child: &Map<String, Value>) -> Vec<(String, Decls)> {
+/// `wp_get_child_layout_style_rules()`: child layout rules (`selfStretch`, grid placement) and, for a child of a
+/// responsive grid, the container query that resets the placement. The third element is the `@container` group.
+fn child_layout_rules(selector: &str, child: &Map<String, Value>, parent: &Map<String, Value>) -> Vec<(String, Decls, Option<String>)> {
     let mut decls: Decls = Vec::new();
     let self_stretch = child.get("selfStretch").and_then(Value::as_str);
     let flex_size = child.get("flexSize").filter(|v| !v.is_null());
@@ -292,7 +293,87 @@ fn child_layout_rules(selector: &str, child: &Map<String, Value>) -> Vec<(String
     if let Some(v) = place(get("rowStart"), get("rowSpan")) {
         decls.push(("grid-row".into(), v));
     }
-    if decls.is_empty() { Vec::new() } else { vec![(selector.to_owned(), decls)] }
+    let mut rules = Vec::new();
+    if !decls.is_empty() {
+        rules.push((selector.to_owned(), decls, None));
+    }
+    // A span or start of a responsive grid (minimum column width, or no column count) is dropped when the grid is narrower.
+    let column_start = child.get("columnStart").filter(|v| !crate::style_engine::is_empty(v));
+    let column_span = child.get("columnSpan").filter(|v| !crate::style_engine::is_empty(v));
+    let minimum = parent.get("minimumColumnWidth").filter(|v| !crate::style_engine::is_empty(v)).and_then(Value::as_str);
+    let has_count = parent.get("columnCount").is_some_and(|v| !crate::style_engine::is_empty(v));
+    if (column_start.is_some() || column_span.is_some()) && (minimum.is_some() || !has_count) {
+        let number = |v: Option<&Value>| v.map_or(0.0, |v| match v {
+            Value::Number(n) => n.as_f64().unwrap_or(0.0),
+            Value::String(s) => crate::general::floatval(s),
+            _ => 0.0,
+        });
+        let (span_number, start_number) = (number(column_span), number(column_start));
+        let width = minimum.unwrap_or("12rem");
+        let value = crate::general::floatval(width);
+        let unit = crate::general::php_float(value);
+        let (parent_value, parent_unit) = match width.split_once(unit.as_str()) {
+            Some((_, rest)) if matches!(rest, "px" | "rem" | "em") => (value, rest.to_owned()),
+            _ => (12.0, "rem".to_owned()),
+        };
+        let break_at = if span_number != 0.0 && start_number != 0.0 {
+            start_number + span_number - 1.0
+        } else if span_number != 0.0 {
+            span_number
+        } else {
+            start_number
+        };
+        let gap = if parent_unit == "px" { 24.0 } else { 1.5 };
+        let query = (break_at * parent_value + (break_at - 1.0) * gap).max(parent_value * 2.0 + gap - 1.0);
+        let grid_column = if span_number > 1.0 { "1/-1" } else { "auto" };
+        rules.push((
+            selector.to_owned(),
+            vec![("grid-column".to_owned(), grid_column.to_owned()), ("grid-row".to_owned(), "auto".to_owned())],
+            Some(format!("@container (max-width: {}{parent_unit} )", crate::general::php_float(query))),
+        ));
+    }
+    rules
+}
+
+/// `wp_render_position_support()`: sticky (and fixed) positioning gets a container class and its rules.
+pub fn render_position_support(env: &Env<'_>, bt: &BlockType, attrs: &Map<String, Value>, content: String) -> String {
+    let position = attrs.get("style").and_then(|s| s.get("position")).filter(|p| !crate::style_engine::is_empty(p));
+    if !bt.has_support(&["position"], false) || position.is_none() {
+        return content;
+    }
+    let position = position.and_then(Value::as_object).cloned().unwrap_or_default();
+    let settings = env.theme.global_settings();
+    let allowed = |kind: &str| settings.get("position").and_then(|p| p.get(kind)) == Some(&Value::Bool(true));
+    let position_type = position.get("type").and_then(Value::as_str).unwrap_or_default().to_owned();
+    if !(position_type == "sticky" && allowed("sticky") || position_type == "fixed" && allowed("fixed")) {
+        // The class name is taken even if nothing is output.
+        env.with_state(|s| s.unique_id("wp-container-"));
+        return content;
+    }
+    let class = env.with_state(|s| s.unique_id("wp-container-"));
+    let selector = format!(".{class}");
+    env.with_state(|s| {
+        for side in ["top", "right", "bottom", "left"] {
+            let Some(value) = position.get(side).filter(|v| !v.is_null()) else { continue };
+            let mut value = value_to_string(value);
+            if side == "top" {
+                if value == "0" {
+                    value = "0px".into();
+                }
+                value = format!("calc({value} + var(--wp-admin--admin-bar--position-offset, 0px))");
+            }
+            s.block_supports_css.add(&selector, &[(side.to_owned(), value)], None);
+        }
+        s.block_supports_css.add(&selector, &[("position".to_owned(), position_type.clone()), ("z-index".to_owned(), "10".to_owned())], None);
+    });
+    match TagEditor::first(&content) {
+        Some(mut editor) => {
+            editor.add_class(&class);
+            editor.add_class(&format!("is-position-{position_type}"));
+            editor.finish()
+        }
+        None => content,
+    }
 }
 
 const CHILD_KEYS: [&str; 6] = ["selfStretch", "flexSize", "columnStart", "columnSpan", "rowStart", "rowSpan"];
@@ -326,11 +407,11 @@ pub fn render_layout_support(
             .map(|p| p.iter().filter(|(k, _)| matches!(k.as_str(), "minimumColumnWidth" | "columnCount")).map(|(k, v)| (k.clone(), v.clone())).collect())
             .unwrap_or_default();
         let class = unique_id_from_values(&json!({ "layout": base, "parentLayout": parent_subset }), "wp-container-content-");
-        let rules = child_layout_rules(&format!(".{class}"), &base);
+        let rules = child_layout_rules(&format!(".{class}"), &base, &parent_subset);
         if !rules.is_empty() {
             env.with_state(|s| {
-                for (sel, decls) in &rules {
-                    s.block_supports_css.add(sel, decls, None);
+                for (sel, decls, group) in &rules {
+                    s.block_supports_css.add(sel, decls, group.as_deref());
                 }
             });
             outer_class_names.push(class);
@@ -570,8 +651,9 @@ mod tests {
     #[test]
     fn child_layout_rules() {
         let child = json!({"selfStretch": "fixed", "flexSize": "50%", "columnSpan": 2});
-        let rules = super::child_layout_rules(".k", child.as_object().unwrap());
-        assert_eq!(rules.len(), 1);
+        let rules = super::child_layout_rules(".k", child.as_object().unwrap(), &Map::new());
+        assert_eq!(rules.len(), 2);
+        assert_eq!(rules[1].2.as_deref(), Some("@container (max-width: 25.5rem )"));
         assert_eq!(rules[0].1, d(&[("flex-basis", "50%"), ("box-sizing", "border-box"), ("grid-column", "span 2")]));
     }
 

@@ -403,6 +403,22 @@ impl<'a> GlobalStyles<'a> {
             .map(str::to_owned)
             .or_else(|| bt.as_ref().and_then(|b| b.support(&["__experimentalSelector"])).and_then(Value::as_str).map(str::to_owned))
             .unwrap_or_else(|| block_class(name));
+        // `supports.<feature>.__experimentalSelector` is a selector relative to the block (calendar: `table, th`).
+        // Blocks that declare `selectors` (API version 2) use those only.
+        let mut selectors = selectors;
+        let legacy = selectors.is_empty();
+        if let Some(bt) = bt.as_ref().filter(|_| legacy) {
+            for feature in ["color", "typography", "spacing", "border"] {
+                if selectors.contains_key(feature) {
+                    continue;
+                }
+                if let Some(relative) = bt.support(&[feature, "__experimentalSelector"]).and_then(Value::as_str) {
+                    let block = block_class(name);
+                    let scoped = relative.split(',').map(|part| format!("{block} {}", part.trim())).collect::<Vec<_>>().join(", ");
+                    selectors.insert(feature.to_owned(), Value::from(scoped));
+                }
+            }
+        }
         (root, selectors)
     }
 
@@ -465,7 +481,8 @@ impl<'a> GlobalStyles<'a> {
     fn block_rules(&self, name: &str, node: &Value, settings: &Value, scope: Option<&str>) -> String {
         let mut css = String::new();
         let (root_selector, feature_selectors) = self.block_selector(name);
-        let selector = scope.map(str::to_owned).unwrap_or(root_selector);
+        let selector_root = root_selector.clone();
+        let selector = scope.map(|s| scoped_selector(s, &root_selector)).unwrap_or(root_selector);
 
         // Declarations grouped by the selector of their feature.
         let declarations = self.declarations_with_features(node, settings);
@@ -475,7 +492,9 @@ impl<'a> GlobalStyles<'a> {
             let target = match (scope, own) {
                 // A variation's instance class goes right behind the first compound of each feature selector.
                 (Some(scope), Some(own)) => variation_selector(scope, &own),
-                (Some(scope), None) => scope.to_owned(),
+                // The block's own declarations: the class joins the first compound of the block selector
+                // (`.wp-block-group.is-style-x`); nested blocks are scoped by a complete selector.
+                (Some(scope), None) => scoped_selector(scope, &selector_root),
                 (None, own) => own.unwrap_or_else(|| selector.clone()),
             };
             match groups.iter_mut().find(|(s, _)| *s == target) {
@@ -506,7 +525,7 @@ impl<'a> GlobalStyles<'a> {
     pub fn block_node(&self, name: &str, node: &Value, settings: &Value, scope: Option<&str>) -> String {
         let mut css = self.block_rules(name, node, settings, scope);
         let (root_selector, _) = self.block_selector(name);
-        let selector = scope.map(str::to_owned).unwrap_or(root_selector);
+        let selector = scope.map(|s| scoped_selector(s, &root_selector)).unwrap_or(root_selector);
         if let Some(elements) = node.get("elements").and_then(Value::as_object) {
             for (element, element_selector) in ELEMENTS {
                 let Some(element_node) = elements.get(*element).filter(|n| n.is_object()) else { continue };
@@ -530,8 +549,7 @@ impl<'a> GlobalStyles<'a> {
                 css.push_str(&self.element_rules(node, selector, &settings, false, Some(scope)));
             }
         }
-        // The variation's own declarations apply to the scoped block.
-        css.push_str(&self.block_node(block_name, &data, &settings, Some(scope)));
+        // WordPress adds the variation to the block nodes after the ones the variation brings along.
         if let Some(Value::Object(blocks)) = blocks {
             for (name, node) in &blocks {
                 let (selector, _) = self.block_selector(name);
@@ -539,6 +557,8 @@ impl<'a> GlobalStyles<'a> {
                 css.push_str(&self.block_node(name, node, &settings, Some(&scoped)));
             }
         }
+        // The variation's own declarations apply to the scoped block.
+        css.push_str(&self.block_node(block_name, &data, &settings, Some(scope)));
         css
     }
 
@@ -605,6 +625,12 @@ fn variation_selector(class: &str, selector: &str) -> String {
         .collect::<Vec<_>>()
         .join(", ")
 }
+/// The selector of a block's own rules inside a variation: the instance class joins the first compound of the
+/// block selector (`.wp-block-group.is-style-x`); nested blocks are scoped by a complete selector already.
+fn scoped_selector(scope: &str, root_selector: &str) -> String {
+    if scope.starts_with(".is-style-") && !scope.contains(' ') { variation_selector(scope, root_selector) } else { scope.to_owned() }
+}
+
 /// `prop: value;prop: value;`
 fn ruleset(declarations: &[(String, String)]) -> String {
     declarations.iter().map(|(p, v)| format!("{p}: {v};")).collect()
@@ -680,7 +706,7 @@ fn process_custom_css(css: &str, selector: &str) -> String {
         // A nested selector that starts with a space is a descendant of the block (each comma part);
         // otherwise it is appended to the block selector as a whole.
         let scoped = if nested.starts_with(' ') {
-            nested.split(',').map(|s| format!("{selector} {}", s.trim())).collect::<Vec<_>>().join(", ")
+            nested.split(',').map(|s| format!("{selector} {}", s.trim()).trim_end().to_owned()).collect::<Vec<_>>().join(", ")
         } else {
             format!("{selector}{nested}")
         };

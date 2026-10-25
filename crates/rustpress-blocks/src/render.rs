@@ -157,8 +157,8 @@ impl<'a> Env<'a> {
 
             // `render_block` filters.
             if let Some(bt) = &block_type {
+                content = crate::supports::render_typography_support(self, &raw_attrs, content);
                 content = crate::elements::render_class_name(&raw_attrs, content);
-                content = crate::variations::render_class_name(&raw_attrs, content);
                 let first_chunk = match block.inner_content.first() {
                     Some(Content::Html(html)) if block.inner_content.len() > 1 => Some(html.as_str()),
                     _ => None,
@@ -172,7 +172,10 @@ impl<'a> Env<'a> {
                     !block.inner_blocks.is_empty(),
                     content,
                 );
+                content = layout::render_position_support(self, bt, &raw_attrs, content);
                 content = crate::dimensions::render_dimensions_support(bt, &raw_attrs, content);
+                content = crate::duotone::render_duotone_support(self, bt, name, &raw_attrs, content);
+                content = crate::variations::render_class_name(&raw_attrs, content);
             }
             content = dynamic::name_filter(name, content);
             // Blocks that rendered nothing do not load their assets; parents come after their children.

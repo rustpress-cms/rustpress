@@ -665,7 +665,12 @@ pub async fn render_document(theme: &Theme, site: &Site, query: &QueryResult, re
                 }
             }
         }
-        GlobalStyles::new(&theme.json, registry).stylesheet_chunks(Some(&queued)).join("\n")
+        let mut chunks = GlobalStyles::new(&theme.json, registry).stylesheet_chunks(Some(&queued));
+        let presets = rustpress_blocks::duotone::global_styles_presets(&state.duotone);
+        if !presets.is_empty() {
+            chunks.push(presets);
+        }
+        chunks.join("\n")
     };
     styles.push_str(&format!("<style id=\"global-styles-inline-css\">\n{global}\n/*# sourceURL=global-styles-inline-css */\n</style>\n"));
     // Each block instance adds its own inline style; they are printed one per line.
@@ -676,7 +681,14 @@ pub async fn render_document(theme: &Theme, site: &Site, query: &QueryResult, re
     if has_variations {
         styles.push_str(&emoji_style());
     }
-    let supports = state.block_supports_css.compile();
+    // Duotone rules are stored when the styles are enqueued, after the blocks have been rendered.
+    let supports = {
+        let mut store = state.block_supports_css.clone();
+        for (selector, filter) in &state.duotone.css {
+            store.add(selector, &[("filter".to_owned(), filter.clone())], None);
+        }
+        store.compile()
+    };
     if !supports.is_empty() {
         styles.push_str(&format!("<style id=\"core-block-supports-inline-css\">\n{supports}\n/*# sourceURL=core-block-supports-inline-css */\n</style>\n"));
     }
@@ -698,7 +710,7 @@ pub async fn render_document(theme: &Theme, site: &Site, query: &QueryResult, re
     // --- scripts ---------------------------------------------------------
     let modules: Vec<String> = state.script_modules.iter().cloned().collect();
     let (importmap, preloads, module_scripts) = script_modules(wp_root, site, &modules);
-    let mut footer_scripts = format!("{}{module_scripts}", speculation_rules(site, theme));
+    let mut footer_scripts = format!("{}{}{module_scripts}", speculation_rules(site, theme), rustpress_blocks::duotone::footer_svgs(&state.duotone));
     if state.scripts.iter().any(|s| s == "comment-reply") {
         footer_scripts.push_str(&format!("<script async data-wp-strategy=\"async\" fetchpriority=\"low\" id=\"comment-reply-js\" src=\"{includes_url}/js/comment-reply.min.js?ver={version}\"></script>\n"));
     }

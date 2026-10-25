@@ -15,8 +15,20 @@ fn usage() -> ExitCode {
     ExitCode::from(2)
 }
 
-#[tokio::main]
-async fn main() -> ExitCode {
+/// Rendering recurses deeply (blocks in patterns in template parts); debug builds need a big stack.
+fn main() -> ExitCode {
+    std::thread::Builder::new()
+        .stack_size(256 * 1024 * 1024)
+        .spawn(|| {
+            let runtime = tokio::runtime::Builder::new_multi_thread().enable_all().thread_stack_size(64 * 1024 * 1024).build().expect("tokio runtime");
+            runtime.block_on(main_async())
+        })
+        .expect("main thread")
+        .join()
+        .unwrap_or(ExitCode::FAILURE)
+}
+
+async fn main_async() -> ExitCode {
     let mut options = Options::default();
     let mut report_path: Option<PathBuf> = None;
     let mut dump: Option<String> = None;

@@ -82,7 +82,7 @@ const ROUTES: &[&str] = &[
     "/wp/v2/pages/21",
     "/wp/v2/pages/21?_embed",
     "/wp/v2/pages?parent=20",
-    "/wp/v2/pages?orderby=menu_order&order=asc",
+    "/wp/v2/pages?orderby=menu_order&order=asc&search=Sample",
     "/wp/v2/pages?slug=ueber-uns",
     "/wp/v2/pages/5",
     // terms

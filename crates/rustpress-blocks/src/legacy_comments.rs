@@ -239,7 +239,7 @@ pub async fn compat_comments_template(site: &Site, env: &crate::env::Env<'_>, po
             rustpress_core::i18n::sprintf(&site.trn("%1$s response to %2$s", "%1$s responses to %2$s", count), &[&site.number_i18n(count.max(0) as u64), &title])
         };
         let navigation = "\t<div class=\"navigation\">\n\t\t<div class=\"alignleft\"></div>\n\t\t<div class=\"alignright\"></div>\n\t</div>\n";
-        let args = ListArgs { avatar_size: 32, reply_text: site.tr("Reply"), short_ping: false };
+        let args = ListArgs { avatar_size: 32, reply_text: site.trx("Reply", "verb"), short_ping: false };
         out.push_str(&format!("\t<h3 id=\"comments\">\n\t\t{heading}\t</h3>\n\n{navigation}\n\t<ol class=\"commentlist\">\n\t"));
         out.push_str(&list_comments(site, env, post, &comments, &args).await?);
         out.push_str(&format!("\t</ol>\n\n{navigation}\n"));

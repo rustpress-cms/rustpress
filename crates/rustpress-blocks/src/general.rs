@@ -87,6 +87,13 @@ pub fn strnatcasecmp(a: &str, b: &str) -> Ordering {
     }
 }
 
+/// `floatval()`: the leading number.
+pub fn floatval(s: &str) -> f64 {
+    let s = s.trim_start();
+    let end = s.char_indices().find(|(i, c)| !(c.is_ascii_digit() || *c == '.' || (*i == 0 && (*c == '-' || *c == '+')))).map_or(s.len(), |(i, _)| i);
+    s[..end].parse().unwrap_or(0.0)
+}
+
 fn now_timestamp() -> i64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs() as i64)
 }
