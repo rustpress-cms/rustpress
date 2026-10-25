@@ -26,7 +26,7 @@ const SCHEMES: [(&str, &str, [&str; 3], &[&str]); 9] = [
 
 fn color_picker(ctx: &Ctx<'_>, current: &str) -> String {
     let tr = |s: &str| ctx.tr(s);
-    let mut out = format!("\t<fieldset id=\"color-picker\" class=\"scheme-list\">\n\t\t<legend class=\"screen-reader-text\"><span>{}</span></legend>\n\t\t<input type=\"hidden\" id=\"color-nonce\" name=\"color-nonce\" value=\"{}\" />", tr("Administration Color Scheme"), ctx.create_nonce("save-color-scheme"));
+    let mut out = format!("\t\t\t\t\t\t\t\t<fieldset id=\"color-picker\" class=\"scheme-list\">\n\t\t<legend class=\"screen-reader-text\"><span>{}</span></legend>\n\t\t<input type=\"hidden\" id=\"color-nonce\" name=\"color-nonce\" value=\"{}\" />", tr("Administration Color Scheme"), ctx.create_nonce("save-color-scheme"));
     for (slug, name, icons, shades) in SCHEMES {
         let css = if slug == "fresh" { String::new() } else { format!("{}/wp-admin/css/colors/{slug}/colors.min.css", ctx.site().settings.siteurl.trim_end_matches('/')) };
         let icon_json = format!("{{\"icons\":{{\"base\":\"{}\",\"focus\":\"{}\",\"current\":\"{}\"}}}}", icons[0], icons[1], icons[2]);
@@ -39,7 +39,7 @@ fn color_picker(ctx: &Ctx<'_>, current: &str) -> String {
             tr(name)
         ));
         for shade in shades {
-            out.push_str(&format!("\t\t\t\t\t<div class=\"color-palette-shade\" style=\"background-color: {shade}\">&nbsp;</div>\n\t\t\t\t\t"));
+            out.push_str(&format!("\t\t\t\t\t\t\t\t\t<div class=\"color-palette-shade\" style=\"background-color: {shade}\">&nbsp;</div>\n\t\t\t\t\t"));
         }
         out.push_str("\t\t\t\t</div>\n\t\t\t</div>\n\t\t");
     }
@@ -53,13 +53,34 @@ fn avatar(ctx: &Ctx<'_>, email: &str, size: u64) -> String {
 }
 
 fn language_select(ctx: &Ctx<'_>, current: &str, with_site_default: bool) -> String {
+    let installed: Vec<&str> = ctx.env.languages.iter().map(|l| l.locale.as_str()).collect();
+    let available: Vec<&(String, String, String)> = if ctx.can("update_core") || ctx.can("install_plugins") || ctx.can("install_themes") { ctx.env.available_translations.iter().filter(|(locale, _, _)| !installed.contains(&locale.as_str())).collect() } else { Vec::new() };
+    let groups = !available.is_empty();
     let mut options = String::new();
-    if with_site_default {
-        options.push_str(&format!("<option value=\"site-default\" data-installed=\"1\"{}>{}</option>\n", selected(current == "site-default"), ctx.tr("Site Default")));
+    if groups {
+        options.push_str(&format!("<optgroup label=\"{}\">
+", esc_attr(&ctx.site().trx("Installed", "translations"))));
     }
-    options.push_str(&format!("<option value=\"\" lang=\"en\" data-installed=\"1\"{}>English (United States)</option>\n", selected(current.is_empty())));
+    if with_site_default {
+        options.push_str(&format!("<option value=\"site-default\" data-installed=\"1\"{}>{}</option>
+", selected(current == "site-default"), ctx.tr("Site Default")));
+    }
+    options.push_str(&format!("<option value=\"\" lang=\"en\" data-installed=\"1\"{}>English (United States)</option>
+", selected(current.is_empty())));
     for language in &ctx.env.languages {
-        options.push_str(&format!("<option value=\"{}\" lang=\"{}\" data-installed=\"1\"{}>{}</option>\n", esc_attr(&language.locale), esc_attr(&language.lang), selected(language.locale == current), esc_html(&language.native_name)));
+        options.push_str(&format!("<option value=\"{}\" lang=\"{}\" data-installed=\"1\"{}>{}</option>
+", esc_attr(&language.locale), esc_attr(&language.lang), selected(language.locale == current), esc_html(&language.native_name)));
+    }
+    if groups {
+        options.push_str(&format!("</optgroup>
+<optgroup label=\"{}\">
+", esc_attr(&ctx.site().trx("Available", "translations"))));
+        for (locale, native_name, lang) in available {
+            options.push_str(&format!("<option value=\"{}\" lang=\"{}\"{}>{}</option>
+", esc_attr(locale), esc_attr(lang), selected(locale == current), esc_html(native_name)));
+        }
+        options.push_str("</optgroup>
+");
     }
     format!("<select name=\"locale\" id=\"locale\">{}</select>", options.trim_end_matches('\n'))
 }
@@ -157,7 +178,7 @@ async fn form(ctx: &Ctx<'_>, user: &User, own: bool, errors: &[String]) -> Admin
         tr("Disable infinite scrolling in the Media Library grid view")
     ));
     h.push_str(&format!(
-        "\t\t\t\t\t\t\t\t\t\t<tr class=\"user-language-wrap\">\n\t\t\t\t\t\t<th scope=\"row\">\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t<label for=\"locale\">{}<span class=\"dashicons dashicons-translation\" aria-hidden=\"true\"></span></label>\n\t\t\t\t\t\t</th>\n\t\t\t\t\t\t<td>\n\t\t\t\t\t\t\t{}\t\t\t\t\t\t</td>\n\t\t\t\t\t</tr>\n\t\t\t\t\t\n\t\t\t\t\t\n\t\t\t\t</table>\n\t\t\t\t\n",
+        "\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<tr class=\"user-language-wrap\">\n\t\t\t\t\t\t<th scope=\"row\">\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t<label for=\"locale\">{}<span class=\"dashicons dashicons-translation\" aria-hidden=\"true\"></span></label>\n\t\t\t\t\t\t</th>\n\t\t\t\t\t\t<td>\n\t\t\t\t\t\t\t{}\t\t\t\t\t\t</td>\n\t\t\t\t\t</tr>\n\t\t\t\t\t\n\t\t\t\t\t\n\t\t\t\t</table>\n\t\t\t\t\n",
         tr("Language"),
         language_select(ctx, &locale, true)
     ));
@@ -254,7 +275,7 @@ async fn form(ctx: &Ctx<'_>, user: &User, own: bool, errors: &[String]) -> Admin
         tr("Share a little biographical information to fill out your profile. This may be shown publicly.")
     ));
     h.push_str(&format!(
-        "\t\t\t\t\t\t<tr class=\"user-profile-picture\">\n\t\t\t\t\t\t\t<th>{}</th>\n\t\t\t\t\t\t\t<td>\n\t\t\t\t\t\t\t\t{}\n\t\t\t\t\t\t\t\t<p class=\"description\">\n\t\t\t\t\t\t\t\t\t{}\t\t\t\t\t\t\t\t</p>\n\t\t\t\t\t\t\t</td>\n\t\t\t\t\t\t</tr>\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t</table>\n\n",
+        "\t\t\t\t\t\t\t\t\t\t\t<tr class=\"user-profile-picture\">\n\t\t\t\t\t\t\t<th>{}</th>\n\t\t\t\t\t\t\t<td>\n\t\t\t\t\t\t\t\t{}\n\t\t\t\t\t\t\t\t<p class=\"description\">\n\t\t\t\t\t\t\t\t\t{}\t\t\t\t\t\t\t\t</p>\n\t\t\t\t\t\t\t</td>\n\t\t\t\t\t\t</tr>\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t</table>\n\n",
         tr("Profile Picture"),
         avatar(ctx, &user.user_email, 96),
         if own { tr("<a href=\"https://gravatar.com/\">You can change your profile picture on Gravatar</a>.") } else { String::new() }
@@ -282,14 +303,24 @@ async fn form(ctx: &Ctx<'_>, user: &User, own: bool, errors: &[String]) -> Admin
     ));
     if own {
         h.push_str(&format!(
-            "\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<tr class=\"user-sessions-wrap hide-if-no-js\">\n\t\t\t\t\t\t\t\t\t<th>{}</th>\n\t\t\t\t\t\t\t\t\t<td aria-live=\"assertive\">\n\t\t\t\t\t\t\t\t\t\t<div class=\"destroy-sessions\"><button type=\"button\" class=\"button\" id=\"destroy-sessions\">{}</button></div>\n\t\t\t\t\t\t\t\t\t\t<p class=\"description\">\n\t\t\t\t\t\t\t\t\t\t\t{}\t\t\t\t\t\t\t\t\t\t</p>\n\t\t\t\t\t\t\t\t\t</td>\n\t\t\t\t\t\t\t\t</tr>\n",
+            "\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<tr class=\"user-sessions-wrap hide-if-no-js\">\n\t\t\t\t\t\t\t\t\t<th>{}</th>\n\t\t\t\t\t\t\t\t\t<td aria-live=\"assertive\">\n\t\t\t\t\t\t\t\t\t\t<div class=\"destroy-sessions\"><button type=\"button\" class=\"button\" id=\"destroy-sessions\">{}</button></div>\n\t\t\t\t\t\t\t\t\t\t<p class=\"description\">\n\t\t\t\t\t\t\t\t\t\t\t{}\t\t\t\t\t\t\t\t\t\t</p>\n\t\t\t\t\t\t\t\t\t</td>\n\t\t\t\t\t\t\t\t</tr>\n",
             tr("Sessions"),
             tr("Log Out Everywhere Else"),
             tr("Did you lose your phone or leave your account logged in at a public computer? You can log out everywhere else, and stay logged in here.")
         ));
     }
-    h.push_str("\t\t\t\t\t\t</table>\n\n");
-    h.push_str(&format!("\t\t\t\t<input type=\"hidden\" name=\"action\" value=\"update\" />\n\t\t\t\t<input type=\"hidden\" name=\"user_id\" id=\"user_id\" value=\"{id}\" />\n\n\t\t\t\t<p class=\"submit\"><input type=\"submit\" name=\"submit\" id=\"submit\" class=\"button button-primary\" value=\"{}\"  /></p>\n\t\t\t</form>\n\t\t</div>\n\t\t<script>\n\tif (window.location.hash == '#password') {{\n\t\tdocument.getElementById('pass1').focus();\n\t}}\n</script>\n\n", if own { tr("Update Profile") } else { tr("Update User") }));
+    h.push_str("\t\t\t\t\t\t\t\t\t\t\t\t\t</table>\n\n");
+    // `wp_is_application_passwords_available_for_user()`: needs HTTPS (or a local environment), which RustPress cannot assume.
+    if ctx.can("create_app_password") || ctx.can("edit_user") || own {
+        h.push_str(&format!(
+            "\t\t\t\t\t\t\t\t\t\t\t<div class=\"application-passwords hide-if-no-js\" id=\"application-passwords-section\">\n\t\t\t\t\t\t\t<h2>{}</h2>\n\t\t\t\t\t\t\t<p>{}</p>\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<p>{}</p>\n\t\t\t\t\t\t\t\t<p>\n\t\t\t\t\t\t\t\t\t{}\t\t\t\t\t\t\t\t</p>\n\t\t\t\t\t\t\t\t\t\t\t\t\t</div>\n\t\t\t\t\t\n\t\t\t\t\t\n\t\t\t\t\t\n\t\t\t\t\n",
+            tr("Application Passwords"),
+            tr("Application passwords allow authentication via non-interactive systems, such as XML-RPC or the REST API, without providing your actual password. Application passwords can be easily revoked. They cannot be used for traditional logins to your website."),
+            tr("The application password feature requires HTTPS, which is not enabled on this site."),
+            rustpress_core::i18n::sprintf(&tr("If this is a development website, you can <a href=\"%s\">set the environment type accordingly</a> to enable application passwords."), &["https://developer.wordpress.org/apis/wp-config-php/#wp-environment-type"])
+        ));
+    }
+    h.push_str(&format!("\t\t\t\t<input type=\"hidden\" name=\"action\" value=\"update\" />\n\t\t\t\t<input type=\"hidden\" name=\"user_id\" id=\"user_id\" value=\"{id}\" />\n\n\t\t\t\t<p class=\"submit\"><input type=\"submit\" name=\"submit\" id=\"submit\" class=\"button button-primary\" value=\"{}\"  /></p>\n\t\t\t</form>\n\t\t</div>\n\t\t<script>\n\tif (window.location.hash == '#password') {{\n\t\tdocument.getElementById('pass1').focus();\n\t}}\n</script>\n\n<script>\n\tjQuery( function( $ ) {{\n\t\tvar languageSelect = $( '#locale' );\n\t\t$( 'form' ).on( 'submit', function() {{\n\t\t\t/*\n\t\t\t * Don't show a spinner for English and installed languages,\n\t\t\t * as there is nothing to download.\n\t\t\t */\n\t\t\tif ( ! languageSelect.find( 'option:selected' ).data( 'installed' ) ) {{\n\t\t\t\t$( '#submit', this ).after( '<span class=\"spinner language-install-spinner is-active\" />' );\n\t\t\t}}\n\t\t}});\n\t}} );\n</script>\n\n", if own { tr("Update Profile") } else { tr("Update User") }));
     let (parent_file, submenu_file) = if ctx.can("list_users") { ("users.php", if own { "profile.php" } else { "users.php" }) } else { ("profile.php", "profile.php") };
     let view_item = (!own).then(|| {
         let url = if ctx.site().settings.permalink_structure.is_empty() { ctx.site().home_url(&format!("?author={id}")) } else { ctx.site().home_url(&format!("author/{}/", user.user_nicename)) };
