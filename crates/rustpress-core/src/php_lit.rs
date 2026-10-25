@@ -59,10 +59,21 @@ impl Lit {
 /// The variables assigned a literal so far, by name without `$`.
 pub type Vars = HashMap<String, Lit>;
 
+/// What a caller knows about the PHP environment: functions it can evaluate and object properties
+/// (`$scripts->base_url` is `props["scripts->base_url"]`).
+pub type HookFunction = Box<dyn Fn(&[Lit]) -> Option<Lit> + Send + Sync>;
+
+#[derive(Default)]
+pub struct Hooks {
+    pub functions: HashMap<String, HookFunction>,
+    pub props: HashMap<String, Lit>,
+}
+
 pub struct Parser<'a> {
     text: &'a str,
     pub at: usize,
     pub vars: &'a Vars,
+    hooks: Option<&'a Hooks>,
 }
 
 /// Functions whose first argument is the text they translate.
@@ -70,7 +81,40 @@ const TRANSLATION: [&str; 7] = ["__", "_x", "esc_html__", "esc_attr__", "esc_htm
 
 impl<'a> Parser<'a> {
     pub fn new(text: &'a str, at: usize, vars: &'a Vars) -> Self {
-        Self { text, at, vars }
+        Self { text, at, vars, hooks: None }
+    }
+
+    /// A parser that also evaluates the functions and properties of `hooks`.
+    pub fn with_hooks(mut self, hooks: &'a Hooks) -> Self {
+        self.hooks = Some(hooks);
+        self
+    }
+
+    /// The arguments of a call whose `(` was consumed, up to and including the `)`.
+    pub fn call_args(&mut self) -> Vec<Lit> {
+        let mut args = Vec::new();
+        loop {
+            self.skip_space();
+            match self.peek() {
+                None => return args,
+                Some(')') => {
+                    self.at += 1;
+                    return args;
+                }
+                Some(',') => {
+                    self.at += 1;
+                    continue;
+                }
+                _ => {}
+            }
+            let before = self.at;
+            args.push(self.expr());
+            if self.at == before {
+                // Not something we can read: skip to the end of the call.
+                self.skip_call_rest();
+                return args;
+            }
+        }
     }
 
     fn rest(&self) -> &'a str {
@@ -149,6 +193,16 @@ impl<'a> Parser<'a> {
                 let name = self.identifier();
                 // `$a['x']` and `$this->x` are not simple variables.
                 self.skip_space();
+                if let Some(after) = self.rest().strip_prefix("->")
+                    && let Some(hooks) = self.hooks
+                {
+                    let property: String = after.trim_start().chars().take_while(|c| c.is_alphanumeric() || *c == '_').collect();
+                    let followed = after.trim_start()[property.len()..].trim_start();
+                    if let Some(value) = hooks.props.get(&format!("{name}->{property}")).filter(|_| !followed.starts_with('(') && !followed.starts_with('[')) {
+                        self.at += self.rest().len() - after.trim_start().len() + property.len();
+                        return value.clone();
+                    }
+                }
                 if self.rest().starts_with('[') || self.rest().starts_with("->") || self.rest().starts_with("::") {
                     return Lit::Unknown;
                 }
@@ -211,8 +265,19 @@ impl<'a> Parser<'a> {
         }
         if is_call {
             self.at += 1;
+            if let Some(hooks) = self.hooks
+                && let Some(function) = hooks.functions.get(word)
+            {
+                let args = self.call_args();
+                return function(&args).unwrap_or(Lit::Unknown);
+            }
             self.skip_call_rest();
             return Lit::Unknown;
+        }
+        if let Some(hooks) = self.hooks
+            && let Some(value) = hooks.props.get(&format!("const::{word}"))
+        {
+            return value.clone();
         }
         // A constant or `Class::CONSTANT`: leave it where it is for the caller to skip.
         if self.rest().starts_with("::") {
@@ -343,7 +408,8 @@ impl<'a> Parser<'a> {
         None
     }
 
-    /// A double-quoted string; `None` (the string is consumed) if it interpolates.
+    /// A double-quoted string; `None` (the string is consumed) if it interpolates something unknown.
+    /// `$name` and `{$name}` take the string a variable was assigned.
     fn double_quoted(&mut self) -> Option<String> {
         self.skip_space();
         if !self.rest().starts_with('"') {
@@ -351,8 +417,9 @@ impl<'a> Parser<'a> {
         }
         self.at += 1;
         let mut out = String::new();
-        let mut interpolates = false;
-        let mut chars = self.rest().char_indices();
+        let mut unknown = false;
+        let rest = self.rest();
+        let mut chars = rest.char_indices().peekable();
         while let Some((i, c)) = chars.next() {
             if c == '\\' {
                 match chars.next() {
@@ -368,11 +435,32 @@ impl<'a> Parser<'a> {
                 }
             } else if c == '"' {
                 self.at += i + 1;
-                return if interpolates { None } else { Some(out) };
-            } else {
-                if c == '$' || (c == '{' && self.rest()[i + 1..].starts_with('$')) {
-                    interpolates = true;
+                return if unknown { None } else { Some(out) };
+            } else if c == '$' && chars.peek().is_some_and(|&(_, n)| n.is_alphabetic() || n == '_') {
+                let mut name = String::new();
+                while let Some(&(_, n)) = chars.peek() {
+                    if n.is_alphanumeric() || n == '_' {
+                        name.push(n);
+                        chars.next();
+                    } else {
+                        break;
+                    }
                 }
+                match self.vars.get(&name) {
+                    Some(Lit::Str(value)) => out.push_str(value),
+                    _ => unknown = true,
+                }
+            } else if c == '{' && rest[i + 1..].starts_with('$') {
+                let close = rest[i..].find('}').map_or(rest.len(), |e| i + e);
+                let inner = rest[i + 2..close].trim();
+                match self.vars.get(inner) {
+                    Some(Lit::Str(value)) if inner.chars().all(|ch| ch.is_alphanumeric() || ch == '_') => out.push_str(value),
+                    _ => unknown = true,
+                }
+                while chars.peek().is_some_and(|&(j, _)| j <= close) {
+                    chars.next();
+                }
+            } else {
                 out.push(c);
             }
         }

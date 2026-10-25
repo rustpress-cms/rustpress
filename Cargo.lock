@@ -1316,6 +1316,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "rustpress-admin"
+version = "0.1.0"
+dependencies = [
+ "regex",
+ "rustpress-auth",
+ "rustpress-blocks",
+ "rustpress-core",
+ "rustpress-db",
+ "serde_json",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "rustpress-auth"
 version = "0.1.0"
 dependencies = [

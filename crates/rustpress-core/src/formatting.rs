@@ -71,6 +71,15 @@ pub fn esc_attr(text: &str) -> String {
 
 /// `esc_url()` for http(s), mailto, tel and relative URLs. Other schemes yield `""`.
 pub fn esc_url(url: &str) -> String {
+    esc_url_context(url, true)
+}
+
+/// `esc_url_raw()`: the same cleaning, but ampersands and quotes stay as they are (for storing and redirects).
+pub fn esc_url_raw(url: &str) -> String {
+    esc_url_context(url, false)
+}
+
+fn esc_url_context(url: &str, display: bool) -> String {
     let url = url.trim_start().replace(' ', "%20");
     if url.is_empty() {
         return String::new();
@@ -88,6 +97,9 @@ pub fn esc_url(url: &str) -> String {
         if looks_like_scheme && !matches!(scheme.to_ascii_lowercase().as_str(), "http" | "https" | "ftp" | "ftps" | "mailto" | "news" | "irc" | "irc6" | "ircs" | "gopher" | "nntp" | "feed" | "telnet" | "mms" | "rtsp" | "sms" | "svn" | "tel" | "fax" | "xmpp" | "webcal" | "urn") {
             return String::new();
         }
+    }
+    if !display {
+        return cleaned;
     }
     // Normalise bare ampersands, then use the numeric form WordPress prints.
     let mut out = String::with_capacity(cleaned.len() + 8);

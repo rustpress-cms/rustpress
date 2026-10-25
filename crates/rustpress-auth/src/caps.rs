@@ -136,7 +136,7 @@ mod tests {
     fn capability_maps_keep_false_values() {
         let value = rustpress_phpser::unserialize(br#"a:2:{s:4:"read";b:1;s:10:"edit_posts";b:0;}"#).unwrap();
         let map = capability_map(&value);
-        assert_eq!(map["read"], true);
-        assert_eq!(map["edit_posts"], false);
+        assert!(map["read"]);
+        assert!(!map["edit_posts"]);
     }
 }

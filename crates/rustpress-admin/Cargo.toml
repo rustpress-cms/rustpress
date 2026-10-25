@@ -1,0 +1,18 @@
+[package]
+name = "rustpress-admin"
+description = "The administration area: script and style loader, sign-in page, admin screens"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[dependencies]
+rustpress-core.workspace = true
+rustpress-db.workspace = true
+rustpress-auth.workspace = true
+rustpress-blocks.workspace = true
+regex.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true

@@ -139,6 +139,12 @@ impl Salts {
     }
 }
 
+/// `md5( $data )` in lower-case hex.
+pub fn md5_hex(data: &str) -> String {
+    use md5::Digest;
+    Md5::digest(data.as_bytes()).iter().map(|b| format!("{b:02x}")).collect()
+}
+
 /// `hash_hmac( 'md5', $data, $key )`.
 pub fn hmac_md5_hex(key: &str, data: &str) -> String {
     let mut mac = Hmac::<Md5>::new_from_slice(key.as_bytes()).expect("hmac accepts any key length");
