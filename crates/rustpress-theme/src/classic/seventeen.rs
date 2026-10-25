@@ -876,7 +876,7 @@ async fn wp_footer(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State) -> Strin
     let version = wp_version(wp_root);
     let modules: Vec<String> = state.script_modules.iter().cloned().collect();
     let (importmap, preloads, module_scripts) = script_modules(wp_root, site, &modules);
-    let mut out = format!("{importmap}{module_scripts}{preloads}");
+    let mut out = format!("{importmap}{module_scripts}{}{preloads}", state.interactivity.data_script().unwrap_or_default());
     out.push_str(&format!("<script data-wp-strategy=\"defer\" defer id=\"jquery-scrollto-js\" src=\"{}/assets/js/jquery.scrollTo.js?ver=2.1.3\"></script>\n", ctx.theme.template_directory_uri()));
     // `comment-reply`, enqueued by `twentyseventeen_scripts()` for singular pages with open comments.
     if let (true, Queried::Post(post)) = (ctx.q.flags.is_singular(), &ctx.q.queried)

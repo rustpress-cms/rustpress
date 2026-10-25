@@ -58,16 +58,11 @@ impl Rest<'_> {
         data.insert("class_list".into(), Value::from(post_class(&env, post, &[], false, false).await?));
 
         // `description`: the content filters plus `prepend_attachment()`.
-        let prefix = match attached_file.as_deref() {
-            Some(file) => {
-                let link = env.in_content_filter(|| images::attachment_link(&env, post, metadata.as_ref(), file, "medium", &alt));
-                format!("<p class=\"attachment\">{link}</p>\n")
-            }
-            None => String::new(),
-        };
+        let prefix = rustpress_blocks::content::attachment_prefix(&env, post, metadata.as_ref(), attached_file.as_deref(), &alt).await?;
         let description = the_content_prefixed(&env, &shared, &post.post_content, &prefix).await?;
         data.insert("description".into(), json!({"rendered": description}));
-        let caption = wpautop(&convert_chars(&self.site.texturize(&post.post_excerpt)));
+        let raw_caption = rustpress_blocks::excerpt::get_the_excerpt(&env, &shared).await?;
+        let caption = wpautop(&convert_chars(&self.site.texturize(&raw_caption)));
         data.insert("caption".into(), json!({"rendered": caption}));
         data.insert("alt_text".into(), Value::from(alt));
         data.insert("media_type".into(), Value::from(if images::is_image(post) { "image" } else { "file" }));
@@ -125,6 +120,11 @@ impl Rest<'_> {
                     );
                 }
             }
+        }
+        // Details without any sizes still get an (empty) object.
+        let sizes_empty = details.get("sizes").is_none_or(rustpress_blocks::style_engine::is_empty);
+        if !details.is_empty() && sizes_empty {
+            details.insert("sizes".into(), rustpress_blocks::php_json::empty_object());
         }
         Value::Object(details)
     }

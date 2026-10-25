@@ -301,6 +301,35 @@ impl TagEditor {
         }
     }
 
+    /// `remove_class`: drops the class token; the attribute goes when no class is left.
+    pub fn remove_class(&mut self, class: &str) {
+        let Some(existing) = self.get_attribute("class").map(str::to_owned) else { return };
+        if !existing.split_ascii_whitespace().any(|c| c == class) {
+            return;
+        }
+        let rest: Vec<&str> = existing.split_ascii_whitespace().filter(|c| *c != class).collect();
+        if rest.is_empty() {
+            self.remove_attribute("class");
+            // A pending value for an attribute that is not in the source goes away with it.
+            self.set.retain(|(l, _, _)| l != "class");
+        } else {
+            self.set_attribute("class", &rest.join(" "));
+        }
+    }
+
+    /// Whether any attribute was set or removed.
+    pub fn is_modified(&self) -> bool {
+        !self.set.is_empty() || !self.removed.is_empty()
+    }
+
+    /// The start tag as it reads with all pending changes: `(start, end, text)` in the original document.
+    pub fn tag_replacement(&self) -> (usize, usize, String) {
+        let rendered = self.render();
+        let grown = rendered.len() as isize - self.html.len() as isize;
+        let end = (self.tag.end as isize + grown) as usize;
+        (self.tag.start, self.tag.end, rendered[self.tag.start..end].to_owned())
+    }
+
     pub fn has_class(&self, class: &str) -> bool {
         self.get_attribute("class").is_some_and(|c| c.split_ascii_whitespace().any(|x| x == class))
     }

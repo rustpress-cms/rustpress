@@ -237,6 +237,42 @@ pub async fn the_content(env: &Env<'_>, post: &Arc<Post>, raw: &str) -> Result<S
     the_content_prefixed(env, post, raw, "").await
 }
 
+/// What `prepend_attachment()` puts in front of the content of an attachment: the player of a video or
+/// audio file, otherwise the linked image. Empty when the attachment has no file.
+pub async fn attachment_prefix(env: &Env<'_>, post: &Post, meta: Option<&images::Metadata>, attached_file: Option<&str>, alt: &str) -> Result<String> {
+    let Some(file) = attached_file else { return Ok(String::new()) };
+    let kind = post.post_mime_type.split('/').next().unwrap_or_default();
+    let player = match kind {
+        "video" => {
+            let mut atts = rustpress_core::shortcodes::Atts::default();
+            atts.set("src", &images::attachment_url(env.site, file));
+            if let Some(meta) = meta.filter(|m| m.width() > 0 && m.height() > 0) {
+                atts.set("width", &meta.width().to_string());
+                atts.set("height", &meta.height().to_string());
+            }
+            let thumbnail = images::post_thumbnail_id(env, post.id).await?;
+            if thumbnail != 0
+                && let Some(poster) = env.site.db.post(thumbnail).await?
+                && let (_, Some(poster_file)) = images::load_metadata(env.site, &poster).await?
+            {
+                atts.set("poster", &images::attachment_url(env.site, &poster_file));
+            }
+            crate::media_shortcodes::video(env, post.id, &atts, "")
+        }
+        "audio" => {
+            let mut atts = rustpress_core::shortcodes::Atts::default();
+            atts.set("src", &images::attachment_url(env.site, file));
+            crate::media_shortcodes::audio(env, post.id, &atts)
+        }
+        _ => {
+            let link = env.in_content_filter(|| images::attachment_link(env, post, meta, file, "medium", alt));
+            Some(format!("<p class=\"attachment\">{link}</p>"))
+        }
+    };
+    Ok(format!("{}
+", player.unwrap_or_default()))
+}
+
 /// [`the_content`] with markup that `prepend_attachment()` puts in front of the content.
 pub async fn the_content_prefixed(env: &Env<'_>, post: &Arc<Post>, raw: &str, prefix: &str) -> Result<String> {
     // Everything below runs inside the filter: images made by nested blocks leave the
@@ -250,9 +286,9 @@ pub async fn the_content_prefixed(env: &Env<'_>, post: &Arc<Post>, raw: &str, pr
 /// The `the_content` filters as `wp_trim_excerpt()` runs them on text that
 /// `excerpt_remove_blocks()` has already rendered: `wp_filter_content_tags()` is unhooked,
 /// since the tags are stripped anyway and would only disturb the image counting.
-pub async fn the_content_for_excerpt(env: &Env<'_>, post: &Arc<Post>, rendered: &str) -> Result<String> {
+pub async fn the_content_for_excerpt(env: &Env<'_>, post: &Arc<Post>, rendered: &str, prefix: &str) -> Result<String> {
     env.with_state(|s| s.media.content_depth += 1);
-    let result = apply_the_content(env, post, rendered, "", false).await;
+    let result = apply_the_content(env, post, rendered, prefix, false).await;
     env.with_state(|s| s.media.content_depth -= 1);
     result
 }

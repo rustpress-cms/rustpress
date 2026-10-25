@@ -445,7 +445,17 @@ impl Site {
                 }
                 return Ok(r.into_404());
             };
-            if s.show_on_front == ShowOnFront::Page && s.page_for_posts == page.id {
+            if page.post_type == "attachment" {
+                // `WP_Query::get_posts()`: an attachment found by its path is an attachment page;
+                // without a parent it is also a single post.
+                f.is_attachment = true;
+                if page.post_parent == 0 {
+                    f.is_page = false;
+                    f.is_single = true;
+                }
+                found = 1;
+                posts.push(page.clone());
+            } else if s.show_on_front == ShowOnFront::Page && s.page_for_posts == page.id {
                 f.is_page = false;
                 f.is_home = true;
                 f.is_posts_page = true;
@@ -576,10 +586,13 @@ impl Site {
         let parts: Vec<String> =
             path.trim_matches('/').split('/').map(sanitize_title).filter(|p| !p.is_empty()).collect();
         let Some(last) = parts.last() else { return Ok(None) };
-        let candidates = self
-            .db
-            .posts(&PostQuery { post_types: vec![post_type.to_owned()], names: parts.clone(), ..PostQuery::default() })
-            .await?;
+        // `get_page_by_path()` also finds attachments (those that inherit their parent's status).
+        let mut query = PostQuery { post_types: vec![post_type.to_owned()], names: parts.clone(), ..PostQuery::default() };
+        if post_type == "page" {
+            query.post_types.push("attachment".into());
+            query.statuses = vec!["publish".into(), "inherit".into()];
+        }
+        let candidates = self.db.posts(&query).await?;
         'candidate: for page in candidates.iter().filter(|p| &p.post_name == last) {
             let mut current = page;
             for wanted in parts[..parts.len() - 1].iter().rev() {

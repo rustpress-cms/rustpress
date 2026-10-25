@@ -1,17 +1,17 @@
 # Kompatibilitätsbericht: twentytwentyfour
 
-Stand: 2026-10-25 06:13 UTC · Referenz: WordPress 7.1.3 · Theme: `twentytwentyfour`
+Stand: 2026-10-25 07:19 UTC · Referenz: WordPress 7.1.3 · Theme: `twentytwentyfour`
 
-**892 URLs verglichen: 873 identisch, 19 mit bekannten Abweichungen, 0 mit unerwarteten Abweichungen.**
+**913 URLs verglichen: 894 identisch, 19 mit bekannten Abweichungen, 0 mit unerwarteten Abweichungen.**
 
 | Art | URLs | identisch | bekannt | unerwartet | Median RustPress | Median WordPress |
 |---|---:|---:|---:|---:|---:|---:|
-| HTML-Seiten | 387 | 384 | 3 | 0 | 930 ms | 96 ms |
-| Feeds | 293 | 293 | 0 | 0 | 104 ms | 39 ms |
-| Sitemaps | 12 | 12 | 0 | 0 | 12 ms | 19 ms |
-| REST-API | 182 | 180 | 2 | 0 | 31 ms | 35 ms |
-| Dateien | 9 | 0 | 9 | 0 | 94 ms | 32 ms |
-| Sonstiges | 9 | 4 | 5 | 0 | 446 ms | 175 ms |
+| HTML-Seiten | 397 | 394 | 3 | 0 | 940 ms | 104 ms |
+| Feeds | 298 | 298 | 0 | 0 | 106 ms | 39 ms |
+| Sitemaps | 12 | 12 | 0 | 0 | 24 ms | 145 ms |
+| REST-API | 188 | 186 | 2 | 0 | 45 ms | 33 ms |
+| Dateien | 9 | 0 | 9 | 0 | 108 ms | 5 ms |
+| Sonstiges | 9 | 4 | 5 | 0 | 863 ms | 90 ms |
 
 ## Unerwartete Abweichungen
 

@@ -38,8 +38,29 @@ pub async fn get_the_excerpt_with(env: &Env<'_>, post: &Arc<Post>, length: usize
     let content = crate::content::get_the_content_with(env, post, 1, on, true).await?;
     let content = rustpress_core::shortcodes::strip_shortcodes(&content);
     let content = excerpt_remove_blocks(env, post, &content).await?;
-    let html = the_content_for_excerpt(env, post, &content).await?.replace("]]>", "]]&gt;");
+    let content = excerpt_remove_footnotes(&content);
+    // An attachment's content starts with its player or image (`prepend_attachment()`).
+    let prefix = if post.post_type == "attachment" {
+        let (meta, file) = crate::images::load_metadata(env.site, post).await?;
+        let alt = crate::images::attachment_alt(env, post.id).await?;
+        crate::content::attachment_prefix(env, post, meta.as_ref(), file.as_deref(), &alt).await?
+    } else {
+        String::new()
+    };
+    let html = the_content_for_excerpt(env, post, &content, &prefix).await?.replace("]]>", "]]&gt;");
     Ok(rustpress_core::formatting::wp_trim_words_with(&html, length, more, env.site.locale_data().word_count_type))
+}
+
+/// `excerpt_remove_footnotes()`: the numbered references vanish from generated excerpts.
+pub fn excerpt_remove_footnotes(content: &str) -> String {
+    use std::sync::LazyLock;
+    static REFERENCE: LazyLock<regex::Regex> = LazyLock::new(|| {
+        regex::Regex::new(r#"<sup data-fn="[^"]+" class="[^"]+">\s*<a href="[^"]+" id="[^"]+">\d+</a>\s*</sup>"#).expect("valid pattern")
+    });
+    if !content.contains("data-fn=") {
+        return content.to_owned();
+    }
+    REFERENCE.replace_all(content, "").into_owned()
 }
 
 fn allowed(name: &Option<String>) -> bool {

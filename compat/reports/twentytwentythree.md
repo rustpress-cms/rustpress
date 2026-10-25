@@ -1,17 +1,17 @@
 # Kompatibilitätsbericht: twentytwentythree
 
-Stand: 2026-10-25 06:16 UTC · Referenz: WordPress 7.1.3 · Theme: `twentytwentythree`
+Stand: 2026-10-25 07:22 UTC · Referenz: WordPress 7.1.3 · Theme: `twentytwentythree`
 
-**888 URLs verglichen: 873 identisch, 15 mit bekannten Abweichungen, 0 mit unerwarteten Abweichungen.**
+**910 URLs verglichen: 894 identisch, 16 mit bekannten Abweichungen, 0 mit unerwarteten Abweichungen.**
 
 | Art | URLs | identisch | bekannt | unerwartet | Median RustPress | Median WordPress |
 |---|---:|---:|---:|---:|---:|---:|
-| HTML-Seiten | 387 | 384 | 3 | 0 | 749 ms | 62 ms |
-| Feeds | 293 | 293 | 0 | 0 | 292 ms | 19 ms |
-| Sitemaps | 12 | 12 | 0 | 0 | 14 ms | 15 ms |
-| REST-API | 182 | 180 | 2 | 0 | 58 ms | 39 ms |
-| Dateien | 5 | 0 | 5 | 0 | 167 ms | 4 ms |
-| Sonstiges | 9 | 4 | 5 | 0 | 278 ms | 62 ms |
+| HTML-Seiten | 397 | 394 | 3 | 0 | 759 ms | 61 ms |
+| Feeds | 298 | 298 | 0 | 0 | 295 ms | 19 ms |
+| Sitemaps | 12 | 12 | 0 | 0 | 102 ms | 83 ms |
+| REST-API | 188 | 186 | 2 | 0 | 50 ms | 26 ms |
+| Dateien | 6 | 0 | 6 | 0 | 113 ms | 5 ms |
+| Sonstiges | 9 | 4 | 5 | 0 | 445 ms | 56 ms |
 
 ## Unerwartete Abweichungen
 
@@ -22,7 +22,7 @@ Keine.
 - **Anmeldung, Admin-Oberfläche, XML-RPC und Cron gibt es nicht: RustPress arbeitet nur lesend und ohne PHP.**: `/wp-login.php` (status), `/wp-login.php` (header:link), `/wp-admin/` (status), `/wp-admin/` (header:location), `/wp-admin/` (header:link), `/xmlrpc.php` (status), `/xmlrpc.php` (header:content-type), `/xmlrpc.php` (header:cache-control), `/xmlrpc.php` (header:expires), `/xmlrpc.php` (header:link), `/xmlrpc.php` (header:allow), `/wp-cron.php` (status) … und 2 weitere
 - **Der Apache der Referenz sendet für statische Dateien keinen Cache-Control-Header; RustPress sendet bewusst public, max-age=86400.**: `/readme.html` (header:cache-control), `/license.txt` (header:cache-control)
 - **Der Routenindex von /wp-json/ listet nur die Routen, die RustPress selbst bedient (eine Teilmenge).**: `/wp-json/` (bytes)
-- **RustPress sendet für statische Dateien bewusst Cache-Control: public, max-age=86400; der Apache der Referenz sendet nichts.**: `/wp-content/` (header:cache-control), `/wp-includes/` (header:cache-control), `/wp-includes/js/dist/script-modules/interactivity/index.min.js?ver=efaa5193bbad9c60ffd1` (header:cache-control), `/wp-content/uploads/2026/10/building-exterior.webp` (header:cache-control), `/wp-includes/js/dist/script-modules/block-library/navigation/view.min.js?ver=1bf28ded04f9f188bdcb` (header:cache-control)
+- **RustPress sendet für statische Dateien bewusst Cache-Control: public, max-age=86400; der Apache der Referenz sendet nichts.**: `/wp-content/` (header:cache-control), `/wp-includes/` (header:cache-control), `/wp-includes/js/dist/script-modules/interactivity/index.min.js?ver=efaa5193bbad9c60ffd1` (header:cache-control), `/wp-content/uploads/2026/10/building-exterior.webp` (header:cache-control), `/wp-includes/js/dist/script-modules/block-library/navigation/view.min.js?ver=1bf28ded04f9f188bdcb` (header:cache-control), `/wp-includes/blocks/navigation/style.min.css?ver=7.1.3` (header:cache-control)
 - **Seiten mit gleichem menu_order haben in MariaDB keine definierte Reihenfolge.**: `/wp-json/wp/v2/pages?parent=0&orderby=menu_order` (bytes)
 - **Verhalten des Apache und von PHP der Referenz (leere index.php, 403 für Verzeichnisse und Dotfiles, ausgeführte wp-config.php); RustPress liefert nur Assets aus.**: `/wp-content/` (status), `/wp-content/` (header:expires), `/wp-content/` (header:link), `/wp-includes/` (status), `/wp-includes/` (header:content-type), `/wp-includes/` (header:expires), `/wp-includes/` (header:link), `/.htaccess` (status), `/.htaccess` (header:content-type), `/.htaccess` (header:cache-control), `/.htaccess` (header:expires), `/.htaccess` (header:link) … und 4 weitere
 

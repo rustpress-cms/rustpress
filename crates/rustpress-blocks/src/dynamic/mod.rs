@@ -15,6 +15,7 @@ mod breadcrumbs;
 mod button;
 mod comments;
 mod extra;
+mod icon;
 mod featured;
 mod media;
 mod navigation;
@@ -25,6 +26,7 @@ mod latest_posts;
 mod search;
 mod simple;
 mod template;
+pub(crate) mod tabs;
 
 /// Blocks with a server-side render callback.
 pub fn is_dynamic(name: &str) -> bool {
@@ -101,6 +103,13 @@ pub fn is_dynamic(name: &str) -> bool {
             | "core/media-text"
             | "core/footnotes"
             | "core/breadcrumbs"
+            | "core/video"
+            | "core/accordion"
+            | "core/accordion-item"
+            | "core/tabs"
+            | "core/icon"
+            | "core/tab-list"
+            | "core/tab-panel"
     )
 }
 
@@ -178,6 +187,13 @@ pub fn render<'a>(bc: &'a BlockCtx<'a>) -> BoxFuture<'a, Result<String>> {
             "core/media-text" => featured::media_text(bc).await,
             "core/footnotes" => featured::footnotes(bc).await,
             "core/breadcrumbs" => breadcrumbs::breadcrumbs(bc).await,
+            "core/video" => featured::video(bc).await,
+            "core/accordion" => featured::accordion(bc),
+            "core/accordion-item" => featured::accordion_item(bc),
+            "core/tabs" => tabs::tabs(bc),
+            "core/icon" => icon::icon(bc),
+            "core/tab-list" => tabs::tab_list(bc),
+            "core/tab-panel" => tabs::tab_panel(bc),
             _ => Ok(bc.content.clone()),
         }
     })

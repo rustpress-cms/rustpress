@@ -794,7 +794,7 @@ pub async fn render_document(theme: &Theme, site: &Site, query: &QueryResult, re
     // --- scripts ---------------------------------------------------------
     let modules: Vec<String> = state.script_modules.iter().cloned().collect();
     let (importmap, preloads, module_scripts) = script_modules(wp_root, site, &modules);
-    let mut footer_scripts = format!("{}{}{module_scripts}", speculation_rules(site, theme), rustpress_blocks::duotone::footer_svgs(&state.duotone));
+    let mut footer_scripts = format!("{}{}{module_scripts}{}", speculation_rules(site, theme), rustpress_blocks::duotone::footer_svgs(&state.duotone), state.interactivity.data_script().unwrap_or_default());
     // MediaElement: jQuery in the head, the player scripts in the footer.
     let styles = if state.mediaelement { format!("{styles}<script id=\"jquery-core-js\" src=\"{includes_url}/js/jquery/jquery.min.js?ver=3.7.1\"></script>\n<script id=\"jquery-migrate-js\" src=\"{includes_url}/js/jquery/jquery-migrate.min.js?ver=3.4.1\"></script>\n") } else { styles };
     if state.mediaelement {

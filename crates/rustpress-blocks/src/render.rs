@@ -75,6 +75,14 @@ impl<'a> Env<'a> {
     pub fn render_block<'b>(&'b self, block: &'b Block, available: &'b Context, parent: Option<&'b Block>) -> BoxFuture<'b, Result<String>> {
         Box::pin(async move {
             let Some(name) = block.name.as_deref() else { return Ok(block.inner_html.clone()) };
+            // The `render_block_context` filter of the tabs block.
+            let provided;
+            let available = if name == "core/tabs" {
+                provided = dynamic::tabs::provide_context(self, block, available);
+                &provided
+            } else {
+                available
+            };
             let block_type = self.registry.get(name);
             let (blocks_before, modules_before) = self.with_state(|s| (s.used_blocks.len(), s.script_modules.clone()));
             self.with_state(|s| {
@@ -82,6 +90,13 @@ impl<'a> Env<'a> {
                     s.rendered_blocks.push(name.to_owned());
                 }
             });
+
+            // The first block that supports the Interactivity API processes the directives of all it contains.
+            let is_root_interactive = !self.with_state(|s| s.interactive_root)
+                && block_type.as_ref().is_some_and(|bt| matches!(bt.support(&["interactivity"]), Some(Value::Bool(true))) || bt.support(&["interactivity", "interactive"]).is_some_and(|v| !crate::style_engine::is_empty(v)));
+            if is_root_interactive {
+                self.with_state(|s| s.interactive_root = true);
+            }
 
             // `render_block_data` filters.
             let mut raw_attrs = block.attrs.clone();
@@ -178,6 +193,12 @@ impl<'a> Env<'a> {
                 content = crate::variations::render_class_name(&raw_attrs, content);
             }
             content = dynamic::name_filter(name, &raw_attrs, content);
+            if is_root_interactive {
+                content = self.with_state(|s| {
+                    s.interactive_root = false;
+                    crate::interactivity::process_directives(&content, &mut s.interactivity)
+                });
+            }
             // Blocks that rendered nothing do not load their assets; parents come after their children.
             // Assets enqueued while rendering a block that turns out empty are dequeued again,
             // including those of its inner blocks (`WP_Block::render()`).
@@ -187,9 +208,6 @@ impl<'a> Env<'a> {
                     s.used_blocks.truncate(blocks_before);
                     s.script_modules = modules_before.clone();
                 });
-            }
-            if name == "core/navigation" {
-                content = crate::interactivity::process_directives(&content);
             }
             Ok(content)
         })

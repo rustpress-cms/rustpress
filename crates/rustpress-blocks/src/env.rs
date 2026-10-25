@@ -2,7 +2,7 @@
 //! theme, and what blocks collect while rendering (CSS rules, script modules,
 //! ID counters).
 
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
 use rustpress_core::{QueryResult, Site};
@@ -130,6 +130,29 @@ fn rule_css(rule: &CssRule) -> String {
     if body.is_empty() { String::new() } else { format!("{}{{{}}}", rule.selector, body) }
 }
 
+/// Script modules in the order they were enqueued.
+#[derive(Debug, Clone, Default)]
+pub struct ModuleSet(Vec<String>);
+
+impl ModuleSet {
+    /// `wp_enqueue_script_module()`: a module is queued once.
+    pub fn insert(&mut self, id: String) -> bool {
+        if self.0.contains(&id) {
+            return false;
+        }
+        self.0.push(id);
+        true
+    }
+
+    pub fn contains(&self, id: &str) -> bool {
+        self.0.iter().any(|m| m == id)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &String> {
+        self.0.iter()
+    }
+}
+
 /// Things collected while rendering.
 #[derive(Debug, Default)]
 pub struct State {
@@ -158,7 +181,13 @@ pub struct State {
     /// Patterns being rendered right now (recursion guard).
     pub active_patterns: HashSet<String>,
     /// Script modules that must be loaded on the page.
-    pub script_modules: BTreeSet<String>,
+    pub script_modules: ModuleSet,
+    /// State and derived state closures of the Interactivity API.
+    pub interactivity: crate::interactivity::Interactivity,
+    /// A root interactive block is rendering: its directives are processed once it is done.
+    pub interactive_root: bool,
+    /// `static $tab_counters` of the tab panel block: panels rendered so far per tabs ID.
+    pub tab_counters: HashMap<String, u64>,
     /// Classic scripts to load (`comment-reply`).
     pub scripts: Vec<String>,
     /// Extra inline styles keyed by handle (e.g. per-block custom CSS).

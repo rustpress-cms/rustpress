@@ -202,3 +202,101 @@ pub(super) async fn footnotes(bc: &BlockCtx<'_>) -> Result<String> {
     }
     Ok(format!("<ol {}>{items}</ol>", bc.wrapper_attributes(&[])))
 }
+
+// -------------------------------------------------------------------- core/video
+
+/// `render_block_core_video()`: width, height and aspect ratio from the attachment's metadata,
+/// so the browser can reserve the space before the video loads.
+pub(super) async fn video(bc: &BlockCtx<'_>) -> Result<String> {
+    let content = bc.content.clone();
+    if !content.contains("<video") {
+        return Ok(content);
+    }
+    let Some(id) = bc.attrs.get("id").and_then(Value::as_u64).filter(|id| *id > 0) else { return Ok(content) };
+    match bc.env.site.db.post(id).await? {
+        Some(post) if post.post_type == "attachment" => {}
+        _ => return Ok(content),
+    }
+    let Some(meta) = images::attachment_metadata(bc.env, id).await? else { return Ok(content) };
+    let (width, height) = (meta.width(), meta.height());
+    if width == 0 || height == 0 {
+        return Ok(content);
+    }
+    let Some(tag) = tags(&content, 0).into_iter().find(|t| !t.is_closer && t.name == "video") else { return Ok(content) };
+    let mut editor = TagEditor::from_tag(&content, tag);
+    editor.set_attribute("width", &width.to_string());
+    editor.set_attribute("height", &height.to_string());
+    let style = editor.get_attribute("style").unwrap_or("").to_owned();
+    editor.set_attribute("style", &format!("aspect-ratio: {width} / {height};{style}"));
+    Ok(editor.finish())
+}
+
+// ---------------------------------------------------------------- core/accordion
+
+/// The first start tag at or after `from` with the class, edited by `change`; returns the new document
+/// and the offset right after the edited tag.
+fn change_tag(content: &str, from: usize, class: &str, change: impl FnOnce(&mut TagEditor)) -> Option<(String, usize)> {
+    let tag = tags(content, from).into_iter().find(|t| !t.is_closer && has_class(t, class))?;
+    let mut editor = TagEditor::from_tag(content, tag);
+    change(&mut editor);
+    let (start, _, text) = editor.tag_replacement();
+    Some((editor.finish(), start + text.len()))
+}
+
+/// `render_block_core_accordion()`.
+pub(super) fn accordion(bc: &BlockCtx<'_>) -> Result<String> {
+    let content = bc.content.clone();
+    if content.is_empty() {
+        return Ok(content);
+    }
+    let autoclose = if bc.attr_bool("autoclose") { "true" } else { "false" };
+    let updated = change_tag(&content, 0, "wp-block-accordion", |e| {
+        e.set_attribute("data-wp-interactive", "core/accordion");
+        e.set_attribute("data-wp-context", &format!("{{ \"autoclose\": {autoclose}, \"accordionItems\": [] }}"));
+    });
+    bc.env.with_state(|s| s.script_modules.insert("@wordpress/block-library/accordion/view".to_owned()));
+    Ok(updated.map_or(content, |(html, _)| html))
+}
+
+/// `block_core_accordion_item_render()`.
+pub(super) fn accordion_item(bc: &BlockCtx<'_>) -> Result<String> {
+    let mut content = bc.content.clone();
+    if content.is_empty() {
+        return Ok(content);
+    }
+    let unique_id = bc.env.with_state(|s| {
+        let id = s.unique_id("accordion-item-");
+        s.interactivity.state_closure("core/accordion", "isOpen");
+        id
+    });
+    let open = bc.attr_bool("openByDefault");
+    let chain = change_tag(&content, 0, "wp-block-accordion-item", |e| {
+        e.set_attribute("data-wp-context", &format!("{{ \"id\": \"{unique_id}\", \"openByDefault\": {} }}", if open { "true" } else { "false" }));
+        e.set_attribute("data-wp-class--is-open", "state.isOpen");
+        e.set_attribute("data-wp-init", "callbacks.initAccordionItems");
+        e.set_attribute("data-wp-on-window--hashchange", "callbacks.hashChange");
+    })
+    .and_then(|(html, at)| {
+        change_tag(&html, at, "wp-block-accordion-heading__toggle", |e| {
+            e.set_attribute("data-wp-on--click", "actions.toggle");
+            e.set_attribute("id", &unique_id);
+            e.set_attribute("aria-controls", &format!("{unique_id}-panel"));
+            e.set_attribute("data-wp-bind--aria-expanded", "state.isOpen");
+        })
+    })
+    .and_then(|(html, at)| {
+        change_tag(&html, at, "wp-block-accordion-panel", |e| {
+            e.set_attribute("id", &format!("{unique_id}-panel"));
+            e.set_attribute("aria-labelledby", &unique_id);
+            e.set_attribute("data-wp-bind--hidden", "state.isHidden");
+            e.set_attribute("data-wp-on--beforematch", "actions.handleBeforeMatch");
+        })
+    });
+    if let Some((html, _)) = chain {
+        content = html;
+    }
+    if !open {
+        content = details_images_low_priority(&serde_json::Map::new(), content);
+    }
+    Ok(content)
+}
