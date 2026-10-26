@@ -136,6 +136,12 @@ impl Theme {
     /// `WP_Block_Styles_Registry::get_all_registered()`: what the `functions.php` of the theme (and its parent) registers
     /// with `register_block_style()`, then the variations of `styles/`, grouped by block in the order they were first seen.
     pub fn registered_block_styles(&self) -> Vec<(String, Vec<BlockStyle>)> {
+        self.registered_block_styles_with(true)
+    }
+
+    /// [`Theme::registered_block_styles`], optionally without the variations of `styles/`: WordPress registers those
+    /// only once something asks for the theme's `theme.json` data.
+    pub fn registered_block_styles_with(&self, partials: bool) -> Vec<(String, Vec<BlockStyle>)> {
         let mut flat: Vec<BlockStyle> = Vec::new();
         let mut dirs = vec![self.stylesheet_dir().to_path_buf()];
         if self.template_dir() != self.stylesheet_dir() {
@@ -160,8 +166,10 @@ impl Theme {
                 flat.push((block, name, label, is_default));
             }
         }
-        for (block, name, label) in self.block_style_variations(&domain) {
-            flat.push((block, name, label, false));
+        if partials {
+            for (block, name, label) in self.block_style_variations(&domain) {
+                flat.push((block, name, label, false));
+            }
         }
         let mut grouped: Vec<(String, Vec<BlockStyle>)> = Vec::new();
         for style in flat {
@@ -174,6 +182,30 @@ impl Theme {
             }
         }
         grouped
+    }
+}
+
+impl Theme {
+    /// The `inline_style` a `register_block_style()` call of the theme gives the style `name` of `block`.
+    pub fn registered_block_style_inline(&self, block: &str, name: &str) -> Option<String> {
+        let mut dirs = vec![self.stylesheet_dir().to_path_buf()];
+        if self.template_dir() != self.stylesheet_dir() {
+            dirs.push(self.template_dir().to_path_buf());
+        }
+        dirs.iter()
+            .filter_map(|dir| std::fs::read_to_string(dir.join("functions.php")).ok())
+            .flat_map(|php| crate::functions_php::block_style_inline_named(&php))
+            .find(|(b, n, _)| b == block && n == name)
+            .map(|(_, _, css)| css)
+    }
+
+    /// `current_theme_supports( $feature )` for what the `functions.php` of the theme (or its parent) adds.
+    pub fn adds_theme_support(&self, feature: &str) -> bool {
+        let mut dirs = vec![self.stylesheet_dir().to_path_buf()];
+        if self.template_dir() != self.stylesheet_dir() {
+            dirs.push(self.template_dir().to_path_buf());
+        }
+        dirs.iter().filter_map(|dir| std::fs::read_to_string(dir.join("functions.php")).ok()).any(|php| crate::functions_php::adds_theme_support(&php, feature))
     }
 }
 

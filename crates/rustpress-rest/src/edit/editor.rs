@@ -38,7 +38,7 @@ fn is_empty_config(value: &Value) -> bool {
 
 /// The widgets WordPress registers.
 /// `get_allowed_block_template_part_areas()`: `(area, label, description, icon, tag)`.
-const PART_AREAS: [(&str, &str, &str, &str, &str); 4] = [
+pub(crate) const PART_AREAS: [(&str, &str, &str, &str, &str); 4] = [
     ("uncategorized", "General", "General templates often perform a specific role like displaying post content, and are not tied to any particular area.", "layout", "div"),
     ("header", "Header", "The Header template defines a page area that typically contains a title, logo, and main navigation.", "header", "header"),
     ("footer", "Footer", "The Footer template defines a page area that typically contains site credits, social links, or any other combination of blocks.", "footer", "footer"),
@@ -170,7 +170,6 @@ impl Rest<'_> {
             ["wp", "v2", "menu-items", id] if get && self.can("edit_theme_options") && id.parse::<u64>().is_ok() => Err(RestError::new("rest_post_invalid_id", "Invalid post ID.", 404)),
             ["wp", "v2", "menus", id] if get && self.can("edit_theme_options") && id.parse::<u64>().is_ok() => Err(RestError::new("rest_term_invalid", "Term does not exist.", 404)),
             ["wp", "v2", "menu-locations", _] if get && self.can("edit_theme_options") => Err(RestError::new("rest_menu_location_invalid", "Invalid menu location.", 404)),
-            ["wp", "v2", "block-types", _, _, _] if get => Err(RestError::new("rest_no_route", "No route was found matching the URL and request method.", 404)),
             ["wp", "v2", "themes"] if get && (self.can("switch_themes") || (self.can("edit_posts") && args.str("status").as_deref() == Some("active"))) => {
                 let wanted = args.str("status");
                 let mut list = Vec::new();
@@ -204,7 +203,6 @@ impl Rest<'_> {
             ["wp-block-editor", "v1", "export"] if get => self.export_theme().await?,
             ["wp", "v2", "pattern-directory", "patterns"] if get && self.can("edit_posts") => Ok(Resp::item(Value::Array(self.directory_items(params).await))),
             ["wp", "v2", "plugins"] | ["wp", "v2", "menus"] | ["wp", "v2", "menu-items"] | ["wp", "v2", "menu-locations"] | ["wp", "v2", "block-directory", "search"] if get => empty_list(),
-            ["wp", "v2", "block-types"] | ["wp", "v2", "block-types", _] | ["wp", "v2", "block-types", _, _] if get => empty_list(),
             ["wp", "v2", "block-patterns", "patterns"] if get => Ok(Resp::item(self.patterns_json())),
             ["wp", "v2", "block-patterns", "categories"] if get => Ok(Resp::item(self.pattern_categories())),
             ["wp", "v2", "global-styles", "themes", stylesheet] if get && self.can("edit_theme_options") => Ok(Resp::item(self.global_styles_theme(stylesheet))),

@@ -144,6 +144,7 @@ impl RestError {
                 | "rest_term_invalid"
                 | "rest_user_invalid_id"
                 | "rest_widget_type_invalid"
+                | "rest_block_type_invalid"
                 | "rest_user_cannot_view"
                 | "rest_cannot_view"
                 | "rest_forbidden_orderby"

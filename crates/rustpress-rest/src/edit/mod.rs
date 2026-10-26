@@ -4,6 +4,7 @@
 
 mod app_passwords;
 mod block_renderer;
+mod block_types;
 mod caps;
 mod comments;
 mod editor;
@@ -293,6 +294,8 @@ impl Rest<'_> {
             ["wp", "v2", "view-config"] if get => self.view_config(&args).await.map(Some),
             ["wp", "v2", "icons", ..] | ["wp", "v2", "icon-collections", ..] if get => Ok(Some(self.icons_route(&segments, &args))),
             ["wp-block-editor", "v1", "navigation-fallback"] if get => self.navigation_fallback(&args).await.map(Some),
+            ["wp", "v2", "block-types"] | ["wp", "v2", "block-types", _] | ["wp", "v2", "block-types", _, _] if get => self.block_types_route(&segments, &args).await.map(Some),
+            ["wp", "v2", "block-types", _, _, _, ..] if get => Ok(Some(Err(RestError::new("rest_no_route", "No route was found matching the URL and request method.", 404)))),
             ["wp", "v2", "sidebars" | "widgets" | "widget-types", ..] if get => match self.widgets_route(&segments, &method, &args).await? {
                 Some(outcome) => Ok(Some(outcome)),
                 None => self.editor_route(&segments, &method, &args, params).await,

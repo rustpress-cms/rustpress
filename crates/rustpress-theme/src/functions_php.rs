@@ -140,6 +140,12 @@ impl<'a> Cursor<'a> {
 /// `(block name, inline_style)` for every `register_block_style()` call with a literal
 /// `inline_style`, in source order.
 pub fn block_style_inline_styles(php: &str) -> Vec<(String, String)> {
+    block_style_inline_named(php).into_iter().map(|(block, _, css)| (block, css)).collect()
+}
+
+/// `(block name, style name, inline_style)` for every `register_block_style()` call with a literal `inline_style`;
+/// the style name is empty when it is no literal.
+pub fn block_style_inline_named(php: &str) -> Vec<(String, String, String)> {
     let mut out = Vec::new();
     let mut from = 0;
     while let Some(found) = php[from..].find("register_block_style(") {
@@ -149,6 +155,7 @@ pub fn block_style_inline_styles(php: &str) -> Vec<(String, String)> {
         if !cursor.eat(",") || !(cursor.eat("array(") || cursor.eat("[")) {
             continue;
         }
+        let (mut name, mut inline) = (String::new(), None);
         loop {
             cursor.skip_space();
             if cursor.peek().is_none() || cursor.eat(")") || cursor.eat("]") {
@@ -164,13 +171,17 @@ pub fn block_style_inline_styles(php: &str) -> Vec<(String, String)> {
             cursor.skip_space();
             let at = cursor.at;
             match cursor.string() {
-                Some(value) if key == "inline_style" => out.push((block.clone(), value)),
+                Some(value) if key == "inline_style" => inline = Some(value),
+                Some(value) if key == "name" => name = value,
                 Some(_) => {}
                 None => {
                     cursor.at = at;
                     cursor.skip_value();
                 }
             }
+        }
+        if let Some(css) = inline {
+            out.push((block.clone(), name, css));
         }
         from = cursor.at;
     }
