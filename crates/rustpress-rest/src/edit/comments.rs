@@ -241,7 +241,13 @@ impl Rest<'_> {
         };
         let id = comment.comment_id;
         Ok(match status {
-            "approved" | "approve" | "1" => comment.comment_approved != "1" && content.set_comment_status(id, "approve").await?,
+            "approved" | "approve" | "1" => {
+                let changed = comment.comment_approved != "1" && content.set_comment_status(id, "approve").await?;
+                if changed {
+                    self.comment_event(super::CommentEvent::Approved { comment: id, by: self.user().map_or(0, |u| u.id) }).await;
+                }
+                changed
+            }
             "hold" | "0" => comment.comment_approved != "0" && content.set_comment_status(id, "hold").await?,
             "spam" => content.spam_comment(id).await?,
             "unspam" => content.unspam_comment(id).await?,
@@ -405,6 +411,7 @@ impl Rest<'_> {
         if let Some(status) = args.str("status") {
             self.handle_comment_status(&sanitize_key(&status), &comment).await?;
         }
+        self.comment_event(super::CommentEvent::Inserted { comment: id, by: user.id, creating: true }).await;
         if let Some(error) = self.update_comment_meta(&comment, args).await? {
             bail!(error);
         }
@@ -443,7 +450,8 @@ impl Rest<'_> {
             bail!(RestError::new("rest_comment_invalid_post_id", "Invalid post ID.", 403));
         }
         // The prepared values always hold the address, so the comment is always rewritten (`wp_update_comment()`).
-        if !Self::content_allowed(prepared.content.as_deref(), comment.comment_type == "note", args) {
+        // Unlike when creating, the note status of the request does not allow empty content here.
+        if !Self::content_allowed(prepared.content.as_deref(), false, args) {
             bail!(RestError::new("rest_comment_content_invalid", "Invalid comment content.", 400));
         }
         let author = prepared.author.clone().unwrap_or_else(|| comment.comment_author.clone());
@@ -488,6 +496,7 @@ impl Rest<'_> {
         if let Some(error) = self.update_comment_meta(&updated, args).await? {
             bail!(error);
         }
+        self.comment_event(super::CommentEvent::Inserted { comment: updated.comment_id, by: self.user().map_or(0, |u| u.id), creating: false }).await;
         updated = self.site.db.comment_any(updated.comment_id).await?.unwrap_or(updated);
         Ok(Ok(Resp::item(self.prepare_comment(&updated, "edit").await?)))
     }

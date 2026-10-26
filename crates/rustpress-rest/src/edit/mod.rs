@@ -51,7 +51,21 @@ pub struct Access<'a> {
     pub roles: Option<&'a rustpress_auth::Roles>,
     /// The keys and salts, for `wp_hash()`.
     pub salts: Option<&'a rustpress_auth::Salts>,
+    /// Sends the e-mail about a comment (the REST API has no mailer of its own).
+    pub comment_notify: Option<CommentNotify>,
 }
+
+/// What happened to a comment that WordPress sends e-mail about; `by` is the signed-in user.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CommentEvent {
+    /// `wp_set_comment_status( $id, 'approve' )` of a comment that was not approved.
+    Approved { comment: u64, by: u64 },
+    /// `rest_insert_comment`: the post author hears about a note, the users it mentions about a new one.
+    Inserted { comment: u64, by: u64, creating: bool },
+}
+
+/// The handler of [`CommentEvent`]s.
+pub type CommentNotify = std::sync::Arc<dyn Fn(CommentEvent) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> + Send + Sync>;
 
 /// A file of a multipart upload.
 #[derive(Debug, Clone)]
@@ -328,6 +342,13 @@ impl Rest<'_> {
         resp.status = Some(201);
         resp.location = Some(location);
         resp
+    }
+
+    /// Hands a [`CommentEvent`] to the mailer of the server.
+    pub(crate) async fn comment_event(&self, event: CommentEvent) {
+        if let Some(notify) = self.access.as_ref().and_then(|a| a.comment_notify.clone()) {
+            notify(event).await;
+        }
     }
 
     pub(crate) fn writer(&self) -> std::result::Result<&Writer, RestError> {

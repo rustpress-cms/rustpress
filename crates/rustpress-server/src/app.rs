@@ -594,7 +594,7 @@ async fn rest_edit_route(app: &Arc<App>, request: Request<Body>) -> std::result:
     }
     let uploads = app.config.wp_root.join("wp-content").join("uploads");
     let roles = loaded.admin.as_ref().map(|admin| &admin.roles);
-    let access = user.map(|user| rustpress_rest::edit::Access { user, app_password, writer: app.writer.as_ref(), now: crate::admin::now(), uploads, nonce, roles, salts: loaded.admin.as_ref().map(|admin| admin.auth.salts()) });
+    let access = user.map(|user| rustpress_rest::edit::Access { user, app_password, writer: app.writer.as_ref(), now: crate::admin::now(), uploads, nonce, roles, salts: loaded.admin.as_ref().map(|admin| admin.auth.salts()), comment_notify: comment_notify(&loaded, app.writer.clone()) });
     let remote_addr = crate::client::Client::of(&app.config, &parts, &loaded.site.settings.siteurl).ip;
     let user_agent = parts.headers.get(header::USER_AGENT).and_then(|v| v.to_str().ok()).map(str::to_owned);
     let rest = Rest::new(&loaded.site, &loaded.theme, &loaded.registry).with_host(parts.headers.get(header::HOST).and_then(|v| v.to_str().ok()).unwrap_or_default());
@@ -641,6 +641,31 @@ fn rest_response(reply: rustpress_rest::Reply) -> Response<Body> {
 }
 
 /// The feed with the headers `WP::send_headers()` sets, or a bare 304.
+/// The mail of `rest_insert_comment` and of an approving `wp_set_comment_status()` for the REST API.
+fn comment_notify(loaded: &std::sync::Arc<Loaded>, writer: Option<rustpress_db::Writer>) -> Option<rustpress_rest::edit::CommentNotify> {
+    loaded.admin.as_ref()?;
+    let loaded = loaded.clone();
+    Some(std::sync::Arc::new(move |event| {
+        let (loaded, writer) = (loaded.clone(), writer.clone());
+        Box::pin(async move {
+            let Some(admin) = loaded.admin.as_ref() else { return };
+            let mail = rustpress_admin::mail::MailCtx { site: &loaded.site, db: &loaded.site.db, writer: writer.as_ref(), now: crate::admin::now(), mailer: admin.mailer.as_ref() };
+            match event {
+                rustpress_rest::edit::CommentEvent::Approved { comment, by } => mail.new_comment_notify(&admin.roles, comment, false, by).await,
+                rustpress_rest::edit::CommentEvent::Inserted { comment, by, creating } => {
+                    // `wp_new_comment_via_rest_notify_postauthor()` is about notes only.
+                    if loaded.site.db.comment_any(comment).await.ok().flatten().is_some_and(|c| c.comment_type == "note") {
+                        mail.new_comment_notify(&admin.roles, comment, false, by).await;
+                        if creating {
+                            mail.notify_note_mentions(&admin.roles, comment).await;
+                        }
+                    }
+                }
+            }
+        })
+    }))
+}
+
 fn feed_response(feed: &Feed, request: &axum::http::HeaderMap) -> Response<Body> {
     let header_str = |name: header::HeaderName| request.get(name).and_then(|v| v.to_str().ok());
     let not_modified = feed.not_modified(header_str(header::IF_NONE_MATCH), header_str(header::IF_MODIFIED_SINCE));

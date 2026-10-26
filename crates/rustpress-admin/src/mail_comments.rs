@@ -1,5 +1,6 @@
-//! The e-mail about comments: the author of a post hears about a new comment (`wp_notify_postauthor()`), the
-//! moderators about a comment that waits for approval (`wp_notify_moderator()`).
+//! The e-mail about comments: the author of a post hears about a new comment or note (`wp_notify_postauthor()`), the
+//! moderators about a comment that waits for approval (`wp_notify_moderator()`), the users a note mentions about the
+//! note (`wp_notify_note_mentions()`).
 
 use crate::mail::{MailCtx, specialchars_decode};
 
@@ -10,6 +11,28 @@ pub struct PostAuthor<'a> {
     pub can_edit_comments: bool,
     /// Whether they may read the post (`user_can( $author, 'read_post' )`).
     pub can_read: bool,
+}
+
+/// `wp_get_note_mentioned_user_ids()`: the `user-N` class of every `<span class="wp-note-mention …">`, once each.
+fn note_mentions(content: &str) -> Vec<u64> {
+    static SPAN: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| regex::Regex::new(r#"(?i)<span\b[^>]*?\sclass\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))"#).expect("valid regex"));
+    if !content.contains("wp-note-mention") {
+        return Vec::new();
+    }
+    let mut ids = Vec::new();
+    for caps in SPAN.captures_iter(content) {
+        let classes = caps.get(1).or(caps.get(2)).or(caps.get(3)).map_or("", |m| m.as_str());
+        if !classes.split_ascii_whitespace().any(|c| c == "wp-note-mention") {
+            continue;
+        }
+        let id = classes.split_ascii_whitespace().find_map(|c| c.strip_prefix("user-").filter(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit())).and_then(|n| n.parse::<u64>().ok()));
+        if let Some(id) = id.filter(|id| *id > 0)
+            && !ids.contains(&id)
+        {
+            ids.push(id);
+        }
+    }
+    ids
 }
 
 /// `gethostbyaddr()` without asking a name server: the loopback addresses are `localhost` (as in every `/etc/hosts`),
@@ -30,17 +53,62 @@ impl MailCtx<'_> {
             Some(auth_user) => rustpress_auth::CurrentUser::load(self.db, roles, &auth_user).await.ok(),
             None => None,
         };
-        let edit_cap = if post.post_type == "page" { "edit_pages" } else { "edit_posts" };
         let post_author = author_user.as_ref().map(|user| PostAuthor {
             user,
-            can_edit_comments: author_caps.as_ref().is_some_and(|c| c.can(edit_cap)),
+            can_edit_comments: author_caps.as_ref().is_some_and(|c| c.can_edit_comment(Some(&post))),
             can_read: author_caps.as_ref().is_some_and(|c| c.can("read")),
         });
         if moderators && comment.comment_approved == "0" {
             self.notify_moderator(comment_id, post_author.as_ref()).await;
         }
-        if comment.comment_approved == "1" && self.site.options.string("comments_notify", "1") != "0" {
+        // Notes are told whatever their status, unless `wp_notes_notify` is off.
+        let notify = if comment.comment_type == "note" {
+            self.site.options.string("wp_notes_notify", "1") != "0"
+        } else {
+            comment.comment_approved == "1" && self.site.options.string("comments_notify", "1") != "0"
+        };
+        if notify {
             self.notify_postauthor(comment_id, post_author.as_ref(), current_user).await;
+        }
+    }
+
+    /// `wp_notify_note_mentions()` for a note that was created: every user it mentions who may edit it hears about
+    /// it, except its own author and the author of the post (who hears anyway).
+    pub async fn notify_note_mentions(&self, roles: &rustpress_auth::Roles, comment_id: u64) {
+        let Some(comment) = self.db.comment_any(comment_id).await.ok().flatten() else { return };
+        if comment.comment_type != "note" || self.site.options.string("wp_notes_notify", "1") == "0" {
+            return;
+        }
+        let post = self.db.post(comment.comment_post_id).await.ok().flatten();
+        let post_author = post.as_ref().map_or(0, |p| p.post_author);
+        for user_id in note_mentions(&comment.comment_content) {
+            if user_id == comment.user_id || user_id == post_author {
+                continue;
+            }
+            let Some(user) = self.db.user(user_id).await.ok().flatten().filter(|u| !u.user_email.is_empty()) else { continue };
+            let may_edit = match self.db.auth_user_by_id(user_id).await.ok().flatten() {
+                Some(auth_user) => rustpress_auth::CurrentUser::load(self.db, roles, &auth_user).await.is_ok_and(|caps| caps.can_edit_comment(post.as_ref())),
+                None => false,
+            };
+            if !may_edit {
+                continue;
+            }
+            // `wp_send_note_notification()`.
+            let sprintf = rustpress_core::i18n::sprintf;
+            let blogname = self.sitename();
+            let title = post.as_ref().map(|p| specialchars_decode(&p.post_title)).unwrap_or_default();
+            let author = if comment.comment_author.is_empty() { self.tr("Someone") } else { comment.comment_author.clone() };
+            let content = specialchars_decode(&rustpress_core::formatting::wp_strip_all_tags(&comment.comment_content));
+            let mut lines = vec![sprintf(&self.tr("%1$s mentioned you in a note on \"%2$s\"."), &[&author, &title]), String::new()];
+            if !content.is_empty() {
+                lines.push(content);
+            }
+            if let Some(post) = &post {
+                lines.push(String::new());
+                lines.push(format!("{}: {}", self.tr("Edit This"), self.admin_url(&format!("post.php?post={}&action=edit", post.id))));
+            }
+            let subject = sprintf(&self.tr("[%1$s] You were mentioned in a note on \"%2$s\""), &[&blogname, &title]);
+            self.send_with_headers(&user.user_email, &subject, &lines.join("\n"), "Content-Type: text/plain; charset=\"UTF-8\"").await;
         }
     }
 
@@ -92,6 +160,15 @@ impl MailCtx<'_> {
                 let subject = if comment.comment_type == "trackback" { sprintf(&tr("[%1$s] Trackback: \"%2$s\""), &[&blogname, title]) } else { sprintf(&tr("[%1$s] Pingback: \"%2$s\""), &[&blogname, title]) };
                 (m, subject)
             }
+            "note" => {
+                let mut m = format!("{}\r\n", sprintf(&tr("New note on your post \"%s\""), &[title]));
+                m.push_str(&format!("{}\r\n", sprintf(&tr("Author: %1$s (IP address: %2$s, %3$s)"), &[&comment.comment_author, &ip, &domain])));
+                m.push_str(&format!("{}\r\n", sprintf(&tr("Email: %s"), &[&comment.comment_author_email])));
+                let text = if content.is_empty() { tr("resolved/reopened") } else { content.clone() };
+                m.push_str(&format!("{}\r\n\r\n", sprintf(&tr("Note: %s"), &[&format!("\r\n{text}")])));
+                m.push_str(&format!("{}\r\n", tr("You can see all notes on this post here:")));
+                (m, sprintf(&tr("[%1$s] Note: \"%2$s\""), &[&blogname, title]))
+            }
             _ => {
                 let mut m = format!("{}\r\n", sprintf(&tr("New comment on your post \"%s\""), &[title]));
                 m.push_str(&format!("{}\r\n", sprintf(&tr("Author: %1$s (IP address: %2$s, %3$s)"), &[&comment.comment_author, &ip, &domain])));
@@ -105,6 +182,11 @@ impl MailCtx<'_> {
                 (m, sprintf(&tr("[%1$s] Comment: \"%2$s\""), &[&blogname, title]))
             }
         };
+        if comment.comment_type == "note" {
+            // `get_edit_post_link( …, 'url' )` for the author of the note, who may edit the post.
+            message.push_str(&format!("{}\r\n", self.admin_url(&format!("post.php?post={}&action=edit", post.id))));
+            return self.send_with_headers(&email, &subject, &message, &headers).await;
+        }
         let permalink = self.site.permalink(&post).await.unwrap_or_default();
         message.push_str(&format!("{permalink}#comments\r\n\r\n"));
         let link = crate::screens::comments::comment_link_for(self.site, self.db, &comment).await;
