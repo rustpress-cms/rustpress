@@ -3,7 +3,7 @@
 
 use rustpress_core::OrLog;
 use rustpress_content::content::{PostData, TermRef};
-use rustpress_core::slug::sanitize_title;
+use rustpress_core::slug::sanitize_title_save;
 use rustpress_db::{Order, OrderBy, Post, PostQuery};
 use serde_json::{Map, Value, json};
 
@@ -132,9 +132,7 @@ impl Rest<'_> {
             return Ok(Err(self.forbidden("rest_forbidden_context", "Sorry, you are not allowed to edit this post.")));
         }
         if let Some(given) = params.get("password").filter(|p| !p.is_empty())
-            && !post.post_password.is_empty()
-            && given != post.post_password
-            && !self.can_edit_post(&post)
+            && !rustpress_core::hash_equals(&post.post_password, given)
         {
             return Ok(Err(RestError::new("rest_post_incorrect_password", "Incorrect post password.", 403)));
         }
@@ -150,8 +148,8 @@ impl Rest<'_> {
             return self.prepare_media_edit(post, context).await;
         }
         let mut params = Params::default();
-        // The author of a protected post sees its content.
-        if !post.post_password.is_empty() && self.can_edit_post(post) {
+        // `check_password_required()`: only in the edit context does who may edit a protected post see its content.
+        if !post.post_password.is_empty() && context == "edit" && self.can_edit_post(post) {
             params.set("password", &post.post_password);
         }
         let mut data = self.prepare_post(post, kind, if context == "edit" { "view" } else { context }, &params).await?;
@@ -217,13 +215,14 @@ impl Rest<'_> {
             Ok(c) => c,
             Err(_) => return Ok((self.site.permalink(post).await?, post.post_name.clone())),
         };
-        let wanted = if post.post_name.is_empty() { sanitize_title(&post.post_title) } else { post.post_name.clone() };
+        // `get_sample_permalink( $post->ID, $post->post_title, '' )`: the empty name stands for the title.
+        let wanted = sanitize_title_save(&post.post_title, &self.site.locale());
         let wanted = if wanted.is_empty() { post.id.to_string() } else { wanted };
         let generated = content.unique_post_slug(&wanted, post.id, &post.post_status, &post.post_type, post.post_parent).await.unwrap_or(wanted);
         let placeholder = if post.post_type == "page" { "%pagename%" } else { "%postname%" };
         let mut sample = post.clone();
         sample.post_name = placeholder.to_owned();
-        if matches!(sample.post_status.as_str(), "draft" | "pending" | "auto-draft") {
+        if matches!(sample.post_status.as_str(), "draft" | "pending" | "auto-draft" | "future") {
             sample.post_status = "publish".to_owned();
         }
         let template = self.site.permalink(&sample).await?;

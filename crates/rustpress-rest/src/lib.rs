@@ -135,6 +135,7 @@ impl<'a> Rest<'a> {
             blank.url_path = "/".to_owned();
             blank.raw_query = if query.is_empty() { format!("rest_route={route}") } else { format!("rest_route={route}&{query}") };
         }
+        blank.http_host = Some(self.host.clone()).filter(|h| !h.is_empty());
         let scoped = Rest { site: self.site, theme: self.theme, registry: self.registry, blank, state: Default::default(), access: None, request: None, patterns: Default::default(), host: self.host.clone(), remote_patterns: Default::default() };
         scoped.handle_request(route, query).await
     }
@@ -149,6 +150,15 @@ impl<'a> Rest<'a> {
         } else {
             blank.url_path = "/".to_owned();
             blank.raw_query = if query.is_empty() { format!("rest_route={route}") } else { format!("rest_route={route}&{query}") };
+        }
+        blank.http_host = Some(self.host.clone()).filter(|h| !h.is_empty());
+        // Content rendered for a signed-in user is rendered as that user (private posts in query blocks).
+        if let Some(access) = &access {
+            let user = access.user.clone();
+            let (login, name, email) = (user.login.clone(), user.display_name.clone(), user.email.clone());
+            let nonce = access.nonce.clone();
+            let viewer = rustpress_core::Viewer::new(user.id, move |capability| user.can(capability));
+            blank.viewer = Some(viewer.with_identity(&login, &name, &email, false, move |action| nonce.as_ref().map(|n| n(action)).unwrap_or_default()));
         }
         let scoped = Rest { site: self.site, theme: self.theme, registry: self.registry, blank, state: Default::default(), access, request: Some(request), patterns: Default::default(), host: self.host.clone(), remote_patterns: Default::default() };
         scoped.handle_request(route, query).await

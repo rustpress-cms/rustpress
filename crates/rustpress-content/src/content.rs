@@ -3,7 +3,7 @@
 
 use rustpress_auth::CurrentUser;
 use rustpress_core::Site;
-use rustpress_core::slug::sanitize_title;
+use rustpress_core::slug::sanitize_title_save;
 use rustpress_db::{Db, Post, SlugScope, Val, Writer};
 use rustpress_phpser::{Key, Value};
 
@@ -277,11 +277,11 @@ impl Content<'_> {
             }
         }
         if post_name.is_empty() {
-            post_name = if !DATE_FLOATING.contains(&post_status.as_str()) { sanitize_title(&post_title) } else { String::new() };
+            post_name = if !DATE_FLOATING.contains(&post_status.as_str()) { sanitize_title_save(&post_title, &self.site.locale()) } else { String::new() };
         } else {
             let current = before.as_ref().map(|p| p.post_name.as_str()).unwrap_or_default();
             if !(update && post_name == current) {
-                post_name = sanitize_title(&post_name);
+                post_name = sanitize_title_save(&post_name, &self.site.locale());
             }
         }
 
@@ -410,7 +410,7 @@ impl Content<'_> {
         };
 
         if post_name.is_empty() && !DATE_FLOATING.contains(&post_status.as_str()) {
-            let unique = self.unique_post_slug(&sanitize_title(&post_title), post_id, &post_status, &post_type, post_parent).await?;
+            let unique = self.unique_post_slug(&sanitize_title_save(&post_title, &self.site.locale()), post_id, &post_status, &post_type, post_parent).await?;
             self.writer.update_rows("posts", "ID", post_id, &[("post_name", Val::Str(unique))]).await?;
         }
 
@@ -608,7 +608,7 @@ impl Content<'_> {
                 if hierarchical && let Ok(id) = name.parse::<u64>() && let Some(t) = self.db.term_by_id(Some(taxonomy), id).await? {
                     return Ok(Some(t.term_taxonomy_id));
                 }
-                let slug = sanitize_title(name);
+                let slug = sanitize_title_save(name, &self.site.locale());
                 if let Some(t) = self.db.term_by_slug(taxonomy, &slug).await? {
                     return Ok(Some(t.term_taxonomy_id));
                 }

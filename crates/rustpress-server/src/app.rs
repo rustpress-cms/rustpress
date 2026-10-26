@@ -320,7 +320,8 @@ async fn page(app: &App, uri: &axum::http::Uri, request_headers: &axum::http::He
         }
         None => None,
     };
-    let result = loaded.site.query_as(path, query, viewer.as_ref()).await?;
+    let mut result = loaded.site.query_as(path, query, viewer.as_ref()).await?;
+    result.http_host = request_headers.get(header::HOST).and_then(|v| v.to_str().ok()).map(str::to_owned);
     // Physical PHP endpoints (wp-login.php, xmlrpc.php, ...) do not exist here; they get the
     // 404 page rather than a canonical redirect. Only `/index.php` is WordPress' own alias for `/`.
     let php_endpoint = path.ends_with(".php") && path != "/index.php";
@@ -477,7 +478,7 @@ async fn rest_edit_route(app: &Arc<App>, request: Request<Body>) -> std::result:
         return Err(Request::from_parts(parts, Body::empty()));
     }
     // The credentials in the headers decide how much may be sent; the nonce of a form body is checked after.
-    let known = matches!(crate::admin::rest_auth(&loaded, &parts.headers, &rest_query, None).await, crate::admin::RestAuth::User(_) | crate::admin::RestAuth::AppPassword(..))
+    let known = matches!(crate::admin::rest_auth(&loaded, &parts.headers, &rest_query, None).await, crate::admin::RestAuth::User(..) | crate::admin::RestAuth::AppPassword(..))
         || crate::admin::frontend_user(&loaded, &parts.headers).await.is_some();
     let bytes = match axum::body::to_bytes(body, if known { UPLOAD_BODY_LIMIT } else { VISITOR_BODY_LIMIT }).await {
         Ok(bytes) => bytes,
@@ -504,8 +505,15 @@ async fn rest_edit_route(app: &Arc<App>, request: Request<Body>) -> std::result:
     };
     let auth = crate::admin::rest_auth(&loaded, &parts.headers, &rest_query, form_nonce.as_deref()).await;
     let mut app_password = None;
+    let mut nonce: Option<std::sync::Arc<dyn Fn(&str) -> String + Send + Sync>> = None;
     let user = match auth {
-        crate::admin::RestAuth::User(user) => Some(user),
+        crate::admin::RestAuth::User(user, token) => {
+            if let Some(admin) = &loaded.admin {
+                let (auth, user_id) = (admin.auth.clone(), user.id);
+                nonce = Some(std::sync::Arc::new(move |action: &str| auth.create_nonce(action, user_id, &token, crate::admin::now()).unwrap_or_default()));
+            }
+            Some(user)
+        }
         crate::admin::RestAuth::AppPassword(user, uuid) => {
             if let Some(writer) = app.writer.as_ref() {
                 let ip = crate::client::Client::of(&app.config, &parts, &loaded.site.settings.siteurl).ip;
@@ -535,7 +543,7 @@ async fn rest_edit_route(app: &Arc<App>, request: Request<Body>) -> std::result:
         return Err(Request::from_parts(parts, Body::empty()));
     }
     let uploads = app.config.wp_root.join("wp-content").join("uploads");
-    let access = user.map(|user| rustpress_rest::edit::Access { user, app_password, writer: app.writer.as_ref(), now: crate::admin::now(), uploads });
+    let access = user.map(|user| rustpress_rest::edit::Access { user, app_password, writer: app.writer.as_ref(), now: crate::admin::now(), uploads, nonce });
     let rest = Rest::new(&loaded.site, &loaded.theme, &loaded.registry).with_host(parts.headers.get(header::HOST).and_then(|v| v.to_str().ok()).unwrap_or_default());
     let reply = rest.handle_as(&route, &rest_query, access, rustpress_rest::edit::Request { method, body: rest_body, basic: crate::admin::basic_credentials(&parts.headers) }).await;
     let response = match reply {

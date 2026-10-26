@@ -134,6 +134,11 @@ async fn custom_query(bc: &BlockCtx<'_>, page: u64) -> Result<LoopData> {
         && let Some(parent) = parents.iter().filter_map(Value::as_u64).next() {
             query.parent = Some(parent);
         }
+    // `WP_Query` without a status: a signed-in viewer also gets the private posts they may read.
+    if let Some(viewer) = bc.env.query.viewer.as_ref().filter(|v| v.id != 0) {
+        query.private_types = query.post_types.iter().filter(|t| viewer.can_read_private(t)).cloned().collect();
+        query.private_author = Some(viewer.id);
+    }
 
     let found = site.db.count_posts(&query).await?;
     let mut posts = site.db.posts(&query).await?;

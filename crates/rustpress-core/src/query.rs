@@ -100,6 +100,8 @@ pub struct QueryResult {
     pub parse_error_404: bool,
     /// The signed-in person who looks at the page.
     pub viewer: Option<Viewer>,
+    /// `$_SERVER['HTTP_HOST']`: the host the client asked for (only for links back to the request).
+    pub http_host: Option<String>,
 }
 
 impl QueryResult {
@@ -118,6 +120,7 @@ impl QueryResult {
             raw_query: String::new(),
             parse_error_404: false,
             viewer: None,
+            http_host: None,
         }
     }
 

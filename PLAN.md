@@ -329,6 +329,8 @@ Vollständiger Review des Bestands (fünf Durchgänge über alle Krates, ~77 000
 - Zurückgestellt: S12 – WordPress filtert Global Styles nur ohne `unfiltered_html`; `edit_theme_options` haben in einer Einzelseite nur Administratoren, die `unfiltered_html` besitzen. Erst bei eigenen Rollen relevant (Port von `remove_insecure_properties`).
 - Größenlimit für Uploads: die 256-MiB-Grenze des Servers gilt (nur angemeldet); eine eigene `upload_max_filesize`-Konfiguration kommt mit Phase 5 (Upload-Größe aus Konfiguration).
 
+- Offen (gefunden beim REST-Vergleich): Im `edit`-Kontext rendert WordPress den Inhalt eines Beitrags vor `content.rendered` ein zusätzliches Mal (Zähler wie `tabs_2`, `audio-271-3`, `attachment_26-2` liegen eins höher als in RustPress, auch mit `_fields=content`); Ursache im Controller und den Standard-Filtern nicht gefunden.
+
 ### Phase 2 – Korrektheit/Robustheit
 6. R2/R3 (Backticks), R4 (rewrite_gen), R10 (FIELD()), R16 (html.rs-Entities), R17 (Index-Guards), R18 (REST-Referenzen/Datum), R19 (`sanitize_text_field`), R21 (Multipart).
 7. Zyklen/Tiefe/Überlauf (R6–R9) mit Tests.

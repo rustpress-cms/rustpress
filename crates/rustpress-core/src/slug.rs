@@ -61,3 +61,49 @@ mod tests {
         assert_eq!(sanitize_title("100%;U+0"), "100u0");
     }
 }
+
+/// `remove_accents( $text, $locale )`: Latin letters with accents become their plain forms (German, Danish,
+/// Catalan and Serbian/Bosnian spell some of them out). Text already in NFD is not composed first.
+pub fn remove_accents(text: &str, locale: &str) -> String {
+    if text.is_ascii() {
+        return text.to_owned();
+    }
+    let special: &[(char, &str)] = if locale.starts_with("de") {
+        &[('Ä', "Ae"), ('ä', "ae"), ('Ö', "Oe"), ('ö', "oe"), ('Ü', "Ue"), ('ü', "ue"), ('ẞ', "SS"), ('ß', "ss")]
+    } else if locale == "da_DK" {
+        &[('Æ', "Ae"), ('æ', "ae"), ('Ø', "Oe"), ('ø', "oe"), ('Å', "Aa"), ('å', "aa")]
+    } else if locale == "sr_RS" || locale == "bs_BA" {
+        &[('Đ', "DJ"), ('đ', "dj")]
+    } else {
+        &[]
+    };
+    let text = if locale == "ca" { text.replace("l·l", "ll") } else { text.to_owned() };
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars() {
+        match special.iter().find(|(k, _)| *k == c).or_else(|| crate::accents_table::ACCENTS.iter().find(|(k, _)| *k == c)) {
+            Some((_, plain)) => out.push_str(plain),
+            None => out.push(c),
+        }
+    }
+    out
+}
+
+/// `sanitize_title( $title )` in its default `save` context: [`remove_accents`], then [`sanitize_title`].
+pub fn sanitize_title_save(title: &str, locale: &str) -> String {
+    sanitize_title(&remove_accents(title, locale))
+}
+
+#[cfg(test)]
+mod accents_tests {
+    use super::*;
+
+    #[test]
+    fn accents_are_removed_like_wordpress() {
+        assert_eq!(sanitize_title_save("Über uns", "en_US"), "uber-uns");
+        assert_eq!(sanitize_title_save("Über uns", "de_DE"), "ueber-uns");
+        assert_eq!(sanitize_title_save("Passwortgeschützt", "en_US"), "passwortgeschutzt");
+        assert_eq!(sanitize_title_save("Straße", "de_DE_formal"), "strasse");
+        assert_eq!(sanitize_title_save("Œuvre ½", "en_US"), "oeuvre-%c2%bd");
+        assert_eq!(sanitize_title_save("Ελληνικά", "en_US"), sanitize_title("Ελληνικά"));
+    }
+}

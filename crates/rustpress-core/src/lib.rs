@@ -30,6 +30,7 @@ pub mod text;
 pub mod text_diff;
 pub mod types;
 pub mod slug;
+mod accents_table;
 pub mod urls;
 pub mod viewer;
 

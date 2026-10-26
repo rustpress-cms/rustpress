@@ -292,15 +292,26 @@ pub(super) fn home_link(bc: &BlockCtx<'_>) -> Result<String> {
 pub(super) fn loginout(bc: &BlockCtx<'_>) -> Result<String> {
     let site = bc.env.site;
     let q = bc.env.query;
-    let mut url = site.site_url("wp-login.php");
+    let viewer = q.viewer.as_ref().filter(|v| v.id != 0);
+    // `wp_loginout()`: `wp_logout_url()` (with its nonce) for a signed-in viewer, `wp_login_url()` otherwise.
+    let mut url = if viewer.is_some() { site.site_url("wp-login.php?action=logout") } else { site.site_url("wp-login.php") };
     if bc.attrs.get("redirectToCurrent").and_then(Value::as_bool) != Some(false) {
         let request = format!("{}{}", q.url_path, if q.raw_query.is_empty() { String::new() } else { format!("?{}", q.raw_query) });
+        // `( is_ssl() ? 'https://' : 'http://' ) . $_SERVER['HTTP_HOST'] . $_SERVER['REQUEST_URI']`
         let scheme_host = site.home_url("");
-        let origin = scheme_host.split_once("://").map(|(scheme, rest)| format!("{scheme}://{}", rest.split('/').next().unwrap_or_default())).unwrap_or(scheme_host);
-        url = rustpress_core::urls::add_query_arg(&url, "redirect_to", &php_urlencode(&format!("{origin}{request}")));
+        let (scheme, home_host) = scheme_host.split_once("://").map_or(("http", scheme_host.as_str()), |(scheme, rest)| (scheme, rest.split('/').next().unwrap_or_default()));
+        let host = q.http_host.as_deref().unwrap_or(home_host);
+        url = rustpress_core::urls::add_query_arg(&url, "redirect_to", &php_urlencode(&format!("{scheme}://{host}{request}")));
     }
-    let link = format!("<a href=\"{}\">{}</a>", esc_url(&url), site.tr("Log in"));
-    let wrapper = bc.wrapper_attributes(&[("class", "logged-out".to_owned())]);
+    let (class, label) = match viewer {
+        Some(viewer) => {
+            url = rustpress_core::urls::add_query_arg(&url, "_wpnonce", &viewer.create_nonce("log-out"));
+            ("logged-in", site.tr("Log out"))
+        }
+        None => ("logged-out", site.tr("Log in")),
+    };
+    let link = format!("<a href=\"{}\">{label}</a>", esc_url(&url));
+    let wrapper = bc.wrapper_attributes(&[("class", class.to_owned())]);
     Ok(format!("<div {wrapper}>{link}</div>"))
 }
 
@@ -413,7 +424,8 @@ fn word_count(text: &str, kind: rustpress_core::locale::WordCountType) -> u64 {
     if words {
         replace(&mut text, r"&\S+?;", "");
         replace(&mut text, "--|\u{2014}", " ");
-        replace(&mut text, "[\u{21}-\u{40}\u{5B}-\u{60}\u{7B}-\u{7E}\u{80}-\u{BF}\u{D7}\u{F7}\u{2000}-\u{2BFF}\u{2E00}-\u{2E7F}]", "");
+        // Escaped: the range 0x5B-0x60 holds `[`, `\` and `]`.
+        replace(&mut text, r"[\x{21}-\x{40}\x{5B}-\x{60}\x{7B}-\x{7E}\x{80}-\x{BF}\x{D7}\x{F7}\x{2000}-\x{2BFF}\x{2E00}-\x{2E7F}]", "");
     } else {
         replace(&mut text, r"&\S+?;", "a");
         replace(&mut text, "[\u{10000}-\u{10FFFF}]", "a");

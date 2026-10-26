@@ -509,7 +509,12 @@ pub fn cached_plain_regex(pattern: &str) -> &'static regex::Regex {
     if let Some(found) = cache.lock().expect("regex cache").get(pattern) {
         return found;
     }
-    let compiled: &'static regex::Regex = Box::leak(Box::new(regex::Regex::new(pattern).expect("valid regex")));
+    let compiled = regex::Regex::new(pattern).unwrap_or_else(|error| {
+        // A broken pattern matches nothing instead of taking the request down.
+        tracing::error!(%error, pattern, "invalid regex");
+        regex::Regex::new(r"\b\B").expect("never matches")
+    });
+    let compiled: &'static regex::Regex = Box::leak(Box::new(compiled));
     cache.lock().expect("regex cache").entry(pattern.to_owned()).or_insert(compiled)
 }
 
@@ -521,7 +526,11 @@ pub fn cached_regex(pattern: &str) -> &'static Regex {
     if let Some(found) = cache.lock().expect("regex cache").get(pattern) {
         return found;
     }
-    let compiled: &'static Regex = Box::leak(Box::new(Regex::new(pattern).expect("valid regex")));
+    let compiled = Regex::new(pattern).unwrap_or_else(|error| {
+        tracing::error!(%error, pattern, "invalid regex");
+        Regex::new(r"(?!)").expect("never matches")
+    });
+    let compiled: &'static Regex = Box::leak(Box::new(compiled));
     cache.lock().expect("regex cache").entry(pattern.to_owned()).or_insert(compiled)
 }
 

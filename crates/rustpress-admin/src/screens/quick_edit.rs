@@ -156,7 +156,7 @@ pub(super) async fn inline_save(env: &AdminEnv<'_>, request: &AdminRequest, user
     let mut post_name = field("post_name").map(str::to_owned);
     if let Some(name) = post_name.as_ref().filter(|n| !n.is_empty())
         && matches!(post.post_status.as_str(), "draft" | "pending")
-        && let Ok(unique) = content.unique_post_slug(&rustpress_core::slug::sanitize_title(name), post.id, "publish", &post.post_type, post.post_parent).await
+        && let Ok(unique) = content.unique_post_slug(&rustpress_core::slug::sanitize_title_save(name, &env.site.locale()), post.id, "publish", &post.post_type, post.post_parent).await
     {
         post_name = Some(unique);
     }

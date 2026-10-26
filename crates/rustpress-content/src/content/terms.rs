@@ -3,7 +3,7 @@
 use super::{Content, ContentError, Result};
 use crate::sanitize;
 use rustpress_core::formatting::esc_html;
-use rustpress_core::slug::sanitize_title;
+use rustpress_core::slug::sanitize_title_save;
 use rustpress_db::Val;
 
 /// The fields of a term as the forms send them.
@@ -75,8 +75,9 @@ impl Content<'_> {
             return Err(ContentError::Message(tr("Parent term does not exist.")));
         }
         let slug_provided = !data.slug.trim().is_empty();
-        let slug = if slug_provided { sanitize_title(&data.slug) } else { sanitize_title(&name) };
-        let slug = if slug.is_empty() { sanitize_title(&data.name) } else { slug };
+        let locale = self.site.locale();
+        let slug = if slug_provided { sanitize_title_save(&data.slug, &locale) } else { sanitize_title_save(&name, &locale) };
+        let slug = if slug.is_empty() { sanitize_title_save(&data.name, &locale) } else { slug };
 
         // A term with the same name (and, in a hierarchy, the same parent) already exists.
         let all = self.db.terms(taxonomy).await?;
@@ -141,9 +142,10 @@ impl Content<'_> {
             }
         }
         let empty_slug = data.slug.trim().is_empty();
-        let mut slug = if empty_slug { sanitize_title(&name) } else { sanitize_title(&data.slug) };
+        let locale = self.site.locale();
+        let mut slug = if empty_slug { sanitize_title_save(&name, &locale) } else { sanitize_title_save(&data.slug, &locale) };
         if slug.is_empty() {
-            slug = sanitize_title(&data.name);
+            slug = sanitize_title_save(&data.name, &locale);
         }
         if let Some(duplicate) = self.db.term_by_slug(taxonomy, &slug).await?
             && duplicate.term_id != term_id

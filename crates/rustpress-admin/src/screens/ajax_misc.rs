@@ -4,7 +4,7 @@
 use rustpress_core::OrLog;
 use rustpress_auth::CurrentUser;
 use rustpress_core::formatting::{esc_attr, esc_html, esc_url};
-use rustpress_core::slug::sanitize_title;
+use rustpress_core::slug::sanitize_title_save;
 use rustpress_db::{PostQuery, Val};
 use serde_json::json;
 
@@ -217,10 +217,10 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUs
             let mut status = post.post_status.clone();
             if matches!(status.as_str(), "draft" | "pending" | "future") {
                 status = "publish".into();
-                post.post_name = sanitize_title(if post.post_name.is_empty() { &post.post_title } else { &post.post_name });
+                post.post_name = sanitize_title_save(if post.post_name.is_empty() { &post.post_title } else { &post.post_name }, &site.locale());
             }
             if let Some(name) = request.post_field("new_slug") {
-                post.post_name = sanitize_title(if name.is_empty() { &title } else { name });
+                post.post_name = sanitize_title_save(if name.is_empty() { &title } else { name }, &site.locale());
             }
             let Some(writer) = env.writer else { return text(500, "0") };
             let content = Content { site, db: env.db, writer, user, now: env.now };

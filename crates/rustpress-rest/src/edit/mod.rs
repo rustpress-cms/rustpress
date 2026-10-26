@@ -42,6 +42,8 @@ pub struct Access<'a> {
     pub writer: Option<&'a Writer>,
     pub now: i64,
     pub uploads: PathBuf,
+    /// The nonces of the user's session (`wp_create_nonce()`), for content rendered as the user.
+    pub nonce: Option<std::sync::Arc<dyn Fn(&str) -> String + Send + Sync>>,
 }
 
 /// A file of a multipart upload.

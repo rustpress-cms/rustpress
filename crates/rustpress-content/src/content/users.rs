@@ -2,7 +2,6 @@
 
 use super::{Content, ContentError, Result};
 use crate::sanitize;
-use rustpress_core::slug::sanitize_title;
 use rustpress_db::Val;
 use rustpress_phpser::{Key, Value};
 
@@ -114,7 +113,7 @@ impl Content<'_> {
         let nicename = match &existing {
             Some(user) => user.user_nicename.clone(),
             None => {
-                let base: String = sanitize_title(&login).chars().take(50).collect();
+                let base: String = rustpress_core::slug::sanitize_title_save(&login, &self.site.locale()).chars().take(50).collect();
                 let mut nicename = base.clone();
                 let mut suffix = 2;
                 while self.db.user_nicename_taken(&nicename, 0).await? {

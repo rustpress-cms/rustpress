@@ -10,7 +10,7 @@ use rustpress_core::OrLog;
 use rustpress_blocks::php_json::{self, Flags};
 use rustpress_content::content::PostData;
 use rustpress_core::formatting::esc_url_raw;
-use rustpress_core::slug::sanitize_title;
+use rustpress_core::slug::sanitize_title_save;
 use rustpress_db::{Order, OrderBy, Post, PostQuery};
 use serde_json::{Map, Value, json};
 
@@ -223,7 +223,7 @@ impl Rest<'_> {
             Err(e) => return Ok(Err(e)),
         };
         let text = |key: &str| settings.get(key).and_then(Value::as_str).unwrap_or_default().to_owned();
-        let slug = sanitize_title(&text("slug"));
+        let slug = sanitize_title_save(&text("slug"), &self.site.locale());
         let existing = PostQuery { post_types: vec![FAMILY.into()], statuses: vec!["publish".into()], name: Some(slug.clone()), ..Default::default() };
         if self.site.db.count_posts(&existing).await? > 0 {
             return Ok(Err(RestError::new("rest_duplicate_font_family", Msg::new("A font family with slug \"%s\" already exists.").with(&[&slug]), 400)));

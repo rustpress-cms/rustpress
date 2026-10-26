@@ -43,7 +43,9 @@ async fn preload_one(ctx: &Ctx<'_>, method: &str, path: &str) -> Option<Value> {
     let writer = env.writer?;
     let (route, query) = path.split_once('?').map_or((path, ""), |(r, q)| (r, q));
     let rest = rustpress_rest::Rest::new(ctx.site(), env.theme, env.registry);
-    let access = Access { user: ctx.user.clone(), app_password: None, writer: Some(writer), now: env.now, uploads: super::ajax_media::uploads_dir(env) };
+    let (auth, user_id, token, now) = (env.auth.clone(), ctx.user.id, ctx.token.clone(), env.now);
+    let nonce: std::sync::Arc<dyn Fn(&str) -> String + Send + Sync> = std::sync::Arc::new(move |action: &str| auth.create_nonce(action, user_id, &token, now).unwrap_or_default());
+    let access = Access { user: ctx.user.clone(), app_password: None, writer: Some(writer), now: env.now, uploads: super::ajax_media::uploads_dir(env), nonce: Some(nonce) };
     let reply = rest.handle_as(route, query, Some(access), Request { method: method.to_owned(), body: Body::None, basic: None }).await.ok()?;
     if reply.status >= 400 {
         return None;

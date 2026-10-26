@@ -260,7 +260,7 @@ impl Rest<'_> {
             return Ok(Err(RestError::new("rest_post_invalid_id", "Invalid post ID.", 404)));
         };
         if let Some(given) = params.get("password").filter(|p| !p.is_empty())
-            && !post.post_password.is_empty() && given != post.post_password {
+            && !rustpress_core::hash_equals(&post.post_password, given) {
                 return Ok(Err(RestError::new("rest_post_incorrect_password", "Incorrect post password.", 403)));
             }
         if kind == Kind::Attachment && post.post_parent != 0 {
@@ -328,7 +328,9 @@ impl Rest<'_> {
             let excerpt = if hidden {
                 String::new()
             } else {
-                let raw = get_the_excerpt(&env, &shared).await?;
+                // The password check passed (`check_password_required()`): the excerpt is made like for any post.
+                let open = if protected { Arc::new(Post { post_password: String::new(), ..post.clone() }) } else { shared.clone() };
+                let raw = get_the_excerpt(&env, &open).await?;
                 wpautop(&convert_chars(&self.site.texturize(&raw)))
             };
             data.insert("excerpt".into(), json!({"rendered": excerpt, "protected": protected}));

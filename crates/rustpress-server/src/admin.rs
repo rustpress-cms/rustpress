@@ -234,8 +234,8 @@ pub async fn front_toolbar(loaded: &std::sync::Arc<Loaded>, user: &std::sync::Ar
 pub enum RestAuth {
     /// No cookie, or a cookie without a nonce: the request is anonymous.
     Anonymous,
-    /// The cookie and the nonce are valid.
-    User(rustpress_auth::CurrentUser),
+    /// The cookie and the nonce are valid: the user and the token of the session.
+    User(rustpress_auth::CurrentUser, String),
     /// An application password in a Basic authorization header: the user and the entry.
     AppPassword(rustpress_auth::CurrentUser, String),
     /// A Basic authorization header whose password is no application password: the code and message of the error.
@@ -294,7 +294,7 @@ pub async fn rest_auth(loaded: &Loaded, headers: &HeaderMap, query: &str, body_n
     let nonce = headers.get("x-wp-nonce").and_then(|v| v.to_str().ok()).map(str::to_owned).or_else(|| pairs_of(query).into_iter().find(|(k, _)| k == "_wpnonce").map(|(_, v)| v)).or_else(|| body_nonce.map(str::to_owned));
     let Some(nonce) = nonce else { return RestAuth::Anonymous };
     let Ok(user) = rustpress_auth::CurrentUser::load(&loaded.site.db, &parts.roles, &session.user).await else { return RestAuth::Anonymous };
-    if parts.auth.verify_nonce(&nonce, "wp_rest", user.id, &session.token, at).is_some() { RestAuth::User(user) } else { RestAuth::BadNonce }
+    if parts.auth.verify_nonce(&nonce, "wp_rest", user.id, &session.token, at).is_some() { RestAuth::User(user, session.token.clone()) } else { RestAuth::BadNonce }
 }
 
 pub fn pairs_of_public(text: &str) -> Vec<(String, String)> {
