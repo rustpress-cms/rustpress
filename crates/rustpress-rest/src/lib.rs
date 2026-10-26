@@ -518,7 +518,7 @@ impl<'a> Rest<'a> {
     }
 
     /// `GET /wp-json/<namespace>`.
-    fn namespace_index(&self, namespace: &str) -> Value {
+    pub(crate) fn namespace_index(&self, namespace: &str) -> Value {
         serde_json::json!({
             "namespace": namespace,
             "routes": Value::Object(self.routes_of(Some(namespace))),
@@ -534,7 +534,7 @@ fn golden_routes() -> &'static Map<String, Value> {
 }
 
 /// The namespaces in the order of the index.
-fn namespaces() -> Vec<String> {
+pub(crate) fn namespaces() -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     for entry in golden_routes().values() {
         if let Some(ns) = entry.get("namespace").and_then(Value::as_str).filter(|ns| !ns.is_empty())

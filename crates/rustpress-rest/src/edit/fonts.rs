@@ -384,6 +384,11 @@ impl Rest<'_> {
     }
 
     async fn face_get(&self, family: &str, face: &str) -> Result<Outcome> {
+        // The face itself is looked up before its family.
+        let face_id: u64 = face.parse().unwrap_or(0);
+        if self.site.db.post(face_id).await?.is_none_or(|p| p.post_type != FACE) {
+            return Ok(Err(RestError::new("rest_post_invalid_id", "Invalid post ID.", 404)));
+        }
         let parent = match self.face_parent(family).await? {
             Ok(p) => p,
             Err(e) => return Ok(Err(e)),

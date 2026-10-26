@@ -49,7 +49,7 @@ def normalize(value, port):
     if isinstance(value, list):
         return [normalize(v, port) for v in value]
     if isinstance(value, str):
-        value = value.replace(f"localhost:{port}", "localhost:PORT").replace("localhost:8080", "localhost:PORT")
+        value = value.replace(f"localhost:{port}", "localhost:PORT").replace("localhost:8080", "localhost:PORT").replace("localhost:3001", "localhost:PORT")
         value = re.sub(r"\b[0-9a-f]{10}\b", "NONCE", value)
         return value
     return value

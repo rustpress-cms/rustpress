@@ -228,6 +228,10 @@ impl Rest<'_> {
         let body = self.request.as_ref().map(|r| r.body.clone()).unwrap_or_default();
         let args = Args::new(params, &body);
         let get = method == "GET";
+        // The index of a namespace.
+        if get && crate::namespaces().iter().any(|ns| *ns == segments.join("/")) {
+            return Ok(Some(Ok(crate::Resp::item(self.namespace_index(&segments.join("/"))))));
+        }
         if let ["wp", "v2", "font-families" | "font-collections", ..] = segments.as_slice() {
             return self.fonts_route(&segments, &method, &args, params).await.map(Some);
         }
@@ -268,6 +272,7 @@ impl Rest<'_> {
             ["wp", "v2", "templates", ..] => self.templates_route(templates::TKind::Template, &segments, &method, &args, params).await.map(Some),
             ["wp", "v2", "template-parts", ..] => self.templates_route(templates::TKind::Part, &segments, &method, &args, params).await.map(Some),
             ["wp", "v2", "block-renderer", namespace, name] if get || method == "POST" => self.block_renderer(namespace, name, &args, params).await.map(Some),
+            ["oembed", "1.0", "proxy"] if get && args.str("url").is_none() => Ok(Some(Err(RestError::missing_params(&["url"])))),
             ["oembed", "1.0", "proxy"] if get => Ok(Some(if self.can("edit_posts") { Err(RestError::new("oembed_invalid_url", &self.site.tr("Not Found"), 404).after_permission_check()) } else { Err(self.forbidden("rest_forbidden", &self.site.tr("Sorry, you are not allowed to make proxied oEmbed requests."))) })),
             ["wp-site-health", "v1", ..] if get => self.health_route(&segments).await.map(Some),
             ["wp", "v2", "view-config"] if get => self.view_config(&args).await.map(Some),

@@ -36,6 +36,9 @@ fn is_empty_config(value: &Value) -> bool {
     }
 }
 
+/// The widgets WordPress registers.
+const WIDGET_TYPES: [&str; 18] = ["archives", "block", "calendar", "categories", "custom_html", "media_audio", "media_gallery", "media_image", "media_video", "meta", "nav_menu", "pages", "recent-comments", "recent-posts", "rss", "search", "tag_cloud", "text"];
+
 /// `get_allowed_block_template_part_areas()`: `(area, label, description, icon, tag)`.
 const PART_AREAS: [(&str, &str, &str, &str, &str); 4] = [
     ("uncategorized", "General", "General templates often perform a specific role like displaying post content, and are not tied to any particular area.", "layout", "div"),
@@ -146,7 +149,33 @@ impl Rest<'_> {
     /// Everything that is not a post, a term, a user, media or a setting.
     pub(crate) async fn editor_route(&self, segments: &[&str], method: &str, args: &Args, params: &Params) -> Result<Option<Outcome>> {
         let get = method == "GET";
+        // The revisions and autosaves of an item that is not there (or of another type) have no parent.
+        if get && segments.len() >= 5 && segments[0] == "wp" && segments[1] == "v2" && matches!(segments[4], "revisions" | "autosaves") {
+            let expected = match segments[2] {
+                "blocks" => Some("wp_block".to_owned()),
+                "navigation" => Some("wp_navigation".to_owned()),
+                "global-styles" => Some("wp_global_styles".to_owned()),
+                "menu-items" => Some("nav_menu_item".to_owned()),
+                other => self.site.types.post_types.iter().find(|t| t.show_in_rest && t.rest_base() == other).map(|t| t.name.clone()),
+            };
+            if let Some(expected) = expected {
+                let found = match segments[3].parse::<u64>() {
+                    Ok(id) => self.site.db.post(id).await?.is_some_and(|p| p.post_type == expected),
+                    Err(_) => false,
+                };
+                if !found && (self.can("edit_theme_options") || self.can("edit_posts")) {
+                    return Ok(Some(Err(RestError::new("rest_post_invalid_parent", "Invalid post parent ID.", 404))));
+                }
+            }
+        }
         let outcome = match segments {
+            ["wp", "v2", "menu-items", id] if get && self.can("edit_theme_options") && id.parse::<u64>().is_ok() => Err(RestError::new("rest_post_invalid_id", "Invalid post ID.", 404)),
+            ["wp", "v2", "menus", id] if get && self.can("edit_theme_options") && id.parse::<u64>().is_ok() => Err(RestError::new("rest_term_invalid", "Term does not exist.", 404)),
+            ["wp", "v2", "menu-locations", _] if get && self.can("edit_theme_options") => Err(RestError::new("rest_menu_location_invalid", "Invalid menu location.", 404)),
+            ["wp", "v2", "sidebars", id] if get && self.can("edit_theme_options") && *id != "wp_inactive_widgets" => Err(RestError::new("rest_sidebar_not_found", "No sidebar exists with that id.", 404)),
+            ["wp", "v2", "widgets", id] if get && self.can("edit_theme_options") && !id.starts_with("block-") => Err(RestError::new("rest_widget_not_found", "No widget was found with that id.", 404)),
+            ["wp", "v2", "widget-types", id] if get && self.can("edit_theme_options") && !WIDGET_TYPES.contains(id) => Err(RestError::new("rest_widget_type_invalid", "Invalid widget type.", 404)),
+            ["wp", "v2", "block-types", _, _, _] if get => Err(RestError::new("rest_no_route", "No route was found matching the URL and request method.", 404)),
             ["wp", "v2", "themes"] if get && (self.can("switch_themes") || (self.can("edit_posts") && args.str("status").as_deref() == Some("active"))) => {
                 let wanted = args.str("status");
                 let mut list = Vec::new();
@@ -237,7 +266,7 @@ impl Rest<'_> {
     async fn global_styles_user(&self, id: &str, method: &str, args: &Args) -> Result<Outcome> {
         let id: u64 = id.parse().unwrap_or(0);
         let Some(post) = self.site.db.post(id).await?.filter(|p| p.post_type == "wp_global_styles") else {
-            return Ok(Err(RestError::new("rest_global_styles_not_found", "No global styles config exists with that id.", 404)));
+            return Ok(Err(RestError::new("rest_global_styles_not_found", "No global styles config exists with that ID.", 404)));
         };
         if matches!(method, "POST" | "PUT" | "PATCH") {
             let content = match self.content() {

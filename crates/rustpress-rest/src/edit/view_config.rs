@@ -113,7 +113,7 @@ impl Rest<'_> {
     pub(super) async fn view_config(&self, args: &Args) -> Result<Outcome> {
         let (Some(kind), Some(name)) = (args.str("kind"), args.str("name")) else {
             let missing: Vec<&str> = ["kind", "name"].into_iter().filter(|k| args.str(k).is_none()).collect();
-            return Ok(Err(RestError::new("rest_missing_callback_param", &format!("Missing parameter(s): {}", missing.join(", ")), 400)));
+            return Ok(Err(RestError::missing_params(&missing)));
         };
         let Some(capability) = self.view_config_capability(&kind, &name) else {
             return Ok(Err(RestError::new("rest_view_config_invalid_entity", &self.site.tr("Invalid entity kind or name."), 404)));
