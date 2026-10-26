@@ -517,7 +517,9 @@ pub(crate) fn robots_meta(site: &Site, q: &QueryResult) -> String {
         }
         directives.push("max-image-preview:large");
         // `wp_robots_noindex_replytocom()`: reply links are not for search engines.
-        if rustpress_core::QueryVars::parse(&q.raw_query).has("replytocom") && !q.flags.is_search {
+        // `unapproved` with `moderation-hash` is the preview of a comment that waits.
+        let vars = rustpress_core::QueryVars::parse(&q.raw_query);
+        if (vars.has("replytocom") || (vars.has("unapproved") && vars.has("moderation-hash"))) && !q.flags.is_search {
             directives.extend(["noindex", "follow"]);
         }
     }

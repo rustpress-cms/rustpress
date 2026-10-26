@@ -413,18 +413,18 @@ struct NewComment {
 }
 
 /// `pre_comment_author_name`: `sanitize_text_field`, `wp_filter_kses`, `_wp_specialchars`.
-fn filter_text(text: &str) -> String {
+pub fn filter_text(text: &str) -> String {
     let text = rustpress_core::kses::kses_data(&crate::sanitize::text_field(text));
     rustpress_core::formatting::specialchars_noquotes(&text)
 }
 
 /// `pre_comment_author_email`: `trim`, `sanitize_email`, `wp_filter_kses`.
-fn filter_email(email: &str) -> String {
+pub fn filter_email(email: &str) -> String {
     rustpress_core::kses::kses_data(&crate::sanitize::sanitize_email(email.trim()))
 }
 
 /// `pre_comment_author_url`: `wp_strip_all_tags`, `sanitize_url`, `wp_filter_kses`.
-fn filter_url(url: &str) -> String {
+pub fn filter_url(url: &str) -> String {
     let url = rustpress_core::formatting::strip_tags(url);
     let url = if url.trim().is_empty() { String::new() } else { esc_url_raw(url.trim()) };
     rustpress_core::kses::kses_data(&url)

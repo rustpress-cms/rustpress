@@ -6,6 +6,7 @@
 //! blocks in [`dynamic`].
 
 pub mod comment_pages;
+pub mod commenter;
 pub mod content;
 pub mod dimensions;
 pub mod dynamic;

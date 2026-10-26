@@ -82,12 +82,12 @@ fn display<'a>(
 }
 
 /// `get_comment_class()`.
-fn comment_class(site: &Site, post: &Post, comment: &Comment, depth: i64, extra: &str, counters: &mut Counters) -> String {
-    let _ = site;
+fn comment_class(post: &Post, comment: &Comment, nicename: Option<&str>, depth: i64, extra: &str, counters: &mut Counters) -> String {
     let mut classes: Vec<String> = vec![if comment.comment_type.is_empty() { "comment".to_owned() } else { comment.comment_type.clone() }];
-    if comment.user_id != 0 {
+    if let Some(nicename) = nicename {
         classes.push("byuser".into());
-        classes.push(format!("comment-author-{}", comment.user_id));
+        let class = rustpress_core::formatting::sanitize_html_class(nicename);
+        classes.push(format!("comment-author-{}", if class.is_empty() { comment.user_id.to_string() } else { class }));
         if comment.user_id == post.post_author {
             classes.push("bypostauthor".into());
         }
@@ -145,7 +145,17 @@ async fn start_element(
     counters: &mut Counters,
     out: &mut String,
 ) -> Result<()> {
-    let class = comment_class(site, post, comment, depth, if has_children { "parent" } else { "" }, counters);
+    let nicename = if comment.user_id != 0 { site.db.user(comment.user_id).await?.map(|u| u.user_nicename) } else { None };
+    let class = comment_class(post, comment, nicename.as_deref(), depth, if has_children { "parent" } else { "" }, counters);
+    let (commenter_author, commenter_email, _) = crate::commenter::current_commenter();
+    let pending = comment.comment_approved == "0";
+    let moderation_note = if commenter_email.is_empty() {
+        site.tr("Your comment is awaiting moderation. This is a preview; your comment will be visible after it has been approved.")
+    } else {
+        site.tr("Your comment is awaiting moderation.")
+    };
+    // The link to the site of a pending comment is shown only to who is known by name.
+    let author_link = if pending && commenter_author.is_empty() { comment_author(site, comment) } else { comment_author_link(site, comment) };
     // `Walker_Comment::ping()`
     if args.short_ping && matches!(comment.comment_type.as_str(), "pingback" | "trackback") {
         out.push_str(&format!(
@@ -159,7 +169,7 @@ async fn start_element(
     // `get_avatar()` answers `false` for pingbacks and trackbacks (`get_avatar_comment_types()`).
     let has_avatar_type = comment.comment_type.is_empty() || comment.comment_type == "comment";
     let avatar = if args.avatar_size != 0 && has_avatar_type { get_avatar(env, &comment.comment_author_email, args.avatar_size, "", "", "") } else { String::new() };
-    let says = rustpress_core::i18n::sprintf(&site.tr("%s <span class=\"says\">says:</span>"), &[&format!("<b class=\"fn\">{}</b>", comment_author_link(site, comment))]);
+    let says = rustpress_core::i18n::sprintf(&site.tr("%s <span class=\"says\">says:</span>"), &[&format!("<b class=\"fn\">{author_link}</b>")]);
     let ts = site.timezone.local_timestamp(&comment.comment_date).unwrap_or(0);
     let date = site.date(&site.options.string("date_format", "F j, Y"), ts);
     let time = site.date(&site.options.string("time_format", "g:i a"), ts);
@@ -182,10 +192,11 @@ async fn start_element(
         String::new()
     };
     out.push_str(&format!(
-        "\t\t<li id=\"comment-{id}\" class=\"{class}\">\n\t\t\t<article id=\"div-comment-{id}\" class=\"comment-body\">\n\t\t\t\t<footer class=\"comment-meta\">\n\t\t\t\t\t<div class=\"comment-author vcard\">\n\t\t\t\t\t\t{avatar}\t\t\t\t\t\t{says}\t\t\t\t\t</div><!-- .comment-author -->\n\n\t\t\t\t\t<div class=\"comment-metadata\">\n\t\t\t\t\t\t<a href=\"{link}\"><time datetime=\"{iso}\">{when}</time></a>\t\t\t\t\t</div><!-- .comment-metadata -->\n\n\t\t\t\t\t\t\t\t\t</footer><!-- .comment-meta -->\n\n\t\t\t\t<div class=\"comment-content\">\n\t\t\t\t\t{text}\t\t\t\t</div><!-- .comment-content -->\n\n\t\t\t\t{reply}\t\t\t</article><!-- .comment-body -->\n\t\t",
+        "\t\t<li id=\"comment-{id}\" class=\"{class}\">\n\t\t\t<article id=\"div-comment-{id}\" class=\"comment-body\">\n\t\t\t\t<footer class=\"comment-meta\">\n\t\t\t\t\t<div class=\"comment-author vcard\">\n\t\t\t\t\t\t{avatar}\t\t\t\t\t\t{says}\t\t\t\t\t</div><!-- .comment-author -->\n\n\t\t\t\t\t<div class=\"comment-metadata\">\n\t\t\t\t\t\t<a href=\"{link}\"><time datetime=\"{iso}\">{when}</time></a>\t\t\t\t\t</div><!-- .comment-metadata -->\n\n\t\t\t\t\t{note}</footer><!-- .comment-meta -->\n\n\t\t\t\t<div class=\"comment-content\">\n\t\t\t\t\t{text}\t\t\t\t</div><!-- .comment-content -->\n\n\t\t\t\t{reply}\t\t\t</article><!-- .comment-body -->\n\t\t",
         id = comment.comment_id,
         link = esc_url(&link),
         iso = site.date("c", ts),
+        note = if pending { format!("\t\t\t\t\t<em class=\"comment-awaiting-moderation\">{moderation_note}</em>\n\t\t\t\t\t\t\t\t\t") } else { "\t\t\t\t".to_owned() },
     ));
     Ok(())
 }
@@ -210,14 +221,16 @@ pub async fn comment_form(site: &Site, post: &Post, request_uri: &str, block_the
         site.trx("Comment", "noun"),
         format_args!(" {indicator}")
     );
+    let (commenter_author, commenter_email, commenter_url) = crate::commenter::current_commenter();
     let mut fields = vec![
-        format!("<p class=\"comment-form-author\"><label for=\"author\">{}{mark}</label> <input id=\"author\" name=\"author\" type=\"text\" value=\"\" size=\"30\" maxlength=\"245\" autocomplete=\"name\"{required_attr} /></p>", site.tr("Name")),
-        format!("<p class=\"comment-form-email\"><label for=\"email\">{}{mark}</label> <input id=\"email\" name=\"email\" type=\"email\" value=\"\" size=\"30\" maxlength=\"100\" aria-describedby=\"email-notes\" autocomplete=\"email\"{required_attr} /></p>", site.tr("Email")),
-        format!("<p class=\"comment-form-url\"><label for=\"url\">{}</label> <input id=\"url\" name=\"url\" type=\"url\" value=\"\" size=\"30\" maxlength=\"200\" autocomplete=\"url\" /></p>", site.tr("Website")),
+        format!("<p class=\"comment-form-author\"><label for=\"author\">{}{mark}</label> <input id=\"author\" name=\"author\" type=\"text\" value=\"{}\" size=\"30\" maxlength=\"245\" autocomplete=\"name\"{required_attr} /></p>", site.tr("Name"), esc_attr(&commenter_author)),
+        format!("<p class=\"comment-form-email\"><label for=\"email\">{}{mark}</label> <input id=\"email\" name=\"email\" type=\"email\" value=\"{}\" size=\"30\" maxlength=\"100\" aria-describedby=\"email-notes\" autocomplete=\"email\"{required_attr} /></p>", site.tr("Email"), esc_attr(&commenter_email)),
+        format!("<p class=\"comment-form-url\"><label for=\"url\">{}</label> <input id=\"url\" name=\"url\" type=\"url\" value=\"{}\" size=\"30\" maxlength=\"200\" autocomplete=\"url\" /></p>", site.tr("Website"), esc_attr(&commenter_url)),
     ];
     if options.get("show_comments_cookies_opt_in") == Some("1") {
         fields.push(format!(
-            "<p class=\"comment-form-cookies-consent\"><input id=\"wp-comment-cookies-consent\" name=\"wp-comment-cookies-consent\" type=\"checkbox\" value=\"yes\" /> <label for=\"wp-comment-cookies-consent\">{}</label></p>",
+            "<p class=\"comment-form-cookies-consent\"><input id=\"wp-comment-cookies-consent\" name=\"wp-comment-cookies-consent\" type=\"checkbox\" value=\"yes\"{} /> <label for=\"wp-comment-cookies-consent\">{}</label></p>",
+            if commenter_email.is_empty() { "" } else { " checked" },
             site.tr("Save my name, email, and website in this browser for the next time I comment.")
         ));
     }

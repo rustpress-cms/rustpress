@@ -63,8 +63,17 @@ pub async fn comments_for_template(env: &Env<'_>, post_id: u64) -> Result<Commen
 }
 
 /// The comments of a post shown on the requested page.
+/// The comments `comments_template()` lists: the approved ones and the pending ones of the viewer.
+pub async fn listed_comments(env: &Env<'_>, post_id: u64) -> Result<Vec<Comment>> {
+    let include = crate::commenter::include_unapproved(env).await?;
+    if include.user.is_none() && include.email.is_none() {
+        return Ok(env.site.db.approved_comments(post_id).await?);
+    }
+    Ok(env.site.db.comments_with_pending(post_id, include.user, include.email.as_deref()).await?)
+}
+
 pub async fn comments_for_post(env: &Env<'_>, post_id: u64) -> Result<CommentPage> {
-    let all = env.site.db.approved_comments(post_id).await?;
+    let all = listed_comments(env, post_id).await?;
     let threaded = threaded(env);
     let top: Vec<&Comment> = if threaded { all.iter().filter(|c| c.comment_parent == 0).collect() } else { all.iter().collect() };
     let (mut selected, max_pages, page): (Vec<&Comment>, u64, u64) = if paginated(env) && per_page(env) > 0 {
@@ -147,7 +156,7 @@ pub async fn comment_link(env: &Env<'_>, comment: &Comment, in_loop: Option<u64>
         cpage = match in_loop {
             Some(page) => page,
             None => {
-                let all = site.db.approved_comments(post.id).await?;
+                let all = listed_comments(env, post.id).await?;
                 page_of_comment(env, &all, comment)
             }
         };

@@ -153,7 +153,7 @@ pub(super) async fn comment_template(bc: &BlockCtx<'_>) -> Result<String> {
     let threaded = options.get("thread_comments") == Some("1");
     let max_depth = options.u64("thread_comments_depth", 5);
     let wrapper = bc.wrapper_attributes(&[]);
-    let mut state = ListState { alt: 0, thread_alt: 0 };
+    let mut state = ListState { alt: 0, thread_alt: 0, post_author: post.post_author };
     let mut roots: Vec<&Comment> = if threaded { comments.iter().filter(|c| c.comment_parent == 0 || !comments.iter().any(|p| p.comment_id == c.comment_parent)).collect() } else { comments.iter().collect() };
     // `array_reverse()` of the top-level comments only; replies keep their order.
     if options.get("comment_order") == Some("desc") {
@@ -166,6 +166,7 @@ pub(super) async fn comment_template(bc: &BlockCtx<'_>) -> Result<String> {
 struct ListState {
     alt: u32,
     thread_alt: u32,
+    post_author: u64,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -185,7 +186,8 @@ fn render_comments<'a>(
             ctx.values.insert("commentId".into(), Value::from(comment.comment_id));
             let mut inner = render_inner(bc, &ctx).await?;
             let children: Vec<&Comment> = all.iter().filter(|c| c.comment_parent == comment.comment_id).collect();
-            let classes = comment_class(comment, depth, state);
+            let nicename = if comment.user_id != 0 { bc.env.site.db.user(comment.user_id).await?.map(|u| u.user_nicename) } else { None };
+            let classes = comment_class(comment, depth, state, nicename.as_deref());
             if !children.is_empty() && threaded {
                 if depth < max_depth {
                     let nested = render_comments(bc, all, &children, threaded, depth + 1, max_depth, state).await?;
@@ -201,8 +203,16 @@ fn render_comments<'a>(
 }
 
 /// `get_comment_class()`.
-fn comment_class(comment: &Comment, depth: u64, state: &mut ListState) -> String {
+fn comment_class(comment: &Comment, depth: u64, state: &mut ListState, nicename: Option<&str>) -> String {
     let mut classes = vec![if comment.comment_type.is_empty() { "comment".to_owned() } else { comment.comment_type.clone() }];
+    if let Some(nicename) = nicename {
+        classes.push("byuser".into());
+        let class = rustpress_core::formatting::sanitize_html_class(nicename);
+        classes.push(format!("comment-author-{}", if class.is_empty() { comment.user_id.to_string() } else { class }));
+        if comment.user_id == state.post_author {
+            classes.push("bypostauthor".into());
+        }
+    }
     if state.alt % 2 == 1 {
         classes.push("odd".into());
         classes.push("alt".into());
@@ -227,7 +237,9 @@ pub(super) async fn comment_author_name(bc: &BlockCtx<'_>) -> Result<String> {
     let Some(comment) = current_comment(bc).await? else { return Ok(String::new()) };
     let wrapper = bc.wrapper_attributes(&[("class", align_and_link_classes(bc))]);
     let mut author = comment_author(bc.env.site, &comment);
-    if !comment.comment_author_url.is_empty() && bc.attr_bool("isLink") && bc.attr_str("linkTarget").is_some_and(|t| !t.is_empty()) {
+    // The site of a comment nobody has approved is linked only for who is known by name.
+    let show_link = comment.comment_approved != "0" || !crate::commenter::current_commenter().0.is_empty();
+    if show_link && !comment.comment_author_url.is_empty() && bc.attr_bool("isLink") && bc.attr_str("linkTarget").is_some_and(|t| !t.is_empty()) {
         author = format!(
             "<a rel=\"external nofollow ugc\" href=\"{}\" target=\"{}\" >{author}</a>",
             esc_url(&comment.comment_author_url),
@@ -246,9 +258,24 @@ pub(super) async fn comment_content(bc: &BlockCtx<'_>) -> Result<String> {
     if comment.comment_content.is_empty() {
         return Ok(String::new());
     }
-    let text = comment_text(bc.env.site, &comment.comment_content);
+    let mut text = comment_text(bc.env.site, &comment.comment_content);
+    let mut note = String::new();
+    if comment.comment_approved == "0" {
+        let (author, email, _) = crate::commenter::current_commenter();
+        let site = bc.env.site;
+        let message = if email.is_empty() {
+            site.tr("Your comment is awaiting moderation. This is a preview; your comment will be visible after it has been approved.")
+        } else {
+            site.tr("Your comment is awaiting moderation.")
+        };
+        note = format!("<p><em class=\"comment-awaiting-moderation\">{message}</em></p>");
+        // Links of a comment nobody has approved are shown only to who is known by name.
+        if author.is_empty() {
+            text = rustpress_core::kses::kses(&text, &rustpress_core::kses::Allowed::none());
+        }
+    }
     let wrapper = bc.wrapper_attributes(&[("class", align_and_link_classes(bc))]);
-    Ok(format!("<div {wrapper}>{text}</div>"))
+    Ok(format!("<div {wrapper}>{note}{text}</div>"))
 }
 
 pub(super) async fn comment_date(bc: &BlockCtx<'_>) -> Result<String> {
@@ -277,7 +304,7 @@ pub(super) async fn comment_reply_link(bc: &BlockCtx<'_>) -> Result<String> {
         return Ok(String::new());
     }
     let max_depth = options.u64("thread_comments_depth", 5);
-    let all = bc.env.site.db.approved_comments(comment.comment_post_id).await?;
+    let all = crate::comment_pages::listed_comments(bc.env, comment.comment_post_id).await?;
     let mut depth = 1;
     let mut parent = comment.comment_parent;
     while parent != 0 {
@@ -505,21 +532,24 @@ pub(super) async fn post_comments_form(bc: &BlockCtx<'_>) -> Result<String> {
     let required_text = format!(" <span class=\"required-field-message\">{}</span>", rustpress_core::i18n::sprintf(&site.tr("Required fields are marked %s"), &[&indicator]));
     let required_attr = " required";
 
+    let (commenter_author, commenter_email, commenter_url) = crate::commenter::current_commenter();
     let author = format!(
-        "<p class=\"comment-form-author\"><label for=\"author\">{}{}</label> <input id=\"author\" name=\"author\" type=\"text\" value=\"\" size=\"30\" maxlength=\"245\" autocomplete=\"name\"{} /></p>",
+        "<p class=\"comment-form-author\"><label for=\"author\">{}{}</label> <input id=\"author\" name=\"author\" type=\"text\" value=\"{}\" size=\"30\" maxlength=\"245\" autocomplete=\"name\"{} /></p>",
         site.tr("Name"),
         if require { required_indicator } else { "" },
+        esc_attr(&commenter_author),
         if require { required_attr } else { "" }
     );
     let email = format!(
-        "<p class=\"comment-form-email\"><label for=\"email\">{}{}</label> <input id=\"email\" name=\"email\" type=\"email\" value=\"\" size=\"30\" maxlength=\"100\" aria-describedby=\"email-notes\" autocomplete=\"email\"{} /></p>",
+        "<p class=\"comment-form-email\"><label for=\"email\">{}{}</label> <input id=\"email\" name=\"email\" type=\"email\" value=\"{}\" size=\"30\" maxlength=\"100\" aria-describedby=\"email-notes\" autocomplete=\"email\"{} /></p>",
         site.tr("Email"),
         if require { required_indicator } else { "" },
+        esc_attr(&commenter_email),
         if require { required_attr } else { "" }
     );
-    let url = format!("<p class=\"comment-form-url\"><label for=\"url\">{}</label> <input id=\"url\" name=\"url\" type=\"url\" value=\"\" size=\"30\" maxlength=\"200\" autocomplete=\"url\" /></p>", site.tr("Website"));
+    let url = format!("<p class=\"comment-form-url\"><label for=\"url\">{}</label> <input id=\"url\" name=\"url\" type=\"url\" value=\"{}\" size=\"30\" maxlength=\"200\" autocomplete=\"url\" /></p>", site.tr("Website"), esc_attr(&commenter_url));
     let cookies = if options.get("show_comments_cookies_opt_in") == Some("1") {
-        format!("<p class=\"comment-form-cookies-consent\"><input id=\"wp-comment-cookies-consent\" name=\"wp-comment-cookies-consent\" type=\"checkbox\" value=\"yes\" /> <label for=\"wp-comment-cookies-consent\">{}</label></p>", site.tr("Save my name, email, and website in this browser for the next time I comment."))
+        format!("<p class=\"comment-form-cookies-consent\"><input id=\"wp-comment-cookies-consent\" name=\"wp-comment-cookies-consent\" type=\"checkbox\" value=\"yes\"{} /> <label for=\"wp-comment-cookies-consent\">{}</label></p>", if commenter_email.is_empty() { "" } else { " checked" }, site.tr("Save my name, email, and website in this browser for the next time I comment."))
     } else {
         String::new()
     };

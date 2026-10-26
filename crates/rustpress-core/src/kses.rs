@@ -26,6 +26,11 @@ pub struct Allowed {
 }
 
 impl Allowed {
+    /// `array()`: no tag at all.
+    pub fn none() -> Self {
+        Self { tags: HashMap::new() }
+    }
+
     /// `$allowedtags`: what a comment of a visitor may contain.
     pub fn data() -> Self {
         let tags: [(&str, &[&str]); 15] = [

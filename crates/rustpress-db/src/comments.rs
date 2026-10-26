@@ -13,6 +13,30 @@ impl Db {
         Ok(sqlx::query_as(AssertSqlSafe(sql)).bind(post_id).fetch_all(&self.pool).await?)
     }
 
+    /// The approved comments of a post and the pending ones of a user or of an address (`include_unapproved`).
+    pub async fn comments_with_pending(&self, post_id: u64, user: Option<u64>, email: Option<&str>) -> Result<Vec<Comment>> {
+        let mut conditions = vec!["comment_approved = '1'".to_owned()];
+        if user.is_some() {
+            conditions.push("( user_id = ? AND comment_approved = '0' )".to_owned());
+        }
+        if email.is_some() {
+            conditions.push("( comment_author_email = ? AND comment_approved = '0' )".to_owned());
+        }
+        let sql = format!(
+            "SELECT {COMMENT_COLUMNS} FROM {} WHERE comment_post_ID = ? AND ( {} ) ORDER BY comment_date_gmt, comment_ID",
+            self.prefix.table("comments"),
+            conditions.join(" OR ")
+        );
+        let mut query = sqlx::query_as(AssertSqlSafe(sql)).bind(post_id);
+        if let Some(user) = user {
+            query = query.bind(user);
+        }
+        if let Some(email) = email {
+            query = query.bind(email.to_owned());
+        }
+        Ok(query.fetch_all(&self.pool).await?)
+    }
+
     /// A single comment by ID, whatever its status.
     /// A comment in any status.
     pub async fn comment_any(&self, id: u64) -> Result<Option<Comment>> {

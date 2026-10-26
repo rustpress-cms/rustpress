@@ -126,7 +126,33 @@ async fn handle(axum::extract::State(app): axum::extract::State<Arc<App>>, reque
             (key.trim() == name).then(|| String::from_utf8_lossy(&rustpress_core::rewrite::urldecode(value.trim().as_bytes())).into_owned())
         })
     });
-    rustpress_blocks::content::POST_PASSWORD_COOKIE.scope(cookie, handle_request(axum::extract::State(app), request)).await
+    let commenter = commenter_of(&app, &request.headers().clone()).await;
+    rustpress_blocks::commenter::COMMENTER.scope(commenter, rustpress_blocks::content::POST_PASSWORD_COOKIE.scope(cookie, handle_request(axum::extract::State(app), request))).await
+}
+
+/// `wp_get_current_commenter()`: the cookies `comment_author_*` of the request, cleaned like `sanitize_comment_cookies()`.
+async fn commenter_of(app: &Arc<App>, headers: &axum::http::HeaderMap) -> rustpress_blocks::commenter::Commenter {
+    let loaded = app.current().await;
+    let auth = loaded.admin.as_ref().map(|parts| parts.auth.clone());
+    let hash = auth.as_ref().map(|auth| auth.cookie_hash().to_owned()).unwrap_or_default();
+    let cookie = |prefix: &str| -> String {
+        let name = format!("{prefix}{hash}");
+        headers.get_all(header::COOKIE).iter().filter_map(|v| v.to_str().ok()).flat_map(|v| v.split(';')).find_map(|pair| {
+            let (key, value) = pair.trim().split_once('=')?;
+            (key.trim() == name).then(|| String::from_utf8_lossy(&rustpress_core::rewrite::urldecode(value.trim().as_bytes())).into_owned())
+        })
+        .unwrap_or_default()
+    };
+    let (author, email, url) = if hash.is_empty() {
+        Default::default()
+    } else {
+        (
+            rustpress_admin::comments_post::filter_text(&cookie("comment_author_")),
+            rustpress_admin::comments_post::filter_email(&cookie("comment_author_email_")),
+            rustpress_admin::comments_post::filter_url(&cookie("comment_author_url_")),
+        )
+    };
+    rustpress_blocks::commenter::Commenter::new(author, email, url, move |data| auth.as_ref().and_then(|auth| auth.salts().hash(data, "auth")).unwrap_or_default())
 }
 
 async fn handle_request(axum::extract::State(app): axum::extract::State<Arc<App>>, request: Request<Body>) -> Response<Body> {
