@@ -5,6 +5,12 @@ use crate::sanitize;
 use rustpress_db::Val;
 use rustpress_phpser::{Key, Value};
 
+/// The `pre_user_display_name`, `pre_user_first_name`, `pre_user_last_name` and `pre_user_nickname` filters:
+/// `sanitize_text_field`, `wp_filter_kses` and `_wp_specialchars` (`&` becomes `&amp;`, entities stay).
+fn name_field(value: &str) -> String {
+    rustpress_core::formatting::specialchars_noquotes(&rustpress_core::kses::kses_data(&sanitize::text_field(value)))
+}
+
 /// The fields `wp_insert_user( $userdata )` takes. `None` keeps the stored value on update.
 #[derive(Debug, Clone, Default)]
 pub struct UserData {
@@ -152,7 +158,7 @@ impl Content<'_> {
             ("user_nicename", Val::Str(nicename)),
             ("user_email", Val::Str(email)),
             ("user_url", Val::Str(url)),
-            ("display_name", Val::Str(sanitize::text_field(&display_name))),
+            ("display_name", Val::Str(name_field(&display_name))),
         ];
         if let Some(password) = data.user_pass.as_deref().filter(|p| !p.is_empty()) {
             fields.push(("user_pass", Val::Str(rustpress_auth::password::hash_password(password))));
@@ -181,11 +187,11 @@ impl Content<'_> {
                 None => None,
             }
         };
-        let nickname = data.nickname.as_ref().map(|n| sanitize::text_field(n));
+        let nickname = data.nickname.as_ref().map(|n| name_field(n));
         let mut pairs: Vec<(String, String)> = Vec::new();
         pairs.extend(meta("nickname", nickname.as_ref().or(if update { None } else { Some(&login) }), &login));
-        pairs.extend(meta("first_name", data.first_name.as_ref().map(|v| sanitize::text_field(v)).as_ref(), ""));
-        pairs.extend(meta("last_name", data.last_name.as_ref().map(|v| sanitize::text_field(v)).as_ref(), ""));
+        pairs.extend(meta("first_name", data.first_name.as_ref().map(|v| name_field(v)).as_ref(), ""));
+        pairs.extend(meta("last_name", data.last_name.as_ref().map(|v| name_field(v)).as_ref(), ""));
         // `pre_user_description`: `wp_filter_kses`.
         pairs.extend(meta("description", data.description.as_ref().map(|v| rustpress_core::kses::kses_data(v)).as_ref(), ""));
         pairs.extend(meta("rich_editing", data.rich_editing.as_ref(), "true"));
