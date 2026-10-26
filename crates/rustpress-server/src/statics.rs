@@ -13,7 +13,10 @@ use tower_http::services::ServeDir;
 
 const EXTENSIONS: &[&str] = &[
     "css", "js", "mjs", "map", "png", "jpg", "jpeg", "gif", "webp", "avif", "svg", "ico", "bmp", "woff", "woff2", "ttf", "otf", "eot", "txt", "pdf",
-    "mp3", "m4a", "ogg", "wav", "mp4", "m4v", "webm", "mov",
+    "mp3", "m4a", "ogg", "wav", "mp4", "m4v", "webm", "mov", "flac", "aac", "wma", "mpg", "mpeg", "avi", "wmv", "3gp", "vtt", "srt",
+    // What the media library takes besides images and media: documents, archives (also the personal data exports).
+    "zip", "gz", "tar", "tgz", "bz2", "7z", "rar", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "odt", "ods", "odp", "csv", "rtf", "epub",
+    "ics", "heic", "heif", "tif", "tiff", "jfif", "apng",
 ];
 
 /// Whether a request path (percent-decoded, starting with `/`) names a servable file location.

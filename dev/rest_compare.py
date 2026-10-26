@@ -12,7 +12,16 @@ import http.cookiejar, json, re, sys, urllib.error, urllib.parse, urllib.request
 PORTS = {"ref": 8080, "rp": 3001}
 
 
+_sessions = {}
+
+
 def session(port):
+    if port not in _sessions:
+        _sessions[port] = _new_session(port)
+    return _sessions[port]
+
+
+def _new_session(port):
     jar = http.cookiejar.CookieJar()
     opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
     opener.open(f"http://127.0.0.1:{port}/wp-login.php").read()
@@ -29,9 +38,9 @@ def call(port, method, path, body):
     request = urllib.request.Request(url, data=data, method=method, headers={"X-WP-Nonce": nonce, "Content-Type": "application/json"})
     try:
         with opener.open(request) as response:
-            return response.status, dict(response.headers), response.read().decode("utf-8")
+            return response.status, {k.title(): v for k, v in response.headers.items()}, response.read().decode("utf-8", "replace")
     except urllib.error.HTTPError as e:
-        return e.code, dict(e.headers), e.read().decode("utf-8")
+        return e.code, {k.title(): v for k, v in e.headers.items()}, e.read().decode("utf-8", "replace")
 
 
 def normalize(value, port):
@@ -98,7 +107,7 @@ def main():
         results[name] = (status, normalize(data, port), headers)
     (sa, da, ha), (sb, db, hb) = results["ref"], results["rp"]
     print(f"status: ref {sa}, rp {sb}")
-    for header in ("X-WP-Total", "X-WP-TotalPages"):
+    for header in ("X-Wp-Total", "X-Wp-Totalpages"):
         if ha.get(header) != hb.get(header):
             print(f"header {header}: ref {ha.get(header)}, rp {hb.get(header)}")
     if "--shape" in flags:
@@ -107,4 +116,5 @@ def main():
     print("\n".join(lines) if lines else "identical")
 
 
-main()
+if __name__ == "__main__":
+    main()

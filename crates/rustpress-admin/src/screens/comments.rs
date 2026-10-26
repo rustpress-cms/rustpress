@@ -305,7 +305,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         "approved" => ("1", None),
         other => (other, None),
     };
-    let query = CommentListQuery { status: status.to_owned(), post_id, user_id, kind: kind.clone(), search: (!search.is_empty()).then(|| search.clone()), orderby: orderby.clone(), desc, limit: per_page, offset: (paged - 1) * per_page };
+    let query = CommentListQuery { status: status.to_owned(), post_id, user_id, author_email: None, kind: kind.clone(), search: (!search.is_empty()).then(|| search.clone()), orderby: orderby.clone(), desc, limit: per_page, offset: (paged - 1) * per_page };
     let (comments, total) = db.list_comments_admin(&query).await.unwrap_or_default();
     // Counts of the posts in the list.
     let mut post_counts: std::collections::HashMap<u64, (u64, u64)> = std::collections::HashMap::new();

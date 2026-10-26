@@ -203,7 +203,7 @@ impl Rest<'_> {
         // Links.
         let featured = map.get("featured_media").and_then(Value::as_u64).unwrap_or(0);
         let mut links = self.post_links(post, kind, featured).await?;
-        self.add_action_links(&mut links, post, kind);
+        self.add_action_links(&mut links, post, kind, context == "edit");
         map.insert("_links".into(), links);
         Ok(data)
     }
@@ -228,7 +228,7 @@ impl Rest<'_> {
     }
 
     /// The `wp:action-*` links and the `targetHints` of the `self` link.
-    fn add_action_links(&self, links: &mut Value, post: &Post, kind: Kind<'_>) {
+    fn add_action_links(&self, links: &mut Value, post: &Post, kind: Kind<'_>, edit_context: bool) {
         let Value::Object(map) = links else { return };
         let href = self.rest_url(&format!("wp/v2/{}/{}", kind.base(), post.id));
         let caps = TypeCaps::of(kind.name());
@@ -243,6 +243,10 @@ impl Rest<'_> {
             && let Some(Value::Object(link)) = items.first_mut()
         {
             link.insert("targetHints".into(), json!({"allow": allow}));
+        }
+        // `get_available_actions()`: only the `edit` context lists them.
+        if !edit_context {
+            return;
         }
         let curies = map.remove("curies");
         let mut action = |name: &str| {

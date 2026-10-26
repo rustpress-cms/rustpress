@@ -12,6 +12,8 @@ pub struct CommentListQuery {
     pub status: String,
     pub post_id: Option<u64>,
     pub user_id: Option<u64>,
+    /// `author_email`: the comments written under this address.
+    pub author_email: Option<String>,
     /// `comment`, `pings` or empty for every type.
     pub kind: String,
     pub search: Option<String>,
@@ -59,6 +61,9 @@ impl Db {
         }
         if let Some(user) = query.user_id {
             qb.push(" AND c.user_id = ").push_bind(user);
+        }
+        if let Some(email) = &query.author_email {
+            qb.push(" AND c.comment_author_email = ").push_bind(email.clone());
         }
         match query.kind.as_str() {
             "comment" => {

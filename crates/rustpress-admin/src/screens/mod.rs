@@ -18,6 +18,7 @@ pub mod ajax;
 pub mod ajax_comments;
 pub mod ajax_media;
 mod ajax_misc;
+mod ajax_privacy;
 pub mod ajax_terms;
 mod bare_pages;
 mod file_editor;

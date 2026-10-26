@@ -47,6 +47,28 @@ impl PluginInfo {
 
 /// `wp_kses()` with the tags of plugin descriptions: links, `abbr`, `acronym`, `code`, `em` and `strong`.
 pub fn kses_description(text: &str) -> String {
+    kses(text, |name| match name {
+        "a" => Some(&["href", "title"]),
+        "abbr" | "acronym" => Some(&["title"]),
+        "code" | "em" | "strong" => Some(&[]),
+        _ => None,
+    })
+}
+
+/// `wp_kses_data()`: the tags `$allowedtags` of WordPress allows.
+pub fn kses_data(text: &str) -> String {
+    kses(text, |name| match name {
+        "a" => Some(&["href", "title"]),
+        "abbr" | "acronym" => Some(&["title"]),
+        "blockquote" | "q" => Some(&["cite"]),
+        "del" => Some(&["datetime"]),
+        "b" | "cite" | "code" | "em" | "i" | "strike" | "strong" => Some(&[]),
+        _ => None,
+    })
+}
+
+/// `wp_kses()` with a table of the allowed tags and the attributes each one keeps.
+fn kses(text: &str, tags: impl Fn(&str) -> Option<&'static [&'static str]>) -> String {
     let mut out = String::new();
     let mut rest = text;
     while let Some(start) = rest.find('<') {
@@ -60,12 +82,7 @@ pub fn kses_description(text: &str) -> String {
         let closing = tag.starts_with('/');
         let body = tag.trim_start_matches('/').trim_end_matches('/').trim();
         let name = body.split_whitespace().next().unwrap_or_default().to_lowercase();
-        let allowed: &[&str] = match name.as_str() {
-            "a" => &["href", "title"],
-            "abbr" | "acronym" => &["title"],
-            "code" | "em" | "strong" => &[],
-            _ => continue,
-        };
+        let Some(allowed) = tags(name.as_str()) else { continue };
         if closing {
             out.push_str(&format!("</{name}>"));
             continue;

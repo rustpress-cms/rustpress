@@ -141,7 +141,18 @@ impl Rest<'_> {
                 let kind = crate::posts::Kind::Custom(&info);
                 return self.posts_route(kind, segments.get(3).copied(), method, args, params).await.map(Some);
             }
-            ["wp", "v2", "statuses"] if get && params.get("context") == Some("edit") && self.can("edit_posts") => Ok(Resp::item(self.statuses_edit())),
+            ["wp", "v2", "statuses"] if get && self.can("edit_posts") => Ok(Resp::item(self.statuses_edit(params.get("context").unwrap_or("view")))),
+            ["wp", "v2", "statuses", slug] if get && self.access.is_some() => {
+                let all = self.statuses_edit("view");
+                let internal = ["auto-draft", "inherit", "request-pending", "request-confirmed", "request-failed", "request-completed"];
+                if !self.can("edit_posts") && *slug != "publish" || internal.contains(slug) {
+                    Err(RestError::new("rest_cannot_read_status", "Cannot view status.", 403))
+                } else if all.get(*slug).is_some() {
+                    Ok(Resp::item(self.statuses_edit(params.get("context").unwrap_or("view"))[*slug].clone()))
+                } else {
+                    Err(RestError::new("rest_status_invalid", "Invalid status.", 404))
+                }
+            }
             _ => return Ok(None),
         };
         Ok(Some(outcome))
@@ -253,10 +264,31 @@ impl Rest<'_> {
         Value::Array(items)
     }
 
-    fn statuses_edit(&self) -> Value {
+    /// `WP_REST_Post_Statuses_Controller`: the statuses of a signed-in editor, with the fields of the context.
+    fn statuses_edit(&self, context: &str) -> Value {
         let s = |t: &str| self.site.tr(t);
         let entry = |slug: &str, name: String, private: bool, protected: bool, public: bool, queryable: bool, show_in_list: bool, floating: bool| {
-            json!({"name": name, "private": private, "protected": protected, "public": public, "queryable": queryable, "show_in_list": show_in_list, "slug": slug, "date_floating": floating})
+            let mut data = Map::new();
+            data.insert("name".into(), json!(name));
+            if context == "edit" {
+                data.insert("private".into(), json!(private));
+                data.insert("protected".into(), json!(protected));
+            }
+            if context != "embed" {
+                data.insert("public".into(), json!(public));
+                data.insert("queryable".into(), json!(queryable));
+            }
+            if context == "edit" {
+                data.insert("show_in_list".into(), json!(show_in_list));
+            }
+            data.insert("slug".into(), json!(slug));
+            if context != "embed" {
+                data.insert("date_floating".into(), json!(floating));
+            }
+            let mut links = Links::new();
+            links.add("archives", vec![], self.rest_url(&if slug == "publish" { "wp/v2/posts".to_owned() } else { format!("wp/v2/posts?status={slug}") }));
+            data.insert("_links".into(), links.finish());
+            Value::Object(data)
         };
         json!({
             "publish": entry("publish", s("Published"), false, false, true, true, true, false),
