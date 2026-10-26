@@ -199,6 +199,15 @@ impl Theme {
             .map(|(_, _, css)| css)
     }
 
+    /// `get_theme_support( 'post-formats' )[0]`: the formats the theme supports, none without the support.
+    pub fn post_formats(&self) -> Vec<String> {
+        let mut dirs = vec![self.stylesheet_dir().to_path_buf()];
+        if self.template_dir() != self.stylesheet_dir() {
+            dirs.push(self.template_dir().to_path_buf());
+        }
+        dirs.iter().filter_map(|dir| std::fs::read_to_string(dir.join("functions.php")).ok()).find_map(|php| crate::functions_php::theme_support_list(&php, "post-formats")).unwrap_or_default()
+    }
+
     /// `current_theme_supports( $feature )` for what the `functions.php` of the theme (or its parent) adds.
     pub fn adds_theme_support(&self, feature: &str) -> bool {
         let mut dirs = vec![self.stylesheet_dir().to_path_buf()];

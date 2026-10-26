@@ -632,6 +632,24 @@ pub fn reply_form_html(ctx: &Ctx<'_>, dashboard: bool) -> String {
     out.replace("{{reply_nonce}}", &ctx.create_nonce("replyto-comment")).replace("{{unfiltered}}", &ctx.create_nonce("unfiltered-html-comment")).replace("{{editor_css}}", &format!("{}/wp-includes/css/editor.min.css?ver={}", ctx.site().settings.siteurl.trim_end_matches('/'), ctx.env.loader.version))
 }
 
+/// `wp_comment_reply()` below the classic edit form: one table column, position 1, no checkbox, mode `single`.
+pub fn reply_form_single(ctx: &Ctx<'_>) -> String {
+    let full = reply_form_html(ctx, false);
+    let start = full.find("<form method=\"get\">").unwrap_or(0);
+    let end = full.find("\t</form>\n").map_or(full.len(), |i| i + "\t</form>\n".len());
+    let mut out = full[start..end].to_owned();
+    if let Some(at) = out.find("<link rel='stylesheet' id='editor-buttons-css'")
+        && let Some(close) = out[at..].find("/>")
+    {
+        out.replace_range(at..at + close + 2, "");
+    }
+    out.replacen("colspan=\"5\"", "colspan=\"2\"", 1)
+        .replacen("id=\"position\" value=\"-1\"", "id=\"position\" value=\"1\"", 1)
+        .replacen("id=\"checkbox\" value=\"1\"", "id=\"checkbox\" value=\"0\"", 1)
+        .replacen("id=\"mode\" value=\"detail\"", "id=\"mode\" value=\"single\"", 1)
+        + "\t"
+}
+
 /// The bulk actions of the list.
 async fn bulk(ctx: &Ctx<'_>) -> Option<AdminResponse> {
     let request = ctx.request;
@@ -980,7 +998,7 @@ async fn edit_form(ctx: &Ctx<'_>, comment: &Comment) -> AdminResponse {
         row
     };
     h.push_str(&format!(
-        "<div id=\"postbox-container-1\" class=\"postbox-container\">\n<div id=\"submitdiv\" class=\"stuffbox\" >\n<h2>{save}</h2>\n<div class=\"inside\">\n<div class=\"submitbox\" id=\"submitcomment\">\n<div id=\"minor-publishing\">\n\n<div id=\"misc-publishing-actions\">\n\n<div class=\"misc-pub-section misc-pub-comment-status\" id=\"comment-status\">\n{status}: <span id=\"comment-status-display\">\n{status_label}</span>\n\n<fieldset id=\"comment-status-radio\">\n<legend class=\"screen-reader-text\">\n\t{status_legend}</legend>\n{approved}<br />\n{pending}<br />\n{spam}\n</fieldset>\n</div><!-- .misc-pub-section -->\n\n<div class=\"misc-pub-section curtime misc-pub-curtime\">\n<span id=\"timestamp\">\n{submitted}</span>\n<a href=\"#edit_timestamp\" class=\"edit-timestamp hide-if-no-js\"><span aria-hidden=\"true\">{edit}</span> <span class=\"screen-reader-text\">\n\t{edit_date}</span></a>\n<fieldset id='timestampdiv' class='hide-if-js'>\n<legend class=\"screen-reader-text\">\n\t{date_legend}</legend>\n{timestamp}\n\t</fieldset>\n</div>\n\n\n<div class=\"misc-pub-section misc-pub-response-to\">\n\t{response_to}</div>\n\n<div class=\"misc-pub-section misc-pub-reply-to\">{parent_row}</div>\n\n\n</div> <!-- misc actions -->\n<div class=\"clear\"></div>\n</div>\n\n<div id=\"major-publishing-actions\">\n<div id=\"delete-action\">\n<a class='submitdelete deletion' href='comment.php?action=trashcomment&amp;c={id}&amp;_wp_original_http_referer&amp;_wpnonce={nonce}'>{trash}</a>\n</div>\n<div id=\"publishing-action\">\n<input type=\"submit\" name=\"save\" id=\"save\" class=\"button button-primary button-large\" value=\"{update}\"  /></div>\n<div class=\"clear\"></div>\n</div>\n</div>\n</div>\n</div><!-- /submitdiv -->\n</div>\n\n",
+        "<div id=\"postbox-container-1\" class=\"postbox-container\">\n<div id=\"submitdiv\" class=\"stuffbox\" >\n<h2>{save}</h2>\n<div class=\"inside\">\n<div class=\"submitbox\" id=\"submitcomment\">\n<div id=\"minor-publishing\">\n\n<div id=\"misc-publishing-actions\">\n\n<div class=\"misc-pub-section misc-pub-comment-status\" id=\"comment-status\">\n{status}: <span id=\"comment-status-display\">\n{status_label}</span>\n\n<fieldset id=\"comment-status-radio\">\n<legend class=\"screen-reader-text\">\n\t{status_legend}</legend>\n{approved}<br />\n{pending}<br />\n{spam}\n</fieldset>\n</div><!-- .misc-pub-section -->\n\n<div class=\"misc-pub-section curtime misc-pub-curtime\">\n<span id=\"timestamp\">\n{submitted}</span>\n<a href=\"#edit_timestamp\" class=\"edit-timestamp hide-if-no-js\"><span aria-hidden=\"true\">{edit}</span> <span class=\"screen-reader-text\">\n\t{edit_date}</span></a>\n<fieldset id='timestampdiv' class='hide-if-js'>\n<legend class=\"screen-reader-text\">\n\t{date_legend}</legend>\n{timestamp}</fieldset>\n</div>\n\n\n<div class=\"misc-pub-section misc-pub-response-to\">\n\t{response_to}</div>\n\n<div class=\"misc-pub-section misc-pub-reply-to\">{parent_row}</div>\n\n\n</div> <!-- misc actions -->\n<div class=\"clear\"></div>\n</div>\n\n<div id=\"major-publishing-actions\">\n<div id=\"delete-action\">\n<a class='submitdelete deletion' href='comment.php?action=trashcomment&amp;c={id}&amp;_wp_original_http_referer&amp;_wpnonce={nonce}'>{trash}</a>\n</div>\n<div id=\"publishing-action\">\n<input type=\"submit\" name=\"save\" id=\"save\" class=\"button button-primary button-large\" value=\"{update}\"  /></div>\n<div class=\"clear\"></div>\n</div>\n</div>\n</div>\n</div><!-- /submitdiv -->\n</div>\n\n",
         save = tr("Save"),
         status = tr("Status"),
         status_legend = tr("Comment status"),

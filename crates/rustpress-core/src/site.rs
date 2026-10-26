@@ -100,7 +100,7 @@ impl Site {
     pub fn post_type_supports(&self, post_type: &str, feature: &str) -> bool {
         match post_type {
             "post" => matches!(feature, "title" | "editor" | "author" | "thumbnail" | "excerpt" | "trackbacks" | "custom-fields" | "comments" | "revisions" | "post-formats"),
-            "page" => matches!(feature, "title" | "editor" | "author" | "thumbnail" | "page-attributes" | "custom-fields" | "comments" | "revisions" | "excerpt"),
+            "page" => matches!(feature, "title" | "editor" | "author" | "thumbnail" | "page-attributes" | "custom-fields" | "comments" | "revisions"),
             "attachment" => matches!(feature, "title" | "author" | "comments"),
             "wp_font_family" => feature == "title",
             "wp_font_face" => false,

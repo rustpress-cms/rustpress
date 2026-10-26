@@ -268,6 +268,14 @@ pub fn theme_stylesheet_handle(php: &str) -> Option<String> {
     })
 }
 
+/// The literal list a theme passes with `add_theme_support( 'feature', array( … ) )` (the post formats).
+pub fn theme_support_list(php: &str, feature: &str) -> Option<Vec<String>> {
+    let quoted = format!("'{feature}'");
+    let arguments = call_arguments(php, "add_theme_support").into_iter().find(|a| a.trim_start().starts_with(&quoted))?;
+    let rest = &arguments.trim_start()[quoted.len()..];
+    Some(rest.split('\'').skip(1).step_by(2).map(str::to_owned).collect())
+}
+
 /// Whether the theme calls `add_theme_support( 'feature' )`.
 pub fn adds_theme_support(php: &str, feature: &str) -> bool {
     let quoted = format!("'{feature}'");

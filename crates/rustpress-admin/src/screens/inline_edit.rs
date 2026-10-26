@@ -95,7 +95,7 @@ async fn parents(ctx: &Ctx<'_>, info: &TypeInfo, bulk: bool) -> String {
 }
 
 /// The page templates that apply to the type, sorted by title: `(name, title)`.
-fn page_templates(ctx: &Ctx<'_>, info: &TypeInfo) -> Vec<(String, String)> {
+pub(super) fn page_templates(ctx: &Ctx<'_>, info: &TypeInfo) -> Vec<(String, String)> {
     let mut out: Vec<(String, String)> = Vec::new();
     for template in ctx.env.theme.json.custom_templates() {
         let types: Vec<&str> = template.get("postTypes").and_then(|v| v.as_array()).map(|a| a.iter().filter_map(|v| v.as_str()).collect()).unwrap_or_else(|| vec!["page"]);

@@ -222,6 +222,12 @@ pub async fn hidden_meta_boxes(ctx: &Ctx<'_>, screen_id: &str, post_type: &str) 
     }
 }
 
+/// `wp_is_mobile()` from the user agent of the request.
+pub fn wp_is_mobile(ctx: &Ctx<'_>) -> bool {
+    let agent = ctx.request.user_agent.as_deref().unwrap_or_default();
+    ["Mobile", "Android", "Silk/", "Kindle", "BlackBerry", "Opera Mini", "Opera Mobi"].iter().any(|m| agent.contains(m))
+}
+
 /// `WP_Screen::get_columns()` of a screen with the `layout_columns` option: the user's choice, else the default.
 pub async fn layout_columns(ctx: &Ctx<'_>, screen_id: &str, default: u32) -> u32 {
     user_option(ctx, &format!("screen_layout_{screen_id}")).await.and_then(|v| v.trim().parse::<u32>().ok()).filter(|n| *n != 0).unwrap_or(default)

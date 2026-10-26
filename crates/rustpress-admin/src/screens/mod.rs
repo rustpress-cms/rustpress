@@ -58,6 +58,7 @@ mod update_core;
 pub mod themes;
 pub mod user_edit;
 pub mod users;
+pub mod meta_boxes;
 pub mod timezones;
 
 /// The answer of a screen is the one of the sign-in page: status, headers, cookies, body.

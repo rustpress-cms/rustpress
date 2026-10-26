@@ -140,6 +140,29 @@ impl Db {
         Ok(sqlx::query_as(AssertSqlSafe(sql)).bind(post_id).fetch_all(&self.pool).await?)
     }
 
+    /// `to_ping` and `pinged` of a post.
+    pub async fn post_pings(&self, post_id: u64) -> Result<Option<(String, String)>> {
+        let sql = format!("SELECT to_ping, pinged FROM {} WHERE ID = ?", self.prefix.table("posts"));
+        Ok(sqlx::query_as(AssertSqlSafe(sql)).bind(post_id).fetch_optional(&self.pool).await?)
+    }
+
+    /// `meta_form()`: the keys of custom fields that do not start with `_`, at most `limit`, sorted by name.
+    pub async fn custom_field_keys(&self, limit: u64) -> Result<Vec<String>> {
+        let sql = format!(
+            "SELECT DISTINCT meta_key FROM {} WHERE meta_key NOT BETWEEN '_' AND '_z' HAVING meta_key NOT LIKE '\\_%' ORDER BY meta_key LIMIT ?",
+            self.prefix.table("postmeta")
+        );
+        let keys: Vec<Option<String>> = sqlx::query_scalar(AssertSqlSafe(sql)).bind(limit).fetch_all(&self.pool).await?;
+        Ok(keys.into_iter().flatten().collect())
+    }
+
+    /// `get_comments( array( 'post_id' => $id, 'count' => true ) )`: approved and waiting comments of all types but notes.
+    pub async fn comment_count_all_types(&self, post_id: u64) -> Result<u64> {
+        let sql = format!("SELECT COUNT(*) FROM {} WHERE comment_post_ID = ? AND comment_approved IN ('0', '1') AND comment_type != 'note'", self.prefix.table("comments"));
+        let count: i64 = sqlx::query_scalar(AssertSqlSafe(sql)).bind(post_id).fetch_one(&self.pool).await?;
+        Ok(count as u64)
+    }
+
     /// The IDs of the revisions of a post.
     pub async fn revision_ids(&self, post_id: u64) -> Result<Vec<u64>> {
         let sql = format!("SELECT ID FROM {} WHERE post_parent = ? AND post_type = 'revision'", self.prefix.table("posts"));
