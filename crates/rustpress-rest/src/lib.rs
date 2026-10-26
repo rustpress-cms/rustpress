@@ -248,7 +248,7 @@ impl<'a> Rest<'a> {
         }
         match segments.as_slice() {
             [""] => Ok(Ok(Resp::item(self.index()))),
-            ["wp", "v2"] => Ok(Ok(Resp::item(self.namespace_index()))),
+            _ if namespaces().iter().any(|ns| *ns == segments.join("/")) => Ok(Ok(Resp::item(self.namespace_index(&segments.join("/"))))),
             ["wp", "v2", "posts"] => self.posts_collection(posts::Kind::Post, params).await,
             ["wp", "v2", "posts", id] => self.posts_item(posts::Kind::Post, id, params).await,
             ["wp", "v2", "pages"] => self.posts_collection(posts::Kind::Page, params).await,
@@ -408,15 +408,11 @@ impl<'a> Rest<'a> {
         let o = &self.site.options;
         let gmt_offset = {
             let v = o.string("gmt_offset", "0");
-            if v.is_empty() { "0".to_owned() } else { v }
+            let n = v.trim().parse::<f64>().unwrap_or(0.0);
+            // `floatval()`: a whole number prints without a fraction.
+            if n.fract() == 0.0 { Value::from(n as i64) } else { Value::from(n) }
         };
-        let mut routes = Map::new();
-        routes.insert("/".into(), route_entry("", &["GET"], &self.rest_url("/")));
-        routes.insert("/wp/v2".into(), route_entry("wp/v2", &["GET"], &self.rest_url("wp/v2")));
-        for name in ["posts", "pages", "media", "categories", "tags", "users", "comments"] {
-            routes.insert(format!("/wp/v2/{name}"), route_entry("wp/v2", &["GET"], &self.rest_url(&format!("wp/v2/{name}"))));
-            routes.insert(format!("/wp/v2/{name}/(?P<id>[\\d]+)"), route_entry("wp/v2", &["GET"], &self.rest_url(&format!("wp/v2/{name}"))));
-        }
+        let routes = self.routes_of(None);
         let mut out = Map::new();
         out.insert("name".into(), Value::from(s.blogname.clone()));
         out.insert("description".into(), Value::from(s.blogdescription.clone()));
@@ -427,34 +423,78 @@ impl<'a> Rest<'a> {
         out.insert("page_for_posts".into(), Value::from(s.page_for_posts));
         out.insert("page_on_front".into(), Value::from(s.page_on_front));
         out.insert("show_on_front".into(), Value::from(if s.show_on_front == rustpress_core::ShowOnFront::Page { "page" } else { "posts" }));
-        out.insert("namespaces".into(), Value::from(vec!["wp/v2"]));
-        out.insert("authentication".into(), Value::Array(Vec::new()));
+        out.insert("namespaces".into(), Value::from(namespaces()));
+        // `wp_is_application_passwords_available()`: over HTTPS, or on a local site.
+        let available = s.siteurl.starts_with("https") || self.site.environment_type() == "local";
+        out.insert(
+            "authentication".into(),
+            if available { serde_json::json!({"application-passwords": {"endpoints": {"authorization": self.site.site_url("wp-admin/authorize-application.php")}}}) } else { Value::Array(Vec::new()) },
+        );
         out.insert("routes".into(), Value::Object(routes));
         out.insert("site_logo".into(), Value::from(o.u64("site_logo", 0)));
         out.insert("site_icon".into(), Value::from(o.u64("site_icon", 0)));
         out.insert("site_icon_url".into(), Value::from(""));
-        out.insert("_links".into(), serde_json::json!({"help": [{"href": "https://developer.wordpress.org/rest-api/"}]}));
+        let mut links = serde_json::json!({"help": [{"href": "https://developer.wordpress.org/rest-api/"}]});
+        let mut featured = Vec::new();
+        for (option, kind) in [("site_logo", "site_logo"), ("site_icon", "site_icon")] {
+            let id = o.u64(option, 0);
+            if id != 0 {
+                featured.push(serde_json::json!({"embeddable": true, "type": kind, "href": self.rest_url(&format!("wp/v2/media/{id}"))}));
+            }
+        }
+        if !featured.is_empty() {
+            links["wp:featuredmedia"] = Value::Array(featured);
+            links["curies"] = serde_json::json!([{"name": "wp", "href": "https://api.w.org/{rel}", "templated": true}]);
+        }
+        out.insert("_links".into(), links);
         Value::Object(out)
     }
 
-    fn namespace_index(&self) -> Value {
+    /// The routes of the reference, optionally of one namespace, with the links of this site.
+    fn routes_of(&self, namespace: Option<&str>) -> Map<String, Value> {
         let mut routes = Map::new();
-        for name in ["posts", "pages", "media", "categories", "tags", "users", "comments"] {
-            routes.insert(format!("/wp/v2/{name}"), route_entry("wp/v2", &["GET"], &self.rest_url(&format!("wp/v2/{name}"))));
+        for (route, entry) in golden_routes() {
+            if namespace.is_some_and(|ns| entry.get("namespace").and_then(Value::as_str) != Some(ns)) {
+                continue;
+            }
+            let mut entry = entry.clone();
+            if let Some(links) = entry.pointer_mut("/_links/self").and_then(Value::as_array_mut) {
+                for link in links {
+                    if let Some(href) = link.get("href").and_then(Value::as_str).and_then(|h| h.strip_prefix("@REST@")).map(str::to_owned) {
+                        link["href"] = Value::from(self.rest_url(if href == "/" { "/" } else { href.trim_start_matches('/') }));
+                    }
+                }
+            }
+            routes.insert(route.clone(), entry);
         }
+        routes
+    }
+
+    /// `GET /wp-json/<namespace>`.
+    fn namespace_index(&self, namespace: &str) -> Value {
         serde_json::json!({
-            "namespace": "wp/v2",
-            "routes": Value::Object(routes),
+            "namespace": namespace,
+            "routes": Value::Object(self.routes_of(Some(namespace))),
             "_links": {"up": [{"href": self.rest_url("/")}]},
         })
     }
 }
 
-fn route_entry(namespace: &str, methods: &[&str], href: &str) -> Value {
-    serde_json::json!({
-        "namespace": namespace,
-        "methods": methods,
-        "endpoints": [{"methods": methods, "args": {"context": {"default": "view", "required": false}}}],
-        "_links": {"self": [{"href": href}]},
-    })
+/// The routes WordPress lists in its index (`dev/gen-rest-index.py` takes them from the reference).
+fn golden_routes() -> &'static Map<String, Value> {
+    static ROUTES: std::sync::OnceLock<Map<String, Value>> = std::sync::OnceLock::new();
+    ROUTES.get_or_init(|| serde_json::from_str(include_str!("index_routes.json")).expect("the route table is valid JSON"))
+}
+
+/// The namespaces in the order of the index.
+fn namespaces() -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for entry in golden_routes().values() {
+        if let Some(ns) = entry.get("namespace").and_then(Value::as_str).filter(|ns| !ns.is_empty())
+            && !out.iter().any(|seen| seen == ns)
+        {
+            out.push(ns.to_owned());
+        }
+    }
+    out
 }
