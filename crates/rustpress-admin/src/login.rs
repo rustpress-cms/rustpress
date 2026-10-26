@@ -278,10 +278,6 @@ impl LoginEnv<'_> {
         format!("<meta name='robots' content='{}' />\n", directives.join(", "))
     }
 
-    fn header(&self, action: &str, title: &str, message: &str, errors: &[LoginError]) -> String {
-        self.header_with(action, title, message, errors, &[], false)
-    }
-
     /// `login_header()`: `head_scripts` are enqueued before the head is printed, `interim` is the login of the
     /// session-expired dialog.
     pub(crate) fn header_with(&self, action: &str, title: &str, message: &str, errors: &[LoginError], head_scripts: &[&str], interim: bool) -> String {
@@ -358,10 +354,6 @@ impl LoginEnv<'_> {
             out.push_str(&format!("<div id=\"login-message\" class=\"notice notice-info message\">{messages}</div>"));
         }
         out
-    }
-
-    fn footer(&self) -> String {
-        self.footer_for(&LoginRequest::default(), false)
     }
 
     /// `login_footer()` without the focus script and the footer scripts.

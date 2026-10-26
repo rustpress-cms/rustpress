@@ -12,6 +12,7 @@ members = [
     "crates/rustpress-rest",
     "crates/rustpress-server",
     "crates/rustpress-compat",
+    "crates/rustpress-mail",
 ]
 
 [workspace.package]
@@ -30,6 +31,7 @@ rustpress-blocks = { path = "crates/rustpress-blocks" }
 rustpress-theme = { path = "crates/rustpress-theme" }
 rustpress-rest = { path = "crates/rustpress-rest" }
 rustpress-server = { path = "crates/rustpress-server" }
+rustpress-mail = { path = "crates/rustpress-mail" }
 
 axum = "0.8"
 base64 = "0.22"

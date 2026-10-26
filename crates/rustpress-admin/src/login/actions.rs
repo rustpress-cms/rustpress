@@ -4,7 +4,7 @@
 
 use super::*;
 use crate::content::{Content, UserData};
-use rustpress_auth::password::{fast_hash, hash_portable, verify_fast_hash};
+use rustpress_auth::password::{hash_portable, verify_fast_hash};
 use rustpress_db::Val;
 
 /// The password reset keys live for a day (`password_reset_expiration`).
@@ -218,56 +218,12 @@ impl LoginEnv<'_> {
 
     /// `retrieve_password()`: the key is saved and mailed; the errors it can end with.
     async fn retrieve_password(&self, request: &LoginRequest) -> Result<(), Vec<LoginError>> {
-        let user_login = request.post_field("user_login").unwrap_or_default().trim().to_owned();
-        let mut errors = Vec::new();
-        let mut found: Option<AuthUser> = None;
-        let by_login = |login: String| async move { self.db.auth_user_by_login(&sanitize_user(&login)).await.ok().flatten() };
-        if user_login.is_empty() {
-            errors.push(error("empty_username", self.tr("<strong>Error:</strong> Please enter a username or email address.")));
-        } else if user_login.find('@').is_some_and(|i| i > 0) {
-            found = self.db.auth_user_by_email(&user_login).await.ok().flatten();
-            if found.is_none() {
-                found = by_login(user_login.clone()).await;
-            }
-            if found.is_none() {
-                errors.push(error("invalid_email", self.tr("<strong>Error:</strong> There is no account with that username or email address.")));
-            }
-        } else {
-            found = by_login(user_login.clone()).await;
-        }
-        if !errors.is_empty() {
-            return Err(errors);
-        }
-        let Some(user) = found else { return Err(vec![error("invalidcombo", self.tr("<strong>Error:</strong> There is no account with that username or email address."))]) };
-        // `get_password_reset_key()`.
-        let key = generate_password(20, false);
-        let Some(writer) = self.writer else { return Err(vec![error("no_writes", self.tr("<strong>Error:</strong> This site was started without write access."))]) };
-        let hashed = format!("{}:{}", self.now, fast_hash(&key));
-        if writer.update_rows("users", "ID", user.id, &[("user_activation_key", Val::Str(hashed))]).await.is_err() {
-            return Err(vec![error("no_password_key_update", self.tr("Could not save password reset key to database."))]);
-        }
-        let site_name = specialchars_decode(&self.site.settings.blogname);
-        let mut message = format!("{}\r\n\r\n", self.tr("Someone has requested a password reset for the following account:"));
-        message.push_str(&format!("{}\r\n\r\n", rustpress_core::i18n::sprintf(&self.tr("Site Name: %s"), &[&site_name])));
-        message.push_str(&format!("{}\r\n\r\n", rustpress_core::i18n::sprintf(&self.tr("Username: %s"), &[&user.user_login])));
-        message.push_str(&format!("{}\r\n\r\n", self.tr("If this was a mistake, ignore this email and nothing will happen.")));
-        message.push_str(&format!("{}\r\n\r\n", self.tr("To reset your password, visit the following address:")));
-        let locale = self.site.locale();
-        message.push_str(&format!("{}?login={}&key={key}&action=rp&wp_lang={locale}\r\n\r\n", self.login_url(), rustpress_core::canonical::rawurlencode(&user.user_login)));
-        if let Some(ip) = request.remote_addr.as_deref().filter(|ip| !ip.is_empty()) {
-            message.push_str(&format!("{}\r\n", rustpress_core::i18n::sprintf(&self.tr("This password reset request originated from the IP address %s."), &[ip])));
-        }
-        let title = rustpress_core::i18n::sprintf(&self.tr("[%s] Password Reset"), &[&site_name]);
-        if !self.send_mail(&user.user_email, &title, &message).await {
-            return Err(vec![error(
-                "retrieve_password_email_failure",
-                rustpress_core::i18n::sprintf(
-                    &self.tr("<strong>Error:</strong> The email could not be sent. Your site may not be correctly configured to send emails. <a href=\"%s\">Get support for resetting your password</a>."),
-                    &[&esc_url(&self.tr("https://wordpress.org/documentation/article/reset-your-password/"))],
-                ),
-            )]);
-        }
-        Ok(())
+        let user_login = request.post_field("user_login").unwrap_or_default();
+        self.mail_ctx().retrieve_password(user_login, request.remote_addr.as_deref()).await.map_err(|errors| errors.into_iter().map(|(code, message)| error(code, message)).collect())
+    }
+
+    pub(crate) fn mail_ctx(&self) -> crate::mail::MailCtx<'_> {
+        crate::mail::MailCtx { site: self.site, db: self.db, writer: self.writer, now: self.now, mailer: self.mailer.as_ref() }
     }
 
     /// The "Log in" and "Register" links under the forms of the lost password and the reset.
@@ -394,6 +350,7 @@ impl LoginEnv<'_> {
                 let hash = rustpress_auth::password::hash_password(&pass1);
                 let _ = writer.update_rows("users", "ID", user.id, &[("user_pass", Val::Str(hash)), ("user_activation_key", Val::Str(String::new()))]).await;
                 let _ = writer.update_user_meta(user.id, "default_password_nag", "").await;
+                self.mail_ctx().password_change_notification(&user.user_login, &user.user_email).await;
                 let message = info_notice(&format!("{} <a href=\"{}\">{}</a>", self.tr("Your password has been reset."), esc_url(&self.login_url()), self.tr("Log in")), &["message", "reset-pass"]);
                 let mut page = self.header_with(action, &self.tr("Password Reset"), &message, &[], &[], false);
                 page.push_str(&self.footer_for(request, false));
@@ -515,32 +472,13 @@ impl LoginEnv<'_> {
                 let _ = writer.update_user_meta(user_id, "locale", lang).await;
             }
         }
-        self.new_user_notification(user_id, &sanitized, &user_email).await;
+        self.new_user_notification(user_id).await;
         Ok(())
     }
 
     /// `wp_new_user_notification()`: the site administrator hears about the new user, the new user how to log in.
-    async fn new_user_notification(&self, user_id: u64, login: &str, email: &str) {
-        let site_name = specialchars_decode(&self.site.settings.blogname);
-        // To the administration address.
-        let mut message = format!("{}\r\n\r\n", rustpress_core::i18n::sprintf(&self.tr("New user registration on your site %s:"), &[&site_name]));
-        message.push_str(&format!("{}\r\n\r\n", rustpress_core::i18n::sprintf(&self.tr("Username: %s"), &[login])));
-        message.push_str(&format!("{}\r\n", rustpress_core::i18n::sprintf(&self.tr("Email: %s"), &[email])));
-        let admin_email = self.site.options.string("admin_email", "");
-        if !admin_email.is_empty() {
-            let _ = self.send_mail(&admin_email, &rustpress_core::i18n::sprintf(&self.tr("[%s] New User Registration"), &[&site_name]), &message).await;
-        }
-        // To the new user: a key to choose the password with.
-        let key = generate_password(20, false);
-        if let Some(writer) = self.writer {
-            let hashed = format!("{}:{}", self.now, fast_hash(&key));
-            let _ = writer.update_rows("users", "ID", user_id, &[("user_activation_key", Val::Str(hashed))]).await;
-        }
-        let mut message = format!("{}\r\n\r\n", rustpress_core::i18n::sprintf(&self.tr("Username: %s"), &[login]));
-        message.push_str(&format!("{}\r\n\r\n", self.tr("To set your password, visit the following address:")));
-        message.push_str(&format!("{}?login={}&key={key}&action=rp\r\n\r\n", self.login_url(), rustpress_core::canonical::rawurlencode(login)));
-        message.push_str(&format!("{}\r\n", self.login_url()));
-        let _ = self.send_mail(email, &rustpress_core::i18n::sprintf(&self.tr("[%s] Login Details"), &[&site_name]), &message).await;
+    async fn new_user_notification(&self, user_id: u64) {
+        self.mail_ctx().new_user_notification(user_id, "both").await;
     }
 
     // ------------------------------------------------------------------ messages
@@ -596,21 +534,7 @@ impl LoginEnv<'_> {
             "remove_personal_data" => format!("<p class=\"success\">{}</p><p>{}</p>", self.tr("Thanks for confirming your erasure request."), self.tr("The site administrator has been notified. You will receive an email confirmation when they erase your data.")),
             _ => format!("<p class=\"success\">{}</p><p>{}</p>", self.tr("Action has been confirmed."), self.tr("The site administrator has been notified and will fulfill your request as soon as possible.")),
         };
-        // The administrator is told by e-mail.
-        let site_name = specialchars_decode(&self.site.settings.blogname);
-        let admin_email = self.site.options.string("admin_email", "");
-        if !admin_email.is_empty() {
-            let (action, link) = match post.post_name.as_str() {
-                "export_personal_data" => (self.tr("export"), self.site.site_url("wp-admin/export-personal-data.php")),
-                _ => (self.tr("erasure"), self.site.site_url("wp-admin/erase-personal-data.php")),
-            };
-            let body = format!(
-                "{}\r\n\r\n{}\r\n",
-                rustpress_core::i18n::sprintf(&self.tr("Howdy,\n\nA user data privacy request has been confirmed on %1$s:\n\nUser: %2$s\nRequest: %3$s\n\nYou can view and manage these data privacy requests here:\n\n%4$s\n\nRegards,\nAll at %1$s\n%5$s"), &[&site_name, &post.post_title, &action, &link, &self.site.settings.home]),
-                ""
-            );
-            let _ = self.send_mail(&admin_email, &rustpress_core::i18n::sprintf(&self.tr("[%1$s] Action Confirmed: %2$s"), &[&site_name, &action]), &body).await;
-        }
+        self.mail_ctx().request_confirmed_notification(request_id).await;
         let mut page = self.header_with("confirmaction", &self.tr("User action confirmed."), &message, &[], &[], false);
         page.push_str(&self.footer_for(request, false));
         page.push_str(&self.footer_scripts(&[]));

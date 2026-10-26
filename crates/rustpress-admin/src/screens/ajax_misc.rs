@@ -12,11 +12,6 @@ use super::terms::tax_info;
 use super::{AdminEnv, AdminRequest, AdminResponse, Ctx};
 use crate::content::Content;
 
-/// `sprintf( $format, $value )` with one `%s`.
-fn sprintf_msg(format: &str, value: &str) -> String {
-    rustpress_core::i18n::sprintf(format, &[value])
-}
-
 /// `sanitize_key()`.
 fn sanitize_key(value: &str) -> String {
     value.to_lowercase().chars().filter(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '_' | '-')).collect()
@@ -357,8 +352,11 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUs
             if !(user.id == user_id || user.can("edit_users")) {
                 return json(200, &json!({"success": false, "data": tr("Cannot send password reset, permission denied.")}));
             }
-            // The e-mail with the link cannot be sent.
-            json(200, &json!({"success": false, "data": sprintf_msg(&tr("<strong>Error:</strong> The email could not be sent. Your site may not be correctly configured to send emails. <a href=\"%s\">Get support for resetting your password</a>."), &esc_url(&tr("https://wordpress.org/documentation/article/reset-your-password/")))}))
+            let Some(target) = env.db.user(user_id).await.ok().flatten() else { return json(200, &json!({"success": false, "data": tr("Cannot send password reset, permission denied.")})) };
+            match env.mail_ctx().retrieve_password(&target.user_login, None).await {
+                Ok(()) => json(200, &json!({"success": true, "data": rustpress_core::i18n::sprintf(&tr("A password reset link was emailed to %s."), &[&target.display_name])})),
+                Err(errors) => json(200, &json!({"success": false, "data": errors.first().map(|e| e.1.clone()).unwrap_or_default()})),
+            }
         }
         "save-user-color-scheme" => {
             if !nonce_ok(request.request("nonce").unwrap_or_default(), "save-color-scheme") {

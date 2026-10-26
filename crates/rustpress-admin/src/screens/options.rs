@@ -391,12 +391,26 @@ pub async fn handle(ctx: &Ctx<'_>) -> AdminResponse {
         let stored = Value::Array(vec![(Key::Str(b"hash".to_vec()), Value::Str(hash.as_bytes().to_vec())), (Key::Str(b"newemail".to_vec()), Value::Str(email.as_bytes().to_vec()))]);
         let _ = writer.update_option("adminhash", &String::from_utf8_lossy(&rustpress_phpser::serialize(&stored))).await;
         let link = ctx.admin_url(&format!("options.php?adminhash={hash}"));
+        if ctx.env.mailer.is_some() {
+            // `update_option_new_admin_email()`: the new address gets the link.
+            let sitename = ctx.env.mail_ctx().sitename();
+            let content = ctx
+                .tr(crate::mail_texts::NEW_ADMIN_EMAIL)
+                .replace("###USERNAME###", &ctx.user.login)
+                .replace("###ADMIN_URL###", &rustpress_core::formatting::esc_url(&link))
+                .replace("###EMAIL###", &email)
+                .replace("###SITENAME###", &sitename)
+                .replace("###SITEURL###", &ctx.site().settings.home);
+            let subject = rustpress_core::i18n::sprintf(&ctx.tr("[%s] New Admin Email Address"), &[&sitename]);
+            let _ = ctx.env.send_mail(&email, &subject, &content).await;
+        } else {
         errors.push(SettingsError {
             setting: "general".into(),
             code: "new_admin_email".into(),
             message: format!("{} <a href=\"{}\">{}</a>", esc_html("RustPress cannot send e-mail. Open this link to confirm the new administration email address:"), rustpress_core::formatting::esc_url(&link), esc_html(&link)),
             kind: "info".into(),
         });
+        }
     }
 
     if errors.is_empty() {

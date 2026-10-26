@@ -188,6 +188,14 @@ async fn cleanup(ctx: &Ctx<'_>, kind: Kind) {
     }
 }
 
+/// `_wp_privacy_resend_request()`: the confirmation e-mail again, with a new key.
+async fn resend(ctx: &Ctx<'_>, request_id: u64) -> Result<(), String> {
+    if ctx.env.db.post(request_id).await.ok().flatten().filter(|p| p.post_type == "user_request").is_none() {
+        return Err(ctx.tr("Invalid personal data request."));
+    }
+    ctx.env.mail_ctx().send_user_request(request_id).await
+}
+
 /// `_wp_personal_data_handle_actions()` and `process_bulk_action()`: the errors and messages they add.
 async fn handle_actions(ctx: &Ctx<'_>, kind: Kind) -> Option<Result<Vec<SettingsError>, AdminResponse>> {
     let request = ctx.request;
@@ -200,8 +208,11 @@ async fn handle_actions(ctx: &Ctx<'_>, kind: Kind) -> Option<Result<Vec<Settings
         if !ctx.verify_nonce("bulk-privacy_requests") {
             return Some(Err(ays()));
         }
-        // The confirmation e-mail cannot be sent.
-        add(&mut errors, "privacy_action_email_retry", tr("Unable to initiate confirmation for personal data request."), "error");
+        let request_id = request.form.iter().find_map(|(k, _)| k.strip_prefix("privacy_action_email_retry[").and_then(|k| k.strip_suffix(']')).and_then(|k| k.parse::<u64>().ok())).unwrap_or(0);
+        match resend(ctx, request_id).await {
+            Ok(()) => add(&mut errors, "privacy_action_email_retry", tr("Confirmation request sent again successfully."), "success"),
+            Err(message) => add(&mut errors, "privacy_action_email_retry", message, "error"),
+        }
     } else if request.post && request.post_field("action").is_some_and(|a| !a.is_empty() && a != "-1") && request.post_field("action") != Some("-1") && matches!(request.post_field("action"), Some("add_export_personal_data_request" | "add_remove_personal_data_request")) {
         if !ctx.verify_nonce("personal-data-request") {
             return Some(Err(ays()));
@@ -224,9 +235,7 @@ async fn handle_actions(ctx: &Ctx<'_>, kind: Kind) -> Option<Result<Vec<Settings
             }
         };
         if !email.is_empty() {
-            if send_email {
-                add(&mut errors, "username_or_email_for_privacy_request", tr("Unable to initiate confirmation request. RustPress cannot send e-mail; add the request without the confirmation email."), "error");
-            } else {
+            {
                 // Duplicates: an incomplete request of the same kind for the same address.
                 let duplicate_query = PostQuery { post_types: vec!["user_request".into()], names: vec![action_type.clone()], statuses: vec!["request-pending".into(), "request-confirmed".into()], ..Default::default() };
                 let duplicate = ctx.env.db.posts(&duplicate_query).await.unwrap_or_default().iter().any(|p| p.post_title == email);
@@ -241,7 +250,7 @@ async fn handle_actions(ctx: &Ctx<'_>, kind: Kind) -> Option<Result<Vec<Settings
                         post_name: Some(action_type.clone()),
                         post_title: Some(email.clone()),
                         post_content: Some("[]".into()),
-                        post_status: Some("request-confirmed".into()),
+                        post_status: Some(if send_email { "request-pending" } else { "request-confirmed" }.into()),
                         post_type: Some("user_request".into()),
                         post_date: Some(now),
                         post_date_gmt: Some(now_gmt),
@@ -249,10 +258,16 @@ async fn handle_actions(ctx: &Ctx<'_>, kind: Kind) -> Option<Result<Vec<Settings
                     };
                     match content.insert_post(&data).await {
                         Ok(id) if id != 0 => {
-                            if let Some(writer) = ctx.env.writer {
-                                let _ = writer.add_post_meta(id, "_wp_user_request_confirmed_timestamp", &ctx.env.now.to_string()).await;
+                            if send_email {
+                                // The result of the mail does not change the message, as in WordPress.
+                                let _ = ctx.env.mail_ctx().send_user_request(id).await;
+                                add(&mut errors, "username_or_email_for_privacy_request", tr("Confirmation request initiated successfully."), "success");
+                            } else {
+                                if let Some(writer) = ctx.env.writer {
+                                    let _ = writer.add_post_meta(id, "_wp_user_request_confirmed_timestamp", &ctx.env.now.to_string()).await;
+                                }
+                                add(&mut errors, "username_or_email_for_privacy_request", tr("Request added successfully."), "success");
                             }
-                            add(&mut errors, "username_or_email_for_privacy_request", tr("Request added successfully."), "success");
                         }
                         Ok(_) => add(&mut errors, "username_or_email_for_privacy_request", tr("Unable to initiate confirmation request."), "error"),
                         Err(e) => add(&mut errors, "username_or_email_for_privacy_request", e.to_string(), "error"),
@@ -270,11 +285,21 @@ async fn handle_actions(ctx: &Ctx<'_>, kind: Kind) -> Option<Result<Vec<Settings
             return Some(Err(ays()));
         }
         let site = ctx.site();
-        let n = |count: u64| site.number_i18n(count);
         match action.as_str() {
             "resend" => {
-                let failures = ids.len() as u64;
-                add(&mut errors, "bulk_action", sprintf(&site.trn("%d confirmation request failed to resend.", "%d confirmation requests failed to resend.", failures as i64), &[&n(failures)]).replace(&n(failures), &failures.to_string()), "error");
+                let (mut failures, mut count) = (0u64, 0u64);
+                for id in &ids {
+                    match resend(ctx, *id).await {
+                        Ok(()) => count += 1,
+                        Err(_) => failures += 1,
+                    }
+                }
+                if failures > 0 {
+                    add(&mut errors, "bulk_action", sprintf(&site.trn("%d confirmation request failed to resend.", "%d confirmation requests failed to resend.", failures as i64), &[&failures.to_string()]), "error");
+                }
+                if count > 0 {
+                    add(&mut errors, "bulk_action", sprintf(&site.trn("%d confirmation request re-sent successfully.", "%d confirmation requests re-sent successfully.", count as i64), &[&count.to_string()]), "success");
+                }
             }
             "complete" => {
                 let mut count = 0u64;

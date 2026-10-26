@@ -4,6 +4,7 @@ use rustpress_core::formatting::{esc_attr, esc_html, esc_url};
 use rustpress_core::i18n::sprintf;
 use rustpress_core::urls::add_query_arg;
 use rustpress_db::User;
+use rustpress_phpser::{Key, Value};
 
 use super::common::{checked, forbidden, read_only, selected};
 use super::{AdminResponse, Ctx, redirect, render};
@@ -164,27 +165,45 @@ async fn form_on(ctx: &Ctx<'_>, user: &User, own: bool, errors: &[String], file:
     let infinite = meta(ctx, id, "media_infinite_scrolling").await;
     let heading = if own { tr("Profile") } else { sprintf(&tr("Edit User %s"), &[&esc_html(&user.display_name)]) };
     let action_url = ctx.admin_url(if own { "profile.php" } else { "user-edit.php" });
-    let mut h = String::from("\t\t<div class=\"wrap\" id=\"profile-page\">\n");
+    // `$wp_http_referer`: where the list of users was, kept while the user is edited.
+    let wp_http_referer = {
+        let raw = request.request("wp_http_referer").filter(|r| !r.is_empty()).map(|r| rustpress_core::formatting::esc_url_raw(r)).unwrap_or_default();
+        ["update", "delete_count", "user_id"].iter().fold(raw, |url, arg| rustpress_core::urls::remove_query_arg(&url, arg))
+    };
+    // The notices come before the wrap: the one of `new_user_email_admin_notice()`, then those of the page.
+    let notice = |message: &str, kind: &str, dismissible: bool, id: &str, extra: &[&str], paragraph: bool| format!("\t\t{}\n", super::notices::notice(message, kind, dismissible, id, extra, paragraph).trim_end());
+    let mut h = String::new();
+    let updated = request.get("updated").is_some();
+    if updated && own && let Some((_, new_email)) = pending_email(ctx, ctx.user.id).await {
+        let message = sprintf(&tr("Your email address has not been updated yet. Please check your inbox at %s for a confirmation email."), &[&format!("<code>{}</code>", esc_html(&new_email))]);
+        h.push_str(&notice(&message, "info", false, "", &[], true));
+    }
+    if updated {
+        let mut message = format!("<p><strong>{}</strong></p>", if own { tr("Profile updated.") } else { tr("User updated.") });
+        if !own && let Some(referer) = request.get("wp_http_referer").filter(|r| !r.is_empty() && !r.contains("user-new.php")) {
+            message.push_str(&format!("<p><a href=\"{}\">{}</a></p>", esc_url(referer), tr("&larr; Go to Users")));
+        }
+        h.push_str(&notice(&message, "", true, "message", &["updated"], false));
+    }
+    if request.get("error") == Some("new-email") {
+        h.push_str(&notice(&tr("Error while saving the new email address. Please try again."), "error", false, "", &[], true));
+    } else if request.get("error").is_some() {
+        h.push_str(&notice("", "error", false, "", &[], true));
+    }
+    if !errors.is_empty() {
+        h.push_str(&notice(&errors.join("</p>\n<p>"), "", false, "", &["error"], true));
+    }
+    h.push_str("\t\t<div class=\"wrap\" id=\"profile-page\">\n");
     h.push_str(&format!("\t\t\t<h1 class=\"wp-heading-inline\">\n\t\t\t\t\t{heading}\t\t\t</h1>\n\n\t\t\t"));
     if !own && ctx.can("create_users") {
         h.push_str(&format!("\t\t\t\t\t\t\t\t\t<a href=\"user-new.php\" class=\"page-title-action\">{}</a>\n\t\t\t\t\t\t\t\n", tr("Add User")));
     }
     h.push_str(if !own && ctx.can("create_users") { "\t\t\t<hr class=\"wp-header-end\">\n\n" } else { "<hr class=\"wp-header-end\">\n\n" });
-    if request.get("updated").is_some() {
-        let message = if own { tr("<strong>Profile updated.</strong>") } else { tr("<strong>User updated.</strong>") };
-        h.push_str(&format!("<div id=\"message\" class=\"updated notice is-dismissible\"><p>{message}</p>\n"));
-        if let Some(referer) = request.get("wp_http_referer").filter(|r| !r.is_empty()) {
-            h.push_str(&format!("<p><a href=\"{}\">{}</a></p>\n", esc_url(referer), tr("&larr; Go to Users")));
-        }
-        h.push_str("</div>\n");
-    }
-    if !errors.is_empty() {
-        h.push_str(&format!("<div class=\"error\"><ul>\n{}</ul></div>\n", errors.iter().map(|e| format!("\t<li>{e}</li>\n")).collect::<String>()));
-    }
     h.push_str(&format!(
-        "\t\t\t<form id=\"your-profile\" action=\"{}\" method=\"post\" novalidate=\"novalidate\"\n\t\t\t\t\t\t\t\t>\n\t\t\t\t{}\t\t\t\t\t\t\t\t<p>\n\t\t\t\t\t<input type=\"hidden\" name=\"from\" value=\"profile\" />\n\t\t\t\t\t<input type=\"hidden\" name=\"checkuser_id\" value=\"{}\" />\n\t\t\t\t</p>\n\n",
+        "\t\t\t<form id=\"your-profile\" action=\"{}\" method=\"post\" novalidate=\"novalidate\"\n\t\t\t\t\t\t\t\t>\n\t\t\t\t{}\t\t\t\t{}\t\t\t\t<p>\n\t\t\t\t\t<input type=\"hidden\" name=\"from\" value=\"profile\" />\n\t\t\t\t\t<input type=\"hidden\" name=\"checkuser_id\" value=\"{}\" />\n\t\t\t\t</p>\n\n",
         esc_url(&action_url),
         ctx.nonce_field(&format!("update-user_{id}")),
+        if wp_http_referer.is_empty() { String::new() } else { format!("\t\t\t\t\t<input type=\"hidden\" name=\"wp_http_referer\" value=\"{}\" />\n\t\t\t\t", esc_url(&wp_http_referer)) },
         ctx.user.id
     ));
     h.push_str(&format!("\t\t\t\t<h2>{}</h2>\n\n\t\t\t\t<table class=\"form-table\" role=\"presentation\">\n\t\t\t\t\t\n\t\t\t\t\t\n\t\t\t\t\t\n", tr("Personal Options")));
@@ -299,8 +318,21 @@ async fn form_on(ctx: &Ctx<'_>, user: &User, own: bool, errors: &[String], file:
     } else {
         String::new()
     };
+    // `_new_email`: a change of the own address that waits for its link.
+    let pending = match pending_email(ctx, ctx.user.id).await {
+        Some((_, new_email)) if own && new_email != ctx.user.email => {
+            let cancel = ctx.admin_url(&format!("profile.php?dismiss={}_new_email&amp;_wpnonce={}", ctx.user.id, ctx.create_nonce(&format!("dismiss-{}_new_email", ctx.user.id))));
+            format!(
+                "<div class=\"notice updated inline\"><p>{} <a href=\"{}\">{}</a></p></div>",
+                sprintf(&tr("There is a pending change of your email to %s."), &[&format!("<code>{}</code>", esc_html(&new_email))]),
+                cancel,
+                tr("Cancel")
+            )
+        }
+        _ => String::new(),
+    };
     h.push_str(&format!(
-        "\t\t\t\t\t<tr class=\"user-email-wrap\">\n\t\t\t\t\t\t<th><label for=\"email\">{} <span class=\"description\">{}</span></label></th>\n\t\t\t\t\t\t<td>\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<input type=\"email\" name=\"email\" id=\"email\"{} value=\"{}\"{} class=\"regular-text ltr\" />\n{email_note}\t\t\t\t\t\t\t\n\t\t\t\t\t\t\t\t\t\t\t\t\t</td>\n\t\t\t\t\t</tr>\n\n",
+        "\t\t\t\t\t<tr class=\"user-email-wrap\">\n\t\t\t\t\t\t<th><label for=\"email\">{} <span class=\"description\">{}</span></label></th>\n\t\t\t\t\t\t<td>\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<input type=\"email\" name=\"email\" id=\"email\"{} value=\"{}\"{} class=\"regular-text ltr\" />\n{email_note}\t\t\t\t\t\t\t\n\t\t\t\t\t\t\t{pending}\t\t\t\t\t\t</td>\n\t\t\t\t\t</tr>\n\n",
         tr("Email"),
         tr("(required)"),
         if own { " aria-describedby=\"email-description\"" } else { "" },
@@ -348,12 +380,28 @@ async fn form_on(ctx: &Ctx<'_>, user: &User, own: bool, errors: &[String], file:
         tr("Confirm Password"),
         tr("Confirm use of weak password")
     ));
-    if own {
+    // The sessions: where the person is signed in (`WP_Session_Tokens::get_all()`).
+    let sessions = session_count(ctx, id).await;
+    if own && sessions == 1 {
+        h.push_str(&format!(
+            "\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<tr class=\"user-sessions-wrap hide-if-no-js\">\n\t\t\t\t\t\t\t\t\t<th>{}</th>\n\t\t\t\t\t\t\t\t\t<td aria-live=\"assertive\">\n\t\t\t\t\t\t\t\t\t\t<div class=\"destroy-sessions\"><button type=\"button\" disabled class=\"button\">{}</button></div>\n\t\t\t\t\t\t\t\t\t\t<p class=\"description\">\n\t\t\t\t\t\t\t\t\t\t\t{}\t\t\t\t\t\t\t\t\t\t</p>\n\t\t\t\t\t\t\t\t\t</td>\n\t\t\t\t\t\t\t\t</tr>\n",
+            tr("Sessions"),
+            tr("Log Out Everywhere Else"),
+            tr("You are only logged in at this location.")
+        ));
+    } else if own && sessions > 1 {
         h.push_str(&format!(
             "\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<tr class=\"user-sessions-wrap hide-if-no-js\">\n\t\t\t\t\t\t\t\t\t<th>{}</th>\n\t\t\t\t\t\t\t\t\t<td aria-live=\"assertive\">\n\t\t\t\t\t\t\t\t\t\t<div class=\"destroy-sessions\"><button type=\"button\" class=\"button\" id=\"destroy-sessions\">{}</button></div>\n\t\t\t\t\t\t\t\t\t\t<p class=\"description\">\n\t\t\t\t\t\t\t\t\t\t\t{}\t\t\t\t\t\t\t\t\t\t</p>\n\t\t\t\t\t\t\t\t\t</td>\n\t\t\t\t\t\t\t\t</tr>\n",
             tr("Sessions"),
             tr("Log Out Everywhere Else"),
             tr("Did you lose your phone or leave your account logged in at a public computer? You can log out everywhere else, and stay logged in here.")
+        ));
+    } else if !own && sessions > 0 {
+        h.push_str(&format!(
+            "\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<tr class=\"user-sessions-wrap hide-if-no-js\">\n\t\t\t\t\t\t\t\t\t<th>{}</th>\n\t\t\t\t\t\t\t\t\t<td>\n\t\t\t\t\t\t\t\t\t\t<p><button type=\"button\" class=\"button\" id=\"destroy-sessions\">{}</button></p>\n\t\t\t\t\t\t\t\t\t\t<p class=\"description\">\n\t\t\t\t\t\t\t\t\t\t\t{}\t\t\t\t\t\t\t\t\t\t</p>\n\t\t\t\t\t\t\t\t\t</td>\n\t\t\t\t\t\t\t\t</tr>\n",
+            tr("Sessions"),
+            tr("Log Out Everywhere"),
+            sprintf(&tr("Log %s out of all locations."), &[&user.display_name])
         ));
     }
     if !own && ctx.can("edit_users") {
@@ -417,6 +465,9 @@ fn help(ctx: &Ctx<'_>) -> Help {
 pub async fn profile(ctx: &Ctx<'_>) -> AdminResponse {
     let user = ctx.env.db.user(ctx.user.id).await.ok().flatten();
     let Some(user) = user else { return forbidden(ctx, "Invalid user ID.") };
+    if let Some(response) = new_email_links(ctx, &user).await {
+        return response;
+    }
     if ctx.request.post && ctx.request.post_field("action") == Some("update") {
         return save(ctx, ctx.user.id, true).await;
     }
@@ -442,6 +493,70 @@ pub async fn user_edit(ctx: &Ctx<'_>) -> AdminResponse {
     }
     // The own profile on `user-edit.php` is the profile page with the toolbar entry "View User".
     form_on(ctx, &user, own, &[], "user-edit.php").await
+}
+
+/// The number of sessions of a user that have not ended (`WP_Session_Tokens::get_all()`).
+async fn session_count(ctx: &Ctx<'_>, user_id: u64) -> usize {
+    let Some(raw) = ctx.env.db.user_meta(user_id, "session_tokens").await.ok().flatten() else { return 0 };
+    let Ok(rustpress_phpser::Value::Array(tokens)) = rustpress_phpser::unserialize(raw.as_bytes()) else { return 0 };
+    tokens.iter().filter(|(_, session)| session.get("expiration").and_then(Value::as_i64).is_some_and(|expiration| expiration >= ctx.env.now)).count()
+}
+
+/// The pending change of the e-mail address: `_new_email` holds the hash and the address.
+async fn pending_email(ctx: &Ctx<'_>, user_id: u64) -> Option<(String, String)> {
+    let raw = ctx.env.db.user_meta(user_id, "_new_email").await.ok().flatten()?;
+    let value = rustpress_phpser::unserialize(raw.as_bytes()).ok()?;
+    let text = |key: &str| value.get(key).and_then(|v| v.as_str()).map(str::to_owned);
+    Some((text("hash")?, text("newemail")?))
+}
+
+/// `profile.php?newuseremail=<hash>` confirms the change of the address, `?dismiss=<id>_new_email` cancels it.
+async fn new_email_links(ctx: &Ctx<'_>, user: &User) -> Option<AdminResponse> {
+    let request = ctx.request;
+    if let Some(hash) = request.get("newuseremail") {
+        let writer = ctx.env.writer?;
+        return Some(match pending_email(ctx, user.id).await.filter(|(h, _)| h == hash) {
+            Some((_, email)) => {
+                let content = Content { site: ctx.site(), db: ctx.env.db, writer, user: &ctx.user, now: ctx.env.now };
+                let _ = content.insert_user(&UserData { id: Some(user.id), user_email: Some(rustpress_core::formatting::esc_html(email.trim())), ..Default::default() }).await;
+                let _ = writer.delete_user_meta(user.id, "_new_email").await;
+                redirect(&add_query_arg(&ctx.admin_url("profile.php"), "updated", "true"))
+            }
+            None => redirect(&add_query_arg(&ctx.admin_url("profile.php"), "error", "new-email")),
+        });
+    }
+    if request.get("dismiss") == Some(&format!("{}_new_email", user.id)) {
+        if !ctx.verify_nonce(&format!("dismiss-{}_new_email", user.id)) {
+            return Some(super::die(ctx.env, 403, &ctx.tr("An error occurred."), &ctx.tr("The link you followed has expired.")));
+        }
+        let writer = ctx.env.writer?;
+        let _ = writer.delete_user_meta(user.id, "_new_email").await;
+        return Some(redirect(&add_query_arg(&ctx.admin_url("profile.php"), "updated", "true")));
+    }
+    None
+}
+
+/// `send_confirmation_on_profile_email()`: the new address gets a link; the address stays as it is until it is used.
+async fn send_confirmation_on_profile_email(ctx: &Ctx<'_>, user: &User, email: &str) -> bool {
+    let Some(writer) = ctx.env.writer else { return false };
+    if ctx.env.mailer.is_none() {
+        return false;
+    }
+    use rand::Rng;
+    let hash = format!("{:x}", md5::compute(format!("{email}{}{}", ctx.env.now, rand::rng().random::<u32>())));
+    let stored = Value::Array(vec![(Key::Str(b"hash".to_vec()), Value::Str(hash.as_bytes().to_vec())), (Key::Str(b"newemail".to_vec()), Value::Str(email.as_bytes().to_vec()))]);
+    let _ = writer.update_user_meta(user.id, "_new_email", &String::from_utf8_lossy(&rustpress_phpser::serialize(&stored))).await;
+    let sitename = ctx.env.mail_ctx().sitename();
+    let content = ctx
+        .tr(crate::mail_texts::NEW_USER_EMAIL)
+        .replace("###USERNAME###", &user.user_login)
+        .replace("###ADMIN_URL###", &rustpress_core::formatting::esc_url(&ctx.admin_url(&format!("profile.php?newuseremail={hash}"))))
+        .replace("###EMAIL###", email)
+        .replace("###SITENAME###", &sitename)
+        .replace("###SITEURL###", &ctx.site().settings.home);
+    let subject = sprintf(&ctx.tr("[%s] Email Change Request"), &[&sitename]);
+    let _ = ctx.env.send_mail(email, &subject, &content).await;
+    true
 }
 
 /// `edit_user()` for the profile forms.
@@ -482,9 +597,14 @@ async fn save(ctx: &Ctx<'_>, id: u64, own: bool) -> AdminResponse {
     if !errors.is_empty() {
         return form(ctx, &user, own, &errors).await;
     }
+    // Your own address changes only when the link sent to the new one is used.
+    let old_email = user.user_email.clone();
+    let old_login = user.user_login.clone();
+    let email_changed = email != old_email;
+    let email = if own && email_changed && send_confirmation_on_profile_email(ctx, &user, &email).await { old_email.clone() } else { email };
     let mut data = UserData {
         id: Some(id),
-        user_email: Some(email),
+        user_email: Some(email.clone()),
         user_url: field("url"),
         display_name: field("display_name"),
         nickname: Some(nickname),
@@ -520,10 +640,29 @@ async fn save(ctx: &Ctx<'_>, id: u64, own: bool) -> AdminResponse {
         // The session stays; the other ones end like in `wp_update_user()`.
         let _ = rustpress_auth::session::destroy_other_sessions(ctx.env.db, writer, id, &ctx.token, ctx.env.now).await;
     }
+    // `wp_update_user()` tells the person about a new password and a new address.
+    if ctx.env.mailer.is_some() {
+        let mail = ctx.env.mail_ctx();
+        let sitename = mail.sitename();
+        let admin_email = ctx.site().options.string("admin_email", "");
+        let home = ctx.site().settings.home.clone();
+        if data.user_pass.is_some() {
+            let message = ctx.tr(crate::mail_texts::PASSWORD_CHANGED).replace("###USERNAME###", &old_login).replace("###ADMIN_EMAIL###", &admin_email).replace("###EMAIL###", &old_email).replace("###SITENAME###", &sitename).replace("###SITEURL###", &home);
+            let _ = mail.send(&old_email, &sprintf(&ctx.tr("[%s] Password Changed"), &[&sitename]), &message).await;
+        }
+        if email != old_email {
+            let message = ctx.tr(crate::mail_texts::EMAIL_CHANGED).replace("###USERNAME###", &old_login).replace("###ADMIN_EMAIL###", &admin_email).replace("###EMAIL###", &old_email).replace("###NEW_EMAIL###", &email).replace("###SITENAME###", &sitename).replace("###SITEURL###", &home);
+            let _ = mail.send(&old_email, &sprintf(&ctx.tr("[%s] Email Changed"), &[&sitename]), &message).await;
+        }
+    }
     let mut url = if own { ctx.admin_url("profile.php") } else { ctx.admin_url(&format!("user-edit.php?user_id={id}")) };
     url = add_query_arg(&url, "updated", "1");
-    if let Some(referer) = request.post_field("_wp_http_referer").filter(|r| r.contains("wp_http_referer")) {
-        let _ = referer;
+    // The list of users the editing started from is not forgotten.
+    if let Some(referer) = request.post_field("wp_http_referer").filter(|r| !r.is_empty()) {
+        let referer = ["update", "delete_count", "user_id"].iter().fold(rustpress_core::formatting::esc_url_raw(referer), |url, arg| rustpress_core::urls::remove_query_arg(&url, arg));
+        if !referer.is_empty() {
+            url = add_query_arg(&url, "wp_http_referer", &rustpress_core::canonical::php_urlencode(&referer));
+        }
     }
     redirect(&url)
 }

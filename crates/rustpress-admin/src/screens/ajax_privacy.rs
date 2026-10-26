@@ -354,10 +354,19 @@ pub async fn export(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUs
     }
     match generate_file(&ctx, request_id, &email, &groups).await {
         Ok(name) => {
+            let exports_url = format!("{}/wp-personal-data-exports/", rustpress_blocks::images::upload_baseurl(ctx.site()));
             if send_as_email {
-                return error(&tr("Unable to send personal data export email."));
+                // The link goes by e-mail, and the request is completed once the e-mail is sent.
+                if let Err(message) = env.mail_ctx().export_email(request_id, &exports_url).await {
+                    return error(&message);
+                }
+                let _ = writer.update_post_meta(request_id, "_wp_user_request_completed_timestamp", &env.now.to_string()).await;
+                let system = rustpress_auth::CurrentUser::system();
+                let content = crate::content::Content { site: env.site, db: env.db, writer, user: &system, now: env.now };
+                let _ = content.insert_post(&PostData { id: Some(request_id), post_status: Some("request-completed".into()), ..Default::default() }).await;
+                return json(200, &json!({"success": true, "data": Json::Object(response)}));
             }
-            let url = format!("{}/wp-personal-data-exports/{name}", rustpress_blocks::images::upload_baseurl(ctx.site()));
+            let url = format!("{exports_url}{name}");
             response.insert("url".into(), Json::String(url));
             json(200, &json!({"success": true, "data": Json::Object(response)}))
         }
@@ -551,6 +560,8 @@ pub async fn erase(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUse
         let content = crate::content::Content { site: env.site, db: env.db, writer, user, now: env.now };
         let _ = writer.update_post_meta(request_id, "_wp_user_request_completed_timestamp", &env.now.to_string()).await;
         let _ = content.insert_post(&PostData { id: Some(request_id), post_status: Some("request-completed".into()), ..Default::default() }).await;
+        // `wp_privacy_personal_data_erased`: the person is told that their data is gone.
+        env.mail_ctx().erasure_fulfillment_notification(request_id).await;
     }
     json(200, &json!({"success": true, "data": {"items_removed": removed, "items_retained": retained, "messages": [], "done": done}}))
 }

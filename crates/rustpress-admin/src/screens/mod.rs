@@ -82,6 +82,23 @@ pub struct AdminEnv<'a> {
     /// The active theme and the block registry (the block editor needs them).
     pub theme: &'a rustpress_theme::Theme,
     pub registry: &'a rustpress_blocks::Registry,
+    /// Sends e-mail; without it every message fails (`wp_mail()` on a host that cannot send).
+    pub mailer: Option<std::sync::Arc<dyn crate::login::Mail>>,
+}
+
+impl AdminEnv<'_> {
+    /// What the messages WordPress sends on its own need.
+    pub fn mail_ctx(&self) -> crate::mail::MailCtx<'_> {
+        crate::mail::MailCtx { site: self.site, db: self.db, writer: self.writer, now: self.now, mailer: self.mailer.as_ref() }
+    }
+
+    /// `wp_mail()`: a plain text message; `false` when it could not be sent.
+    pub async fn send_mail(&self, to: &str, subject: &str, message: &str) -> bool {
+        match &self.mailer {
+            Some(mailer) => mailer.send(to, subject, message).await,
+            None => false,
+        }
+    }
 }
 
 /// A request to a file in `wp-admin`.

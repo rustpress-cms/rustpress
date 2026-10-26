@@ -8,6 +8,8 @@ pub mod cron;
 pub mod die;
 pub mod list_table;
 pub mod login;
+pub mod mail;
+mod mail_texts;
 pub mod menu;
 pub mod multipart;
 pub mod plugins;

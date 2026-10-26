@@ -32,6 +32,17 @@ pub struct AdminParts {
     pub loader: LoaderEnv,
     pub languages: Vec<LanguageOption>,
     pub privacy_policy: Option<(String, String)>,
+    /// Sends e-mail, when an SMTP server is configured (`RUSTPRESS_SMTP_URL`).
+    pub mailer: Option<std::sync::Arc<dyn rustpress_admin::login::Mail>>,
+}
+
+/// The SMTP mailer as the administration area uses it.
+struct SmtpMail(rustpress_mail::Mailer);
+
+impl rustpress_admin::login::Mail for SmtpMail {
+    fn send<'a>(&'a self, to: &'a str, subject: &'a str, message: &'a str) -> std::pin::Pin<Box<dyn std::future::Future<Output = bool> + Send + 'a>> {
+        Box::pin(self.0.send(to, subject, message))
+    }
 }
 
 fn config_path(config: &Config) -> Option<std::path::PathBuf> {
@@ -72,7 +83,9 @@ impl AdminParts {
         };
         let languages = installed_languages(config, site).await;
         let privacy_policy = privacy_policy(site).await;
-        AdminParts { auth, roles, loader, languages, privacy_policy }
+        let host = site.settings.home.split_once("://").map_or("localhost", |(_, rest)| rest.split(['/', ':']).next().unwrap_or("localhost")).to_owned();
+        let mailer = rustpress_mail::Mailer::from_env(&host).map(|m| std::sync::Arc::new(SmtpMail(m)) as std::sync::Arc<dyn rustpress_admin::login::Mail>);
+        AdminParts { auth, roles, loader, languages, privacy_policy, mailer }
     }
 }
 
@@ -315,7 +328,7 @@ pub async fn login_page(loaded: &Loaded, writer: Option<&rustpress_db::Writer>, 
         privacy_policy: parts.privacy_policy.clone(),
         https: loaded.site.settings.siteurl.starts_with("https"),
         now: now(),
-        mailer: None,
+        mailer: parts.mailer.clone(),
     };
     let request = LoginRequest {
         post: method_post,
@@ -364,6 +377,7 @@ pub async fn admin_page(loaded: &Loaded, config: &Config, writer: Option<&rustpr
         block_theme,
         theme: &loaded.theme,
         registry: &loaded.registry,
+        mailer: parts.mailer.clone(),
     };
     let content_type = headers.get(header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).unwrap_or_default();
     let (form, files) = if !method_post {

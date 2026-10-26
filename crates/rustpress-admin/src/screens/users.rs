@@ -57,8 +57,11 @@ fn update_message(ctx: &Ctx<'_>, code: &str) -> Option<(String, bool)> {
         "err_admin_del" => (tr("You cannot delete the current user."), true),
         "remove" => (tr("User removed from this site."), false),
         "newuseremail" => (tr("A confirmation email has been sent to the new email address."), false),
-        "resetpassword" => (tr("Password reset links sent."), false),
-        "err_resetpassword" => (tr("Password reset links could not be sent."), true),
+        "resetpassword" => {
+            let reset = ctx.request.get("reset_count").and_then(|c| c.parse::<i64>().ok()).unwrap_or(0);
+            let message = if reset == 1 { tr("Password reset link sent.") } else { sprintf(&ctx.site().trn("Password reset links sent to %s user.", "Password reset links sent to %s users.", reset), &[&ctx.site().number_i18n(reset.unsigned_abs())]) };
+            (message, false)
+        }
         _ => return None,
     })
 }
@@ -390,8 +393,15 @@ async fn handle_action(ctx: &Ctx<'_>, action: &str) -> Option<AdminResponse> {
             if !ctx.verify_nonce("bulk-users") {
                 return Some(expired());
             }
-            // RustPress cannot send e-mail.
-            return Some(self_redirect("err_resetpassword", ""));
+            // `retrieve_password()` for each of the others; the current user is skipped.
+            let mut reset_count = 0u64;
+            for id in users.iter().filter(|id| **id != ctx.user.id) {
+                let Some(user) = ctx.env.db.user(*id).await.ok().flatten() else { continue };
+                if ctx.env.mail_ctx().retrieve_password(&user.user_login, None).await.is_ok() {
+                    reset_count += 1;
+                }
+            }
+            return Some(redirect(&ctx.admin_url(&format!("users.php?reset_count={reset_count}&update=resetpassword"))));
         }
         _ => {}
     }
