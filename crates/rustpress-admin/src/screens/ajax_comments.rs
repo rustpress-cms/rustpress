@@ -54,7 +54,9 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUs
         "dim-comment" => {
             let id: u64 = request.request("id").and_then(|v| v.parse().ok()).unwrap_or(0);
             let Some(comment) = env.db.comment_any(id).await.ok().flatten() else {
-                return text(200, &sprintf(&env.site.tr("Comment %d does not exist"), &[&id.to_string()]));
+                let mut x = AjaxResponse::new("dim-comment");
+                x.add("comment", id, Some(1), Err(("invalid_comment", &sprintf(&env.site.tr("Comment %d does not exist"), &[&id.to_string()]))), &[]);
+                return x.send();
             };
             if !ctx.can("moderate_comments") {
                 return text(403, &env.site.tr("Sorry, you are not allowed to edit comments on this post."));
@@ -72,7 +74,7 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUs
         }
         "delete-comment" => {
             let id: u64 = request.request("id").and_then(|v| v.parse().ok()).unwrap_or(0);
-            let Some(comment) = env.db.comment_any(id).await.ok().flatten() else { return text(200, "1") };
+            let Some(comment) = env.db.comment_any(id).await.ok().flatten() else { return text(200, &env.now.to_string()) };
             if !ctx.can("moderate_comments") {
                 return text(403, "-1");
             }

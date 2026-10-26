@@ -270,6 +270,9 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUs
     let ctx = Ctx { env, request, user: user.clone(), token: token.to_owned() };
     let tr = |t: &str| env.site.tr(t);
     let nonce_ok = |name: &str, nonce_action: &str| request.request(name).is_some_and(|n| env.auth.verify_nonce(n, nonce_action, user.id, token, env.now).is_some());
+    if matches!(action, "upload-attachment" | "async-upload") && !nonce_ok("_wpnonce", "media-form") {
+        return text(403, "-1");
+    }
     if !ctx.can("upload_files") {
         return failure(json!({"message": tr("Sorry, you are not allowed to upload files."), "filename": ""}));
     }
@@ -350,7 +353,12 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUs
             }
             response
         }
-        "set-attachment-thumbnail" => text(200, "0"),
+        "set-attachment-thumbnail" => {
+            if request.request("thumbnail_id").is_none_or(|v| v.is_empty() || v == "0") || request.request("id").is_none_or(|v| v.is_empty() || v == "0") {
+                return send_json(200, &json!({"success": false}));
+            }
+            text(200, "0")
+        }
         "crop-image" => crop_image(&ctx).await,
         _ => text(400, "0"),
     }

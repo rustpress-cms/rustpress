@@ -16,6 +16,7 @@ use crate::registry::LoaderEnv;
 
 pub mod ajax;
 pub mod ajax_comments;
+mod ajax_legacy;
 pub mod ajax_media;
 mod ajax_misc;
 mod ajax_privacy;

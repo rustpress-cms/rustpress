@@ -279,6 +279,21 @@ async fn delete_confirmation(ctx: &Ctx<'_>, plugins: &[String], root: &std::path
     render(ctx, &screen, &content, &Assets { scripts: vec!["jquery".into()], ..Default::default() }).await
 }
 
+/// `activate_plugin()` for the Ajax action: the plugin goes into `active_plugins`.
+pub(super) async fn activate_one(ctx: &Ctx<'_>, file: &str) -> Result<(), String> {
+    let Some(root) = ctx.env.loader.includes.parent().map(std::path::Path::to_path_buf) else { return Err(ctx.tr("Plugin file does not exist.")) };
+    if !plugins::installed(&root).iter().any(|p| p.file == file) {
+        return Err(ctx.tr("Plugin file does not exist."));
+    }
+    let mut active = active_plugins(ctx);
+    if !active.iter().any(|p| p == file) {
+        active.push(file.to_owned());
+        let Some(writer) = ctx.env.writer else { return Err(ctx.tr("The site is read only.")) };
+        writer.update_option("active_plugins", &serialize_list(&active)).await.map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     let tr = |s: &str| ctx.tr(s);
     let request = ctx.request;

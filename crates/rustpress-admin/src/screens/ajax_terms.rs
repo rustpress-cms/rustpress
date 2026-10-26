@@ -27,13 +27,11 @@ impl AjaxResponse {
             Ok(text) => x.push_str(&format!("<response_data>{}</response_data>", cdata(text))),
             Err((code, message)) => x.push_str(&format!("<wp_error code='{code}'>{}</wp_error>", cdata(message))),
         }
-        if !supplemental.is_empty() {
-            x.push_str("<supplemental>");
-            for (key, value) in supplemental {
-                x.push_str(&format!("<{key}>{}</{key}>", cdata(value)));
-            }
-            x.push_str("</supplemental>");
+        x.push_str("<supplemental>");
+        for (key, value) in supplemental {
+            x.push_str(&format!("<{key}>{}</{key}>", cdata(value)));
         }
+        x.push_str("</supplemental>");
         x.push_str(&format!("</{what}></response>"));
         self.entries.push(x);
     }
@@ -63,8 +61,23 @@ fn depth(all: &[rustpress_db::Term], term: &rustpress_db::Term) -> usize {
 /// `add-tag`, `inline-save-tax` and `delete-tag`.
 pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUser, token: &str, action: &str) -> AdminResponse {
     let ctx = Ctx { env, request, user: user.clone(), token: token.to_owned() };
-    let taxonomy = request.request("taxonomy").unwrap_or_default().to_owned();
-    let Some(info) = terms::tax_info(&ctx, &taxonomy, request.request("post_type")) else { return text(200, "0") };
+    // `check_ajax_referer()` comes before everything else.
+    let first_nonce = match action {
+        "add-tag" => Some((request.request("_wpnonce_add-tag").or(request.request("_ajax_nonce-add-tag")).or(request.request("_ajax_nonce")).or(request.request("_wpnonce")).unwrap_or_default().to_owned(), "add-tag".to_owned())),
+        "inline-save-tax" => Some((request.request("_inline_edit").or(request.request("_ajax_nonce")).or(request.request("_wpnonce")).unwrap_or_default().to_owned(), "taxinlineeditnonce".to_owned())),
+        _ => {
+            let id: i64 = request.request("tag_ID").and_then(|v| v.trim().parse().ok()).unwrap_or(0);
+            Some((request.request("_ajax_nonce").or(request.request("_wpnonce")).unwrap_or_default().to_owned(), format!("delete-tag_{id}")))
+        }
+    };
+    if let Some((value, nonce_action)) = first_nonce
+        && env.auth.verify_nonce(&value, &nonce_action, user.id, token, env.now).is_none()
+    {
+        return text(403, "-1");
+    }
+    // `add-tag` and `delete-tag` take the tags if no taxonomy is named.
+    let taxonomy = request.request("taxonomy").filter(|t| !t.is_empty()).map(str::to_owned).unwrap_or_else(|| if action == "inline-save-tax" { String::new() } else { "post_tag".to_owned() });
+    let Some(info) = terms::tax_info(&ctx, &taxonomy, request.request("post_type")) else { return text(200, if action == "delete-tag" { "-1" } else { "0" }) };
     if !ctx.can("manage_categories") {
         return text(403, "-1");
     }

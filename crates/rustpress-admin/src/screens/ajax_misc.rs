@@ -56,7 +56,10 @@ fn natural_cmp(a: &str, b: &str) -> std::cmp::Ordering {
 
 pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUser, token: &str, action: &str) -> AdminResponse {
     if action == "health-check-get-sizes" {
-        if !nonce_ok_early(env, request, user, token) || !user.can("view_site_health_checks") {
+        if !nonce_ok_early_for(env, request, user, token, "health-check-get-sizes") {
+            return text(403, "-1");
+        }
+        if !user.can("view_site_health_checks") {
             return super::ajax::json(403, &json!({"success": false}));
         }
         return super::ajax::json(200, &super::site_health_info::sizes(env).await);
@@ -181,7 +184,7 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUs
         }
         "dismiss-wp-pointer" => {
             let pointer = param("pointer");
-            if sanitize_key(&pointer) != pointer {
+            if request.request("pointer").is_none() || sanitize_key(&pointer) != pointer {
                 return text(200, "0");
             }
             let current = env.db.user_meta(user.id, "dismissed_wp_pointers").await.ok().flatten().unwrap_or_default();
@@ -506,6 +509,13 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUs
         }
         // Everything that needs WordPress.org: RustPress does not connect to it.
         "query-themes" | "install-theme" | "install-plugin" | "update-theme" | "update-plugin" | "search-plugins" | "search-install-plugins" => {
+            if action == "query-themes" && !user.can("install_themes") {
+                return json(200, &json!({"success": false}));
+            }
+            // `check_ajax_referer( 'updates' )`.
+            if action != "query-themes" && !nonce_ok(request.request("_ajax_nonce").or(request.request("_wpnonce")).unwrap_or_default(), "updates") {
+                return text(403, "-1");
+            }
             let message = tr("An unexpected error occurred. Something may be wrong with WordPress.org or this server&#8217;s configuration. If you continue to have problems, please try the <a href=\"https://wordpress.org/support/forums/\">support forums</a>.");
             json(200, &json!({"success": false, "data": {"slug": param("slug"), "errorCode": "plugins_api_failed", "errorMessage": message, "error": message}}))
         }
@@ -533,6 +543,11 @@ pub async fn attach(ctx: &Ctx<'_>, ids: &[u64], parent: u64) -> u64 {
 }
 
 /// The nonce of the Site Health results (`check_ajax_referer( 'health-check-site-status-result' )`).
+fn nonce_ok_early_for(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUser, token: &str, nonce_action: &str) -> bool {
+    let nonce = request.request("_ajax_nonce").or(request.request("_wpnonce")).unwrap_or_default();
+    env.auth.verify_nonce(nonce, nonce_action, user.id, token, env.now).is_some()
+}
+
 fn nonce_ok_early(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUser, token: &str) -> bool {
     let nonce = request.request("_ajax_nonce").or(request.request("_wpnonce")).unwrap_or_default();
     env.auth.verify_nonce(nonce, "health-check-site-status-result", user.id, token, env.now).is_some()

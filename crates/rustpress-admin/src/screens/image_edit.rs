@@ -426,10 +426,10 @@ async fn restore(ctx: &Ctx<'_>, state: &mut State) -> Result<String, String> {
 /// `wp_ajax_image_editor()`.
 pub async fn editor(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUser, token: &str) -> AdminResponse {
     let id: u64 = request.post_field("postid").and_then(|p| p.parse().ok()).unwrap_or(0);
-    let Some(post) = (if id == 0 { None } else { env.db.post(id).await.ok().flatten() }) else { return text(403, "-1") };
+    let Some(post) = (if id == 0 { None } else { env.db.post(id).await.ok().flatten() }) else { return text(200, "-1") };
     let may_edit = user.can("edit_posts") && (post.post_author == user.id || user.can("edit_others_posts"));
     if !may_edit {
-        return text(403, "-1");
+        return text(200, "-1");
     }
     if env.auth.verify_nonce(request.request("_ajax_nonce").or(request.request("_wpnonce")).unwrap_or_default(), &format!("image_editor-{id}"), user.id, token, env.now).is_none() {
         return text(403, "-1");

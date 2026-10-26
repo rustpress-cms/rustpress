@@ -114,6 +114,28 @@ async fn autosave(env: &AdminEnv<'_>, user: &CurrentUser, token: &str, fields: &
     }
 }
 
+/// Whether `admin-ajax.php` knows the action for this request: the name is in the list for the method it was sent with.
+fn registered(request: &AdminRequest, _action: &str) -> bool {
+    const GET: &[&str] = &[
+        "fetch-list", "ajax-tag-search", "wp-compression-test", "imgedit-preview", "oembed-cache", "autocomplete-user", "dashboard-widgets", "logged-in",
+        "rest-nonce",
+    ];
+    const POST: &[&str] = &[
+        "oembed-cache", "image-editor", "delete-comment", "delete-tag", "delete-link", "delete-meta", "delete-post", "trash-post",
+        "untrash-post", "delete-page", "dim-comment", "add-link-category", "add-tag", "get-tagcloud", "get-comments", "replyto-comment",
+        "edit-comment", "add-menu-item", "add-meta", "add-user", "closed-postboxes", "hidden-columns", "update-welcome-panel", "menu-get-metabox",
+        "wp-link-ajax", "menu-locations-save", "menu-quick-search", "meta-box-order", "get-permalink", "sample-permalink", "inline-save", "inline-save-tax",
+        "find_posts", "widgets-order", "save-widget", "delete-inactive-widgets", "set-post-thumbnail", "date_format", "time_format", "wp-remove-post-lock",
+        "dismiss-wp-pointer", "upload-attachment", "get-attachment", "query-attachments", "save-attachment", "save-attachment-compat", "send-link-to-editor", "send-attachment-to-editor",
+        "save-attachment-order", "media-create-image-subsizes", "heartbeat", "get-revision-diffs", "save-user-color-scheme", "update-widget", "query-themes", "parse-embed",
+        "set-attachment-thumbnail", "parse-media-shortcode", "destroy-sessions", "install-plugin", "activate-plugin", "update-plugin", "crop-image", "generate-password",
+        "save-wporg-username", "delete-plugin", "search-plugins", "search-install-plugins", "update-theme", "delete-theme", "install-theme", "get-post-thumbnail-html",
+        "get-community-events", "edit-theme-plugin-file", "wp-privacy-export-personal-data", "wp-privacy-erase-personal-data", "health-check-site-status-result", "health-check-dotorg-communication", "health-check-is-in-debug-mode", "health-check-background-updates",
+        "health-check-loopback-requests", "health-check-get-sizes", "toggle-auto-updates", "send-password-reset", "wp-fullscreen-save-post", "press-this-save-post", "press-this-add-category",
+    ];
+    request.get("action").is_some_and(|a| GET.contains(&a)) || (request.post && request.post_field("action").is_some_and(|a| POST.contains(&a)))
+}
+
 /// Handles a request to `admin-ajax.php`.
 pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse {
     let action = if request.file == "async-upload.php" { "async-upload".to_owned() } else { request.request("action").unwrap_or_default().to_owned() };
@@ -123,9 +145,18 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse
         None => None,
     };
     let Some(session) = session else {
-        return if action == "heartbeat" { json(200, &json!({"nonces_expired": true})) } else { text(400, "0") };
+        // `wp_ajax_nopriv_heartbeat` and `wp_ajax_nopriv_generate_password` are the actions for visitors.
+        return match action.as_str() {
+            "heartbeat" if registered(request, &action) => json(200, &json!({"nonces_expired": true})),
+            "generate-password" if registered(request, &action) => json(200, &json!({"success": true, "data": crate::sanitize::random_password(24, true)})),
+            _ => text(400, "0"),
+        };
     };
     let Ok(user) = CurrentUser::load(env.db, env.roles, &session.user).await else { return text(500, "0") };
+    // Only the actions the core registers for the method of the request exist (`$core_actions_get`, `$core_actions_post`).
+    if request.file != "async-upload.php" && !registered(request, &action) {
+        return text(400, "0");
+    }
     let nonce_ok = |nonce: &str, nonce_action: &str| env.auth.verify_nonce(nonce, nonce_action, user.id, &session.token, env.now).is_some();
     let sanitize_key = |s: &str| s.chars().filter(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '_' | '-')).collect::<String>();
     let write_meta = |key: String, value: String| async move {
@@ -135,9 +166,17 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse
     };
 
     match action.as_str() {
+        "oembed-cache" | "add-user" | "delete-link" | "add-link-category" | "delete-meta" | "add-meta" | "trash-post" | "untrash-post" | "delete-page" | "get-permalink" | "set-post-thumbnail" | "get-post-thumbnail-html" | "save-attachment-compat" | "save-attachment-order"
+        | "media-create-image-subsizes" | "send-link-to-editor" | "send-attachment-to-editor" | "parse-embed" | "parse-media-shortcode" | "save-wporg-username" | "activate-plugin" | "add-menu-item" | "menu-locations-save" | "menu-get-metabox" | "menu-quick-search"
+        | "widgets-order" | "save-widget" | "delete-inactive-widgets" | "update-widget" | "health-check-is-in-debug-mode" | "health-check-dotorg-communication" | "health-check-background-updates" | "health-check-loopback-requests" | "wp-fullscreen-save-post"
+        | "press-this-save-post" | "press-this-add-category" | "get-comments" => super::ajax_legacy::handle(env, request, &user, &session.token, &action).await,
+        "delete-post" if env.db.post(request.request("id").and_then(|v| v.trim().parse().ok()).unwrap_or(0)).await.ok().flatten().is_some_and(|p| p.post_type != "attachment") => super::ajax_legacy::handle(env, request, &user, &session.token, &action).await,
         "inline-save" => super::quick_edit::inline_save(env, request, &user, &session.token).await,
         "heartbeat" => {
             let mut response = Map::new();
+            if request.request("_nonce").is_none_or(str::is_empty) {
+                return json(200, &json!({"success": false}));
+            }
             let nonce_valid = nonce_ok(request.request("_nonce").unwrap_or_default(), "heartbeat-nonce");
             if !nonce_valid {
                 response.insert("nonces_expired".into(), Json::Bool(true));
