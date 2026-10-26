@@ -15,6 +15,7 @@ rustpress-db.workspace = true
 rustpress-theme.workspace = true
 chrono.workspace = true
 serde_json.workspace = true
+md5.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]

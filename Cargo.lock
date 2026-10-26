@@ -1758,6 +1758,7 @@ name = "rustpress-rest"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "md5",
  "rustpress-auth",
  "rustpress-blocks",
  "rustpress-content",

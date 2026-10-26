@@ -19,6 +19,8 @@ pub struct PatternEntry {
     pub post_types: Vec<String>,
     pub template_types: Vec<String>,
     pub source: Option<String>,
+    /// Patterns of the pattern directory have all their fields set, even the empty ones.
+    pub all_fields: bool,
 }
 
 /// The patterns `_register_core_block_patterns_and_categories()` registers, in its order.
@@ -36,9 +38,10 @@ const CORE_PATTERNS: &[&str] = &[
     "navigation-overlay-centered-with-extras",
 ];
 
-/// A comma-separated header as a list.
+/// A header of the pattern file as a list.
 fn list(text: &str) -> Vec<String> {
-    text.split(',').map(str::trim).filter(|s| !s.is_empty()).map(str::to_owned).collect()
+    // `wp_parse_list()`: commas and white space separate the items.
+    text.split(|c: char| c == ',' || c.is_whitespace()).filter(|s| !s.is_empty()).map(str::to_owned).collect()
 }
 
 /// The strings of `array( 'a', 'b' )` after `key =>`.
@@ -105,8 +108,8 @@ impl Theme {
                     viewport_width: header("Viewport Width").parse().ok(),
                     inserter: match header("Inserter").to_lowercase().as_str() {
                         "" => None,
-                        "no" | "false" | "0" => Some(false),
-                        _ => Some(true),
+                        "yes" | "true" => Some(true),
+                        _ => Some(false),
                     },
                     categories: list(&header("Categories")),
                     keywords: list(&header("Keywords")),
@@ -114,6 +117,7 @@ impl Theme {
                     post_types: list(&header("Post Types")),
                     template_types: list(&header("Template Types")),
                     source: None,
+                    all_fields: false,
                 });
             }
         }

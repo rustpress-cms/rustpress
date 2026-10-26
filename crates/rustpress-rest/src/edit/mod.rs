@@ -8,6 +8,7 @@ mod caps;
 mod editor;
 mod fonts;
 mod health;
+mod hints;
 mod icons;
 mod media;
 mod navigation;

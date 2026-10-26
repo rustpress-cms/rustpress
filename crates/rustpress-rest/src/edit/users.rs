@@ -28,7 +28,7 @@ pub(crate) fn json_to_php(value: &Value) -> rustpress_phpser::Value {
 }
 
 impl Rest<'_> {
-    fn user_allow(&self, id: u64) -> Vec<&'static str> {
+    pub(crate) fn user_allow(&self, id: u64) -> Vec<&'static str> {
         let me = self.user().map_or(0, |u| u.id);
         let mut allow = vec!["GET"];
         if self.can("edit_users") || id == me {

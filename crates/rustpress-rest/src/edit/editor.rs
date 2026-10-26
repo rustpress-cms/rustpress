@@ -45,8 +45,31 @@ const PART_AREAS: [(&str, &str, &str, &str, &str); 4] = [
 ];
 
 impl Rest<'_> {
+    /// The stylesheets of the installed themes, by name as `wp_get_themes()` sorts them.
+    fn installed_themes(&self) -> Vec<String> {
+        let themes_dir = self.theme.wp_root.join("wp-content").join("themes");
+        let mut found: Vec<(String, String)> = Vec::new();
+        if let Ok(entries) = std::fs::read_dir(&themes_dir) {
+            for entry in entries.flatten() {
+                let slug = entry.file_name().to_string_lossy().into_owned();
+                if let Ok(css) = std::fs::read_to_string(entry.path().join("style.css"))
+                    && let Some(name) = style_header(&css, "Theme Name")
+                {
+                    found.push((name.to_lowercase(), slug));
+                }
+            }
+        }
+        found.sort();
+        found.into_iter().map(|(_, slug)| slug).collect()
+    }
+
     async fn theme_object(&self) -> Value {
-        let dir = self.theme.stylesheet_dir().to_path_buf();
+        self.theme_object_for(&self.theme.stylesheet.clone()).await
+    }
+
+    async fn theme_object_for(&self, stylesheet: &str) -> Value {
+        let active = stylesheet == self.theme.stylesheet;
+        let dir = if active { self.theme.stylesheet_dir().to_path_buf() } else { self.theme.wp_root.join("wp-content").join("themes").join(stylesheet) };
         let css = std::fs::read_to_string(dir.join("style.css")).unwrap_or_default();
         let header = |key: &str| style_header(&css, key).unwrap_or_default();
         let rendered_author = {
@@ -54,7 +77,7 @@ impl Rest<'_> {
             let uri = header("Author URI");
             if uri.is_empty() { name } else { format!("<a href=\"{uri}\">{name}</a>") }
         };
-        let content_url = format!("{}/wp-content/themes/{}", self.site.settings.siteurl.trim_end_matches('/'), self.theme.stylesheet);
+        let content_url = format!("{}/wp-content/themes/{}", self.site.settings.siteurl.trim_end_matches('/'), stylesheet);
         let tags: Vec<String> = header("Tags").split(',').map(|t| t.trim().to_owned()).filter(|t| !t.is_empty()).collect();
         let screenshot = ["png", "jpg", "jpeg", "gif", "webp"].iter().find(|e| dir.join(format!("screenshot.{e}")).is_file()).map(|e| format!("{content_url}/screenshot.{e}")).unwrap_or_default();
         let supports = json!({
@@ -66,13 +89,13 @@ impl Rest<'_> {
             "post-thumbnails": true, "responsive-embeds": true, "title-tag": false, "wp-block-styles": false
         });
         let mut links = Links::new();
-        links.push_raw("self", json!({"href": self.rest_url(&format!("wp/v2/themes/{}", self.theme.stylesheet)), "targetHints": {"allow": ["GET"]}}));
+        links.push_raw("self", json!({"href": self.rest_url(&format!("wp/v2/themes/{stylesheet}")), "targetHints": {"allow": ["GET"]}}));
         links.add("collection", vec![], self.rest_url("wp/v2/themes"));
-        let query = rustpress_db::PostQuery { post_types: vec!["wp_global_styles".into()], statuses: vec!["publish".into(), "draft".into()], names: vec![format!("wp-global-styles-{}", rustpress_core::slug::sanitize_title(&self.theme.stylesheet))], limit: Some(1), ..Default::default() };
-        if let Some(post) = self.site.db.posts(&query).await.ok().and_then(|posts| posts.into_iter().next()) {
+        let query = rustpress_db::PostQuery { post_types: vec!["wp_global_styles".into()], statuses: vec!["publish".into(), "draft".into()], names: vec![format!("wp-global-styles-{}", rustpress_core::slug::sanitize_title(stylesheet))], limit: Some(1), ..Default::default() };
+        if active && let Some(post) = self.site.db.posts(&query).await.ok().and_then(|posts| posts.into_iter().next()) {
             links.add("wp:user-global-styles", vec![], self.rest_url(&format!("wp/v2/global-styles/{}", post.id)));
         }
-        if self.can("edit_theme_options") {
+        if active && self.can("edit_theme_options") {
             links.push_raw("wp:export-theme", json!({"targetHints": {"allow": ["GET"]}, "href": self.rest_url("wp-block-editor/v1/export")}));
         }
         let template_types: Vec<Value> = self.default_template_types().into_iter().map(|(slug, title, description)| json!({"title": title, "description": description, "slug": slug})).collect();
@@ -80,9 +103,11 @@ impl Rest<'_> {
             .iter()
             .map(|(area, label, description, icon, tag)| json!({"area": area, "label": self.site.tr(label), "description": self.site.tr(description), "icon": icon, "area_tag": tag}))
             .collect();
+        let template = style_header(&css, "Template").filter(|t| !t.is_empty()).unwrap_or_else(|| stylesheet.to_owned());
+        let is_block_theme = [dir.join("templates").join("index.html"), dir.join("block-templates").join("index.html")].iter().any(|p| p.is_file());
         let mut theme = json!({
-            "stylesheet": self.theme.stylesheet,
-            "template": self.theme.template,
+            "stylesheet": stylesheet,
+            "template": if active { self.theme.template.clone() } else { template },
             "requires_php": header("Requires PHP"),
             "requires_wp": header("Requires at least"),
             "textdomain": header("Text Domain"),
@@ -94,15 +119,25 @@ impl Rest<'_> {
             "name": {"raw": header("Theme Name"), "rendered": header("Theme Name")},
             "tags": {"raw": tags, "rendered": tags.join(", ")},
             "theme_uri": {"raw": header("Theme URI"), "rendered": header("Theme URI")},
-            "status": "active",
-            "theme_supports": supports,
-            "is_block_theme": true,
+            "status": if active { "active" } else { "inactive" },
+            "is_block_theme": is_block_theme,
             "stylesheet_uri": content_url,
             "template_uri": content_url,
-            "default_template_types": template_types,
-            "default_template_part_areas": part_areas,
         });
         if let Value::Object(map) = &mut theme {
+            // Only the active theme says what it supports.
+            if active {
+                let mut full = Map::new();
+                for (key, value) in std::mem::take(map) {
+                    if key == "is_block_theme" {
+                        full.insert("theme_supports".into(), supports.clone());
+                    }
+                    full.insert(key, value);
+                }
+                full.insert("default_template_types".into(), Value::Array(template_types.clone()));
+                full.insert("default_template_part_areas".into(), Value::Array(part_areas.clone()));
+                *map = full;
+            }
             map.insert("_links".into(), links.finish());
         }
         theme
@@ -112,13 +147,25 @@ impl Rest<'_> {
     pub(crate) async fn editor_route(&self, segments: &[&str], method: &str, args: &Args, params: &Params) -> Result<Option<Outcome>> {
         let get = method == "GET";
         let outcome = match segments {
-            ["wp", "v2", "themes"] if get && self.can("edit_theme_options") => {
-                let list = if args.str("status").as_deref() == Some("active") || args.str("status").is_none() { vec![self.theme_object().await] } else { Vec::new() };
+            ["wp", "v2", "themes"] if get && (self.can("switch_themes") || (self.can("edit_posts") && args.str("status").as_deref() == Some("active"))) => {
+                let wanted = args.str("status");
+                let mut list = Vec::new();
+                for slug in self.installed_themes() {
+                    let active = slug == self.theme.stylesheet;
+                    let take = match wanted.as_deref() {
+                        Some("active") => active,
+                        Some("inactive") => !active,
+                        _ => true,
+                    };
+                    if take {
+                        list.push(self.theme_object_for(&slug).await);
+                    }
+                }
                 let mut resp = Resp::item(Value::Array(list));
                 resp.allow = Some("GET".to_owned());
                 Ok(resp)
             }
-            ["wp", "v2", "themes", name] if get && self.can("edit_theme_options") && *name == self.theme.stylesheet => Ok(Resp::item(self.theme_object().await)),
+            ["wp", "v2", "themes", name] if get && (self.can("switch_themes") || (self.can("edit_posts") && *name == self.theme.stylesheet)) && self.installed_themes().iter().any(|t| t == name) => Ok(Resp::item(self.theme_object_for(name).await)),
             ["wp-block-editor", "v1", "url-details"] if get => {
                 if args.str("url").is_none() {
                     Err(RestError::missing_params(&["url"]))
@@ -130,7 +177,8 @@ impl Rest<'_> {
                 }
             }
             ["wp", "v2", "block-directory", "search"] if get && args.str("term").is_none() => Err(RestError::missing_params(&["term"])),
-            ["wp", "v2", "plugins"] | ["wp", "v2", "sidebars"] | ["wp", "v2", "widgets"] | ["wp", "v2", "menus"] | ["wp", "v2", "menu-items"] | ["wp", "v2", "widget-types"] | ["wp", "v2", "menu-locations"] | ["wp", "v2", "pattern-directory", "patterns"] | ["wp", "v2", "block-directory", "search"] if get => empty_list(),
+            ["wp", "v2", "pattern-directory", "patterns"] if get && self.can("edit_posts") => Ok(Resp::item(Value::Array(self.directory_items(params).await))),
+            ["wp", "v2", "plugins"] | ["wp", "v2", "sidebars"] | ["wp", "v2", "widgets"] | ["wp", "v2", "menus"] | ["wp", "v2", "menu-items"] | ["wp", "v2", "widget-types"] | ["wp", "v2", "menu-locations"] | ["wp", "v2", "block-directory", "search"] if get => empty_list(),
             ["wp", "v2", "block-types"] | ["wp", "v2", "block-types", _] | ["wp", "v2", "block-types", _, _] if get => empty_list(),
             ["wp", "v2", "block-patterns", "patterns"] if get => Ok(Resp::item(self.patterns_json())),
             ["wp", "v2", "block-patterns", "categories"] if get => Ok(Resp::item(self.pattern_categories())),
@@ -250,7 +298,7 @@ impl Rest<'_> {
             item.insert("name".into(), json!(pattern.name));
             item.insert("title".into(), json!(pattern.title));
             item.insert("content".into(), json!(self.resolved_content(&self.with_theme_attribute(&pattern.content))));
-            if !pattern.description.is_empty() {
+            if !pattern.description.is_empty() || pattern.all_fields || pattern.source.is_none() {
                 item.insert("description".into(), json!(pattern.description));
             }
             if let Some(width) = pattern.viewport_width {
@@ -259,11 +307,11 @@ impl Rest<'_> {
             if let Some(inserter) = pattern.inserter {
                 item.insert("inserter".into(), json!(inserter));
             }
-            if !pattern.categories.is_empty() {
+            if !pattern.categories.is_empty() || pattern.all_fields {
                 item.insert("categories".into(), json!(pattern.categories.iter().map(|c| migrate(c)).collect::<Vec<_>>()));
             }
             for (key, list) in [("keywords", &pattern.keywords), ("block_types", &pattern.block_types), ("post_types", &pattern.post_types), ("template_types", &pattern.template_types)] {
-                if !list.is_empty() {
+                if !list.is_empty() || (pattern.all_fields && matches!(key, "keywords" | "block_types")) {
                     item.insert(key.into(), json!(list));
                 }
             }

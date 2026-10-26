@@ -405,7 +405,11 @@ impl Rest<'_> {
     }
 
     pub(crate) fn registered_patterns(&self) -> &[rustpress_theme::registered_patterns::PatternEntry] {
-        self.patterns.get_or_init(|| self.theme.registered_patterns())
+        self.patterns.get_or_init(|| {
+            let mut all = self.theme.registered_patterns();
+            all.extend(self.remote_patterns.get().cloned().unwrap_or_default());
+            all
+        })
     }
 
     fn pattern_lookup(&self) -> impl Fn(&str) -> Option<PatternRef> + '_ {

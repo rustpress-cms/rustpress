@@ -6,6 +6,7 @@
 //! with the same 401 errors WordPress gives to anonymous requests.
 
 mod comments;
+mod directory;
 pub mod edit;
 mod error;
 mod fields;
@@ -95,11 +96,27 @@ pub struct Rest<'a> {
     pub(crate) request: Option<edit::Request>,
     /// The patterns of the registry, evaluated once per request.
     pub(crate) patterns: std::sync::OnceLock<Vec<rustpress_theme::registered_patterns::PatternEntry>>,
+    /// The host the request was sent to (`$_SERVER['HTTP_HOST']`).
+    pub(crate) host: String,
+    /// The patterns of the pattern directory, loaded for the routes that list patterns.
+    pub(crate) remote_patterns: std::sync::OnceLock<Vec<rustpress_theme::registered_patterns::PatternEntry>>,
 }
 
 impl<'a> Rest<'a> {
     pub fn new(site: &'a Site, theme: &'a Theme, registry: &'a Registry) -> Self {
-        Self { site, theme, registry, blank: QueryResult::blank(), state: Default::default(), access: None, request: None, patterns: Default::default() }
+        Self { site, theme, registry, blank: QueryResult::blank(), state: Default::default(), access: None, request: None, patterns: Default::default(), host: String::new(), remote_patterns: Default::default() }
+    }
+
+    /// The host of the request: client-side media processing is on for `localhost` and for HTTPS.
+    pub fn with_host(mut self, host: &str) -> Self {
+        self.host = host.to_owned();
+        self
+    }
+
+    /// `wp_is_client_side_media_processing_enabled()`.
+    fn client_side_media(&self) -> bool {
+        let host = self.host.split(':').next().unwrap_or_default().to_ascii_lowercase();
+        self.site.settings.siteurl.starts_with("https") || host == "localhost" || host.ends_with(".localhost")
     }
 
     /// Handles `GET <route>?<query>`; `route` is the part after `/wp-json` (`/wp/v2/posts`).
@@ -113,7 +130,7 @@ impl<'a> Rest<'a> {
             blank.url_path = "/".to_owned();
             blank.raw_query = if query.is_empty() { format!("rest_route={route}") } else { format!("rest_route={route}&{query}") };
         }
-        let scoped = Rest { site: self.site, theme: self.theme, registry: self.registry, blank, state: Default::default(), access: None, request: None, patterns: Default::default() };
+        let scoped = Rest { site: self.site, theme: self.theme, registry: self.registry, blank, state: Default::default(), access: None, request: None, patterns: Default::default(), host: self.host.clone(), remote_patterns: Default::default() };
         scoped.handle_request(route, query).await
     }
 
@@ -128,12 +145,17 @@ impl<'a> Rest<'a> {
             blank.url_path = "/".to_owned();
             blank.raw_query = if query.is_empty() { format!("rest_route={route}") } else { format!("rest_route={route}&{query}") };
         }
-        let scoped = Rest { site: self.site, theme: self.theme, registry: self.registry, blank, state: Default::default(), access, request: Some(request), patterns: Default::default() };
+        let scoped = Rest { site: self.site, theme: self.theme, registry: self.registry, blank, state: Default::default(), access, request: Some(request), patterns: Default::default(), host: self.host.clone(), remote_patterns: Default::default() };
         scoped.handle_request(route, query).await
     }
 
     async fn handle_request(&self, route: &str, query: &str) -> Result<Reply> {
         let params = Params::parse(query);
+        // The registry of patterns includes those of the pattern directory.
+        if route.starts_with("/wp/v2/block-patterns/patterns") {
+            let local = self.theme.registered_patterns();
+            let _ = self.remote_patterns.set(self.remote_pattern_entries(&local).await);
+        }
         let outcome = match &self.request {
             Some(_) => match self.dispatch_edit(route, &params).await? {
                 Some(outcome) => outcome,
@@ -203,6 +225,9 @@ impl<'a> Rest<'a> {
         if status == 200 || status == 201 {
             if params.truthy("_embed") {
                 self.embed_all(&mut data).await?;
+            }
+            if self.access.is_some() {
+                self.refine_hints(&mut data).await;
             }
             if let Some(list) = params.list("_fields") {
                 fields::filter(&mut data, &list);
@@ -435,6 +460,10 @@ impl<'a> Rest<'a> {
         out.insert("site_icon".into(), Value::from(o.u64("site_icon", 0)));
         out.insert("site_icon_url".into(), Value::from(""));
         let mut links = serde_json::json!({"help": [{"href": "https://developer.wordpress.org/rest-api/"}]});
+        // `add_active_theme_link_to_index()`: for who may switch themes or edit.
+        if self.can("switch_themes") || self.can("edit_posts") {
+            links["wp:active-theme"] = serde_json::json!([{"href": self.rest_url(&format!("wp/v2/themes/{}", self.theme.stylesheet))}]);
+        }
         let mut featured = Vec::new();
         for (option, kind) in [("site_logo", "site_logo"), ("site_icon", "site_icon")] {
             let id = o.u64(option, 0);
@@ -444,6 +473,8 @@ impl<'a> Rest<'a> {
         }
         if !featured.is_empty() {
             links["wp:featuredmedia"] = Value::Array(featured);
+        }
+        if links.as_object().is_some_and(|o| o.keys().any(|k| k.starts_with("wp:"))) {
             links["curies"] = serde_json::json!([{"name": "wp", "href": "https://api.w.org/{rel}", "templated": true}]);
         }
         out.insert("_links".into(), links);
@@ -454,6 +485,10 @@ impl<'a> Rest<'a> {
     fn routes_of(&self, namespace: Option<&str>) -> Map<String, Value> {
         let mut routes = Map::new();
         for (route, entry) in golden_routes() {
+            // The routes for client-side media processing exist on `localhost` and over HTTPS only.
+            if !self.client_side_media() && route.starts_with("/wp/v2/media/") && (route.ends_with("/sideload") || route.ends_with("/finalize")) {
+                continue;
+            }
             if namespace.is_some_and(|ns| entry.get("namespace").and_then(Value::as_str) != Some(ns)) {
                 continue;
             }

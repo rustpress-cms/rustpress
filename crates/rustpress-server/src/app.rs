@@ -271,7 +271,7 @@ async fn page(app: &App, uri: &axum::http::Uri, request_headers: &axum::http::He
     let (path, query) = (uri.path(), uri.query().unwrap_or(""));
     let loaded = app.current().await;
     if let Some((route, rest_query)) = rest_route(&loaded.site.settings.home_path(), path, query) {
-        let rest = Rest::new(&loaded.site, &loaded.theme, &loaded.registry);
+        let rest = Rest::new(&loaded.site, &loaded.theme, &loaded.registry).with_host(request_headers.get(header::HOST).and_then(|v| v.to_str().ok()).unwrap_or_default());
         let reply = rest.handle(&route, &rest_query).await?;
         return Ok(rest_response(reply));
     }
@@ -503,7 +503,7 @@ async fn rest_edit_route(app: &Arc<App>, request: Request<Body>) -> std::result:
     }
     let uploads = app.config.wp_root.join("wp-content").join("uploads");
     let access = user.map(|user| rustpress_rest::edit::Access { user, app_password, writer: app.writer.as_ref(), now: crate::admin::now(), uploads });
-    let rest = Rest::new(&loaded.site, &loaded.theme, &loaded.registry);
+    let rest = Rest::new(&loaded.site, &loaded.theme, &loaded.registry).with_host(parts.headers.get(header::HOST).and_then(|v| v.to_str().ok()).unwrap_or_default());
     let reply = rest.handle_as(&route, &rest_query, access, rustpress_rest::edit::Request { method, body: rest_body, basic: crate::admin::basic_credentials(&parts.headers) }).await;
     let response = match reply {
         Ok(reply) => rest_response(reply),
