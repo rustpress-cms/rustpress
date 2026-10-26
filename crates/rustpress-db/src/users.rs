@@ -54,6 +54,12 @@ impl Db {
         Ok(sqlx::query_as(AssertSqlSafe(sql)).bind(login).fetch_optional(&self.pool).await?)
     }
 
+    /// `user_activation_key` of a user: the password reset key (`time:hash`) or the activation key.
+    pub async fn user_activation_key(&self, id: u64) -> Result<String> {
+        let sql = format!("SELECT user_activation_key FROM {} WHERE ID = ?", self.prefix.table("users"));
+        Ok(sqlx::query_scalar::<_, String>(AssertSqlSafe(sql)).bind(id).fetch_optional(&self.pool).await?.unwrap_or_default())
+    }
+
     pub async fn auth_user_by_id(&self, id: u64) -> Result<Option<AuthUser>> {
         let sql = format!("SELECT {AUTH_USER_COLUMNS} FROM {} WHERE ID = ?", self.prefix.table("users"));
         Ok(sqlx::query_as(AssertSqlSafe(sql)).bind(id).fetch_optional(&self.pool).await?)

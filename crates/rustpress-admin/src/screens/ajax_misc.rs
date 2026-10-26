@@ -12,6 +12,11 @@ use super::terms::tax_info;
 use super::{AdminEnv, AdminRequest, AdminResponse, Ctx};
 use crate::content::Content;
 
+/// `sprintf( $format, $value )` with one `%s`.
+fn sprintf_msg(format: &str, value: &str) -> String {
+    rustpress_core::i18n::sprintf(format, &[value])
+}
+
 /// `sanitize_key()`.
 fn sanitize_key(value: &str) -> String {
     value.to_lowercase().chars().filter(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '_' | '-')).collect()
@@ -297,6 +302,63 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUs
             }
             html.push_str("</tbody></table>");
             json(200, &json!({"success": true, "data": html}))
+        }
+        "wp-link-ajax" => {
+            // `_WP_Editors::wp_link_query()`: the published posts of the public types, 20 a page.
+            if !nonce_ok(request.request("_ajax_linking_nonce").unwrap_or_default(), "internal-linking") {
+                return text(403, "-1");
+            }
+            let phrase = request.post_field("term").or(request.post_field("search")).unwrap_or_default().to_owned();
+            let page = request.post_field("page").and_then(|p| p.parse::<u64>().ok()).filter(|p| *p > 0).unwrap_or(1);
+            let mut query = PostQuery { post_types: site.types.public_post_types().into_iter().map(str::to_owned).collect(), statuses: vec!["publish".into()], ..Default::default() };
+            if !phrase.is_empty() {
+                query.search = phrase.split_whitespace().map(str::to_owned).collect();
+                query.search_phrase = Some(phrase.clone());
+            }
+            let mut posts = env.db.posts(&query).await.unwrap_or_default();
+            posts.sort_by(|a, b| b.post_date.cmp(&a.post_date).then(a.id.cmp(&b.id)));
+            let posts: Vec<_> = posts.into_iter().skip(((page - 1) * 20) as usize).take(20).collect();
+            if posts.is_empty() {
+                return text(200, "0");
+            }
+            let mut results = Vec::new();
+            for post in &posts {
+                let info = if post.post_type == "post" {
+                    site.date(&tr("Y/m/d"), site.timezone.local_timestamp(&post.post_date).unwrap_or(0))
+                } else {
+                    super::posts::type_info(&ctx, &post.post_type).map_or_else(|| post.post_type.clone(), |t| t.singular)
+                };
+                let title = rustpress_blocks::content::the_title_for(site, post);
+                results.push(json!({
+                    "ID": post.id,
+                    "title": esc_html(&rustpress_core::formatting::strip_tags(&title)).trim().to_owned(),
+                    "permalink": site.permalink(post).await.unwrap_or_default(),
+                    "info": info,
+                }));
+            }
+            let mut response = text(200, &format!("{}
+", super::ajax::php_json(&serde_json::Value::Array(results))));
+            response.headers.retain(|(k, _)| k != "Content-Type");
+            response.headers.push(("Content-Type".into(), "text/html; charset=UTF-8".into()));
+            response
+        }
+        "get-community-events" => {
+            if !nonce_ok(request.request("_ajax_nonce").or(request.request("_wpnonce")).unwrap_or_default(), "community_events") {
+                return text(403, "-1");
+            }
+            // RustPress makes no requests to WordPress.org, where the events come from.
+            json(200, &json!({"success": false, "data": {"error": tr("RustPress does not contact WordPress.org to look up events.")}}))
+        }
+        "send-password-reset" => {
+            let user_id = request.post_field("user_id").and_then(|v| v.parse::<u64>().ok()).unwrap_or(0);
+            if !nonce_ok(request.request("nonce").unwrap_or_default(), &format!("reset-password-for-{user_id}")) {
+                return text(403, "-1");
+            }
+            if !(user.id == user_id || user.can("edit_users")) {
+                return json(200, &json!({"success": false, "data": tr("Cannot send password reset, permission denied.")}));
+            }
+            // The e-mail with the link cannot be sent.
+            json(200, &json!({"success": false, "data": sprintf_msg(&tr("<strong>Error:</strong> The email could not be sent. Your site may not be correctly configured to send emails. <a href=\"%s\">Get support for resetting your password</a>."), &esc_url(&tr("https://wordpress.org/documentation/article/reset-your-password/")))}))
         }
         "save-user-color-scheme" => {
             if !nonce_ok(request.request("nonce").unwrap_or_default(), "save-color-scheme") {

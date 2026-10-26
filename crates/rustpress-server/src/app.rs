@@ -116,7 +116,20 @@ async fn scheduler(app: Arc<App>) {
     }
 }
 
+/// The request with the cookie of the password of protected posts in reach of the renderer.
 async fn handle(axum::extract::State(app): axum::extract::State<Arc<App>>, request: Request<Body>) -> Response<Body> {
+    let hash = app.current().await.admin.as_ref().map(|parts| parts.auth.cookie_hash().to_owned());
+    let cookie = hash.and_then(|hash| {
+        let name = format!("wp-postpass_{hash}");
+        request.headers().get_all(header::COOKIE).iter().filter_map(|v| v.to_str().ok()).flat_map(|v| v.split(';')).find_map(|pair| {
+            let (key, value) = pair.trim().split_once('=')?;
+            (key.trim() == name).then(|| String::from_utf8_lossy(&rustpress_core::rewrite::urldecode(value.trim().as_bytes())).into_owned())
+        })
+    });
+    rustpress_blocks::content::POST_PASSWORD_COOKIE.scope(cookie, handle_request(axum::extract::State(app), request)).await
+}
+
+async fn handle_request(axum::extract::State(app): axum::extract::State<Arc<App>>, request: Request<Body>) -> Response<Body> {
     let request = match admin_route(&app, request).await {
         Ok(response) => return response,
         Err(request) => request,
@@ -179,7 +192,12 @@ async fn admin_route(app: &Arc<App>, request: Request<Body>) -> std::result::Res
         }
         return Ok(response);
     }
-    Ok(crate::admin::login_page(&loaded, app.writer.as_ref(), post, &query, &body_text, &parts.headers).await)
+    let remote_addr = parts.extensions.get::<axum::extract::ConnectInfo<std::net::SocketAddr>>().map(|c| c.0.ip().to_string());
+    let response = crate::admin::login_page(&loaded, app.writer.as_ref(), post, &path, &request_uri, &query, &body_text, &parts.headers, remote_addr).await;
+    if post {
+        app.reload_now().await;
+    }
+    Ok(response)
 }
 
 /// `index.php` for `wp-admin/`, the file name for `wp-admin/<file>.php`; `None` for anything else

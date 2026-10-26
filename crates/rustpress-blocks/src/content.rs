@@ -11,9 +11,19 @@ use crate::Result;
 use crate::env::{Context, Env};
 use crate::images::{self, LoadingInput};
 
-/// `post_password_required()`: without cookie support every protected post requires the password.
+tokio::task_local! {
+    /// The cookie `wp-postpass_<hash>` of the request being answered: the hash of a password the visitor entered.
+    pub static POST_PASSWORD_COOKIE: Option<String>;
+}
+
+/// `post_password_required()`: a protected post needs the password unless the visitor has entered it
+/// (the cookie of the request holds its portable hash).
 pub fn post_password_required(post: &Post) -> bool {
-    !post.post_password.is_empty()
+    if post.post_password.is_empty() {
+        return false;
+    }
+    let Some(hash) = POST_PASSWORD_COOKIE.try_with(Clone::clone).ok().flatten() else { return true };
+    !(hash.starts_with("$P$B") && rustpress_auth::password::check_password(&post.post_password, &hash))
 }
 
 /// `get_the_title()` including the `the_title` filters, in English.

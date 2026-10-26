@@ -296,7 +296,8 @@ fn pairs_of(text: &str) -> Vec<(String, String)> {
 }
 
 /// `wp-login.php`.
-pub async fn login_page(loaded: &Loaded, writer: Option<&rustpress_db::Writer>, method_post: bool, query: &str, body: &str, headers: &HeaderMap) -> Response<Body> {
+#[allow(clippy::too_many_arguments)]
+pub async fn login_page(loaded: &Loaded, writer: Option<&rustpress_db::Writer>, method_post: bool, path: &str, request_uri: &str, query: &str, body: &str, headers: &HeaderMap, remote_addr: Option<String>) -> Response<Body> {
     let Some(parts) = &loaded.admin else { return plain(StatusCode::NOT_FOUND, "Not Found") };
     let mut loader = parts.loader.clone();
     // Nobody is signed in on this page: the nonces belong to user 0 without a session.
@@ -314,13 +315,17 @@ pub async fn login_page(loaded: &Loaded, writer: Option<&rustpress_db::Writer>, 
         privacy_policy: parts.privacy_policy.clone(),
         https: loaded.site.settings.siteurl.starts_with("https"),
         now: now(),
+        mailer: None,
     };
     let request = LoginRequest {
         post: method_post,
+        path: path.to_owned(),
+        request_uri: request_uri.to_owned(),
+        referer: headers.get(header::REFERER).and_then(|v| v.to_str().ok()).map(str::to_owned),
         query: pairs_of(query),
         form: if method_post { pairs_of(body) } else { Vec::new() },
         cookies: cookies_of(headers),
-        remote_addr: None,
+        remote_addr,
         user_agent: headers.get(header::USER_AGENT).and_then(|v| v.to_str().ok()).map(str::to_owned),
     };
     let reply = login::handle(&env, &request).await;

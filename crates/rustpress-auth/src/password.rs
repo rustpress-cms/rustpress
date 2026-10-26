@@ -34,6 +34,33 @@ pub fn hash_password(password: &str) -> String {
     format!("$wp{}", hashed.replacen("$2b$", "$2y$", 1))
 }
 
+/// `wp_fast_hash()`: the keyed BLAKE2b hash WordPress 6.8 stores for security keys.
+pub fn fast_hash(message: &str) -> String {
+    use blake2::Blake2bMac;
+    use blake2::digest::consts::U30;
+    let mut mac = <Blake2bMac<U30> as hmac::digest::KeyInit>::new_from_slice(b"wp_fast_hash_6.8+").expect("a key of 17 bytes");
+    hmac::digest::Update::update(&mut mac, message.as_bytes());
+    let hashed = hmac::digest::FixedOutput::finalize_fixed(mac);
+    format!("$generic${}", base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(hashed))
+}
+
+/// `wp_verify_fast_hash()`: also accepts the phpass hashes of older versions.
+pub fn verify_fast_hash(message: &str, hash: &str) -> bool {
+    if !hash.starts_with("$generic$") {
+        return phpass(message, hash).is_some_and(|computed| computed.as_bytes().ct_eq(hash.as_bytes()).into());
+    }
+    fast_hash(message).as_bytes().ct_eq(hash.as_bytes()).into()
+}
+
+/// `PasswordHash( 8, true )->HashPassword()`: the portable phpass hash of the cookie of a protected post.
+pub fn hash_portable(password: &str) -> String {
+    use rand::Rng;
+    let mut random = [0u8; 6];
+    rand::rng().fill(&mut random);
+    let setting = format!("$P${}{}", ITOA64[13] as char, encode64(&random));
+    phpass(password, &setting).unwrap_or_else(|| "*0".to_owned())
+}
+
 /// `wp_check_password()`.
 pub fn check_password(password: &str, hash: &str) -> bool {
     if hash.len() <= 32 {
@@ -144,5 +171,30 @@ mod tests {
         let long = "x".repeat(MAX_LENGTH + 1);
         assert_eq!(hash_password(&long), "*");
         assert!(!check_password(&long, "$wp$2y$10$abcdefghijklmnopqrstuuabcdefghijklmnopqrstuvwxyz01234"));
+    }
+}
+
+#[cfg(test)]
+mod fast_hash_tests {
+    use super::*;
+
+    #[test]
+    fn fast_hash_has_the_shape_of_wordpress() {
+        let hash = fast_hash("abcdefghijklmnopqrst");
+        assert!(hash.starts_with("$generic$"));
+        // 30 bytes in base64 without padding: 40 characters.
+        assert_eq!(hash.len(), "$generic$".len() + 40);
+        // The value libsodium gives (`sodium_crypto_generichash( $key, 'wp_fast_hash_6.8+', 30 )`).
+        assert_eq!(hash, "$generic$1BfirmYI698KI6-zrkeF0CJICMFgCxm3HV5z4zK9");
+        assert!(verify_fast_hash("abcdefghijklmnopqrst", &hash));
+        assert!(!verify_fast_hash("abcdefghijklmnopqrsu", &hash));
+    }
+
+    #[test]
+    fn portable_hash_checks() {
+        let hash = hash_portable("geheim");
+        assert!(hash.starts_with("$P$B"));
+        assert!(check_password("geheim", &hash));
+        assert!(!check_password("anders", &hash));
     }
 }
