@@ -139,16 +139,21 @@ async fn list_mode(ctx: &Ctx<'_>, title: String) -> AdminResponse {
     // `WP_Query` leaves `found_posts` at 0 when the page has no rows (a page past the last one).
     let total = if items.is_empty() { 0 } else { total };
     let mut rows = String::new();
+    // `$this->detached`: the unattached view has no "Uploaded to" column and offers to attach.
+    let detached = filter == "detached";
     for item in &items {
-        rows.push_str(&row(ctx, item).await);
+        rows.push_str(&row(ctx, item, detached).await);
     }
-    let columns = vec![
+    let mut columns = vec![
         Column::new("cb", ""),
         Column::new("title", &tr("File")).sortable("title", false, Some(&tr("File")), None),
         Column::new("author", &tr("Author")).sortable("author", false, Some(&tr("Author")), None),
         Column::new("parent", &tr("Uploaded to")).sortable("parent", false, Some(&tr("Uploaded to")), None),
         Column::new("date", &tr("Date")).sortable("date", true, Some(&tr("Date")), Some("desc")),
     ];
+    if detached {
+        columns.retain(|c| c.key != "parent");
+    }
     let table = Table {
         site,
         plural: "media".into(),
@@ -161,17 +166,26 @@ async fn list_mode(ctx: &Ctx<'_>, title: String) -> AdminResponse {
         total_items: total,
         per_page,
         current_page: paged,
-        bulk_actions: if ctx.can("delete_posts") { vec![("delete".into(), tr("Delete permanently"))] } else { Vec::new() },
+        bulk_actions: {
+            let mut actions = if ctx.can("delete_posts") { vec![("delete".into(), tr("Delete permanently"))] } else { Vec::new() };
+            if detached {
+                actions.push(("attach".into(), tr("Attach")));
+            }
+            actions
+        },
         has_items: !items.is_empty(),
     };
     let nonce_field = ctx.nonce_field("bulk-media");
+    // `print_table_description()`: the description of the sortable column, then the direction.
     let ordered_by = match orderby.as_str() {
-        "title" => tr("File"),
-        "author" => tr("Author"),
-        "parent" => tr("Uploaded to"),
-        _ => tr("Date"),
+        "title" => Some(tr("Table ordered by File Name.")),
+        "author" => Some(tr("Table ordered by Author.")),
+        "parent" => Some(tr("Table ordered by Uploaded To.")),
+        "comment_count" => Some(tr("Table ordered by Comments.")),
+        "date" => Some(tr("Table ordered by Date.")),
+        _ => None,
     };
-    let caption = sprintf(&if desc { tr("Table ordered by %s. Descending.") } else { tr("Table ordered by %s. Ascending.") }, &[&ordered_by]);
+    let caption = ordered_by.map_or_else(String::new, |text| format!("{text} {}", if desc { tr("Descending.") } else { tr("Ascending.") }));
     // `display_rows_or_placeholder()`
     if items.is_empty() {
         rows = format!("<tr class=\"no-items\"><td class=\"colspanchange\" colspan=\"5\">{}</td></tr>", tr("No media files found."));
@@ -187,13 +201,15 @@ async fn list_mode(ctx: &Ctx<'_>, title: String) -> AdminResponse {
             options.push_str(&format!("\t<option value=\"post_mime_type:{key}\"{}>{label}</option>\n", if selected_filter == format!("post_mime_type:{key}") { " selected='selected'" } else { "" }));
         }
     }
-    options.push_str(&format!("\t<option value=\"detached\"{}>{}</option>\n", if filter == "detached" { " selected='selected'" } else { "" }, tr("Unattached")));
+    // Written out, not `selected()`: double quotes.
+    options.push_str(&format!("\t<option value=\"detached\"{}>{}</option>\n", if filter == "detached" { " selected=\"selected\"" } else { "" }, tr("Unattached")));
     options.push_str(&format!("\t<option value=\"mine\"{}>{}</option>\n", if filter == "mine" { " selected='selected'" } else { "" }, tr("Mine")));
-    let mut months = format!("\t\t\t<option {} value=\"0\">{}</option>\n", if month == 0 { "selected='selected'" } else { "" }, tr("All dates"));
+    // `months_dropdown()`: `selected()` gives ` selected='selected'` or nothing.
+    let mut months = format!("\t\t\t<option{} value=\"0\">{}</option>\n", if month == 0 { " selected='selected'" } else { "" }, tr("All dates"));
     for (year, m) in db.attachment_months().await.unwrap_or_default() {
         let value = format!("{year}{m:02}");
         let name = site.locale_data().month[(m as usize).saturating_sub(1).min(11)].clone();
-        months.push_str(&format!("\t\t<option {} value='{value}'>{}</option>\n", if month.to_string() == value { "selected='selected'" } else { "" }, esc_html(&sprintf(&tr("%1$s %2$d"), &[&name, &year.to_string()]))));
+        months.push_str(&format!("\t\t<option {} value='{value}'>{}</option>\n", if month.to_string() == value { " selected='selected'" } else { "" }, esc_html(&sprintf(&tr("%1$s %2$d"), &[&name, &year.to_string()]))));
     }
     let mut h = format!("<div class=\"wrap\">\n<h1 class=\"wp-heading-inline\">{}</h1>\n\n", esc_html(&title));
     h.push_str(&format!("\t<a href=\"{}\" class=\"page-title-action\">{}</a>\n\t\t\t\t\t\t", esc_url(&ctx.admin_url("media-new.php")), tr("Add Media File")));
@@ -206,8 +222,9 @@ async fn list_mode(ctx: &Ctx<'_>, title: String) -> AdminResponse {
     // An unknown mode is neither of the two views.
     let mode_value = esc_attr(request.get("mode").unwrap_or("list"));
     let (list_current, list_aria) = if mode_value == "list" { (" current", " aria-current=\"page\"") } else { ("", "") };
-    let list_url = esc_url(&add_query_arg(&request.request_uri, "mode", "list"));
-    let grid_url = esc_url(&add_query_arg(&request.request_uri, "mode", "grid"));
+    // `remove_query_arg( 'attachment-filter', add_query_arg( 'mode', $mode ) )`
+    let list_url = esc_url(&remove_query_arg(&add_query_arg(&request.request_uri, "mode", "list"), "attachment-filter"));
+    let grid_url = esc_url(&remove_query_arg(&add_query_arg(&request.request_uri, "mode", "grid"), "attachment-filter"));
     h.push_str(&format!(
         "<form id=\"posts-filter\" method=\"get\">\n\n<h2 class='screen-reader-text'>{filter_heading}</h2>\t\t<div class=\"wp-filter\">\n\t\t\t<div class=\"filter-items\">\n\t\t\t\t\t\t<input type=\"hidden\" name=\"mode\" value=\"{mode_value}\" />\n\t\t<div class=\"view-switch\">\n\t\t<a href='{list_url}' class='view-list{list_current}' id='view-switch-list'{list_aria}><span class='screen-reader-text'>{list}</span></a>\n<a href='{grid_url}' class='view-grid' id='view-switch-grid'><span class='screen-reader-text'>{grid}</span></a>\n\t\t</div>\n\t\t\n\t\t\t\t<label for=\"attachment-filter\" class=\"screen-reader-text\">\n\t\t\t\t\t{by_type}\t\t\t\t</label>\n\t\t\t\t<select class=\"attachment-filters\" name=\"attachment-filter\" id=\"attachment-filter\">\n\t\t\t\t\t\t{options}\t\t\t\t</select>\n\n\t\t\t\t\t\t<div class=\"actions\">\n\t\t\t\t\t<label for=\"filter-by-date\" class=\"screen-reader-text\">{by_date}</label>\n\t\t<select name=\"m\" id=\"filter-by-date\">\n{months}\t\t</select>\n\t\t<input type=\"submit\" name=\"filter_action\" id=\"post-query-submit\" class=\"button button-compact\" value=\"{filter_btn}\"  />\t\t</div>\n\t\t\t\t\t</div>\n\n\t\t\t<div class=\"search-form\">\n\t\t\t\t<p class=\"search-box\">\n\t\t\t\t\t<label class=\"screen-reader-text\" for=\"media-search-input\">\n\t\t\t\t\t{search_label}\t\t\t\t\t</label>\n\t\t\t\t\t<input type=\"search\" id=\"media-search-input\" class=\"search\" name=\"s\" value=\"{search}\">\n\t\t\t\t\t<input id=\"search-submit\" type=\"submit\" class=\"button button-compact\" value=\"{search_label}\">\n\t\t\t\t</p>\n\t\t\t</div>\n\t\t</div>\n\t\t\n",
         filter_heading = tr("Filter media items list"),
@@ -252,7 +269,7 @@ fn notice(ctx: &Ctx<'_>) -> String {
     format!("<div id=\"message\" class=\"updated notice is-dismissible\"><p>{message}</p></div>\n")
 }
 
-async fn row(ctx: &Ctx<'_>, post: &Post) -> String {
+async fn row(ctx: &Ctx<'_>, post: &Post, detached: bool) -> String {
     let site = ctx.site();
     let tr = |s: &str| ctx.tr(s);
     let db = ctx.env.db;
@@ -293,6 +310,9 @@ async fn row(ctx: &Ctx<'_>, post: &Post) -> String {
     actions.push(("view".into(), format!("<a href=\"{}\" aria-label=\"{}\" rel=\"bookmark\">{}</a>", esc_url(&permalink), esc_attr(&sprintf(&tr("View %s"), &[&quote])), tr("View"))));
     actions.push(("copy".into(), format!("<span class=\"copy-to-clipboard-container\"><button type=\"button\" class=\"button-link copy-attachment-url media-library\" data-clipboard-text=\"{}\" aria-label=\"{}\">{}</button><span class=\"success hidden\" aria-hidden=\"true\">{}</span></span>", esc_attr(&url), esc_attr(&sprintf(&tr("Copy %s URL to clipboard"), &[&quote])), tr("Copy URL"), tr("Copied!"))));
     actions.push(("download".into(), format!("<a href=\"{}\" aria-label=\"{}\" download>{}</a>", esc_url(&url), esc_attr(&sprintf(&tr("Download %s"), &[&quote])), tr("Download file"))));
+    if detached && can_edit {
+        actions.push(("attach".into(), format!("<a href=\"#the-list\" onclick=\"findPosts.open( 'media[]', '{}' ); return false;\" class=\"hide-if-no-js aria-button-if-js\" aria-label=\"{}\">{}</a>", post.id, esc_attr(&sprintf(&tr("Attach %s to existing content"), &[&quote])), tr("Attach"))));
+    }
     let author = match db.user(post.post_author).await.ok().flatten() {
         Some(user) => format!("<a href=\"{}\">{}</a>", esc_url(&format!("upload.php?author={}", user.id)), esc_html(&user.display_name)),
         None => format!("<span aria-hidden=\"true\">&#8212;</span><span class=\"screen-reader-text\">{}</span>", tr("(no author)")),
@@ -317,7 +337,7 @@ async fn row(ctx: &Ctx<'_>, post: &Post) -> String {
     let diff = ctx.env.now - timestamp;
     let date = if diff > 0 && diff < 86_400 { sprintf(&tr("%s ago"), &[&human_time_diff(ctx, timestamp, ctx.env.now)]) } else { site.date(&tr("Y/m/d"), timestamp) };
     format!(
-        "\t\t\t<tr id=\"post-{id}\" class=\"author-{owner} status-inherit\">\n\t\t\t\t<td class=\"check-column\">{cb}</td><th class='title column-title has-row-actions column-primary' data-colname=\"{file}\" scope=\"row\" aria-label=\"{label}\">\t\t<strong class=\"has-media-icon\">\n\t\t\t{title_html}{state}\t\t</strong>\n\t\t<p class=\"filename\">\n\t\t\t<span class=\"screen-reader-text\">\n\t\t\t\t{filename_label}\t\t\t</span>\n\t\t\t{filename}\t\t</p>\n\t\t{actions}</th><td class='author column-author' data-colname=\"{author_label}\">{author}</td><td class='parent column-parent' data-colname=\"{parent_label}\">{parent}</td><td class='date column-date' data-colname=\"{date_label}\">{date}</td>\t\t\t</tr>\n\t\t\t",
+        "\t\t\t<tr id=\"post-{id}\" class=\"author-{owner} status-inherit\">\n\t\t\t\t<td class=\"check-column\">{cb}</td><th class='title column-title has-row-actions column-primary' data-colname=\"{file}\" scope=\"row\" aria-label=\"{label}\">\t\t<strong class=\"has-media-icon\">\n\t\t\t{title_html}{state}\t\t</strong>\n\t\t<p class=\"filename\">\n\t\t\t<span class=\"screen-reader-text\">\n\t\t\t\t{filename_label}\t\t\t</span>\n\t\t\t{filename}\t\t</p>\n\t\t{actions}</th><td class='author column-author' data-colname=\"{author_label}\">{author}</td>{parent_cell}<td class='date column-date' data-colname=\"{date_label}\">{date}</td>\t\t\t</tr>\n\t\t\t",
         id = post.id,
         owner = if post.post_author == ctx.user.id { "self" } else { "other" },
         cb = if can_edit {
@@ -331,7 +351,7 @@ async fn row(ctx: &Ctx<'_>, post: &Post) -> String {
         filename = esc_html(attached.rsplit('/').next().unwrap_or_default()),
         actions = row_actions(site, &actions).trim_start_matches("").to_owned(),
         author_label = tr("Author"),
-        parent_label = tr("Uploaded to"),
+        parent_cell = if detached { String::new() } else { format!("<td class='parent column-parent' data-colname=\"{}\">{parent}</td>", tr("Uploaded to")) },
         date_label = tr("Date"),
     )
 }

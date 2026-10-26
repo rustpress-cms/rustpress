@@ -413,6 +413,8 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         "menu_order" => OrderBy::MenuOrder,
         _ if hierarchical_display => OrderBy::MenuOrderTitle,
         _ if matches!(post_status.as_deref(), Some("pending" | "draft")) && request.get("orderby").is_none() => OrderBy::Modified,
+        // `WP_Query` without an `orderby` orders a search by relevance.
+        _ if search.is_some() => OrderBy::Relevance,
         _ => OrderBy::Date,
     };
     let order = if order_param == "asc" || (hierarchical_display) || (order_param.is_empty() && post_status.as_deref() == Some("pending")) { Order::Asc } else { Order::Desc };
@@ -442,8 +444,13 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         // A tag that does not exist matches nothing.
         query.tax_groups.push(vec![tag_term.as_ref().map_or(0, |term| term.term_taxonomy_id)]);
     }
-    // The query variables of the other taxonomies (`genre=krimi`), and the post format (`post_format=video`).
-    for (taxonomy, _) in &taxonomies {
+    // The query variables of the other taxonomies (`genre=krimi`), and the post format (`post_format=video`) of the
+    // types with formats.
+    let mut filter_taxonomies = taxonomies.clone();
+    if site.post_type_supports(&info.name, "post-formats") && !filter_taxonomies.iter().any(|(t, _)| t == "post_format") {
+        filter_taxonomies.push(("post_format".to_owned(), false));
+    }
+    for (taxonomy, _) in &filter_taxonomies {
         let (query_var, hierarchical) = match taxonomy.as_str() {
             "category" | "post_tag" => continue,
             "post_format" => (Some("post_format".to_owned()), false),
@@ -761,10 +768,25 @@ pub(super) async fn post_row(ctx: &Ctx<'_>, post: &Post, level: usize, row: &Row
             _ => None,
         }
     };
+    // `get_post_ancestors()`: the class counts the ancestors whatever the display; the title of a child shown at the
+    // top (search results) finds its level the same way and names its parent (`column_title()`).
+    let mut ancestors: Vec<Post> = Vec::new();
+    let mut next = post.post_parent;
+    while next != 0 && next != post.id && !ancestors.iter().any(|a| a.id == next) {
+        let Some(parent) = db.post(next).await.ok().flatten() else { break };
+        next = parent.post_parent;
+        ancestors.push(parent);
+    }
+    let (level, parent_name) = if hierarchical_display && level == 0 && post.post_parent > 0 && !ancestors.is_empty() {
+        (ancestors.len(), ancestors.first().map(|p| site.texturize(&p.post_title)))
+    } else {
+        (level, None)
+    };
     let class = format!(
-        "iedit author-{} {}level-{level} {}",
+        "iedit author-{} {}level-{} {}",
         if post.post_author == ctx.user.id { "self" } else { "other" },
         if lock_holder.is_some() { "wp-locked " } else { "" },
+        ancestors.len(),
         post_class(post, &categories, &tags, &others, is_sticky, thumbnail)
     );
     out.push_str(&format!("\t\t{}<tr id=\"post-{}\" class=\"{class}\">\n\t\t\t", if hierarchical_display { "\t" } else { "" }, post.id));
@@ -797,7 +819,10 @@ pub(super) async fn post_row(ctx: &Ctx<'_>, post: &Post, level: usize, row: &Row
                     None => (String::new(), String::new(), String::new()),
                 };
                 let edit_link = ctx.admin_url(&format!("post.php?post={}&action=edit", post.id)).replace('&', "&amp;");
-                let states = post_states(ctx, post, &status_param, is_sticky);
+                let mut states = post_states(ctx, post, &status_param, is_sticky);
+                if let Some(name) = &parent_name {
+                    states.push_str(&format!(" | {} {}", tr("Parent Page:"), esc_html(name)));
+                }
                 let name_html = if can_edit && post.post_status != "trash" {
                     format!("{pad}<a class=\"row-title\" href=\"{edit_link}\"{described}>{title}</a>{hierarchy_linked}")
                 } else {

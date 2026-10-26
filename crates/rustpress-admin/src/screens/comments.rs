@@ -310,6 +310,8 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         "approved" => ("1", None),
         other => (other, None),
     };
+    // `$_REQUEST['user_id']` filters every view.
+    let user_id = request.get("user_id").and_then(|u| u.trim().parse::<u64>().ok()).filter(|u| *u != 0).or(user_id);
     let query = CommentListQuery { status: status.to_owned(), post_id, user_id, author_email: None, kind: kind.clone(), search: (!search.is_empty()).then(|| search.clone()), orderby: orderby.clone(), desc, limit: per_page, offset: (paged - 1).saturating_mul(per_page) };
     let (comments, total) = db.list_comments_admin(&query).await.unwrap_or_default();
     if let Some(response) = super::common::past_last_page(ctx, paged, total, per_page) {
@@ -416,8 +418,14 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         tr("Filter")
     );
     let type_select = format!("<div class=\"alignleft actions\">{}{empty_button}</div>", if has_items { type_filter.as_str() } else { "" });
-    // The caption of the initial view; a sorted list has none (its columns carry no description).
-    let caption = if request.get("orderby").is_some() { String::new() } else { tr("Ordered by Comment Date, descending.") };
+    // The caption of the initial view; a list sorted by a column with a description names it (`print_table_description()`).
+    let direction = if request.get("order") == Some("desc") { tr("Descending.") } else { tr("Ascending.") };
+    let caption = match request.get("orderby") {
+        None => tr("Ordered by Comment Date, descending."),
+        Some("comment_author") => format!("{} {direction}", tr("Table ordered by Comment Author.")),
+        Some("comment_post_ID") => format!("{} {direction}", tr("Table ordered by Post Replied To.")),
+        Some(_) => String::new(),
+    };
     let nonce_field = format!("<input type=\"hidden\" id=\"_ajax_fetch_list_nonce\" name=\"_ajax_fetch_list_nonce\" value=\"{}\" /><input type=\"hidden\" name=\"_wp_http_referer\" value=\"{}\" />{}", ctx.create_nonce("fetch-list-wp_list_comments_table"), esc_url(&request.request_uri), if has_items { ctx.nonce_field("bulk-comments") } else { String::new() });
     let table_html = table.display_opts(has_items, &nonce_field, &type_select, &bottom_extra, &caption, &rows, &tr("Comments list")).replace("<tbody id=\"the-list\"\n\t\t\t\t>", "<tbody id=\"the-comment-list\" data-wp-lists=\"list:comment\">");
     let table_html = table_html.replace("<tbody id=\"the-list\"\n\t\t\t\t\t>", "<tbody id=\"the-comment-list\" data-wp-lists=\"list:comment\">");
