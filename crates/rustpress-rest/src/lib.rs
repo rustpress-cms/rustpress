@@ -5,6 +5,7 @@
 //! Everything that needs a login (the `edit` context, drafts, writes) answers
 //! with the same 401 errors WordPress gives to anonymous requests.
 
+mod abilities;
 mod comments;
 mod directory;
 pub mod edit;
@@ -324,6 +325,7 @@ impl<'a> Rest<'a> {
                 }
             }
             ["wp", "v2", "font-families" | "font-collections", ..] => self.fonts_route(&segments, "GET", &edit::Args::default(), params).await,
+            ["wp-abilities", "v1", ..] => self.abilities_route(&segments, "GET", &edit::Args::default(), params).await,
             ["wp-block-editor", "v1", "url-details"] if params.get("url").is_none() => Ok(Err(RestError::missing_params(&["url"]))),
             ["wp-block-editor", "v1", "url-details"] => Ok(Err(RestError::new("rest_cannot_view_url_details", "Sorry, you are not allowed to process remote URLs.", 401))),
             ["wp-block-editor", "v1", "export"] => Ok(Err(RestError::new("rest_cannot_export_templates", "Sorry, you are not allowed to export templates and template parts.", 401))),

@@ -275,6 +275,7 @@ impl Rest<'_> {
             ["oembed", "1.0", "proxy"] if get && args.str("url").is_none() => Ok(Some(Err(RestError::missing_params(&["url"])))),
             ["oembed", "1.0", "proxy"] if get => Ok(Some(if self.can("edit_posts") { Err(RestError::new("oembed_invalid_url", &self.site.tr("Not Found"), 404).after_permission_check()) } else { Err(self.forbidden("rest_forbidden", &self.site.tr("Sorry, you are not allowed to make proxied oEmbed requests."))) })),
             ["wp-site-health", "v1", ..] if get => self.health_route(&segments).await.map(Some),
+            ["wp-abilities", "v1", ..] => self.abilities_route(&segments, &method, &args, params).await.map(Some),
             ["wp", "v2", "view-config"] if get => self.view_config(&args).await.map(Some),
             ["wp", "v2", "icons", ..] | ["wp", "v2", "icon-collections", ..] if get => Ok(Some(self.icons_route(&segments, &args))),
             ["wp-block-editor", "v1", "navigation-fallback"] if get => self.navigation_fallback(&args).await.map(Some),
