@@ -216,8 +216,27 @@ pub async fn form(ctx: &Ctx<'_>, post: &Post) -> AdminResponse {
         .replace("{{ID}}", &id.to_string())
         .replace("{{SITE}}", &siteurl);
 
+    // The boxes the user hid (`do_meta_boxes()` gives them `hide-if-js`) and the layout of the screen.
+    let hidden = super::common::hidden_meta_boxes(ctx, "attachment", "attachment").await;
+    let columns = super::common::layout_columns(ctx, "attachment", 2).await;
+    let boxes = [("commentstatusdiv", tr("Discussion")), ("commentsdiv", tr("Comments")), ("slugdiv", tr("Slug")), ("authordiv", tr("Author"))];
+    let mut html = html;
+    for (id, _) in &boxes {
+        if !hidden.iter().any(|h| h == id) {
+            html = html.replacen(&format!("id=\"{id}\" class=\"postbox  hide-if-js\""), &format!("id=\"{id}\" class=\"postbox \""), 1);
+        }
+    }
+    if columns == 1 {
+        html = html.replacen("<div id=\"post-body\" class=\"metabox-holder columns-2\">", "<div id=\"post-body\" class=\"metabox-holder columns-1\">", 1);
+    }
+    let options = crate::chrome::ScreenOptions {
+        meta_boxes: Some(boxes.iter().map(|(id, title)| ((*id).to_owned(), title.clone(), hidden.iter().any(|h| h == id))).collect()),
+        layout_columns: Some((2, columns)),
+        editor_expand: Some(super::common::user_setting(ctx, "editor_expand").await.is_none_or(|v| v == "on")),
+        ..Default::default()
+    };
     let baked = super::pages::load(ctx, "attachment-edit");
-    let screen = Screen { file: "post.php".into(), parent_file: "upload.php".into(), submenu_file: Some("upload.php".into()), post_type: "attachment".into(), title: tr("Edit Media"), help: Some(baked.help), view_item: Some((tr("View Media File"), site.permalink(post).await.unwrap_or_default())), ..Default::default() };
+    let screen = Screen { file: "post.php".into(), parent_file: "upload.php".into(), submenu_file: Some("upload.php".into()), post_type: "attachment".into(), title: tr("Edit Media"), help: Some(baked.help), view_item: Some((tr("View Media File"), site.permalink(post).await.unwrap_or_default())), options: Some(options), ..Default::default() };
     let scripts: Vec<String> = ["admin-comments", "suggest", "post", "image-edit"].into_iter().map(String::from).collect();
     let word_count = serde_json::json!({"type": "words", "shortcodes": ["wp_caption", "caption", "gallery", "playlist", "audio", "video", "embed"]});
     let assets = Assets { scripts, styles: vec!["imgareaselect".into()], late_scripts: vec!["wplink".into()], localize: vec![("word-count".into(), "wordCountL10n".into(), word_count)], ..Default::default() };

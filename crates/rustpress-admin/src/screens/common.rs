@@ -209,6 +209,24 @@ pub async fn user_option(ctx: &Ctx<'_>, name: &str) -> Option<String> {
     db.user_meta(ctx.user.id, name).await.ok().flatten()
 }
 
+/// `get_hidden_meta_boxes( $screen )` of an edit screen (`post` base): the boxes the user hid, or the ones WordPress hides
+/// by default.
+pub async fn hidden_meta_boxes(ctx: &Ctx<'_>, screen_id: &str, post_type: &str) -> Vec<String> {
+    let stored = user_option(ctx, &format!("metaboxhidden_{screen_id}")).await.and_then(|raw| rustpress_phpser::unserialize(raw.as_bytes()).ok()).filter(|v| v.as_array().is_some());
+    match stored {
+        Some(value) => value.as_array().unwrap_or_default().iter().filter_map(|(_, v)| v.as_str().map(str::to_owned)).collect(),
+        None if matches!(post_type, "post" | "page" | "attachment") => {
+            ["slugdiv", "trackbacksdiv", "postcustom", "postexcerpt", "commentstatusdiv", "commentsdiv", "authordiv", "revisionsdiv"].iter().map(|s| (*s).to_owned()).collect()
+        }
+        None => vec!["slugdiv".to_owned()],
+    }
+}
+
+/// `WP_Screen::get_columns()` of a screen with the `layout_columns` option: the user's choice, else the default.
+pub async fn layout_columns(ctx: &Ctx<'_>, screen_id: &str, default: u32) -> u32 {
+    user_option(ctx, &format!("screen_layout_{screen_id}")).await.and_then(|v| v.trim().parse::<u32>().ok()).filter(|n| *n != 0).unwrap_or(default)
+}
+
 /// `get_hidden_columns( $screen )`: the columns the user hid (`manage{screen}columnshidden`).
 pub async fn hidden_columns(ctx: &Ctx<'_>, screen_id: &str) -> Vec<String> {
     let Some(raw) = user_option(ctx, &format!("manage{screen_id}columnshidden")).await else { return Vec::new() };

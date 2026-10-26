@@ -97,6 +97,10 @@ pub struct ScreenOptions {
     pub meta_boxes: Option<Vec<(String, String, bool)>>,
     /// Whether the welcome panel of the dashboard shows; `None` where there is none.
     pub welcome: Option<bool>,
+    /// `(max, current)` of the `layout_columns` screen option (`render_screen_layout()`).
+    pub layout_columns: Option<(u32, u32)>,
+    /// The "Additional settings" of an edit screen: whether the full-height editor is on (`editor_expand`).
+    pub editor_expand: Option<bool>,
 }
 
 /// `WP_Screen::render_screen_meta()`: the help, the screen options and the buttons that open them.
@@ -153,6 +157,18 @@ fn screen_meta_with(help: Option<&Help>, options: Option<&ScreenOptions>, tr: &d
             }
             out.push_str("\t\t</fieldset>\n\t\t");
         }
+        if let Some((max, current)) = options.layout_columns {
+            out.push_str(&format!("\t\t<fieldset class='columns-prefs'>\n\t\t<legend class=\"screen-layout\">{}</legend>\n\t\t", tr("Layout")));
+            for i in 1..=max {
+                let label = if i == 1 { tr("%s column") } else { tr("%s columns") };
+                out.push_str(&format!(
+                    "\t\t\t<label class=\"columns-prefs-{i}\">\n\t\t\t<input type='radio' name='screen_columns' value='{i}' {} />\n\t\t\t{}\t\t\t</label>\n\t\t",
+                    if current == i { " checked='checked'" } else { "" },
+                    label.replace("%s", &i.to_string())
+                ));
+            }
+            out.push_str("\t\t</fieldset>\n\t\t");
+        }
         if let Some((option, value)) = &options.per_page {
             out.push_str(&format!(
                 "\t\t<fieldset class=\"screen-options\">\n\t\t<legend>{}</legend>\n\t\t\t\t\t\t\t<label for=\"{o}\">{}</label>\n\t\t\t\t<input type=\"number\" step=\"1\" min=\"1\" max=\"999\" class=\"screen-per-page small-text\" name=\"wp_screen_options[value]\"\n\t\t\t\t\tid=\"{o}\"\n\t\t\t\t\tvalue=\"{value}\" />\n\t\t\t\t\t\t\t<input type=\"hidden\" name=\"wp_screen_options[option]\" value=\"{o}\" />\n\t\t</fieldset>\n\t\t",
@@ -170,6 +186,15 @@ fn screen_meta_with(help: Option<&Help>, options: Option<&ScreenOptions>, tr: &d
                 tr("Compact view"),
                 checked("excerpt"),
                 tr("Extended view")
+            ));
+        }
+        // `WP_Screen::$_screen_settings` of the edit screens.
+        if let Some(expand) = options.editor_expand {
+            out.push_str(&format!(
+                "<fieldset class=\"editor-expand hidden\"><legend>{}</legend><label for=\"editor-expand-toggle\"><input type=\"checkbox\" id=\"editor-expand-toggle\"{} />{}</label></fieldset>",
+                tr("Additional settings"),
+                if expand { " checked='checked'" } else { "" },
+                tr("Enable full-height editor and distraction-free functionality.")
             ));
         }
         // `screen_options_show_submit`: the items per page and the view mode need the button.
