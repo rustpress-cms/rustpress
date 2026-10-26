@@ -647,6 +647,8 @@ fn feed_response(feed: &Feed, request: &axum::http::HeaderMap) -> Response<Body>
     let mut response = Response::new(if not_modified { Body::empty() } else { Body::from(feed.body.clone()) });
     if not_modified {
         *response.status_mut() = StatusCode::NOT_MODIFIED;
+    } else if feed.not_found {
+        *response.status_mut() = StatusCode::NOT_FOUND;
     }
     let headers = response.headers_mut();
     if let Ok(value) = HeaderValue::from_str(&feed.content_type) {

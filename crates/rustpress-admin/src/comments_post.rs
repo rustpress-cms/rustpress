@@ -10,7 +10,6 @@ use rustpress_db::{Db, Val, Writer};
 use crate::login::Mail;
 use rustpress_auth::setcookie::SetCookie as SetCookieOut;
 use crate::mail::MailCtx;
-use crate::mail_comments::PostAuthor;
 pub use rustpress_content::comment_rules::{comments_open, filter_email, filter_text, filter_url};
 use rustpress_content::comment_rules::{self, NewComment};
 
@@ -238,7 +237,7 @@ impl CommentEnv<'_> {
             content.update_comment_count(c.post_id).await.or_log();
         }
         // `comment_post`: the moderators and the author of the post are told.
-        self.notify(id, &approved, user).await;
+        self.notify(id, user).await;
         match self.db.comment_any(id).await.ok().flatten() {
             Some(comment) => Ok((comment, true)),
             None => Err(failure(tr("<strong>Error:</strong> The comment could not be saved. Please try again later."), 500)),
@@ -246,27 +245,8 @@ impl CommentEnv<'_> {
     }
 
     /// `wp_new_comment_notify_moderator()` and `wp_new_comment_notify_postauthor()`.
-    async fn notify(&self, comment_id: u64, approved: &str, current: Option<&CurrentUser>) {
-        let Some(comment) = self.db.comment_any(comment_id).await.ok().flatten() else { return };
-        let Some(post) = self.db.post(comment.comment_post_id).await.ok().flatten() else { return };
-        let author_user = self.db.user(post.post_author).await.ok().flatten();
-        let author_caps = match self.db.auth_user_by_id(post.post_author).await.ok().flatten() {
-            Some(auth_user) => CurrentUser::load(self.db, self.roles, &auth_user).await.ok(),
-            None => None,
-        };
-        let edit_cap = if post.post_type == "page" { "edit_pages" } else { "edit_posts" };
-        let post_author = author_user.as_ref().map(|user| PostAuthor {
-            user,
-            can_edit_comments: author_caps.as_ref().is_some_and(|c| c.can(edit_cap)),
-            can_read: author_caps.as_ref().is_some_and(|c| c.can("read")),
-        });
-        let mail = self.mail_ctx();
-        if approved == "0" {
-            mail.notify_moderator(comment_id, post_author.as_ref()).await;
-        }
-        if approved == "1" && self.site.options.string("comments_notify", "1") != "0" {
-            mail.notify_postauthor(comment_id, post_author.as_ref(), current.map_or(0, |u| u.id)).await;
-        }
+    async fn notify(&self, comment_id: u64, current: Option<&CurrentUser>) {
+        self.mail_ctx().new_comment_notify(self.roles, comment_id, true, current.map_or(0, |u| u.id)).await;
     }
 
     /// The reply for a comment that was saved: the cookies and where to go.
@@ -308,11 +288,6 @@ impl CommentEnv<'_> {
         CommentReply { status: 302, headers, cookies, body: String::new() }
     }
 }
-
-/// A comment on its way in.
-
-
-
 
 /// Handles a request to `wp-comments-post.php`.
 pub async fn handle(env: &CommentEnv<'_>, request: &CommentRequest) -> CommentReply {

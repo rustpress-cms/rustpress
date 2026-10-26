@@ -169,7 +169,8 @@ impl Site {
                 return Ok(None);
             }
         }
-        let paging = (q.vars.u64("paged").unwrap_or(0) != 0 || q.flags.is_feed || q.vars.u64("cpage").unwrap_or(0) != 0) && q.vars.get("sitemap").is_none_or(str::is_empty);
+        // A 404 never reaches the paging and feed part of `redirect_canonical()`.
+        let paging = (q.vars.u64("paged").unwrap_or(0) != 0 || (q.flags.is_feed && !q.flags.is_404) || q.vars.u64("cpage").unwrap_or(0) != 0) && q.vars.get("sitemap").is_none_or(str::is_empty);
         let has_port = self.settings.home.rsplit_once("://").is_some_and(|(_, rest)| rest.split('/').next().is_some_and(|host| host.contains(':')));
         // A comment feed of a single post with plain permalinks is redirected to `get_post_comments_feed_link()`,
         // which carries the port.

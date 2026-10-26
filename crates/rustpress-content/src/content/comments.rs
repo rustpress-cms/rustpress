@@ -125,9 +125,10 @@ impl Content<'_> {
         Ok(())
     }
 
-    /// `wp_insert_comment()` for a reply written by a signed-in user in the administration area. `content` has been
-    /// through the `pre_comment_content` filters.
-    pub async fn insert_reply(&self, post_id: u64, parent: u64, content: &str, comment_type: &str, approved: &str) -> Result<u64> {
+    /// `wp_new_comment()` for a reply written by a signed-in user in the administration area. `content` has been
+    /// through the `pre_comment_content` filters; `ip` and `agent` are those of the request.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn insert_reply(&self, post_id: u64, parent: u64, content: &str, comment_type: &str, approved: &str, ip: &str, agent: &str) -> Result<u64> {
         let content = content.to_owned();
         let user_row = self.db.user(self.user.id).await?;
         let fields: Vec<(&str, Val)> = vec![
@@ -135,13 +136,13 @@ impl Content<'_> {
             ("comment_author", Val::Str(self.user.display_name.clone())),
             ("comment_author_email", Val::Str(self.user.email.clone())),
             ("comment_author_url", Val::Str(user_row.map(|u| u.user_url).unwrap_or_default())),
-            ("comment_author_IP", Val::Str(String::new())),
+            ("comment_author_IP", Val::Str(ip.chars().filter(|c| c.is_ascii_hexdigit() || matches!(c, ':' | '.' | ',' | ' ')).collect())),
             ("comment_date", Val::Str(self.local_now())),
             ("comment_date_gmt", Val::Str(self.gmt_now())),
             ("comment_content", Val::Str(content)),
             ("comment_karma", Val::Int(0)),
             ("comment_approved", Val::Str(approved.to_owned())),
-            ("comment_agent", Val::Str(String::new())),
+            ("comment_agent", Val::Str(agent.chars().take(254).collect())),
             ("comment_type", Val::Str(comment_type.to_owned())),
             ("comment_parent", Val::Int(parent as i64)),
             ("user_id", Val::Int(self.user.id as i64)),

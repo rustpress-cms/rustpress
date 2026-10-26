@@ -12,7 +12,38 @@ pub struct PostAuthor<'a> {
     pub can_read: bool,
 }
 
+/// `gethostbyaddr()` without asking a name server: the loopback addresses are `localhost` (as in every `/etc/hosts`),
+/// any other address stays itself, like an address without a name.
+fn host_name(ip: &str) -> String {
+    if matches!(ip, "127.0.0.1" | "::1") { "localhost".to_owned() } else { ip.to_owned() }
+}
+
 impl MailCtx<'_> {
+    /// `wp_new_comment_notify_moderator()` (with `moderators`, for a waiting comment) and
+    /// `wp_new_comment_notify_postauthor()` (for an approved one): what `comment_post` runs after a new comment, and
+    /// what an approving `wp_set_comment_status()` adds. `current_user` is who is signed in (0 for a visitor).
+    pub async fn new_comment_notify(&self, roles: &rustpress_auth::Roles, comment_id: u64, moderators: bool, current_user: u64) {
+        let Some(comment) = self.db.comment_any(comment_id).await.ok().flatten() else { return };
+        let Some(post) = self.db.post(comment.comment_post_id).await.ok().flatten() else { return };
+        let author_user = self.db.user(post.post_author).await.ok().flatten();
+        let author_caps = match self.db.auth_user_by_id(post.post_author).await.ok().flatten() {
+            Some(auth_user) => rustpress_auth::CurrentUser::load(self.db, roles, &auth_user).await.ok(),
+            None => None,
+        };
+        let edit_cap = if post.post_type == "page" { "edit_pages" } else { "edit_posts" };
+        let post_author = author_user.as_ref().map(|user| PostAuthor {
+            user,
+            can_edit_comments: author_caps.as_ref().is_some_and(|c| c.can(edit_cap)),
+            can_read: author_caps.as_ref().is_some_and(|c| c.can("read")),
+        });
+        if moderators && comment.comment_approved == "0" {
+            self.notify_moderator(comment_id, post_author.as_ref()).await;
+        }
+        if comment.comment_approved == "1" && self.site.options.string("comments_notify", "1") != "0" {
+            self.notify_postauthor(comment_id, post_author.as_ref(), current_user).await;
+        }
+    }
+
     fn admin_url(&self, path: &str) -> String {
         self.site.site_url(&format!("wp-admin/{path}"))
     }
@@ -45,8 +76,7 @@ impl MailCtx<'_> {
         let tr = |s: &str| self.tr(s);
         let sprintf = rustpress_core::i18n::sprintf;
         let title = &post.post_title;
-        // No reverse lookup of the address: like `gethostbyaddr()` that finds no name, the address is the name.
-        let domain = ip.clone();
+        let domain = host_name(&ip);
         let (mut message, subject) = match comment.comment_type.as_str() {
             "trackback" | "pingback" => {
                 let (kind, all) = if comment.comment_type == "trackback" {
@@ -111,7 +141,7 @@ impl MailCtx<'_> {
         let sprintf = rustpress_core::i18n::sprintf;
         let title = &post.post_title;
         let permalink = self.site.permalink(&post).await.unwrap_or_default();
-        let domain = ip.clone();
+        let domain = host_name(&ip);
         let mut message = match comment.comment_type.as_str() {
             "trackback" | "pingback" => {
                 let (kind, excerpt) = if comment.comment_type == "trackback" {

@@ -92,7 +92,11 @@ pub(super) async fn categories(bc: &BlockCtx<'_>) -> Result<String> {
     }
     let show_count = flag(bc, "showPostCounts");
     if flag(bc, "displayAsDropdown") {
-        let selected = env.query.vars.get(&query_var).unwrap_or_default().to_owned();
+        // `WP_Query::get_posts()` sets `category_name` to the slug of the queried category, also for `?cat=`.
+        let selected = match &env.query.queried {
+            rustpress_core::Queried::Term(term) if taxonomy == "category" && env.query.flags.is_category && term.taxonomy == "category" => term.slug.clone(),
+            _ => env.query.vars.get(&query_var).unwrap_or_default().to_owned(),
+        };
         let args = DropdownCategories {
             terms,
             show_count,

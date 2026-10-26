@@ -129,9 +129,10 @@ impl QueryResult {
         Self::new(QueryVars::new(), None)
     }
 
-    /// `WP_Query::set_404()`: all conditionals off except `is_404`.
+    /// `WP_Query::set_404()`: all conditionals off except `is_404` and `is_feed` (a feed stays a feed, with nothing in it).
     pub fn into_404(mut self) -> Self {
-        self.flags = Flags { is_404: true, ..Flags::default() };
+        let is_feed = self.vars.get("feed").is_some_and(|f| !f.is_empty());
+        self.flags = Flags { is_404: true, is_feed, ..Flags::default() };
         self.posts.clear();
         self.queried = Queried::None;
         self.found_posts = 0;
@@ -399,7 +400,18 @@ impl Site {
                     (None, Some(name)) => self.db.user_by_nicename(&sanitize_title(name)).await?,
                     _ => None,
                 };
-                let Some(user) = user else { return Ok(r.into_404()) };
+                let Some(user) = user else {
+                    if !f.is_feed || paged > 1 {
+                        return Ok(r.into_404());
+                    }
+                    // A feed is not a 404: it asks for the posts of nobody (`post_author = 0` for an unknown name).
+                    f.is_author = true;
+                    q.author = Some(v.u64("author").unwrap_or(0));
+                    f.is_archive = true;
+                    r.flags = f;
+                    r.per_page = s.posts_per_rss;
+                    return Ok(r);
+                };
                 f.is_author = true;
                 q.author = Some(user.id);
                 if matches!(queried, Queried::None) {
@@ -459,8 +471,8 @@ impl Site {
                     let name = sanitize_title(path.rsplit('/').next().unwrap_or(path));
                     r.vars.set("name", name);
                 }
-                if f.is_feed {
-                    // A feed is not a 404 even when there is nothing in it.
+                if f.is_feed && paged <= 1 {
+                    // A feed is not a 404 even when there is nothing in it (unless it is paged).
                     r.flags = f;
                     return Ok(r);
                 }
@@ -491,7 +503,14 @@ impl Site {
                 Some(post) if viewer.is_some() => self.visible(post, viewer, &mut f, preview, &r.raw_query).await?,
                 other => other,
             };
-            let Some(post) = post else { return Ok(r.into_404()) };
+            let Some(post) = post else {
+                if f.is_feed && paged <= 1 {
+                    // A feed is not a 404 even when there is nothing in it (unless it is paged).
+                    r.flags = f;
+                    return Ok(r);
+                }
+                return Ok(r.into_404());
+            };
             found = 1;
             posts.push(post.clone());
             queried = Queried::Post(Box::new(post));

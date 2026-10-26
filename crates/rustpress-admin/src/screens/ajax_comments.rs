@@ -138,7 +138,11 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUs
                 return text(403, "-1");
             }
             let target = if matches!(current, "unapproved" | "spam") { "approve" } else { "hold" };
-            content.set_comment_status(id, target).await.or_log();
+            if target == "approve" {
+                comments::approve_comment(&ctx, &content, &comment).await;
+            } else {
+                content.set_comment_status(id, target).await.or_log();
+            }
             counts_response(&ctx, id, "dim-comment").await
         }
         "delete-comment" => {
@@ -208,7 +212,7 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUs
                 if !can_edit_comment(env, user, &p).await {
                     return text(200, "-1");
                 }
-                if content.set_comment_status(p.comment_id, "approve").await.is_ok() {
+                if comments::approve_comment(&ctx, &content, &p).await {
                     approved_parent = Some(p);
                 }
             }
@@ -222,10 +226,12 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUs
             }
             // `wp_allow_comment()`: whoever may edit a post that is not a draft is its author or may moderate.
             let approved = if post.post_author == user.id || user.can("moderate_comments") { "1" } else { "0" };
-            let id = match content.insert_reply(post_id, parent, &filtered, &comment_type, approved).await {
+            let id = match content.insert_reply(post_id, parent, &filtered, &comment_type, approved, request.remote_addr.as_deref().unwrap_or_default(), request.user_agent.as_deref().unwrap_or_default()).await {
                 Ok(id) => id,
                 Err(e) => return text(200, &e.to_string()),
             };
+            // `comment_post`: the moderators and the author of the post are told.
+            env.mail_ctx().new_comment_notify(env.roles, id, true, user.id).await;
             let Some(new_comment) = env.db.comment_any(id).await.ok().flatten() else { return text(200, "1") };
             let html = if request.request("mode") == Some("dashboard") {
                 super::dashboard::comment_row(&ctx, &new_comment, 0).await

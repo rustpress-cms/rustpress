@@ -45,6 +45,22 @@ fn avatar(ctx: &Ctx<'_>, email: &str, size: u64) -> String {
 }
 
 /// `get_comment_link()` with the right `comment-page-N`.
+/// `wp_set_comment_status( $id, 'approve' )`: a comment that was not approved yet tells the author of the post about
+/// itself (`wp_new_comment_notify_postauthor()`). `false` when the status could not be written.
+pub async fn approve_comment(ctx: &Ctx<'_>, content: &Content<'_>, comment: &Comment) -> bool {
+    let changed = comment.comment_approved != "1";
+    let result = content.set_comment_status(comment.comment_id, "approve").await;
+    let written = result.is_ok();
+    result.or_log();
+    if !written {
+        return false;
+    }
+    if changed {
+        ctx.env.mail_ctx().new_comment_notify(ctx.env.roles, comment.comment_id, false, ctx.user.id).await;
+    }
+    true
+}
+
 pub async fn comment_link(ctx: &Ctx<'_>, comment: &Comment) -> String {
     comment_link_for(ctx.site(), ctx.env.db, comment).await
 }
@@ -142,7 +158,7 @@ pub async fn row_html(ctx: &Ctx<'_>, comment: &Comment, index: usize, current_st
         _ => "unapproved",
     };
     let kind = if comment.comment_type.is_empty() { "comment" } else { comment.comment_type.as_str() };
-    let (alt, thread_alt) = if index % 2 == 0 { ("even", "thread-even") } else { ("odd alt", "thread-odd thread-alt") };
+    let (alt, thread_alt) = if index.is_multiple_of(2) { ("even", "thread-even") } else { ("odd alt", "thread-odd thread-alt") };
     let post = db.post(comment.comment_post_id).await.ok().flatten();
     let can_moderate = ctx.can("moderate_comments");
     let del_nonce = ctx.create_nonce(&format!("delete-comment_{id}"));
@@ -351,7 +367,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     let search = request.get("s").map(|s| s.trim().to_owned()).unwrap_or_default();
     let kind = request.get("comment_type").unwrap_or_default().to_owned();
     let orderby = request.get("orderby").filter(|o| ["comment_author", "comment_post_ID", "comment_date", "comment_ID"].contains(o)).unwrap_or("comment_date").to_owned();
-    let desc = request.get("order").map_or(true, |o| o.eq_ignore_ascii_case("desc"));
+    let desc = request.get("order").is_none_or(|o| o.eq_ignore_ascii_case("desc"));
     let per_page = super::common::items_per_page(ctx, "edit_comments_per_page", 20).await;
     let paged = request.get("paged").and_then(|p| p.parse::<u64>().ok()).filter(|p| *p > 0).unwrap_or(1);
     let (status, user_id) = match status_param.as_str() {
@@ -379,9 +395,9 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     // Counts of the posts in the list.
     let mut post_counts: std::collections::HashMap<u64, (u64, u64)> = std::collections::HashMap::new();
     for comment in &comments {
-        if !post_counts.contains_key(&comment.comment_post_id) {
+        if let std::collections::hash_map::Entry::Vacant(e) = post_counts.entry(comment.comment_post_id) {
             let c = db.comment_counts(Some(comment.comment_post_id)).await.unwrap_or_default();
-            post_counts.insert(comment.comment_post_id, (c.approved, c.moderated));
+            e.insert((c.approved, c.moderated));
         }
     }
     let mine = db.list_comments_admin(&CommentListQuery { status: "all".into(), user_id: Some(ctx.user.id), post_id, limit: 1, ..Default::default() }).await.map(|(_, n)| n).unwrap_or(0);
@@ -525,7 +541,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     };
     let mut h = String::new();
     let mut view_item = None;
-    match post_id.and_then(|id| Some(id)) {
+    match post_id {
         Some(id) => {
             let post = db.post(id).await.ok().flatten();
             let name = match &post {
@@ -667,7 +683,9 @@ async fn bulk(ctx: &Ctx<'_>) -> Option<AdminResponse> {
         // WordPress counts every comment it is allowed to touch.
         match action.as_str() {
             "approve" => {
-                content.set_comment_status(*id, "approve").await.or_log();
+                if let Some(comment) = ctx.env.db.comment_any(*id).await.ok().flatten() {
+                    approve_comment(ctx, &content, &comment).await;
+                }
                 approved += 1;
             }
             "unapprove" => {
@@ -798,7 +816,7 @@ pub async fn comment_php(ctx: &Ctx<'_>) -> AdminResponse {
             let content = Content { site: ctx.site(), db: ctx.env.db, writer, user: &ctx.user, now: ctx.env.now };
             let param = match action.as_str() {
                 "approvecomment" => {
-                    content.set_comment_status(id, "approve").await.or_log();
+                    approve_comment(ctx, &content, &comment).await;
                     "approved"
                 }
                 "unapprovecomment" => {

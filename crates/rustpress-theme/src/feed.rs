@@ -29,8 +29,10 @@ pub struct Feed {
     /// The modification time conditional requests are compared with; set even when the response is not cacheable.
     modified_at: String,
     pub etag: String,
-    /// Password protected posts get `wp_get_nocache_headers()`.
+    /// Password protected posts and feeds that found nothing get `wp_get_nocache_headers()`.
     pub nocache: bool,
+    /// The query is a 404 (`WP::handle_404()`): the feed is sent with that status.
+    pub not_found: bool,
 }
 
 impl Feed {
@@ -229,13 +231,12 @@ pub async fn render_feed(theme: &Theme, site: &Site, q: &QueryResult, registry: 
         "atom" => Kind::Atom,
         _ => return Ok(None),
     };
-    if q.flags.is_404 {
-        return Ok(None);
-    }
     let singular = q.flags.is_singular();
-    let comment_feed = q.vars.get("withcomments").is_some_and(|v| !v.is_empty() && v != "0")
-        || feed_var.contains("comments-")
-        || (!q.vars.get("withoutcomments").is_some_and(|v| !v.is_empty() && v != "0") && singular);
+    // `WP_Query::set_404()` leaves `is_comment_feed` off: a 404 is a feed of (no) posts.
+    let comment_feed = !q.flags.is_404
+        && (q.vars.get("withcomments").is_some_and(|v| !v.is_empty() && v != "0")
+            || feed_var.contains("comments-")
+            || (!q.vars.get("withoutcomments").is_some_and(|v| !v.is_empty() && v != "0") && singular));
     // Comment feeds of archives and searches are not supported.
     if comment_feed && !singular && (q.flags.is_archive || q.flags.is_search) {
         return Ok(None);
@@ -282,8 +283,9 @@ pub async fn render_feed(theme: &Theme, site: &Site, q: &QueryResult, registry: 
         (Kind::Atom, true) => atom_comments(&ctx, q, &comments, &self_url, &home, &description, &lang, &title, &built).await?,
     };
 
-    let (content_type, last_modified, etag, nocache) = send_headers(site, q, kind, comment_feed).await?;
-    Ok(Some(Feed { content_type: content_type.to_owned(), body, modified_at: last_modified.clone(), last_modified: (!nocache).then_some(last_modified), etag, nocache }))
+    let (content_type, last_modified, etag, protected) = send_headers(site, q, kind, comment_feed).await?;
+    let not_found = q.flags.is_404;
+    Ok(Some(Feed { content_type: content_type.to_owned(), body, modified_at: last_modified.clone(), last_modified: (!protected).then_some(last_modified), etag, nocache: protected || not_found, not_found }))
 }
 
 /// The headers `WP::send_headers()` sets for a feed: content type, last modified, ETag and whether the
@@ -324,7 +326,7 @@ pub async fn redirect_headers(site: &Site, q: &QueryResult) -> Result<Option<Fee
         || feed_var.contains("comments-")
         || (!q.vars.get("withoutcomments").is_some_and(|v| !v.is_empty() && v != "0") && q.flags.is_singular());
     let (content_type, last_modified, etag, nocache) = send_headers(site, q, kind, comment_feed).await?;
-    Ok(Some(Feed { content_type: content_type.to_owned(), body: String::new(), modified_at: last_modified.clone(), last_modified: (!nocache).then_some(last_modified), etag, nocache }))
+    Ok(Some(Feed { content_type: content_type.to_owned(), body: String::new(), modified_at: last_modified.clone(), last_modified: (!nocache).then_some(last_modified), etag, nocache, not_found: false }))
 }
 
 /// `feed-rss.php`.
@@ -477,12 +479,15 @@ async fn protected_form(c: &Ctx<'_>, post: &Post) -> Result<String> {
 async fn rss2_comments(c: &Ctx<'_>, q: &QueryResult, comments: &[Comment], self_url: &str, home: &str, description: &str, title: &str, built: &str) -> Result<String> {
     let singular = q.flags.is_singular();
     let post = if singular { q.posts.first().cloned() } else { None };
+    // A singular feed whose post was not found has an empty title and link.
     let heading = match &post {
         Some(p) => sprintf(&ent2ncr(&c.site.tr("Comments on: %s")), &[&c.title_rss(p)]),
+        None if singular => sprintf(&ent2ncr(&c.site.tr("Comments on: %s")), &[""]),
         None => sprintf(&ent2ncr(&c.site.tr("Comments for %s")), &[title]),
     };
     let link = match &post {
         Some(p) if q.flags.is_single => esc_url(&c.site.permalink(p).await?),
+        None if singular => String::new(),
         _ => home.to_owned(),
     };
     let mut out = String::new();
@@ -530,6 +535,7 @@ async fn atom_comments(c: &Ctx<'_>, q: &QueryResult, comments: &[Comment], _self
     let post = if singular { q.posts.first().cloned() } else { None };
     let heading = match &post {
         Some(p) => sprintf(&ent2ncr(&c.site.tr("Comments on %s")), &[&c.title_rss(p)]),
+        None if singular => sprintf(&ent2ncr(&c.site.tr("Comments on %s")), &[""]),
         None => sprintf(&ent2ncr(&c.site.tr("Comments for %s")), &[title]),
     };
     let mut out = String::new();
@@ -547,6 +553,11 @@ async fn atom_comments(c: &Ctx<'_>, q: &QueryResult, comments: &[Comment], _self
                 esc_url(&format!("{permalink}{hash}"))
             ));
         }
+        // No post: `get_permalink()` is empty and so is its comment feed.
+        None if singular => out.push_str("	<link rel=\"alternate\" type=\"text/html\" href=\"#respond\" />
+	<link rel=\"self\" type=\"application/atom+xml\" href=\"\" />
+	<id></id>
+"),
         None => {
             let atom_url = bloginfo_rss(&main_feed_link(c.site, "atom", true));
             out.push_str(&format!("\t<link rel=\"alternate\" type=\"text/html\" href=\"{home}\" />\n\t<link rel=\"self\" type=\"application/atom+xml\" href=\"{atom_url}\" />\n\t<id>{atom_url}</id>\n"));
