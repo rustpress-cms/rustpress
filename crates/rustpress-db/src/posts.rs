@@ -83,6 +83,10 @@ pub struct PostQuery {
     pub order: Order,
     pub limit: Option<u64>,
     pub offset: u64,
+    /// Private posts of these post types are listed, too (the viewer may read them).
+    pub private_types: Vec<String>,
+    /// Private posts of this author are listed, too (the viewer may read their own).
+    pub private_author: Option<u64>,
 }
 
 impl Default for PostQuery {
@@ -124,6 +128,8 @@ impl Default for PostQuery {
             order: Order::Desc,
             limit: None,
             offset: 0,
+            private_types: Vec::new(),
+            private_author: None,
         }
     }
 }
@@ -133,7 +139,34 @@ impl PostQuery {
     fn push_filters(&self, qb: &mut QueryBuilder<MySql>, db: &Db) {
         qb.push(" FROM ").push(db.prefix.table("posts")).push(" p WHERE 1 = 1");
         push_in(qb, "p.post_type", &self.post_types);
-        push_in(qb, "p.post_status", &self.statuses);
+        if self.statuses.iter().any(|s| s == "publish") && (!self.private_types.is_empty() || self.private_author.is_some()) {
+            // `WP_Query::get_posts()` for a signed-in viewer: `OR post_status = 'private'` where they may read it.
+            qb.push(" AND (p.post_status IN (");
+            let mut list = qb.separated(", ");
+            for status in &self.statuses {
+                list.push_bind(status.clone());
+            }
+            qb.push(") OR (p.post_status = 'private' AND (");
+            let mut first = true;
+            if !self.private_types.is_empty() {
+                qb.push("p.post_type IN (");
+                let mut list = qb.separated(", ");
+                for post_type in &self.private_types {
+                    list.push_bind(post_type.clone());
+                }
+                qb.push(")");
+                first = false;
+            }
+            if let Some(author) = self.private_author {
+                if !first {
+                    qb.push(" OR ");
+                }
+                qb.push("p.post_author = ").push_bind(author);
+            }
+            qb.push(")))");
+        } else {
+            push_in(qb, "p.post_status", &self.statuses);
+        }
         if let Some(id) = self.id {
             qb.push(" AND p.ID = ").push_bind(id);
         }

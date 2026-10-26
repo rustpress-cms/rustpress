@@ -14,7 +14,7 @@ pub mod theme;
 pub mod theme_headers;
 pub mod theme_json;
 
-pub use document::{Document, render_document};
+pub use document::{Document, Extras, ToolbarFn, ToolbarInfo, render_document, render_document_with};
 pub use feed::{Feed, render_feed};
 pub use page::{RenderedBody, render_body};
 pub use theme::Theme;

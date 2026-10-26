@@ -11,6 +11,7 @@ use crate::settings::ShowOnFront;
 use crate::site::Site;
 use crate::slug::sanitize_title;
 use crate::types::is_internal_post_type;
+use crate::viewer::Viewer;
 
 /// Query variables WordPress reads from the query string (`$wp->public_query_vars`
 /// plus the ones core registers through the `query_vars` filter).
@@ -55,6 +56,8 @@ pub struct Flags {
     pub is_sitemap: bool,
     pub is_favicon: bool,
     pub is_404: bool,
+    /// A post that is not published shown to somebody who may edit it, or `?preview=true`.
+    pub is_preview: bool,
 }
 
 impl Flags {
@@ -95,6 +98,8 @@ pub struct QueryResult {
     /// The 404 was decided while parsing the query (an impossible date), not by `handle_404()`;
     /// only the latter asks for no caching.
     pub parse_error_404: bool,
+    /// The signed-in person who looks at the page.
+    pub viewer: Option<Viewer>,
 }
 
 impl QueryResult {
@@ -112,6 +117,7 @@ impl QueryResult {
             url_path: String::new(),
             raw_query: String::new(),
             parse_error_404: false,
+            viewer: None,
         }
     }
 
@@ -156,6 +162,11 @@ impl Site {
     /// Resolves `url_path` (as sent by the client, still percent-encoded) and
     /// `query_string` and runs the main query.
     pub async fn query(&self, url_path: &str, query_string: &str) -> Result<QueryResult> {
+        self.query_as(url_path, query_string, None).await
+    }
+
+    /// [`Site::query`] for a signed-in viewer, who sees private posts and previews.
+    pub async fn query_as(&self, url_path: &str, query_string: &str, viewer: Option<&Viewer>) -> Result<QueryResult> {
         let request = request_path(url_path, &self.settings.home_path());
 
         let mut vars = QueryVars::new();
@@ -171,7 +182,7 @@ impl Site {
                 if self.use_verbose_page_rules()
                     && m.rule.query.contains("pagename=$matches[")
                     && let Some(path) = m.vars.get("pagename")
-                    && self.page_by_path(path).await?.is_none()
+                    && self.post_by_path_as(path, "page", viewer).await?.is_none()
                 {
                     continue;
                 }
@@ -197,6 +208,7 @@ impl Site {
 
         self.map_type_vars(&mut vars);
         let mut result = QueryResult::new(vars, matched_rule);
+        result.viewer = viewer.cloned();
         result.url_path = url_path.to_owned();
         result.raw_query = query_string.to_owned();
         if unmatched {
@@ -204,16 +216,17 @@ impl Site {
             not_found.flags.is_embed = not_found.vars.get("embed").is_some();
             return Ok(not_found);
         }
-        let mut result = self.run_main_query(result).await?;
+        let mut result = self.run_main_query(result, viewer).await?;
         // `WP_Query::parse_query()`: only requests for one post, or ones that failed, can be embeds.
         result.flags.is_embed = result.vars.get("embed").is_some() && (result.flags.is_singular() || result.flags.is_404);
         Ok(result)
     }
 
-    async fn run_main_query(&self, mut r: QueryResult) -> Result<QueryResult> {
+    async fn run_main_query(&self, mut r: QueryResult, viewer: Option<&Viewer>) -> Result<QueryResult> {
         let s = &self.settings;
         let v = r.vars.clone();
-        let mut f = Flags { is_feed: v.get("feed").is_some_and(|feed| !feed.is_empty()), ..Flags::default() };
+        // "If we're previewing inside the write screen": any request with a `preview` variable.
+        let mut f = Flags { is_feed: v.get("feed").is_some_and(|feed| !feed.is_empty()), is_preview: v.get("preview").is_some_and(|p| !p.is_empty()), ..Flags::default() };
         let mut queried = Queried::None;
         let mut posts: Vec<Post> = Vec::new();
         let mut found = 0;
@@ -423,13 +436,18 @@ impl Site {
         }
 
         // --- WP_Query::get_posts ---------------------------------------------------
+        let preview = v.get("preview").is_some_and(|p| !p.is_empty());
         r.per_page = if f.is_feed { s.posts_per_rss } else { s.posts_per_page };
 
         if f.is_page {
             let page = match (pagename, page_id) {
-                (Some(path), _) => self.page_by_path(path).await?,
-                (None, Some(id)) => self.page_by_id(id).await?,
+                (Some(path), _) => self.post_by_path_as(path, "page", viewer).await?,
+                (None, Some(id)) => self.page_by_id(id, viewer).await?,
                 _ => None,
+            };
+            let page = match page {
+                Some(page) if viewer.is_some() => self.visible(page, viewer, &mut f, preview, &r.raw_query).await?,
+                other => other,
             };
             let Some(page) = page else {
                 // `WP_Query::get_posts()` takes the last segment of the page path as `name`, which is what
@@ -465,7 +483,11 @@ impl Site {
             }
             queried = Queried::Post(Box::new(page));
         } else if f.is_single {
-            let post = self.find_single(&v, &mut f).await?;
+            let post = self.find_single(&v, &mut f, viewer).await?;
+            let post = match post {
+                Some(post) if viewer.is_some() => self.visible(post, viewer, &mut f, preview, &r.raw_query).await?,
+                other => other,
+            };
             let Some(post) = post else { return Ok(r.into_404()) };
             found = 1;
             posts.push(post.clone());
@@ -509,6 +531,11 @@ impl Site {
                         q.order_by = OrderBy::Relevance;
                     }
                 }
+            }
+            if let Some(viewer) = viewer {
+                // Private posts: all of a type the viewer may read, otherwise their own.
+                q.private_types = q.post_types.iter().filter(|t| viewer.can_read_private(t)).cloned().collect();
+                q.private_author = Some(viewer.id);
             }
             q.limit = Some(r.per_page);
             q.offset = (paged - 1) * r.per_page;
@@ -583,6 +610,11 @@ impl Site {
 
     /// `get_page_by_path( $path, OBJECT, $post_type )`.
     pub async fn post_by_path(&self, path: &str, post_type: &str) -> Result<Option<Post>> {
+        self.post_by_path_as(path, post_type, None).await
+    }
+
+    /// [`Site::post_by_path`] for a viewer who may see posts that are not published (their status is checked later).
+    async fn post_by_path_as(&self, path: &str, post_type: &str, viewer: Option<&Viewer>) -> Result<Option<Post>> {
         let parts: Vec<String> =
             path.trim_matches('/').split('/').map(sanitize_title).filter(|p| !p.is_empty()).collect();
         let Some(last) = parts.last() else { return Ok(None) };
@@ -591,6 +623,9 @@ impl Site {
         if post_type == "page" {
             query.post_types.push("attachment".into());
             query.statuses = vec!["publish".into(), "inherit".into()];
+        }
+        if viewer.is_some() {
+            query.statuses = vec!["publish".into(), "inherit".into(), "draft".into(), "pending".into(), "future".into(), "private".into(), "auto-draft".into()];
         }
         let candidates = self.db.posts(&query).await?;
         'candidate: for page in candidates.iter().filter(|p| &p.post_name == last) {
@@ -608,13 +643,73 @@ impl Site {
         Ok(None)
     }
 
-    async fn page_by_id(&self, id: u64) -> Result<Option<Post>> {
-        Ok(self.db.post(id).await?.filter(|p| p.post_type == "page" && p.post_status == "publish"))
+    async fn page_by_id(&self, id: u64, viewer: Option<&Viewer>) -> Result<Option<Post>> {
+        Ok(self.db.post(id).await?.filter(|p| p.post_type == "page" && (p.post_status == "publish" || viewer.is_some())))
+    }
+
+    /// `WP_Query::get_posts()` after the fetch: whether the viewer may see the single post, and whether it is
+    /// shown as a preview. A draft shows the time of the visit as its date.
+    async fn visible(&self, mut post: Post, viewer: Option<&Viewer>, f: &mut Flags, preview: bool, raw_query: &str) -> Result<Option<Post>> {
+        let status = if post.post_type == "attachment" && post.post_status == "inherit" {
+            match self.db.post(post.post_parent).await? {
+                Some(parent) if post.post_parent != 0 && parent.id != post.id => parent.post_status,
+                _ => "publish".to_owned(),
+            }
+        } else {
+            post.post_status.clone()
+        };
+        if status == "publish" {
+            // `_show_post_preview()`: the autosave is shown for the editor with a valid preview nonce.
+            if preview && let Some(viewer) = viewer {
+                let vars = QueryVars::parse(raw_query);
+                let id = vars.u64("preview_id").unwrap_or(0);
+                let valid = vars.get("preview_nonce").is_some_and(|nonce| viewer.check_nonce(nonce, &format!("post_preview_{id}")));
+                if valid && viewer.can_edit_post(&post) {
+                    post = self.with_autosave(post).await?;
+                }
+            }
+            return Ok(Some(post));
+        }
+        let Some(viewer) = viewer else { return Ok(None) };
+        Ok(match status.as_str() {
+            "draft" | "pending" | "future" | "auto-draft" => {
+                if !viewer.can_edit_post(&post) {
+                    return Ok(None);
+                }
+                f.is_preview = true;
+                if status != "future" {
+                    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs() as i64);
+                    post.post_date = self.timezone.format("Y-m-d H:i:s", now);
+                }
+                Some(self.with_autosave(post).await?)
+            }
+            "private" => viewer.can_read_post(&post).then_some(post),
+            _ => None,
+        })
+    }
+
+    /// `_set_preview()`: the content of the latest autosave replaces the post's, for somebody who may edit it.
+    pub async fn with_autosave(&self, mut post: Post) -> Result<Post> {
+        let query = PostQuery {
+            post_types: vec!["revision".into()],
+            statuses: vec!["inherit".into()],
+            name: Some(format!("{}-autosave-v1", post.id)),
+            parent: Some(post.id),
+            limit: Some(1),
+            ..PostQuery::default()
+        };
+        if let Some(autosave) = self.db.posts(&query).await?.pop() {
+            post.post_content = autosave.post_content;
+            post.post_title = autosave.post_title;
+            post.post_excerpt = autosave.post_excerpt;
+        }
+        Ok(post)
     }
 
     /// Looks up the post for `name=`, `p=` or `attachment=` requests and
     /// corrects the flags if it turns out to be a page or attachment.
-    async fn find_single(&self, v: &QueryVars, f: &mut Flags) -> Result<Option<Post>> {
+    async fn find_single(&self, v: &QueryVars, f: &mut Flags, viewer: Option<&Viewer>) -> Result<Option<Post>> {
+        let any_status: Vec<String> = ["publish", "inherit", "draft", "pending", "future", "private", "auto-draft"].iter().map(|s| (*s).to_owned()).collect();
         let post = if let Some(slug) = v.get("attachment") {
             self.db
                 .posts(&PostQuery {
@@ -629,11 +724,12 @@ impl Site {
         } else if let Some(name) = v.get("name") {
             let post_type = v.get("post_type").unwrap_or("post").to_owned();
             if self.types.post_type(&post_type).is_some_and(|t| t.hierarchical) {
-                return self.post_by_path(name, &post_type).await;
+                return self.post_by_path_as(name, &post_type, viewer).await;
             }
             self.db
                 .posts(&PostQuery {
                     post_types: vec![post_type],
+                    statuses: if viewer.is_some() { any_status.clone() } else { vec!["publish".into()] },
                     name: Some(sanitize_title(name)),
                     year: v.u64("year").map(|y| y as u32),
                     month: v.u64("monthnum").map(|y| y as u32),
@@ -654,7 +750,7 @@ impl Site {
                     && if by_attachment_id {
                         p.post_type == "attachment" && matches!(p.post_status.as_str(), "publish" | "inherit")
                     } else {
-                        p.post_type == wanted && p.post_status == "publish"
+                        p.post_type == wanted && (p.post_status == "publish" || viewer.is_some())
                     }
             })
         };

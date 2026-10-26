@@ -201,7 +201,31 @@ async fn page(app: &App, uri: &axum::http::Uri, request_headers: &axum::http::He
         let reply = rest.handle(&route, &rest_query).await?;
         return Ok(rest_response(reply));
     }
-    let result = loaded.site.query(path, query).await?;
+    let mut extras = rustpress_theme::Extras::default();
+    let mut signed_in = false;
+    let viewer = match crate::admin::frontend_user(&loaded, request_headers).await {
+        Some((user, token)) => {
+            let user = std::sync::Arc::new(user);
+            let show_bar = loaded.site.db.user_meta(user.id, "show_admin_bar_front").await.ok().flatten().is_none_or(|v| v != "false");
+            let parts = loaded.admin.as_ref();
+            let nonce_auth = parts.map(|p| p.auth.clone());
+            let (uid, session) = (user.id, token.clone());
+            let nonce = move |action: &str| nonce_auth.as_ref().and_then(|auth| auth.create_nonce(action, uid, &session, crate::admin::now())).unwrap_or_default();
+            let can_user = user.clone();
+            let verify_auth = parts.map(|p| p.auth.clone());
+            let verify_session = token.clone();
+            let privacy_page = loaded.site.options.u64("wp_page_for_privacy_policy", 0);
+            let verify = move |nonce: &str, action: &str| verify_auth.as_ref().is_some_and(|auth| auth.verify_nonce(nonce, action, uid, &verify_session, crate::admin::now()).is_some());
+            let viewer = rustpress_core::Viewer::new(user.id, move |capability| can_user.can(capability)).with_identity(&user.login, &user.display_name, &user.email, show_bar, nonce).with_verifier(privacy_page, verify);
+            if show_bar && let Some(found) = crate::admin::front_toolbar(&loaded, &user, &token).await {
+                extras = found;
+            }
+            signed_in = true;
+            Some(viewer)
+        }
+        None => None,
+    };
+    let result = loaded.site.query_as(path, query, viewer.as_ref()).await?;
     // Physical PHP endpoints (wp-login.php, xmlrpc.php, ...) do not exist here; they get the
     // 404 page rather than a canonical redirect. Only `/index.php` is WordPress' own alias for `/`.
     let php_endpoint = path.ends_with(".php") && path != "/index.php";
@@ -270,11 +294,12 @@ async fn page(app: &App, uri: &axum::http::Uri, request_headers: &axum::http::He
         singular_headers(&mut response, &result, &loaded);
         return Ok(with_api_link(response, &loaded));
     }
-    let document = render_document(&loaded.theme, &loaded.site, &result, &loaded.registry).await?;
+    let document = rustpress_theme::render_document_with(&loaded.theme, &loaded.site, &result, &loaded.registry, &extras).await?;
     let mut response = Response::new(Body::from(document.html));
     *response.status_mut() = StatusCode::from_u16(document.status).unwrap_or(StatusCode::OK);
     response.headers_mut().insert(header::CONTENT_TYPE, HeaderValue::from_static("text/html; charset=UTF-8"));
-    if document.status == 404 {
+    // `WP::send_headers()`: pages for a signed-in user are not cached.
+    if document.status == 404 || signed_in {
         no_cache(response.headers_mut());
     }
     if result.flags.is_embed {

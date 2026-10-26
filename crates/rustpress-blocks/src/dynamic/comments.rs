@@ -311,6 +311,22 @@ pub(super) async fn comment_reply_link(bc: &BlockCtx<'_>) -> Result<String> {
     Ok(format!("<div {wrapper}>{link}</div>"))
 }
 
+/// `core/comment-edit-link`: the link to the editor of the comment, for somebody who may edit it.
+pub(super) async fn comment_edit_link(bc: &BlockCtx<'_>) -> Result<String> {
+    let Some(comment) = current_comment(bc).await? else { return Ok(String::new()) };
+    let Some(viewer) = bc.env.query.viewer.as_ref() else { return Ok(String::new()) };
+    // `current_user_can( 'edit_comment' )`: whoever may edit the post of the comment.
+    let Some(post) = bc.env.site.db.post(comment.comment_post_id).await? else { return Ok(String::new()) };
+    if !viewer.can_edit_post(&post) {
+        return Ok(String::new());
+    }
+    let link = bc.env.site.site_url(&format!("wp-admin/comment.php?action=editcomment&c={}", comment.comment_id));
+    let class = bc.attr_str("textAlign").map(|a| format!("has-text-align-{a}")).unwrap_or_default();
+    let wrapper = bc.wrapper_attributes(&[("class", class)]);
+    let target = bc.attr_str("linkTarget").filter(|t| !t.is_empty()).map(|t| format!("target=\"{}\"", esc_attr(t))).unwrap_or_default();
+    Ok(format!("<div {wrapper}><a href=\"{}\" {target}>{}</a></div>", esc_url(&link), bc.env.site.tr("Edit")))
+}
+
 // ---------------------------------------------------------------------- avatar
 
 /// `get_avatar()` for an email address.
@@ -511,29 +527,59 @@ pub(super) async fn post_comments_form(bc: &BlockCtx<'_>) -> Result<String> {
     let comment_field = format!(
         "<p class=\"comment-form-comment\"><label for=\"comment\">{comment_label}{required_indicator}</label> <textarea id=\"comment\" name=\"comment\" cols=\"45\" rows=\"8\" maxlength=\"65525\"{required_attr}></textarea></p>"
     );
-    let notes = format!("<p class=\"comment-notes\"><span id=\"email-notes\">{}</span>{required_text}</p>", site.tr("Your email address will not be published."));
+    let mut notes = format!("<p class=\"comment-notes\"><span id=\"email-notes\">{}</span>{required_text}</p>", site.tr("Your email address will not be published."));
+    // A signed-in viewer is named instead of asked, and has no fields to fill in.
+    let viewer = bc.env.query.viewer.as_ref();
+    let mut unfiltered = String::new();
+    if let Some(viewer) = viewer {
+        let permalink = site.permalink(&post).await?;
+        let logout = rustpress_core::formatting::esc_html(&format!("{}?action=logout&redirect_to={}&_wpnonce={}", site.site_url("wp-login.php"), rustpress_core::canonical::php_urlencode(&permalink), viewer.create_nonce("log-out")));
+        notes = format!(
+            "<p class=\"logged-in-as\">{}{required_text}</p>",
+            rustpress_core::i18n::sprintf(
+                &site.tr("Logged in as %1$s. <a href=\"%2$s\">Edit your profile</a>. <a href=\"%3$s\">Log out?</a>"),
+                &[&rustpress_core::formatting::esc_html(&viewer.display_name), &esc_url(&site.site_url("wp-admin/profile.php")), &logout]
+            )
+        );
+        if viewer.can("unfiltered_html") {
+            unfiltered = format!(
+                "<input type=\"hidden\" id=\"_wp_unfiltered_html_comment_disabled\" name=\"_wp_unfiltered_html_comment_disabled\" value=\"{}\" /><script>\n(function(){{if(window===window.parent){{document.getElementById('_wp_unfiltered_html_comment_disabled').name='_wp_unfiltered_html_comment';}}}})();\n//# sourceURL=wp_comment_form_unfiltered_html_nonce\n</script>\n",
+                viewer.create_nonce(&format!("unfiltered-html-comment_{post_id}"))
+            );
+        }
+    }
 
     let q = bc.env.query;
-    let request = remove_query_arg(&format!("{}{}", q.url_path, if q.raw_query.is_empty() { String::new() } else { format!("?{}", q.raw_query) }), "replytocom");
     let threaded = options.get("thread_comments") == Some("1");
+    // `?replytocom=ID`: the form answers that comment (`comment_form_title()`, `cancel_comment_reply_link()`).
+    let reply_to = rustpress_core::QueryVars::parse(&q.raw_query).u64("replytocom").filter(|id| *id != 0);
+    let parent = match reply_to {
+        Some(id) => site.db.comment(id).await?.filter(|c| !c.comment_author.is_empty()),
+        None => None,
+    };
     let cancel = if threaded {
-        format!(" <small><a rel=\"nofollow\" id=\"cancel-comment-reply-link\" href=\"{}#respond\" style=\"display:none;\">{}</a></small>", esc_url(&request), site.tr("Cancel reply"))
+        let style = if reply_to.is_some() { "" } else { " style=\"display:none;\"" };
+        let link = esc_url(&remove_query_arg(&remove_query_arg(&remove_query_arg(&format!("{}{}", q.url_path, if q.raw_query.is_empty() { String::new() } else { format!("?{}", q.raw_query) }), "replytocom"), "unapproved"), "moderation-hash"));
+        format!(" <small><a rel=\"nofollow\" id=\"cancel-comment-reply-link\" href=\"{link}#respond\"{style}>{}</a></small>", site.tr("Cancel reply"))
     } else {
         String::new()
     };
     let mut fields = String::new();
     for field in [&author, &email, &url, &cookies] {
-        if !field.is_empty() {
+        if !field.is_empty() && viewer.is_none() {
             fields.push_str(field);
             fields.push('\n');
         }
     }
     let submit = format!("<input name=\"submit\" type=\"submit\" id=\"submit\" class=\"wp-block-button__link wp-element-button\" value=\"{}\" />", esc_attr(&site.tr("Post Comment")));
-    let id_fields = format!("<input type='hidden' name='comment_post_ID' value='{post_id}' id='comment_post_ID' />\n<input type='hidden' name='comment_parent' id='comment_parent' value='0' />\n");
+    let id_fields = format!("<input type='hidden' name='comment_post_ID' value='{post_id}' id='comment_post_ID' />\n<input type='hidden' name='comment_parent' id='comment_parent' value='{}' />\n", reply_to.unwrap_or(0));
     let action = esc_url(&site.site_url("/wp-comments-post.php"));
     bc.env.with_state(|s| if !s.scripts.iter().any(|x| x == "comment-reply") { s.scripts.push("comment-reply".to_owned()) });
-    let reply_title = site.tr("Leave a Reply");
+    let reply_title = match &parent {
+        Some(comment) => rustpress_core::i18n::sprintf(&site.tr("Leave a Reply to %s"), &[&format!("<a href=\"#comment-{}\">{}</a>", comment.comment_id, esc_html(&comment.comment_author))]),
+        None => site.tr("Leave a Reply"),
+    };
     Ok(format!(
-        "\t<div id=\"respond\" {wrapper}>\n\t\t<h3 id=\"reply-title\" class=\"comment-reply-title\">{reply_title}{cancel}</h3><form action=\"{action}\" method=\"post\" id=\"commentform\" class=\"comment-form\">{notes}{comment_field}{fields}<p class=\"form-submit wp-block-button\">{submit} {id_fields}</p></form>\t</div><!-- #respond -->\n\t"
+        "\t<div id=\"respond\" {wrapper}>\n\t\t<h3 id=\"reply-title\" class=\"comment-reply-title\">{reply_title}{cancel}</h3><form action=\"{action}\" method=\"post\" id=\"commentform\" class=\"comment-form\">{notes}{comment_field}{fields}<p class=\"form-submit wp-block-button\">{submit} {id_fields}</p>{unfiltered}</form>\t</div><!-- #respond -->\n\t"
     ))
 }

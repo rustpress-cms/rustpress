@@ -19,6 +19,21 @@ pub struct Document {
     pub html: String,
 }
 
+/// What the toolbar needs to know about the page.
+pub struct ToolbarInfo<'a> {
+    /// The slug of the template that rendered the page (`home`, `single`, ...).
+    pub template_slug: &'a str,
+    pub query: &'a QueryResult,
+}
+
+pub type ToolbarFn = dyn Fn(&ToolbarInfo<'_>) -> String + Send + Sync;
+
+/// Parts of the document the caller makes: the toolbar of a signed-in viewer.
+#[derive(Clone, Default)]
+pub struct Extras {
+    pub toolbar: Option<std::sync::Arc<ToolbarFn>>,
+}
+
 /// Inline stylesheets up to this many bytes in total; larger files become `<link>`s.
 pub(crate) const INLINE_LIMIT: u64 = 40_000;
 
@@ -46,6 +61,9 @@ pub async fn body_classes(theme: &Theme, site: &Site, q: &QueryResult) -> Result
     }
     if f.is_home {
         push("blog");
+    }
+    if f.is_page && site.options.u64("wp_page_for_privacy_policy", 0) != 0 && matches!(&q.queried, Queried::Post(p) if p.id == site.options.u64("wp_page_for_privacy_policy", 0)) {
+        push("privacy-policy");
     }
     if f.is_archive {
         push("archive");
@@ -135,6 +153,13 @@ pub async fn body_classes(theme: &Theme, site: &Site, q: &QueryResult) -> Result
                 c.push(format!("term-{}", term.term_id));
             }
             _ => {}
+        }
+    }
+    if let Some(viewer) = &q.viewer {
+        c.push("logged-in".into());
+        if viewer.show_admin_bar {
+            c.push("admin-bar".into());
+            c.push("no-customize-support".into());
         }
     }
     if rustpress_blocks::images::custom_logo_id(site).await? != 0 {
@@ -443,6 +468,10 @@ pub(crate) async fn discovery_links(site: &Site, q: &QueryResult, version: &str,
 /// part of the address.
 pub(crate) async fn canonical_url(site: &Site, q: &QueryResult, cpage_override: u64) -> Result<Option<String>> {
     let Queried::Post(post) = &q.queried else { return Ok(None) };
+    // Only a published post has a canonical address.
+    if post.post_status != "publish" && post.post_type != "attachment" {
+        return Ok(None);
+    }
     let mut canonical = site.permalink(post).await?;
     if q.queried_object_id() == post.id {
         let page = q.vars.u64("page").unwrap_or(0);
@@ -603,6 +632,11 @@ fn mediaelement_scripts(site: &Site, wp_root: &std::path::Path, includes_url: &s
 
 /// Renders a request into a complete HTML document.
 pub async fn render_document(theme: &Theme, site: &Site, query: &QueryResult, registry: &Registry) -> Result<Document> {
+    render_document_with(theme, site, query, registry, &Extras::default()).await
+}
+
+/// [`render_document`] with the toolbar of the signed-in viewer.
+pub async fn render_document_with(theme: &Theme, site: &Site, query: &QueryResult, registry: &Registry, extras: &Extras) -> Result<Document> {
     if query.flags.is_embed {
         return crate::embed::render(theme, site, query, registry).await;
     }
@@ -731,6 +765,10 @@ pub async fn render_document(theme: &Theme, site: &Site, query: &QueryResult, re
 
     let mut styles = String::new();
     styles.push_str("<style id=\"wp-img-auto-sizes-contain-inline-css\">\nimg:is([sizes=auto i],[sizes^=\"auto,\" i]){contain-intrinsic-size:3000px 1500px}\n/*# sourceURL=wp-img-auto-sizes-contain-inline-css */\n</style>\n");
+    let toolbar_on = query.viewer.as_ref().is_some_and(|v| v.show_admin_bar);
+    if toolbar_on {
+        styles.push_str(&format!("<link rel='stylesheet' id='dashicons-css' href='{includes_url}/css/dashicons.min.css?ver={version}' media='all' />\n<link rel='stylesheet' id='admin-bar-css' href='{includes_url}/css/admin-bar.min.css?ver={version}' media='all' />\n<style id=\"admin-bar-inline-css\">\n\n\t\t@media screen {{ html {{ margin-top: 32px !important; }} }}\n\t\t@media screen and ( max-width: 782px ) {{ html {{ margin-top: 46px !important; }} }}\n\t\n@media print {{ #wpadminbar {{ display:none; }} }}\n/*# sourceURL=admin-bar-inline-css */\n</style>\n"));
+    }
     for sheet in &sheets {
         match (&sheet.inline, &sheet.file) {
             (Some(css), Some((_, url))) => {
@@ -816,9 +854,14 @@ pub async fn render_document(theme: &Theme, site: &Site, query: &QueryResult, re
     // --- scripts ---------------------------------------------------------
     let modules: Vec<String> = state.script_modules.iter().cloned().collect();
     let (importmap, preloads, module_scripts) = script_modules(wp_root, site, &modules);
-    let mut footer_scripts = format!("{}{}{module_scripts}{}", speculation_rules(site, theme), rustpress_blocks::duotone::footer_svgs(&state.duotone), state.interactivity.data_script().unwrap_or_default());
+    // Signed-in viewers get no speculation rules.
+    let speculation = if query.viewer.is_some() { String::new() } else { speculation_rules(site, theme) };
+    let mut footer_scripts = format!("{speculation}{}{module_scripts}{}", rustpress_blocks::duotone::footer_svgs(&state.duotone), state.interactivity.data_script().unwrap_or_default());
     // MediaElement: jQuery in the head, the player scripts in the footer.
     let styles = if state.mediaelement { format!("{styles}<script id=\"jquery-core-js\" src=\"{includes_url}/js/jquery/jquery.min.js?ver=3.7.1\"></script>\n<script id=\"jquery-migrate-js\" src=\"{includes_url}/js/jquery/jquery-migrate.min.js?ver=3.4.1\"></script>\n") } else { styles };
+    if toolbar_on {
+        footer_scripts.push_str(&format!("<script id=\"hoverintent-js-js\" src=\"{includes_url}/js/hoverintent-js.min.js?ver=2.2.1\"></script>\n<script id=\"admin-bar-js\" src=\"{includes_url}/js/admin-bar.min.js?ver={version}\"></script>\n"));
+    }
     if state.mediaelement {
         footer_scripts.push_str(&mediaelement_scripts(site, wp_root, &includes_url, &version, state.vimeo));
     }
@@ -828,7 +871,11 @@ pub async fn render_document(theme: &Theme, site: &Site, query: &QueryResult, re
     footer_scripts.push_str(&emoji_detection_script(site, wp_root, &version));
 
     // --- head ------------------------------------------------------------
-    let robots = robots_meta(site, query);
+    let mut robots = robots_meta(site, query);
+    // `wp_post_preview_js()`: the preview window is named after the post.
+    if query.flags.is_preview && let Queried::Post(post) = &query.queried {
+        robots.push_str(&format!("<script>\n\t( function() {{\n\t\tvar query = document.location.search;\n\n\t\tif ( query && query.indexOf( 'preview=true' ) !== -1 ) {{\n\t\t\twindow.name = 'wp-preview-{}';\n\t\t}}\n\n\t\tif ( window.addEventListener ) {{\n\t\t\twindow.addEventListener( 'pagehide', function() {{ window.name = ''; }} );\n\t\t}}\n\t}}());\n\t//# sourceURL=wp_post_preview_js\t\n</script>\n", post.id));
+    }
     let title = document_title(site, query).await?;
     let lang = site.language_tag();
     let classes = body_classes(theme, site, query).await?;
@@ -840,8 +887,12 @@ pub async fn render_document(theme: &Theme, site: &Site, query: &QueryResult, re
         oembed_links(site, query).await?,
         discovery_links(site, query, &version, state.cpage_override).await?,
     );
+    let bar = match (&extras.toolbar, toolbar_on) {
+        (Some(toolbar), true) => toolbar(&ToolbarInfo { template_slug: &rendered.template_slug, query }),
+        _ => String::new(),
+    };
     let html = format!(
-        "<!DOCTYPE html>\n<html {}lang=\"{}\">\n<head>\n\t{head}</head>\n\n<body class=\"{}\">\n\n{}\n{footer_scripts}</body>\n</html>\n",
+        "<!DOCTYPE html>\n<html {}lang=\"{}\">\n<head>\n\t{head}</head>\n\n<body class=\"{}\">\n{bar}\n{}\n{footer_scripts}</body>\n</html>\n",
         if rtl { "dir=\"rtl\" " } else { "" },
         esc_attr(&lang),
         esc_attr(&classes.join(" ")),

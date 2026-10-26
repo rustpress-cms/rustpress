@@ -26,11 +26,13 @@ pub mod text_diff;
 pub mod types;
 pub mod slug;
 pub mod urls;
+pub mod viewer;
 
 pub use query::{Flags, Queried, QueryResult};
 pub use rewrite::QueryVars;
 pub use settings::{Settings, ShowOnFront};
 pub use site::Site;
+pub use viewer::Viewer;
 pub use sitemap::SitemapOutput;
 
 #[derive(Debug, thiserror::Error)]

@@ -70,6 +70,7 @@ pub fn is_dynamic(name: &str) -> bool {
             | "core/comment-content"
             | "core/comment-date"
             | "core/comment-reply-link"
+            | "core/comment-edit-link"
             | "core/avatar"
             | "core/post-comments-form"
             | "core/comments-pagination"
@@ -154,6 +155,7 @@ pub fn render<'a>(bc: &'a BlockCtx<'a>) -> BoxFuture<'a, Result<String>> {
             "core/comment-content" => comments::comment_content(bc).await,
             "core/comment-date" => comments::comment_date(bc).await,
             "core/comment-reply-link" => comments::comment_reply_link(bc).await,
+            "core/comment-edit-link" => comments::comment_edit_link(bc).await,
             "core/avatar" => comments::avatar(bc).await,
             "core/post-comments-form" => comments::post_comments_form(bc).await,
             "core/comments-pagination" => comments::comments_pagination(bc).await,

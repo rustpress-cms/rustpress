@@ -159,6 +159,16 @@ impl Site {
     /// redirects without the port of the site and then finds that it still is not canonical (its
     /// guard against chained redirects): on a port other than 80 or 443 these are never redirected.
     pub async fn canonical_redirect_for_request(&self, path: &str, query: &str, q: &QueryResult) -> Result<Option<String>> {
+        // `redirect_canonical()` leaves previews alone; a published post with `?preview=true` but without a valid
+        // preview nonce is none.
+        if q.flags.is_preview {
+            let published = matches!(&q.queried, crate::query::Queried::Post(post) if post.post_status == "publish");
+            let vars = crate::rewrite::QueryVars::parse(&q.raw_query);
+            let valid = q.viewer.as_ref().is_some_and(|viewer| vars.get("preview_nonce").is_some_and(|nonce| viewer.check_nonce(nonce, &format!("post_preview_{}", vars.u64("preview_id").unwrap_or(0)))));
+            if !(q.vars.u64("p").is_some_and(|p| p != 0) && published && !valid) {
+                return Ok(None);
+            }
+        }
         let paging = (q.vars.u64("paged").unwrap_or(0) != 0 || q.flags.is_feed || q.vars.u64("cpage").unwrap_or(0) != 0) && q.vars.get("sitemap").is_none_or(str::is_empty);
         let has_port = self.settings.home.rsplit_once("://").is_some_and(|(_, rest)| rest.split('/').next().is_some_and(|host| host.contains(':')));
         // A comment feed of a single post with plain permalinks is redirected to `get_post_comments_feed_link()`,

@@ -157,6 +157,62 @@ fn cookies_of(headers: &HeaderMap) -> Vec<(String, String)> {
     out
 }
 
+/// The user who looks at the site (`wp_validate_auth_cookie( '', 'logged_in' )`) and the token of their session.
+pub async fn frontend_user(loaded: &Loaded, headers: &HeaderMap) -> Option<(rustpress_auth::CurrentUser, String)> {
+    let parts = loaded.admin.as_ref()?;
+    let scheme = rustpress_auth::Scheme::LoggedIn;
+    let name = parts.auth.cookie_name(scheme);
+    let cookie = cookies_of(headers).into_iter().find(|(k, _)| *k == name).map(|(_, v)| v)?;
+    let session = parts.auth.validate_cookie(&loaded.site.db, &cookie, scheme, now(), false).await.ok().flatten()?;
+    let user = rustpress_auth::CurrentUser::load(&loaded.site.db, &parts.roles, &session.user).await.ok()?;
+    Some((user, session.token))
+}
+
+/// The toolbar of the site for a signed-in user: a function of the page it is printed on.
+pub async fn front_toolbar(loaded: &std::sync::Arc<Loaded>, user: &std::sync::Arc<rustpress_auth::CurrentUser>, token: &str) -> Option<rustpress_theme::Extras> {
+    let parts = loaded.admin.as_ref()?;
+    let at = now();
+    let updates = rustpress_admin::updates::counts(&loaded.site).await.total();
+    let pending = loaded.site.db.count_comments_with_status("0").await.unwrap_or(0);
+    let logout_nonce = parts.auth.create_nonce("log-out", user.id, token, at).unwrap_or_default();
+    let (loaded, user) = (loaded.clone(), user.clone());
+    let toolbar: std::sync::Arc<rustpress_theme::ToolbarFn> = std::sync::Arc::new(move |info: &rustpress_theme::ToolbarInfo<'_>| {
+        let site = &loaded.site;
+        let admin = |path: &str| site.site_url(&format!("wp-admin/{path}"));
+        let mut context = rustpress_admin::adminbar::FrontContext { updates, pending_comments: pending, logout_nonce: logout_nonce.clone(), ..Default::default() };
+        if [&site.settings.stylesheet, &site.settings.template].iter().any(|t| loaded.theme.wp_root.join("wp-content").join("themes").join(t.as_str()).join("templates").join("index.html").is_file()) && user.can("edit_theme_options") {
+            context.site_editor_url = Some(format!("{}?postType=wp_template&postId={}//{}&canvas=edit", admin("site-editor.php"), site.settings.stylesheet, info.template_slug));
+        }
+        let tr = |s: &str| site.tr(s);
+        context.edit = match &info.query.queried {
+            rustpress_core::Queried::Post(post) if info.query.flags.is_singular() => {
+                let can = user.can(match post.post_type.as_str() {
+                    "page" => if post.post_author == user.id { "edit_pages" } else { "edit_others_pages" },
+                    _ => if post.post_author == user.id { "edit_posts" } else { "edit_others_posts" },
+                });
+                let label = match post.post_type.as_str() {
+                    "page" => tr("Edit Page"),
+                    "attachment" => tr("Edit Media"),
+                    _ => tr("Edit Post"),
+                };
+                can.then(|| (label, admin(&format!("post.php?post={}&action=edit", post.id))))
+            }
+            rustpress_core::Queried::Term(term) if user.can("manage_categories") => {
+                let label = if term.taxonomy == "category" || site.types.taxonomy(&term.taxonomy).is_some_and(|t| t.hierarchical) { tr("Edit Category") } else { tr("Edit Tag") };
+                let post_type = site.types.taxonomy(&term.taxonomy).and_then(|t| t.object_types.first().cloned()).unwrap_or_else(|| "post".to_owned());
+                Some((label, admin(&format!("term.php?taxonomy={}&tag_ID={}&post_type={post_type}", term.taxonomy, term.term_id))))
+            }
+            rustpress_core::Queried::User(author) if user.can("edit_users") || author.id == user.id => {
+                let url = if author.id == user.id { admin("profile.php") } else { admin(&format!("user-edit.php?user_id={}", author.id)) };
+                Some((tr("Edit User"), url))
+            }
+            _ => None,
+        };
+        rustpress_admin::adminbar::render_front(site, &user, &context)
+    });
+    Some(rustpress_theme::Extras { toolbar: Some(toolbar) })
+}
+
 /// The user of a REST request, from the cookie of the sign-in and the `wp_rest` nonce.
 pub enum RestAuth {
     /// No cookie, or a cookie without a nonce: the request is anonymous.
