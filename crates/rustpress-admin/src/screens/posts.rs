@@ -19,14 +19,73 @@ pub struct TypeInfo {
     pub hierarchical: bool,
     pub label: String,
     pub singular: String,
+    pub labels: ListLabels,
+}
+
+/// The labels of a post type the list prints (`get_post_type_labels()`).
+pub struct ListLabels {
+    pub add_new: String,
+    pub search_items: String,
+    pub not_found: String,
+    pub not_found_in_trash: String,
+    pub filter_items_list: String,
+    pub items_list_navigation: String,
+    pub items_list: String,
+}
+
+impl ListLabels {
+    /// The defaults: those of posts, or of pages for a hierarchical type.
+    pub(super) fn defaults(ctx: &Ctx<'_>, hierarchical: bool) -> Self {
+        let tr = |s: &str| ctx.tr(s);
+        if hierarchical {
+            ListLabels {
+                add_new: tr("Add Page"),
+                search_items: tr("Search Pages"),
+                not_found: tr("No pages found."),
+                not_found_in_trash: tr("No pages found in Trash."),
+                filter_items_list: tr("Filter pages list"),
+                items_list_navigation: tr("Pages list navigation"),
+                items_list: tr("Pages list"),
+            }
+        } else {
+            ListLabels {
+                add_new: tr("Add Post"),
+                search_items: tr("Search Posts"),
+                not_found: tr("No posts found."),
+                not_found_in_trash: tr("No posts found in Trash."),
+                filter_items_list: tr("Filter posts list"),
+                items_list_navigation: tr("Posts list navigation"),
+                items_list: tr("Posts list"),
+            }
+        }
+    }
 }
 
 pub fn type_info(ctx: &Ctx<'_>, name: &str) -> Option<TypeInfo> {
     let site = ctx.site();
     match name {
-        "post" => Some(TypeInfo { name: "post".into(), hierarchical: false, label: site.post_type_label("post"), singular: site.trx("Post", "post type singular name") }),
-        "page" => Some(TypeInfo { name: "page".into(), hierarchical: true, label: site.post_type_label("page"), singular: site.trx("Page", "post type singular name") }),
-        other => site.types.post_type(other).filter(|t| t.public || t.queryable).map(|t| TypeInfo { name: other.to_owned(), hierarchical: t.hierarchical, label: t.plural_label(), singular: t.singular_label() }),
+        "post" => Some(TypeInfo { name: "post".into(), hierarchical: false, label: site.post_type_label("post"), singular: site.trx("Post", "post type singular name"), labels: ListLabels::defaults(ctx, false) }),
+        "page" => Some(TypeInfo { name: "page".into(), hierarchical: true, label: site.post_type_label("page"), singular: site.trx("Page", "post type singular name"), labels: ListLabels::defaults(ctx, true) }),
+        // The patterns (`register_post_type( 'wp_block' )` in `create_initial_post_types()`).
+        "wp_block" => {
+            let tr = |s: &str| ctx.tr(s);
+            Some(TypeInfo {
+                name: "wp_block".into(),
+                hierarchical: false,
+                label: site.trx("Patterns", "post type general name"),
+                singular: site.trx("Pattern", "post type singular name"),
+                labels: ListLabels {
+                    add_new: tr("Add Pattern"),
+                    search_items: tr("Search Patterns"),
+                    not_found: tr("No patterns found."),
+                    not_found_in_trash: tr("No patterns found in Trash."),
+                    filter_items_list: tr("Filter patterns list"),
+                    items_list_navigation: tr("Patterns list navigation"),
+                    items_list: tr("Patterns list"),
+                },
+            })
+        }
+        other => site.types.post_type(other).filter(|t| t.public || t.queryable).map(|t| TypeInfo { name: other.to_owned(), hierarchical: t.hierarchical, label: t.plural_label(), singular: t.singular_label(), labels: ListLabels::defaults(ctx, t.hierarchical) }),
     }
 }
 
@@ -56,7 +115,8 @@ fn post_class(post: &Post, categories: &[rustpress_db::Term], tags: &[rustpress_
         classes.push(format!("tag-{}", rustpress_core::formatting::sanitize_html_class(&term.slug)));
     }
     // The terms of every other public taxonomy: `genre-krimi`.
-    for (taxonomy, term) in others {
+    // Only public taxonomies give classes; the internal ones (`wp_pattern_category`, …) are not.
+    for (taxonomy, term) in others.iter().filter(|(taxonomy, _)| !taxonomy.starts_with("wp_")) {
         classes.push(rustpress_core::formatting::sanitize_html_class(&format!("{taxonomy}-{}", rustpress_core::formatting::sanitize_html_class(&term.slug))));
     }
     classes.join(" ")
@@ -559,16 +619,8 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
 
     // Rows
     let mut rows = String::new();
-    let all_categories = db.terms("category").await.unwrap_or_default();
-    let _ = all_categories;
     if posts.is_empty() {
-        let not_found = if is_trash {
-            if info.name == "page" { tr("No pages found in Trash.") } else { tr("No posts found in Trash.") }
-        } else if info.name == "page" {
-            tr("No pages found.")
-        } else {
-            tr("No posts found.")
-        };
+        let not_found = if is_trash { info.labels.not_found_in_trash.clone() } else { info.labels.not_found.clone() };
         rows.push_str(&format!("<tr class=\"no-items\"><td class=\"colspanchange\" colspan=\"{}\">{not_found}</td></tr>", columns.iter().filter(|c| !c.hidden).count()));
     }
     for (post, level) in posts.iter().zip(levels.iter()) {
@@ -607,12 +659,11 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         if !filters.is_empty() {
             out.push_str(&filters);
             out.push_str(&submit_button(&tr("Filter"), "compact", "filter_action", "post-query-submit"));
-            out.push_str("		");
         }
         if is_trash && !posts.is_empty() && ctx.can("edit_others_posts") {
             out.push_str(&submit_button(&tr("Empty Trash"), "apply", "delete_all", "delete_all"));
         }
-        out.push_str("</div>
+        out.push_str("		</div>
 		");
         out
     };
@@ -637,8 +688,10 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         };
         format!("{ordered_by} {}", if direction { tr("Descending.") } else { tr("Ascending.") })
     };
-    let list_heading = if info.hierarchical { tr("Pages list") } else { tr("Posts list") };
+    let list_heading = info.labels.items_list.clone();
     let table_html = table.display(&nonce_field, &extra_top, &extra_bottom, &caption, &rows, &list_heading);
+    // `heading_pagination` is the post type's `items_list_navigation`.
+    let table_html = table_html.replace(&format!("<h2 class='screen-reader-text'>{}</h2>", table.heading_pagination()), &format!("<h2 class='screen-reader-text'>{}</h2>", info.labels.items_list_navigation));
 
     // The page
     let add_new = if info.name == "post" { ctx.admin_url("post-new.php") } else { ctx.admin_url(&format!("post-new.php?post_type={}", info.name)) };
@@ -646,7 +699,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         Some(term) => format!("<span class=\"subtitle\">{}</span>", rustpress_core::i18n::sprintf(&tr("Search results for: %s"), &[&format!("<strong>{}</strong>", esc_html(term))])),
         None => String::new(),
     };
-    let heading = format!("<h1 class=\"wp-heading-inline\">\n{}</h1>\n\n <a href=\"{}\" class=\"page-title-action\">{}</a>{subtitle}\n<hr class=\"wp-header-end\">\n\n", esc_html(&info.label), esc_url(&add_new), if info.hierarchical { tr("Add Page") } else { tr("Add Post") });
+    let heading = format!("<h1 class=\"wp-heading-inline\">\n{}</h1>\n\n <a href=\"{}\" class=\"page-title-action\">{}</a>{subtitle}\n<hr class=\"wp-header-end\">\n\n", esc_html(&info.label), esc_url(&add_new), info.labels.add_new);
     let search_box = if search.is_some() || !posts.is_empty() {
         let mut hidden = String::new();
         if !orderby_param.is_empty() {
@@ -655,7 +708,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         if !order_param.is_empty() {
             hidden.push_str(&format!("<input type=\"hidden\" name=\"order\" value=\"{}\" />", esc_attr(&order_param)));
         }
-        let text = if info.hierarchical { tr("Search Pages") } else { tr("Search Posts") };
+        let text = info.labels.search_items.clone();
         format!(
             "{hidden}\n<p class=\"search-box\">\n\t<label class=\"screen-reader-text\" for=\"post-search-input\">{text}:</label>\n\t<input type=\"search\" id=\"post-search-input\" name=\"s\" value=\"{}\" />\n\t\t{}</p>\n\t\t\n",
             esc_attr(&search.clone().unwrap_or_default()),
@@ -664,7 +717,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     } else {
         String::new()
     };
-    let filter_heading = if info.hierarchical { tr("Filter pages list") } else { tr("Filter posts list") };
+    let filter_heading = info.labels.filter_items_list.clone();
     let mut hidden_fields = format!(
         "<input type=\"hidden\" name=\"post_status\" class=\"post_status_page\" value=\"{}\" />\n<input type=\"hidden\" name=\"post_type\" class=\"post_type_page\" value=\"{}\" />\n",
         esc_attr(&status_param),
@@ -717,6 +770,10 @@ pub(super) fn list_columns(ctx: &Ctx<'_>, info: &TypeInfo, status_param: &str, t
         } else if taxonomy == "post_tag" {
             columns.push(Column::new("tags", &site.taxonomy_label("post_tag")));
         }
+    }
+    // Taxonomies with `show_admin_column` besides categories and tags.
+    if info.name == "wp_block" {
+        columns.push(Column::new("taxonomy-wp_pattern_category", &tr("Pattern Categories")));
     }
     if site.post_type_supports(&info.name, "comments") && !matches!(status_param, "pending" | "draft" | "future") {
         columns.push(
@@ -884,6 +941,33 @@ pub(super) async fn post_row(ctx: &Ctx<'_>, post: &Post, level: usize, row: &Row
                 };
                 out.push_str(&format!("<td class='{} column-{}' data-colname=\"{}\">{cell}</td>", column.key, column.key, esc_attr(&label)));
             }
+            key if key.starts_with("taxonomy-") => {
+                // `column_default()`: the terms as links to the list filtered by them.
+                let taxonomy = &key["taxonomy-".len()..];
+                let terms = db.terms_for_post(post.id, Some(taxonomy)).await.unwrap_or_default();
+                // `labels->no_terms`, and the term in the address: by its query variable, or as `taxonomy` and `term`.
+                let (no_terms, query_var) = if taxonomy == "wp_pattern_category" { (tr("No pattern categories"), None) } else { (tr("No tags"), Some(taxonomy)) };
+                let cell = if terms.is_empty() {
+                    format!("<span aria-hidden=\"true\">&#8212;</span><span class=\"screen-reader-text\">{no_terms}</span>")
+                } else {
+                    let links: Vec<String> = terms
+                        .iter()
+                        .map(|t| {
+                            let mut url = "edit.php".to_owned();
+                            if post.post_type != "post" {
+                                url = add_query_arg(&url, "post_type", &post.post_type);
+                            }
+                            url = match query_var {
+                                Some(var) => add_query_arg(&url, var, &t.slug),
+                                None => add_query_arg(&add_query_arg(&url, "taxonomy", taxonomy), "term", &t.slug),
+                            };
+                            format!("<a href=\"{}\">{}</a>", esc_url(&url), esc_html(&t.name))
+                        })
+                        .collect();
+                    links.join(&site.trx(", ", "tag delimiter"))
+                };
+                out.push_str(&format!("<td class='{key} column-{key}' data-colname=\"{}\">{cell}</td>", esc_attr(&column.label)));
+            }
             "comments" => {
                 let pending_count = pending.iter().find(|(id, _)| *id == post.id).map_or(0, |(_, n)| *n);
                 out.push_str(&format!("<td class='comments column-comments' data-colname=\"{}\">\t\t<div class=\"post-com-count-wrapper\">\n\t\t{}\t\t</div>\n\t\t</td>", esc_attr(&strip_tags_label(&column.label, ctx)), comments_bubble(ctx, post, pending_count)));
@@ -1019,7 +1103,10 @@ async fn row_actions_for(ctx: &Ctx<'_>, post: &Post, title: &str, can_edit: bool
     let edit_url = ctx.admin_url(&format!("post.php?post={}&action=edit", post.id)).replace('&', "&amp;");
     if can_edit && post.post_status != "trash" {
         actions.push(("edit".into(), format!("<a href=\"{edit_url}\" aria-label=\"{}\">{}</a>", esc_attr(&rustpress_core::i18n::sprintf(&tr("Edit &#8220;%s&#8221;"), &[title])), tr("Edit"))));
-        actions.push(("inline hide-if-no-js".into(), format!("<button type=\"button\" class=\"button-link editinline\" aria-label=\"{}\" aria-expanded=\"false\">{}</button>", esc_attr(&rustpress_core::i18n::sprintf(&tr("Quick edit &#8220;%s&#8221; inline"), &[title])), tr("Quick&nbsp;Edit"))));
+        // Patterns have no quick edit.
+        if info.name != "wp_block" {
+            actions.push(("inline hide-if-no-js".into(), format!("<button type=\"button\" class=\"button-link editinline\" aria-label=\"{}\" aria-expanded=\"false\">{}</button>", esc_attr(&rustpress_core::i18n::sprintf(&tr("Quick edit &#8220;%s&#8221; inline"), &[title])), tr("Quick&nbsp;Edit"))));
+        }
     }
     let can_delete = ctx.user.can_delete_post(post);
     if can_delete {
@@ -1044,6 +1131,17 @@ async fn row_actions_for(ctx: &Ctx<'_>, post: &Post, title: &str, can_edit: bool
             let link = site.permalink(post).await.unwrap_or_default();
             actions.push(("view".into(), format!("<a href=\"{}\" rel=\"bookmark\" aria-label=\"{}\">{}</a>", esc_attr(&link), esc_attr(&rustpress_core::i18n::sprintf(&tr("View &#8220;%s&#8221;"), &[title])), tr("View"))));
         }
+    }
+    if info.name == "wp_block" {
+        actions.push((
+            "export".into(),
+            format!(
+                "<button type=\"button\" class=\"wp-list-reusable-blocks__export button-link\" data-id=\"{}\" aria-label=\"{}\">{}</button>",
+                post.id,
+                esc_attr(&rustpress_core::i18n::sprintf(&tr("Export &#8220;%s&#8221; as JSON"), &[title])),
+                tr("Export as JSON")
+            ),
+        ));
     }
     let mut html = row_actions(site, &actions);
     // `row_actions()` ends with the toggle button, which the title cell prints itself.

@@ -529,7 +529,6 @@ async fn welcome_panel(ctx: &Ctx<'_>) -> String {
         .replace("{{welcome_nonce}}", &ctx.create_nonce("welcome-panel-nonce"))
         .replace("Learn more about the %s version.", &sprintf(&tr("Learn more about the %s version."), &[&esc_html(&version)]));
     let option: i64 = ctx.env.db.user_meta(ctx.user.id, "show_welcome_panel").await.ok().flatten().and_then(|v| v.parse().ok()).unwrap_or(0);
-    let admin_email = ctx.site().options.string("admin_email", "");
     let hide = !welcome_shown(ctx, option);
     format!("\t<div id=\"welcome-panel\" class=\"welcome-panel{}\">\n{body}", if hide { " hidden" } else { "" })
 }

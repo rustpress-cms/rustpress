@@ -104,6 +104,7 @@ impl Site {
             "attachment" => matches!(feature, "title" | "author" | "comments"),
             "wp_font_family" => feature == "title",
             "wp_font_face" => false,
+            "wp_block" => matches!(feature, "title" | "excerpt" | "editor" | "revisions" | "custom-fields"),
             other => self.types.post_type(other).is_none_or(|t| t.supports(feature)),
         }
     }
@@ -124,6 +125,7 @@ impl Site {
             "category" => self.trx("Categories", "taxonomy general name"),
             "post_tag" => self.trx("Tags", "taxonomy general name"),
             "post_format" => self.trx("Formats", "post format"),
+            "wp_pattern_category" => self.trx("Pattern Categories", "taxonomy general name"),
             other => self.types.taxonomy(other).map_or_else(|| other.to_owned(), |t| t.plural_label()),
         }
     }

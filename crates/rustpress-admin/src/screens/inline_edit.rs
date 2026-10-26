@@ -255,7 +255,8 @@ pub async fn inline_edit(ctx: &Ctx<'_>, info: &TypeInfo, first: Option<&Post>, c
     let can_publish = ctx.can(if is_page { "publish_pages" } else { "publish_posts" });
     let can_edit_others = ctx.can(if is_page { "edit_others_pages" } else { "edit_others_posts" });
     let hier: Vec<&str> = taxonomies.iter().filter(|(name, h)| *h && name != "post_format").map(|(name, _)| name.as_str()).collect();
-    let flat: Vec<&str> = taxonomies.iter().filter(|(name, h)| !*h && name != "post_format" && !name.starts_with("wp_")).map(|(name, _)| name.as_str()).collect();
+    // The internal taxonomies stay out, except the pattern categories (`show_in_quick_edit`).
+    let flat: Vec<&str> = taxonomies.iter().filter(|(name, h)| !*h && name != "post_format" && (!name.starts_with("wp_") || name == "wp_pattern_category")).map(|(name, _)| name.as_str()).collect();
     let date = match first {
         // `touch_time()`: a draft that has no date of its own shows the current time.
         Some(post) if !post.post_date.is_empty() && post.post_date != "0000-00-00 00:00:00" && !(matches!(post.post_status.as_str(), "draft" | "pending") && (post.post_date_gmt.is_empty() || post.post_date_gmt == "0000-00-00 00:00:00")) => post.post_date.clone(),
@@ -338,7 +339,7 @@ pub async fn inline_edit(ctx: &Ctx<'_>, info: &TypeInfo, first: Option<&Post>, c
                 item.flag("ITEM_CAN", ctx.can("edit_posts"));
                 item.var("TAX_LABEL", esc_html(&site.taxonomy_label(name)));
                 item.var("TAX_NAME", esc_attr(name));
-                item.var("TAX_COMMAS", esc_html(&ctx.tr("Separate tags with commas")));
+                item.var("TAX_COMMAS", esc_html(&ctx.tr(if *name == "wp_pattern_category" { "Separate pattern categories with commas" } else { "Separate tags with commas" })));
                 items.push(item);
             }
             scope.lists.insert("FLAT", items);

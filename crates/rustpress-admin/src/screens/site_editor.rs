@@ -62,7 +62,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         return redirect(&url);
     }
     let stylesheet = site.settings.stylesheet.clone();
-    let settings = super::block_editor::editor_settings(ctx, &rustpress_db::Post::default(), &super::posts::TypeInfo { name: String::new(), hierarchical: false, label: String::new(), singular: String::new() }).await;
+    let settings = super::block_editor::editor_settings(ctx, &rustpress_db::Post::default(), &super::posts::TypeInfo { name: String::new(), hierarchical: false, label: String::new(), singular: String::new(), labels: super::posts::ListLabels::defaults(ctx, false) }).await;
     let gs_id = super::block_editor::global_styles_id(ctx).await;
 
     let mut paths: Vec<(String, String)> = vec![
