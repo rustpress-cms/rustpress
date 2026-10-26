@@ -30,6 +30,47 @@ pub struct Services<'a> {
     pub search_form: &'a (dyn Fn() -> String + Sync),
 }
 
+/// A sidebar as `register_sidebar()` keeps it in `$wp_registered_sidebars`.
+#[derive(Debug, Clone, Default)]
+pub struct RegisteredSidebar {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub class: String,
+    pub before_widget: String,
+    pub after_widget: String,
+    pub before_title: String,
+    pub after_title: String,
+    pub show_in_rest: bool,
+}
+
+/// `$wp_registered_sidebars` of the active theme: the sidebars of a ported classic theme, or the classic sidebars a
+/// block theme kept from the theme before it (`_wp_block_theme_register_classic_sidebars()`).
+pub fn registered_sidebars(theme: &crate::theme::Theme, site: &Site) -> Vec<RegisteredSidebar> {
+    if super::is_ported(theme) {
+        return super::seventeen::registered_sidebars(site);
+    }
+    let mods = super::menu::theme_mod(site, &theme.stylesheet);
+    let Some(list) = mods.get("wp_classic_sidebars").and_then(Value::as_array) else { return Vec::new() };
+    list.iter()
+        .filter_map(|(_, sidebar)| {
+            sidebar.as_array()?;
+            let text = |key: &str| setting_str(sidebar, key);
+            Some(RegisteredSidebar {
+                id: text("id"),
+                name: text("name"),
+                description: text("description"),
+                class: text("class"),
+                before_widget: text("before_widget"),
+                after_widget: text("after_widget"),
+                before_title: text("before_title"),
+                after_title: text("after_title"),
+                show_in_rest: setting_flag(sidebar, "show_in_rest"),
+            })
+        })
+        .collect()
+}
+
 /// `wp_get_sidebars_widgets()`: sidebar id -> widget ids.
 pub fn sidebars_widgets(site: &Site) -> Vec<(String, Vec<String>)> {
     let Some(value) = site.options.value("sidebars_widgets") else { return Vec::new() };

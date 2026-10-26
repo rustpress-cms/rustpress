@@ -5,9 +5,9 @@
     python3 dev/rest_compare.py POST "/wp/v2/posts" '{"title":"x","status":"draft"}' [--keep]
     python3 dev/rest_compare.py GET "/wp/v2/types/post?context=edit" --show      # print the RustPress answer only
 
-The sessions are those of rpadmin (password rustpress-dev). Values that differ by nature (nonces, ports) are neutralized;
+The sessions are those of rpadmin (password rustpress-dev; `RP_USER=rpeditor` signs in as another user). Values that differ by nature (nonces, ports) are neutralized;
 `--shape` compares only the keys and the types of the values."""
-import http.cookiejar, json, re, sys, urllib.error, urllib.parse, urllib.request
+import http.cookiejar, json, os, re, sys, urllib.error, urllib.parse, urllib.request
 
 PORTS = {"ref": 8080, "rp": 3001}
 
@@ -25,7 +25,7 @@ def _new_session(port):
     jar = http.cookiejar.CookieJar()
     opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
     opener.open(f"http://127.0.0.1:{port}/wp-login.php").read()
-    data = urllib.parse.urlencode({"log": "rpadmin", "pwd": "rustpress-dev", "testcookie": "1"}).encode()
+    data = urllib.parse.urlencode({"log": os.environ.get("RP_USER", "rpadmin"), "pwd": "rustpress-dev", "testcookie": "1"}).encode()
     opener.open(f"http://127.0.0.1:{port}/wp-login.php", data).read()
     nonce = opener.open(f"http://127.0.0.1:{port}/wp-admin/admin-ajax.php?action=rest-nonce").read().decode().strip()
     return opener, nonce

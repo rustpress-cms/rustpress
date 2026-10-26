@@ -143,6 +143,7 @@ impl RestError {
                 | "rest_comment_invalid_id"
                 | "rest_term_invalid"
                 | "rest_user_invalid_id"
+                | "rest_widget_type_invalid"
                 | "rest_user_cannot_view"
                 | "rest_cannot_view"
                 | "rest_forbidden_orderby"

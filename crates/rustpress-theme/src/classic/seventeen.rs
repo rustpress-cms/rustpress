@@ -32,6 +32,28 @@ fn sidebar(id: &'static str) -> Sidebar {
     Sidebar { id, before_widget: "<section id=\"%1$s\" class=\"widget %2$s\">", after_widget: "</section>", before_title: "<h2 class=\"widget-title\">", after_title: "</h2>" }
 }
 
+/// The sidebars `twentyseventeen_widgets_init()` registers.
+pub fn registered_sidebars(site: &Site) -> Vec<widgets::RegisteredSidebar> {
+    let t = |text: &str| site.i18n().gettext(THEME, text);
+    [("sidebar-1", "Blog Sidebar", "Add widgets here to appear in your sidebar on blog posts and archive pages."), ("sidebar-2", "Footer 1", "Add widgets here to appear in your footer."), ("sidebar-3", "Footer 2", "Add widgets here to appear in your footer.")]
+        .into_iter()
+        .map(|(id, name, description)| {
+            let wrap = sidebar(id);
+            widgets::RegisteredSidebar {
+                id: id.to_owned(),
+                name: t(name),
+                description: t(description),
+                class: String::new(),
+                before_widget: wrap.before_widget.to_owned(),
+                after_widget: wrap.after_widget.to_owned(),
+                before_title: wrap.before_title.to_owned(),
+                after_title: wrap.after_title.to_owned(),
+                show_in_rest: false,
+            }
+        })
+        .collect()
+}
+
 /// `dynamic_sidebar()` for one of the theme's sidebars.
 async fn sidebar_widgets(ctx: &Ctx<'_>, id: &'static str) -> Result<String> {
     let request_uri = ctx.request_uri();

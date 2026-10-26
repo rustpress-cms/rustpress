@@ -24,6 +24,7 @@ mod terms;
 mod types;
 mod users;
 mod view_config;
+mod widgets;
 
 use std::path::PathBuf;
 
@@ -47,6 +48,8 @@ pub struct Access<'a> {
     pub nonce: Option<std::sync::Arc<dyn Fn(&str) -> String + Send + Sync>>,
     /// The roles, for the capabilities of other users (`user_can()`).
     pub roles: Option<&'a rustpress_auth::Roles>,
+    /// The keys and salts, for `wp_hash()`.
+    pub salts: Option<&'a rustpress_auth::Salts>,
 }
 
 /// A file of a multipart upload.
@@ -209,8 +212,15 @@ impl Rest<'_> {
     }
 
     /// The `Allow` header of an error answer.
-    pub(crate) fn allow_for(&self, _route: &str) -> String {
-        if self.access.is_some() { "GET, POST, PUT, PATCH, DELETE".to_owned() } else { "GET".to_owned() }
+    pub(crate) fn allow_for(&self, route: &str) -> String {
+        if self.access.is_none() {
+            "GET".to_owned()
+        } else if route.trim_start_matches('/').starts_with("wp/v2/sidebars/") {
+            // A sidebar cannot be deleted.
+            "GET, POST, PUT, PATCH".to_owned()
+        } else {
+            "GET, POST, PUT, PATCH, DELETE".to_owned()
+        }
     }
 
     /// The not-logged-in or forbidden error WordPress sends for an action.
@@ -283,6 +293,10 @@ impl Rest<'_> {
             ["wp", "v2", "view-config"] if get => self.view_config(&args).await.map(Some),
             ["wp", "v2", "icons", ..] | ["wp", "v2", "icon-collections", ..] if get => Ok(Some(self.icons_route(&segments, &args))),
             ["wp-block-editor", "v1", "navigation-fallback"] if get => self.navigation_fallback(&args).await.map(Some),
+            ["wp", "v2", "sidebars" | "widgets" | "widget-types", ..] if get => match self.widgets_route(&segments, &method, &args).await? {
+                Some(outcome) => Ok(Some(outcome)),
+                None => self.editor_route(&segments, &method, &args, params).await,
+            },
             _ => self.editor_route(&segments, &method, &args, params).await,
         }
     }
