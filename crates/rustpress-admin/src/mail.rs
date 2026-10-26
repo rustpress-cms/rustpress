@@ -25,7 +25,7 @@ pub fn specialchars_decode(text: &str) -> String {
 }
 
 impl MailCtx<'_> {
-    fn tr(&self, text: &str) -> String {
+    pub(crate) fn tr(&self, text: &str) -> String {
         self.site.tr(text)
     }
 
@@ -38,6 +38,14 @@ impl MailCtx<'_> {
     pub async fn send(&self, to: &str, subject: &str, message: &str) -> bool {
         match self.mailer {
             Some(mailer) => mailer.send(to, &specialchars_decode(subject), message).await,
+            None => false,
+        }
+    }
+
+    /// `wp_mail()` with the header lines.
+    pub async fn send_with_headers(&self, to: &str, subject: &str, message: &str, headers: &str) -> bool {
+        match self.mailer {
+            Some(mailer) => mailer.send_with_headers(to, &specialchars_decode(subject), message, headers).await,
             None => false,
         }
     }

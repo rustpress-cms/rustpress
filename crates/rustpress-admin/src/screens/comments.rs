@@ -45,14 +45,18 @@ fn avatar(ctx: &Ctx<'_>, email: &str, size: u64) -> String {
 
 /// `get_comment_link()` with the right `comment-page-N`.
 pub async fn comment_link(ctx: &Ctx<'_>, comment: &Comment) -> String {
-    let site = ctx.site();
-    let Some(post) = ctx.env.db.post(comment.comment_post_id).await.ok().flatten() else { return String::new() };
+    comment_link_for(ctx.site(), ctx.env.db, comment).await
+}
+
+/// `get_comment_link()` for a site and a database.
+pub async fn comment_link_for(site: &rustpress_core::Site, db: &rustpress_db::Db, comment: &Comment) -> String {
+    let Some(post) = db.post(comment.comment_post_id).await.ok().flatten() else { return String::new() };
     let permalink = site.permalink(&post).await.unwrap_or_default();
     let mut page = 1u64;
     let mut max_page = 1u64;
     let per_page = site.options.u64("comments_per_page", 50);
     if site.options.get("page_comments") == Some("1") && per_page > 0 {
-        let approved = ctx.env.db.approved_comments(post.id).await.unwrap_or_default();
+        let approved = db.approved_comments(post.id).await.unwrap_or_default();
         let top: Vec<&Comment> = approved.iter().filter(|c| c.comment_parent == 0).collect();
         // The top-level ancestor decides the page.
         let mut ancestor = comment;

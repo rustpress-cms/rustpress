@@ -25,6 +25,47 @@ impl Db {
         Ok(sqlx::query_as(AssertSqlSafe(sql)).bind(id).fetch_optional(&self.pool).await?)
     }
 
+    /// The comment `wp_allow_comment()` calls a duplicate: the same author, address and text on the same post under
+    /// the same parent, not in the trash.
+    pub async fn duplicate_comment(&self, post_id: u64, parent: u64, author: &str, email: &str, content: &str) -> Result<Option<u64>> {
+        let mut sql = format!("SELECT comment_ID FROM {} WHERE comment_post_ID = ? AND comment_parent = ? AND comment_approved != 'trash' AND ( comment_author = ? ", self.prefix.table("comments"));
+        if !email.is_empty() {
+            sql.push_str("AND comment_author_email = ? ");
+        }
+        sql.push_str(") AND comment_content = ? LIMIT 1");
+        let mut query = sqlx::query_scalar::<_, u64>(AssertSqlSafe(sql)).bind(post_id).bind(parent.to_string()).bind(author.to_owned());
+        if !email.is_empty() {
+            query = query.bind(email.to_owned());
+        }
+        Ok(query.bind(content.to_owned()).fetch_optional(&self.pool).await?)
+    }
+
+    /// The date (GMT) of the last comment of a user or an address since `since`: `wp_check_comment_flood()`.
+    pub async fn last_comment_since(&self, by_user: Option<u64>, ip: &str, email: &str, since: &str) -> Result<Option<String>> {
+        let column = if by_user.is_some() { "`user_id`" } else { "`comment_author_IP`" };
+        let sql = format!(
+            "SELECT CAST(`comment_date_gmt` AS CHAR) FROM {} WHERE `comment_date_gmt` >= ? AND ( {column} = ? OR `comment_author_email` = ? ) ORDER BY `comment_date_gmt` DESC LIMIT 1",
+            self.prefix.table("comments")
+        );
+        let query = sqlx::query_scalar::<_, String>(AssertSqlSafe(sql)).bind(since.to_owned());
+        let query = match by_user {
+            Some(user) => query.bind(user.to_string()),
+            None => query.bind(ip.to_owned()),
+        };
+        Ok(query.bind(email.to_owned()).fetch_optional(&self.pool).await?)
+    }
+
+    /// Whether an earlier comment of this person was approved (`check_comment()`, "comment author must have a
+    /// previously approved comment"): by the user, or by name and address.
+    pub async fn has_approved_comment(&self, user_id: Option<u64>, author: &str, email: &str) -> Result<bool> {
+        let table = self.prefix.table("comments");
+        let found: Option<String> = match user_id {
+            Some(user) => sqlx::query_scalar(AssertSqlSafe(format!("SELECT comment_approved FROM {table} WHERE user_id = ? AND comment_approved = '1' LIMIT 1"))).bind(user).fetch_optional(&self.pool).await?,
+            None => sqlx::query_scalar(AssertSqlSafe(format!("SELECT comment_approved FROM {table} WHERE comment_author = ? AND comment_author_email = ? AND comment_approved = '1' LIMIT 1"))).bind(author.to_owned()).bind(email.to_owned()).fetch_optional(&self.pool).await?,
+        };
+        Ok(found.is_some_and(|v| v == "1"))
+    }
+
     /// `get_lastcommentmodified( 'GMT' )`.
     pub async fn last_comment_modified_gmt(&self) -> Result<Option<String>> {
         let sql = format!("SELECT CAST(comment_date_gmt AS CHAR) FROM {} WHERE comment_approved = '1' ORDER BY comment_date_gmt DESC LIMIT 1", self.prefix.table("comments"));

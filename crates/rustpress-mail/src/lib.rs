@@ -39,9 +39,33 @@ impl Mailer {
 
     /// Sends `message` (plain text, UTF-8) to `to`; `false` when it could not be sent.
     pub async fn send(&self, to: &str, subject: &str, message: &str) -> bool {
+        self.send_with_headers(to, subject, message, "").await
+    }
+
+    /// The same with the `From:` and `Reply-To:` lines of `headers` (`"From: ...\nReply-To: ..."`).
+    pub async fn send_with_headers(&self, to: &str, subject: &str, message: &str, headers: &str) -> bool {
         let Ok(to) = to.parse::<Mailbox>() else { return false };
         let body = message.replace("\r\n", "\n").replace('\n', "\r\n");
-        let Ok(email) = Message::builder().from(self.from.clone()).to(to).subject(subject).header(ContentType::TEXT_PLAIN).body(body) else { return false };
+        let mut builder = Message::builder().to(to).subject(subject).header(ContentType::TEXT_PLAIN);
+        let mut from = self.from.clone();
+        for line in headers.lines() {
+            let Some((name, value)) = line.split_once(':') else { continue };
+            match name.trim().to_lowercase().as_str() {
+                // The address of the site stays; the name is the one the header gives.
+                "from" => {
+                    if let Ok(given) = value.trim().parse::<Mailbox>() {
+                        from = Mailbox::new(given.name, self.from.email.clone());
+                    }
+                }
+                "reply-to" => {
+                    if let Ok(reply) = value.trim().parse::<Mailbox>() {
+                        builder = builder.reply_to(reply);
+                    }
+                }
+                _ => {}
+            }
+        }
+        let Ok(email) = builder.from(from).body(body) else { return false };
         match self.transport.send(email).await {
             Ok(_) => true,
             Err(e) => {

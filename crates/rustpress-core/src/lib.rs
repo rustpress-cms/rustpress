@@ -10,6 +10,8 @@ mod entities;
 pub mod formatting;
 pub mod health;
 pub mod hierarchy;
+mod html_entities;
+pub mod kses;
 pub mod i18n;
 pub mod locale;
 pub mod options;

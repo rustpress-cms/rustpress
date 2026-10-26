@@ -19,7 +19,7 @@ async fn run() -> Result<(), String> {
     let listener = tokio::net::TcpListener::bind(&config.listen).await.map_err(|e| format!("cannot listen on {}: {e}", config.listen))?;
     let app = App::new(config).await.map_err(|e| e.to_string())?;
     tracing::info!(address = %listener.local_addr().map_err(|e| e.to_string())?, "listening");
-    axum::serve(listener, app.router()).with_graceful_shutdown(shutdown()).await.map_err(|e| e.to_string())
+    axum::serve(listener, app.router().into_make_service_with_connect_info::<std::net::SocketAddr>()).with_graceful_shutdown(shutdown()).await.map_err(|e| e.to_string())
 }
 
 async fn shutdown() {

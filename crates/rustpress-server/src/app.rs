@@ -134,6 +134,10 @@ async fn handle_request(axum::extract::State(app): axum::extract::State<Arc<App>
         Ok(response) => return response,
         Err(request) => request,
     };
+    let request = match comments_post_route(&app, request).await {
+        Ok(response) => return response,
+        Err(request) => request,
+    };
     let request = match rest_edit_route(&app, request).await {
         Ok(response) => return response,
         Err(request) => request,
@@ -155,6 +159,32 @@ async fn handle_request(axum::extract::State(app): axum::extract::State<Arc<App>
             text(StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error\n")
         }
     }
+}
+
+/// `wp-comments-post.php`: only a POST sends a comment; anything else is answered with 405 and `Allow: POST`.
+#[allow(clippy::result_large_err)]
+async fn comments_post_route(app: &Arc<App>, request: Request<Body>) -> std::result::Result<Response<Body>, Request<Body>> {
+    let path = request.uri().path();
+    if !(path.ends_with("/wp-comments-post.php") || path == "/wp-comments-post.php") {
+        return Err(request);
+    }
+    if request.method() != Method::POST {
+        let mut response = Response::new(Body::empty());
+        *response.status_mut() = StatusCode::METHOD_NOT_ALLOWED;
+        response.headers_mut().insert(header::ALLOW, HeaderValue::from_static("POST"));
+        response.headers_mut().insert(header::CONTENT_TYPE, HeaderValue::from_static("text/plain;charset=UTF-8"));
+        return Ok(response);
+    }
+    if app.writer.is_none() {
+        return Err(request);
+    }
+    let loaded = app.current().await;
+    let (parts, body) = request.into_parts();
+    let bytes = axum::body::to_bytes(body, 8 * 1024 * 1024).await.unwrap_or_default();
+    let remote_addr = parts.extensions.get::<axum::extract::ConnectInfo<std::net::SocketAddr>>().map(|c| c.0.ip().to_string());
+    let response = crate::admin::comments_post(&loaded, app.writer.as_ref(), &String::from_utf8_lossy(&bytes), &parts.headers, remote_addr).await;
+    app.reload_now().await;
+    Ok(response)
 }
 
 /// The routes of the administration area; the request comes back for everything else.

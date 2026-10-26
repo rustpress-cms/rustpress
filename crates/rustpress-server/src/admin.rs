@@ -43,6 +43,10 @@ impl rustpress_admin::login::Mail for SmtpMail {
     fn send<'a>(&'a self, to: &'a str, subject: &'a str, message: &'a str) -> std::pin::Pin<Box<dyn std::future::Future<Output = bool> + Send + 'a>> {
         Box::pin(self.0.send(to, subject, message))
     }
+
+    fn send_with_headers<'a>(&'a self, to: &'a str, subject: &'a str, message: &'a str, headers: &'a str) -> std::pin::Pin<Box<dyn std::future::Future<Output = bool> + Send + 'a>> {
+        Box::pin(self.0.send_with_headers(to, subject, message, headers))
+    }
 }
 
 fn config_path(config: &Config) -> Option<std::path::PathBuf> {
@@ -343,6 +347,37 @@ pub async fn login_page(loaded: &Loaded, writer: Option<&rustpress_db::Writer>, 
     };
     let reply = login::handle(&env, &request).await;
     let mut response = if reply.bytes.is_empty() { Response::new(Body::from(reply.body)) } else { Response::new(Body::from(reply.bytes)) };
+    *response.status_mut() = StatusCode::from_u16(reply.status).unwrap_or(StatusCode::OK);
+    for (name, value) in &reply.headers {
+        if let (Ok(name), Ok(value)) = (header::HeaderName::from_bytes(name.as_bytes()), HeaderValue::from_str(value)) {
+            response.headers_mut().append(name, value);
+        }
+    }
+    for cookie in &reply.cookies {
+        if let Ok(value) = HeaderValue::from_str(&cookie.header_value(env.now)) {
+            response.headers_mut().append(header::SET_COOKIE, value);
+        }
+    }
+    response
+}
+
+/// `wp-comments-post.php`: a comment is sent.
+pub async fn comments_post(loaded: &Loaded, writer: Option<&rustpress_db::Writer>, body: &str, headers: &HeaderMap, remote_addr: Option<String>) -> Response<Body> {
+    let Some(parts) = &loaded.admin else { return plain(StatusCode::NOT_FOUND, "Not Found") };
+    let env = rustpress_admin::comments_post::CommentEnv {
+        site: &loaded.site,
+        db: &loaded.site.db,
+        writer,
+        auth: &parts.auth,
+        roles: &parts.roles,
+        mailer: parts.mailer.clone(),
+        now: now(),
+        user: frontend_user(loaded, headers).await,
+        https: loaded.site.settings.siteurl.starts_with("https"),
+    };
+    let request = rustpress_admin::comments_post::CommentRequest { form: pairs_of(body), remote_addr, user_agent: headers.get(header::USER_AGENT).and_then(|v| v.to_str().ok()).map(str::to_owned) };
+    let reply = rustpress_admin::comments_post::handle(&env, &request).await;
+    let mut response = Response::new(Body::from(reply.body));
     *response.status_mut() = StatusCode::from_u16(reply.status).unwrap_or(StatusCode::OK);
     for (name, value) in &reply.headers {
         if let (Ok(name), Ok(value)) = (header::HeaderName::from_bytes(name.as_bytes()), HeaderValue::from_str(value)) {

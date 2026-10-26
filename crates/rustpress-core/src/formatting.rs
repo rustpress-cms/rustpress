@@ -79,6 +79,12 @@ pub fn esc_url_raw(url: &str) -> String {
     esc_url_context(url, false)
 }
 
+/// `preg_match( '/^[a-z0-9-]+?\.php/i', $url )`.
+fn is_php_file(url: &str) -> bool {
+    let stem = url.bytes().take_while(|b| b.is_ascii_alphanumeric() || *b == b'-').count();
+    stem > 0 && url[stem..].get(..4).is_some_and(|s| s.eq_ignore_ascii_case(".php"))
+}
+
 fn esc_url_context(url: &str, display: bool) -> String {
     let url = url.trim_start().replace(' ', "%20");
     if url.is_empty() {
@@ -91,6 +97,9 @@ fn esc_url_context(url: &str, display: bool) -> String {
     if cleaned.is_empty() {
         return String::new();
     }
+    let cleaned = cleaned.replace(";//", "://");
+    // An address without a scheme is taken for a host, unless it is relative (`/x`, `#x`, `?x`, `file.php`).
+    let cleaned = if !cleaned.contains(':') && !cleaned.starts_with(['/', '#', '?']) && !is_php_file(&cleaned) { format!("http://{cleaned}") } else { cleaned };
     if let Some(colon) = cleaned.find(':') {
         let scheme = &cleaned[..colon];
         let looks_like_scheme = !scheme.is_empty() && scheme.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'+' | b'-' | b'.'));
@@ -679,6 +688,40 @@ mod tests {
 
 /// PHP's `strip_tags()` without an allow-list: removes `<...>` tags, comments and
 /// processing instructions; a `<` not followed by a tag-like character stays.
+/// `_wp_specialchars( $text )` with the defaults of a filter: `&`, `<` and `>` are encoded (an entity stays), quotes not.
+pub fn specialchars_noquotes(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let bytes = text.as_bytes();
+    let mut i = 0;
+    while i < text.len() {
+        match bytes[i] {
+            b'&' => {
+                // An entity that is complete stays as it is.
+                let rest = &text[i + 1..];
+                let end = rest.find(|c: char| !(c.is_ascii_alphanumeric() || c == '#')).filter(|n| *n > 0 && rest[*n..].starts_with(';'));
+                match end {
+                    Some(n) => {
+                        out.push_str(&text[i..i + n + 2]);
+                        i += n + 2;
+                        continue;
+                    }
+                    None => out.push_str("&amp;"),
+                }
+            }
+            b'<' => out.push_str("&lt;"),
+            b'>' => out.push_str("&gt;"),
+            _ => {
+                let c = text[i..].chars().next().unwrap_or(' ');
+                out.push(c);
+                i += c.len_utf8();
+                continue;
+            }
+        }
+        i += 1;
+    }
+    out
+}
+
 pub fn strip_tags(text: &str) -> String {
     let bytes = text.as_bytes();
     let mut out = String::with_capacity(text.len());

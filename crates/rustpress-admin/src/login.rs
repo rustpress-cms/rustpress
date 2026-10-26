@@ -26,6 +26,11 @@ pub struct LanguageOption {
 pub trait Mail: Send + Sync {
     /// Sends a plain text message; `false` when it could not be sent.
     fn send<'a>(&'a self, to: &'a str, subject: &'a str, message: &'a str) -> std::pin::Pin<Box<dyn std::future::Future<Output = bool> + Send + 'a>>;
+
+    /// The same with the extra header lines of `wp_mail()` (`From:`, `Reply-To:`).
+    fn send_with_headers<'a>(&'a self, to: &'a str, subject: &'a str, message: &'a str, _headers: &'a str) -> std::pin::Pin<Box<dyn std::future::Future<Output = bool> + Send + 'a>> {
+        self.send(to, subject, message)
+    }
 }
 
 /// What the sign-in page needs from the site.

@@ -1,0 +1,382 @@
+[
+ {
+  "in": "plain text",
+  "out": "plain text"
+ },
+ {
+  "in": "Tom & Jerry",
+  "out": "Tom &amp; Jerry"
+ },
+ {
+  "in": "a < b and c > d",
+  "out": "a <b> d"
+ },
+ {
+  "in": "<b>bold</b> <i>italic</i> <strong>x</strong> <em>y</em> <u>underline</u>",
+  "out": "<b>bold</b> <i>italic</i> <strong>x</strong> <em>y</em> underline"
+ },
+ {
+  "in": "<a href=\"http://example.com/\">link</a>",
+  "out": "<a href=\"http://example.com/\" rel=\"nofollow ugc\">link</a>"
+ },
+ {
+  "in": "<a href='http://example.com/' title='Titel'>link</a>",
+  "out": "<a href=\"http://example.com/\" title=\"Titel\" rel=\"nofollow ugc\">link</a>"
+ },
+ {
+  "in": "<a href=http://example.com/>unquoted</a>",
+  "out": "<a href=\"http://example.com/\" / rel=\"nofollow ugc\">unquoted</a>"
+ },
+ {
+  "in": "<a href=\"javascript:alert(1)\">js</a>",
+  "out": "<a href=\"alert(1)\" rel=\"nofollow ugc\">js</a>"
+ },
+ {
+  "in": "<a href=\"JaVaScRiPt:alert(1)\">js</a>",
+  "out": "<a href=\"alert(1)\" rel=\"nofollow ugc\">js</a>"
+ },
+ {
+  "in": "<a href=\"java&#x09;script:alert(1)\">tab</a>",
+  "out": "<a href=\"alert(1)\" rel=\"nofollow ugc\">tab</a>"
+ },
+ {
+  "in": "<a href=\"&#106;avascript:alert(1)\">entity</a>",
+  "out": "<a href=\"alert(1)\" rel=\"nofollow ugc\">entity</a>"
+ },
+ {
+  "in": "<a href=\"jav&#x61;script:alert(1)\">hex</a>",
+  "out": "<a href=\"alert(1)\" rel=\"nofollow ugc\">hex</a>"
+ },
+ {
+  "in": "<a href=\" javascript:alert(1)\">space</a>",
+  "out": "<a href=\"alert(1)\" rel=\"nofollow ugc\">space</a>"
+ },
+ {
+  "in": "<a href=\"data:text/html;base64,PHNjcmlwdD4=\">data</a>",
+  "out": "<a href=\"text/html;base64,PHNjcmlwdD4=\" rel=\"nofollow ugc\">data</a>"
+ },
+ {
+  "in": "<a href=\"mailto:me@example.com\">mail</a>",
+  "out": "<a href=\"mailto:me@example.com\" rel=\"nofollow ugc\">mail</a>"
+ },
+ {
+  "in": "<a href=\"tel:+491234\">tel</a>",
+  "out": "<a href=\"tel:+491234\" rel=\"nofollow ugc\">tel</a>"
+ },
+ {
+  "in": "<a href=\"/relative/path?x=1&y=2\">rel</a>",
+  "out": "<a href=\"/relative/path?x=1&amp;y=2\" rel=\"nofollow ugc\">rel</a>"
+ },
+ {
+  "in": "<a href=\"#anchor\">anchor</a>",
+  "out": "<a href=\"#anchor\" rel=\"nofollow ugc\">anchor</a>"
+ },
+ {
+  "in": "<a href=\"http://localhost:8080/page/\">internal</a>",
+  "out": "<a href=\"http://localhost:8080/page/\" rel=\"ugc\">internal</a>"
+ },
+ {
+  "in": "<a href=\"http://example.com/\" rel=\"friend\">has rel</a>",
+  "out": "<a href=\"http://example.com/\" rel=\"nofollow ugc\">has rel</a>"
+ },
+ {
+  "in": "<a href=\"http://example.com/\" onclick=\"alert(1)\" class=\"c\" style=\"color:red\">attrs</a>",
+  "out": "<a href=\"http://example.com/\" rel=\"nofollow ugc\">attrs</a>"
+ },
+ {
+  "in": "<a href=\"http://example.com/\" title=\"a &amp; b &lt; c &quot;q&quot;\">entities in title</a>",
+  "out": "<a href=\"http://example.com/\" title=\"a &amp; b &lt; c &quot;q&quot;\" rel=\"nofollow ugc\">entities in title</a>"
+ },
+ {
+  "in": "<a href=\"http://example.com/?a=1&b=2&amp;c=3\">amp</a>",
+  "out": "<a href=\"http://example.com/?a=1&amp;b=2&amp;c=3\" rel=\"nofollow ugc\">amp</a>"
+ },
+ {
+  "in": "<a href>empty</a>",
+  "out": "<a href rel=\"nofollow ugc\">empty</a>"
+ },
+ {
+  "in": "<a href=\"\">empty value</a>",
+  "out": "<a href=\"\" rel=\"nofollow ugc\">empty value</a>"
+ },
+ {
+  "in": "<a HREF=\"http://example.com/\" TITLE=\"x\">upper</a>",
+  "out": "<a href=\"http://example.com/\" title=\"x\" rel=\"nofollow ugc\">upper</a>"
+ },
+ {
+  "in": "<A href=\"http://example.com/\">Upper tag</A>",
+  "out": "<a href=\"http://example.com/\" rel=\"nofollow ugc\">Upper tag</A>"
+ },
+ {
+  "in": "<a href=\"http://example.com/\" href=\"http://evil.example/\">duplicate</a>",
+  "out": "<a href=\"http://example.com/\" rel=\"nofollow ugc\">duplicate</a>"
+ },
+ {
+  "in": "<a title=\"no href\">t</a>",
+  "out": "<a title=\"no href\" rel=\"nofollow ugc\">t</a>"
+ },
+ {
+  "in": "<abbr title=\"x\">y</abbr> <acronym title=\"z\">w</acronym> <cite>c</cite> <code>code</code> <q cite=\"http://q.example/\">q</q>",
+  "out": "<abbr title=\"x\">y</abbr> <acronym title=\"z\">w</acronym> <cite>c</cite> <code>code</code> <q cite=\"http://q.example/\">q</q>"
+ },
+ {
+  "in": "<blockquote cite=\"http://b.example/\">quote</blockquote>",
+  "out": "<blockquote cite=\"http://b.example/\">quote</blockquote>"
+ },
+ {
+  "in": "<del datetime=\"2020-01-01\">old</del> <s>s</s> <strike>st</strike>",
+  "out": "<del datetime=\"2020-01-01\">old</del> <s>s</s> <strike>st</strike>"
+ },
+ {
+  "in": "<br> <br/> <br />",
+  "out": "  "
+ },
+ {
+  "in": "<img src=\"http://example.com/a.png\" alt=\"a\">",
+  "out": ""
+ },
+ {
+  "in": "<script>alert(1)</script>",
+  "out": "alert(1)"
+ },
+ {
+  "in": "<script src=\"http://evil.example/x.js\"></script>",
+  "out": ""
+ },
+ {
+  "in": "<style>body{display:none}</style>",
+  "out": "body{display:none}"
+ },
+ {
+  "in": "<iframe src=\"http://example.com/\"></iframe>",
+  "out": ""
+ },
+ {
+  "in": "<div class=\"x\">div</div> <p>para</p> <span>span</span> <span class=\"wp-note-mention user-5 other\">m</span>",
+  "out": "div para <span>span</span> <span class=\"wp-note-mention user-5\">m</span>"
+ },
+ {
+  "in": "<h1>head</h1> <ul><li>item</li></ul>",
+  "out": "head item"
+ },
+ {
+  "in": "<!-- a comment --> text",
+  "out": "<!-- a comment --> text"
+ },
+ {
+  "in": "<!-- <script>x</script> -->",
+  "out": "&lt;!-- x --&gt;"
+ },
+ {
+  "in": "<!--a--b-->",
+  "out": "<!--a-b-->"
+ },
+ {
+  "in": "</b>stray close",
+  "out": "</b>stray close"
+ },
+ {
+  "in": "<b>unclosed",
+  "out": "<b>unclosed"
+ },
+ {
+  "in": "<b onmouseover=alert(1)>x",
+  "out": "<b>x"
+ },
+ {
+  "in": "<b/onmouseover=alert(1)>x</b>",
+  "out": "<b>x</b>"
+ },
+ {
+  "in": "<a/href=\"http://example.com/\">slash</a>",
+  "out": "<a href=\"http://example.com/\" rel=\"nofollow ugc\">slash</a>"
+ },
+ {
+  "in": "<a href=\"http://example.com/\"onclick=\"x\">nospace</a>",
+  "out": "<a href=\"http://example.com/\" rel=\"nofollow ugc\">nospace</a>"
+ },
+ {
+  "in": "<a href=\"http://example.com/'>quote</a>",
+  "out": "<a>quote</a>"
+ },
+ {
+  "in": "<a href=\"foo>bar\">gt in value</a>",
+  "out": "<a>bar\"&gt;gt in value</a>"
+ },
+ {
+  "in": "<a href='foo'>sq</a>",
+  "out": "<a href=\"foo\" rel=\"nofollow ugc\">sq</a>"
+ },
+ {
+  "in": "< b>space</b>",
+  "out": "<b>space</b>"
+ },
+ {
+  "in": "<b >trailing space</b >",
+  "out": "<b>trailing space</b>"
+ },
+ {
+  "in": "<<b>>double</b>",
+  "out": "&lt;<b>&gt;double</b>"
+ },
+ {
+  "in": "&nbsp;&copy;&amp;&lt;&gt;&quot;&apos;&hellip;&notanentity;&#65;&#x41;&#0;&#xD800;&#128;",
+  "out": "&nbsp;&copy;&amp;&lt;&gt;&quot;&apos;&hellip;&amp;notanentity;&#065;&#x41;&amp;#0;&amp;#xD800;&#8364;"
+ },
+ {
+  "in": "&#38; &#x26; &#060; &#x3c;",
+  "out": "&#038; &#x26; &#060; &#x3c;"
+ },
+ {
+  "in": "&amp;amp; &amp",
+  "out": "&amp;amp; &amp;amp"
+ },
+ {
+  "in": "line1\nline2\r\nline3",
+  "out": "line1\nline2\r\nline3"
+ },
+ {
+  "in": "null\u0000byte and \u0001 control",
+  "out": "nullbyte and  control"
+ },
+ {
+  "in": "\\\"escaped quotes\\\" <a href=\\\"http://example.com/\\\">x</a>",
+  "out": "\\\"escaped quotes\\\" <a href=\"http://example.com/\" rel=\"nofollow ugc\">x</a>"
+ },
+ {
+  "in": "ünïcödé <b>bold</b> 日本語 😀",
+  "out": "ünïcödé <b>bold</b> 日本語 😀"
+ },
+ {
+  "in": "<a href=\"http://example.com/日本語?q=é\">unicode url</a>",
+  "out": "<a href=\"http://example.com/日本語?q=é\" rel=\"nofollow ugc\">unicode url</a>"
+ },
+ {
+  "in": "<a href=\"http://example.com/\" title=\"é &eacute; &#233;\">ent</a>",
+  "out": "<a href=\"http://example.com/\" title=\"é é é\" rel=\"nofollow ugc\">ent</a>"
+ },
+ {
+  "in": "<q cite=\"javascript:x\">q</q>",
+  "out": "<q cite=\"x\">q</q>"
+ },
+ {
+  "in": "<blockquote cite=\"  http://x.example/  \">q</blockquote>",
+  "out": "<blockquote cite=\"http://x.example/\">q</blockquote>"
+ },
+ {
+  "in": "<a href=\"feed:javascript:alert(1)\">feed</a>",
+  "out": "<a href=\"feed:alert(1)\" rel=\"nofollow ugc\">feed</a>"
+ },
+ {
+  "in": "<a href=\"feed:feed:feed:feed:http://x.example/\">feeds</a>",
+  "out": "<a href=\"\" rel=\"nofollow ugc\">feeds</a>"
+ },
+ {
+  "in": "<a href=\"http://example.com\" title='a\"b'>mixed quotes</a>",
+  "out": "<a href=\"http://example.com\" title=\"a&quot;b\" rel=\"nofollow ugc\">mixed quotes</a>"
+ },
+ {
+  "in": "<a href=\"http://example.com\" title=\"a'b\">apos</a>",
+  "out": "<a href=\"http://example.com\" title=\"a&apos;b\" rel=\"nofollow ugc\">apos</a>"
+ },
+ {
+  "in": "<a href=\"http://example.com\" data-x=\"1\" aria-label=\"l\">data</a>",
+  "out": "<a href=\"http://example.com\" rel=\"nofollow ugc\">data</a>"
+ },
+ {
+  "in": "<a href=http://example.com/a&b>unquoted amp</a>",
+  "out": "<a href=\"http://example.com/a&amp;b\" rel=\"nofollow ugc\">unquoted amp</a>"
+ },
+ {
+  "in": "<a href=\"http://example.com/&#x3a;\">colon</a>",
+  "out": "<a href=\"http://example.com/:\" rel=\"nofollow ugc\">colon</a>"
+ },
+ {
+  "in": "<a href=\"&colon;javascript\">colon name</a>",
+  "out": "<a href=\"javascript\" rel=\"nofollow ugc\">colon name</a>"
+ },
+ {
+  "in": "<a href=\"javascript&colon;alert(1)\">colon name 2</a>",
+  "out": "<a href=\"alert(1)\" rel=\"nofollow ugc\">colon name 2</a>"
+ },
+ {
+  "in": "<a href=\"javascript&#58;alert(1)\">colon dec</a>",
+  "out": "<a href=\"alert(1)\" rel=\"nofollow ugc\">colon dec</a>"
+ },
+ {
+  "in": "<a href=\"javascript&#x3a;alert(1)\">colon hex</a>",
+  "out": "<a href=\"alert(1)\" rel=\"nofollow ugc\">colon hex</a>"
+ },
+ {
+  "in": "<a href=\"http://example.com\" title=>missing value</a>",
+  "out": "<a href=\"http://example.com\" title=\"\" rel=\"nofollow ugc\">missing value</a>"
+ },
+ {
+  "in": "<a href=\"http://example.com\" =foo>weird</a>",
+  "out": "<a href=\"http://example.com\" rel=\"nofollow ugc\">weird</a>"
+ },
+ {
+  "in": "<a \"x\" href=\"http://example.com\">quoted name</a>",
+  "out": "<a href=\"http://example.com\" rel=\"nofollow ugc\">quoted name</a>"
+ },
+ {
+  "in": "<b title=\"x\">bold with attr</b>",
+  "out": "<b>bold with attr</b>"
+ },
+ {
+  "in": "<em class=\"c\" id=\"i\">em</em>",
+  "out": "<em>em</em>"
+ },
+ {
+  "in": "text with <b>nested <i>tags <a href=\"http://example.com/\">here</a></i></b> end",
+  "out": "text with <b>nested <i>tags <a href=\"http://example.com/\" rel=\"nofollow ugc\">here</a></i></b> end"
+ },
+ {
+  "in": "<a href=\"http://example.com/\"><img src=\"x\"></a>",
+  "out": "<a href=\"http://example.com/\" rel=\"nofollow ugc\"></a>"
+ },
+ {
+  "in": "<a href=\"http://example.com/\">a</a><a href=\"http://example.org/\">b</a>",
+  "out": "<a href=\"http://example.com/\" rel=\"nofollow ugc\">a</a><a href=\"http://example.org/\" rel=\"nofollow ugc\">b</a>"
+ },
+ {
+  "in": "<a   href=\"http://example.com/\"   title=\"x\"  >spaces</a>",
+  "out": "<a href=\"http://example.com/\" title=\"x\" rel=\"nofollow ugc\">spaces</a>"
+ },
+ {
+  "in": "<a\nhref=\"http://example.com/\"\ntitle=\"x\">newlines</a>",
+  "out": "<a href=\"http://example.com/\" title=\"x\" rel=\"nofollow ugc\">newlines</a>"
+ },
+ {
+  "in": "<a href=\"http://example.com/\n\">newline in value</a>",
+  "out": "<a href=\"http://example.com/\n\">newline in value</a>"
+ },
+ {
+  "in": "<a href=\"HTTP://EXAMPLE.COM/\">upper scheme</a>",
+  "out": "<a href=\"http://EXAMPLE.COM/\" rel=\"nofollow ugc\">upper scheme</a>"
+ },
+ {
+  "in": "<a href=\"ftp://example.com/f\">ftp</a>",
+  "out": "<a href=\"ftp://example.com/f\" rel=\"nofollow ugc\">ftp</a>"
+ },
+ {
+  "in": "<a href=\"irc://example.com/c\">irc</a>",
+  "out": "<a href=\"irc://example.com/c\" rel=\"nofollow ugc\">irc</a>"
+ },
+ {
+  "in": "<a href=\"ssh://example.com/\">ssh</a>",
+  "out": "<a href=\"//example.com/\" rel=\"nofollow ugc\">ssh</a>"
+ },
+ {
+  "in": "<a href=\"//example.com/x\">protocol relative</a>",
+  "out": "<a href=\"//example.com/x\" rel=\"nofollow ugc\">protocol relative</a>"
+ },
+ {
+  "in": "<a href=\"http://example.com/?x=<script>\">lt in value</a>",
+  "out": "&lt;a href=&quot;http://example.com/?x=\"&gt;lt in value</a>"
+ },
+ {
+  "in": "<a href=\"http://example.com/\" title=\"<b>x</b>\">tags in title</a>",
+  "out": "&lt;a href=&quot;http://example.com/&quot; title=&quot;<b>x</b>\"&gt;tags in title</a>"
+ }
+]
