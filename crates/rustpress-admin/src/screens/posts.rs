@@ -487,6 +487,11 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         }
     }
     let total_items = db.count_posts(&query).await.unwrap_or(0);
+    if !hierarchical_display
+        && let Some(response) = super::common::past_last_page(ctx, paged, total_items, per_page)
+    {
+        return response;
+    }
     let (posts, levels): (Vec<Post>, Vec<usize>) = if hierarchical_display {
         let all = db.posts(&query).await.unwrap_or_default();
         let flat = hierarchical_order(all);

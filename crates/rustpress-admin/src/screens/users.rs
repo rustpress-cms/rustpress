@@ -107,6 +107,9 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         let all = UserListQuery { no_role: false, ..query.clone() };
         (users, total) = db.list_users(&all).await.unwrap_or_default();
     }
+    if let Some(response) = super::common::past_last_page(ctx, paged, total, per_page) {
+        return response;
+    }
     let ids: Vec<u64> = users.iter().map(|u| u.id).collect();
     let type_refs: Vec<&str> = vec!["post"];
     let counts = db.published_post_counts(&ids, &type_refs).await.unwrap_or_default();

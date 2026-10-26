@@ -7,12 +7,22 @@ use std::collections::HashMap;
 
 use sqlx::AssertSqlSafe;
 
-use crate::models::{Post, PostMeta};
+use crate::models::{Comment, Post, PostMeta};
 use crate::{Db, PostQuery, Result};
 
 tokio::task_local! {
     pub(crate) static PRIMED_META: RefCell<HashMap<u64, Vec<PostMeta>>>;
     pub(crate) static PRIMED_POSTS: RefCell<HashMap<u64, Option<Post>>>;
+    pub(crate) static PRIMED_COMMENTS: RefCell<HashMap<u64, Option<Comment>>>;
+    pub(crate) static PRIMED_APPROVED: RefCell<HashMap<u64, Vec<Comment>>>;
+}
+
+pub(crate) fn primed_comment(id: u64) -> Option<Option<Comment>> {
+    PRIMED_COMMENTS.try_with(|cache| cache.borrow().get(&id).cloned()).ok().flatten()
+}
+
+pub(crate) fn primed_approved(post_id: u64) -> Option<Vec<Comment>> {
+    PRIMED_APPROVED.try_with(|cache| cache.borrow().get(&post_id).cloned()).ok().flatten()
 }
 
 pub(crate) fn primed_meta(post_id: u64) -> Option<Vec<PostMeta>> {
@@ -84,6 +94,44 @@ impl Db {
                 cache.insert(*id, rows.iter().find(|p| p.id == *id).cloned());
             }
         });
+        Ok(())
+    }
+
+    /// Comments by ID (for a list of comments: their parents) in one query, for the request's cache.
+    pub async fn prime_comments(&self, ids: &[u64]) -> Result<()> {
+        let Ok(missing) = PRIMED_COMMENTS.try_with(|cache| {
+            let cache = cache.borrow();
+            ids.iter().copied().filter(|id| *id != 0 && !cache.contains_key(id)).collect::<Vec<u64>>()
+        }) else {
+            return Ok(());
+        };
+        if missing.is_empty() {
+            return Ok(());
+        }
+        let query = crate::CommentQuery { ids: missing.clone(), types: Vec::new(), ..Default::default() };
+        let rows = self.comments_query(&query).await?;
+        let _ = PRIMED_COMMENTS.try_with(|cache| {
+            let mut cache = cache.borrow_mut();
+            for id in &missing {
+                cache.insert(*id, rows.iter().find(|c| c.comment_id == *id).cloned());
+            }
+        });
+        Ok(())
+    }
+
+    /// The approved comments of each post (`get_comment_link()` of a list asks for them per row), for the request's
+    /// cache.
+    pub async fn prime_approved_comments(&self, post_ids: &[u64]) -> Result<()> {
+        if PRIMED_APPROVED.try_with(|_| ()).is_err() {
+            return Ok(());
+        }
+        for post_id in post_ids {
+            if primed_approved(*post_id).is_some() {
+                continue;
+            }
+            let approved = self.approved_comments(*post_id).await?;
+            let _ = PRIMED_APPROVED.try_with(|cache| cache.borrow_mut().insert(*post_id, approved));
+        }
         Ok(())
     }
 

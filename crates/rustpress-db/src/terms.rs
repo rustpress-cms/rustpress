@@ -23,7 +23,8 @@ struct PostTerm {
 impl Db {
     /// Runs `future` with a cache of the terms of posts for this request (see [`Db::prime_terms`]).
     pub async fn with_term_cache<F: std::future::Future>(future: F) -> F::Output {
-        let posts = crate::primed::PRIMED_POSTS.scope(RefCell::new(HashMap::new()), future);
+        let comments = crate::primed::PRIMED_COMMENTS.scope(RefCell::new(HashMap::new()), crate::primed::PRIMED_APPROVED.scope(RefCell::new(HashMap::new()), future));
+        let posts = crate::primed::PRIMED_POSTS.scope(RefCell::new(HashMap::new()), comments);
         let meta = crate::primed::PRIMED_META.scope(RefCell::new(HashMap::new()), posts);
         PRIMED_TERMS.scope(RefCell::new(HashMap::new()), PRIMED_REVISIONS.scope(RefCell::new(HashMap::new()), meta)).await
     }

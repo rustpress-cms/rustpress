@@ -312,6 +312,16 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     };
     let query = CommentListQuery { status: status.to_owned(), post_id, user_id, author_email: None, kind: kind.clone(), search: (!search.is_empty()).then(|| search.clone()), orderby: orderby.clone(), desc, limit: per_page, offset: (paged - 1).saturating_mul(per_page) };
     let (comments, total) = db.list_comments_admin(&query).await.unwrap_or_default();
+    if let Some(response) = super::common::past_last_page(ctx, paged, total, per_page) {
+        return response;
+    }
+    // The posts, parents and approved comments the rows ask for, read ahead.
+    let mut post_ids: Vec<u64> = comments.iter().map(|c| c.comment_post_id).collect();
+    post_ids.sort_unstable();
+    post_ids.dedup();
+    let _ = db.prime_posts(&post_ids).await;
+    let _ = db.prime_comments(&comments.iter().map(|c| c.comment_parent).collect::<Vec<_>>()).await;
+    let _ = db.prime_approved_comments(&post_ids).await;
     // Counts of the posts in the list.
     let mut post_counts: std::collections::HashMap<u64, (u64, u64)> = std::collections::HashMap::new();
     for comment in &comments {

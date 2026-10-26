@@ -136,6 +136,8 @@ async fn list_mode(ctx: &Ctx<'_>, title: String) -> AdminResponse {
         query.month = Some(month % 100);
     }
     let (items, total) = db.list_attachments(&query).await.unwrap_or_default();
+    // `WP_Query` leaves `found_posts` at 0 when the page has no rows (a page past the last one).
+    let total = if items.is_empty() { 0 } else { total };
     let mut rows = String::new();
     for item in &items {
         rows.push_str(&row(ctx, item).await);
@@ -170,6 +172,10 @@ async fn list_mode(ctx: &Ctx<'_>, title: String) -> AdminResponse {
         _ => tr("Date"),
     };
     let caption = sprintf(&if desc { tr("Table ordered by %s. Descending.") } else { tr("Table ordered by %s. Ascending.") }, &[&ordered_by]);
+    // `display_rows_or_placeholder()`
+    if items.is_empty() {
+        rows = format!("<tr class=\"no-items\"><td class=\"colspanchange\" colspan=\"5\">{}</td></tr>", tr("No media files found."));
+    }
     let table_html = table.display(&nonce_field, "", "", &caption, &rows, &tr("Media items list"));
 
     // Filters above the table.
@@ -190,11 +196,11 @@ async fn list_mode(ctx: &Ctx<'_>, title: String) -> AdminResponse {
         months.push_str(&format!("\t\t<option {} value='{value}'>{}</option>\n", if month.to_string() == value { "selected='selected'" } else { "" }, esc_html(&sprintf(&tr("%1$s %2$d"), &[&name, &year.to_string()]))));
     }
     let mut h = format!("<div class=\"wrap\">\n<h1 class=\"wp-heading-inline\">{}</h1>\n\n", esc_html(&title));
-    h.push_str(&format!("\t<a href=\"{}\" class=\"page-title-action\">{}</a>\n\t\t\t\t\t\t\n", esc_url(&ctx.admin_url("media-new.php")), tr("Add Media File")));
+    h.push_str(&format!("\t<a href=\"{}\" class=\"page-title-action\">{}</a>\n\t\t\t\t\t\t", esc_url(&ctx.admin_url("media-new.php")), tr("Add Media File")));
     if !search.is_empty() {
-        h.push_str(&format!("<span class=\"subtitle\">{}</span>\n", sprintf(&tr("Search results for: %s"), &[&format!("<strong>{}</strong>", esc_html(&search))])));
+        h.push_str(&format!("<span class=\"subtitle\">{}</span>", sprintf(&tr("Search results for: %s"), &[&format!("<strong>{}</strong>", esc_html(&search))])));
     }
-    h.push_str("<hr class=\"wp-header-end\">\n\n\n");
+    h.push_str("\n<hr class=\"wp-header-end\">\n\n\n");
     h.push_str(&notice(ctx));
     // `view_switcher()`: the addresses of the other modes keep the rest of the query.
     // An unknown mode is neither of the two views.

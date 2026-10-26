@@ -138,3 +138,10 @@ pub fn wp_get_referer(ctx: &Ctx<'_>) -> Option<String> {
     }
     Some(crate::login::validate_redirect(ctx.site(), raw, "")).filter(|r| !r.is_empty())
 }
+
+/// The list tables: a page past the last one goes to the last one
+/// (`if ( $pagenum > $total_pages && $total_pages > 0 ) wp_redirect( add_query_arg( 'paged', $total_pages ) )`).
+pub fn past_last_page(ctx: &Ctx<'_>, paged: u64, total_items: u64, per_page: u64) -> Option<AdminResponse> {
+    let total_pages = total_items.div_ceil(per_page.max(1));
+    (paged > total_pages && total_pages > 0).then(|| super::redirect(&rustpress_core::urls::add_query_arg(&ctx.request.request_uri, "paged", &total_pages.to_string())))
+}

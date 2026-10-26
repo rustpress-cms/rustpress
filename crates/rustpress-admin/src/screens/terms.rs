@@ -332,6 +332,9 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     };
     let paged = request.get("paged").and_then(|p| p.parse::<u64>().ok()).filter(|p| *p > 0).unwrap_or(1);
     let total = list.len() as u64;
+    if let Some(response) = super::common::past_last_page(ctx, paged, total, per_page) {
+        return response;
+    }
     let tree_paging = hierarchical_view && search.is_empty();
     let page_rows: Vec<(Term, usize, usize)> = if tree_paging {
         let mut out = Vec::new();
