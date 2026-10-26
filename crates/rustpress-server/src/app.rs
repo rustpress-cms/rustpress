@@ -82,9 +82,14 @@ impl App {
         }
     }
 
-    /// Re-reads options and theme right away (after the administration area changed something).
+    /// Re-reads options and theme right away (after the administration area changed something). Requests that
+    /// waited for a reload that began after their change share it instead of starting another.
     pub async fn reload_now(&self) {
+        let changed_at = Instant::now();
         let _guard = self.reload.lock().await;
+        if self.loaded.read().await.loaded_at > changed_at {
+            return;
+        }
         match Self::load(&self.config, &self.db).await {
             Ok(fresh) => *self.loaded.write().await = Arc::new(fresh),
             Err(e) => tracing::error!(error = %e, "reload failed, keeping previous snapshot"),
@@ -209,7 +214,10 @@ async fn comments_post_route(app: &Arc<App>, request: Request<Body>) -> std::res
     let bytes = axum::body::to_bytes(body, 8 * 1024 * 1024).await.unwrap_or_default();
     let remote_addr = parts.extensions.get::<axum::extract::ConnectInfo<std::net::SocketAddr>>().map(|c| c.0.ip().to_string());
     let response = crate::admin::comments_post(&loaded, app.writer.as_ref(), &String::from_utf8_lossy(&bytes), &parts.headers, remote_addr).await;
-    app.reload_now().await;
+    // A saved comment answers with a redirect; the errors change nothing.
+    if response.status() == StatusCode::FOUND {
+        app.reload_now().await;
+    }
     Ok(response)
 }
 
@@ -239,22 +247,34 @@ async fn admin_route(app: &Arc<App>, request: Request<Body>) -> std::result::Res
     }
     let request_uri = request.uri().path_and_query().map(|p| p.as_str().to_owned()).unwrap_or_default();
     let (parts, body) = request.into_parts();
-    let bytes = axum::body::to_bytes(body, 256 * 1024 * 1024).await.unwrap_or_default();
-    let body_text = String::from_utf8_lossy(&bytes).into_owned();
+    // Only somebody who is signed in may send an upload-sized body; a visitor's form is small.
+    let signed_in = post && crate::admin::frontend_user(&loaded, &parts.headers).await.is_some();
+    let limit = if signed_in { UPLOAD_BODY_LIMIT } else { VISITOR_BODY_LIMIT };
+    let bytes = match axum::body::to_bytes(body, limit).await {
+        Ok(bytes) => bytes,
+        Err(_) => return Ok(text(StatusCode::PAYLOAD_TOO_LARGE, "Payload Too Large\n")),
+    };
     if let Some(file) = admin_file {
         let response = crate::admin::admin_page(&loaded, &app.config, app.writer.as_ref(), &file, post, &request_uri, &query, &bytes, &parts.headers).await;
-        if post {
+        // A visitor's POST reaches no screen that writes (it is sent to the sign-in).
+        if signed_in {
             app.reload_now().await;
         }
         return Ok(response);
     }
+    let body_text = String::from_utf8_lossy(&bytes).into_owned();
     let remote_addr = parts.extensions.get::<axum::extract::ConnectInfo<std::net::SocketAddr>>().map(|c| c.0.ip().to_string());
     let response = crate::admin::login_page(&loaded, app.writer.as_ref(), post, &path, &request_uri, &query, &body_text, &parts.headers, remote_addr).await;
-    if post {
+    // The sign-in forms that change something (a sign-in, a new password, a registration) answer with a redirect.
+    if post && response.status().is_redirection() {
         app.reload_now().await;
     }
     Ok(response)
 }
+
+/// The body a signed-in user may send (an upload) and the body a visitor may send (a form).
+const UPLOAD_BODY_LIMIT: usize = 256 * 1024 * 1024;
+const VISITOR_BODY_LIMIT: usize = 64 * 1024;
 
 /// `index.php` for `wp-admin/`, the file name for `wp-admin/<file>.php`; `None` for anything else
 /// (static files, `load-styles.php`, sub-directories).
@@ -455,7 +475,13 @@ async fn rest_edit_route(app: &Arc<App>, request: Request<Body>) -> std::result:
     if is_read && !has_nonce {
         return Err(Request::from_parts(parts, Body::empty()));
     }
-    let bytes = axum::body::to_bytes(body, 256 * 1024 * 1024).await.unwrap_or_default();
+    // The credentials in the headers decide how much may be sent; the nonce of a form body is checked after.
+    let known = matches!(crate::admin::rest_auth(&loaded, &parts.headers, &rest_query, None).await, crate::admin::RestAuth::User(_) | crate::admin::RestAuth::AppPassword(..))
+        || crate::admin::frontend_user(&loaded, &parts.headers).await.is_some();
+    let bytes = match axum::body::to_bytes(body, if known { UPLOAD_BODY_LIMIT } else { VISITOR_BODY_LIMIT }).await {
+        Ok(bytes) => bytes,
+        Err(_) => return Ok(text(StatusCode::PAYLOAD_TOO_LARGE, "Payload Too Large\n")),
+    };
     let content_type = parts.headers.get(header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).unwrap_or_default().to_owned();
     let rest_body = if bytes.is_empty() {
         rustpress_rest::edit::Body::None
@@ -512,7 +538,8 @@ async fn rest_edit_route(app: &Arc<App>, request: Request<Body>) -> std::result:
             text(StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error\n")
         }
     };
-    if !is_read {
+    // Only a request that was allowed to write changed anything.
+    if !is_read && response.status().is_success() {
         app.reload_now().await;
     }
     Ok(response)

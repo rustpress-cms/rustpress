@@ -1,6 +1,7 @@
 //! `core/search`.
 
 use rustpress_core::formatting::{esc_attr, esc_url};
+use rustpress_core::kses::kses_post;
 use serde_json::{Map, Value};
 
 use crate::Result;
@@ -216,7 +217,7 @@ pub(super) fn search(bc: &BlockCtx<'_>) -> Result<String> {
     let border_classes = border_color_classes(attrs);
 
     // <label>
-    let label_html = non_empty(attrs, "label").unwrap_or(&search_word);
+    let label_html = kses_post(non_empty(attrs, "label").unwrap_or(&search_word));
     let mut label = TagEditor::first(&format!("<label {}>{}</label>", inline.label, label_html)).expect("label tag");
     label.set_attribute("for", &input_id);
     label.add_class("wp-block-search__label");
@@ -280,7 +281,7 @@ pub(super) fn search(bc: &BlockCtx<'_>) -> Result<String> {
             classes.push("has-icon".to_owned());
             "<svg class=\"search-icon\" viewBox=\"0 0 24 24\" width=\"24\" height=\"24\">\n\t\t\t\t\t<path d=\"M13 5c-3.3 0-6 2.7-6 6 0 1.4.5 2.7 1.3 3.7l-3.8 3.8 1.1 1.1 3.8-3.8c1 .8 2.3 1.3 3.7 1.3 3.3 0 6-2.7 6-6S16.3 5 13 5zm0 10.5c-2.5 0-4.5-2-4.5-4.5s2-4.5 4.5-4.5 4.5 2 4.5 4.5-2 4.5-4.5 4.5z\"></path>\n\t\t\t\t</svg>".to_owned()
         } else {
-            non_empty(attrs, "buttonText").unwrap_or_default().to_owned()
+            kses_post(non_empty(attrs, "buttonText").unwrap_or_default())
         };
         classes.push("wp-element-button".to_owned());
         let mut editor = TagEditor::first(&format!("<button type=\"submit\" {}>{inner}</button>", inline.button)).expect("button tag");

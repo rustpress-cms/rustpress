@@ -2,6 +2,7 @@
 //! plus `core/details` and `core/footnotes`.
 
 use rustpress_core::formatting::{esc_attr, esc_url, strip_tags};
+use rustpress_core::kses::kses_post;
 use serde_json::Value;
 
 use crate::Result;
@@ -198,7 +199,7 @@ pub(super) async fn footnotes(bc: &BlockCtx<'_>) -> Result<String> {
         };
         let id = esc_attr(&text("id"));
         let aria = esc_attr(&rustpress_core::i18n::sprintf(&label, &[&(index + 1).to_string()]));
-        items.push_str(&format!("<li id=\"{id}\">{} <a href=\"#{id}-link\" aria-label=\"{aria}\">↩︎</a></li>", text("content")));
+        items.push_str(&format!("<li id=\"{id}\">{} <a href=\"#{id}-link\" aria-label=\"{aria}\">↩︎</a></li>", kses_post(&text("content"))));
     }
     Ok(format!("<ol {}>{items}</ol>", bc.wrapper_attributes(&[])))
 }

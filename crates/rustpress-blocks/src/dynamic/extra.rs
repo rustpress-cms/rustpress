@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 use regex::Regex;
 use rustpress_core::formatting::{esc_attr, esc_html, esc_url, strip_tags, wpautop};
+use rustpress_core::kses::kses_post;
 use rustpress_core::i18n::sprintf;
 use serde_json::Value;
 
@@ -271,11 +272,11 @@ pub(super) async fn latest_comments(bc: &BlockCtx<'_>) -> Result<String> {
 pub(super) fn home_link(bc: &BlockCtx<'_>) -> Result<String> {
     let site = bc.env.site;
     let q = bc.env.query;
-    let label = bc.attr_str("label").filter(|l| !l.is_empty()).map(str::to_owned).unwrap_or_else(|| site.tr("Home"));
+    let label = bc.attr_str("label").filter(|l| !l.is_empty()).map(kses_post).unwrap_or_else(|| site.tr("Home"));
     let current = q.flags.is_front_page || (q.flags.is_home && site.settings.page_for_posts != q.queried_object_id());
     let aria = if current { " aria-current=\"page\"" } else { "" };
     let target = if bc.attrs.get("opensInNewTab").and_then(Value::as_bool) == Some(true) { " target=\"_blank\"" } else { "" };
-    let description = bc.attr_str("description").filter(|d| !d.is_empty()).map(|d| format!("<span class=\"wp-block-navigation-item__description\">{d}</span>")).unwrap_or_default();
+    let description = bc.attr_str("description").filter(|d| !d.is_empty()).map(|d| format!("<span class=\"wp-block-navigation-item__description\">{}</span>", kses_post(d))).unwrap_or_default();
     let mut classes = vec!["wp-block-navigation-item".to_owned()];
     if current {
         classes.push("current-menu-item".into());
@@ -382,7 +383,7 @@ pub(super) async fn read_more(bc: &BlockCtx<'_>) -> Result<String> {
     let screen_reader = sprintf(&site.tr(": %s"), &[&title]);
     let justify = bc.attr_str("justifyContent").filter(|j| !j.is_empty()).map(|j| format!("is-justified-{j}")).unwrap_or_default();
     let wrapper = bc.wrapper_attributes(&[("class", justify)]);
-    let more = bc.attr_str("content").filter(|c| !c.is_empty()).map(str::to_owned).unwrap_or_else(|| site.tr("Read more"));
+    let more = bc.attr_str("content").filter(|c| !c.is_empty()).map(kses_post).unwrap_or_else(|| site.tr("Read more"));
     Ok(format!(
         "<a {wrapper} href=\"{}\" target=\"{}\">{more}<span class=\"screen-reader-text\">{screen_reader}</span></a>",
         esc_url(&site.permalink(&post).await?),

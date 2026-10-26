@@ -107,94 +107,9 @@ fn truncate_slug(slug: &str, length: usize) -> String {
     slug[..end].trim_end_matches('-').to_owned()
 }
 
-/// Strips what a user without `unfiltered_html` may not post (a coarse `wp_kses_post()`).
+/// `wp_kses_post()`: what a user without `unfiltered_html` may save.
 pub fn kses_post(html: &str) -> String {
-    let mut out = String::with_capacity(html.len());
-    let lower = html.to_lowercase();
-    let bytes = html.as_bytes();
-    let mut i = 0;
-    let blocked = ["script", "style", "iframe", "object", "embed", "form", "meta", "link", "base", "applet"];
-    while i < bytes.len() {
-        if bytes[i] == b'<' && i + 1 < bytes.len() {
-            let rest = &lower[i + 1..];
-            let name: String = rest.trim_start_matches('/').chars().take_while(|c| c.is_ascii_alphanumeric()).collect();
-            if blocked.contains(&name.as_str()) {
-                // Drop the element up to the matching close tag or the end of the opening tag.
-                if !rest.starts_with('/')
-                    && let Some(close) = lower[i..].find(&format!("</{name}")) {
-                        let end = lower[i + close..].find('>').map_or(html.len(), |e| i + close + e + 1);
-                        i = end;
-                        continue;
-                    }
-                i = lower[i..].find('>').map_or(html.len(), |e| i + e + 1);
-                continue;
-            }
-            // Remove `on...=` attributes and `javascript:` URLs from the tag.
-            if let Some(end) = html[i..].find('>') {
-                let tag = &html[i..i + end + 1];
-                out.push_str(&clean_tag(tag));
-                i += end + 1;
-                continue;
-            }
-        }
-        let ch = html[i..].chars().next().unwrap_or(' ');
-        out.push(ch);
-        i += ch.len_utf8();
-    }
-    out
-}
-
-fn clean_tag(tag: &str) -> String {
-    let lower = tag.to_lowercase();
-    if !lower.contains(" on") && !lower.contains("javascript:") && !lower.contains("data:text/html") {
-        return tag.to_owned();
-    }
-    let mut out = String::new();
-    let mut chars = tag.char_indices().peekable();
-    let mut in_quote: Option<char> = None;
-    let mut skipping = false;
-    let mut word = String::new();
-    let mut token_start = 0;
-    while let Some((index, c)) = chars.next() {
-        match in_quote {
-            Some(q) => {
-                if c == q {
-                    in_quote = None;
-                }
-                if !skipping {
-                    out.push(c);
-                }
-                continue;
-            }
-            None => {}
-        }
-        if c.is_whitespace() || c == '>' || c == '/' {
-            word.clear();
-            skipping = false;
-            token_start = index + c.len_utf8();
-            out.push(c);
-            continue;
-        }
-        word.push(c);
-        if c == '=' {
-            let name = word.trim_end_matches('=').to_lowercase();
-            let value_start = &tag[index + 1..];
-            let unsafe_url = value_start.trim_start_matches(['"', '\'']).to_lowercase().starts_with("javascript:");
-            if name.starts_with("on") || unsafe_url {
-                skipping = true;
-                // Remove what was already written for this attribute name.
-                let written = out.len() - (index - token_start);
-                out.truncate(written);
-            }
-        }
-        if c == '"' || c == '\'' {
-            in_quote = Some(c);
-        }
-        if !skipping {
-            out.push(c);
-        }
-    }
-    out
+    rustpress_core::kses::kses_post(html)
 }
 
 impl Content<'_> {

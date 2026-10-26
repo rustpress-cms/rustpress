@@ -326,7 +326,9 @@ pub async fn export(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUs
     }
     collected.extend(data);
     let store = |items: &[Datum]| Value::Array(items.iter().enumerate().map(|(i, d)| (Key::Int(i as i64), d.to_php())).collect());
-    let _ = writer.update_post_meta(request_id, "_export_data_raw", &String::from_utf8_lossy(&rustpress_phpser::serialize(&store(&collected))));
+    if let Err(e) = writer.update_post_meta(request_id, "_export_data_raw", &String::from_utf8_lossy(&rustpress_phpser::serialize(&store(&collected)))).await {
+        return json(500, &json!({"success": false, "data": e.to_string()}));
+    }
     if exporter as usize != EXPORTERS.len() || !done {
         return json(200, &json!({"success": true, "data": Json::Object(response)}));
     }

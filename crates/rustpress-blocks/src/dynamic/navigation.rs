@@ -1,6 +1,7 @@
 //! `core/navigation`, `core/page-list` and `core/navigation-link`.
 
 use rustpress_core::formatting::{esc_attr, esc_url};
+use rustpress_core::kses::kses_post;
 use rustpress_db::{OrderBy, Order, Post, PostQuery};
 use serde_json::{Map, Value, json};
 
@@ -652,7 +653,7 @@ pub(super) async fn navigation_link(bc: &BlockCtx<'_>) -> Result<String> {
     if let Some(title) = str_attr(attrs, "title") {
         html.push_str(&format!(" title=\"{}\"", esc_attr(title)));
     }
-    html.push_str(&format!(">{}{}</a>", format_args!("<span class=\"wp-block-navigation-item__label\">{label}</span>"), description(attrs)));
+    html.push_str(&format!(">{}{}</a>", format_args!("<span class=\"wp-block-navigation-item__label\">{}</span>", kses_post(&label)), description(attrs)));
     if bc.context.get("showSubmenuIcon").is_some_and(|v| !crate::style_engine::is_empty(v)) && has_submenu {
         html.push_str(&format!("<span class=\"wp-block-navigation__submenu-icon\">{SUBMENU_ICON}</span>"));
     }
@@ -665,7 +666,7 @@ pub(super) async fn navigation_link(bc: &BlockCtx<'_>) -> Result<String> {
 
 fn description(attrs: &Map<String, Value>) -> String {
     match str_attr(attrs, "description").filter(|d| !d.is_empty()) {
-        Some(d) => format!("<span class=\"wp-block-navigation-item__description\">{d}</span>"),
+        Some(d) => format!("<span class=\"wp-block-navigation-item__description\">{}</span>", kses_post(d)),
         None => String::new(),
     }
 }

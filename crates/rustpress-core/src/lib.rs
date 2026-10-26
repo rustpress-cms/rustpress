@@ -12,6 +12,8 @@ pub mod health;
 pub mod hierarchy;
 mod html_entities;
 pub mod kses;
+mod kses_post_table;
+pub mod safe_css;
 pub mod i18n;
 pub mod locale;
 pub mod options;

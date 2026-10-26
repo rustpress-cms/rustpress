@@ -92,7 +92,7 @@ fn esc_url_context(url: &str, display: bool) -> String {
     }
     let cleaned: String = url
         .chars()
-        .filter(|c| c.is_ascii_alphanumeric() || "-~+_.?#=!&;,/:%@$|*'()[]\\".contains(*c) || (*c as u32) >= 0x80)
+        .filter(|c| c.is_ascii_alphanumeric() || "-~+_.?#=!&;,/:%@$|*'()[]".contains(*c) || (*c as u32) >= 0x80)
         .collect();
     if cleaned.is_empty() {
         return String::new();

@@ -23,12 +23,30 @@ const URI_ATTRIBUTES: [&str; 17] = ["action", "archive", "background", "cite", "
 /// The elements that are allowed and the attributes each one keeps.
 pub struct Allowed {
     tags: HashMap<&'static str, Vec<&'static str>>,
+    /// The rules of `wp_kses_allowed_html( 'post' )`: `data-*`, `style` through `safecss_filter_attr()`, a valueless
+    /// `download`, `object` only for PDF files.
+    post: bool,
 }
 
 impl Allowed {
     /// `array()`: no tag at all.
     pub fn none() -> Self {
-        Self { tags: HashMap::new() }
+        Self { tags: HashMap::new(), post: false }
+    }
+
+    /// `wp_kses_allowed_html( 'post' )`: what post content may contain (`wp_kses_post()`).
+    pub fn post() -> Self {
+        Self { tags: crate::kses_post_table::ALLOWED_POST.iter().map(|(name, attrs)| (*name, attrs.to_vec())).collect(), post: true }
+    }
+
+    /// Whether `name` (lower case) is an attribute the element keeps.
+    fn permits(&self, element: &str, name: &str) -> bool {
+        let Some(permitted) = self.attributes(element) else { return false };
+        if permitted.contains(&name) {
+            return true;
+        }
+        static DATA: OnceLock<Regex> = OnceLock::new();
+        permitted.contains(&"data-*") && re(&DATA, r"^data-[a-z0-9_-]+$").is_match(name)
     }
 
     /// `$allowedtags`: what a comment of a visitor may contain.
@@ -50,7 +68,7 @@ impl Allowed {
             ("strong", &[]),
             ("span", &["class"]),
         ];
-        Self { tags: tags.into_iter().map(|(name, attrs)| (name, attrs.to_vec())).collect() }
+        Self { tags: tags.into_iter().map(|(name, attrs)| (name, attrs.to_vec())).collect(), post: false }
     }
 
     /// The comments of `pre_comment_content` also allow `span` with a `class` (note mentions); other users of
@@ -263,6 +281,8 @@ struct Attribute {
     value: String,
     whole: String,
     valueless: bool,
+    /// The value as written, before the syntax characters were encoded.
+    decoded: String,
 }
 
 /// The attributes of the tag `<wp {attr}>` as a tokenizer reads them; `None` when the tag does not end.
@@ -345,13 +365,13 @@ fn hair(attr: &str, allowed_protocols: &[&str]) -> Vec<Attribute> {
     let Some(read) = read_attributes(attr) else { return Vec::new() };
     read.into_iter()
         .map(|(name, value)| match value {
-            None => Attribute { whole: name.clone(), name, value: String::new(), valueless: true },
+            None => Attribute { whole: name.clone(), name, value: String::new(), valueless: true, decoded: String::new() },
             Some(mut value) => {
                 if URI_ATTRIBUTES.contains(&name.as_str()) {
                     value = bad_protocol(&value, allowed_protocols);
                 }
                 let recoded = value.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('\'', "&apos;").replace('"', "&quot;");
-                Attribute { whole: format!("{name}=\"{recoded}\""), name, value: recoded, valueless: false }
+                Attribute { whole: format!("{name}=\"{recoded}\""), name, value: recoded, valueless: false, decoded: value }
             }
         })
         .collect()
@@ -361,14 +381,54 @@ fn hair(attr: &str, allowed_protocols: &[&str]) -> Vec<Attribute> {
 fn attr_tag(element: &str, attr: &str, allowed: &Allowed) -> String {
     static SLASH: OnceLock<Regex> = OnceLock::new();
     let xhtml_slash = if re(&SLASH, r"\s*/\s*$").is_match(attr) { " /" } else { "" };
-    let Some(permitted) = allowed.attributes(element).filter(|a| !a.is_empty()) else { return format!("<{element}{xhtml_slash}>") };
+    if allowed.attributes(element).is_none_or(|a| a.is_empty()) {
+        return format!("<{element}{xhtml_slash}>");
+    }
+    let element_low = element.to_lowercase();
+    // `wp_kses_attr()`: an `object` of post content needs both of its attributes, each with an allowed value.
+    let mut required: Vec<&str> = if allowed.post && element_low == "object" { vec!["data", "type"] } else { Vec::new() };
     let mut kept = String::new();
-    for attribute in hair(attr, &PROTOCOLS) {
+    for mut attribute in hair(attr, &PROTOCOLS) {
         // Attribute names are kept as read; the rules apply to the lower case.
-        if permitted.contains(&attribute.name.as_str()) {
-            kept.push(' ');
-            kept.push_str(&attribute.whole);
+        let name_low = attribute.name.to_lowercase();
+        if !allowed.permits(element, &name_low) {
+            continue;
         }
+        if allowed.post {
+            if name_low == "style" {
+                let cleaned = crate::safe_css::safecss_filter_attr(&attribute.decoded);
+                if cleaned.is_empty() {
+                    continue;
+                }
+                if cleaned != attribute.decoded {
+                    let encoded = crate::formatting::esc_attr(&cleaned);
+                    attribute.whole = attribute.whole.replace(&attribute.value, &encoded);
+                    attribute.value = encoded;
+                }
+            }
+            // `wp_kses_check_attr_val()`: `download` is valueless; `object` takes PDF files of the site only, and
+            // without the site in reach none is allowed (`_wp_kses_allow_pdf_objects`).
+            if element_low == "a" && name_low == "download" && !attribute.valueless {
+                continue;
+            }
+            if element_low == "object" {
+                let ok = match name_low.as_str() {
+                    "type" => attribute.decoded == "application/pdf",
+                    "data" => false,
+                    _ => true,
+                };
+                if !ok {
+                    // A failed required attribute: nothing for a self-closing tag, the bare tag otherwise (its closing tag stays).
+                    return if xhtml_slash.is_empty() { format!("<{element}>") } else { String::new() };
+                }
+                required.retain(|r| *r != name_low);
+            }
+        }
+        kept.push(' ');
+        kept.push_str(&attribute.whole);
+    }
+    if !required.is_empty() {
+        return if xhtml_slash.is_empty() { format!("<{element}>") } else { String::new() };
     }
     let kept: String = kept.chars().filter(|c| *c != '<' && *c != '>').collect();
     format!("<{element}{kept}{xhtml_slash}>")
@@ -453,6 +513,12 @@ fn kses_inner(content: &str, allowed: &Allowed) -> String {
 /// `wp_kses( $content, $allowed )`.
 pub fn kses(content: &str, allowed: &Allowed) -> String {
     kses_inner(content, allowed)
+}
+
+/// `wp_kses_post()`: what post content may contain.
+pub fn kses_post(content: &str) -> String {
+    static POST: OnceLock<Allowed> = OnceLock::new();
+    kses(content, POST.get_or_init(Allowed::post))
 }
 
 /// `wp_filter_kses()` / `wp_kses_data()`: what a visitor may write.

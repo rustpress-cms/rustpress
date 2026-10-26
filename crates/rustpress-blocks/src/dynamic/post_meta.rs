@@ -1,6 +1,7 @@
 //! Post title, date, terms and author blocks.
 
 use rustpress_core::formatting::{esc_attr, esc_html, esc_url};
+use rustpress_core::kses::kses_post;
 
 use crate::Result;
 use crate::content::{post_password_required, the_title_for};
@@ -86,11 +87,11 @@ pub(super) async fn post_terms(bc: &BlockCtx<'_>) -> Result<String> {
     let wrapper = bc.wrapper_attributes(&[("class", classes.join(" "))]);
     let mut prefix = format!("<div {wrapper}>");
     if let Some(p) = bc.attr_str("prefix").filter(|p| !p.is_empty()) {
-        prefix.push_str(&format!("<span class=\"wp-block-post-terms__prefix\">{p}</span>"));
+        prefix.push_str(&format!("<span class=\"wp-block-post-terms__prefix\">{}</span>", kses_post(p)));
     }
     let mut suffix = "</div>".to_owned();
     if let Some(s) = bc.attr_str("suffix").filter(|s| !s.is_empty()) {
-        suffix = format!("<span class=\"wp-block-post-terms__suffix\">{s}</span>{suffix}");
+        suffix = format!("<span class=\"wp-block-post-terms__suffix\">{}</span>{suffix}", kses_post(s));
     }
 
     let mut terms = bc.env.site.db.terms_for_post(post_id, Some(taxonomy)).await?;
@@ -152,7 +153,7 @@ pub(super) async fn post_excerpt(bc: &BlockCtx<'_>) -> Result<String> {
     let more_text = match bc.attr_str("moreText").filter(|t| !t.is_empty()) {
         Some(text) => {
             let link = bc.env.site.permalink(&post).await?;
-            format!("<a class=\"wp-block-post-excerpt__more-link\" href=\"{}\">{text}</a>", esc_url(&link))
+            format!("<a class=\"wp-block-post-excerpt__more-link\" href=\"{}\">{}</a>", esc_url(&link), kses_post(text))
         }
         None => String::new(),
     };
@@ -215,7 +216,7 @@ pub(super) async fn post_author(bc: &BlockCtx<'_>) -> Result<String> {
     }
     out.push_str("<div class=\"wp-block-post-author__content\">");
     if let Some(byline) = byline {
-        out.push_str(&format!("<p class=\"wp-block-post-author__byline\">{byline}</p>"));
+        out.push_str(&format!("<p class=\"wp-block-post-author__byline\">{}</p>", kses_post(byline)));
     }
     out.push_str(&format!("<p class=\"wp-block-post-author__name\">{author_name}</p>"));
     if bc.attr_bool("showBio") {

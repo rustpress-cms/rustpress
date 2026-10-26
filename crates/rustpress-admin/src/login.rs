@@ -141,40 +141,112 @@ pub(crate) fn sanitize_user(raw: &str) -> String {
     out.split_whitespace().collect::<Vec<_>>().join(" ").trim().to_owned()
 }
 
-/// `wp_validate_redirect()`.
+/// `wp_validate_redirect()`: the address is cleaned first (`wp_sanitize_redirect()`), then only `http`/`https`
+/// addresses of this site (or relative ones) pass; everything else becomes `fallback`.
 pub(crate) fn validate_redirect(site: &Site, location: &str, fallback: &str) -> String {
-    let mut location = location.trim_matches([' ', '\t', '\n', '\r', '\0', '\u{8}', '\u{b}']).to_owned();
+    let home = site.settings.home.split_once("://").map_or("", |(_, r)| r.split(['/', ':']).next().unwrap_or(""));
+    validate_redirect_for_host(home, location, fallback)
+}
+
+/// [`validate_redirect`] for the host of the site.
+fn validate_redirect_for_host(home: &str, location: &str, fallback: &str) -> String {
+    let mut location = sanitize_redirect(location.trim_matches([' ', '\t', '\n', '\r', '\0', '\u{8}', '\u{b}']));
+    // Browsers obey a redirect to `//host`.
     if location.starts_with("//") {
         location = format!("http:{location}");
     }
-    let test = location.split('?').next().unwrap_or_default();
-    let (scheme, host) = match test.split_once("://") {
-        Some((scheme, rest)) => (Some(scheme.to_owned()), Some(rest.split(['/', '?', '#']).next().unwrap_or_default().to_owned())),
-        None => (None, None),
-    };
-    if let Some(scheme) = &scheme
-        && scheme != "http"
-        && scheme != "https"
-    {
+    let test = location.split_once('?').map_or(location.as_str(), |(before, _)| before);
+    // `parse_url()`: a scheme is letters, digits, `+`, `-` and `.` before the first colon.
+    let scheme = test.split_once(':').map(|(s, _)| s).filter(|s| !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.')) && !s.contains('/'));
+    if scheme.is_some_and(|s| s != "http" && s != "https") {
         return fallback.to_owned();
     }
-    if scheme.is_none() && test.contains(':') && !test.starts_with('/') && test.split(':').next().is_some_and(|s| s.chars().all(|c| c.is_ascii_alphabetic())) {
-        return fallback.to_owned();
-    }
-    if let Some(host) = &host {
-        let bare = host.rsplit('@').next().unwrap_or(host);
-        let bare = bare.split(':').next().unwrap_or(bare);
-        let home = site.settings.home.split_once("://").map_or("", |(_, r)| r.split(['/', ':']).next().unwrap_or(""));
-        if !bare.eq_ignore_ascii_case(home) || host.contains('@') {
+    let authority = test.split_once("://").map(|(_, rest)| rest.split(['/', '?', '#']).next().unwrap_or_default());
+    let Some(authority) = authority else {
+        // Without a host there may be no scheme, user, password or port.
+        if scheme.is_some() {
             return fallback.to_owned();
         }
+        return location;
+    };
+    // `user:pass@host:port`: none of the parts may hold the characters that end them.
+    let (userinfo, hostport) = match authority.rsplit_once('@') {
+        Some((userinfo, hostport)) => (Some(userinfo), hostport),
+        None => (None, authority),
+    };
+    if userinfo.is_some_and(|u| u.is_empty() || u.contains(['/', '?', '#', '@']) || u.split(':').count() > 2) {
+        return fallback.to_owned();
+    }
+    let host = hostport.split(':').next().unwrap_or_default();
+    if host.is_empty() || host.contains(['/', '?', '#', '@', ':']) {
+        return fallback.to_owned();
+    }
+    // `allowed_redirect_hosts`: the host of the site as written, or the lower case of it.
+    if host != home && host != home.to_lowercase() {
+        return fallback.to_owned();
     }
     location
 }
 
-/// `wp_sanitize_redirect()`: only characters that belong in an address stay.
+/// `wp_sanitize_redirect()`: spaces and characters outside ASCII are percent-encoded, only the characters that
+/// belong in an address stay, control characters and encoded line breaks go.
 pub(crate) fn sanitize_redirect(location: &str) -> String {
-    location.chars().filter(|c| c.is_ascii_alphanumeric() || "-~+_.?#=!&;,/:%@$|*'()[]\\".contains(*c) || (*c as u32) >= 0x80).collect::<String>().replace(' ', "%20")
+    let mut encoded = String::with_capacity(location.len());
+    for c in location.chars() {
+        if c == ' ' {
+            encoded.push_str("%20");
+        } else if c.is_ascii() {
+            encoded.push(c);
+        } else {
+            let mut buffer = [0u8; 4];
+            for byte in c.encode_utf8(&mut buffer).bytes() {
+                encoded.push_str(&format!("%{byte:02X}"));
+            }
+        }
+    }
+    let kept: String = encoded.chars().filter(|c| c.is_ascii_alphanumeric() || "-~+_.?#=&;,/:%!*[]()@".contains(*c)).collect();
+    let mut out = rustpress_core::kses::no_null(&kept, true);
+    // `_deep_replace()`: encoded line breaks go, however often they were nested.
+    loop {
+        let next = out.replace("%0d", "").replace("%0a", "").replace("%0D", "").replace("%0A", "");
+        if next == out {
+            return out;
+        }
+        out = next;
+    }
+}
+
+#[cfg(test)]
+mod redirect_tests {
+    use super::{sanitize_redirect, validate_redirect_for_host};
+
+    #[test]
+    fn validates_like_wordpress() {
+        let check = |input: &str, expected: &str| assert_eq!(validate_redirect_for_host("example.org", input, "/fallback"), expected, "input {input:?}");
+        check("/wp-admin/", "/wp-admin/");
+        check("http://example.org/x", "http://example.org/x");
+        check("https://example.org/x?a=1", "https://example.org/x?a=1");
+        check("//evil.example/", "/fallback");
+        check("/\"/evil.example", "/fallback");
+        check("/\\evil.example", "/evil.example");
+        check("/%01/evil.example", "/%01/evil.example");
+        check("/\u{1}/evil.example", "/fallback");
+        check("http:evil.example", "/fallback");
+        check("https://example.org@evil.example/", "/fallback");
+        check("javascript:alert(1)", "/fallback");
+        check("http://EXAMPLE.ORG/x", "/fallback");
+        check("http://evil.example/", "/fallback");
+        check("mailto:x@example.org", "/fallback");
+        check("edit.php?x=1", "edit.php?x=1");
+        check("http://example.org:8080/", "http://example.org:8080/");
+    }
+
+    #[test]
+    fn sanitizes_like_wordpress() {
+        assert_eq!(sanitize_redirect("/a b/ü\"'<>"), "/a%20b/%C3%BC");
+        assert_eq!(sanitize_redirect("/x%0d%0ay"), "/xy");
+        assert_eq!(sanitize_redirect("/x%0%0dAy"), "/xy");
+    }
 }
 
 impl LoginEnv<'_> {

@@ -70,6 +70,8 @@ impl<'a> Cursor<'a> {
                 out.push(c);
             }
         }
+        // No closing quote: the rest of the file is the string, so the callers cannot loop on the same spot.
+        self.at = self.text.len();
         None
     }
 
@@ -104,6 +106,8 @@ impl<'a> Cursor<'a> {
                 out.push(c);
             }
         }
+        // No closing quote: the rest of the file is the string, so the callers cannot loop on the same spot.
+        self.at = self.text.len();
         None
     }
 
