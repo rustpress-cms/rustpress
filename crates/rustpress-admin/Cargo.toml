@@ -27,3 +27,6 @@ zip = { version = "9.1.0", default-features = false, features = ["deflate"] }
 
 [dev-dependencies]
 tokio.workspace = true
+
+[lints]
+workspace = true

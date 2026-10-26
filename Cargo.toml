@@ -15,6 +15,15 @@ members = [
     "crates/rustpress-mail",
 ]
 
+# Futures that are dropped unawaited lose writes (review R1); the long argument lists, nested types and
+# `format!` arguments follow the PHP functions they port.
+[workspace.lints.clippy]
+let_underscore_future = "deny"
+type_complexity = "allow"
+too_many_arguments = "allow"
+needless_range_loop = "allow"
+format_in_format_args = "allow"
+
 [workspace.package]
 edition = "2024"
 version = "0.1.0"

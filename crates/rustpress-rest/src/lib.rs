@@ -486,7 +486,7 @@ impl<'a> Rest<'a> {
         out.insert("description".into(), Value::from(s.blogdescription.clone()));
         out.insert("url".into(), Value::from(s.siteurl.trim_end_matches('/').to_owned()));
         out.insert("home".into(), Value::from(s.home.trim_end_matches('/').to_owned()));
-        out.insert("gmt_offset".into(), Value::from(gmt_offset));
+        out.insert("gmt_offset".into(), gmt_offset);
         out.insert("timezone_string".into(), Value::from(o.string("timezone_string", "")));
         out.insert("page_for_posts".into(), Value::from(s.page_for_posts));
         out.insert("page_on_front".into(), Value::from(s.page_on_front));

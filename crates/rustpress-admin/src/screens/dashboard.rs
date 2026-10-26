@@ -62,7 +62,7 @@ fn postbox(ctx: &Ctx<'_>, widget: &Widget, closed: bool, hidden: bool, body: &st
     let expanded = if closed { "false" } else { "true" };
     let higher = tooltip("handle-order-higher", &tr("Move up"), "", "order-higher-indicator", "handle-order-higher-description");
     let lower = tooltip("handle-order-lower", &tr("Move down"), "", "order-lower-indicator", "handle-order-lower-description");
-    let toggle = tooltip("handlediv", &tr("Show or hide panel"), &format!(" aria-expanded=\"{expanded}\""), "toggle-indicator", "handlediv").replace(&format!("id=\"{id}-handlediv\""), &format!("id=\"{id}-handlediv\""));
+    let toggle = tooltip("handlediv", &tr("Show or hide panel"), &format!(" aria-expanded=\"{expanded}\""), "toggle-indicator", "handlediv");
     format!(
         "<div id=\"{id}\" class=\"{classes}\"  role=\"region\" aria-label=\"{}\">\n<div class=\"postbox-header\"><h2 class=\"hndle\" id=\"{id}-title\">{}</h2>\n<div class=\"handle-actions hide-if-no-js\">{higher}{lower}{toggle}</div></div><div class=\"inside\">\n{body}</div>\n</div>\n",
         esc_attr(&widget.aria),
@@ -216,8 +216,8 @@ async fn recent_posts(ctx: &Ctx<'_>, status: &str, order: Order, title: &str, id
 /// `comment_class()` for the dashboard list.
 async fn comment_classes(ctx: &Ctx<'_>, comment: &Comment, index: usize, status: &str) -> String {
     let mut classes: Vec<String> = vec![if comment.comment_type.is_empty() { "comment".to_owned() } else { comment.comment_type.clone() }];
-    if comment.user_id > 0 {
-        if let Ok(Some(user)) = ctx.env.db.user(comment.user_id).await {
+    if comment.user_id > 0
+        && let Ok(Some(user)) = ctx.env.db.user(comment.user_id).await {
             classes.push("byuser".into());
             classes.push(format!("comment-author-{}", rustpress_core::formatting::sanitize_html_class(&user.user_nicename)));
             if let Ok(Some(post)) = ctx.env.db.post(comment.comment_post_id).await
@@ -226,7 +226,6 @@ async fn comment_classes(ctx: &Ctx<'_>, comment: &Comment, index: usize, status:
                 classes.push("bypostauthor".into());
             }
         }
-    }
     if index % 2 == 1 {
         classes.extend(["odd".into(), "alt".into()]);
         classes.extend(["thread-odd".into(), "thread-alt".into()]);

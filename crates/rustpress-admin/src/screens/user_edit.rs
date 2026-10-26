@@ -168,7 +168,7 @@ async fn form_on(ctx: &Ctx<'_>, user: &User, own: bool, errors: &[String], file:
     let action_url = ctx.admin_url(if own { "profile.php" } else { "user-edit.php" });
     // `$wp_http_referer`: where the list of users was, kept while the user is edited.
     let wp_http_referer = {
-        let raw = request.request("wp_http_referer").filter(|r| !r.is_empty()).map(|r| rustpress_core::formatting::esc_url_raw(r)).unwrap_or_default();
+        let raw = request.request("wp_http_referer").filter(|r| !r.is_empty()).map(rustpress_core::formatting::esc_url_raw).unwrap_or_default();
         ["update", "delete_count", "user_id"].iter().fold(raw, |url, arg| rustpress_core::urls::remove_query_arg(&url, arg))
     };
     // The notices come before the wrap: the one of `new_user_email_admin_notice()`, then those of the page.

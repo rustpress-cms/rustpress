@@ -6,7 +6,7 @@ use std::path::Path;
 pub fn file_header(text: &str, header: &str) -> String {
     let lower = header.to_lowercase();
     for line in text.replace('\r', "\n").lines() {
-        let trimmed = line.trim_start_matches(|c: char| matches!(c, ' ' | '\t' | '/' | '*' | '#' | '@'));
+        let trimmed = line.trim_start_matches([' ', '\t', '/', '*', '#', '@']);
         let trimmed = trimmed.strip_prefix("<?php").map(str::trim_start).unwrap_or(trimmed);
         let Some((key, value)) = trimmed.split_once(':') else { continue };
         if key.trim().to_lowercase() == lower && key.len() == key.trim_end().len() {

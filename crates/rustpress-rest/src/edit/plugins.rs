@@ -78,8 +78,8 @@ impl Rest<'_> {
             }
             ("GET", true) | ("PUT" | "PATCH" | "POST", true) => {
                 let Some(info) = installed.iter().find(|p| plugin_id(p) == id) else { return Ok(Err(RestError::new("rest_plugin_not_found", "Plugin not found.", 404))) };
-                if method != "GET" {
-                    if let Some(status) = args.str("status") {
+                if method != "GET"
+                    && let Some(status) = args.str("status") {
                         if !matches!(status.as_str(), "active" | "inactive") {
                             return Ok(Err(RestError::invalid_param_with_data("status", Msg::new("%1$s is not one of %2$s.").with(&["status", "inactive and active"]), "rest_not_in_enum", Value::Null)));
                         }
@@ -101,7 +101,6 @@ impl Rest<'_> {
                             return Ok(Err(RestError::new("rest_cannot_edit", "The plugin status could not be changed.", 500)));
                         }
                     }
-                }
                 Ok(Ok(Resp::item(self.prepare_plugin(info, active.contains(&info.file)))))
             }
             ("POST", false) => Ok(Err(RestError::new("rest_cannot_install_plugin", "Sorry, you are not allowed to install plugins on this site.", 403))),

@@ -108,14 +108,12 @@ impl Rest<'_> {
 
     /// `prepare_item_for_database()`.
     async fn prepare_comment_for_database(&self, args: &Args) -> Result<std::result::Result<Prepared, RestError>> {
-        let mut prepared = Prepared::default();
-        prepared.content = match args.get("content") {
+        let content = match args.get("content") {
             Some(Value::String(content)) => Some(content.trim().to_owned()),
             Some(Value::Object(object)) => object.get("raw").and_then(Value::as_str).map(|raw| raw.trim().to_owned()),
             _ => None,
         };
-        prepared.post_id = args.u64("post");
-        prepared.parent = args.u64("parent");
+        let mut prepared = Prepared { content, post_id: args.u64("post"), parent: args.u64("parent"), ..Prepared::default() };
         if args.has("author") {
             let user = match args.u64("author").filter(|id| *id != 0) {
                 Some(id) => self.site.db.user(id).await?,

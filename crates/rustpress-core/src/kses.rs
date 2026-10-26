@@ -224,8 +224,8 @@ pub fn decode_attribute(value: &str) -> String {
             continue;
         }
         // Numeric.
-        if rest.starts_with("&#") {
-            let hex = rest[2..].starts_with(['x', 'X']);
+        if let Some(number) = rest.strip_prefix("&#") {
+            let hex = number.starts_with(['x', 'X']);
             let digits_at = if hex { 3 } else { 2 };
             let digits: String = rest[digits_at..].chars().take_while(|c| if hex { c.is_ascii_hexdigit() } else { c.is_ascii_digit() }).collect();
             if !digits.is_empty() {

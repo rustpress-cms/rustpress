@@ -10,8 +10,10 @@ use super::Ctx;
 use crate::plugins as plugin_scan;
 use crate::themes::{self, ThemeInfo};
 
-/// The value of a field: text or a list of `name: value` pairs.
+/// The value of a field: text or a list of `name: value` pairs (WordPress has list fields; none of those RustPress
+/// fills is one yet).
 #[derive(Clone)]
+#[allow(dead_code)]
 enum Val {
     Text(String),
     List(Vec<(String, String)>),
@@ -19,6 +21,7 @@ enum Val {
 
 /// What the clipboard text shows for a field instead of the value.
 #[derive(Clone)]
+#[allow(dead_code)]
 enum Debug {
     Text(String),
     Bool(bool),
@@ -308,7 +311,7 @@ async fn debug_data(ctx: &Ctx<'_>) -> Vec<Section> {
     info.push(Section { id: "wp-plugins-inactive", label: tr("Inactive Plugins"), description: String::new(), show_count: true, fields: inactive });
 
     // Media handling
-    let max = super::media_ui::MAX_UPLOAD as u64;
+    let max = super::media_ui::MAX_UPLOAD;
     info.push(Section {
         id: "wp-media",
         label: tr("Media Handling"),
@@ -520,7 +523,7 @@ fn space_separated(n: u64) -> String {
     let digits = n.to_string();
     let mut out = String::new();
     for (i, c) in digits.chars().enumerate() {
-        if i > 0 && (digits.len() - i) % 3 == 0 {
+        if i > 0 && (digits.len() - i).is_multiple_of(3) {
             out.push(' ');
         }
         out.push(c);

@@ -105,7 +105,7 @@ fn plugin_version(ctx: &Ctx<'_>, outdated: u64) -> Test {
 }
 
 /// `WP_Theme::get_core_default_theme()`: the newest `twenty*` theme.
-fn default_theme<'a>(themes: &'a [ThemeInfo]) -> Option<&'a ThemeInfo> {
+fn default_theme(themes: &[ThemeInfo]) -> Option<&ThemeInfo> {
     themes.iter().find(|t| t.stylesheet == DEFAULT_THEME).or_else(|| {
         let year = |t: &&ThemeInfo| t.stylesheet.strip_prefix("twenty").map(str::to_owned).filter(|rest| rest.len() >= 2 && rest.chars().all(char::is_alphabetic)).map(|_| t.stylesheet.clone());
         themes.iter().filter(|t| year(t).is_some()).max_by_key(|t| (t.version.clone(), t.stylesheet.clone()))

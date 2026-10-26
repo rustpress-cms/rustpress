@@ -175,8 +175,8 @@ pub async fn attachment_js_with(ctx: &Ctx<'_>, post: &Post, extra_sizes: &[Strin
         }
     } else {
         let icon = format!("{}/wp-includes/images/media/{}", site.settings.siteurl.trim_end_matches('/'), mime_icon(&post.post_mime_type));
-        if kind == "video" || kind == "audio" {
-            if let Some(m) = &stored_meta {
+        if (kind == "video" || kind == "audio")
+            && let Some(m) = &stored_meta {
                 if let Some(w) = m.get("width") {
                     response.insert("width".into(), w.clone());
                 }
@@ -184,8 +184,7 @@ pub async fn attachment_js_with(ctx: &Ctx<'_>, post: &Post, extra_sizes: &[Strin
                     response.insert("height".into(), h.clone());
                 }
             }
-        }
-        let (w, h) = if matches!(mime_icon(&post.post_mime_type), "default.svg") { (48, 64) } else { (48, 64) };
+        let (w, h) = (48, 64);
         response.insert("image".into(), json!({"src": icon, "width": w, "height": h}));
         response.insert("thumb".into(), json!({"src": icon, "width": w, "height": h}));
     }
@@ -255,16 +254,14 @@ fn attachment_query(request: &AdminRequest) -> AttachmentQuery {
         query.status = Some(status.to_owned());
     }
     for (key, value) in &request.form {
-        if key.starts_with("query[post__in]") {
-            if let Ok(id) = value.parse() {
+        if key.starts_with("query[post__in]")
+            && let Ok(id) = value.parse() {
                 query.ids.push(id);
             }
-        }
-        if key.starts_with("query[post__not_in]") {
-            if let Ok(id) = value.parse() {
+        if key.starts_with("query[post__not_in]")
+            && let Ok(id) = value.parse() {
                 query.exclude_ids.push(id);
             }
-        }
     }
     if let Some(author) = q("author").and_then(|v| v.parse::<u64>().ok()) {
         query.author = Some(author);

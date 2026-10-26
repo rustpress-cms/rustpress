@@ -173,11 +173,10 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     if !ctx.can("manage_options") {
         return die(ctx.env, 403, "WordPress &rsaquo; Error", &format!("<p>{}</p>", tr("Sorry, you are not allowed to manage options for this site.")));
     }
-    if ctx.request.post {
-        if let Some(response) = save(ctx).await {
+    if ctx.request.post
+        && let Some(response) = save(ctx).await {
             return response;
         }
-    }
     let site = ctx.site();
     let permalink_structure = site.options.string("permalink_structure", "");
     let category_base = taxonomy_base(&site.options.string("category_base", ""));

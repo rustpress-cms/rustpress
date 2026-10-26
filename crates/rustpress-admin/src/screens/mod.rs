@@ -288,11 +288,10 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse
         return response;
     }
     // `user_can_access_admin_page()`: the pages of the menu are only for those the menu is for.
-    if let Some(capabilities) = menu_capabilities(&request.file) {
-        if !capabilities.iter().any(|capability| ctx.can(capability)) {
+    if let Some(capabilities) = menu_capabilities(&request.file)
+        && !capabilities.iter().any(|capability| ctx.can(capability)) {
             return die(env, 403, "WordPress &rsaquo; Error", &ctx.tr("Sorry, you are not allowed to access this page."));
         }
-    }
     let mut response = match request.file.as_str() {
         "" | "index.php" => dashboard::page(&ctx).await,
         "options-general.php" => general::page(&ctx).await,

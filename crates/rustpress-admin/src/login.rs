@@ -217,39 +217,6 @@ pub(crate) fn sanitize_redirect(location: &str) -> String {
     }
 }
 
-#[cfg(test)]
-mod redirect_tests {
-    use super::{sanitize_redirect, validate_redirect_for_host};
-
-    #[test]
-    fn validates_like_wordpress() {
-        let check = |input: &str, expected: &str| assert_eq!(validate_redirect_for_host("example.org", input, "/fallback"), expected, "input {input:?}");
-        check("/wp-admin/", "/wp-admin/");
-        check("http://example.org/x", "http://example.org/x");
-        check("https://example.org/x?a=1", "https://example.org/x?a=1");
-        check("//evil.example/", "/fallback");
-        check("/\"/evil.example", "/fallback");
-        check("/\\evil.example", "/evil.example");
-        check("/%01/evil.example", "/%01/evil.example");
-        check("/\u{1}/evil.example", "/fallback");
-        check("http:evil.example", "/fallback");
-        check("https://example.org@evil.example/", "/fallback");
-        check("javascript:alert(1)", "/fallback");
-        check("http://EXAMPLE.ORG/x", "/fallback");
-        check("http://evil.example/", "/fallback");
-        check("mailto:x@example.org", "/fallback");
-        check("edit.php?x=1", "edit.php?x=1");
-        check("http://example.org:8080/", "http://example.org:8080/");
-    }
-
-    #[test]
-    fn sanitizes_like_wordpress() {
-        assert_eq!(sanitize_redirect("/a b/ü\"'<>"), "/a%20b/%C3%BC");
-        assert_eq!(sanitize_redirect("/x%0d%0ay"), "/xy");
-        assert_eq!(sanitize_redirect("/x%0%0dAy"), "/xy");
-    }
-}
-
 impl LoginEnv<'_> {
     fn tr(&self, text: &str) -> String {
         self.site.tr(text)
@@ -839,3 +806,36 @@ pub async fn handle(env: &LoginEnv<'_>, request: &LoginRequest) -> LoginResponse
 
 #[allow(dead_code)]
 fn unused(_: Ver, _: &[(&str, Attr)]) {}
+
+#[cfg(test)]
+mod redirect_tests {
+    use super::{sanitize_redirect, validate_redirect_for_host};
+
+    #[test]
+    fn validates_like_wordpress() {
+        let check = |input: &str, expected: &str| assert_eq!(validate_redirect_for_host("example.org", input, "/fallback"), expected, "input {input:?}");
+        check("/wp-admin/", "/wp-admin/");
+        check("http://example.org/x", "http://example.org/x");
+        check("https://example.org/x?a=1", "https://example.org/x?a=1");
+        check("//evil.example/", "/fallback");
+        check("/\"/evil.example", "/fallback");
+        check("/\\evil.example", "/evil.example");
+        check("/%01/evil.example", "/%01/evil.example");
+        check("/\u{1}/evil.example", "/fallback");
+        check("http:evil.example", "/fallback");
+        check("https://example.org@evil.example/", "/fallback");
+        check("javascript:alert(1)", "/fallback");
+        check("http://EXAMPLE.ORG/x", "/fallback");
+        check("http://evil.example/", "/fallback");
+        check("mailto:x@example.org", "/fallback");
+        check("edit.php?x=1", "edit.php?x=1");
+        check("http://example.org:8080/", "http://example.org:8080/");
+    }
+
+    #[test]
+    fn sanitizes_like_wordpress() {
+        assert_eq!(sanitize_redirect("/a b/ü\"'<>"), "/a%20b/%C3%BC");
+        assert_eq!(sanitize_redirect("/x%0d%0ay"), "/xy");
+        assert_eq!(sanitize_redirect("/x%0%0dAy"), "/xy");
+    }
+}

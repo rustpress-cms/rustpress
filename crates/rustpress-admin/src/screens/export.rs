@@ -108,12 +108,11 @@ pub async fn export_wp(ctx: &Ctx<'_>, args: &ExportArgs) -> (String, String) {
         filter.status = args.status.clone();
     }
     let mut category_term: Option<Term> = None;
-    if let (Some(cat), "post") = (args.category, content) {
-        if let Ok(Some(term)) = db.term_by_id(Some("category"), cat).await {
+    if let (Some(cat), "post") = (args.category, content)
+        && let Ok(Some(term)) = db.term_by_id(Some("category"), cat).await {
             filter.category = Some(term.term_taxonomy_id);
             category_term = Some(term);
         }
-    }
     if matches!(content, "post" | "page" | "attachment") {
         filter.author = args.author;
         filter.start = args.start_date.as_deref().and_then(month_start);

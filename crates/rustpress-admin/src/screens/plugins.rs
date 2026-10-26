@@ -368,8 +368,6 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         if name != "all" && count == 0 {
             continue;
         }
-        let class_name = if name == "all" { String::new() } else { String::new() };
-        let _ = class_name;
         let current = if name == status { " class=\"current\" aria-current=\"page\"" } else { "" };
         views.push(format!("\t<li class='{name}'><a href=\"plugins.php?plugin_status={name}\"{current}>{} <span class=\"count\">({})</span></a>", label(name), site.number_i18n(count as u64)));
     }

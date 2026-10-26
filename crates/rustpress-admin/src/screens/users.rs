@@ -79,11 +79,10 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         let a = request.request("action").unwrap_or_default();
         if a.is_empty() || a == "-1" { request.request("action2").unwrap_or_default().to_owned() } else { a.to_owned() }
     };
-    if !action.is_empty() {
-        if let Some(response) = handle_action(ctx, &action).await {
+    if !action.is_empty()
+        && let Some(response) = handle_action(ctx, &action).await {
             return response;
         }
-    }
     let db = ctx.env.db;
     let current_url = format!("{}{}", origin(ctx), request.request_uri);
     let role = request.get("role").unwrap_or_default().to_owned();

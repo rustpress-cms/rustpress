@@ -72,8 +72,4 @@ impl Rest<'_> {
         }
         false
     }
-
-    pub(crate) fn can_publish(&self, post_type: &str) -> bool {
-        self.user().is_some_and(|u| u.can_publish_type(post_type))
-    }
 }

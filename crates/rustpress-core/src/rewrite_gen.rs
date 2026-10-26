@@ -440,7 +440,7 @@ pub fn rewrite_rules(input: &RewriteInput<'_>) -> Vec<(String, String)> {
 
     // `^[^%]*%(?:postname|category|tag|author)%`
     let verbose_page_rules = {
-        let before = structure.find('%').map_or(structure.len(), |at| at);
+        let before = structure.find('%').unwrap_or(structure.len());
         let rest = &structure[before..];
         ["%postname%", "%category%", "%tag%", "%author%"].iter().any(|t| rest.starts_with(t))
     };

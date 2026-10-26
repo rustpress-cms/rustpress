@@ -93,11 +93,10 @@ fn theme_files(theme: &ThemeInfo) -> Vec<(String, PathBuf)> {
     let mut allowed: Vec<(String, PathBuf)> = Vec::new();
     for kind in EDITABLE_TYPES {
         let found = scandir(&theme.dir, kind, -1, "");
-        if kind == "css" {
-            if let Some(style) = found.iter().find(|(k, _)| k == "style.css").cloned() {
+        if kind == "css"
+            && let Some(style) = found.iter().find(|(k, _)| k == "style.css").cloned() {
                 union(&mut allowed, vec![style]);
             }
-        }
         union(&mut allowed, found);
     }
     if let Some(at) = allowed.iter().position(|(k, _)| k == "functions.php") {

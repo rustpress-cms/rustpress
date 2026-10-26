@@ -315,7 +315,6 @@ fn pairs_of(text: &str) -> Vec<(String, String)> {
 
 /// `wp-login.php`.
 #[allow(clippy::too_many_arguments)]
-#[allow(clippy::too_many_arguments)]
 pub async fn login_page(loaded: &Loaded, writer: Option<&rustpress_db::Writer>, method_post: bool, path: &str, request_uri: &str, query: &str, body: &str, headers: &HeaderMap, client: &crate::client::Client) -> Response<Body> {
     let remote_addr = client.ip.clone();
     let Some(parts) = &loaded.admin else { return plain(StatusCode::NOT_FOUND, "Not Found") };

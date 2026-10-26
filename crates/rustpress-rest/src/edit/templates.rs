@@ -377,15 +377,12 @@ impl Rest<'_> {
                 if kind == TKind::Part && area.is_some_and(|a| file.area.as_deref() != Some(a)) {
                     continue;
                 }
-                match post_type {
-                    Some(pt) => {
-                        let listed = file.post_types.as_ref().is_some_and(|t| t.iter().any(|x| x == pt));
-                        let unlisted_custom = file.post_types.is_none() && !defaults.iter().any(|(s, _, _)| *s == file.slug);
-                        if !listed && !unlisted_custom {
-                            continue;
-                        }
+                if let Some(pt) = post_type {
+                    let listed = file.post_types.as_ref().is_some_and(|t| t.iter().any(|x| x == pt));
+                    let unlisted_custom = file.post_types.is_none() && !defaults.iter().any(|(s, _, _)| *s == file.slug);
+                    if !listed && !unlisted_custom {
+                        continue;
                     }
-                    None => {}
                 }
                 result.push(self.tpl_from_file(kind, &file));
             }
@@ -591,7 +588,7 @@ impl Rest<'_> {
         let is_custom = args.bool("is_custom").unwrap_or(false);
         let prefix = args.str("template_prefix").unwrap_or_default();
         let mut hierarchy = self.template_hierarchy(&slug, is_custom, &prefix);
-        let mut found: Option<Tpl> = None;
+        let mut found: Option<Tpl>;
         loop {
             let slugs: Vec<String> = hierarchy.clone();
             let mut templates = self.block_templates(TKind::Template, None, None, None, &slugs).await?;

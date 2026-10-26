@@ -243,7 +243,7 @@ impl Rest<'_> {
         match args.str("orderby").as_deref() {
             Some("id") => users.sort_by_key(|u| u.id),
             Some("registered_date") => users.sort_by(|a, b| a.user_registered.cmp(&b.user_registered)),
-            Some("email") => users.sort_by(|a, b| a.user_email.to_lowercase().cmp(&b.user_email.to_lowercase())),
+            Some("email") => users.sort_by_key(|a| a.user_email.to_lowercase()),
             Some("slug") => users.sort_by(|a, b| a.user_nicename.cmp(&b.user_nicename)),
             _ => users.sort_by(|a, b| a.display_name.to_lowercase().cmp(&b.display_name.to_lowercase()).then(a.id.cmp(&b.id))),
         }

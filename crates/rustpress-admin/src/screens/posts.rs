@@ -178,8 +178,7 @@ async fn categories_dropdown(ctx: &Ctx<'_>, selected: u64) -> String {
 fn result_notice(ctx: &Ctx<'_>, info: &TypeInfo) -> String {
     let site = ctx.site();
     let count = |name: &str| ctx.request.get(name).and_then(|v| v.parse::<i64>().ok());
-    let (post, posts) = if info.name == "page" { (("%s page updated.", "%s pages updated."), ()) } else { (("%s post updated.", "%s posts updated."), ()) };
-    let _ = posts;
+    let post = if info.name == "page" { ("%s page updated.", "%s pages updated.") } else { ("%s post updated.", "%s posts updated.") };
     let mut messages: Vec<String> = Vec::new();
     let number = |n: i64| site.number_i18n(n.unsigned_abs());
     if let Some(n) = count("updated").filter(|n| *n > 0) {
@@ -881,7 +880,7 @@ pub(super) async fn post_row(ctx: &Ctx<'_>, post: &Post, level: usize, row: &Row
                     None => (String::new(), String::new(), String::new()),
                 };
                 let edit_link = ctx.admin_url(&format!("post.php?post={}&action=edit", post.id)).replace('&', "&amp;");
-                let mut states = post_states(ctx, post, &status_param, is_sticky);
+                let mut states = post_states(ctx, post, status_param, is_sticky);
                 if let Some(name) = &parent_name {
                     states.push_str(&format!(" | {} {}", tr("Parent Page:"), esc_html(name)));
                 }
@@ -900,13 +899,13 @@ pub(super) async fn post_row(ctx: &Ctx<'_>, post: &Post, level: usize, row: &Row
                     }
                     None => (String::new(), String::new()),
                 };
-                let inline = if can_edit { inline_data(ctx, post, &info, &taxonomies, is_sticky).await } else { String::new() };
+                let inline = if can_edit { inline_data(ctx, post, info, taxonomies, is_sticky).await } else { String::new() };
                 let excerpt = if mode == "excerpt" && !info.hierarchical && ctx.user.can_read_post(post) { list_excerpt(ctx, post).await } else { String::new() };
                 out.push_str(&format!(
                     "<th scope=\"row\" class=\"title column-title has-row-actions column-primary page-title\" data-colname=\"{}\" aria-label=\"{}\"><div class=\"locked-info\"><span class=\"locked-avatar\">{locked_avatar}</span> <span class=\"locked-text\">{locked_text}</span></div>\n<strong>{name_html}{states}</strong>\n{excerpt}{inline}{}<button type=\"button\" class=\"toggle-row\"><span class=\"screen-reader-text\">{}</span></button></th>",
                     esc_attr(&column.label),
                     esc_attr(&aria),
-                    row_actions_for(ctx, post, &title, can_edit, &info).await,
+                    row_actions_for(ctx, post, &title, can_edit, info).await,
                     tr("Show more details")
                 ));
             }

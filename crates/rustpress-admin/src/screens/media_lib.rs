@@ -195,7 +195,7 @@ async fn list_mode(ctx: &Ctx<'_>, title: String) -> AdminResponse {
     let search = request.get("s").map(|s| s.trim().to_owned()).unwrap_or_default();
     let month = request.get("m").and_then(|m| m.parse::<u32>().ok()).unwrap_or(0);
     let orderby = request.get("orderby").filter(|o| ["title", "author", "parent", "date"].contains(o)).unwrap_or("date").to_owned();
-    let desc = request.get("order").map_or(true, |o| o.eq_ignore_ascii_case("desc"));
+    let desc = request.get("order").is_none_or(|o| o.eq_ignore_ascii_case("desc"));
     let per_page = super::common::items_per_page(ctx, "upload_per_page", 20).await;
     let paged = request.get("paged").and_then(|p| p.parse::<u64>().ok()).filter(|p| *p > 0).unwrap_or(1);
     let mut query = AttachmentQuery { orderby: orderby.clone(), desc, limit: per_page, offset: (paged - 1).saturating_mul(per_page), ..Default::default() };
@@ -366,7 +366,7 @@ async fn row(ctx: &Ctx<'_>, post: &Post, detached: bool) -> String {
     let edit_url = ctx.admin_url(&format!("post.php?post={}&action=edit", post.id));
     // The icon: a 60x60 thumbnail for images.
     let icon = if kind == "image" {
-        let thumb = metadata.as_ref().and_then(|m| rustpress_blocks::images::intermediate_size(&url, m, 60, 60)).map(|(u, w, h)| (u, w, h));
+        let thumb = metadata.as_ref().and_then(|m| rustpress_blocks::images::intermediate_size(&url, m, 60, 60));
         let (src, w, h) = thumb.unwrap_or_else(|| {
             let (w, h) = metadata.as_ref().map_or((60, 60), |m| (m.width(), m.height()));
             (url.clone(), w, h)

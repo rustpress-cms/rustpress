@@ -231,7 +231,7 @@ pub async fn list_screen_options(ctx: &Ctx<'_>, screen_id: &str, columns: &mut [
     const SPECIAL: [&str; 8] = ["_title", "cb", "comment", "media", "name", "title", "username", "blogname"];
     let mut toggles = Vec::new();
     for column in columns.iter_mut() {
-        column.hidden = hidden.iter().any(|h| *h == column.key);
+        column.hidden = hidden.contains(&column.key);
         if SPECIAL.contains(&column.key.as_str()) || column.label.is_empty() {
             continue;
         }

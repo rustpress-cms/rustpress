@@ -29,3 +29,6 @@ tracing-subscriber.workspace = true
 
 [dev-dependencies]
 http-body-util.workspace = true
+
+[lints]
+workspace = true

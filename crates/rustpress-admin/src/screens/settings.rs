@@ -331,7 +331,7 @@ pub async fn discussion(ctx: &Ctx<'_>) -> AdminResponse {
         l1 = tr("Number of links to allow in a comment before holding for moderation:"),
         l2 = tr("(A common characteristic of comment spam is a large number of hyperlinks.)"),
         links = form_option(ctx, "comment_max_links"),
-        k1 = sprintf(&keys_text, &[&format!("{}", sprintf(&tr("held in the <a href=\"%s\">moderation queue</a>"), &["edit-comments.php?comment_status=moderated"]))]),
+        k1 = sprintf(&keys_text, &[&sprintf(&tr("held in the <a href=\"%s\">moderation queue</a>"), &["edit-comments.php?comment_status=moderated"]).to_string()]),
         mod_keys = esc_html(&o("moderation_keys"))
     ));
     h.push_str(&format!(

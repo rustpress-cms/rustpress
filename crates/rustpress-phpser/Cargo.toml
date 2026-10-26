@@ -7,3 +7,6 @@ license.workspace = true
 
 [dev-dependencies]
 proptest = "1"
+
+[lints]
+workspace = true

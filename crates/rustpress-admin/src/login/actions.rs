@@ -19,11 +19,6 @@ fn info_notice(message: &str, classes: &[&str]) -> String {
     format!("<div class=\"notice notice-info{extra}\"><p>{message}</p></div>")
 }
 
-/// `wp_specialchars_decode( $text, ENT_QUOTES )`.
-fn specialchars_decode(text: &str) -> String {
-    text.replace("&#039;", "'").replace("&#39;", "'").replace("&quot;", "\"").replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&")
-}
-
 /// `wp_generate_password( $length, $special_chars )`.
 fn generate_password(length: usize, special: bool) -> String {
     crate::sanitize::random_password(length, special)
@@ -93,14 +88,6 @@ impl LoginEnv<'_> {
         let cookie = request.cookie(&self.auth.cookie_name(Scheme::LoggedIn))?;
         let session = self.auth.validate_cookie(self.db, cookie, Scheme::LoggedIn, self.now, request.post).await.ok().flatten()?;
         Some((session.user, session.token))
-    }
-
-    /// `wp_mail()`: e-mail is not sent by RustPress itself.
-    async fn send_mail(&self, to: &str, subject: &str, message: &str) -> bool {
-        match &self.mailer {
-            Some(mailer) => mailer.send(to, subject, message).await,
-            None => false,
-        }
     }
 
     /// `wp_login_url( $redirect )`.
@@ -468,11 +455,10 @@ impl LoginEnv<'_> {
             _ => return Err(fail(self)),
         };
         writer.update_user_meta(user_id, "default_password_nag", "1").await.or_log();
-        if let Some(lang) = request.cookie("wp_lang").filter(|l| !l.is_empty()) {
-            if self.languages.iter().any(|l| l.locale == lang) {
+        if let Some(lang) = request.cookie("wp_lang").filter(|l| !l.is_empty())
+            && self.languages.iter().any(|l| l.locale == lang) {
                 writer.update_user_meta(user_id, "locale", lang).await.or_log();
             }
-        }
         self.new_user_notification(user_id).await;
         Ok(())
     }

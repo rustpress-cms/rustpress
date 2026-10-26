@@ -139,12 +139,11 @@ impl Rest<'_> {
                 }
             }
         }
-        if let Value::Object(map) = &mut data {
-            if let Some(version) = map.get("version").and_then(Value::as_u64) {
+        if let Value::Object(map) = &mut data
+            && let Some(version) = map.get("version").and_then(Value::as_u64) {
                 let schema = if version >= 3 { format!("https://schemas.wp.org/wp/{}/theme.json", self.wp_major_minor()) } else { "https://schemas.wp.org/trunk/theme.json".to_owned() };
                 map.insert("$schema".into(), Value::String(schema));
             }
-        }
         sort_keys(&mut data);
         files.insert("theme.json".into(), pretty(&data).into_bytes());
 

@@ -64,10 +64,6 @@ impl Rest<'_> {
         found.into_iter().map(|(_, slug)| slug).collect()
     }
 
-    async fn theme_object(&self) -> Value {
-        self.theme_object_for(&self.theme.stylesheet.clone()).await
-    }
-
     async fn theme_object_for(&self, stylesheet: &str) -> Value {
         let active = stylesheet == self.theme.stylesheet;
         let dir = if active { self.theme.stylesheet_dir().to_path_buf() } else { self.theme.wp_root.join("wp-content").join("themes").join(stylesheet) };

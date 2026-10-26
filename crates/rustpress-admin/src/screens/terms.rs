@@ -467,7 +467,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     h.push_str("<div id=\"col-container\" class=\"wp-clearfix\">\n\n<div id=\"col-left\">\n<div class=\"col-wrap\">\n\n\t\n");
     h.push_str(&add_form(ctx, &info).await);
     h.push_str("</div>\n</div><!-- /col-left -->\n\n<div id=\"col-right\">\n<div class=\"col-wrap\">\n\n\n<form id=\"posts-filter\" method=\"post\">\n");
-    h.push_str(&table_html.replacen("<input type=\"hidden\" name=\"taxonomy\"", "<input type=\"hidden\" name=\"taxonomy\"", 1));
+    h.push_str(&table_html);
     h.push_str("\n</form>\n\n");
     let default_name = if info.name == "category" { terms.iter().find(|t| t.term_id == site.options.u64("default_category", 1)).map(|t| t.name.clone()).unwrap_or_default() } else { String::new() };
     // The converters belong to those who may import.

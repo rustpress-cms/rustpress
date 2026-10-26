@@ -659,7 +659,7 @@ pub(super) async fn navigation_link(bc: &BlockCtx<'_>) -> Result<String> {
     if let Some(title) = str_attr(attrs, "title") {
         html.push_str(&format!(" title=\"{}\"", esc_attr(title)));
     }
-    html.push_str(&format!(">{}{}</a>", format_args!("<span class=\"wp-block-navigation-item__label\">{}</span>", kses_post(&label)), description(attrs)));
+    html.push_str(&format!(">{}{}</a>", format_args!("<span class=\"wp-block-navigation-item__label\">{}</span>", kses_post(label)), description(attrs)));
     if bc.context.get("showSubmenuIcon").is_some_and(|v| !crate::style_engine::is_empty(v)) && has_submenu {
         html.push_str(&format!("<span class=\"wp-block-navigation__submenu-icon\">{SUBMENU_ICON}</span>"));
     }

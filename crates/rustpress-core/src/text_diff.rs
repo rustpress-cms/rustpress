@@ -13,22 +13,6 @@ pub enum Op {
     Change(Vec<String>, Vec<String>),
 }
 
-impl Op {
-    fn orig(&self) -> &[String] {
-        match self {
-            Op::Copy(lines) | Op::Delete(lines) | Op::Change(lines, _) => lines,
-            Op::Add(_) => &[],
-        }
-    }
-
-    fn fin(&self) -> &[String] {
-        match self {
-            Op::Copy(lines) | Op::Add(lines) | Op::Change(_, lines) => lines,
-            Op::Delete(_) => &[],
-        }
-    }
-}
-
 /// PHP's `==` of two strings: numeric strings compare as numbers.
 fn loose_eq(a: &str, b: &str) -> bool {
     if a == b {

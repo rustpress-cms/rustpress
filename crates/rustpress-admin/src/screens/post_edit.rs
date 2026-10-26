@@ -526,7 +526,7 @@ async fn form(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, is_new: bool) -> Admi
         h.push_str(&notices::notice(&text, "success", true, "message", &["updated"], true));
     }
     let lost = format!("<span class=\"spinner\"></span> {} <span class=\"hide-if-no-sessionstorage\">{}</span>", tr("<strong>Connection lost.</strong> Saving has been disabled until you are reconnected."), tr("This post is being backed up in your browser, just in case."));
-    h.push_str(&notices::notice(&lost, "", false, "lost-connection-notice", &["error", "hidden"], true).replace("<div id=\"lost-connection-notice\" class=\"notice error hidden\">", "<div id=\"lost-connection-notice\" class=\"notice error hidden\">").trim_end_matches('\n').to_owned());
+    h.push_str(notices::notice(&lost, "", false, "lost-connection-notice", &["error", "hidden"], true).trim_end_matches('\n'));
     h.push_str("<form name=\"post\" action=\"post.php\" method=\"post\" id=\"post\"\n>\n");
     h.push_str(&ctx.nonce_field(&format!("update-post_{}", post.id)));
     let referer = ctx.request.get("referredby").unwrap_or_default();

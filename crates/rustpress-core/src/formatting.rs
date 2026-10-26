@@ -306,10 +306,10 @@ fn texturize_primes(haystack: &str, needle: char, prime: &str, open_quote: &str,
         }
         if key != 0 && !sentence.contains(close_quote) {
             let count = quote_pattern.find_iter(sentence).count();
-            *sentence = replace_all_str(&quote_pattern, sentence, flag);
+            *sentence = replace_all_str(quote_pattern, sentence, flag);
             if count > 1 {
                 let before = sentence.clone();
-                *sentence = replace_all_str(&flag_no_digit, sentence, close_quote);
+                *sentence = replace_all_str(flag_no_digit, sentence, close_quote);
                 if *sentence == before {
                     // No flag without a digit: use the last `flag.` or the last flag.
                     let pos = sentence.rfind(&format!("{flag}.")).or_else(|| sentence.rfind(flag));
@@ -317,18 +317,18 @@ fn texturize_primes(haystack: &str, needle: char, prime: &str, open_quote: &str,
                         sentence.replace_range(pos..pos + flag.len(), close_quote);
                     }
                 }
-                *sentence = replace_all_str(&prime_pattern, sentence, prime);
-                *sentence = replace_all_str(&flag_after_digit, sentence, prime);
+                *sentence = replace_all_str(prime_pattern, sentence, prime);
+                *sentence = replace_all_str(flag_after_digit, sentence, prime);
                 *sentence = sentence.replace(flag, close_quote);
             } else if count == 1 {
                 *sentence = sentence.replace(flag, close_quote);
-                *sentence = replace_all_str(&prime_pattern, sentence, prime);
+                *sentence = replace_all_str(prime_pattern, sentence, prime);
             } else {
-                *sentence = replace_all_str(&prime_pattern, sentence, prime);
+                *sentence = replace_all_str(prime_pattern, sentence, prime);
             }
         } else {
-            *sentence = replace_all_str(&prime_pattern, sentence, prime);
-            *sentence = replace_all_str(&quote_pattern, sentence, close_quote);
+            *sentence = replace_all_str(prime_pattern, sentence, prime);
+            *sentence = replace_all_str(quote_pattern, sentence, close_quote);
         }
         if needle == '"' && sentence.contains('"') {
             *sentence = sentence.replace('"', close_quote);

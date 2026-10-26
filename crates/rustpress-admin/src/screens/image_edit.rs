@@ -270,11 +270,10 @@ async fn save(ctx: &Ctx<'_>, state: &mut State) -> Result<Json, String> {
     let mut filename = stem;
     let new_path = loop {
         // `preg_replace( '/-e([0-9]+)$/', '', $filename )` and the new marker.
-        if let Some(at) = filename.rfind("-e") {
-            if filename[at + 2..].chars().all(|c| c.is_ascii_digit()) && at + 2 < filename.len() {
+        if let Some(at) = filename.rfind("-e")
+            && filename[at + 2..].chars().all(|c| c.is_ascii_digit()) && at + 2 < filename.len() {
                 filename.truncate(at);
             }
-        }
         let candidate = format!("{filename}-e{suffix_value}");
         let candidate_path = dir.join(format!("{candidate}.{ext}"));
         if candidate_path.exists() {
@@ -316,8 +315,8 @@ async fn save(ctx: &Ctx<'_>, state: &mut State) -> Result<Json, String> {
         set(&mut meta, "filesize", Value::Int(new_size));
         fw = image.width();
         fh = image.height();
-        if matches!(target.as_str(), "nothumb" | "all") {
-            if let Some((_, _, sizes)) = rustpress_content::media::generate_sizes(&env.site.options, &new_path, &state.mime) {
+        if matches!(target.as_str(), "nothumb" | "all")
+            && let Some((_, _, sizes)) = rustpress_content::media::generate_sizes(&env.site.options, &new_path, &state.mime) {
                 let size_names: Vec<String> = rustpress_content::media::registered_sizes(&env.site.options).into_iter().map(|(n, ..)| n).collect();
                 for name in &size_names {
                     let current = meta.get("sizes").and_then(|s| s.get(name)).cloned();
@@ -338,7 +337,6 @@ async fn save(ctx: &Ctx<'_>, state: &mut State) -> Result<Json, String> {
                 }
                 set(&mut meta, "sizes", merged);
             }
-        }
     }
     writer.update_post_meta(state.id, "_wp_attached_file", &new_relative).await.or_log();
     writer.update_post_meta(state.id, "_wp_attachment_metadata", &serialize(&meta)).await.or_log();

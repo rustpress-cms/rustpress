@@ -23,3 +23,6 @@ blake2 = "0.10"
 
 [dev-dependencies]
 tokio.workspace = true
+
+[lints]
+workspace = true
