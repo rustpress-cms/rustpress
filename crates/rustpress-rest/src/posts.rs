@@ -93,6 +93,9 @@ impl Rest<'_> {
             query.offset = (page - 1).saturating_mul(per_page);
         }
         let posts = self.site.db.posts(&query).await?;
+        let ids: Vec<u64> = posts.iter().map(|p| p.id).collect();
+        self.site.db.prime_terms(&ids).await?;
+        self.site.db.prime_revisions(&ids).await?;
         let context = params.get("context").unwrap_or("view");
         let mut items = Vec::with_capacity(posts.len());
         for post in &posts {
@@ -288,6 +291,18 @@ impl Rest<'_> {
         Ok(Err(RestError::new("rest_cannot_read", &format!("Sorry, you are not allowed to view {what} of this post."), 401)))
     }
 
+    /// `rest_is_field_included( $field, $fields )` for the `_fields` of the request: fields that are not asked
+    /// for are not computed (rendering the content of a hundred posts for `_fields=id` was most of the time).
+    pub(crate) fn field_included(&self, field: &str) -> bool {
+        let params = Params::parse(&self.blank.raw_query);
+        let Some(list) = params.get("_fields").filter(|f| !f.trim().is_empty()) else { return true };
+        // `_embed` needs the links, whatever `_fields` says.
+        if field == "_links" && params.get("_embed").is_some() {
+            return true;
+        }
+        list.split(',').map(str::trim).any(|accepted| accepted == field || accepted.starts_with(&format!("{field}.")) || field.starts_with(&format!("{accepted}.")))
+    }
+
     /// `prepare_item_for_response()` for the `view` and `embed` contexts.
     pub(crate) async fn prepare_post(&self, post: &Post, kind: Kind<'_>, context: &str, params: &Params) -> Result<Value> {
         let env = env(self);
@@ -320,11 +335,13 @@ impl Rest<'_> {
         }
 
         let hidden = protected && !unlocked;
-        if has("editor") {
+        // Embedded items are not filtered by the `_fields` of the request around them.
+        let wanted = |field: &str| context == "embed" || self.field_included(field);
+        if has("editor") && wanted("content") {
             let content = if hidden { String::new() } else { the_content(&env, &shared, &post.post_content).await? };
             data.insert("content".into(), json!({"rendered": content, "protected": protected}));
         }
-        if has("excerpt") {
+        if has("excerpt") && wanted("excerpt") {
             let excerpt = if hidden {
                 String::new()
             } else {
@@ -357,7 +374,7 @@ impl Rest<'_> {
         }
         let template = meta_value("_wp_page_template").filter(|t| !t.is_empty() && t != "default").unwrap_or_default();
         data.insert("template".into(), Value::from(template));
-        if kind == Kind::Post || (custom && has("post-formats")) {
+        if (kind == Kind::Post || (custom && has("post-formats"))) && wanted("format") {
             let formats = self.site.db.terms_for_post(post.id, Some("post_format")).await?;
             let format = formats.first().and_then(|t| t.slug.strip_prefix("post-format-")).unwrap_or("standard").to_owned();
             data.insert("format".into(), Value::from(format));
@@ -368,25 +385,27 @@ impl Rest<'_> {
             data.insert("meta".into(), Value::Array(Vec::new()));
         }
         if kind == Kind::Post {
-            for (base, taxonomy) in [("categories", "category"), ("tags", "post_tag")] {
+            for (base, taxonomy) in [("categories", "category"), ("tags", "post_tag")].into_iter().filter(|(base, _)| wanted(base)) {
                 let mut terms = self.site.db.terms_for_post(post.id, Some(taxonomy)).await?;
                 terms.sort_by_key(|t| (t.name.to_lowercase(), t.term_id));
                 data.insert(base.into(), Value::from(terms.iter().map(|t| t.term_id).collect::<Vec<_>>()));
             }
         }
         if let Kind::Custom(info) = kind {
-            for tax in self.taxonomies_of(&info.name) {
+            for tax in self.taxonomies_of(&info.name).into_iter().filter(|tax| wanted(&tax.base)) {
                 let mut terms = self.site.db.terms_for_post(post.id, Some(&tax.name)).await?;
                 terms.sort_by_key(|t| (t.name.to_lowercase(), t.term_id));
                 data.insert(tax.base.clone(), Value::from(terms.iter().map(|t| t.term_id).collect::<Vec<_>>()));
             }
         }
         // `class_list` belongs to the types that have pages of their own.
-        if !matches!(kind, Kind::Custom(info) if !info.public) {
+        if !matches!(kind, Kind::Custom(info) if !info.public) && (wanted("class_list") || wanted("permalink_template") || wanted("generated_slug")) {
             data.insert("class_list".into(), Value::from(post_class(&env, post, &[], false, false).await?));
         }
 
-        data.insert("_links".into(), self.post_links(post, kind, featured).await?);
+        if wanted("_links") || wanted("_embedded") {
+            data.insert("_links".into(), self.post_links(post, kind, featured).await?);
+        }
         if context == "embed" {
             // `WP_Navigation_Fallback::update_wp_navigation_post_schema()` exposes more of a menu.
             let menu = post.post_type == "wp_navigation";
@@ -433,11 +452,11 @@ impl Rest<'_> {
         }
 
         if builtin || self.supports(kind, "revisions") {
-            let revisions = self.site.db.posts(&PostQuery { post_types: vec!["revision".into()], statuses: vec!["inherit".into()], parent: Some(post.id), order_by: OrderBy::Id, order: Order::Desc, ..Default::default() }).await?;
+            let (count, latest) = self.site.db.revision_summary(post.id).await?;
             let revisions_base = self.rest_url(&format!("{base}/{}/revisions", post.id));
-            links.add("version-history", vec![("count", Value::from(revisions.len()))], revisions_base.clone());
-            if let Some(latest) = revisions.first() {
-                links.add("predecessor-version", vec![("id", Value::from(latest.id))], format!("{}/{}", self.rest_url(&format!("{base}/{}/revisions", post.id)), latest.id));
+            links.add("version-history", vec![("count", Value::from(count))], revisions_base.clone());
+            if count > 0 {
+                links.add("predecessor-version", vec![("id", Value::from(latest))], format!("{revisions_base}/{latest}"));
             }
         }
         if (kind == Kind::Page || matches!(kind, Kind::Custom(info) if info.hierarchical)) && post.post_parent != 0 {

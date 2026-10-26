@@ -265,8 +265,10 @@ impl Theme {
         if relative.contains("..") {
             return None;
         }
-        std::fs::read_to_string(self.stylesheet_dir.join(relative))
-            .or_else(|_| std::fs::read_to_string(self.template_dir.join(relative)))
+        rustpress_core::files::read(&self.stylesheet_dir.join(relative))
+            .or_else(|| rustpress_core::files::read(&self.template_dir.join(relative)))
+            .map(|text| text.to_string())
+            .ok_or_else(|| std::io::Error::from(std::io::ErrorKind::NotFound))
             .ok()
     }
 

@@ -137,7 +137,8 @@ impl<'a> Rest<'a> {
         }
         blank.http_host = Some(self.host.clone()).filter(|h| !h.is_empty());
         let scoped = Rest { site: self.site, theme: self.theme, registry: self.registry, blank, state: Default::default(), access: None, request: None, patterns: Default::default(), host: self.host.clone(), remote_patterns: Default::default() };
-        scoped.handle_request(route, query).await
+        // The terms of the posts of a list are read once for the request (`update_object_term_cache()`).
+        rustpress_db::Db::with_term_cache(scoped.handle_request(route, query)).await
     }
 
     /// Handles a request of a signed-in user (or with a body): `method`, the route after `/wp-json`, the
@@ -161,7 +162,8 @@ impl<'a> Rest<'a> {
             blank.viewer = Some(viewer.with_identity(&login, &name, &email, false, move |action| nonce.as_ref().map(|n| n(action)).unwrap_or_default()));
         }
         let scoped = Rest { site: self.site, theme: self.theme, registry: self.registry, blank, state: Default::default(), access, request: Some(request), patterns: Default::default(), host: self.host.clone(), remote_patterns: Default::default() };
-        scoped.handle_request(route, query).await
+        // The terms of the posts of a list are read once for the request (`update_object_term_cache()`).
+        rustpress_db::Db::with_term_cache(scoped.handle_request(route, query)).await
     }
 
     async fn handle_request(&self, route: &str, query: &str) -> Result<Reply> {
@@ -248,8 +250,8 @@ impl<'a> Rest<'a> {
             return Ok(Reply { status, headers, body: xml, bytes: Vec::new() });
         }
         if status == 200 || status == 201 {
-            if params.truthy("_embed") {
-                self.embed_all(&mut data).await?;
+            if let Some(rels) = embed_param(&params) {
+                self.embed_all(&mut data, rels.as_deref()).await?;
             }
             if self.access.is_some() {
                 self.refine_hints(&mut data).await;
@@ -408,24 +410,24 @@ impl<'a> Rest<'a> {
     }
 
     /// `_embed`: replaces nothing, adds `_embedded` next to `_links` of every item.
-    async fn embed_all(&self, data: &mut Value) -> Result<()> {
+    async fn embed_all(&self, data: &mut Value, rels: Option<&[String]>) -> Result<()> {
         match data {
             Value::Array(items) => {
                 for item in items {
-                    self.embed_one(item).await?;
+                    self.embed_one(item, rels).await?;
                 }
             }
-            Value::Object(_) => self.embed_one(data).await?,
+            Value::Object(_) => self.embed_one(data, rels).await?,
             _ => {}
         }
         Ok(())
     }
 
-    async fn embed_one(&self, item: &mut Value) -> Result<()> {
+    async fn embed_one(&self, item: &mut Value, rels: Option<&[String]>) -> Result<()> {
         let Some(links) = item.get("_links").and_then(Value::as_object).cloned() else { return Ok(()) };
         let mut embedded = Map::new();
         for (rel, entries) in &links {
-            if rel == "curies" {
+            if rel == "curies" || rels.is_some_and(|wanted| !wanted.iter().any(|w| w == rel)) {
                 continue;
             }
             let Some(entries) = entries.as_array() else { continue };
@@ -558,4 +560,18 @@ pub(crate) fn namespaces() -> Vec<String> {
         }
     }
     out
+}
+
+/// `rest_parse_embed_param()`: `None` without `_embed`; `Some(None)` embeds every relation (also for `0`, `1`,
+/// `true` and an empty value, which PHP reads as "all"), otherwise the relations named.
+fn embed_param(params: &Params) -> Option<Option<Vec<String>>> {
+    if !params.has("_embed") {
+        return None;
+    }
+    let value = params.get("_embed").unwrap_or_default();
+    if matches!(value, "" | "0" | "1" | "true") {
+        return Some(None);
+    }
+    let rels: Vec<String> = value.split([',', ' ', '\t', '\n', '\r']).filter(|r| !r.is_empty()).map(str::to_owned).collect();
+    Some(if rels.is_empty() { None } else { Some(rels) })
 }

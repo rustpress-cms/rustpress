@@ -154,7 +154,7 @@ let name = match self.kind {
         let raw = get_the_content(&self.env, post, 1, true).await?;
         let content = the_content(&self.env, post, &raw).await?.replace("]]>", "]]&gt;");
         // `the_content_feed`: `wp_staticize_emoji()`.
-        let formatting = std::fs::read_to_string(self.wp_root.join("wp-includes").join("formatting.php")).unwrap_or_default();
+        let formatting = rustpress_core::files::read(&self.wp_root.join("wp-includes").join("formatting.php")).unwrap_or_default();
         Ok(rustpress_core::text::staticize_emoji(&content, &formatting))
     }
 

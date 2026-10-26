@@ -103,6 +103,9 @@ impl Rest<'_> {
             query.offset = (page - 1).saturating_mul(per_page);
         }
         let posts = self.site.db.posts(&query).await?;
+        let ids: Vec<u64> = posts.iter().map(|p| p.id).collect();
+        self.site.db.prime_terms(&ids).await?;
+        self.site.db.prime_revisions(&ids).await?;
         let mut items = Vec::with_capacity(posts.len());
         for post in &posts {
             // Posts the user may not see are left out; the totals stay those of the query, as in WordPress.

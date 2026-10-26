@@ -269,8 +269,9 @@ pub async fn document_title(site: &Site, q: &QueryResult) -> Result<String> {
     Ok(capital_p_dangit(&title, true))
 }
 
+/// A file of WordPress or the theme, from the process-wide cache.
 pub(crate) fn read(path: &Path) -> Option<String> {
-    std::fs::read_to_string(path).ok()
+    rustpress_core::files::read(path).map(|text| text.to_string())
 }
 
 pub(crate) fn wp_version(wp_root: &Path) -> String {
@@ -608,8 +609,8 @@ pub(crate) fn emoji_detection_script(site: &Site, wp_root: &Path, version: &str)
 fn mediaelement_scripts(site: &Site, wp_root: &std::path::Path, includes_url: &str, version: &str, vimeo: bool) -> String {
     // The strings of `mejsL10n` are read from WordPress's own script-loader and translated.
     let mut strings = serde_json::Map::new();
-    if let Ok(php) = std::fs::read_to_string(wp_root.join("wp-includes").join("script-loader.php"))
-        && let Ok(re) = regex::Regex::new(r"'(mejs\.[a-z-]+)'\s*=>\s*__\(\s*'((?:[^'\\]|\\.)*)'\s*\)")
+    if let Some(php) = read(&wp_root.join("wp-includes").join("script-loader.php"))
+        && let Some(re) = Some(rustpress_core::formatting::cached_plain_regex(r"'(mejs\.[a-z-]+)'\s*=>\s*__\(\s*'((?:[^'\\]|\\.)*)'\s*\)"))
     {
         for c in re.captures_iter(&php) {
             strings.insert(c[1].to_owned(), serde_json::Value::from(site.tr(&c[2].replace("\\'", "'"))));
@@ -734,17 +735,17 @@ pub async fn render_document_with(theme: &Theme, site: &Site, query: &QueryResul
         }
     }
     // Smallest files first until the inline budget is used up.
-    let mut by_size: Vec<(usize, u64)> = sheets.iter().enumerate().filter_map(|(i, s)| s.file.as_ref().filter(|_| !s.linked).and_then(|(p, _)| std::fs::metadata(p).ok()).map(|m| (i, m.len()))).collect();
+    let mut by_size: Vec<(usize, u64)> = sheets.iter().enumerate().filter_map(|(i, s)| s.file.as_ref().filter(|_| !s.linked).and_then(|(p, _)| rustpress_core::files::size(p)).map(|len| (i, len))).collect();
     // The skip link and the theme's own stylesheet are enqueued later but compete for the same budget.
     const SKIP_LINK: usize = usize::MAX;
     const THEME_STYLE: usize = usize::MAX - 1;
     let skip_link_file = wp_root.join("wp-includes").join("css").join("wp-block-template-skip-link.min.css");
     let theme_style_file = theme.theme_style_handle().and_then(|_| if theme.theme_style_path() { ["style.min.css", "style.css"].iter().map(|f| theme.template_dir().join(f)).find(|p| p.is_file()) } else { Some(theme.template_dir().join("style.css")) });
-    if let Ok(meta) = std::fs::metadata(&skip_link_file) {
-        by_size.push((SKIP_LINK, meta.len()));
+    if let Some(len) = rustpress_core::files::size(&skip_link_file) {
+        by_size.push((SKIP_LINK, len));
     }
-    if let Some(meta) = theme_style_file.as_ref().filter(|_| theme.theme_style_path()).and_then(|p| std::fs::metadata(p).ok()) {
-        by_size.push((THEME_STYLE, meta.len()));
+    if let Some(len) = theme_style_file.as_ref().filter(|_| theme.theme_style_path()).and_then(|p| rustpress_core::files::size(p)) {
+        by_size.push((THEME_STYLE, len));
     }
     by_size.sort_by_key(|(_, size)| *size);
     let mut budget = 0u64;

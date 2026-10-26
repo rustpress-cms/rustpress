@@ -354,7 +354,13 @@ async fn page(app: &App, uri: &axum::http::Uri, request_headers: &axum::http::He
     }
     if result.flags.is_feed {
         let request_uri = uri.path_and_query().map_or(path, |p| p.as_str());
-        let Some(feed) = render_feed(&loaded.theme, &loaded.site, &result, &loaded.registry, request_uri).await? else {
+        let ids: Vec<u64> = result.posts.iter().map(|p| p.id).collect();
+        let feed = rustpress_db::Db::with_term_cache(async {
+            loaded.site.db.prime_terms(&ids).await?;
+            render_feed(&loaded.theme, &loaded.site, &result, &loaded.registry, request_uri).await
+        })
+        .await;
+        let Some(feed) = feed? else {
             return Ok(text(StatusCode::NOT_FOUND, "This feed is not available.\n"));
         };
         let mut response = feed_response(&feed, request_headers);
@@ -390,7 +396,13 @@ async fn page(app: &App, uri: &axum::http::Uri, request_headers: &axum::http::He
         singular_headers(&mut response, &result, &loaded);
         return Ok(with_api_link(response, &loaded));
     }
-    let document = rustpress_theme::render_document_with(&loaded.theme, &loaded.site, &result, &loaded.registry, &extras).await?;
+    // The terms of the posts of the main query are read once (`update_object_term_cache()`).
+    let ids: Vec<u64> = result.posts.iter().map(|p| p.id).collect();
+    let document = rustpress_db::Db::with_term_cache(async {
+        loaded.site.db.prime_terms(&ids).await?;
+        rustpress_theme::render_document_with(&loaded.theme, &loaded.site, &result, &loaded.registry, &extras).await
+    })
+    .await?;
     let mut response = Response::new(Body::from(document.html));
     *response.status_mut() = StatusCode::from_u16(document.status).unwrap_or(StatusCode::OK);
     response.headers_mut().insert(header::CONTENT_TYPE, HeaderValue::from_static("text/html; charset=UTF-8"));

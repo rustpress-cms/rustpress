@@ -142,6 +142,7 @@ async fn custom_query(bc: &BlockCtx<'_>, page: u64) -> Result<LoopData> {
 
     let found = site.db.count_posts(&query).await?;
     let mut posts = site.db.posts(&query).await?;
+    site.db.prime_terms(&posts.iter().map(|p| p.id).collect::<Vec<_>>()).await?;
     // Custom queries without archive/search flags behave like the blog home: sticky posts first.
     if !ignore_sticky && !has_tax && !has_author && !has_search && page <= 1 && !sticky.is_empty() && query.post_types == ["post"] {
         let (mut front, rest): (Vec<Post>, Vec<Post>) = posts.into_iter().partition(|p| sticky.contains(&p.id));
