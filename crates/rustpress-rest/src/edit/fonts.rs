@@ -26,6 +26,9 @@ const FONT_TYPES: [&str; 4] = ["otf", "ttf", "woff", "woff2"];
 const THEME_JSON_VERSION: u64 = 3;
 
 /// `WP_Font_Utils::format_font_family()`: names with spaces are quoted, quotes of the input are dropped.
+/// Where `_wp_register_default_font_collections()` gets the Google Fonts families from.
+const GOOGLE_FONTS_URL: &str = "https://s.w.org/images/fonts/wp-7.1/collections/google-fonts-with-preview.json";
+
 fn format_font_family(family: &str) -> String {
     family
         .split(',')
@@ -67,7 +70,7 @@ impl Rest<'_> {
     pub(crate) async fn fonts_route(&self, segments: &[&str], method: &str, args: &Args, params: &Params) -> Result<Outcome> {
         let tail: Vec<&str> = segments.iter().skip(3).copied().collect();
         match (segments.get(2).copied(), tail.as_slice(), method) {
-            (Some("font-collections"), [], "GET") => self.collections_list().await,
+            (Some("font-collections"), [], "GET") => self.collections_list(args).await,
             (Some("font-collections"), [slug], "GET") => self.collections_item(slug).await,
             (Some("font-families"), [], "GET") => self.families_list(args, params).await,
             (Some("font-families"), [], "POST") => self.family_create(args).await,
@@ -84,21 +87,64 @@ impl Rest<'_> {
 
     // ---------------------------------------------------------------- collections
 
-    async fn collections_list(&self) -> Result<Outcome> {
+    /// `WP_Font_Collection::load_from_url()` of the Google Fonts collection: the families WordPress keeps in a site
+    /// transient for a day. RustPress makes no requests to other servers, so without the transient the collection
+    /// fails like a failed download.
+    async fn google_fonts(&self) -> Result<std::result::Result<Value, RestError>> {
+        let key = format!("wp_font_collection_url_{GOOGLE_FONTS_URL}");
+        let key = &key[..key.len().min(167)];
+        let db = &self.site.db;
+        let expires = db.option(&format!("_site_transient_timeout_{key}")).await?.and_then(|t| t.parse::<i64>().ok());
+        let fresh = expires.is_none_or(|t| t >= chrono::Utc::now().timestamp());
+        let families = match db.option(&format!("_site_transient_{key}")).await? {
+            Some(raw) if fresh => rustpress_phpser::unserialize(raw.as_bytes()).ok().and_then(|v| v.get("font_families").map(rustpress_core::options::php_to_json)),
+            _ => None,
+        };
+        let Some(families) = families else {
+            let message = rustpress_core::i18n::sprintf(&self.site.tr("Error fetching the font collection data from \"%s\"."), &[GOOGLE_FONTS_URL]);
+            return Ok(Err(RestError::new("font_collection_request_error", &message, 500)));
+        };
+        let categories: Vec<Value> = [("Sans Serif", "sans-serif"), ("Display", "display"), ("Serif", "serif"), ("Handwriting", "handwriting"), ("Monospace", "monospace")]
+            .iter()
+            .map(|(name, slug)| json!({"name": self.site.trx(name, "font category"), "slug": slug}))
+            .collect();
+        let mut links = crate::util::Links::new();
+        links.push_raw("self", json!({"href": self.rest_url("wp/v2/font-collections/google-fonts"), "targetHints": {"allow": ["GET"]}}));
+        links.add("collection", Vec::new(), self.rest_url("wp/v2/font-collections"));
+        Ok(Ok(json!({
+            "slug": "google-fonts",
+            "name": self.site.trx("Google Fonts", "font collection name"),
+            "description": self.site.tr("Install from Google Fonts. Fonts are copied to and served from your site."),
+            "font_families": families,
+            "categories": categories,
+            "_links": links.finish(),
+        })))
+    }
+
+    async fn collections_list(&self, args: &Args) -> Result<Outcome> {
         if !self.can_fonts() {
             return Ok(Err(self.fonts_denied("rest_cannot_read", "Sorry, you are not allowed to access font collections.")));
         }
-        let mut resp = Resp::item(json!([]));
-        resp.total = Some(0);
-        resp.total_pages = Some(0);
+        // One collection is registered, `google-fonts`.
+        if args.i64("page").unwrap_or(1) > 1 {
+            return Ok(Err(RestError::new("rest_post_invalid_page_number", "The page number requested is larger than the number of pages available.", 400)));
+        }
+        // A collection that fails to load is left out.
+        let items: Vec<Value> = self.google_fonts().await?.into_iter().collect();
+        let mut resp = Resp::item(Value::Array(items));
+        resp.total = Some(1);
+        resp.total_pages = Some(1);
         Ok(Ok(resp))
     }
 
-    async fn collections_item(&self, _slug: &str) -> Result<Outcome> {
+    async fn collections_item(&self, slug: &str) -> Result<Outcome> {
         if !self.can_fonts() {
             return Ok(Err(self.fonts_denied("rest_cannot_read", "Sorry, you are not allowed to access font collections.")));
         }
-        Ok(Err(RestError::new("rest_font_collection_not_found", "Font collection not found.", 404)))
+        if slug != "google-fonts" {
+            return Ok(Err(RestError::new("rest_font_collection_not_found", "Font collection not found.", 404)));
+        }
+        Ok(self.google_fonts().await?.map(Resp::item))
     }
 
     // ---------------------------------------------------------------- families

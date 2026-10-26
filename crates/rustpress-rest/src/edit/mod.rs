@@ -216,6 +216,9 @@ impl Rest<'_> {
     pub(crate) fn allow_for(&self, route: &str) -> String {
         if self.access.is_none() {
             "GET".to_owned()
+        } else if route.trim_start_matches('/').starts_with("wp/v2/font-collections") {
+            // Font collections can only be read.
+            "GET".to_owned()
         } else if route.trim_start_matches('/').starts_with("wp/v2/sidebars/") {
             // A sidebar cannot be deleted.
             "GET, POST, PUT, PATCH".to_owned()
