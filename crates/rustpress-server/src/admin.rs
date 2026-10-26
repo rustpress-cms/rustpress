@@ -436,6 +436,7 @@ pub async fn admin_page(loaded: &Loaded, config: &Config, writer: Option<&rustpr
         remote_addr: client.ip.clone(),
         user_agent: headers.get(header::USER_AGENT).and_then(|v| v.to_str().ok()).map(str::to_owned),
         referer: headers.get(header::REFERER).and_then(|v| v.to_str().ok()).map(str::to_owned),
+        host: headers.get(header::HOST).and_then(|v| v.to_str().ok()).map(str::to_owned),
     };
     // The caches that lists prime for the request (terms, meta, rows of posts).
     let reply = rustpress_db::Db::with_term_cache(rustpress_admin::screens::handle(&env, &request)).await;

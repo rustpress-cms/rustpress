@@ -251,14 +251,14 @@ fn screen_meta(help: &Help, label: &str) -> String {
 								<a href=\"#tab-panel-{id}\" aria-controls=\"tab-panel-{id}\">
 									{title}								</a>
 							</li>
-",
+							",
             id = esc_attr(&tab.id),
             title = esc_html(&tab.title)
         ));
         panels.push_str(&format!("
 							<div id=\"tab-panel-{}\" class=\"help-tab-content{panel_active}\">
 								{}							</div>
-", esc_attr(&tab.id), tab.content));
+							", esc_attr(&tab.id), tab.content));
     }
     let sidebar = if help.sidebar.is_empty() { String::new() } else { format!("										<div class=\"contextual-help-sidebar\">
 						{}					</div>
@@ -271,12 +271,12 @@ fn screen_meta(help: &Help, label: &str) -> String {
 				<div id=\"contextual-help-columns\">
 					<div class=\"contextual-help-tabs\">
 						<ul>
-						{tabs}													</ul>
+						{tabs}						</ul>
 					</div>
 
 {sidebar}					
 					<div class=\"contextual-help-tabs-wrap\">
-						{panels}												</div>
+						{panels}					</div>
 				</div>
 			</div>
 				</div>
@@ -344,6 +344,9 @@ pub struct Assets {
     pub no_emoji: bool,
     /// The update screens print neither the heartbeat nor the session check (`wp_auth_check_load()`).
     pub no_auth_check: bool,
+    /// The page emptied the global `$locale` (options-general.php when the site language is not installed): the
+    /// session check asks for no language.
+    pub empty_locale: bool,
     /// A page of `wp-includes/build/pages` (font library, connectors): started by `@wordpress/boot`.
     pub boot: Option<Boot>,
     /// `wp_add_inline_style()`: `(handle, code)`; a handle that is not registered gets one without a file.
@@ -751,13 +754,15 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
         esc_url(&canonical)
     ));
     out.push_str(&assets.head);
-    out.push_str("\n\t</head>\n");
+    // The scripts of `admin_head` end with the indentation of their closing `<?php`.
+    out.push_str(if assets.head.is_empty() { "</head>\n" } else { "\t</head>\n" });
     out.push_str(&format!("<body class=\"{}\">\n", esc_attr(&classes.join(" "))));
     out.push_str("<script>\n\tdocument.body.className = document.body.className.replace('no-js','js');\n</script>\n\n");
     // Only who may customize the site gets the script (`wp_admin_bar_customize_menu()`).
     if env.user.can("edit_theme_options") {
-        out.push_str("<script>\n\t\t(function() {\n\t\t\tvar request, b = document.body, c = 'className', cs = 'customize-support', rcs = new RegExp('(^|\\\\s+)(no-)?'+cs+'(\\\\s+|$)');\n\n\t\t\t\trequest = true;\n\t\n\t\t\tb[c] = b[c].replace( rcs, ' ' );\n\t\t\t// The customizer requires postMessage and CORS (if the site is cross domain).\n\t\t\tb[c] += ( window.postMessage && request ? ' ' : ' no-' ) + cs;\n\t\t}());\n\t\n//# sourceURL=wp_customize_support_script\n</script>\n\n");
+        out.push_str("<script>\n\t\t(function() {\n\t\t\tvar request, b = document.body, c = 'className', cs = 'customize-support', rcs = new RegExp('(^|\\\\s+)(no-)?'+cs+'(\\\\s+|$)');\n\n\t\t\t\trequest = true;\n\t\n\t\t\tb[c] = b[c].replace( rcs, ' ' );\n\t\t\t// The customizer requires postMessage and CORS (if the site is cross domain).\n\t\t\tb[c] += ( window.postMessage && request ? ' ' : ' no-' ) + cs;\n\t\t}());\n\t\n//# sourceURL=wp_customize_support_script\n</script>\n");
     }
+    out.push('\n');
     out.push_str("<div id=\"wpwrap\">\n\n");
     out.push_str(&format!(
         "<div id=\"adminmenumain\" role=\"navigation\" aria-label=\"{}\">\n<a href=\"#wpbody-content\" class=\"screen-reader-shortcut\">{}</a>\n<a href=\"#wp-toolbar\" class=\"screen-reader-shortcut\">{}</a>\n<div id=\"adminmenuback\"></div>\n<div id=\"adminmenuwrap\">\n<ul id=\"adminmenu\">\n\n",
@@ -800,16 +805,16 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
     out.push_str(content);
     out.push_str("\n<div class=\"clear\"></div></div><!-- wpbody-content -->\n<div class=\"clear\"></div></div><!-- wpbody -->\n<div class=\"clear\"></div></div><!-- wpcontent -->\n\n");
     out.push_str(&format!(
-        "<div id=\"wpfooter\" role=\"contentinfo\">\n\t\t<p id=\"footer-left\" class=\"alignleft\">\n\t\t<span id=\"footer-thankyou\">{}</span>\t</p>\n\t<p id=\"footer-upgrade\" class=\"alignright\">\n\t\t{}\t</p>\n\t<div class=\"clear\"></div>\n</div>\n\n",
+        "<div id=\"wpfooter\" role=\"contentinfo\">\n\t\t<p id=\"footer-left\" class=\"alignleft\">\n\t\t<span id=\"footer-thankyou\">{}</span>\t</p>\n\t<p id=\"footer-upgrade\" class=\"alignright\">\n\t\t{}\t</p>\n\t<div class=\"clear\"></div>\n</div>\n",
         rustpress_core::i18n::sprintf(&tr("Thank you for creating with <a href=\"%s\">WordPress</a>."), &["https://wordpress.org/"]),
         rustpress_core::i18n::sprintf(&tr("Version %s"), &[&version])
     ));
     out.push_str(&assets.pre_footer);
     if !assets.no_auth_check {
         out.push_str(&format!(
-            "\t\t<div id=\"wp-auth-check-wrap\" class=\"hidden\">\n\t<div id=\"wp-auth-check-bg\"></div>\n\t<div id=\"wp-auth-check\">\n\t<button type=\"button\" class=\"wp-auth-check-close button-link\"><span class=\"screen-reader-text\">\n\t\t{close}\t</span></button>\n\t\t\t<div id=\"wp-auth-check-form\" class=\"loading\" data-src=\"{src}\"></div>\n\t\t\t<div class=\"wp-auth-fallback\">\n\t\t<p><b class=\"wp-auth-fallback-expired\" tabindex=\"0\">{expired}</b></p>\n\t\t<p><a href=\"{login}\" target=\"_blank\">{again}</a>\n\t\t{note}</p>\n\t</div>\n\t</div>\n\t</div>\n\t",
+            "\t<div id=\"wp-auth-check-wrap\" class=\"hidden\">\n\t<div id=\"wp-auth-check-bg\"></div>\n\t<div id=\"wp-auth-check\">\n\t<button type=\"button\" class=\"wp-auth-check-close button-link\"><span class=\"screen-reader-text\">\n\t\t{close}\t</span></button>\n\t\t\t<div id=\"wp-auth-check-form\" class=\"loading\" data-src=\"{src}\"></div>\n\t\t\t<div class=\"wp-auth-fallback\">\n\t\t<p><b class=\"wp-auth-fallback-expired\" tabindex=\"0\">{expired}</b></p>\n\t\t<p><a href=\"{login}\" target=\"_blank\">{again}</a>\n\t\t{note}</p>\n\t</div>\n\t</div>\n\t</div>\n\t",
             close = tr("Close dialog"),
-            src = esc_url(&format!("{}?interim-login=1&wp_lang={}", site.site_url("wp-login.php"), if site.locale() == "en_US" { String::new() } else { site.locale() })),
+            src = esc_url(&if assets.empty_locale { format!("{}?interim-login=1&wp_lang", site.site_url("wp-login.php")) } else { format!("{}?interim-login=1&wp_lang={}", site.site_url("wp-login.php"), site.locale()) }),
             expired = tr("Session expired"),
             login = esc_url(&site.site_url("wp-login.php")),
             again = tr("Please log in again."),

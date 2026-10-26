@@ -31,34 +31,34 @@ fn views_strings(ctx: &Ctx<'_>) -> Map<String, Json> {
 }
 
 /// The `post` part of the settings for a post being edited.
-fn post_settings(ctx: &Ctx<'_>, post_id: u64) -> Json {
+async fn post_settings(ctx: &Ctx<'_>, post_id: u64) -> Json {
     if post_id == 0 {
         return json!({"id": 0});
     }
-    json!({"id": post_id, "nonce": ctx.create_nonce(&format!("update-post_{post_id}"))})
+    let mut settings = json!({"id": post_id, "nonce": ctx.create_nonce(&format!("update-post_{post_id}"))});
+    let Ok(Some(post)) = ctx.env.db.post(post_id).await else { return settings };
+    // Audio and video files support featured images on their own (`attachment:audio`, `attachment:video`).
+    let theme_support = ctx.env.block_theme || ctx.env.theme.adds_theme_support("post-thumbnails");
+    let thumbnail_support = (theme_support && ctx.site().post_type_supports(&post.post_type, "thumbnail"))
+        || (post.post_type == "attachment" && (post.post_mime_type.starts_with("audio/") || post.post_mime_type.starts_with("video/")));
+    if thumbnail_support {
+        let featured = ctx.env.db.post_meta(post_id).await.unwrap_or_default().into_iter().find(|m| m.meta_key.as_deref() == Some("_thumbnail_id")).and_then(|m| m.meta_value).filter(|v| !v.is_empty() && v != "0");
+        settings["featuredImageId"] = featured.map_or(json!(-1), Json::String);
+    }
+    settings
 }
 
 /// Adds what `wp_enqueue_media()` and `wp_print_media_templates()` add to the page.
 pub async fn enqueue(ctx: &Ctx<'_>, assets: &mut Assets, post_id: u64) {
     let site = ctx.site();
     let baked = bake();
-    let ajax_path = admin_path(ctx, "admin-ajax.php");
     for handle in ["media-editor", "media-audiovideo", "mce-view", "image-edit", "imgareaselect"] {
         assets.scripts.push(handle.to_owned());
     }
     for handle in ["media-views", "wp-mediaelement", "imgareaselect"] {
         assets.styles.push(handle.to_owned());
     }
-    assets.localize.push(("wp-util".into(), "_wpUtilSettings".into(), json!({"ajax": {"url": ajax_path}})));
-    assets.localize.push(("media-models".into(), "_wpMediaModelsL10n".into(), json!({"settings": {"ajaxurl": ajax_path, "post": {"id": post_id}}})));
-    // The uploader.
-    let mut plupload = Map::new();
-    if let Some(Json::Object(strings)) = baked.get("plupload_l10n") {
-        for (key, value) in strings {
-            plupload.insert(key.clone(), value.as_str().map_or_else(|| value.clone(), |text| Json::String(ctx.tr(text))));
-        }
-    }
-    assets.localize.push(("wp-plupload".into(), "pluploadL10n".into(), Json::Object(plupload)));
+    // The uploader (`wp_plupload_default_settings()`); `pluploadL10n` comes from the script loader.
     assets.localize.push((
         "wp-plupload".into(),
         "_wpPluploadSettings".into(),
@@ -73,8 +73,6 @@ pub async fn enqueue(ctx: &Ctx<'_>, assets: &mut Assets, post_id: u64) {
             "limitExceeded": false,
         }),
     ));
-    assets.localize.push(("wp-api-request".into(), "wpApiSettings".into(), json!({"root": site.site_url("wp-json/"), "nonce": ctx.create_nonce("wp_rest"), "versionString": "wp/v2/"})));
-    assets.localize.push(("mediaelement".into(), "_wpmejsSettings".into(), json!({"pluginPath": "/wp-includes/js/mediaelement/", "classPrefix": "mejs-", "stretching": "responsive", "audioShortcodeLibrary": "mediaelement", "videoShortcodeLibrary": "mediaelement"})));
     assets.localize.push(("mce-view".into(), "mceViewL10n".into(), json!({"shortcodes": ["wp_caption", "caption", "gallery", "playlist", "audio", "video", "embed"]})));
 
     // The settings of the views.
@@ -93,8 +91,6 @@ pub async fn enqueue(ctx: &Ctx<'_>, assets: &mut Assets, post_id: u64) {
             m
         })
         .collect();
-    let mime_counts = db.attachment_mime_counts().await.unwrap_or_default();
-    let has = |prefix: &str| mime_counts.iter().any(|(m, n)| m.starts_with(prefix) && *n > 0);
     let mut mime_types = Map::new();
     if let Some(Json::Object(types)) = baked.get("mime_types") {
         for (key, value) in types {
@@ -107,9 +103,10 @@ pub async fn enqueue(ctx: &Ctx<'_>, assets: &mut Assets, post_id: u64) {
         "mimeTypes": mime_types,
         "captions": true,
         "nonce": {"sendToEditor": ctx.create_nonce("media-send-to-editor"), "setAttachmentThumbnail": ctx.create_nonce("set-attachment-thumbnail")},
-        "post": post_settings(ctx, post_id),
+        "post": post_settings(ctx, post_id).await,
         "defaultProps": {"link": site.options.string("image_default_link_type", "none"), "align": site.options.string("image_default_align", ""), "size": site.options.string("image_default_size", "")},
-        "attachmentCounts": {"audio": i32::from(has("audio/")), "video": i32::from(has("video/"))},
+        // The playlist filters default to showing both.
+        "attachmentCounts": {"audio": 1, "video": 1},
         "oEmbedProxyUrl": site.site_url("wp-json/oembed/1.0/proxy"),
         "embedExts": baked.get("embed_exts").cloned().unwrap_or(Json::Null),
         "embedMimes": baked.get("embed_mimes").cloned().unwrap_or(Json::Null),
@@ -119,6 +116,15 @@ pub async fn enqueue(ctx: &Ctx<'_>, assets: &mut Assets, post_id: u64) {
         "infiniteScrolling": 1,
     });
     let mut views = views_strings(ctx);
+    // Two labels of the post type being edited (posts without one): those of pages for hierarchical types.
+    let post_type = match post_id {
+        0 => None,
+        id => db.post(id).await.ok().flatten().map(|p| p.post_type),
+    };
+    if post_type.and_then(|t| super::posts::type_info(ctx, &t)).is_some_and(|info| info.hierarchical) {
+        views.insert("insertIntoPost".into(), json!(ctx.tr("Insert into page")));
+        views.insert("uploadedToThisPost".into(), json!(ctx.tr("Uploaded to this page")));
+    }
     views.insert("settings".into(), settings);
     assets.localize.push(("media-views".into(), "_wpMediaViewsL10n".into(), Json::Object(views)));
     assets.inline.push((
@@ -136,6 +142,8 @@ pub async fn enqueue(ctx: &Ctx<'_>, assets: &mut Assets, post_id: u64) {
 
 /// `wp_print_media_templates()`.
 pub fn templates(ctx: &Ctx<'_>) -> String {
-    let _ = ctx;
-    format!("\n{TEMPLATES}")
+    // The templates were taken from the reference; its address is replaced by the site's.
+    // `wp_print_media_templates()` leaves an empty line between two templates.
+    let templates = TEMPLATES.replace("</script>\n\t\t<script type=\"text/html\"", "</script>\n\n\t\t<script type=\"text/html\"");
+    format!("\n{}\n\t", templates.replace("http://localhost:8080/wp-admin/", &ctx.admin_url("")))
 }

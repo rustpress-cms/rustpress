@@ -723,7 +723,6 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
                 "site_status": {"direct": [], "async": [], "issues": {"good": good, "recommended": recommended, "critical": critical}}
             }),
         ));
-        localize.push(("wp-api-request".to_owned(), "wpApiSettings".to_owned(), serde_json::json!({"root": ctx.site().site_url("wp-json/"), "nonce": ctx.create_nonce("wp_rest"), "versionString": "wp/v2/"})));
     }
     scripts.push("dashboard".to_owned());
     if ctx.can("install_plugins") {

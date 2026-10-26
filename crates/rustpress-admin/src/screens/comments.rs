@@ -639,9 +639,9 @@ pub fn reply_form_single(ctx: &Ctx<'_>) -> String {
     let end = full.find("\t</form>\n").map_or(full.len(), |i| i + "\t</form>\n".len());
     let mut out = full[start..end].to_owned();
     if let Some(at) = out.find("<link rel='stylesheet' id='editor-buttons-css'")
-        && let Some(close) = out[at..].find("/>")
+        && let Some(close) = out[at..].find("/>\n")
     {
-        out.replace_range(at..at + close + 2, "");
+        out.replace_range(at..at + close + 3, "");
     }
     out.replacen("colspan=\"5\"", "colspan=\"2\"", 1)
         .replacen("id=\"position\" value=\"-1\"", "id=\"position\" value=\"1\"", 1)

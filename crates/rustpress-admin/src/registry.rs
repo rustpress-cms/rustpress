@@ -165,8 +165,16 @@ fn hooks(env: &LoaderEnv) -> Hooks {
     }));
     h.functions.insert("includes_url".into(), Box::new({
         let site = site.clone();
-        move |args| Some(Lit::Str(format!("{site}/wp-includes/{}", args.first().and_then(Lit::as_str).unwrap_or_default().trim_start_matches('/'))))
+        move |args| {
+            let base = if args.get(1).and_then(Lit::as_str) == Some("relative") { rustpress_core::urls::strip_origin(&site) } else { site.clone() };
+            Some(Lit::Str(format!("{base}/wp-includes/{}", args.first().and_then(Lit::as_str).unwrap_or_default().trim_start_matches('/'))))
+        }
     }));
+    h.functions.insert("get_rest_url".into(), Box::new({
+        let site = site.clone();
+        move |_| Some(Lit::Str(format!("{site}/wp-json/")))
+    }));
+    h.functions.insert("sanitize_url".into(), Box::new(|args| args.first().cloned()));
     h.functions.insert("content_url".into(), Box::new({
         let content = content.clone();
         move |args| Some(Lit::Str(format!("{content}/{}", args.first().and_then(Lit::as_str).unwrap_or_default().trim_start_matches('/'))))
@@ -328,9 +336,12 @@ fn marking(env: &LoaderEnv) -> LoaderEnv {
 fn with_nonces(deps: &mut crate::deps::Dependencies, env: &LoaderEnv) {
     let nonce = env.nonce.clone();
     deps.map_extra_text(&|text: &str| {
-        if !text.contains(NONCE_MARK) {
+        // A localization carries the mark JSON-encoded.
+        if !text.contains(NONCE_MARK) && !text.contains("\\u0001") {
             return text.to_owned();
         }
+        let text = text.replace("\\u0001", "\u{1}");
+        let text = text.as_str();
         let mut out = String::with_capacity(text.len());
         let mut rest = text;
         while let Some(start) = rest.find(NONCE_MARK) {

@@ -98,9 +98,11 @@ pub fn render_admin(site: &Site, user: &CurrentUser, ctx: &BarContext) -> String
     // Command palette
     if ctx.command_palette {
         let shortcut = site.trx("Ctrl+K", "keyboard shortcut to open the command palette");
-        let apple = serde_json::to_string(&site.trx("\u{2318}K", "keyboard shortcut to open the command palette")).unwrap_or_default().replace('<', "\\u003C").replace('>', "\\u003E");
+        let flags = rustpress_blocks::php_json::Flags { unescaped_slashes: true, unescaped_unicode: false };
+        let apple = rustpress_blocks::php_json::encode_with(&serde_json::Value::from(site.trx("\u{2318}K", "keyboard shortcut to open the command palette")), flags).replace('<', "\\u003C").replace('>', "\\u003E");
+        // A nowdoc whose closing marker is indented by one tab: every line loses one.
         let script = format!(
-            "( ( applePattern, appleOSLabel ) => {{\n\t\t\tif ( ! ( new RegExp( applePattern, 'i' ) ).test( navigator.userAgent ) ) {{\n\t\t\t\treturn;\n\t\t\t}}\n\t\t\tconst kbd = document.querySelector( '#wp-admin-bar-command-palette .ab-label kbd' );\n\t\t\tif ( kbd ) {{\n\t\t\t\tkbd.textContent = appleOSLabel;\n\t\t\t}}\n\t\t}} )( \"Macintosh|Mac OS X|Mac_PowerPC\", {apple} );\n//# sourceURL=wp_admin_bar_command_palette_menu"
+            "( \t( applePattern, appleOSLabel ) => {{\n\t\tif ( ! ( new RegExp( applePattern, 'i' ) ).test( navigator.userAgent ) ) {{\n\t\t\treturn;\n\t\t}}\n\t\tconst kbd = document.querySelector( '#wp-admin-bar-command-palette .ab-label kbd' );\n\t\tif ( kbd ) {{\n\t\t\tkbd.textContent = appleOSLabel;\n\t\t}}\n\t}} )( \"Macintosh|Mac OS X|Mac_PowerPC\", {apple} );\n//# sourceURL=wp_admin_bar_command_palette_menu"
         );
         top.push(format!(
             "<li role='group' id='wp-admin-bar-command-palette' class=\"hide-if-no-js\"><a class='ab-item' role=\"menuitem\" href='#' onclick='wp.data.dispatch( &quot;core/commands&quot; ).open(); return false;'><span class=\"ab-icon\" aria-hidden=\"true\"></span><span class=\"ab-label\"><kbd>{shortcut}</kbd><span class=\"screen-reader-text\"> {}</span></span></a><script>\n{script}\n</script>\n</li>",

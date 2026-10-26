@@ -215,6 +215,31 @@ impl<'a> Parser<'a> {
                 self.array_items(']')
             }
             '-' | '0'..='9' => self.number(),
+            '(' => {
+                // A cast: `(int) _x( '3', … )`.
+                let rest = self.rest();
+                let Some(close) = rest.find(')') else { return Lit::Unknown };
+                let kind = rest[1..close].trim().to_ascii_lowercase();
+                if !matches!(kind.as_str(), "int" | "integer" | "string" | "bool" | "boolean") {
+                    return Lit::Unknown;
+                }
+                self.at += close + 1;
+                let value = self.primary();
+                match (kind.as_str(), value) {
+                    ("int" | "integer", Lit::Int(i)) => Lit::Int(i),
+                    ("int" | "integer", Lit::Str(s)) => {
+                        let s = s.trim_start();
+                        let sign = usize::from(s.starts_with(['-', '+']));
+                        let digits = s[sign..].bytes().take_while(u8::is_ascii_digit).count();
+                        Lit::Int(s[..sign + digits].parse().unwrap_or(0))
+                    }
+                    ("int" | "integer", Lit::Bool(b)) => Lit::Int(i64::from(b)),
+                    ("string", Lit::Str(s)) => Lit::Str(s),
+                    ("string", Lit::Int(i)) => Lit::Str(i.to_string()),
+                    ("bool" | "boolean", value) => value.truthy().map_or(Lit::Unknown, Lit::Bool),
+                    _ => Lit::Unknown,
+                }
+            }
             '$' => {
                 self.at += 1;
                 let name = self.identifier();
@@ -289,6 +314,12 @@ impl<'a> Parser<'a> {
             let first = self.expr();
             self.skip_call_rest();
             return first;
+        }
+        // No filters are registered: `apply_filters( $name, $value, … )` is the value.
+        if is_call && lower == "apply_filters" {
+            self.at += 1;
+            let args = self.call_args();
+            return args.get(1).cloned().unwrap_or(Lit::Unknown);
         }
         if is_call {
             self.at += 1;

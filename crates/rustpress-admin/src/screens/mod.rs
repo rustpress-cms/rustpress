@@ -120,6 +120,8 @@ pub struct AdminRequest {
     pub user_agent: Option<String>,
     /// `$_SERVER['HTTP_REFERER']`.
     pub referer: Option<String>,
+    /// `$_SERVER['HTTP_HOST']`.
+    pub host: Option<String>,
 }
 
 impl AdminRequest {
@@ -489,6 +491,16 @@ pub async fn render(ctx: &Ctx<'_>, screen: &Screen, content: &str, assets: &Asse
             ),
             "after".into(),
         ));
+    }
+    // `wp_set_client_side_media_processing_flag()` on `admin_init`: the browser resizes images when the page is a
+    // secure context (SharedArrayBuffer).
+    let host = ctx.request.host.as_deref().unwrap_or("").split(':').next().unwrap_or("").to_lowercase();
+    if env.https || host == "localhost" || host.ends_with(".localhost") {
+        assets.inline.push(("wp-block-editor".into(), "window.__clientSideMediaProcessing = true;".into(), "before".into()));
+        let chromium = ctx.request.user_agent.as_deref().and_then(|ua| ua.split_once("Chrome/")).map(|(_, rest)| rest.bytes().take_while(u8::is_ascii_digit).fold(0u64, |n, d| n.saturating_mul(10).saturating_add(u64::from(d - b'0'))));
+        if chromium.is_some_and(|version| version >= 137) {
+            assets.inline.push(("wp-block-editor".into(), "window.__documentIsolationPolicy = true;".into(), "before".into()));
+        }
     }
     if !assets.inline.iter().any(|(handle, _, _)| handle == "mediaelement-core") {
         // `var mejsL10n`: the strings of MediaElement.js, read from the script loader of WordPress and translated.

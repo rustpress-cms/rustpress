@@ -239,7 +239,9 @@ pub async fn form(ctx: &Ctx<'_>, post: &Post) -> AdminResponse {
     let screen = Screen { file: "post.php".into(), parent_file: "upload.php".into(), submenu_file: Some("upload.php".into()), post_type: "attachment".into(), title: tr("Edit Media"), help: Some(baked.help), view_item: Some((tr("View Media File"), site.permalink(post).await.unwrap_or_default())), options: Some(options), ..Default::default() };
     let scripts: Vec<String> = ["admin-comments", "suggest", "post", "image-edit"].into_iter().map(String::from).collect();
     let word_count = serde_json::json!({"type": "words", "shortcodes": ["wp_caption", "caption", "gallery", "playlist", "audio", "video", "embed"]});
-    let assets = Assets { scripts, styles: vec!["imgareaselect".into()], late_scripts: vec!["wplink".into()], localize: vec![("word-count".into(), "wordCountL10n".into(), word_count)], ..Default::default() };
+    // `admin_footer`: the lock dialog, the backup notice and the arguments of the two comment list tables.
+    let pre_footer = format!("{}{}", super::meta_boxes::post_lock_dialog(ctx, "attachment", &tr("Media")), super::meta_boxes::edit_footer_notices(ctx, "attachment", 2));
+    let assets = Assets { scripts, styles: vec!["imgareaselect".into()], late_scripts: vec!["wplink".into()], localize: vec![("word-count".into(), "wordCountL10n".into(), word_count)], pre_footer, ..Default::default() };
     render(ctx, &screen, &html, &assets).await
 }
 

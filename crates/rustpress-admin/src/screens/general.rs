@@ -269,7 +269,9 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     h.push_str(&format!("<p class=\"submit\"><input type=\"submit\" name=\"submit\" id=\"submit\" class=\"button button-primary\" value=\"{}\"  /></p></form>\n\n</div>\n\n", esc_attr(&tr("Save Changes"))));
 
     let screen = Screen { file: "options-general.php".into(), parent_file: "options-general.php".into(), submenu_file: Some("options-general.php".into()), title, help: Some(help(ctx)), ..Default::default() };
-    let mut assets = Assets { head: options_general_js(ctx), ..Default::default() };
+    // The language drop-down sets the global `$locale` to '' when the site's language is not installed.
+    let installed = ctx.env.languages.iter().any(|l| l.locale == ctx.site().locale());
+    let mut assets = Assets { head: options_general_js(ctx), empty_locale: !installed, ..Default::default() };
     if ctx.can("upload_files") {
         super::media_ui::enqueue(ctx, &mut assets, 0).await;
         // `wp_enqueue_media()` runs in the page, after the header was printed.

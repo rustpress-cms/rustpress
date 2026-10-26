@@ -99,7 +99,8 @@ impl Scripts {
                 }
             }
         }
-        let json = serde_json::to_string(&l10n).unwrap_or_default().replace('<', "\\u003C").replace('>', "\\u003E");
+        let flags = rustpress_blocks::php_json::Flags { unescaped_slashes: true, unescaped_unicode: false };
+        let json = rustpress_blocks::php_json::encode_with(&l10n, flags).replace('<', "\\u003C").replace('>', "\\u003E");
         let mut script = format!("var {object_name} = {json};");
         if let Some(Extra::Text(data)) = self.deps.get_data(handle, "data")
             && !data.is_empty()

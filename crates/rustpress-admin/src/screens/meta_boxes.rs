@@ -269,6 +269,73 @@ pub fn revisions_box(ctx: &Ctx<'_>, rows: &[String]) -> String {
     out
 }
 
+/// `_admin_notice_post_locked()` for a post nobody else is editing: the hidden dialog shown when the lock is lost.
+/// `all_items` is the label of the list the dialog leads back to.
+pub fn post_lock_dialog(ctx: &Ctx<'_>, post_type: &str, all_items: &str) -> String {
+    let back = if post_type == "post" { ctx.admin_url("edit.php") } else { ctx.admin_url(&format!("edit.php?post_type={post_type}")) };
+    format!(
+        "\t<div id=\"post-lock-dialog\" class=\"notification-dialog-wrap hidden\">\n\t<div class=\"notification-dialog-background\"></div>\n\t<div class=\"notification-dialog\">\n\t\t\t<div class=\"post-taken-over\">\n\t\t\t<div class=\"post-locked-avatar\"></div>\n\t\t\t<p class=\"wp-tab-first\" tabindex=\"0\">\n\t\t\t<span class=\"currently-editing\"></span><br />\n\t\t\t<span class=\"locked-saving hidden\"><img src=\"{}\" width=\"16\" height=\"16\" alt=\"\" /> {}</span>\n\t\t\t<span class=\"locked-saved hidden\">{}</span>\n\t\t\t</p>\n\t\t\t\t\t\t<p><a class=\"button button-primary wp-tab-last\" href=\"{}\">{all_items}</a></p>\n\t\t</div>\n\t\t\t</div>\n\t</div>\n\t",
+        esc_url(&ctx.admin_url("images/spinner-2x.gif")),
+        ctx.tr("Saving revision&hellip;"),
+        ctx.tr("Your latest changes were saved as a revision."),
+        esc_url(&back)
+    )
+}
+
+/// `_admin_notice_post_locked()` while `holder` edits the post: the open dialog that offers to take it over.
+pub async fn post_locked_dialog(ctx: &Ctx<'_>, post: &rustpress_db::Post, holder: &rustpress_db::User, all_items: &str) -> String {
+    let tr = |s: &str| ctx.tr(s);
+    let public = ctx.site().is_post_type_viewable(&post.post_type);
+    let (sendback, sendback_text) = match super::common::wp_get_referer(ctx) {
+        Some(referer) if !referer.contains("post.php") && !referer.contains("post-new.php") => (referer, tr("Go back")),
+        _ => {
+            let list = if post.post_type == "post" { ctx.admin_url("edit.php") } else { ctx.admin_url(&format!("edit.php?post_type={}", post.post_type)) };
+            (list, all_items.to_owned())
+        }
+    };
+    let avatar = if ctx.site().show_avatars() {
+        let url = |size: u64| esc_url(&rustpress_blocks::content::avatar_url(&ctx.site().options, &holder.user_email, size));
+        format!("<img alt='' src='{}' srcset='{} 2x' class='avatar avatar-64 photo' height='64' width='64' loading='lazy' decoding='async'/>", url(64), url(128))
+    } else {
+        String::new()
+    };
+    // `get_preview_post_link()`: the latest content of a published post or of someone else's is in the autosave.
+    let preview = if public && let Ok(permalink) = ctx.site().permalink(post).await {
+        let mut link = permalink;
+        if post.post_status == "publish" || holder.id != post.post_author {
+            link = rustpress_core::urls::add_query_arg(&link, "preview_id", &post.id.to_string());
+            link = rustpress_core::urls::add_query_arg(&link, "preview_nonce", &ctx.create_nonce(&format!("post_preview_{}", post.id)));
+        }
+        let link = rustpress_core::urls::add_query_arg(&link, "preview", "true");
+        format!("\t\t<a class=\"button\" href=\"{}\">{}</a>\n\t\t\t", esc_url(&link), esc_html(&ctx.site().trx("Preview", "verb")))
+    } else {
+        String::new()
+    };
+    let take_over = format!("{}&get-post-lock=1", ctx.admin_url(&format!("post.php?post={}&action=edit&_wpnonce={}", post.id, ctx.create_nonce(&format!("lock-post_{}", post.id)))));
+    format!(
+        "\t<div id=\"post-lock-dialog\" class=\"notification-dialog-wrap\">\n\t<div class=\"notification-dialog-background\"></div>\n\t<div class=\"notification-dialog\">\n\t\t\t<div class=\"post-locked-message\">\n\t\t<div class=\"post-locked-avatar\">{avatar}</div>\n\t\t<p class=\"currently-editing wp-tab-first\" tabindex=\"0\">\n\t\t{}\t\t</p>\n\t\t\t\t<p>\n\t\t<a class=\"button\" href=\"{}\">{sendback_text}</a>\n\t\t{preview}\t<a class=\"button button-primary wp-tab-last\" href=\"{}\">{}</a>\n\t\t\t\t\t</p>\n\t\t</div>\n\t\t\t</div>\n\t</div>\n\t",
+        sprintf(&tr("%s is currently editing this post. Do you want to take over?"), &[&esc_html(&holder.display_name)]),
+        esc_url(&sendback),
+        esc_url(&take_over),
+        tr("Take over")
+    )
+}
+
+/// `_local_storage_notice()` and the `list_args` of the comment list tables of the screen (`$count` tables).
+pub fn edit_footer_notices(ctx: &Ctx<'_>, screen_id: &str, comment_tables: usize) -> String {
+    let tr = |s: &str| ctx.tr(s);
+    let mut out = format!(
+        "<div id=\"local-storage-notice\" class=\"notice is-dismissible hidden\"><p class=\"local-restore\">{}<button type=\"button\" class=\"button restore-backup\">{}</button></p><p class=\"help\">{}</p></div>",
+        tr("The backup of this post in your browser is different from the version below."),
+        tr("Restore the backup"),
+        tr("This will replace the current editor content with the last backup version. You can use undo and redo in the editor to get the old content back or to return to the restored version.")
+    );
+    for _ in 0..comment_tables {
+        out.push_str(&format!("<script>list_args = {{\"class\":\"WP_Post_Comments_List_Table\",\"screen\":{{\"id\":\"{screen_id}\",\"base\":\"post\"}}}};</script>\n"));
+    }
+    out
+}
+
 /// `natcasesort()`: natural order, case-insensitive.
 pub fn natcasesort(keys: &mut [String]) {
     fn chunks(s: &str) -> Vec<(bool, String)> {

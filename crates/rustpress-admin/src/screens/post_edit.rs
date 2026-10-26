@@ -286,6 +286,16 @@ async fn submit_box(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, is_new: bool, s
     h
 }
 
+/// `$post_type_object->labels->all_items`.
+fn all_items_label(ctx: &Ctx<'_>, info: &TypeInfo) -> String {
+    match info.name.as_str() {
+        "post" => ctx.tr("All Posts"),
+        "page" => ctx.tr("All Pages"),
+        "attachment" => ctx.tr("Media"),
+        _ => info.label.clone(),
+    }
+}
+
 /// The help tabs `edit-form-advanced.php` adds for posts and pages.
 fn edit_help(ctx: &Ctx<'_>, info: &TypeInfo) -> Help {
     let tr = |s: &str| ctx.tr(s);
@@ -732,13 +742,23 @@ async fn form(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, is_new: bool) -> Admi
     let db = ctx.env.db;
     let (edit_title, add_title) = labels(ctx, info);
     let title = if is_new { add_title.clone() } else { edit_title };
+    // `admin-header.php` names the post in the window title.
+    let window_title = match rustpress_blocks::content::the_title_for(site, post) {
+        post_title if !is_new && !post_title.is_empty() => rustpress_core::i18n::sprintf(&tr("%1$s &#8220;%2$s&#8221;"), &[&title, &post_title]),
+        _ => title.clone(),
+    };
     let sticky = sticky_ids(ctx).contains(&post.id);
     let post_title = if post.post_status == "auto-draft" { String::new() } else { post.post_title.clone() };
     let supports = |feature: &str| site.post_type_supports(&info.name, feature);
 
-    // `wp_set_post_lock()` of post.php; post-new.php sets none.
+    // `wp_check_post_lock()` and `wp_set_post_lock()` of post.php; post-new.php sets none.
+    let holder = match if is_new { None } else { super::ajax::post_lock_holder(ctx.env, &ctx.user, post.id).await } {
+        Some(id) => db.user(id).await.ok().flatten(),
+        None => None,
+    };
     let lock = format!("{}:{}", ctx.env.now, ctx.user.id);
-    if !is_new && let Some(writer) = ctx.env.writer {
+    let locks = !is_new && holder.is_none();
+    if locks && let Some(writer) = ctx.env.writer {
         writer.update_post_meta(post.id, "_edit_lock", &lock).await.or_log();
     }
 
@@ -768,7 +788,7 @@ async fn form(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, is_new: bool) -> Admi
         esc_attr(&post.post_status),
         esc_url(referer)
     ));
-    if !is_new {
+    if locks {
         h.push_str(&format!("<input type=\"hidden\" id=\"active_post_lock\" value=\"{lock}\" />\n\t"));
     }
     if post.post_status != "draft" {
@@ -844,6 +864,17 @@ async fn form(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, is_new: bool) -> Admi
             );
         }
         editor.html = html;
+        // The distraction-free button, and the quicktags of the comment reply form printed further down.
+        if !mobile {
+            editor.preinit = editor.preinit.replacen("code,more,close\"}", "code,more,close,dfw\"}", 1);
+        }
+        if supports("comments") {
+            editor.preinit = editor.preinit.replacen(
+                "\"}},\n\t\t\tref:",
+                "\"},'replycontent':{id:\"replycontent\",buttons:\"strong,em,link,block,del,ins,img,ul,ol,li,code,close\"}},\n\t\t\tref:",
+                1,
+            );
+        }
         h.push_str(&editor.html);
         editor_scripts = editor.scripts.clone();
         editor_footer = editor.init.clone();
@@ -879,11 +910,12 @@ async fn form(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, is_new: bool) -> Admi
     if supports("comments") {
         h.push_str(&super::comments::reply_form_single(ctx));
     }
-    h.push_str("\n\n");
+    h.push('\n');
     if post_title.is_empty() {
         h.push_str("<script>\ntry{document.post.title.focus();}catch(e){}\n</script>\n");
     }
-    h.push_str(&editor_preinit);
+    // `_WP_Editors::editor_js()` prints the settings in the footer, before the scripts that start the editors.
+    let editor_footer = format!("{editor_preinit}{editor_footer}");
 
     let (parent_file, mut submenu_file) = if info.name == "post" { ("edit.php".to_owned(), "edit.php".to_owned()) } else { (format!("edit.php?post_type={}", info.name), format!("edit.php?post_type={}", info.name)) };
     // post-new.php marks "Add New" in the menu.
@@ -903,13 +935,81 @@ async fn form(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, is_new: bool) -> Admi
         editor_expand: supports("editor").then(|| !super::common::wp_is_mobile(ctx)).filter(|shown| *shown).map(|_| expand_setting),
         ..Default::default()
     };
-    let screen = Screen { file: file.into(), parent_file, submenu_file: Some(submenu_file), post_type: info.name.clone(), title: title.clone(), help: Some(help), view_item, options: Some(options), ..Default::default() };
-    let mut scripts: Vec<String> = vec!["post".into(), "word-count".into(), "autosave".into(), "wp-lists".into(), "suggest".into(), "postbox".into(), "tags-box".into()];
-    scripts.extend(editor_scripts);
-    let mut assets = Assets { scripts, footer: editor_footer, ..Default::default() };
-    if supports("editor") && ctx.can("upload_files") {
-        super::media_ui::enqueue(ctx, &mut assets, post.id).await;
+    let screen = Screen { file: file.into(), parent_file, submenu_file: Some(submenu_file), post_type: info.name.clone(), title: window_title, help: Some(help), view_item, options: Some(options), ..Default::default() };
+    // The order of the enqueues: post.php/post-new.php (autosave, the comment scripts), edit-form-advanced.php (post,
+    // editor-expand, thickbox and the media library for featured images), then what `_WP_Editors::enqueue_scripts()`
+    // adds when the footer is printed.
+    let mobile = super::common::wp_is_mobile(ctx);
+    let mut early: Vec<String> = Vec::new();
+    if holder.is_none() {
+        early.push("autosave".into());
     }
+    if !is_new && supports("comments") {
+        early.push("admin-comments".into());
+    }
+    early.push("post".into());
+    if supports("editor") && !mobile {
+        early.push("editor-expand".into());
+    }
+    if mobile {
+        early.push("jquery-touch-punch".into());
+    }
+    let thumbnail_support = supports("thumbnail") && (ctx.env.block_theme || ctx.env.theme.adds_theme_support("post-thumbnails"));
+    if thumbnail_support {
+        early.push("thickbox".into());
+    }
+    let media_buttons = supports("editor") && ctx.can("upload_files");
+    let mut footer_time: Vec<String> = Vec::new();
+    if editor_scripts.iter().any(|s| s == "editor") && editor_scripts.iter().any(|s| s == "wp-tinymce") {
+        footer_time.push("editor".into());
+    }
+    if supports("editor") || supports("comments") {
+        footer_time.extend(["quicktags".into(), "wplink".into(), "jquery-ui-autocomplete".into()]);
+    }
+    if editor_scripts.iter().any(|s| s == "wp-tinymce") {
+        footer_time.push("wp-tinymce".into());
+    }
+    if media_buttons {
+        footer_time.extend(["thickbox".into(), "media-upload".into(), "wp-embed".into()]);
+    }
+    let localize = vec![
+        ("autosave".to_owned(), "autosaveL10n".to_owned(), serde_json::json!({"autosaveInterval": "60", "blog_id": "1"})),
+        ("word-count".to_owned(), "wordCountL10n".to_owned(), serde_json::json!({"type": "words", "shortcodes": ["wp_caption", "caption", "gallery", "playlist", "audio", "video", "embed"]})),
+    ];
+    let mut assets = Assets {
+        early_scripts: early,
+        post_header_scripts: footer_time,
+        localize,
+        footer: editor_footer,
+        // `add_thickbox()` brings its style along.
+        styles: if thumbnail_support { vec!["thickbox".into()] } else { Vec::new() },
+        post_header_styles: if !thumbnail_support && media_buttons { vec!["thickbox".into()] } else { Vec::new() },
+        // `wp_page_reload_on_back_button_js()` on `admin_print_scripts-post.php`.
+        head_early: "\t<script>\n\t\tif ( typeof performance !== 'undefined' && performance.navigation && performance.navigation.type === 2 ) {\n\t\t\tdocument.location.reload( true );\n\t\t}\n\t</script>\n\t".into(),
+        ..Default::default()
+    };
+    // `admin_footer`: the lock dialog of post.php, the media templates, the backup notice, the list tables' arguments.
+    assets.pre_footer = match &holder {
+        Some(holder) => super::meta_boxes::post_locked_dialog(ctx, post, holder, &all_items_label(ctx, info)).await,
+        None => super::meta_boxes::post_lock_dialog(ctx, &info.name, &all_items_label(ctx, info)),
+    };
+    if thumbnail_support || media_buttons {
+        let mut media = Assets::default();
+        super::media_ui::enqueue(ctx, &mut media, post.id).await;
+        // Before the header for featured images, else by the media button while the page is printed.
+        if thumbnail_support {
+            assets.early_scripts.extend(media.scripts);
+            assets.styles.extend(media.styles);
+        } else {
+            assets.post_header_scripts.splice(0..0, media.scripts);
+            assets.post_header_styles.extend(media.styles);
+        }
+        assets.localize.extend(media.localize);
+        assets.inline.extend(media.inline);
+        assets.pre_footer.push_str(&media.pre_footer);
+    }
+    let comment_tables = usize::from(boxes.iter().any(|b| b.id == "commentsdiv")) + usize::from(supports("comments"));
+    assets.pre_footer.push_str(&super::meta_boxes::edit_footer_notices(ctx, &screen_id, comment_tables));
     render(ctx, &screen, &h, &assets).await
 }
 
@@ -976,6 +1076,16 @@ pub async fn post_php(ctx: &Ctx<'_>) -> AdminResponse {
             let Some(post) = post else {
                 return die(ctx.env, 404, "WordPress &rsaquo; Error", &tr("You attempted to edit an item that does not exist. Perhaps it was deleted?"));
             };
+            // "Take over" in the dialog of a locked post.
+            if request.get("get-post-lock").is_some_and(|v| !v.is_empty()) && ctx.user.can_edit_post(&post) && post.post_status != "trash" {
+                if !ctx.verify_nonce(&format!("lock-post_{post_id}")) {
+                    return ays();
+                }
+                if let Some(writer) = ctx.env.writer {
+                    writer.update_post_meta(post_id, "_edit_lock", &format!("{}:{}", ctx.env.now, ctx.user.id)).await.or_log();
+                }
+                return redirect(&ctx.admin_url(&format!("post.php?post={post_id}&action=edit")));
+            }
             if post.post_type == "attachment" {
                 if !(ctx.user.can_edit_post(&post)) {
                     return die(ctx.env, 403, "WordPress &rsaquo; Error", &format!("<p>{}</p>", tr("Sorry, you are not allowed to edit this item.")));
