@@ -62,6 +62,11 @@ impl Site {
         self.settings.siteurl.starts_with("https://") || self.settings.home.starts_with("https://") || matches!(std::env::var("RUSTPRESS_ENVIRONMENT_TYPE").as_deref(), Ok("local" | "development"))
     }
 
+    /// `wp_get_environment_type()`.
+    pub fn environment_type(&self) -> String {
+        std::env::var("RUSTPRESS_ENVIRONMENT_TYPE").ok().filter(|e| ["local", "development", "staging", "production"].contains(&e.as_str())).unwrap_or_else(|| "production".to_owned())
+    }
+
     /// `get_option( 'show_avatars' )`: avatars are on unless the option is switched off.
     pub fn show_avatars(&self) -> bool {
         !matches!(self.options.get("show_avatars"), Some("0" | ""))

@@ -61,6 +61,25 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUs
         }
         return super::ajax::json(200, &super::site_health_info::sizes(env).await);
     }
+    if action == "health-check-site-status-result" {
+        if !nonce_ok_early(env, request, user, token) {
+            return text(403, "-1");
+        }
+        if !user.can("view_site_health_checks") {
+            return json(200, &json!({"success": false}));
+        }
+        // `set_transient( 'health-check-site-status-result', wp_json_encode( $_POST['counts'] ) )`.
+        let mut counts = serde_json::Map::new();
+        for (key, value) in &request.form {
+            if let Some(name) = key.strip_prefix("counts[").and_then(|k| k.strip_suffix(']')) {
+                counts.insert(name.to_owned(), value.parse::<i64>().map_or_else(|_| json!(value), |n| json!(n)));
+            }
+        }
+        if let Some(writer) = env.writer {
+            let _ = writer.update_option_with_autoload("_transient_health-check-site-status-result", &serde_json::Value::Object(counts).to_string(), "on").await;
+        }
+        return json(200, &json!({"success": true}));
+    }
     if action == "edit-theme-plugin-file" {
         return super::file_editor::ajax_edit(env, request, user, token).await;
     }

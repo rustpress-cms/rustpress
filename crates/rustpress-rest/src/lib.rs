@@ -287,6 +287,11 @@ impl<'a> Rest<'a> {
                 }
             }
             ["wp", "v2", "font-families" | "font-collections", ..] => self.fonts_route(&segments, "GET", &edit::Args::default(), params).await,
+            ["wp-block-editor", "v1", "url-details"] if params.get("url").is_none() => Ok(Err(RestError::missing_params(&["url"]))),
+            ["wp-block-editor", "v1", "url-details"] => Ok(Err(RestError::new("rest_cannot_view_url_details", "Sorry, you are not allowed to process remote URLs.", 401))),
+            ["wp-block-editor", "v1", "export"] => Ok(Err(RestError::new("rest_cannot_export_templates", "Sorry, you are not allowed to export templates and template parts.", 401))),
+            ["wp-block-editor", "v1", "navigation-fallback"] => Ok(Err(RestError::new("rest_cannot_create", "Sorry, you are not allowed to create Navigation Menus as this user.", 401))),
+            ["wp-site-health", "v1", "tests", _] | ["wp-site-health", "v1", "directory-sizes"] => Ok(Err(RestError::new("rest_forbidden", "Sorry, you are not allowed to do that.", 401))),
             ["wp", "v2", rest @ ..] if meta::denied(rest, params).is_some() => Ok(Err(meta::denied(rest, params).unwrap_or_else(|| RestError::new("rest_no_route", "No route was found matching the URL and request method.", 404)))),
             ["wp", "v2", base] | ["wp", "v2", base, _] if self.custom_route(base).is_some() => self.custom_route_dispatch(base, segments.get(3).copied(), params).await,
             _ => Ok(Err(RestError::new("rest_no_route", "No route was found matching the URL and request method.", 404))),

@@ -430,7 +430,7 @@ async fn rest_edit_route(app: &Arc<App>, request: Request<Body>) -> std::result:
     let uploads = app.config.wp_root.join("wp-content").join("uploads");
     let access = user.map(|user| rustpress_rest::edit::Access { user, app_password, writer: app.writer.as_ref(), now: crate::admin::now(), uploads });
     let rest = Rest::new(&loaded.site, &loaded.theme, &loaded.registry);
-    let reply = rest.handle_as(&route, &rest_query, access, rustpress_rest::edit::Request { method, body: rest_body }).await;
+    let reply = rest.handle_as(&route, &rest_query, access, rustpress_rest::edit::Request { method, body: rest_body, basic: crate::admin::basic_credentials(&parts.headers) }).await;
     let response = match reply {
         Ok(reply) => rest_response(reply),
         Err(e) => {

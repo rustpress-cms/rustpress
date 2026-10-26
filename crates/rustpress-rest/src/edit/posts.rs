@@ -520,7 +520,7 @@ impl Rest<'_> {
         }
         let context = args.str("context").unwrap_or_else(|| "view".to_owned());
         if sub == "autosaves" {
-            return self.autosaves(kind, &parent_post, method, args, &context).await;
+            return self.autosaves(kind, &parent_post, method, args, &context, id).await;
         }
         let revisions = self.site.db.posts(&PostQuery { post_types: vec!["revision".into()], statuses: vec!["inherit".into()], parent: Some(parent_id), order_by: OrderBy::Date, order: Order::Desc, ..Default::default() }).await?;
         let revisions: Vec<Post> = revisions.into_iter().filter(|r| !r.post_name.contains("autosave")).collect();
@@ -577,11 +577,15 @@ impl Rest<'_> {
         Ok(Value::Object(data))
     }
 
-    async fn autosaves(&self, kind: Kind<'_>, parent: &Post, method: &str, args: &Args, context: &str) -> Result<Outcome> {
+    async fn autosaves(&self, kind: Kind<'_>, parent: &Post, method: &str, args: &Args, context: &str, id: Option<&str>) -> Result<Outcome> {
         let user = self.user().map_or(0, |u| u.id);
         let existing = self.site.db.posts(&PostQuery { post_types: vec!["revision".into()], statuses: vec!["inherit".into()], parent: Some(parent.id), author: Some(user), order_by: OrderBy::Date, order: Order::Desc, ..Default::default() }).await?;
         let autosave = existing.into_iter().find(|r| r.post_name == format!("{}-autosave-v1", parent.id));
         match method {
+            "GET" if id.is_some() => match autosave.as_ref().filter(|a| id.and_then(|i| i.parse::<u64>().ok()) == Some(a.id)) {
+                Some(a) => Ok(Ok(Resp::item(self.prepare_revision(a, parent, kind, context).await?))),
+                None => Ok(Err(RestError::new("rest_post_no_autosave", "There is no autosave revision for this post.", 404))),
+            },
             "GET" => {
                 let items = match &autosave {
                     Some(a) => vec![self.prepare_revision(a, parent, kind, context).await?],

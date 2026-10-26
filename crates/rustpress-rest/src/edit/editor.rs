@@ -119,6 +119,17 @@ impl Rest<'_> {
                 Ok(resp)
             }
             ["wp", "v2", "themes", name] if get && self.can("edit_theme_options") && *name == self.theme.stylesheet => Ok(Resp::item(self.theme_object().await)),
+            ["wp-block-editor", "v1", "url-details"] if get => {
+                if args.str("url").is_none() {
+                    Err(RestError::missing_params(&["url"]))
+                } else if !self.can("edit_posts") {
+                    Err(self.forbidden("rest_cannot_view_url_details", "Sorry, you are not allowed to process remote URLs."))
+                } else {
+                    // RustPress makes no requests to other servers.
+                    Err(RestError::new("no_response", "URL not found. Response returned a non-200 status code for this URL.", 404).after_permission_check())
+                }
+            }
+            ["wp", "v2", "block-directory", "search"] if get && args.str("term").is_none() => Err(RestError::missing_params(&["term"])),
             ["wp", "v2", "plugins"] | ["wp", "v2", "sidebars"] | ["wp", "v2", "widgets"] | ["wp", "v2", "menus"] | ["wp", "v2", "menu-items"] | ["wp", "v2", "widget-types"] | ["wp", "v2", "menu-locations"] | ["wp", "v2", "pattern-directory", "patterns"] | ["wp", "v2", "block-directory", "search"] if get => empty_list(),
             ["wp", "v2", "block-types"] | ["wp", "v2", "block-types", _] | ["wp", "v2", "block-types", _, _] if get => empty_list(),
             ["wp", "v2", "block-patterns", "patterns"] if get => Ok(Resp::item(self.patterns_json())),

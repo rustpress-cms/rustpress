@@ -184,7 +184,7 @@ async fn debug_data(ctx: &Ctx<'_>) -> Vec<Section> {
     let registration = site.options.string("users_can_register", "0") == "1";
     let blog_public = site.options.string("blog_public", "1") != "0";
     let comment_status = site.options.string("default_comment_status", "open");
-    let environment = std::env::var("RUSTPRESS_ENVIRONMENT_TYPE").ok().filter(|e| ["local", "development", "staging", "production"].contains(&e.as_str())).unwrap_or_else(|| "production".to_owned());
+    let environment = site.environment_type();
     let user_count = ctx.env.db.list_users(&rustpress_db::UserListQuery { limit: 1, orderby: "ID".into(), ..Default::default() }).await.map(|(_, n)| n).unwrap_or(0);
     let user_locale = ctx.env.db.user_meta(ctx.user.id, "locale").await.ok().flatten().filter(|l| !l.is_empty()).unwrap_or_else(|| site.locale());
     info.push(Section {
@@ -444,6 +444,12 @@ pub async fn body(ctx: &Ctx<'_>) -> String {
 
 /// The Ajax action `health-check-get-sizes`: the sizes of the directories and the database.
 pub async fn sizes(env: &super::AdminEnv<'_>) -> serde_json::Value {
+    let root = env.loader.includes.parent().map(Path::to_path_buf).unwrap_or_default();
+    serde_json::json!({"success": true, "data": rustpress_core::health::directory_sizes(env.site, &root).await})
+}
+
+#[allow(dead_code)]
+async fn sizes_old(env: &super::AdminEnv<'_>) -> serde_json::Value {
     use serde_json::{Map, Value as Json, json};
     let root = env.loader.includes.parent().map(Path::to_path_buf).unwrap_or_default();
     let content = root.join("wp-content");

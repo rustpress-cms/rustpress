@@ -7,6 +7,7 @@ mod block_renderer;
 mod caps;
 mod editor;
 mod fonts;
+mod health;
 mod icons;
 mod media;
 mod navigation;
@@ -66,6 +67,8 @@ pub enum Body {
 pub struct Request {
     pub method: String,
     pub body: Body,
+    /// The user and password of an `Authorization: Basic` header.
+    pub basic: Option<(String, String)>,
 }
 
 /// The parameters of a request: the query string and the body in one map (the body wins).
@@ -264,8 +267,9 @@ impl Rest<'_> {
             ["wp", "v2", "template-parts", ..] => self.templates_route(templates::TKind::Part, &segments, &method, &args, params).await.map(Some),
             ["wp", "v2", "block-renderer", namespace, name] if get || method == "POST" => self.block_renderer(namespace, name, &args, params).await.map(Some),
             ["oembed", "1.0", "proxy"] if get => Ok(Some(if self.can("edit_posts") { Err(RestError::new("oembed_invalid_url", &self.site.tr("Not Found"), 404).after_permission_check()) } else { Err(self.forbidden("rest_forbidden", &self.site.tr("Sorry, you are not allowed to make proxied oEmbed requests."))) })),
+            ["wp-site-health", "v1", ..] if get => self.health_route(&segments).await.map(Some),
             ["wp", "v2", "view-config"] if get => self.view_config(&args).await.map(Some),
-            ["wp", "v2", "icons", ..] if get =>Ok(Some(self.icons_route(&segments, &args))),
+            ["wp", "v2", "icons", ..] | ["wp", "v2", "icon-collections", ..] if get => Ok(Some(self.icons_route(&segments, &args))),
             ["wp-block-editor", "v1", "navigation-fallback"] if get => self.navigation_fallback(&args).await.map(Some),
             _ => self.editor_route(&segments, &method, &args, params).await,
         }

@@ -99,6 +99,14 @@ impl Rest<'_> {
         }
         let icons = self.icons();
         match segments {
+            ["wp", "v2", "icon-collections"] => Ok(Resp::item(json!([self.icon_collection()]))),
+            ["wp", "v2", "icon-collections", slug] => {
+                if *slug == "core" {
+                    Ok(Resp::item(self.icon_collection()))
+                } else {
+                    Err(RestError::new("rest_icon_collection_not_found", &self.site.tr("Icon collection not found: \"%s\".").replace("%s", slug), 404))
+                }
+            }
             ["wp", "v2", "icons"] => Ok(Resp::item(Value::Array(self.filter_icons(icons, None, args.str("search").as_deref())))),
             ["wp", "v2", "icons", collection] => {
                 if *collection != "core" {
@@ -115,6 +123,10 @@ impl Rest<'_> {
             }
             _ => Err(RestError::new("rest_no_route", &self.site.tr("No route was found matching the URL and request method."), 404)),
         }
+    }
+
+    fn icon_collection(&self) -> Value {
+        json!({"slug": "core", "label": self.site.tr("WordPress"), "description": self.site.tr("Default icon collection.")})
     }
 
     fn filter_icons(&self, icons: Vec<Value>, collection: Option<&str>, search: Option<&str>) -> Vec<Value> {

@@ -8,6 +8,7 @@ pub mod canonical;
 pub mod datetime;
 mod entities;
 pub mod formatting;
+pub mod health;
 pub mod hierarchy;
 pub mod i18n;
 pub mod locale;

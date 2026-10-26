@@ -265,10 +265,20 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
             *count = json!(count.as_u64().unwrap_or(0) + 1);
         }
     }
+    // The tests that need the REST API: the screen asks for them one by one.
+    let rest = |name: &str| ctx.site().rest_url(&format!("wp-site-health/v1/tests/{name}"));
+    let mut asynchronous = Vec::new();
+    for name in ["dotorg-communication", "background-updates", "loopback-requests", "https-status"] {
+        asynchronous.push(json!({"test": rest(name), "has_rest": true, "completed": false, "headers": []}));
+    }
+    asynchronous.push(json!({"test": rest("authorization-header"), "has_rest": true, "completed": false, "headers": {"Authorization": "Basic dXNlcjpwd2Q="}}));
+    if ctx.site().environment_type() == "production" {
+        asynchronous.push(json!({"test": rest("page-cache"), "has_rest": true, "completed": false, "headers": []}));
+    }
     let data = json!({
         "screen": "site-health",
         "nonce": {"site_status": ctx.create_nonce("health-check-site-status"), "site_status_result": ctx.create_nonce("health-check-site-status-result")},
-        "site_status": {"direct": direct, "async": [], "issues": issues},
+        "site_status": {"direct": direct, "async": asynchronous, "issues": issues},
     });
     let baked = super::pages::load(ctx, "site-health");
     let debug_tab = ctx.request.get("tab") == Some("debug");

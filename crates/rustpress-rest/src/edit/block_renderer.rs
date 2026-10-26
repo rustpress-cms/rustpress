@@ -60,6 +60,10 @@ fn typed(value: Value, schema: Option<&Value>) -> Value {
 
 impl Rest<'_> {
     pub(super) async fn block_renderer(&self, namespace: &str, name: &str, args: &Args, params: &Params) -> Result<Outcome> {
+        // The route accepts only the `edit` context.
+        if args.str("context").as_deref().unwrap_or("view") != "edit" {
+            return Ok(Err(RestError::invalid_param("context", crate::error::Msg::new("%1$s is not %2$s.").with(&["context", "edit"]), "rest_not_in_enum")));
+        }
         let post_id = args.u64("post_id").unwrap_or(0);
         let mut post = None;
         if post_id > 0 {

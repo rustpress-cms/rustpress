@@ -228,7 +228,7 @@ pub enum RestAuth {
 }
 
 /// `Authorization: Basic base64( login:password )`.
-fn basic_credentials(headers: &HeaderMap) -> Option<(String, String)> {
+pub fn basic_credentials(headers: &HeaderMap) -> Option<(String, String)> {
     use base64::Engine;
     let value = headers.get("authorization")?.to_str().ok()?;
     let encoded = value.strip_prefix("Basic ").or_else(|| value.strip_prefix("basic "))?;
@@ -240,8 +240,19 @@ fn basic_credentials(headers: &HeaderMap) -> Option<(String, String)> {
 
 pub async fn rest_auth(loaded: &Loaded, headers: &HeaderMap, query: &str, body_nonce: Option<&str>) -> RestAuth {
     let Some(parts) = &loaded.admin else { return RestAuth::Anonymous };
+    let scheme = rustpress_auth::Scheme::LoggedIn;
+    let name = parts.auth.cookie_name(scheme);
+    let cookies = cookies_of(headers);
+    let at = now();
+    // `determine_current_user`: the cookie comes before the application password, which only counts when nobody
+    // is signed in by cookie.
+    let session = match cookies.iter().find(|(k, _)| *k == name).map(|(_, v)| v.clone()) {
+        Some(cookie) => parts.auth.validate_cookie(&loaded.site.db, &cookie, scheme, at, false).await.ok().flatten(),
+        None => None,
+    };
     // Application passwords work where WordPress offers them (HTTPS, or a local environment).
-    if loaded.site.app_passwords_available()
+    if session.is_none()
+        && loaded.site.app_passwords_available()
         && let Some((login, password)) = basic_credentials(headers)
     {
         return match rustpress_auth::app_passwords::authenticate(&loaded.site.db, &login, &password).await {
@@ -261,12 +272,7 @@ pub async fn rest_auth(loaded: &Loaded, headers: &HeaderMap, query: &str, body_n
             None => RestAuth::BadAppPassword,
         };
     }
-    let scheme = rustpress_auth::Scheme::LoggedIn;
-    let name = parts.auth.cookie_name(scheme);
-    let cookies = cookies_of(headers);
-    let Some(cookie) = cookies.iter().find(|(k, _)| *k == name).map(|(_, v)| v.clone()) else { return RestAuth::Anonymous };
-    let at = now();
-    let Some(session) = parts.auth.validate_cookie(&loaded.site.db, &cookie, scheme, at, false).await.ok().flatten() else { return RestAuth::Anonymous };
+    let Some(session) = session else { return RestAuth::Anonymous };
     let nonce = headers.get("x-wp-nonce").and_then(|v| v.to_str().ok()).map(str::to_owned).or_else(|| pairs_of(query).into_iter().find(|(k, _)| k == "_wpnonce").map(|(_, v)| v)).or_else(|| body_nonce.map(str::to_owned));
     let Some(nonce) = nonce else { return RestAuth::Anonymous };
     let Ok(user) = rustpress_auth::CurrentUser::load(&loaded.site.db, &parts.roles, &session.user).await else { return RestAuth::Anonymous };

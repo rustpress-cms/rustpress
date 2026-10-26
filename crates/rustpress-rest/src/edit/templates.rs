@@ -643,9 +643,21 @@ impl Rest<'_> {
                 _ => Ok(Err(RestError::new("rest_no_route", "No route was found matching the URL and request method.", 404))),
             };
         }
-        if rest == ["lookup"] && method == "GET" && kind == TKind::Template {
+        if rest == ["lookup"] && method == "GET" {
+            // The required parameter is checked before the permission.
+            if args.str("slug").is_none() {
+                return Ok(Err(RestError::missing_params(&["slug"])));
+            }
             if let Err(e) = self.templates_permission() {
                 return Ok(Err(e));
+            }
+            if kind == TKind::Part {
+                let slug = args.str("slug").unwrap_or_default();
+                let found = self.block_templates(TKind::Part, None, None, None, std::slice::from_ref(&slug)).await?.into_iter().next();
+                return Ok(Ok(Resp::item(match found {
+                    Some(tpl) => self.tpl_json(&tpl, edit).await,
+                    None => json!({}),
+                })));
             }
             return self.template_lookup(args, params).await;
         }
