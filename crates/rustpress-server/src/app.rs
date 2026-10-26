@@ -35,6 +35,10 @@ pub struct App {
     statics: Statics,
     loaded: RwLock<Arc<Loaded>>,
     reload: Mutex<()>,
+    /// The app itself, for reloading in the background.
+    this: std::sync::OnceLock<std::sync::Weak<App>>,
+    /// A background reload is running.
+    reloading: std::sync::atomic::AtomicBool,
 }
 
 impl App {
@@ -42,7 +46,17 @@ impl App {
         let db = Db::connect(&config.database_url, &config.table_prefix).await?;
         let writer = if config.allow_writes { Some(rustpress_db::Writer::connect(&config.database_url, &config.table_prefix).await?) } else { None };
         let loaded = Self::load(&config, &db).await?;
-        let app = Arc::new(Self { statics: Statics::new(&config.wp_root), config, db, writer, loaded: RwLock::new(Arc::new(loaded)), reload: Mutex::new(()) });
+        let app = Arc::new(Self {
+            statics: Statics::new(&config.wp_root),
+            config,
+            db,
+            writer,
+            loaded: RwLock::new(Arc::new(loaded)),
+            reload: Mutex::new(()),
+            this: std::sync::OnceLock::new(),
+            reloading: std::sync::atomic::AtomicBool::new(false),
+        });
+        let _ = app.this.set(Arc::downgrade(&app));
         if app.writer.is_some() {
             tokio::spawn(scheduler(app.clone()));
         }
@@ -58,12 +72,33 @@ impl App {
     }
 
     /// The current snapshot; options and theme are re-read once it is older than `reload_secs`.
-    /// A failed reload keeps serving the previous snapshot.
+    /// A failed reload keeps serving the previous snapshot. The reload runs in the background while requests keep
+    /// the snapshot they have, except with `reload_secs` of 1 or less (development: every request sees the
+    /// database as it is now).
     pub async fn current(&self) -> Arc<Loaded> {
         let snapshot = self.loaded.read().await.clone();
         if snapshot.loaded_at.elapsed() < Duration::from_secs(self.config.reload_secs) {
             return snapshot;
         }
+        if self.config.reload_secs > 1 {
+            if !self.reloading.swap(true, std::sync::atomic::Ordering::AcqRel) {
+                match self.this.get().and_then(std::sync::Weak::upgrade) {
+                    Some(app) => {
+                        tokio::spawn(async move {
+                            app.reload_if_stale().await;
+                            app.reloading.store(false, std::sync::atomic::Ordering::Release);
+                        });
+                    }
+                    None => self.reloading.store(false, std::sync::atomic::Ordering::Release),
+                }
+            }
+            return snapshot;
+        }
+        self.reload_if_stale().await
+    }
+
+    /// Reloads when the snapshot is (still) older than `reload_secs`; returns the snapshot to use.
+    async fn reload_if_stale(&self) -> Arc<Loaded> {
         let _guard = self.reload.lock().await;
         let snapshot = self.loaded.read().await.clone();
         if snapshot.loaded_at.elapsed() < Duration::from_secs(self.config.reload_secs) {

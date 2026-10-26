@@ -437,7 +437,8 @@ pub async fn admin_page(loaded: &Loaded, config: &Config, writer: Option<&rustpr
         remote_addr: client.ip.clone(),
         user_agent: headers.get(header::USER_AGENT).and_then(|v| v.to_str().ok()).map(str::to_owned),
     };
-    let reply = rustpress_admin::screens::handle(&env, &request).await;
+    // The caches that lists prime for the request (terms, meta, rows of posts).
+    let reply = rustpress_db::Db::with_term_cache(rustpress_admin::screens::handle(&env, &request)).await;
     let mut response = if reply.bytes.is_empty() { Response::new(Body::from(reply.body)) } else { Response::new(Body::from(reply.bytes)) };
     *response.status_mut() = StatusCode::from_u16(reply.status).unwrap_or(StatusCode::OK);
     for (name, value) in &reply.headers {

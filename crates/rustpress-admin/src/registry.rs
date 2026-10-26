@@ -308,9 +308,73 @@ fn base_vars() -> Vars {
     vars
 }
 
+/// The registries built from `script-loader.php`, per configuration. Interpreting the PHP took a large part of
+/// every page of the administration; the nonces of the user are put in afterwards (see [`with_nonces`]).
+type RegistryKey = (PathBuf, String, String, String, bool, bool, bool);
+
+fn registry_key(env: &LoaderEnv) -> RegistryKey {
+    (env.includes.clone(), env.site_url.clone(), env.content_url.clone(), env.version.clone(), env.rtl, env.separate_block_assets, env.compressed_tinymce)
+}
+
+const NONCE_MARK: char = '\u{1}';
+
+/// The environment with a nonce function that leaves a mark (`\u{1}nonce:<action>\u{1}`) instead of a nonce.
+fn marking(env: &LoaderEnv) -> LoaderEnv {
+    let mark: NonceFn = std::sync::Arc::new(|action: &str| format!("{NONCE_MARK}nonce:{action}{NONCE_MARK}"));
+    LoaderEnv { nonce: Some(mark), ..env.clone() }
+}
+
+/// Replaces the marks of [`marking`] with the user's nonces (or nothing, without a user).
+fn with_nonces(deps: &mut crate::deps::Dependencies, env: &LoaderEnv) {
+    let nonce = env.nonce.clone();
+    deps.map_extra_text(&|text: &str| {
+        if !text.contains(NONCE_MARK) {
+            return text.to_owned();
+        }
+        let mut out = String::with_capacity(text.len());
+        let mut rest = text;
+        while let Some(start) = rest.find(NONCE_MARK) {
+            out.push_str(&rest[..start]);
+            let after = &rest[start + NONCE_MARK.len_utf8()..];
+            match (after.strip_prefix("nonce:"), after.find(NONCE_MARK)) {
+                (Some(_), Some(end)) => {
+                    let action = &after["nonce:".len()..end];
+                    out.push_str(&nonce.as_ref().map(|n| n(action)).unwrap_or_default());
+                    rest = &after[end + NONCE_MARK.len_utf8()..];
+                }
+                _ => {
+                    out.push(NONCE_MARK);
+                    rest = after;
+                }
+            }
+        }
+        out.push_str(rest);
+        out
+    });
+}
+
 /// Every script WordPress registers on its own: `wp_default_scripts()`, the vendor scripts and the
-/// packages of `script-loader-packages.php`.
+/// packages of `script-loader-packages.php`. Built once per configuration and copied.
 pub fn default_scripts(env: &LoaderEnv) -> Scripts {
+    static CACHE: std::sync::OnceLock<std::sync::Mutex<HashMap<RegistryKey, crate::deps::Dependencies>>> = std::sync::OnceLock::new();
+    let cache = CACHE.get_or_init(Default::default);
+    let key = registry_key(env);
+    let cached = cache.lock().expect("registry cache").get(&key).cloned();
+    let mut deps = match cached {
+        Some(deps) => deps,
+        None => {
+            let built = build_default_scripts(&marking(env)).deps;
+            cache.lock().expect("registry cache").insert(key, built.clone());
+            built
+        }
+    };
+    with_nonces(&mut deps, env);
+    let mut scripts = Scripts::new(&env.site_url, &env.content_url, &env.version);
+    scripts.deps = deps;
+    scripts
+}
+
+fn build_default_scripts(env: &LoaderEnv) -> Scripts {
     let php = read(&env.includes.join("script-loader.php"));
     let mut scripts = Scripts::new(&env.site_url, &env.content_url, &env.version);
     let mut vars = base_vars();
@@ -405,8 +469,27 @@ fn register_packages(scripts: &mut Scripts, env: &LoaderEnv) {
     }
 }
 
-/// Every stylesheet WordPress registers on its own (`wp_default_styles()`).
+/// Every stylesheet WordPress registers on its own (`wp_default_styles()`), built once per configuration.
 pub fn default_styles(env: &LoaderEnv) -> Styles {
+    static CACHE: std::sync::OnceLock<std::sync::Mutex<HashMap<RegistryKey, crate::deps::Dependencies>>> = std::sync::OnceLock::new();
+    let cache = CACHE.get_or_init(Default::default);
+    let key = registry_key(env);
+    let cached = cache.lock().expect("registry cache").get(&key).cloned();
+    let mut deps = match cached {
+        Some(deps) => deps,
+        None => {
+            let built = build_default_styles(&marking(env)).deps;
+            cache.lock().expect("registry cache").insert(key, built.clone());
+            built
+        }
+    };
+    with_nonces(&mut deps, env);
+    let mut styles = Styles::new(&env.site_url, &env.content_url, &env.version, env.rtl);
+    styles.deps = deps;
+    styles
+}
+
+fn build_default_styles(env: &LoaderEnv) -> Styles {
     let php = read(&env.includes.join("script-loader.php"));
     let mut styles = Styles::new(&env.site_url, &env.content_url, &env.version, env.rtl);
     let mut vars = base_vars();

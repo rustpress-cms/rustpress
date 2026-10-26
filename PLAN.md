@@ -356,6 +356,8 @@ Vollständiger Review des Bestands (fünf Durchgänge über alle Krates, ~77 000
 | `/wp-json/wp/v2/posts?per_page=100` | 385 ms | 95 / 64 ms | 111 / 92 ms |
 | `…?per_page=100&_fields=id` | 330 ms | 25 ms | 19 ms |
 
+Verwaltung (gleiche Messung, angemeldet als rpadmin): `edit.php` 225 → 52 ms (Referenz 59), `options-general.php` 65 → 38 ms (41), `/wp-admin/` 86 → 59 ms (48), `post.php?action=edit` 213 → 139 ms (104), `edit-comments.php` 127 → 82 ms (48). Ursachen: die Skript-/Style-Registry wurde pro Aufruf aus `script-loader.php` interpretiert (jetzt einmal pro Konfiguration, Nonces werden als Platzhalter eingesetzt und pro Benutzer ersetzt, P14), das Neuladen des Snapshots lief im Anfragepfad (jetzt im Hintergrund, S19; mit `RUSTPRESS_RELOAD_SECS` ≤ 1 weiter synchron für die Vergleiche), Listen ohne Vorab-Laden (P5).
+
 Erledigt: P1 (Regex-Cache), P2 teilweise (`rustpress_core::files`), P3 (Kommentar-Cache je Render), P4 (`_fields`, Terme/Meta/Beitragsbilder/Revisionszahlen gebündelt pro Liste), Seitenliste ohne Eltern-Abfragen. Die Streuung der Mediane kommt von der Latenz Windows→WSL-Datenbank (jede Abfrage ~0,3–0,5 ms). Offen: P5 (Admin-Listen), P6 (targetHints), P7 (globales Stylesheet), P8 (Query-Block mehrfach), P11–P16.
 
 ### Phase 4 – Wartbarkeit und Tests
@@ -364,6 +366,7 @@ Erledigt: P1 (Regex-Cache), P2 teilweise (`rustpress_core::files`), P3 (Kommenta
 18. Kleine WP-Abweichungen aus A4 nachziehen (jede per Orakelvergleich).
 
 ### Phase 5 – Fehlende Features (wp-admin und REST)
+- (neu) Listenansicht „Auszug“ (`mode=excerpt`, `posts_list_mode` über `set_user_setting()`/`user-settings`): RustPress wertet `mode` nicht aus.
 19. `customize.php` – **Entscheidung nötig**: Für Block-Themes nicht im Menü; vollständiger Customizer ist groß. Vorschlag: nur die 403/Weiterleitungs-Semantik, keine Oberfläche.
 20. `media-upload.php` (alte Medienbox des klassischen Editors) – Vorschlag: weglassen, nur Block-Editor.
 21. REST: `widgets`/`sidebars`/`widget-types` mit Daten aus `sidebars_widgets`/`widget_*` (nur Lesen), `block-types` mit echten Daten aus `block.json`, `font-collections` (Google-Fonts-Transient wie Pattern-Verzeichnis), `menu-items`/`menus`/`menu-locations` (leer, aber korrekte Fehler), Site-Health-Texte (`background-updates`, `dotorg-communication`, `loopback-requests`, `authorization-header`, `page-cache`) an WP angleichen, `view-config` Fehler-`params`.

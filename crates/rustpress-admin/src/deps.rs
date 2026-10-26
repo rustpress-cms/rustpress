@@ -82,6 +82,23 @@ pub struct Dependencies {
 }
 
 impl Dependencies {
+    /// Rewrites every text of the registered items' extra data (localized scripts, inline code).
+    pub fn map_extra_text(&mut self, f: &dyn Fn(&str) -> String) {
+        for dependency in &mut self.registered {
+            for extra in dependency.extra.values_mut() {
+                match extra {
+                    Extra::Text(text) => *text = f(text),
+                    Extra::List(items) => {
+                        for item in items.iter_mut() {
+                            *item = f(item);
+                        }
+                    }
+                    Extra::Bool(_) | Extra::Int(_) => {}
+                }
+            }
+        }
+    }
+
     pub fn new(kind: Kind) -> Self {
         Self { kind, registered: Vec::new(), index: HashMap::new(), queue: Vec::new(), to_do: Vec::new(), done: Vec::new(), args: HashMap::new(), groups: HashMap::new(), queued_before_register: Vec::new() }
     }

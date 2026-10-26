@@ -501,7 +501,8 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         (posts, levels)
     };
 
-    // Related data of the rows
+    // Related data of the rows; terms, meta and featured images of all rows in a few queries.
+    let _ = db.prime_loop(&posts).await;
     let ids: Vec<u64> = posts.iter().map(|p| p.id).collect();
     let pending = db.pending_comment_counts(&ids).await.unwrap_or_default();
     let author_ids: Vec<u64> = posts.iter().map(|p| p.post_author).collect();

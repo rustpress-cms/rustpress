@@ -67,7 +67,10 @@ impl Options {
     pub async fn fetch(&self, db: &Db, name: &str) -> Result<Option<String>> {
         match self.get(name) {
             Some(value) => Ok(Some(value.to_owned())),
-            None => Ok(db.option(name).await?),
+            None => {
+                tracing::trace!(name, "option not autoloaded, read from the database");
+                Ok(db.option(name).await?)
+            }
         }
     }
 }
