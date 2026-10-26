@@ -243,6 +243,8 @@ pub struct ThemeJson {
     pub core: Value,
     pub theme: Value,
     pub user: Value,
+    /// The theme layers as the files say (and the block style variations), before the opt-in settings are expanded.
+    pub raw_theme: Value,
 }
 
 impl ThemeJson {
@@ -259,14 +261,17 @@ impl ThemeJson {
     /// Core defaults, then the styles blocks declare themselves (`blocks`), the theme and the user.
     pub fn with_layers(core: Value, blocks: Value, parent: Option<Value>, child: Option<Value>, user: Option<Value>, partials: &[Value]) -> Self {
         let mut theme = Value::Object(Map::new());
+        let mut raw_theme = Value::Object(Map::new());
         for layer in [parent, child].into_iter().flatten() {
             let mut layer = layer;
+            deep_merge(&mut raw_theme, &layer);
             opt_in_settings(&mut layer);
             set_spacing_sizes(&mut layer, "theme");
             deep_merge(&mut theme, &layer);
         }
         for partial in partials {
             add_variation_partial(&mut theme, partial);
+            add_variation_partial(&mut raw_theme, partial);
         }
         let mut core = core;
         opt_in_settings(&mut core);
@@ -281,7 +286,7 @@ impl ThemeJson {
         }
         deep_merge(&mut merged, &theme);
         deep_merge(&mut merged, &user);
-        Self { merged, core, theme, user }
+        Self { merged, core, theme, user, raw_theme }
     }
 
     pub fn settings(&self) -> Value {

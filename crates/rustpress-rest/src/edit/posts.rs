@@ -567,12 +567,22 @@ impl Rest<'_> {
         data.insert("slug".into(), json!(revision.post_name));
         data.insert("guid".into(), if context == "edit" { json!({"rendered": revision.guid, "raw": revision.guid}) } else { json!({"rendered": revision.guid}) });
         let rendered = |text: &str| rustpress_core::formatting::wpautop(&self.site.texturize(text));
+        // The content of a revision is shown as the content of its post (`setup_postdata( $parent )`).
+        let env = crate::util::env(self);
+        let shared = std::sync::Arc::new(parent.clone());
+        let content_rendered = rustpress_blocks::content::the_content(&env, &shared, &revision.post_content).await?;
         data.insert("title".into(), if context == "edit" { json!({"raw": revision.post_title, "rendered": self.site.texturize(&revision.post_title)}) } else { json!({"rendered": self.site.texturize(&revision.post_title)}) });
-        data.insert("content".into(), if context == "edit" { json!({"raw": revision.post_content, "rendered": rendered(&revision.post_content)}) } else { json!({"rendered": rendered(&revision.post_content)}) });
+        data.insert("content".into(), if context == "edit" { json!({"raw": revision.post_content, "rendered": content_rendered}) } else { json!({"rendered": content_rendered}) });
         data.insert("excerpt".into(), if context == "edit" { json!({"raw": revision.post_excerpt, "rendered": rendered(&revision.post_excerpt)}) } else { json!({"rendered": rendered(&revision.post_excerpt)}) });
+        if !matches!(kind, Kind::Custom(_)) {
+            let footnotes = self.site.db.post_meta_value(revision.id, "footnotes").await.ok().flatten().unwrap_or_default();
+            data.insert("meta".into(), json!({"footnotes": footnotes}));
+        }
         let mut links = crate::util::Links::new();
         links.add("parent", vec![], self.rest_url(&format!("wp/v2/{}/{}", kind.base(), parent.id)));
-        links.self_link(self.rest_url(&format!("wp/v2/{}/{}/revisions/{}", kind.base(), parent.id, revision.id)));
+        if revision.post_name.contains("autosave") {
+            links.self_link(self.rest_url(&format!("wp/v2/{}/{}/revisions/{}", kind.base(), parent.id, revision.id)));
+        }
         data.insert("_links".into(), links.finish());
         Ok(Value::Object(data))
     }

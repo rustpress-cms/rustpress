@@ -7,6 +7,7 @@ mod block_renderer;
 mod caps;
 mod editor;
 mod fonts;
+mod export;
 mod health;
 mod hints;
 mod icons;

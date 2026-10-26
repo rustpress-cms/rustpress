@@ -54,6 +54,8 @@ pub struct Reply {
     pub status: u16,
     pub headers: Vec<(String, String)>,
     pub body: String,
+    /// A file that is sent instead of the text (`wp-block-editor/v1/export`).
+    pub bytes: Vec<u8>,
 }
 
 /// The data of a successful endpoint call.
@@ -73,11 +75,13 @@ pub(crate) struct Resp {
     pub allow: Option<String>,
     /// The `Location` header of a created item.
     pub location: Option<String>,
+    /// A file to download: its bytes and the name it is saved under.
+    pub download: Option<(Vec<u8>, String)>,
 }
 
 impl Resp {
     pub fn item(data: Value) -> Self {
-        Self { data, total: None, total_pages: None, link: None, alternate: None, xml: None, status: None, allow: None, location: None }
+        Self { data, total: None, total_pages: None, link: None, alternate: None, xml: None, status: None, allow: None, location: None, download: None }
     }
 }
 
@@ -170,11 +174,13 @@ impl<'a> Rest<'a> {
             ("Access-Control-Allow-Headers".to_owned(), "Authorization, X-WP-Nonce, Content-Disposition, Content-MD5, Content-Type".to_owned()),
         ];
         let mut xml_body = None;
+        let mut download: Option<(Vec<u8>, String)> = None;
         // The headers of the response itself, which `?_envelope` moves into the body.
         let mut response_headers: Vec<(String, String)> = Vec::new();
         let (mut status, mut data) = match outcome {
             Ok(resp) => {
                 xml_body = resp.xml.clone();
+                download = resp.download.clone();
                 let allow = resp.allow.clone().unwrap_or_else(|| "GET".to_owned());
                 let response_link = resp.link.clone().or_else(|| resp.alternate.as_ref().map(|url| format!("<{url}>; rel=\"alternate\"; type=text/html")));
                 if let Some(total) = resp.total {
@@ -219,8 +225,14 @@ impl<'a> Rest<'a> {
                 h.1 = "text/xml; charset=UTF-8".to_owned();
             }
         }
+        if let Some((bytes, name)) = download {
+            headers.retain(|(n, _)| n != "Content-Type");
+            headers.push(("Content-Disposition".to_owned(), format!("attachment; filename={name}")));
+            headers.push(("Content-Type".to_owned(), "application/zip".to_owned()));
+            return Ok(Reply { status, headers, body: String::new(), bytes });
+        }
         if let Some(xml) = xml_body {
-            return Ok(Reply { status, headers, body: xml });
+            return Ok(Reply { status, headers, body: xml, bytes: Vec::new() });
         }
         if status == 200 || status == 201 {
             if params.truthy("_embed") {
@@ -254,12 +266,12 @@ impl<'a> Rest<'a> {
                 if let Some(h) = headers.iter_mut().find(|(n, _)| n == "Content-Type") {
                     h.1 = "application/javascript; charset=UTF-8".to_owned();
                 }
-                return Ok(Reply { status, headers, body: format!("/**/{callback}({})", php_json::encode(&data)) });
+                return Ok(Reply { status, headers, body: format!("/**/{callback}({})", php_json::encode(&data)), bytes: Vec::new() });
             }
             let error = RestError::new("rest_callback_invalid", "Invalid JSONP callback function.", 400).to_value(self.site);
-            return Ok(Reply { status: 400, headers, body: php_json::encode(&error) });
+            return Ok(Reply { status: 400, headers, body: php_json::encode(&error), bytes: Vec::new() });
         }
-        Ok(Reply { status, headers, body: php_json::encode(&data) })
+        Ok(Reply { status, headers, body: php_json::encode(&data), bytes: Vec::new() })
     }
 
     /// Routes a request to its endpoint.

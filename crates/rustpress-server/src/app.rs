@@ -535,7 +535,7 @@ fn rest_route(home_path: &str, path: &str, query: &str) -> Option<(String, Strin
 }
 
 fn rest_response(reply: rustpress_rest::Reply) -> Response<Body> {
-    let mut response = Response::new(Body::from(reply.body));
+    let mut response = Response::new(if reply.bytes.is_empty() { Body::from(reply.body) } else { Body::from(reply.bytes) });
     *response.status_mut() = StatusCode::from_u16(reply.status).unwrap_or(StatusCode::OK);
     for (name, value) in reply.headers {
         if let (Ok(name), Ok(value)) = (header::HeaderName::from_bytes(name.as_bytes()), HeaderValue::from_str(&value)) {

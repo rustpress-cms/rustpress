@@ -1766,9 +1766,11 @@ dependencies = [
  "rustpress-db",
  "rustpress-phpser",
  "rustpress-theme",
+ "serde",
  "serde_json",
  "thiserror",
  "tokio",
+ "zip",
 ]
 
 [[package]]
