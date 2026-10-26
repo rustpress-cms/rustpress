@@ -261,6 +261,14 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         redirect(&url)
     };
     let expired = || super::die(ctx.env, 403, &ctx.tr("An error occurred."), &ctx.tr("The link you followed has expired."));
+    // `edit`: the edit form lives in `term.php` (`get_edit_term_link()`).
+    if action == "edit" && request.request("tag_ID").is_some() {
+        let id = request.request("tag_ID").and_then(|v| v.trim().parse::<i64>().ok()).unwrap_or(0).max(0) as u64;
+        if ctx.env.db.term_by_id(None, id).await.ok().flatten().is_none() {
+            return super::common::die_plain(ctx, "You attempted to edit an item that does not exist. Perhaps it was deleted?");
+        }
+        return redirect(&ctx.admin_url(&format!("term.php?taxonomy={}&tag_ID={id}&post_type={}", info.name, info.post_type)));
+    }
     if request.post && action == "editedtag" {
         return edited_tag(ctx, &info).await;
     }

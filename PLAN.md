@@ -374,7 +374,8 @@ Erledigt: P1 (Regex-Cache), P2 teilweise (`rustpress_core::files`), P3 (Kommenta
 23. Kommentar-Benachrichtigungen bei Antworten/Statuswechseln im Admin (`wp_notify_postauthor` bei `replyto-comment`, `comment_unapproved_to_approved`).
 24. Frontend-Reste: „Private:“/„Protected:“-Präfixe in Feed-Titeln, `core/loginout` und weitere Blöcke für Angemeldete, Reihenfolge gleicher Sortierwerte.
 25. Aus `PLAN.md` (ältere Abschnitte, weiterhin offen): Pro-Request-Sprache (`I18nRegistry`), JS-Übersetzungen (`wp_set_script_translations`), Hot-Reload der Sprachpakete, `de_DE_formal`; Usermeta/Termmeta/Kommentar-Meta-Schicht, Multisite (bewusst nicht); Twenty-Seventeen-Reste (Post-Formate mit eigener Vorlage, `front-page.php`-Panels, Farbschema `custom`, Social-Menü, `wp_link_pages`, `rtl.css`), weitere klassische Themes; Plugins als native Module (`wp-date-remover`, `svg-support`); oEmbed/Autoembed, `[playlist]`, Lightbox, `useFirstImageFromPost`, Galerien mit `dynamicContent`; Upload-Größe aus Konfiguration.
-26. Nicht behebbar (dokumentieren): Vorlagen-Reihenfolge aus dem Container-Dateisystem, alles mit ausgehendem HTTP (WordPress.org, Updates, Loopback, Remote-Patterns nur aus Cache), PHP-Plugins.
+26. Nicht behebbar (dokumentieren; Stand Seitenmatrix 26.10.2026 mit `dev/page-compare.py`): `site-health.php?tab=debug` (Pfade, Server/PHP/ImageMagick, WordPress.org nicht erreichbar, Upload-Grenzen aus php.ini), `plugin-editor.php` (Dateireihenfolge von `readdir()` im Container), `credits.php` (Daten von api.wordpress.org), Gleichstände einer Sortierung (`orderby=comment_count`: MySQL-Reihenfolge).
+27. Bisher: Vorlagen-Reihenfolge aus dem Container-Dateisystem, alles mit ausgehendem HTTP (WordPress.org, Updates, Loopback, Remote-Patterns nur aus Cache), PHP-Plugins.
 
 ### Verifikation (pro Phase)
 - `cargo test` im Workspace (inkl. neuer Rollenmatrix) + `cargo clippy` ohne Warnungen in den Lint-Kategorien.

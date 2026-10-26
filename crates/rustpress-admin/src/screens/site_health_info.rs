@@ -157,12 +157,30 @@ fn theme_fields(ctx: &Ctx<'_>, theme: &ThemeInfo, parent: &ThemeInfo, auto: &[St
         } else {
             fields.push(field("parent_theme", tr("Parent theme"), tr("None")).debug("none"));
         }
-        let features = if theme.block_theme {
-            "core-block-patterns, post-thumbnails, responsive-embeds, editor-styles, html5, automatic-feed-links, widgets-block-editor, block-templates"
+        let defaults: &[&str] = if theme.block_theme {
+            &["core-block-patterns", "post-thumbnails", "responsive-embeds", "editor-styles", "html5", "automatic-feed-links", "widgets-block-editor", "block-templates"]
         } else {
-            "post-thumbnails, html5, automatic-feed-links, title-tag"
+            &["post-thumbnails", "html5", "automatic-feed-links", "title-tag"]
         };
-        fields.push(field("theme_features", tr("Theme features"), features));
+        let mut features: Vec<String> = defaults.iter().map(|f| (*f).to_owned()).collect();
+        // `$_wp_theme_features` gets the theme's own features after the defaults, in the order the theme adds them
+        // (the child's `functions.php` runs before the parent's).
+        let themes = ctx.env.loader.includes.parent().map(|root| root.join("wp-content").join("themes")).unwrap_or_default();
+        let mut dirs = vec![themes.join(&theme.stylesheet)];
+        if theme.has_parent() {
+            dirs.push(themes.join(&theme.template));
+        }
+        for dir in dirs {
+            let Some(php) = rustpress_core::files::read(&dir.join("functions.php")) else { continue };
+            let calls = rustpress_core::formatting::cached_plain_regex(r#"(add_theme_support)\(\s*['"]([^'"]+)['"]|(add_editor_style)\("#);
+            for found in calls.captures_iter(&php) {
+                let feature = if found.get(3).is_some() { "editor-style".to_owned() } else { found[2].to_owned() };
+                if !features.contains(&feature) {
+                    features.push(feature);
+                }
+            }
+        }
+        fields.push(field("theme_features", tr("Theme features"), features.join(", ")));
     }
     fields.push(field("theme_path", tr("Theme directory location"), path_string(&theme.dir)));
     let enabled = auto.contains(&theme.stylesheet);

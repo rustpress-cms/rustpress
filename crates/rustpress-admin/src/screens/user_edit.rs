@@ -381,6 +381,15 @@ async fn form_on(ctx: &Ctx<'_>, user: &User, own: bool, errors: &[String], file:
         tr("Confirm Password"),
         tr("Confirm use of weak password")
     ));
+    // The link to reset the password, for somebody else (`wp_is_password_reset_allowed_for_user()`).
+    if !own && ctx.can("edit_users") {
+        h.push_str(&format!(
+            "\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<tr class=\"user-generate-reset-link-wrap hide-if-no-js\">\n\t\t\t\t\t\t\t\t\t<th>{}</th>\n\t\t\t\t\t\t\t\t\t<td>\n\t\t\t\t\t\t\t\t\t\t<div class=\"generate-reset-link\">\n\t\t\t\t\t\t\t\t\t\t\t<button type=\"button\" class=\"button button-secondary\" id=\"generate-reset-link\">\n\t\t\t\t\t\t\t\t\t\t\t\t{}\t\t\t\t\t\t\t\t\t\t\t</button>\n\t\t\t\t\t\t\t\t\t\t</div>\n\t\t\t\t\t\t\t\t\t\t<p class=\"description\">\n\t\t\t\t\t\t\t\t\t\t\t{}\t\t\t\t\t\t\t\t\t\t</p>\n\t\t\t\t\t\t\t\t\t</td>\n\t\t\t\t\t\t\t\t</tr>\n\t\t\t\t\t\t\t\n",
+            tr("Password Reset"),
+            tr("Send Reset Link"),
+            sprintf(&tr("Send %s a link to reset their password. This will not change their password, nor will it force a change."), &[&user.display_name])
+        ));
+    }
     // The sessions: where the person is signed in (`WP_Session_Tokens::get_all()`).
     let sessions = session_count(ctx, id).await;
     if own && sessions == 1 {
@@ -403,14 +412,6 @@ async fn form_on(ctx: &Ctx<'_>, user: &User, own: bool, errors: &[String], file:
             tr("Sessions"),
             tr("Log Out Everywhere"),
             sprintf(&tr("Log %s out of all locations."), &[&user.display_name])
-        ));
-    }
-    if !own && ctx.can("edit_users") {
-        h.push_str(&format!(
-            "\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<tr class=\"user-generate-reset-link-wrap hide-if-no-js\">\n\t\t\t\t\t\t\t\t\t<th>{}</th>\n\t\t\t\t\t\t\t\t\t<td>\n\t\t\t\t\t\t\t\t\t\t<div class=\"generate-reset-link\">\n\t\t\t\t\t\t\t\t\t\t\t<button type=\"button\" class=\"button button-secondary\" id=\"generate-reset-link\">\n\t\t\t\t\t\t\t\t\t\t\t\t{}\t\t\t\t\t\t\t\t\t\t\t</button>\n\t\t\t\t\t\t\t\t\t\t</div>\n\t\t\t\t\t\t\t\t\t\t<p class=\"description\">\n\t\t\t\t\t\t\t\t\t\t\t{}\t\t\t\t\t\t\t\t\t\t</p>\n\t\t\t\t\t\t\t\t\t</td>\n\t\t\t\t\t\t\t\t</tr>\n",
-            tr("Password Reset"),
-            tr("Send Reset Link"),
-            sprintf(&tr("Send %s a link to reset their password. This will not change their password, nor will it force a change."), &[&user.display_name])
         ));
     }
     h.push_str("\t\t\t\t\t\t\t\t\t\t\t\t\t</table>\n\n");

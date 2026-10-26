@@ -190,5 +190,14 @@ pub async fn about(ctx: &Ctx<'_>, file: &str) -> AdminResponse {
         "privacy.php" => ("privacy", "Privacy"),
         _ => ("about", "About"),
     };
-    simple(ctx, file, name, title, file, Assets::default()).await
+    let mut response = simple(ctx, file, name, title, file, Assets::default()).await;
+    // `freedoms.php`: the directories of WordPress.org for whoever cannot manage plugins or themes here.
+    if file == "freedoms.php" {
+        for (screen, cap, directory) in [("plugins.php", "activate_plugins", "https://wordpress.org/plugins/"), ("themes.php", "switch_themes", "https://wordpress.org/themes/")] {
+            if !ctx.can(cap) {
+                response.body = response.body.replace(&format!("href=\"{}\"", ctx.admin_url(screen)), &format!("href=\"{}\"", ctx.tr(directory)));
+            }
+        }
+    }
+    response
 }
