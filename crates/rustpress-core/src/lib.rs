@@ -47,3 +47,25 @@ pub enum Error {
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
+
+/// `hash_equals()`: compares two secrets in a time that does not depend on where they differ.
+pub fn hash_equals(known: &str, given: &str) -> bool {
+    let (a, b) = (known.as_bytes(), given.as_bytes());
+    a.len() == b.len() && a.iter().zip(b).fold(0u8, |diff, (x, y)| diff | (x ^ y)) == 0
+}
+
+/// A failed write that the caller has no way to report to the user is logged instead of dropped.
+pub trait OrLog {
+    #[track_caller]
+    fn or_log(self);
+}
+
+impl<T, E: std::fmt::Display> OrLog for std::result::Result<T, E> {
+    #[track_caller]
+    fn or_log(self) {
+        if let Err(error) = self {
+            let at = std::panic::Location::caller();
+            tracing::error!(%error, file = at.file(), line = at.line(), "write failed");
+        }
+    }
+}

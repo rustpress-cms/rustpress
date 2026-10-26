@@ -61,10 +61,9 @@ pub fn make_clickable(text: &str, opts: &Clickable<'_>) -> String {
     let code_open = re!(r"(?i)^<(?:code|pre|script|style)[\s>]");
     let scheme_tag = re!(r"^<\s*[\w]{1,20}://");
     let url_class = r"A-Za-z0-9_\x{80}-\x{10FFFF}#%~/@\[\]*(+=&$-";
-    let url = Regex::new(&format!(
+    let url = crate::formatting::cached_regex(&format!(
         r"([\s(<.,;:!?])((?>[A-Za-z0-9_]{{1,20}})://(?=\S{{1,2000}}\s)(?>[{url_class}]*)(?:['.,;:!?)](?>[{url_class}]+))*)(\)?)(\.\w{{2,6}})?"
-    ))
-    .expect("url regex");
+    ));
     for piece in pieces {
         if code_open.is_match(piece).unwrap_or(false) {
             nested += 1;

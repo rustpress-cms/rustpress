@@ -2,6 +2,7 @@
 
 mod actions;
 
+use rustpress_core::OrLog;
 use rustpress_auth::password::check_password;
 use rustpress_auth::setcookie::{CookiePaths, SetCookie};
 use rustpress_auth::{Auth, CurrentUser, Roles, Scheme, session};
@@ -782,7 +783,7 @@ impl LoginEnv<'_> {
         }
         // `wp_logout()`: end the session, clear the cookies.
         if let (Some(session), Some(writer)) = (&session, self.writer) {
-            let _ = session::destroy_session(self.db, writer, session.user.id, &session.token, self.now).await;
+            session::destroy_session(self.db, writer, session.user.id, &session.token, self.now).await.or_log();
         }
         response.cookies.extend(self.auth.clear_cookies(user_id, self.now, self.auth.cookie_hash(), &self.paths()));
         let target = match request.request("redirect_to").filter(|r| !r.is_empty()) {

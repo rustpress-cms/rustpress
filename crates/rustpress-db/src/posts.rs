@@ -316,7 +316,10 @@ impl Db {
             OrderBy::Relevance => "",
         };
         let direction = if query.order == Order::Asc { "ASC" } else { "DESC" };
-        if query.order_by == OrderBy::Include {
+        // `FIELD()` needs at least one ID; without any the order of the date is used.
+        if query.order_by == OrderBy::Include && query.ids.is_empty() {
+            qb.push(format!(" ORDER BY p.post_date {direction}, p.ID {direction}"));
+        } else if query.order_by == OrderBy::Include {
             qb.push(" ORDER BY FIELD(p.ID");
             for id in &query.ids {
                 qb.push(", ").push_bind(*id);

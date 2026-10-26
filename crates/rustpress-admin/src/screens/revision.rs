@@ -1,6 +1,7 @@
 //! `wp-admin/revision.php`: comparing and restoring the revisions of a post, and the `get-revision-diffs` action
 //! of `admin-ajax.php` that the screen's JavaScript asks for the differences.
 
+use rustpress_core::OrLog;
 use rustpress_auth::CurrentUser;
 use rustpress_core::formatting::{esc_attr, esc_html, esc_url};
 use rustpress_core::i18n::sprintf;
@@ -31,8 +32,7 @@ fn revisions_enabled(env: &AdminEnv<'_>, post: &Post) -> bool {
 }
 
 fn may_edit(user: &CurrentUser, post: &Post) -> bool {
-    let page = post.post_type == "page";
-    user.can(if page { "edit_pages" } else { "edit_posts" }) && (post.post_author == user.id || user.can("edit_others_posts") || user.can("edit_others_pages"))
+    user.can_edit_post(post)
 }
 
 /// The revision and its parent, when the user may see them.
@@ -253,7 +253,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         let Some(writer) = env.writer else { return super::common::read_only(ctx) };
         let content = Content { site: env.site, db: env.db, writer, user: &ctx.user, now: env.now };
         let data = PostData { id: Some(post.id), post_title: Some(revision.post_title.clone()), post_content: Some(revision.post_content.clone()), post_excerpt: Some(revision.post_excerpt.clone()), ..Default::default() };
-        let _ = content.insert_post(&data).await;
+        content.insert_post(&data).await.or_log();
         return redirect(&format!("{}&message=5&revision={}", edit_link(ctx, &post), revision.id));
     }
 

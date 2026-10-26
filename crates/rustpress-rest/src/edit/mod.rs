@@ -13,6 +13,7 @@ mod hints;
 mod icons;
 mod media;
 mod navigation;
+mod pending_writes;
 mod plugins;
 mod posts;
 mod settings;
@@ -244,6 +245,9 @@ impl Rest<'_> {
             ["wp", "v2", "users", id, "application-passwords", uuid] => self.app_passwords_route(id, Some(uuid), &method, &args).await.map(Some),
             ["wp", "v2", "users", "me"] => self.users_me(&method, &args).await.map(Some),
             ["wp", "v2", "users"] if get && (self.access.is_some()) => self.users_list(&args).await.map(Some),
+            ["wp", "v2", "users"] if method == "POST" => self.users_create(&args).await.map(Some),
+            ["wp", "v2", "users", id] if !get && *id != "me" => self.users_write(id, &method, &args).await.map(Some),
+            ["wp", "v2", "comments"] | ["wp", "v2", "comments", _] if !get => self.comments_write(segments.get(3).copied(), &method).await.map(Some),
             ["wp", "v2", "users", id] if get && self.access.is_some() && id.parse::<u64>().is_ok() => self.users_get(id, &args).await.map(Some),
             ["wp", "v2", "plugins", ..] => self.plugins_route(&segments, &method, &args).await.map(Some),
             ["wp", "v2", "settings"] => self.settings(&method, &args).await.map(Some),

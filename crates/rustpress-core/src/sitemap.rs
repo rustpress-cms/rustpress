@@ -219,7 +219,7 @@ impl Site {
                 order_by: rustpress_db::OrderBy::Id,
                 order: rustpress_db::Order::Asc,
                 limit: Some(MAX_URLS),
-                offset: (page - 1) * MAX_URLS,
+                offset: (page - 1).saturating_mul(MAX_URLS),
                 ..Default::default()
             })
             .await?;
@@ -233,14 +233,14 @@ impl Site {
         let mut terms: Vec<_> = self.db.terms(taxonomy).await?.into_iter().filter(|t| t.count > 0).collect();
         terms.sort_by_key(|t| t.term_id);
         let mut urls = Vec::new();
-        for term in terms.iter().skip(((page - 1) * MAX_URLS) as usize).take(MAX_URLS as usize) {
+        for term in terms.iter().skip(((page - 1).saturating_mul(MAX_URLS)) as usize).take(MAX_URLS as usize) {
             urls.push((self.term_link(term).await?, None));
         }
         Ok(urls)
     }
 
     async fn user_sitemap_urls(&self, page: u64) -> Result<Vec<(String, Option<String>)>> {
-        let users = self.db.users_with_published_posts(&self.sitemap_author_types(), MAX_URLS, (page - 1) * MAX_URLS).await?;
+        let users = self.db.users_with_published_posts(&self.sitemap_author_types(), MAX_URLS, (page - 1).saturating_mul(MAX_URLS)).await?;
         Ok(users.iter().map(|u| (self.author_url(u), None)).collect())
     }
 

@@ -4,7 +4,6 @@
 //! The English texts below are the `msgid`s WordPress uses, so any WordPress language pack
 //! (about 200 on translate.wordpress.org) works unchanged.
 
-use regex::Regex;
 
 use crate::datetime::SiteTimezone;
 use crate::i18n::I18n;
@@ -149,18 +148,19 @@ impl LocaleData {
             return date.to_owned();
         }
         let mut date = date.to_owned();
-        if Regex::new(r"[dj]\.? F").is_ok_and(|re| re.is_match(format)) {
+        let cached = crate::formatting::cached_plain_regex;
+        if cached(r"[dj]\.? F").is_match(format) {
             // "j F Y": the month after a day number.
             for (nominative, genitive) in self.month.iter().zip(&self.month_genitive) {
-                if let Ok(re) = Regex::new(&format!(r" {}\b", regex::escape(nominative))) {
-                    date = re.replace_all(&date, regex::NoExpand(&format!(" {genitive}"))).into_owned();
-                }
+                let re = cached(&format!(r" {}\b", regex::escape(nominative)));
+                date = re.replace_all(&date, regex::NoExpand(&format!(" {genitive}"))).into_owned();
             }
         }
-        if Regex::new(r"F [dj]").is_ok_and(|re| re.is_match(format)) {
+        if cached(r"F [dj]").is_match(format) {
             // "F j": becomes "j F" with the declined month.
             for (nominative, genitive) in self.month.iter().zip(&self.month_genitive) {
-                if let Ok(re) = Regex::new(&format!(r"\b{} (\d{{1,2}})(st|nd|rd|th)?([-–]\d{{1,2}})?(st|nd|rd|th)?\b", regex::escape(nominative))) {
+                {
+                    let re = cached(&format!(r"\b{} (\d{{1,2}})(st|nd|rd|th)?([-–]\d{{1,2}})?(st|nd|rd|th)?\b", regex::escape(nominative)));
                     date = re
                         .replace_all(&date, |caps: &regex::Captures<'_>| {
                             format!("{}{} {genitive}", caps.get(1).map_or("", |m| m.as_str()), caps.get(3).map_or("", |m| m.as_str()))

@@ -564,7 +564,8 @@ async fn atom_comments(c: &Ctx<'_>, q: &QueryResult, comments: &[Comment], _self
             ent2ncr(&sprintf(&c.site.tr("Comment on %1$s by %2$s"), &[&c.title_rss(&comment_post), &author]))
         };
         out.push_str(&format!("\t<entry>\n\t\t<title>\n\t\t{item_title}\t\t</title>\n\t\t<link rel=\"alternate\" href=\"{comment_link}\" type=\"text/html\" />\n\n\t\t<author>\n\t\t\t<name>{author}</name>\n\t\t\t"));
-        if !comment.comment_author_url.is_empty() {
+        // `get_comment_author_url()`: printed as stored (it was sanitized when it was saved), `http://` alone is empty.
+        if !comment.comment_author_url.is_empty() && comment.comment_author_url != "http://" {
             out.push_str(&format!("<uri>{}</uri>", comment.comment_author_url));
         }
         out.push_str(&format!(

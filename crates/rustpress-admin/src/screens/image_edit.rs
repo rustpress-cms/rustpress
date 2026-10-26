@@ -2,6 +2,7 @@
 //! (`wp-admin/includes/image-edit.php`). Rotating, flipping, cropping and scaling work on the current file
 //! of the attachment; the result is a new file next to it, the original stays and can be restored.
 
+use rustpress_core::OrLog;
 use std::path::PathBuf;
 
 use image::DynamicImage;
@@ -339,9 +340,9 @@ async fn save(ctx: &Ctx<'_>, state: &mut State) -> Result<Json, String> {
             }
         }
     }
-    let _ = writer.update_post_meta(state.id, "_wp_attached_file", &new_relative).await;
-    let _ = writer.update_post_meta(state.id, "_wp_attachment_metadata", &serialize(&meta)).await;
-    let _ = writer.update_post_meta(state.id, "_wp_attachment_backup_sizes", &serialize(&backup)).await;
+    writer.update_post_meta(state.id, "_wp_attached_file", &new_relative).await.or_log();
+    writer.update_post_meta(state.id, "_wp_attachment_metadata", &serialize(&meta)).await.or_log();
+    writer.update_post_meta(state.id, "_wp_attachment_backup_sizes", &serialize(&backup)).await.or_log();
     state.relative = new_relative.clone();
     state.meta = Some(meta);
     state.backup = Some(backup);
@@ -412,10 +413,10 @@ async fn restore(ctx: &Ctx<'_>, state: &mut State) -> Result<String, String> {
         }
     }
     let Some(writer) = env.writer else { return Err(tr("Cannot save image metadata.")) };
-    let _ = writer.update_post_meta(state.id, "_wp_attached_file", &new_relative).await;
-    let _ = writer.update_post_meta(state.id, "_wp_attachment_metadata", &serialize(&meta)).await;
+    writer.update_post_meta(state.id, "_wp_attached_file", &new_relative).await.or_log();
+    writer.update_post_meta(state.id, "_wp_attachment_metadata", &serialize(&meta)).await.or_log();
     if backup != old_backup {
-        let _ = writer.update_post_meta(state.id, "_wp_attachment_backup_sizes", &serialize(&backup)).await;
+        writer.update_post_meta(state.id, "_wp_attachment_backup_sizes", &serialize(&backup)).await.or_log();
     }
     state.relative = new_relative;
     state.meta = Some(meta);
@@ -427,7 +428,7 @@ async fn restore(ctx: &Ctx<'_>, state: &mut State) -> Result<String, String> {
 pub async fn editor(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUser, token: &str) -> AdminResponse {
     let id: u64 = request.post_field("postid").and_then(|p| p.parse().ok()).unwrap_or(0);
     let Some(post) = (if id == 0 { None } else { env.db.post(id).await.ok().flatten() }) else { return text(200, "-1") };
-    let may_edit = user.can("edit_posts") && (post.post_author == user.id || user.can("edit_others_posts"));
+    let may_edit = user.can_edit_post(&post);
     if !may_edit {
         return text(200, "-1");
     }
@@ -477,7 +478,7 @@ pub async fn editor(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUs
 pub async fn preview(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUser, token: &str) -> AdminResponse {
     let id: u64 = request.request("postid").and_then(|p| p.parse().ok()).unwrap_or(0);
     let Some(post) = (if id == 0 { None } else { env.db.post(id).await.ok().flatten() }) else { return text(403, "-1") };
-    let may_edit = user.can("edit_posts") && (post.post_author == user.id || user.can("edit_others_posts"));
+    let may_edit = user.can_edit_post(&post);
     if !may_edit {
         return text(403, "-1");
     }

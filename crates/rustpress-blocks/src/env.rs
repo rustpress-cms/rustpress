@@ -162,6 +162,8 @@ pub struct State {
     pub used_blocks: Vec<String>,
     /// `wp_unique_prefixed_id` counters.
     pub id_counters: HashMap<String, u64>,
+    /// How many blocks are being rendered inside each other right now.
+    pub render_depth: u32,
     /// Counter behind wp_unique_id().
     pub unique_counter: u64,
     /// `do_blocks()` took `wpautop` off the `the_content` filter and `_restore_wpautop_hook()` put it back

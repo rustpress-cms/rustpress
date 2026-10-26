@@ -14,6 +14,9 @@ use crate::parser::{Block, Content, parse_blocks};
 use crate::registry::BlockType;
 use crate::supports::wrapper_attributes_with;
 
+/// Deeper blocks are not rendered (see [`Env::render_block`]).
+pub const MAX_RENDER_DEPTH: u32 = 64;
+
 /// Blocks that render their inner blocks themselves (`skip_inner_blocks`).
 fn skips_inner_blocks(name: &str) -> bool {
     matches!(name, "core/post-template" | "core/comment-template" | "core/comments" | "core/term-template" | "core/navigation" | "core/navigation-link")
@@ -72,7 +75,21 @@ impl<'a> Env<'a> {
         })
     }
 
+    /// Renders one block. Blocks nested deeper than [`MAX_RENDER_DEPTH`] keep their saved HTML: a post of
+    /// thousands of nested groups must not exhaust the stack of the worker.
     pub fn render_block<'b>(&'b self, block: &'b Block, available: &'b Context, parent: Option<&'b Block>) -> BoxFuture<'b, Result<String>> {
+        Box::pin(async move {
+            let depth = self.with_state(|s| {
+                s.render_depth += 1;
+                s.render_depth
+            });
+            let result = if depth > MAX_RENDER_DEPTH { Ok(block.inner_html.clone()) } else { self.render_block_unguarded(block, available, parent).await };
+            self.with_state(|s| s.render_depth -= 1);
+            result
+        })
+    }
+
+    fn render_block_unguarded<'b>(&'b self, block: &'b Block, available: &'b Context, parent: Option<&'b Block>) -> BoxFuture<'b, Result<String>> {
         Box::pin(async move {
             let Some(name) = block.name.as_deref() else { return Ok(block.inner_html.clone()) };
             // The `render_block_context` filter of the tabs block.
@@ -136,7 +153,8 @@ impl<'a> Env<'a> {
                     match chunk {
                         Content::Html(html) => content.push_str(html),
                         Content::InnerBlock => {
-                            let inner = &block.inner_blocks[index];
+                            // A placeholder without its block (a hand-built tree) renders nothing.
+                            let Some(inner) = block.inner_blocks.get(index) else { continue };
                             // `block_core_gallery_data_id_backcompatibility` (a `render_block_data` filter).
                             let with_data_id;
                             let inner = match inner.attrs.get("id") {

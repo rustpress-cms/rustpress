@@ -105,14 +105,35 @@ pub async fn save(writer: &Writer, user_id: u64, list: &[AppPassword]) -> Result
 }
 
 /// `wp_authenticate_application_password()`: the user and the entry a login and password belong to.
-pub async fn authenticate(db: &Db, login: &str, password: &str) -> Option<(u64, String)> {
+///
+/// `Err(None)`: no application password is in use on the site, the request stays anonymous. `Err(Some((code,
+/// message)))`: the error WordPress answers with (401).
+pub async fn authenticate(db: &Db, login: &str, password: &str) -> Result<(u64, String), Option<(&'static str, &'static str)>> {
+    // `WP_Application_Passwords::is_in_use()`
+    let in_use = db.option("using_application_passwords").await.ok().flatten().is_some_and(|v| !v.is_empty() && v != "0");
+    if !in_use {
+        return Err(None);
+    }
     let user = match db.user_by_login(login).await.ok().flatten() {
-        Some(user) => user,
-        None if login.contains('@') => db.user_by_email(login).await.ok().flatten()?,
-        None => return None,
+        Some(user) => Some(user),
+        None if login.contains('@') => db.user_by_email(login).await.ok().flatten(),
+        None => None,
     };
-    let plain: String = password.chars().filter(|c| !c.is_whitespace()).collect();
-    list(db, user.id).await.into_iter().find(|item| check_password(&plain, &item.password)).map(|item| (user.id, item.uuid))
+    let Some(user) = user else {
+        return Err(Some(if login.contains('@') {
+            ("invalid_email", "<strong>Error:</strong> Unknown email address. Check again or try your username.")
+        } else {
+            ("invalid_username", "<strong>Error:</strong> Unknown username. Check again or try your email address.")
+        }));
+    };
+    // Everything that is not a letter or a digit goes (spaces and dashes of the displayed form).
+    let plain: String = password.chars().filter(char::is_ascii_alphanumeric).collect();
+    list(db, user.id)
+        .await
+        .into_iter()
+        .find(|item| check_password(&plain, &item.password))
+        .map(|item| (user.id, item.uuid))
+        .ok_or(Some(("incorrect_password", "The provided password is an invalid application password.")))
 }
 
 /// `WP_Application_Passwords::record_application_password_usage()`.

@@ -211,7 +211,7 @@ fn named_references() -> &'static HashMap<&'static str, &'static str> {
 }
 
 /// `WP_HTML_Decoder::decode_attribute()`: the character references of an attribute value.
-fn decode_attribute(value: &str) -> String {
+pub fn decode_attribute(value: &str) -> String {
     let mut out = String::with_capacity(value.len());
     let bytes = value.as_bytes();
     let mut i = 0;
@@ -491,7 +491,7 @@ fn split(content: &str, allowed: &Allowed) -> String {
 }
 
 /// `wp_pre_kses_less_than()`: a `<` that no `>` closes is text.
-fn pre_kses_less_than(content: &str) -> String {
+pub fn pre_kses_less_than(content: &str) -> String {
     static CELL: OnceLock<FancyRegex> = OnceLock::new();
     let pattern = CELL.get_or_init(|| FancyRegex::new(r"<[^>]*?((?=<)|>|$)").expect("pattern"));
     pattern

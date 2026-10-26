@@ -422,7 +422,7 @@ pub(super) async fn page_list(bc: &BlockCtx<'_>) -> Result<String> {
         let active = page.id != 0 && queried_id == page.id;
         if active {
             let mut parent = page.post_parent;
-            while parent != 0 {
+            while parent != 0 && !active_ancestors.contains(&parent) && parent != page.id {
                 active_ancestors.push(parent);
                 parent = pages.iter().find(|p| p.id == parent).map_or(0, |p| p.post_parent);
             }
@@ -447,6 +447,7 @@ pub(super) async fn page_list(bc: &BlockCtx<'_>) -> Result<String> {
     };
 
     let front_page_id = bc.env.site.settings.page_on_front;
+    const MAX_PAGE_DEPTH: u32 = 100;
     #[allow(clippy::too_many_arguments)]
     fn render_level(
         pages: &[&Item],
@@ -456,6 +457,10 @@ pub(super) async fn page_list(bc: &BlockCtx<'_>) -> Result<String> {
         front_page_id: u64,
     ) -> String {
         let mut markup = String::new();
+        // Parents that point at each other would nest for ever; no real page tree is this deep.
+        if depth > MAX_PAGE_DEPTH {
+            return markup;
+        }
         for page in pages {
             let mut css = if page.active { " current-menu-item".to_owned() } else { String::new() };
             let aria_current = if page.active { " aria-current=\"page\"" } else { "" };

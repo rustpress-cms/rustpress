@@ -5,6 +5,8 @@ use std::collections::HashMap;
 use rustpress_db::{AuthUser, Db};
 use rustpress_phpser::Value;
 
+use crate::meta_caps::SiteCaps;
+
 /// A PHP boolean-ish value of a capability map.
 fn truthy(value: &Value) -> bool {
     match value {
@@ -77,12 +79,14 @@ pub struct CurrentUser {
     pub allcaps: HashMap<String, bool>,
     /// The scheduler: may do everything and is nobody (ID 0).
     system: bool,
+    /// The options `map_meta_cap()` reads.
+    pub(crate) site_caps: SiteCaps,
 }
 
 impl CurrentUser {
     /// The user background jobs run as (`wp-cron.php` has no current user; every check passes).
     pub fn system() -> Self {
-        Self { id: 0, login: String::new(), display_name: String::new(), email: String::new(), roles: Vec::new(), allcaps: HashMap::new(), system: true }
+        Self { id: 0, login: String::new(), display_name: String::new(), email: String::new(), roles: Vec::new(), allcaps: HashMap::new(), system: true, site_caps: SiteCaps::default() }
     }
 
     /// Loads the capabilities of `user`.
@@ -114,7 +118,15 @@ impl CurrentUser {
         for (cap, granted) in caps {
             allcaps.insert(cap, granted);
         }
-        Ok(Self { id: user.id, login: user.user_login.clone(), display_name: user.display_name.clone(), email: user.user_email.clone(), roles, allcaps, system: false })
+        let options = db.options_named(&["wp_page_for_privacy_policy", "page_on_front", "page_for_posts", "link_manager_enabled"]).await?;
+        let number = |name: &str| options.iter().find(|(n, _)| n == name).and_then(|(_, v)| v.trim().parse::<u64>().ok()).unwrap_or(0);
+        let site_caps = SiteCaps {
+            privacy_page: number("wp_page_for_privacy_policy"),
+            page_on_front: number("page_on_front"),
+            page_for_posts: number("page_for_posts"),
+            link_manager_enabled: number("link_manager_enabled") != 0,
+        };
+        Ok(Self { id: user.id, login: user.user_login.clone(), display_name: user.display_name.clone(), email: user.user_email.clone(), roles, allcaps, system: false, site_caps })
     }
 
     /// `current_user_can( $cap )` for a primitive capability.
@@ -130,9 +142,16 @@ impl CurrentUser {
             "manage_privacy_options" | "view_site_health_checks" | "export_others_personal_data" | "erase_others_personal_data" => "manage_options",
             "setup_network" => "manage_options",
             "customize" => "edit_theme_options",
+            // Without the link manager switched on nobody manages links.
+            "manage_links" if !self.site_caps.link_manager_enabled => return false,
             other => other,
         };
         self.allcaps.get(capability).copied().unwrap_or(false)
+    }
+
+    /// `manage_links` as if the link manager were switched on (`wp_link_manager_disabled_message()`).
+    pub fn can_manage_links_if_enabled(&self) -> bool {
+        self.system || self.allcaps.get("manage_links").copied().unwrap_or(false)
     }
 }
 

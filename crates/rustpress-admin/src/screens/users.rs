@@ -1,11 +1,12 @@
 //! `wp-admin/users.php`: the list of users, deleting them and changing their roles.
 
+use rustpress_core::OrLog;
 use rustpress_core::formatting::{esc_attr, esc_html, esc_url};
 use rustpress_core::i18n::sprintf;
 use rustpress_core::urls::add_query_arg;
 use rustpress_db::{User, UserListQuery};
 
-use super::common::{forbidden, read_only};
+use super::common::read_only;
 use super::{AdminResponse, Ctx, die, redirect, render};
 use crate::chrome::{Assets, Help, HelpTab, Screen};
 use crate::content::Content;
@@ -98,7 +99,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         orderby: orderby.clone(),
         desc,
         limit: per_page,
-        offset: (paged - 1) * per_page,
+        offset: (paged - 1).saturating_mul(per_page),
     };
     let (mut users, mut total) = db.list_users(&query).await.unwrap_or_default();
     if query.no_role && total == 0 {
@@ -374,20 +375,31 @@ async fn handle_action(ctx: &Ctx<'_>, action: &str) -> Option<AdminResponse> {
                 let a = request.post_field("new_role").unwrap_or_default();
                 if a.is_empty() { request.post_field("new_role2").unwrap_or_default() } else { a }
             };
-            if new_role.is_empty() {
+            if users.is_empty() || new_role.is_empty() {
                 return Some(redirect(&ctx.admin_url("users.php")));
+            }
+            // `get_editable_roles()` and the mock `none`: a role that does not exist is refused.
+            if new_role != "none" && !ctx.env.roles.contains(new_role) {
+                return Some(die(ctx.env, 403, "WordPress &rsaquo; Error", &format!("<p>{}</p>", tr("Sorry, you are not allowed to give users that role."))));
             }
             let Some(writer) = ctx.env.writer else { return Some(read_only(ctx)) };
             let content = Content { site, db: ctx.env.db, writer, user: &ctx.user, now: ctx.env.now };
             let target = if new_role == "none" { "" } else { new_role };
-            let mut errored = false;
-            for id in users.iter().filter(|id| **id != ctx.user.id) {
-                let _ = content.set_user_role(*id, target).await;
+            let mut update = "promote";
+            for id in &users {
+                // The own role stays: it may not become empty, and one without `promote_users` is an error.
+                if *id == ctx.user.id {
+                    if target.is_empty() {
+                        return Some(die(ctx.env, 403, "WordPress &rsaquo; Error", &format!("<p>{}</p>", tr("Sorry, you cannot remove your own role."))));
+                    }
+                    if !ctx.env.roles.capabilities(target).is_some_and(|caps| caps.get("promote_users").copied().unwrap_or(false)) {
+                        update = "err_admin_role";
+                    }
+                    continue;
+                }
+                content.set_user_role(*id, target).await.or_log();
             }
-            if users.contains(&ctx.user.id) {
-                errored = true;
-            }
-            return Some(self_redirect(if errored { "err_admin_role" } else { "promote" }, ""));
+            return Some(self_redirect(update, ""));
         }
         "resetpassword" if !users.is_empty() => {
             if !ctx.verify_nonce("bulk-users") {

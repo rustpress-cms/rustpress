@@ -1,110 +1,79 @@
-//! `map_meta_cap()` for posts and the capabilities of a post type.
+//! `map_meta_cap()` for the signed-in user of a request: the rules live in `rustpress_auth::meta_caps`.
 
 use rustpress_db::Post;
 
+pub(crate) use rustpress_auth::TypeCaps;
+
 use crate::Rest;
-
-/// The capability names of a post type (`get_post_type_capabilities()`).
-pub(crate) struct TypeCaps {
-    pub edit_posts: String,
-    pub edit_others: String,
-    pub publish: String,
-    pub read_private: String,
-    pub delete_posts: String,
-    pub delete_others: String,
-    pub delete_published: String,
-    pub delete_private: String,
-    pub edit_private: String,
-    pub edit_published: String,
-}
-
-impl TypeCaps {
-    pub fn of(post_type: &str) -> Self {
-        if post_type == "wp_navigation" {
-            let cap = || "edit_theme_options".to_owned();
-            return Self { edit_posts: cap(), edit_others: cap(), publish: cap(), read_private: cap(), delete_posts: cap(), delete_others: cap(), delete_published: cap(), delete_private: cap(), edit_private: cap(), edit_published: cap() };
-        }
-        let plural = if post_type == "page" { "pages" } else { "posts" };
-        let name = |prefix: &str| format!("{prefix}_{plural}");
-        Self {
-            edit_posts: name("edit"),
-            edit_others: format!("edit_others_{plural}"),
-            publish: format!("publish_{plural}"),
-            read_private: format!("read_private_{plural}"),
-            delete_posts: name("delete"),
-            delete_others: format!("delete_others_{plural}"),
-            delete_published: format!("delete_published_{plural}"),
-            delete_private: format!("delete_private_{plural}"),
-            edit_private: format!("edit_private_{plural}"),
-            edit_published: format!("edit_published_{plural}"),
-        }
-    }
-}
 
 impl Rest<'_> {
     pub(crate) fn can_create(&self, post_type: &str) -> bool {
-        if post_type == "attachment" {
-            return self.can("upload_files");
-        }
-        self.can(&TypeCaps::of(post_type).edit_posts)
+        self.user().is_some_and(|u| u.can_create_type(post_type))
     }
 
     /// `current_user_can( 'edit_post', $post )`.
     pub(crate) fn can_edit_post(&self, post: &Post) -> bool {
-        let Some(user) = self.user() else { return false };
-        let caps = TypeCaps::of(&post.post_type);
-        let status = if post.post_status == "trash" { "draft" } else { post.post_status.as_str() };
-        let own = post.post_author != 0 && post.post_author == user.id;
-        if post.post_type == "attachment" && !own && !user.can("edit_others_posts") {
-            return false;
-        }
-        let needed: Vec<&str> = if own {
-            let mut list = vec![caps.edit_posts.as_str()];
-            match status {
-                "publish" | "future" => list.push(caps.edit_published.as_str()),
-                "private" => list.push(caps.edit_private.as_str()),
-                _ => {}
-            }
-            list
-        } else {
-            let mut list = vec![caps.edit_others.as_str()];
-            match status {
-                "publish" | "future" => list.push(caps.edit_published.as_str()),
-                "private" => list.push(caps.edit_private.as_str()),
-                _ => {}
-            }
-            list
-        };
-        needed.iter().all(|c| user.can(c))
+        self.user().is_some_and(|u| u.can_edit_post(post))
     }
 
     /// `current_user_can( 'delete_post', $post )`.
     pub(crate) fn can_delete_post(&self, post: &Post) -> bool {
-        let Some(user) = self.user() else { return false };
-        let caps = TypeCaps::of(&post.post_type);
-        let own = post.post_author != 0 && post.post_author == user.id;
-        let mut needed: Vec<&str> = vec![if own { caps.delete_posts.as_str() } else { caps.delete_others.as_str() }];
-        match post.post_status.as_str() {
-            "publish" | "future" => needed.push(caps.delete_published.as_str()),
-            "private" => needed.push(caps.delete_private.as_str()),
-            _ => {}
-        }
-        needed.iter().all(|c| user.can(c))
+        self.user().is_some_and(|u| u.can_delete_post(post))
     }
 
-    /// `current_user_can( 'read_post', $post )`.
+    /// `current_user_can( 'read_post', $post )`: published posts for everybody.
     pub(crate) fn can_read_post(&self, post: &Post) -> bool {
-        if post.post_status == "publish" || (post.post_type == "attachment" && post.post_status == "inherit") {
-            return true;
+        match self.user() {
+            Some(user) => user.can_read_post(post),
+            None => post.post_status == "publish" || (post.post_type == "attachment" && post.post_status == "inherit"),
         }
-        let Some(user) = self.user() else { return false };
-        match post.post_status.as_str() {
-            "private" => (post.post_author == user.id && user.can("read")) || user.can(&TypeCaps::of(&post.post_type).read_private),
-            _ => self.can_edit_post(post),
+    }
+
+    /// `get_post_status()`: an attachment that inherits has the status of its parent (`publish` without one).
+    pub(crate) async fn post_status(&self, post: &Post) -> String {
+        if post.post_type != "attachment" || post.post_status != "inherit" {
+            return post.post_status.clone();
         }
+        if post.post_parent == 0 || post.post_parent == post.id {
+            return "publish".to_owned();
+        }
+        match self.site.db.post(post.post_parent).await.ok().flatten() {
+            None => "publish".to_owned(),
+            Some(parent) if parent.post_status == "trash" => {
+                let meta = self.site.db.post_meta(parent.id).await.unwrap_or_default();
+                meta.iter().find(|m| m.meta_key.as_deref() == Some("_wp_trash_meta_status")).and_then(|m| m.meta_value.clone()).filter(|s| !s.is_empty()).unwrap_or_else(|| "publish".to_owned())
+            }
+            Some(parent) => parent.post_status,
+        }
+    }
+
+    /// `check_read_permission()` of the posts controller: published, readable, or inheriting from a readable parent.
+    pub(crate) async fn check_read_permission(&self, post: &Post) -> bool {
+        let mut current = post.clone();
+        for _ in 0..32 {
+            if current.post_status == "publish" {
+                return true;
+            }
+            let mut effective = current.clone();
+            effective.post_status = self.post_status(&current).await;
+            if self.can_read_post(&effective) {
+                return true;
+            }
+            if current.post_status != "inherit" {
+                return false;
+            }
+            if current.post_parent == 0 {
+                return true;
+            }
+            match self.site.db.post(current.post_parent).await.ok().flatten() {
+                Some(parent) => current = parent,
+                None => return true,
+            }
+        }
+        false
     }
 
     pub(crate) fn can_publish(&self, post_type: &str) -> bool {
-        self.can(&TypeCaps::of(post_type).publish)
+        self.user().is_some_and(|u| u.can_publish_type(post_type))
     }
 }

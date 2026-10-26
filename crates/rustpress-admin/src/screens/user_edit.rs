@@ -1,5 +1,6 @@
 //! `wp-admin/profile.php`, `user-edit.php` and `user-new.php`.
 
+use rustpress_core::OrLog;
 use rustpress_core::formatting::{esc_attr, esc_html, esc_url};
 use rustpress_core::i18n::sprintf;
 use rustpress_core::urls::add_query_arg;
@@ -476,7 +477,6 @@ pub async fn profile(ctx: &Ctx<'_>) -> AdminResponse {
 
 /// `user-edit.php`.
 pub async fn user_edit(ctx: &Ctx<'_>) -> AdminResponse {
-    let tr = |s: &str| ctx.tr(s);
     let id: u64 = ctx.request.request("user_id").and_then(|v| v.parse().ok()).unwrap_or(0);
     if id == 0 {
         return super::common::die_plain(ctx, "Invalid user ID.");
@@ -518,8 +518,8 @@ async fn new_email_links(ctx: &Ctx<'_>, user: &User) -> Option<AdminResponse> {
         return Some(match pending_email(ctx, user.id).await.filter(|(h, _)| h == hash) {
             Some((_, email)) => {
                 let content = Content { site: ctx.site(), db: ctx.env.db, writer, user: &ctx.user, now: ctx.env.now };
-                let _ = content.insert_user(&UserData { id: Some(user.id), user_email: Some(rustpress_core::formatting::esc_html(email.trim())), ..Default::default() }).await;
-                let _ = writer.delete_user_meta(user.id, "_new_email").await;
+                content.insert_user(&UserData { id: Some(user.id), user_email: Some(rustpress_core::formatting::esc_html(email.trim())), ..Default::default() }).await.or_log();
+                writer.delete_user_meta(user.id, "_new_email").await.or_log();
                 redirect(&add_query_arg(&ctx.admin_url("profile.php"), "updated", "true"))
             }
             None => redirect(&add_query_arg(&ctx.admin_url("profile.php"), "error", "new-email")),
@@ -530,7 +530,7 @@ async fn new_email_links(ctx: &Ctx<'_>, user: &User) -> Option<AdminResponse> {
             return Some(super::die(ctx.env, 403, &ctx.tr("An error occurred."), &ctx.tr("The link you followed has expired.")));
         }
         let writer = ctx.env.writer?;
-        let _ = writer.delete_user_meta(user.id, "_new_email").await;
+        writer.delete_user_meta(user.id, "_new_email").await.or_log();
         return Some(redirect(&add_query_arg(&ctx.admin_url("profile.php"), "updated", "true")));
     }
     None
@@ -545,7 +545,7 @@ async fn send_confirmation_on_profile_email(ctx: &Ctx<'_>, user: &User, email: &
     use rand::Rng;
     let hash = format!("{:x}", md5::compute(format!("{email}{}{}", ctx.env.now, rand::rng().random::<u32>())));
     let stored = Value::Array(vec![(Key::Str(b"hash".to_vec()), Value::Str(hash.as_bytes().to_vec())), (Key::Str(b"newemail".to_vec()), Value::Str(email.as_bytes().to_vec()))]);
-    let _ = writer.update_user_meta(user.id, "_new_email", &String::from_utf8_lossy(&rustpress_phpser::serialize(&stored))).await;
+    writer.update_user_meta(user.id, "_new_email", &String::from_utf8_lossy(&rustpress_phpser::serialize(&stored))).await.or_log();
     let sitename = ctx.env.mail_ctx().sitename();
     let content = ctx
         .tr(crate::mail_texts::NEW_USER_EMAIL)
@@ -555,6 +555,7 @@ async fn send_confirmation_on_profile_email(ctx: &Ctx<'_>, user: &User, email: &
         .replace("###SITENAME###", &sitename)
         .replace("###SITEURL###", &ctx.site().settings.home);
     let subject = sprintf(&ctx.tr("[%s] Email Change Request"), &[&sitename]);
+    // A mail that cannot be sent is no error of the request (as `wp_mail()` in WordPress).
     let _ = ctx.env.send_mail(email, &subject, &content).await;
     true
 }
@@ -629,6 +630,10 @@ async fn save(ctx: &Ctx<'_>, id: u64, own: bool) -> AdminResponse {
         data.locale = Some(if locale == "site-default" { String::new() } else { locale });
     }
     if !own && ctx.can("promote_users") && let Some(role) = field("role") {
+        // `get_editable_roles()`: a role that does not exist is refused.
+        if !role.is_empty() && !ctx.env.roles.contains(&role) {
+            return super::die(ctx.env, 403, "WordPress &rsaquo; Error", &format!("<p>{}</p>", ctx.tr("Sorry, you are not allowed to give users that role.")));
+        }
         data.role = Some(role);
     }
     // `locale` "site-default" is stored as an empty string like WordPress.
@@ -638,7 +643,7 @@ async fn save(ctx: &Ctx<'_>, id: u64, own: bool) -> AdminResponse {
     }
     if data.user_pass.is_some() && own {
         // The session stays; the other ones end like in `wp_update_user()`.
-        let _ = rustpress_auth::session::destroy_other_sessions(ctx.env.db, writer, id, &ctx.token, ctx.env.now).await;
+        rustpress_auth::session::destroy_other_sessions(ctx.env.db, writer, id, &ctx.token, ctx.env.now).await.or_log();
     }
     // `wp_update_user()` tells the person about a new password and a new address.
     if ctx.env.mailer.is_some() {
@@ -648,10 +653,12 @@ async fn save(ctx: &Ctx<'_>, id: u64, own: bool) -> AdminResponse {
         let home = ctx.site().settings.home.clone();
         if data.user_pass.is_some() {
             let message = ctx.tr(crate::mail_texts::PASSWORD_CHANGED).replace("###USERNAME###", &old_login).replace("###ADMIN_EMAIL###", &admin_email).replace("###EMAIL###", &old_email).replace("###SITENAME###", &sitename).replace("###SITEURL###", &home);
+            // A mail that cannot be sent is no error of the request (as `wp_mail()` in WordPress).
             let _ = mail.send(&old_email, &sprintf(&ctx.tr("[%s] Password Changed"), &[&sitename]), &message).await;
         }
         if email != old_email {
             let message = ctx.tr(crate::mail_texts::EMAIL_CHANGED).replace("###USERNAME###", &old_login).replace("###ADMIN_EMAIL###", &admin_email).replace("###EMAIL###", &old_email).replace("###NEW_EMAIL###", &email).replace("###SITENAME###", &sitename).replace("###SITEURL###", &home);
+            // A mail that cannot be sent is no error of the request (as `wp_mail()` in WordPress).
             let _ = mail.send(&old_email, &sprintf(&ctx.tr("[%s] Email Changed"), &[&sitename]), &message).await;
         }
     }
@@ -698,6 +705,9 @@ pub async fn user_new(ctx: &Ctx<'_>) -> AdminResponse {
             errors.push(tr("<strong>Error:</strong> Please enter a password."));
         } else if pass1 != pass2 {
             errors.push(tr("<strong>Error:</strong> Passwords do not match. Please enter the same password in both password fields."));
+        }
+        if ctx.can("promote_users") && !submitted("role").is_empty() && !ctx.env.roles.contains(&submitted("role")) {
+            return super::die(ctx.env, 403, "WordPress &rsaquo; Error", &format!("<p>{}</p>", ctx.tr("Sorry, you are not allowed to give users that role.")));
         }
         if errors.is_empty() {
             let role = submitted("role");

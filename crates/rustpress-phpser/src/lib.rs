@@ -95,7 +95,13 @@ pub enum Error {
     /// `R:`/`r:` pointing at a slot that does not exist (yet).
     InvalidReference { offset: usize },
     TrailingData { offset: usize },
+    /// Arrays and objects nested deeper than [`MAX_DEPTH`].
+    TooDeep { offset: usize },
 }
+
+/// How deep arrays and objects may nest (PHP's `unserialize_max_depth` is 4096; WordPress data is far flatter, and
+/// the parser recurses on the stack).
+pub const MAX_DEPTH: usize = 128;
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -112,6 +118,7 @@ impl fmt::Display for Error {
                 write!(f, "invalid reference target at offset {offset}")
             }
             Error::TrailingData { offset } => write!(f, "trailing data at offset {offset}"),
+            Error::TooDeep { offset } => write!(f, "nested too deep at offset {offset}"),
         }
     }
 }
@@ -120,7 +127,7 @@ impl std::error::Error for Error {}
 
 /// Parses a complete serialized value; trailing bytes are an error.
 pub fn unserialize(input: &[u8]) -> Result<Value, Error> {
-    let mut p = Parser { input, pos: 0, slots: 0 };
+    let mut p = Parser { input, pos: 0, slots: 0, depth: 0 };
     let value = p.value()?;
     if p.pos != input.len() {
         return Err(Error::TrailingData { offset: p.pos });
@@ -133,9 +140,16 @@ struct Parser<'a> {
     pos: usize,
     /// Number of values seen so far that can be targets of `R:`/`r:`.
     slots: usize,
+    /// Arrays and objects open around the current value.
+    depth: usize,
 }
 
 impl Parser<'_> {
+    fn enter(&mut self, offset: usize) -> Result<(), Error> {
+        self.depth += 1;
+        if self.depth > MAX_DEPTH { Err(Error::TooDeep { offset }) } else { Ok(()) }
+    }
+
     fn peek(&self) -> Result<u8, Error> {
         self.input.get(self.pos).copied().ok_or(Error::UnexpectedEof)
     }
@@ -273,11 +287,13 @@ impl Parser<'_> {
                 self.expect(b':')?;
                 let count = self.len_until(b':')?;
                 self.expect(b'{')?;
+                self.enter(tag_offset)?;
                 let mut items = Vec::with_capacity(count.min(1024));
                 for _ in 0..count {
                     let key = self.key()?;
                     items.push((key, self.value()?));
                 }
+                self.depth -= 1;
                 self.expect(b'}')?;
                 Ok(Value::Array(items))
             }
@@ -287,11 +303,13 @@ impl Parser<'_> {
                 self.expect(b':')?;
                 let count = self.len_until(b':')?;
                 self.expect(b'{')?;
+                self.enter(tag_offset)?;
                 let mut props = Vec::with_capacity(count.min(1024));
                 for _ in 0..count {
                     let name = self.key()?;
                     props.push((name, self.value()?));
                 }
+                self.depth -= 1;
                 self.expect(b'}')?;
                 Ok(Value::Object { class, props })
             }
@@ -557,5 +575,18 @@ mod tests {
             let bytes = serialize(&value);
             prop_assert_eq!(unserialize(&bytes), Ok(value));
         }
+    }
+}
+
+#[cfg(test)]
+mod depth_tests {
+    use super::*;
+
+    #[test]
+    fn deep_nesting_is_an_error_not_a_crash() {
+        let deep = "a:1:{i:0;".repeat(100_000) + "N;" + &"}".repeat(100_000);
+        assert!(matches!(unserialize(deep.as_bytes()), Err(Error::TooDeep { .. })));
+        let fine = "a:1:{i:0;".repeat(10) + "N;" + &"}".repeat(10);
+        assert!(unserialize(fine.as_bytes()).is_ok());
     }
 }

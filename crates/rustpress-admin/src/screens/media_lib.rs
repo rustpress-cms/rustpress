@@ -1,5 +1,6 @@
 //! `wp-admin/upload.php` and `media-new.php`: the media library and the upload screen.
 
+use rustpress_core::OrLog;
 use rustpress_core::formatting::{esc_attr, esc_html, esc_url};
 use rustpress_core::i18n::sprintf;
 use rustpress_core::urls::{add_query_arg, remove_query_arg};
@@ -69,7 +70,7 @@ pub async fn upload_php(ctx: &Ctx<'_>) -> AdminResponse {
     if request.get("mode").is_some()
         && let Some(writer) = ctx.env.writer
     {
-        let _ = writer.update_user_meta(ctx.user.id, "media_library_mode", mode_now).await;
+        writer.update_user_meta(ctx.user.id, "media_library_mode", mode_now).await.or_log();
     }
     if let Some(response) = delete_action(ctx).await {
         return response;
@@ -117,7 +118,7 @@ async fn list_mode(ctx: &Ctx<'_>, title: String) -> AdminResponse {
     let desc = request.get("order").map_or(true, |o| o.eq_ignore_ascii_case("desc"));
     let per_page = db.user_meta(ctx.user.id, "upload_per_page").await.ok().flatten().and_then(|v| v.parse::<u64>().ok()).filter(|v| *v >= 1).unwrap_or(20);
     let paged = request.get("paged").and_then(|p| p.parse::<u64>().ok()).filter(|p| *p > 0).unwrap_or(1);
-    let mut query = AttachmentQuery { orderby: orderby.clone(), desc, limit: per_page, offset: (paged - 1) * per_page, ..Default::default() };
+    let mut query = AttachmentQuery { orderby: orderby.clone(), desc, limit: per_page, offset: (paged - 1).saturating_mul(per_page), ..Default::default() };
     if let Some(mime) = filter.strip_prefix("post_mime_type:") {
         query.mime = Some(mime.to_owned());
     }
@@ -133,9 +134,6 @@ async fn list_mode(ctx: &Ctx<'_>, title: String) -> AdminResponse {
     if month >= 190_000 {
         query.year = Some(month / 100);
         query.month = Some(month % 100);
-    }
-    if !ctx.can("edit_others_posts") {
-        query.author = Some(ctx.user.id);
     }
     let (items, total) = db.list_attachments(&query).await.unwrap_or_default();
     let mut rows = String::new();
@@ -274,12 +272,15 @@ async fn row(ctx: &Ctx<'_>, post: &Post) -> String {
         let icon_url = format!("{}/wp-includes/images/media/{}", site.settings.siteurl.trim_end_matches('/'), super::ajax_media::mime_icon(&post.post_mime_type));
         format!("<span class=\"media-icon {kind}-icon\"><img width=\"48\" height=\"64\" src=\"{}\" class=\"attachment-60x60 size-60x60\" alt=\"\" decoding=\"async\" loading=\"lazy\" /></span>", esc_url(&icon_url))
     };
-    let can_edit = ctx.can("upload_files");
+    let can_edit = ctx.user.can_edit_post(post);
+    let can_delete = ctx.user.can_delete_post(post);
     let title_html = if can_edit { format!("<a href=\"{}\">\t\t\t\t{icon}\n\t\t\t\t{}</a>", esc_attr(&edit_url).replace("&#038;", "&amp;"), esc_html(&title)) } else { format!("{icon}\n\t\t\t\t{}", esc_html(&title)) };
     let state = if site.options.u64("site_logo", 0) == post.id { format!(" &mdash; <span class='post-state'>{}</span>", tr("Logo")) } else { String::new() };
     let mut actions: Vec<(String, String)> = Vec::new();
     if can_edit {
         actions.push(("edit".into(), format!("<a href=\"{}\" aria-label=\"{}\">{}</a>", esc_url(&edit_url), esc_attr(&sprintf(&tr("Edit %s"), &[&quote])), tr("Edit"))));
+    }
+    if can_delete {
         actions.push(("delete".into(), format!("<a href=\"post.php?action=delete&#038;post={}&#038;_wpnonce={}\" class=\"submitdelete aria-button-if-js\" onclick='return showNotice.warn();' aria-label=\"{}\">{}</a>", post.id, ctx.create_nonce(&format!("delete-post_{}", post.id)), esc_attr(&sprintf(&tr("Delete %s permanently"), &[&quote])), tr("Delete Permanently"))));
     }
     let permalink = site.permalink(post).await.unwrap_or_default();
@@ -293,19 +294,31 @@ async fn row(ctx: &Ctx<'_>, post: &Post) -> String {
     let parent = match db.post(post.post_parent).await.ok().flatten().filter(|_| post.post_parent != 0) {
         Some(parent) => {
             let parent_title = if parent.post_title.is_empty() { tr("(no title)") } else { parent.post_title.clone() };
-            let detach = if ctx.can("edit_posts") { format!("<br />\n<a href=\"upload.php?parent_post_id={}&media[]={}&_wpnonce={}\" class=\"hide-if-no-js detach-from-parent\" aria-label=\"{}\">{}</a>", parent.id, post.id, ctx.create_nonce("bulk-media"), esc_attr(&sprintf(&tr("Detach from %s"), &[&format!("&#8220;{}&#8221;", esc_html(&parent_title))])), tr("Detach")) } else { String::new() };
-            format!("<strong><a href=\"{}\">{}</a></strong>\n{detach}", esc_url(&ctx.admin_url(&format!("post.php?post={}&action=edit", parent.id))).replace("&#038;", "&amp;"), esc_html(&parent_title))
+            let detach = if can_edit { format!("<br />\n<a href=\"upload.php?parent_post_id={}&media[]={}&_wpnonce={}\" class=\"hide-if-no-js detach-from-parent\" aria-label=\"{}\">{}</a>", parent.id, post.id, ctx.create_nonce("bulk-media"), esc_attr(&sprintf(&tr("Detach from %s"), &[&format!("&#8220;{}&#8221;", esc_html(&parent_title))])), tr("Detach")) } else { String::new() };
+            let heading = if ctx.user.can_edit_post(&parent) {
+                format!("<strong><a href=\"{}\">{}</a></strong>", esc_url(&ctx.admin_url(&format!("post.php?post={}&action=edit", parent.id))).replace("&#038;", "&amp;"), esc_html(&parent_title))
+            } else if ctx.user.can_read_post(&parent) {
+                format!("<strong>{}</strong>", esc_html(&parent_title))
+            } else {
+                tr("(Private post)")
+            };
+            format!("{heading}\n{detach}")
         }
-        None => format!("{}\t\t\t<br /><a href=\"#the-list\" onclick=\"findPosts.open( 'media[]', '{}' ); return false;\" class=\"hide-if-no-js aria-button-if-js\" aria-label=\"{}\">{}</a>", tr("(Unattached)"), post.id, esc_attr(&sprintf(&tr("Attach %s to existing content"), &[&quote])), tr("Attach")),
+        None if can_edit => format!("{}\t\t\t<br /><a href=\"#the-list\" onclick=\"findPosts.open( 'media[]', '{}' ); return false;\" class=\"hide-if-no-js aria-button-if-js\" aria-label=\"{}\">{}</a>", tr("(Unattached)"), post.id, esc_attr(&sprintf(&tr("Attach %s to existing content"), &[&quote])), tr("Attach")),
+        None => format!("{}\t\t\t", tr("(Unattached)")),
     };
     let timestamp = rustpress_core::datetime::SiteTimezone::gmt_timestamp(&post.post_date_gmt).unwrap_or(0);
     let diff = ctx.env.now - timestamp;
     let date = if diff > 0 && diff < 86_400 { sprintf(&tr("%s ago"), &[&human_time_diff(ctx, timestamp, ctx.env.now)]) } else { site.date(&tr("Y/m/d"), timestamp) };
     format!(
-        "\t\t\t<tr id=\"post-{id}\" class=\"author-{owner} status-inherit\">\n\t\t\t\t<td class=\"check-column\">\t\t\t<input type=\"checkbox\" name=\"media[]\" id=\"cb-select-{id}\" value=\"{id}\" />\n\t\t\t<label for=\"cb-select-{id}\">\n\t\t\t\t<span class=\"screen-reader-text\">\n\t\t\t\t{select}\t\t\t\t</span>\n\t\t\t</label>\n\t\t\t</td><th class='title column-title has-row-actions column-primary' data-colname=\"{file}\" scope=\"row\" aria-label=\"{label}\">\t\t<strong class=\"has-media-icon\">\n\t\t\t{title_html}{state}\t\t</strong>\n\t\t<p class=\"filename\">\n\t\t\t<span class=\"screen-reader-text\">\n\t\t\t\t{filename_label}\t\t\t</span>\n\t\t\t{filename}\t\t</p>\n\t\t{actions}</th><td class='author column-author' data-colname=\"{author_label}\">{author}</td><td class='parent column-parent' data-colname=\"{parent_label}\">{parent}</td><td class='date column-date' data-colname=\"{date_label}\">{date}</td>\t\t\t</tr>\n\t\t\t",
+        "\t\t\t<tr id=\"post-{id}\" class=\"author-{owner} status-inherit\">\n\t\t\t\t<td class=\"check-column\">{cb}</td><th class='title column-title has-row-actions column-primary' data-colname=\"{file}\" scope=\"row\" aria-label=\"{label}\">\t\t<strong class=\"has-media-icon\">\n\t\t\t{title_html}{state}\t\t</strong>\n\t\t<p class=\"filename\">\n\t\t\t<span class=\"screen-reader-text\">\n\t\t\t\t{filename_label}\t\t\t</span>\n\t\t\t{filename}\t\t</p>\n\t\t{actions}</th><td class='author column-author' data-colname=\"{author_label}\">{author}</td><td class='parent column-parent' data-colname=\"{parent_label}\">{parent}</td><td class='date column-date' data-colname=\"{date_label}\">{date}</td>\t\t\t</tr>\n\t\t\t",
         id = post.id,
         owner = if post.post_author == ctx.user.id { "self" } else { "other" },
-        select = sprintf(&tr("Select %s"), &[&esc_html(&title)]),
+        cb = if can_edit {
+            format!("\t\t\t<input type=\"checkbox\" name=\"media[]\" id=\"cb-select-{id}\" value=\"{id}\" />\n\t\t\t<label for=\"cb-select-{id}\">\n\t\t\t\t<span class=\"screen-reader-text\">\n\t\t\t\t{}\t\t\t\t</span>\n\t\t\t</label>\n\t\t\t", sprintf(&tr("Select %s"), &[&esc_html(&title)]), id = post.id)
+        } else {
+            String::new()
+        },
         file = tr("File"),
         label = esc_attr(&title),
         filename_label = tr("File name:"),
@@ -344,8 +357,9 @@ async fn delete_action(ctx: &Ctx<'_>) -> Option<AdminResponse> {
         if parent == 0 {
             return None;
         }
-        if !ctx.can("edit_posts") {
-            return Some(forbidden(ctx, "Sorry, you are not allowed to edit this post."));
+        // `wp_media_attach_action()`: the post attached to (or detached from) must be editable.
+        if !ctx.env.db.post(parent).await.ok().flatten().is_some_and(|p| ctx.user.can_edit_post(&p)) {
+            return Some(super::common::die_plain(ctx, "Sorry, you are not allowed to edit this post."));
         }
         let count = super::ajax_misc::attach(ctx, &ids, if action == "attach" { parent } else { 0 }).await;
         let referer = request.request("_wp_http_referer").filter(|r| r.contains("upload.php")).unwrap_or("upload.php").to_owned();
@@ -357,18 +371,19 @@ async fn delete_action(ctx: &Ctx<'_>) -> Option<AdminResponse> {
         let location = remove_query_arg(&remove_query_arg(&location, "attached"), "detach");
         return Some(redirect(&add_query_arg(&location, if action == "attach" { "attached" } else { "detach" }, &count.to_string())));
     }
-    if !ctx.can("delete_posts") {
-        return Some(forbidden(ctx, "Sorry, you are not allowed to delete this item."));
-    }
     let Some(writer) = ctx.env.writer else { return Some(read_only(ctx)) };
     let content = Content { site: ctx.site(), db: ctx.env.db, writer, user: &ctx.user, now: ctx.env.now };
-    let mut deleted = 0;
-    for id in ids {
-        if content.delete_attachment(id, super::ajax_media::uploads_dir(ctx.env)).await.unwrap_or(false) {
-            deleted += 1;
+    // Every attachment on its own; one that may not be deleted ends the request (`wp_die()`).
+    for id in &ids {
+        let post = ctx.env.db.post(*id).await.ok().flatten();
+        if !post.is_some_and(|p| ctx.user.can_delete_post(&p)) {
+            return Some(super::common::die_plain(ctx, "Sorry, you are not allowed to delete this item."));
+        }
+        if !content.delete_attachment(*id, super::ajax_media::uploads_dir(ctx.env)).await.unwrap_or(false) {
+            return Some(super::common::die_plain(ctx, "Error in deleting the attachment."));
         }
     }
-    Some(redirect(&add_query_arg(&ctx.admin_url("upload.php?mode=list"), "deleted", &deleted.to_string())))
+    Some(redirect(&add_query_arg(&ctx.admin_url("upload.php?mode=list"), "deleted", &ids.len().to_string())))
 }
 
 /// `media-new.php`.

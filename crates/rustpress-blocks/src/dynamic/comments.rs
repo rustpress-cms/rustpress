@@ -48,7 +48,9 @@ async fn render_inner(bc: &BlockCtx<'_>, ctx: &Context) -> Result<String> {
         match chunk {
             Content::Html(html) => out.push_str(html),
             Content::InnerBlock => {
-                out.push_str(&bc.env.render_block(&bc.block.inner_blocks[index], ctx, Some(bc.block)).await?);
+                if let Some(inner) = bc.block.inner_blocks.get(index) {
+                    out.push_str(&bc.env.render_block(inner, ctx, Some(bc.block)).await?);
+                }
                 index += 1;
             }
         }
@@ -307,7 +309,8 @@ pub(super) async fn comment_reply_link(bc: &BlockCtx<'_>) -> Result<String> {
     let all = crate::comment_pages::listed_comments(bc.env, comment.comment_post_id).await?;
     let mut depth = 1;
     let mut parent = comment.comment_parent;
-    while parent != 0 {
+    let mut seen = std::collections::HashSet::from([comment.comment_id]);
+    while parent != 0 && seen.insert(parent) {
         depth += 1;
         parent = all.iter().find(|c| c.comment_id == parent).map_or(0, |c| c.comment_parent);
     }

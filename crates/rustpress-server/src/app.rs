@@ -10,7 +10,7 @@ use rustpress_blocks::Registry;
 use rustpress_core::{Site, SitemapOutput};
 use rustpress_rest::Rest;
 use rustpress_db::Db;
-use rustpress_theme::{Feed, Theme, render_document, render_feed};
+use rustpress_theme::{Feed, Theme, render_feed};
 use tokio::sync::{Mutex, RwLock};
 use tower_http::trace::TraceLayer;
 
@@ -212,8 +212,8 @@ async fn comments_post_route(app: &Arc<App>, request: Request<Body>) -> std::res
     let loaded = app.current().await;
     let (parts, body) = request.into_parts();
     let bytes = axum::body::to_bytes(body, 8 * 1024 * 1024).await.unwrap_or_default();
-    let remote_addr = parts.extensions.get::<axum::extract::ConnectInfo<std::net::SocketAddr>>().map(|c| c.0.ip().to_string());
-    let response = crate::admin::comments_post(&loaded, app.writer.as_ref(), &String::from_utf8_lossy(&bytes), &parts.headers, remote_addr).await;
+    let client = crate::client::Client::of(&app.config, &parts, &loaded.site.settings.siteurl);
+    let response = crate::admin::comments_post(&loaded, app.writer.as_ref(), &String::from_utf8_lossy(&bytes), &parts.headers, &client).await;
     // A saved comment answers with a redirect; the errors change nothing.
     if response.status() == StatusCode::FOUND {
         app.reload_now().await;
@@ -255,7 +255,8 @@ async fn admin_route(app: &Arc<App>, request: Request<Body>) -> std::result::Res
         Err(_) => return Ok(text(StatusCode::PAYLOAD_TOO_LARGE, "Payload Too Large\n")),
     };
     if let Some(file) = admin_file {
-        let response = crate::admin::admin_page(&loaded, &app.config, app.writer.as_ref(), &file, post, &request_uri, &query, &bytes, &parts.headers).await;
+        let client = crate::client::Client::of(&app.config, &parts, &loaded.site.settings.siteurl);
+        let response = crate::admin::admin_page(&loaded, &app.config, app.writer.as_ref(), &file, post, &request_uri, &query, &bytes, &parts.headers, &client).await;
         // A visitor's POST reaches no screen that writes (it is sent to the sign-in).
         if signed_in {
             app.reload_now().await;
@@ -263,8 +264,8 @@ async fn admin_route(app: &Arc<App>, request: Request<Body>) -> std::result::Res
         return Ok(response);
     }
     let body_text = String::from_utf8_lossy(&bytes).into_owned();
-    let remote_addr = parts.extensions.get::<axum::extract::ConnectInfo<std::net::SocketAddr>>().map(|c| c.0.ip().to_string());
-    let response = crate::admin::login_page(&loaded, app.writer.as_ref(), post, &path, &request_uri, &query, &body_text, &parts.headers, remote_addr).await;
+    let client = crate::client::Client::of(&app.config, &parts, &loaded.site.settings.siteurl);
+    let response = crate::admin::login_page(&loaded, app.writer.as_ref(), post, &path, &request_uri, &query, &body_text, &parts.headers, &client).await;
     // The sign-in forms that change something (a sign-in, a new password, a registration) answer with a redirect.
     if post && response.status().is_redirection() {
         app.reload_now().await;
@@ -507,14 +508,20 @@ async fn rest_edit_route(app: &Arc<App>, request: Request<Body>) -> std::result:
         crate::admin::RestAuth::User(user) => Some(user),
         crate::admin::RestAuth::AppPassword(user, uuid) => {
             if let Some(writer) = app.writer.as_ref() {
-                let ip = parts.extensions.get::<axum::extract::ConnectInfo<std::net::SocketAddr>>().map(|c| c.0.ip().to_string());
+                let ip = crate::client::Client::of(&app.config, &parts, &loaded.site.settings.siteurl).ip;
                 rustpress_auth::app_passwords::record_usage(&loaded.site.db, writer, user.id, &uuid, ip.as_deref(), crate::admin::now()).await;
             }
             app_password = Some(uuid);
             Some(user)
         }
-        // WordPress answers as if nobody had signed in.
-        crate::admin::RestAuth::BadAppPassword => None,
+        // `rest_application_password_check_errors()`: the error of the failed application password, as 401.
+        crate::admin::RestAuth::BadAppPassword(code, message) => {
+            let body = serde_json::json!({"code": code, "message": loaded.site.tr(message), "data": {"status": 401}}).to_string();
+            let mut response = Response::new(Body::from(body));
+            *response.status_mut() = StatusCode::UNAUTHORIZED;
+            response.headers_mut().insert(header::CONTENT_TYPE, HeaderValue::from_static("application/json; charset=UTF-8"));
+            return Ok(response);
+        }
         crate::admin::RestAuth::BadNonce => {
             let body = r#"{"code":"rest_cookie_invalid_nonce","message":"Cookie check failed","data":{"status":403}}"#;
             let mut response = Response::new(Body::from(body));

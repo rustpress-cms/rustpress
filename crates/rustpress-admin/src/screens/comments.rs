@@ -1,5 +1,6 @@
 //! `wp-admin/edit-comments.php` and `comment.php`: moderating comments.
 
+use rustpress_core::OrLog;
 use rustpress_core::formatting::{esc_attr, esc_html, esc_url};
 use rustpress_core::i18n::sprintf;
 use rustpress_core::urls::add_query_arg;
@@ -309,7 +310,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         "approved" => ("1", None),
         other => (other, None),
     };
-    let query = CommentListQuery { status: status.to_owned(), post_id, user_id, author_email: None, kind: kind.clone(), search: (!search.is_empty()).then(|| search.clone()), orderby: orderby.clone(), desc, limit: per_page, offset: (paged - 1) * per_page };
+    let query = CommentListQuery { status: status.to_owned(), post_id, user_id, author_email: None, kind: kind.clone(), search: (!search.is_empty()).then(|| search.clone()), orderby: orderby.clone(), desc, limit: per_page, offset: (paged - 1).saturating_mul(per_page) };
     let (comments, total) = db.list_comments_admin(&query).await.unwrap_or_default();
     // Counts of the posts in the list.
     let mut post_counts: std::collections::HashMap<u64, (u64, u64)> = std::collections::HashMap::new();
@@ -562,7 +563,7 @@ async fn bulk(ctx: &Ctx<'_>) -> Option<AdminResponse> {
     }
     let Some(writer) = ctx.env.writer else { return Some(read_only(ctx)) };
     let content = Content { site: ctx.site(), db: ctx.env.db, writer, user: &ctx.user, now: ctx.env.now };
-    let referer = request.request("_wp_http_referer").filter(|r| !r.is_empty() && *r != request.request_uri.as_str() && r.starts_with('/')).map(str::to_owned);
+    let referer = super::common::wp_get_referer(ctx);
     let mut action = action.to_owned();
     let ids: Vec<u64> = if action == "delete_all" && request.request("pagegen_timestamp").is_some_and(|t| !t.is_empty()) {
         let status = request.request("comment_status").unwrap_or_default();
@@ -583,31 +584,31 @@ async fn bulk(ctx: &Ctx<'_>) -> Option<AdminResponse> {
         // WordPress counts every comment it is allowed to touch.
         match action.as_str() {
             "approve" => {
-                let _ = content.set_comment_status(*id, "approve").await;
+                content.set_comment_status(*id, "approve").await.or_log();
                 approved += 1;
             }
             "unapprove" => {
-                let _ = content.set_comment_status(*id, "hold").await;
+                content.set_comment_status(*id, "hold").await.or_log();
                 unapproved += 1;
             }
             "spam" => {
-                let _ = content.spam_comment(*id).await;
+                content.spam_comment(*id).await.or_log();
                 spammed += 1;
             }
             "unspam" => {
-                let _ = content.unspam_comment(*id).await;
+                content.unspam_comment(*id).await.or_log();
                 unspammed += 1;
             }
             "trash" => {
-                let _ = content.trash_comment(*id).await;
+                content.trash_comment(*id).await.or_log();
                 trashed += 1;
             }
             "untrash" => {
-                let _ = content.untrash_comment(*id).await;
+                content.untrash_comment(*id).await.or_log();
                 untrashed += 1;
             }
             "delete" => {
-                let _ = content.delete_comment(*id).await;
+                content.delete_comment(*id).await.or_log();
                 deleted += 1;
             }
             _ => {}
@@ -640,20 +641,53 @@ pub async fn comment_php(ctx: &Ctx<'_>) -> AdminResponse {
         return super::common::die_plain(ctx, "Unknown action.");
     }
     let id: u64 = request.request("c").or(request.request("comment_ID")).and_then(|v| v.parse().ok()).unwrap_or(0);
-    let Some(comment) = ctx.env.db.comment_any(id).await.ok().flatten() else {
-        // `comment_footer_die()`: the message in the frame of the administration.
-        let content = format!("<div class='wrap'>\n<p>{} <a href=\"javascript:history.go(-1)\">{}</a>.</p>\n</div>\n", tr("Invalid comment ID."), tr("Go back"));
-        let screen = Screen { file: "comment.php".into(), parent_file: "edit-comments.php".into(), submenu_file: Some("edit-comments.php".into()), title: tr("Edit Comment"), ..Default::default() };
-        return render(ctx, &screen, &content, &Assets::default()).await;
+    let found = ctx.env.db.comment_any(id).await.ok().flatten();
+    // No action on a comment of a trashed post.
+    if request.request("c").is_some()
+        && let Some(comment) = &found
+        && ctx.env.db.post(comment.comment_post_id).await.ok().flatten().is_some_and(|p| p.post_status == "trash")
+    {
+        return super::common::die_plain(ctx, "You cannot edit this comment because the associated post is in the Trash. Please restore the post first, then try again.");
+    }
+    // `comment_footer_die()`: the message in the frame of the administration.
+    let footer_die = |message: String| async move {
+        let content = format!("<div class='wrap'><p>{message}</p></div>");
+        let screen = Screen { file: "comment.php".into(), parent_file: "edit-comments.php".into(), submenu_file: Some("edit-comments.php".into()), title: ctx.tr("Edit Comment"), ..Default::default() };
+        render(ctx, &screen, &content, &Assets::default()).await
     };
-    if !ctx.can("edit_posts") || !ctx.can("moderate_comments") && !ctx.can("edit_comment") && !ctx.can("edit_others_posts") {
-        return forbidden(ctx, "Sorry, you are not allowed to edit comments on this post.");
+    let moderation = !matches!(action.as_str(), "editcomment" | "editedcomment");
+    if moderation {
+        let nonce_action = if matches!(action.as_str(), "approvecomment" | "unapprovecomment") { format!("approve-comment_{id}") } else { format!("delete-comment_{id}") };
+        if !ctx.verify_nonce(&nonce_action) {
+            return die(ctx.env, 403, &tr("An error occurred."), &tr("The link you followed has expired."));
+        }
+    }
+    if action == "editedcomment" && !ctx.verify_nonce(&format!("update-comment_{id}")) {
+        return die(ctx.env, 403, &tr("An error occurred."), &tr("The link you followed has expired."));
+    }
+    let Some(comment) = found else {
+        if action == "editedcomment" {
+            return super::common::die_plain(ctx, "Sorry, you are not allowed to edit comments on this post.");
+        }
+        let back = if moderation { "edit-comments.php" } else { "javascript:history.go(-1)" };
+        return footer_die(format!("{} <a href=\"{back}\">{}</a>.", tr("Invalid comment ID."), tr("Go back"))).await;
+    };
+    if !super::ajax_comments::can_edit_comment(ctx.env, &ctx.user, &comment).await {
+        return match action.as_str() {
+            "editcomment" => footer_die(tr("Sorry, you are not allowed to edit this comment.")).await,
+            "editedcomment" => super::common::die_plain(ctx, "Sorry, you are not allowed to edit comments on this post."),
+            _ => footer_die(tr("Sorry, you are not allowed to edit comments on this post.")).await,
+        };
     }
     match action.as_str() {
+        "editcomment" if comment.comment_approved == "trash" => footer_die(tr("This comment is in the Trash. Please move it out of the Trash if you want to edit it.")).await,
         "editcomment" => edit_form(ctx, &comment).await,
         "editedcomment" => {
-            if !ctx.verify_nonce(&format!("update-comment_{id}")) {
-                return die(ctx.env, 403, &tr("An error occurred."), &tr("The link you followed has expired."));
+            let status = request.post_field("comment_status");
+            if let Some(parent) = request.post_field("comment_parent").and_then(|p| p.trim().parse::<i64>().ok())
+                && let Err(message) = super::ajax_comments::check_new_parent(ctx.env, &comment, parent.max(0) as u64, status).await
+            {
+                return die(ctx.env, 500, "WordPress &rsaquo; Error", &message);
             }
             let Some(writer) = ctx.env.writer else { return read_only(ctx) };
             let content = Content { site: ctx.site(), db: ctx.env.db, writer, user: &ctx.user, now: ctx.env.now };
@@ -666,50 +700,46 @@ pub async fn comment_php(ctx: &Ctx<'_>) -> AdminResponse {
                 author: field("newcomment_author"),
                 author_email: field("newcomment_author_email"),
                 author_url: field("newcomment_author_url"),
-                content: field("content"),
+                content: field("content").map(|c| super::ajax_comments::filter_admin_comment(ctx.env, request, &ctx.user, &ctx.token, &c)),
                 status: field("comment_status"),
                 date: date.filter(|d| crate::content::valid_date(d)),
             };
-            let _ = content.update_comment(id, &update).await;
+            content.update_comment(id, &update).await.or_log();
             if let Some(parent) = field("comment_parent").and_then(|p| p.parse::<u64>().ok()) {
-                let _ = writer.update_rows("comments", "comment_ID", id, &[("comment_parent", rustpress_db::Val::Int(parent as i64))]).await;
+                writer.update_rows("comments", "comment_ID", id, &[("comment_parent", rustpress_db::Val::Int(parent as i64))]).await.or_log();
             }
             redirect(&ctx.admin_url(&format!("edit-comments.php?p={}#comment-{id}", comment.comment_post_id)))
         }
         "approvecomment" | "unapprovecomment" | "spamcomment" | "unspamcomment" | "trashcomment" | "untrashcomment" | "deletecomment" => {
-            let nonce_action = if matches!(action.as_str(), "approvecomment" | "unapprovecomment") { format!("approve-comment_{id}") } else { format!("delete-comment_{id}") };
-            if !ctx.verify_nonce(&nonce_action) {
-                return die(ctx.env, 403, &tr("An error occurred."), &tr("The link you followed has expired."));
-            }
             let Some(writer) = ctx.env.writer else { return read_only(ctx) };
             let content = Content { site: ctx.site(), db: ctx.env.db, writer, user: &ctx.user, now: ctx.env.now };
             let param = match action.as_str() {
                 "approvecomment" => {
-                    let _ = content.set_comment_status(id, "approve").await;
+                    content.set_comment_status(id, "approve").await.or_log();
                     "approved"
                 }
                 "unapprovecomment" => {
-                    let _ = content.set_comment_status(id, "hold").await;
+                    content.set_comment_status(id, "hold").await.or_log();
                     "unapproved"
                 }
                 "spamcomment" => {
-                    let _ = content.spam_comment(id).await;
+                    content.spam_comment(id).await.or_log();
                     "spammed"
                 }
                 "unspamcomment" => {
-                    let _ = content.unspam_comment(id).await;
+                    content.unspam_comment(id).await.or_log();
                     "unspammed"
                 }
                 "trashcomment" => {
-                    let _ = content.trash_comment(id).await;
+                    content.trash_comment(id).await.or_log();
                     "trashed"
                 }
                 "untrashcomment" => {
-                    let _ = content.untrash_comment(id).await;
+                    content.untrash_comment(id).await.or_log();
                     "untrashed"
                 }
                 _ => {
-                    let _ = content.delete_comment(id).await;
+                    content.delete_comment(id).await.or_log();
                     "deleted"
                 }
             };

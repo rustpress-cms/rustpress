@@ -6,11 +6,13 @@
 //! wp_root      = "/var/www/html"
 //! listen       = "127.0.0.1:3000"
 //! reload_secs  = 60
+//! trusted_proxies = ["127.0.0.1"]
 //! ```
 //!
 //! Environment: `RUSTPRESS_CONFIG` (path of the TOML file), `RUSTPRESS_DATABASE_URL`, `RUSTPRESS_ALLOW_WRITES`,
 //! `RUSTPRESS_WP_CONFIG`,
-//! `RUSTPRESS_TABLE_PREFIX`, `RUSTPRESS_WP_ROOT`, `RUSTPRESS_LISTEN`, `RUSTPRESS_RELOAD_SECS`.
+//! `RUSTPRESS_TABLE_PREFIX`, `RUSTPRESS_WP_ROOT`, `RUSTPRESS_LISTEN`, `RUSTPRESS_RELOAD_SECS`,
+//! `RUSTPRESS_TRUSTED_PROXIES` (addresses separated by commas).
 
 use std::path::PathBuf;
 
@@ -31,6 +33,8 @@ pub struct Config {
     pub allow_writes: bool,
     /// The `wp-config.php` whose keys and salts sign the cookies (default: the one in `wp_root`).
     pub wp_config: Option<PathBuf>,
+    /// The addresses of reverse proxies whose `X-Forwarded-For`/`X-Forwarded-Proto` are believed.
+    pub trusted_proxies: Vec<String>,
 }
 
 impl Default for Config {
@@ -43,6 +47,7 @@ impl Default for Config {
             reload_secs: 60,
             allow_writes: false,
             wp_config: None,
+            trusted_proxies: Vec::new(),
         }
     }
 }
@@ -89,6 +94,9 @@ impl Config {
         }
         if let Ok(v) = std::env::var("RUSTPRESS_WP_CONFIG") {
             config.wp_config = Some(v.into());
+        }
+        if let Ok(v) = std::env::var("RUSTPRESS_TRUSTED_PROXIES") {
+            config.trusted_proxies = v.split(',').map(str::trim).filter(|p| !p.is_empty()).map(str::to_owned).collect();
         }
         if config.database_url.is_empty() {
             return Err(ConfigError::NoDatabase);

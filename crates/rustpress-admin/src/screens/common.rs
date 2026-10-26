@@ -127,3 +127,14 @@ pub async fn dropdown_pages(ctx: &Ctx<'_>, name: &str, id: &str, selected_id: u6
     out.push_str("</select>\n");
     out
 }
+
+/// `wp_get_referer()`: the `_wp_http_referer` of the form when it is not this request and stays on the site
+/// (`wp_validate_redirect()`).
+pub fn wp_get_referer(ctx: &Ctx<'_>) -> Option<String> {
+    let raw = ctx.request.request("_wp_http_referer").filter(|r| !r.is_empty())?;
+    let uri = &ctx.request.request_uri;
+    if raw == uri || raw == format!("{}{uri}", ctx.site().settings.home.trim_end_matches('/')) {
+        return None;
+    }
+    Some(crate::login::validate_redirect(ctx.site(), raw, "")).filter(|r| !r.is_empty())
+}

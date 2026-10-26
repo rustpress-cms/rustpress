@@ -1,5 +1,6 @@
 //! `wp-admin/edit-tags.php` and `term.php`: categories, tags and the terms of other taxonomies.
 
+use rustpress_core::OrLog;
 use rustpress_core::formatting::{esc_attr, esc_html, esc_url};
 use rustpress_core::i18n::sprintf;
 use rustpress_core::urls::add_query_arg;
@@ -246,7 +247,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         let a = request.request("action").unwrap_or_default();
         if a.is_empty() || a == "-1" { request.request("action2").unwrap_or_default().to_owned() } else { a.to_owned() }
     };
-    let referer = request.request("_wp_http_referer").filter(|r| !r.is_empty()).map_or_else(|| format!("{}", request.request_uri), str::to_owned);
+    let referer = super::common::wp_get_referer(ctx).unwrap_or_else(|| request.request_uri.clone());
     let index_url = format!("edit-tags.php?taxonomy={}{}", info.name, if info.post_type == "post" { String::new() } else { format!("&post_type={}", info.post_type) });
     let messages = messages(ctx, &info);
 
@@ -289,7 +290,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
                 return expired();
             }
             for id in bulk_ids {
-                let _ = content.delete_term(id, &info.name).await;
+                content.delete_term(id, &info.name).await.or_log();
             }
             return back(6, false);
         }
@@ -297,7 +298,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         if !ctx.verify_nonce(&format!("delete-tag_{id}")) {
             return expired();
         }
-        let _ = content.delete_term(id, &info.name).await;
+        content.delete_term(id, &info.name).await.or_log();
         return back(2, false);
     }
 
@@ -339,13 +340,13 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
             if entry.1 == 0 {
                 root += 1;
             }
-            if root > (paged - 1) * per_page && root <= paged * per_page {
+            if root > (paged - 1).saturating_mul(per_page) && root <= paged.saturating_mul(per_page) {
                 out.push(entry);
             }
         }
         out
     } else {
-        list.iter().skip(((paged - 1) * per_page) as usize).take(per_page as usize).cloned().collect()
+        list.iter().skip(((paged - 1).saturating_mul(per_page)) as usize).take(per_page as usize).cloned().collect()
     };
     let current_url = format!("{origin}{}", request.request_uri);
     let mut rows = String::new();

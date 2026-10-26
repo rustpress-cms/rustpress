@@ -1,6 +1,7 @@
 //! The block editor of `post.php` and `post-new.php` (`edit-form-blocks.php`): the page around the JavaScript editor,
 //! the REST responses it starts with and its settings.
 
+use rustpress_core::OrLog;
 use rustpress_core::formatting::{esc_attr, esc_html, esc_url};
 use rustpress_core::i18n::sprintf;
 use rustpress_db::Post;
@@ -209,7 +210,7 @@ async fn post_settings(ctx: &Ctx<'_>, post: &Post, settings: &mut Map<String, Va
     } else {
         let lock = format!("{}:{}", env.now, ctx.user.id);
         if let Some(writer) = env.writer {
-            let _ = writer.update_post_meta(post.id, "_edit_lock", &lock).await;
+            writer.update_post_meta(post.id, "_edit_lock", &lock).await.or_log();
         }
         settings.insert("postLock".into(), json!({"isLocked": false, "activePostLock": lock}));
     }

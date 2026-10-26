@@ -4,6 +4,7 @@
 //! [`rustpress_core::rewrite_gen`]. There is no `.htaccess` or `web.config` here: RustPress answers the
 //! requests itself.
 
+use rustpress_core::OrLog;
 use rustpress_core::formatting::{esc_attr, esc_html, esc_url};
 use rustpress_core::i18n::sprintf;
 use rustpress_phpser::{Key, Value};
@@ -97,15 +98,15 @@ async fn save(ctx: &Ctx<'_>) -> Option<AdminResponse> {
     let rules = rewrite_rules(&input);
     let serialized = if rules.is_empty() { String::new() } else { serialize_rules(&rules) };
     if structure != old_structure {
-        let _ = writer.update_option("permalink_structure", &structure).await;
+        writer.update_option("permalink_structure", &structure).await.or_log();
     }
     if old_category_base != category_base {
-        let _ = writer.update_option("category_base", &category_base).await;
+        writer.update_option("category_base", &category_base).await.or_log();
     }
     if old_tag_base != tag_base {
-        let _ = writer.update_option("tag_base", &tag_base).await;
+        writer.update_option("tag_base", &tag_base).await.or_log();
     }
-    let _ = writer.update_option("rewrite_rules", &serialized).await;
+    writer.update_option("rewrite_rules", &serialized).await.or_log();
 
     // `add_settings_error()` and `set_transient( 'settings_errors', ..., 30 )`.
     let message = if errors.is_empty() { vec![("settings_updated", ctx.tr("Permalink structure updated."), "success", "general")] } else { errors.iter().map(|(code, text)| (*code, text.clone(), "error", "permalink_structure")).collect() };
@@ -118,8 +119,8 @@ async fn save(ctx: &Ctx<'_>) -> Option<AdminResponse> {
         })
         .collect();
     let value = String::from_utf8_lossy(&rustpress_phpser::serialize(&Value::Array(entries))).into_owned();
-    let _ = writer.update_option_with_autoload("_transient_settings_errors", &value, "off").await;
-    let _ = writer.update_option_with_autoload("_transient_timeout_settings_errors", &(ctx.env.now + 30).to_string(), "off").await;
+    writer.update_option_with_autoload("_transient_settings_errors", &value, "off").await.or_log();
+    writer.update_option_with_autoload("_transient_timeout_settings_errors", &(ctx.env.now + 30).to_string(), "off").await.or_log();
     Some(redirect(&ctx.admin_url("options-permalink.php?settings-updated=true")))
 }
 
@@ -152,8 +153,8 @@ async fn settings_errors(ctx: &Ctx<'_>) -> String {
     let Some(items) = value.as_array() else { return String::new() };
     // `delete_transient( 'settings_errors' )`: shown once.
     if let Some(writer) = ctx.env.writer {
-        let _ = writer.delete_option("_transient_settings_errors").await;
-        let _ = writer.delete_option("_transient_timeout_settings_errors").await;
+        writer.delete_option("_transient_settings_errors").await.or_log();
+        writer.delete_option("_transient_timeout_settings_errors").await.or_log();
     }
     let mut out = String::new();
     for (_, entry) in items {

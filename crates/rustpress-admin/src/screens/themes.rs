@@ -1,5 +1,6 @@
 //! `wp-admin/themes.php`: the installed themes and switching between them.
 
+use rustpress_core::OrLog;
 use rustpress_core::formatting::{esc_html, esc_url, wptexturize};
 use serde_json::{Map, Value, json};
 
@@ -114,19 +115,19 @@ async fn switch(ctx: &Ctx<'_>, theme: &ThemeInfo) -> bool {
     let Some(writer) = ctx.env.writer else { return false };
     let site = ctx.site();
     let old = site.settings.stylesheet.clone();
-    let _ = writer.update_option("template", &theme.template).await;
-    let _ = writer.update_option("stylesheet", &theme.stylesheet).await;
-    let _ = writer.update_option("current_theme", &theme.name).await;
+    writer.update_option("template", &theme.template).await.or_log();
+    writer.update_option("stylesheet", &theme.stylesheet).await.or_log();
+    writer.update_option("current_theme", &theme.name).await.or_log();
     // The mods of the new theme exist (empty) from now on.
     let mods = format!("theme_mods_{}", theme.stylesheet);
     if ctx.env.db.option(&mods).await.ok().flatten().is_none() {
-        let _ = writer.update_option_with_autoload(&mods, "a:0:{}", "yes").await;
+        writer.update_option_with_autoload(&mods, "a:0:{}", "yes").await.or_log();
     }
     let old_mods = format!("theme_mods_{old}");
     if let Ok(Some(value)) = ctx.env.db.option(&old_mods).await {
-        let _ = writer.update_option_with_autoload(&old_mods, &value, "no").await;
+        writer.update_option_with_autoload(&old_mods, &value, "no").await.or_log();
     }
-    let _ = writer.update_option("theme_switched", &old).await;
+    writer.update_option("theme_switched", &old).await.or_log();
     true
 }
 
@@ -197,7 +198,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
                 let known = themes::installed(&root);
                 auto.retain(|t| known.iter().any(|k| &k.stylesheet == t));
                 let items = auto.iter().enumerate().map(|(i, t)| (rustpress_phpser::Key::Int(i as i64), rustpress_phpser::Value::Str(t.clone().into_bytes()))).collect();
-                let _ = writer.update_option("auto_update_themes", &String::from_utf8_lossy(&rustpress_phpser::serialize(&rustpress_phpser::Value::Array(items)))).await;
+                writer.update_option("auto_update_themes", &String::from_utf8_lossy(&rustpress_phpser::serialize(&rustpress_phpser::Value::Array(items)))).await.or_log();
                 return redirect(&ctx.admin_url(&format!("themes.php?{}=true", if action == "enable-auto-update" { "enabled-auto-update" } else { "disabled-auto-update" })));
             }
             _ => {}

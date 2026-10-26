@@ -1,6 +1,7 @@
 //! `wp-admin/post.php` and `post-new.php`: the classic edit form of posts and pages, and the actions that
 //! come with it (save, trash, restore, delete).
 
+use rustpress_core::OrLog;
 use rustpress_core::formatting::{esc_attr, esc_html, esc_url};
 use rustpress_core::urls::{add_query_arg, remove_query_arg};
 use rustpress_db::{Post, PostQuery};
@@ -508,7 +509,7 @@ async fn form(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, is_new: bool) -> Admi
     // Lock
     let lock = format!("{}:{}", ctx.env.now, ctx.user.id);
     if let Some(writer) = ctx.env.writer {
-        let _ = writer.update_post_meta(post.id, "_edit_lock", &lock).await;
+        writer.update_post_meta(post.id, "_edit_lock", &lock).await.or_log();
     }
 
     let mut h = String::from("<div class=\"wrap\">\n<h1 class=\"wp-heading-inline\">\n");
@@ -685,10 +686,9 @@ pub async fn post_php(ctx: &Ctx<'_>) -> AdminResponse {
     let post_id: u64 = request.get("post").or(request.post_field("post_ID")).and_then(|p| p.parse().ok()).unwrap_or(0);
     let post = if post_id != 0 { ctx.env.db.post(post_id).await.ok().flatten() } else { None };
     let sendback = {
-        let referer = request.request("_wp_http_referer").filter(|r| !r.is_empty());
-        match referer {
+        match super::common::wp_get_referer(ctx) {
             Some(r) if !r.contains("post.php") && !r.contains("post-new.php") => {
-                let mut url = r.to_owned();
+                let mut url = r;
                 for key in ["trashed", "untrashed", "deleted", "ids"] {
                     url = remove_query_arg(&url, key);
                 }
@@ -703,7 +703,7 @@ pub async fn post_php(ctx: &Ctx<'_>) -> AdminResponse {
             }
         }
     };
-    let can_delete = |post: &Post| ctx.can(if post.post_type == "page" { "delete_pages" } else { "delete_posts" }) && (post.post_author == ctx.user.id || ctx.can("delete_others_posts") || ctx.can("delete_others_pages"));
+    let can_delete = |post: &Post| ctx.user.can_delete_post(post);
     let ays = || die(ctx.env, 403, &tr("An error occurred."), &tr("The link you followed has expired."));
     match action.as_str() {
         "post-quickdraft-save" => super::dashboard::quickdraft_save(ctx).await,
@@ -716,7 +716,7 @@ pub async fn post_php(ctx: &Ctx<'_>) -> AdminResponse {
                 return die(ctx.env, 404, "WordPress &rsaquo; Error", &tr("You attempted to edit an item that does not exist. Perhaps it was deleted?"));
             };
             if post.post_type == "attachment" {
-                if !(ctx.can("edit_posts") && (post.post_author == ctx.user.id || ctx.can("edit_others_posts"))) {
+                if !(ctx.user.can_edit_post(&post)) {
                     return die(ctx.env, 403, "WordPress &rsaquo; Error", &format!("<p>{}</p>", tr("Sorry, you are not allowed to edit this item.")));
                 }
                 return super::attachment_edit::form(ctx, &post).await;
@@ -724,7 +724,7 @@ pub async fn post_php(ctx: &Ctx<'_>) -> AdminResponse {
             let Some(info) = type_info(ctx, &post.post_type) else {
                 return die(ctx.env, 403, "WordPress &rsaquo; Error", &format!("<p>{}</p>", tr("Sorry, you are not allowed to edit posts in this post type.")));
             };
-            let may_edit = ctx.can(if post.post_type == "page" { "edit_pages" } else { "edit_posts" }) && (post.post_author == ctx.user.id || ctx.can("edit_others_posts") || ctx.can("edit_others_pages"));
+            let may_edit = ctx.user.can_edit_post(&post);
             if !may_edit {
                 return die(ctx.env, 403, "WordPress &rsaquo; Error", &format!("<p>{}</p>", tr("Sorry, you are not allowed to edit this item.")));
             }
@@ -810,7 +810,7 @@ async fn edit_post(ctx: &Ctx<'_>, post_id: u64) -> AdminResponse {
         return die(ctx.env, 403, "WordPress &rsaquo; Error", "<p>Invalid post type.</p>");
     };
     let page = info.name == "page";
-    let may_edit = ctx.can(if page { "edit_pages" } else { "edit_posts" }) && (post.post_author == ctx.user.id || ctx.can("edit_others_posts") || ctx.can("edit_others_pages"));
+    let may_edit = ctx.user.can_edit_post(&post);
     if !may_edit {
         return die(ctx.env, 403, "WordPress &rsaquo; Error", &format!("<p>{}</p>", if page { tr("Sorry, you are not allowed to edit this page.") } else { tr("Sorry, you are not allowed to edit this post.") }));
     }
@@ -931,8 +931,8 @@ async fn edit_post(ctx: &Ctx<'_>, post_id: u64) -> AdminResponse {
         return die(ctx.env, 200, "WordPress &rsaquo; Error", &format!("<p>{}</p>", esc_html(&e.to_string())));
     }
     if let Some(writer) = ctx.env.writer {
-        let _ = writer.update_post_meta(post_id, "_edit_last", &ctx.user.id.to_string()).await;
-        let _ = writer.update_post_meta(post_id, "_edit_lock", &format!("{}:{}", ctx.env.now, ctx.user.id)).await;
+        writer.update_post_meta(post_id, "_edit_last", &ctx.user.id.to_string()).await.or_log();
+        writer.update_post_meta(post_id, "_edit_lock", &format!("{}:{}", ctx.env.now, ctx.user.id)).await.or_log();
         // Sticky posts
         if info.name == "post" && ctx.can("edit_others_posts") && can_publish {
             let mut ids = sticky_ids(ctx);
@@ -943,7 +943,7 @@ async fn edit_post(ctx: &Ctx<'_>, post_id: u64) -> AdminResponse {
             }
             if ids != before {
                 let value = rustpress_phpser::Value::Array(ids.iter().enumerate().map(|(i, id)| (rustpress_phpser::Key::Int(i as i64), rustpress_phpser::Value::Int(*id as i64))).collect());
-                let _ = writer.update_option("sticky_posts", &String::from_utf8_lossy(&rustpress_phpser::serialize(&value))).await;
+                writer.update_option("sticky_posts", &String::from_utf8_lossy(&rustpress_phpser::serialize(&value))).await.or_log();
             }
         }
     }

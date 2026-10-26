@@ -590,11 +590,12 @@ impl Site {
 
         // Remove trailing spaces and end punctuation from the path.
         let punct = punctuation_pattern();
-        rpath = Regex::new(&format!("({punct})+$")).expect("valid regex").replace(&rpath, "").into_owned();
+        let cached = crate::formatting::cached_regex;
+        rpath = cached(&format!("({punct})+$")).replace(&rpath, "").into_owned();
         if !rquery.is_empty() {
-            rquery = Regex::new(&format!("((^|&)(p|page_id|cat|tag)=[^&]*?)({punct})+$")).expect("valid regex").replace(&rquery, "$1").into_owned();
-            rquery = Regex::new("(^|&)(p|page_id|cat|tag)=?(&|$)").expect("valid regex").replace_all(&rquery, "&").trim_matches('&').to_owned();
-            rquery = Regex::new("(^|&)feed=rss(&|$)").expect("valid regex").replace(&rquery, "${1}feed=rss2${2}").into_owned();
+            rquery = cached(&format!("((^|&)(p|page_id|cat|tag)=[^&]*?)({punct})+$")).replace(&rquery, "$1").into_owned();
+            rquery = cached("(^|&)(p|page_id|cat|tag)=?(&|$)").replace_all(&rquery, "&").trim_matches('&').to_owned();
+            rquery = cached("(^|&)feed=rss(&|$)").replace(&rquery, "${1}feed=rss2${2}").into_owned();
             rquery = rquery.strip_prefix('?').unwrap_or(&rquery).trim_start_matches('&').to_owned();
         }
 

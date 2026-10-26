@@ -1,5 +1,6 @@
 //! `wp-admin/index.php`: the dashboard and its widgets (`wp-admin/includes/dashboard.php`).
 
+use rustpress_core::OrLog;
 use std::collections::HashMap;
 
 use rustpress_core::datetime::SiteTimezone;
@@ -259,7 +260,7 @@ fn author_link(ctx: &Ctx<'_>, comment: &Comment, author: &str) -> String {
 }
 
 /// `_wp_dashboard_recent_comments_row()`.
-async fn comment_row(ctx: &Ctx<'_>, comment: &Comment, index: usize) -> String {
+pub(super) async fn comment_row(ctx: &Ctx<'_>, comment: &Comment, index: usize) -> String {
     let site = ctx.site();
     let tr = |s: &str| ctx.tr(s);
     let id = comment.comment_id;
@@ -449,7 +450,7 @@ async fn quick_draft_id(ctx: &Ctx<'_>) -> u64 {
     let data = crate::content::PostData { post_title: Some(ctx.tr("Auto Draft")), post_type: Some("post".into()), post_status: Some("auto-draft".into()), post_author: Some(ctx.user.id), post_content: Some(String::new()), ..Default::default() };
     match content.insert_post(&data).await {
         Ok(id) => {
-            let _ = writer.update_user_meta(ctx.user.id, &key, &id.to_string()).await;
+            writer.update_user_meta(ctx.user.id, &key, &id.to_string()).await.or_log();
             id
         }
         Err(_) => 0,
@@ -570,7 +571,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     let title = tr("Dashboard");
     // The link of the welcome panel's close button works without JavaScript.
     if let (Some(flag), Some(writer)) = (ctx.request.get("welcome"), ctx.env.writer) {
-        let _ = writer.update_user_meta(ctx.user.id, "show_welcome_panel", if flag.is_empty() || flag == "0" { "0" } else { "1" }).await;
+        writer.update_user_meta(ctx.user.id, "show_welcome_panel", if flag.is_empty() || flag == "0" { "0" } else { "1" }).await.or_log();
     }
     let (closed, hidden, order) = box_state(ctx).await;
 
@@ -681,7 +682,7 @@ pub async fn quickdraft_save(ctx: &Ctx<'_>) -> AdminResponse {
         return html(quick_press(ctx, Some((&tr("Cannot create a draft post with empty title and content."), "error"))).await);
     }
     let Some(writer) = ctx.env.writer else { return html(quick_press(ctx, Some((&tr("Unable to submit this form, please refresh and try again."), "error"))).await) };
-    let Some(post) = ctx.env.db.post(post_id).await.ok().flatten().filter(|p| p.post_author == ctx.user.id || ctx.can("edit_others_posts")) else {
+    let Some(post) = ctx.env.db.post(post_id).await.ok().flatten().filter(|p| ctx.user.can_edit_post(p)) else {
         return html(quick_press(ctx, Some((&tr("Unable to submit this form, please refresh and try again."), "error"))).await);
     };
     // The content of a block editor post is wrapped in a paragraph block.

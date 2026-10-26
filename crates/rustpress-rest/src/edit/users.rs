@@ -175,10 +175,29 @@ impl Rest<'_> {
         Ok(())
     }
 
+    /// The IDs of the users with a published post of a type of the REST API (`has_published_posts`, `count_user_posts()`).
+    async fn published_authors(&self) -> Result<Vec<u64>> {
+        Ok(self.site.db.users_with_published_posts(crate::users::AUTHOR_TYPES, 1_000_000, 0).await?.into_iter().map(|u| u.id).collect())
+    }
+
     pub(crate) async fn users_list(&self, args: &Args) -> Result<Outcome> {
         let context = args.str("context").unwrap_or_else(|| "view".to_owned());
-        if context == "edit" && !self.can("list_users") {
-            return Ok(Err(RestError::new("rest_forbidden_context", "Sorry, you are not allowed to list users.", 403)));
+        let list_users = self.can("list_users");
+        // `get_items_permissions_check()`
+        if args.list("roles").is_some_and(|r| !r.is_empty()) && !list_users {
+            return Ok(Err(self.forbidden("rest_user_cannot_view", "Sorry, you are not allowed to filter users by role.")));
+        }
+        if args.list("capabilities").is_some_and(|c| !c.is_empty()) && !list_users {
+            return Ok(Err(self.forbidden("rest_user_cannot_view", "Sorry, you are not allowed to filter users by capability.")));
+        }
+        if context == "edit" && !list_users {
+            return Ok(Err(self.forbidden("rest_forbidden_context", "Sorry, you are not allowed to edit users.")));
+        }
+        if matches!(args.str("orderby").as_deref(), Some("email" | "registered_date")) && !list_users {
+            return Ok(Err(self.forbidden("rest_forbidden_orderby", "Sorry, you are not allowed to order users by this parameter.")));
+        }
+        if args.str("who").as_deref() == Some("authors") && !self.can("edit_posts") && !self.can("edit_pages") {
+            return Ok(Err(self.forbidden("rest_forbidden_who", "Sorry, you are not allowed to query users by this parameter.")));
         }
         let per_page = args.u64("per_page").unwrap_or(10).clamp(1, 100);
         let page = args.u64("page").unwrap_or(1).max(1);
@@ -187,16 +206,34 @@ impl Rest<'_> {
         let include = args.ids("include").unwrap_or_default();
         let exclude = args.ids("exclude").unwrap_or_default();
         let roles = args.list("roles").unwrap_or_default();
+        // Without `list_users` only the authors of published posts are listed, and the e-mail is not searched.
+        let published = if !who_authors && !list_users { Some(self.published_authors().await?) } else { None };
         let all = self.site.db.all_users().await?;
         let mut users: Vec<User> = Vec::new();
         for user in all {
             if !include.is_empty() && !include.contains(&user.id) || exclude.contains(&user.id) {
                 continue;
             }
-            if !search.is_empty() && ![&user.user_login, &user.user_nicename, &user.display_name, &user.user_email, &user.user_url].iter().any(|f| f.to_lowercase().contains(&search)) {
+            if published.as_ref().is_some_and(|ids| !ids.contains(&user.id)) {
                 continue;
             }
-            if who_authors || !roles.is_empty() {
+            if !search.is_empty() {
+                let mut columns = vec![&user.user_login, &user.user_nicename, &user.display_name];
+                if list_users {
+                    columns.push(&user.user_email);
+                }
+                if user.id.to_string() != search && !columns.iter().any(|f| f.to_lowercase().contains(&search)) {
+                    continue;
+                }
+            }
+            // `who=authors`: a `user_level` other than 0.
+            if who_authors {
+                let level = self.site.db.user_meta(user.id, &format!("{}user_level", self.site.db.table_prefix())).await?;
+                if level.is_none_or(|l| l.trim().is_empty() || l.trim() == "0") {
+                    continue;
+                }
+            }
+            if !roles.is_empty() {
                 let caps_raw = self.site.db.user_meta(user.id, &format!("{}capabilities", self.site.db.table_prefix())).await?.unwrap_or_default();
                 let held: Vec<String> = match rustpress_phpser::unserialize(caps_raw.as_bytes()) {
                     Ok(rustpress_phpser::Value::Array(items)) => items.iter().filter(|(_, v)| v.as_i64() == Some(1)).filter_map(|(k, _)| match k {
@@ -206,9 +243,6 @@ impl Rest<'_> {
                     _ => Vec::new(),
                 };
                 if !roles.is_empty() && !roles.iter().any(|r| held.contains(r)) {
-                    continue;
-                }
-                if who_authors && !held.iter().any(|r| matches!(r.as_str(), "administrator" | "editor" | "author")) {
                     continue;
                 }
             }
@@ -225,7 +259,7 @@ impl Rest<'_> {
             users.reverse();
         }
         let total = users.len() as u64;
-        let start = ((page - 1) * per_page) as usize;
+        let start = ((page - 1).saturating_mul(per_page)) as usize;
         let mut items = Vec::new();
         for user in users.iter().skip(start).take(per_page as usize) {
             items.push(self.prepare_user_edit(user, &context).await?);
@@ -237,14 +271,81 @@ impl Rest<'_> {
         Ok(Ok(resp))
     }
 
+    /// `POST /wp/v2/users` (`WP_REST_Users_Controller::create_item()`).
+    pub(crate) async fn users_create(&self, args: &Args) -> Result<Outcome> {
+        let missing: Vec<&str> = ["username", "email", "password"].into_iter().filter(|k| args.get(k).is_none()).collect();
+        if !missing.is_empty() {
+            return Ok(Err(RestError::missing_params(&missing)));
+        }
+        if !self.can("create_users") {
+            return Ok(Err(self.forbidden("rest_cannot_create_user", "Sorry, you are not allowed to create new users.")));
+        }
+        if args.u64("id").is_some_and(|id| id != 0) {
+            return Ok(Err(RestError::new("rest_user_exists", "Cannot create existing user.", 400)));
+        }
+        let roles = args.list("roles").unwrap_or_default();
+        let key = format!("{}user_roles", self.site.db.table_prefix());
+        let known = rustpress_auth::Roles::from_option(&self.site.options.fetch(&self.site.db, &key).await?.unwrap_or_default());
+        for role in &roles {
+            if !known.contains(role) {
+                return Ok(Err(RestError::new("rest_user_invalid_role", &rustpress_core::i18n::sprintf(&self.site.tr("The role %s does not exist."), &[role]), 400)));
+            }
+        }
+        let content = match self.content() {
+            Ok(c) => c,
+            Err(e) => return Ok(Err(e)),
+        };
+        let data = UserData {
+            user_login: args.str("username"),
+            user_email: args.str("email"),
+            user_pass: args.str("password"),
+            user_url: args.str("url"),
+            display_name: args.str("name"),
+            nickname: args.str("nickname"),
+            first_name: args.str("first_name"),
+            last_name: args.str("last_name"),
+            description: args.str("description"),
+            locale: args.str("locale"),
+            role: roles.first().cloned(),
+            ..Default::default()
+        };
+        let id = match content.insert_user(&data).await {
+            Ok(id) => id,
+            Err(e) => {
+                let message = e.to_string();
+                let code = [
+                    ("Sorry, that username already exists!", "existing_user_login"),
+                    ("Sorry, that email address is already used!", "existing_user_email"),
+                    ("Username may not be longer than 60 characters.", "user_login_too_long"),
+                    ("Cannot create a user with an empty login name.", "empty_user_login"),
+                ]
+                .iter()
+                .find(|(text, _)| self.site.tr(text) == message)
+                .map_or("rest_user_create", |(_, code)| code);
+                return Ok(Err(RestError::new(code, &message, 400)));
+            }
+        };
+        let Some(user) = self.site.db.user(id).await? else { return Ok(Err(RestError::new("rest_user_create", "Error creating new user.", 500))) };
+        let resp = Resp::item(self.prepare_user_edit(&user, "edit").await?);
+        let location = self.rest_url(&format!("wp/v2/users/{id}"));
+        Ok(Ok(self.created(resp, location)))
+    }
+
     pub(crate) async fn users_get(&self, id: &str, args: &Args) -> Result<Outcome> {
         let id: u64 = id.parse().unwrap_or(0);
         let Some(user) = self.site.db.user(id).await? else {
             return Ok(Err(RestError::new("rest_user_invalid_id", "Invalid user ID.", 404)));
         };
         let context = args.str("context").unwrap_or_else(|| "view".to_owned());
-        if context == "edit" && !(self.can("edit_users") || self.user().is_some_and(|u| u.id == id)) {
-            return Ok(Err(RestError::new("rest_forbidden_context", "Sorry, you are not allowed to edit this user.", 403)));
+        // `get_item_permissions_check()`
+        if !self.user().is_some_and(|u| u.id == id) {
+            let may_edit = self.user().is_some_and(|u| u.can_edit_user(id));
+            if context == "edit" && !may_edit {
+                return Ok(Err(self.forbidden("rest_forbidden_context", "Sorry, you are not allowed to edit this user.")));
+            }
+            if !may_edit && !self.can("list_users") && !self.published_authors().await?.contains(&id) {
+                return Ok(Err(self.forbidden("rest_user_cannot_view", "Sorry, you are not allowed to list users.")));
+            }
         }
         let mut resp = Resp::item(self.prepare_user_edit(&user, &context).await?);
         resp.allow = Some(self.user_allow(id).join(", "));

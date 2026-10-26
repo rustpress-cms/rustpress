@@ -294,10 +294,10 @@ fn texturize_primes(haystack: &str, needle: char, prime: &str, open_quote: &str,
     let end = "\\n?\\z";
     let needle_text = needle.to_string();
     let n = fancy_regex::escape(&needle_text);
-    let quote_pattern = Regex::new(&format!("{n}(?={end}|[.,:;!?)}}\\-\\]]|&gt;|{SPACES})")).expect("regex");
-    let prime_pattern = Regex::new(&format!("(?<=\\d){n}")).expect("regex");
-    let flag_after_digit = Regex::new(&format!("(?<=\\d){}", fancy_regex::escape(flag))).expect("regex");
-    let flag_no_digit = Regex::new(&format!("(?<!\\d){}", fancy_regex::escape(flag))).expect("regex");
+    let quote_pattern = cached_regex(&format!("{n}(?={end}|[.,:;!?)}}\\-\\]]|&gt;|{SPACES})"));
+    let prime_pattern = cached_regex(&format!("(?<=\\d){n}"));
+    let flag_after_digit = cached_regex(&format!("(?<=\\d){}", fancy_regex::escape(flag)));
+    let flag_no_digit = cached_regex(&format!("(?<!\\d){}", fancy_regex::escape(flag)));
 
     let mut sentences: Vec<String> = haystack.split(open_quote).map(str::to_owned).collect();
     for (key, sentence) in sentences.iter_mut().enumerate() {
@@ -498,8 +498,31 @@ pub fn capital_p_dangit(text: &str, is_title: bool) -> String {
 
 const ALLBLOCKS: &str = "(?:table|thead|tfoot|caption|col|colgroup|tbody|tr|td|th|div|dl|dd|dt|ul|ol|li|pre|form|map|area|blockquote|address|style|p|h[1-6]|hr|fieldset|legend|section|article|aside|hgroup|header|footer|nav|figure|figcaption|details|menu|summary)";
 
-fn rx(pattern: &str) -> Regex {
-    Regex::new(pattern).expect("valid wpautop regex")
+fn rx(pattern: &str) -> &'static Regex {
+    cached_regex(pattern)
+}
+
+/// [`cached_regex`] for the `regex` crate (no look-around).
+pub fn cached_plain_regex(pattern: &str) -> &'static regex::Regex {
+    static CACHE: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<String, &'static regex::Regex>>> = std::sync::OnceLock::new();
+    let cache = CACHE.get_or_init(Default::default);
+    if let Some(found) = cache.lock().expect("regex cache").get(pattern) {
+        return found;
+    }
+    let compiled: &'static regex::Regex = Box::leak(Box::new(regex::Regex::new(pattern).expect("valid regex")));
+    cache.lock().expect("regex cache").entry(pattern.to_owned()).or_insert(compiled)
+}
+
+/// A regex compiled once per pattern. The patterns of the filters are a small fixed set (built from constants), so
+/// the cache stays small; compiling them on every call was the largest cost of `wpautop()`.
+pub fn cached_regex(pattern: &str) -> &'static Regex {
+    static CACHE: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<String, &'static Regex>>> = std::sync::OnceLock::new();
+    let cache = CACHE.get_or_init(Default::default);
+    if let Some(found) = cache.lock().expect("regex cache").get(pattern) {
+        return found;
+    }
+    let compiled: &'static Regex = Box::leak(Box::new(Regex::new(pattern).expect("valid regex")));
+    cache.lock().expect("regex cache").entry(pattern.to_owned()).or_insert(compiled)
 }
 
 /// `wpautop( $text, true )`.
@@ -530,7 +553,7 @@ pub fn wpautop(text: &str) -> String {
         text = rebuilt;
     }
 
-    let sub = |text: &str, pattern: &str, replacement: &str| replace_all_str(&rx(pattern), text, replacement);
+    let sub = |text: &str, pattern: &str, replacement: &str| replace_all_str(rx(pattern), text, replacement);
 
     text = sub(&text, r"<br\s*/?>\s*<br\s*/?>", "\n\n");
     text = sub(&text, &format!(r"(<{ALLBLOCKS}[\s/>])"), "\n\n$1");
@@ -763,7 +786,12 @@ pub fn strip_tags(text: &str) -> String {
 pub fn wp_strip_all_tags(text: &str) -> String {
     static SCRIPT: std::sync::OnceLock<fancy_regex::Regex> = std::sync::OnceLock::new();
     let re = SCRIPT.get_or_init(|| fancy_regex::Regex::new(r"(?is)<(script|style)[^>]*?>.*?</\1>").expect("valid regex"));
-    strip_tags(&re.replace_all(text, "")).trim().to_owned()
+    php_trim(&strip_tags(&re.replace_all(text, ""))).to_owned()
+}
+
+/// PHP's `trim()`: spaces, tabs, line breaks, NUL and vertical tabs (no other white space such as U+00A0).
+pub fn php_trim(text: &str) -> &str {
+    text.trim_matches([' ', '\t', '\n', '\r', '\0', '\u{b}'])
 }
 
 /// `ent2ncr()`: named entities become numeric character references.

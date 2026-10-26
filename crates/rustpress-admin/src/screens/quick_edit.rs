@@ -1,5 +1,6 @@
 //! Quick Edit and Bulk Edit of the posts list: `wp_ajax_inline_save()` and `bulk_edit_posts()`.
 
+use rustpress_core::OrLog;
 use rustpress_auth::CurrentUser;
 use rustpress_core::formatting::esc_html;
 use rustpress_db::Post;
@@ -81,7 +82,7 @@ async fn set_sticky(ctx: &Ctx<'_>, post_id: u64, sticky: bool) {
     }
     if ids != before {
         let value = rustpress_phpser::Value::Array(ids.iter().enumerate().map(|(i, id)| (rustpress_phpser::Key::Int(i as i64), rustpress_phpser::Value::Int(*id as i64))).collect());
-        let _ = writer.update_option("sticky_posts", &String::from_utf8_lossy(&rustpress_phpser::serialize(&value))).await;
+        writer.update_option("sticky_posts", &String::from_utf8_lossy(&rustpress_phpser::serialize(&value))).await.or_log();
     }
 }
 
@@ -89,7 +90,7 @@ async fn set_sticky(ctx: &Ctx<'_>, post_id: u64, sticky: bool) {
 async fn set_post_format(content: &Content<'_>, post_id: u64, format: &str) {
     let format = sanitize_key(format);
     let terms = if format.is_empty() || format == "0" || format == "standard" { Vec::new() } else { vec![TermRef::Name(format!("post-format-{format}"))] };
-    let _ = content.set_object_terms(post_id, &terms, "post_format", false).await;
+    content.set_object_terms(post_id, &terms, "post_format", false).await.or_log();
 }
 
 /// The terms of `tax_input[<taxonomy>]` (a comma list or `[]` ids) for every taxonomy but categories and tags.
@@ -122,7 +123,7 @@ pub(super) async fn inline_save(env: &AdminEnv<'_>, request: &AdminRequest, user
     let Some(post_id) = request.post_field("post_ID").and_then(|v| v.trim().parse::<u64>().ok()).filter(|id| *id != 0) else { return text(200, "") };
     let Some(post) = env.db.post(post_id).await.ok().flatten() else { return text(200, "") };
     let page = post.post_type == "page";
-    let may_edit = user.can(if page { "edit_pages" } else { "edit_posts" }) && (post.post_author == user.id || user.can("edit_others_posts") || user.can("edit_others_pages"));
+    let may_edit = user.can_edit_post(&post);
     if !may_edit {
         return text(200, &if page { tr("Sorry, you are not allowed to edit this page.") } else { tr("Sorry, you are not allowed to edit this post.") });
     }
@@ -185,7 +186,7 @@ pub(super) async fn inline_save(env: &AdminEnv<'_>, request: &AdminRequest, user
     if let Err(e) = content.insert_post(&data).await {
         return text(200, &esc_html(&e.to_string()));
     }
-    let _ = writer.update_post_meta(post_id, "_edit_last", &user.id.to_string()).await;
+    writer.update_post_meta(post_id, "_edit_last", &user.id.to_string()).await.or_log();
     if info.name == "post" && user.can("edit_others_posts") && user.can("publish_posts") && request.post_field("sticky").is_some() {
         set_sticky(&ctx, post_id, field("sticky") == Some("sticky")).await;
     }
@@ -214,8 +215,7 @@ pub(super) async fn inline_save(env: &AdminEnv<'_>, request: &AdminRequest, user
     if post.post_parent != 0 && let Ok(Some(parent)) = env.db.post(post.post_parent).await {
         parents.push(parent);
     }
-    let edit_cap = if page { "edit_pages" } else { "edit_posts" };
-    let row_env = RowEnv { info: &info, columns: &columns, status_param: &status_param, hierarchical_display: false, sticky: &sticky, taxonomies: &taxonomies, edit_cap, pending: &pending, authors: &authors, parents: &parents };
+    let row_env = RowEnv { info: &info, columns: &columns, status_param: &status_param, hierarchical_display: false, sticky: &sticky, taxonomies: &taxonomies, pending: &pending, authors: &authors, parents: &parents };
     text(200, &post_row(&ctx, &post, level, &row_env).await)
 }
 
@@ -234,7 +234,7 @@ pub(super) async fn bulk_edit(ctx: &Ctx<'_>, ids: &[u64]) -> (u64, u64, u64) {
             continue;
         };
         let page = post.post_type == "page";
-        let may_edit = ctx.can(if page { "edit_pages" } else { "edit_posts" }) && (post.post_author == ctx.user.id || ctx.can("edit_others_posts") || ctx.can("edit_others_pages"));
+        let may_edit = ctx.user.can_edit_post(&post);
         if !may_edit {
             skipped += 1;
             continue;

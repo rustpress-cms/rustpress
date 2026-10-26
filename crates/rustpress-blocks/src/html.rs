@@ -148,81 +148,22 @@ pub fn first_start_tag(html: &str, from: usize) -> Option<Tag> {
     tags(html, from).into_iter().find(|t| !t.is_closer)
 }
 
-/// Escapes a value for use inside a double-quoted attribute (`esc_attr`).
+/// Escapes a value for use inside a double-quoted attribute (`esc_attr`: entities that are complete stay).
 pub fn esc_attr(value: &str) -> String {
-    let mut out = String::with_capacity(value.len());
-    for c in value.chars() {
-        match c {
-            '&' => out.push_str("&amp;"),
-            '<' => out.push_str("&lt;"),
-            '>' => out.push_str("&gt;"),
-            '"' => out.push_str("&quot;"),
-            '\'' => out.push_str("&#039;"),
-            _ => out.push(c),
-        }
-    }
-    out
+    rustpress_core::formatting::esc_attr(value)
 }
 
-/// `esc_html`.
+/// `esc_html` (entities that are complete stay).
 pub fn esc_html(value: &str) -> String {
-    let mut out = String::with_capacity(value.len());
-    for c in value.chars() {
-        match c {
-            '&' => out.push_str("&amp;"),
-            '<' => out.push_str("&lt;"),
-            '>' => out.push_str("&gt;"),
-            '"' => out.push_str("&quot;"),
-            '\'' => out.push_str("&#039;"),
-            _ => out.push(c),
-        }
-    }
-    out
+    rustpress_core::formatting::esc_html(value)
 }
 
-/// Decodes the entities that appear in attribute values.
+/// Decodes the character references of an attribute value (`WP_HTML_Decoder::decode_attribute()`).
 pub fn decode_entities(value: &str) -> String {
     if !value.contains('&') {
         return value.to_owned();
     }
-    let mut out = String::with_capacity(value.len());
-    let mut rest = value;
-    while let Some(i) = rest.find('&') {
-        out.push_str(&rest[..i]);
-        rest = &rest[i..];
-        let Some(semi) = rest.find(';').filter(|&s| s <= 10) else {
-            out.push('&');
-            rest = &rest[1..];
-            continue;
-        };
-        let entity = &rest[1..semi];
-        let decoded = match entity {
-            "amp" => Some('&'),
-            "lt" => Some('<'),
-            "gt" => Some('>'),
-            "quot" => Some('"'),
-            "apos" => Some('\''),
-            "nbsp" => Some('\u{a0}'),
-            _ => entity
-                .strip_prefix("#x")
-                .or_else(|| entity.strip_prefix("#X"))
-                .and_then(|h| u32::from_str_radix(h, 16).ok())
-                .or_else(|| entity.strip_prefix('#').and_then(|d| d.parse().ok()))
-                .and_then(char::from_u32),
-        };
-        match decoded {
-            Some(c) => {
-                out.push(c);
-                rest = &rest[semi + 1..];
-            }
-            None => {
-                out.push('&');
-                rest = &rest[1..];
-            }
-        }
-    }
-    out.push_str(rest);
-    out
+    rustpress_core::kses::decode_attribute(value)
 }
 
 /// Edits the attributes of one tag of a document, like `WP_HTML_Tag_Processor`:

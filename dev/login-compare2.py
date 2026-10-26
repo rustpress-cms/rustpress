@@ -21,8 +21,14 @@ HERE = __file__.rsplit('\\', 1)[0].rsplit('/', 1)[0]
 
 
 def sql(statement):
-    out = subprocess.run(['powershell', '-File', f'{HERE}/sql.ps1', 'wordpress', statement], capture_output=True, text=True, encoding='utf-8')
-    return out.stdout.strip()
+    # The call through PowerShell and WSL now and then never returns: give it a limit and try again.
+    for _ in range(3):
+        try:
+            out = subprocess.run(['powershell', '-File', f'{HERE}/sql.ps1', 'wordpress', statement], capture_output=True, text=True, encoding='utf-8', timeout=60)
+            return out.stdout.strip()
+        except subprocess.TimeoutExpired:
+            continue
+    raise RuntimeError(f'sql did not answer: {statement[:80]}')
 
 
 def fast_hash(key):

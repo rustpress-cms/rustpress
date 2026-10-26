@@ -370,7 +370,7 @@ impl Rest<'_> {
                 if types.is_empty() {
                     (Vec::new(), 0)
                 } else {
-                    let mut query = PostQuery { post_types: types, statuses: vec!["publish".into()], limit: Some(per_page), offset: (page - 1) * per_page, ..Default::default() };
+                    let mut query = PostQuery { post_types: types, statuses: vec!["publish".into()], limit: Some(per_page), offset: (page - 1).saturating_mul(per_page), ..Default::default() };
                     query.exclude_ids = exclude;
                     query.ids = include;
                     if let Some(search) = &search {
@@ -383,7 +383,7 @@ impl Rest<'_> {
                     }
                     let found = self.site.db.count_posts(&query).await?;
                     // A page past the end finds no rows, and WordPress then reports no total either.
-                    let total = if (page - 1) * per_page < found { found } else { 0 };
+                    let total = if (page - 1).saturating_mul(per_page) < found { found } else { 0 };
                     let mut out = Vec::new();
                     if total > 0 {
                         for post in self.site.db.posts(&query).await? {
@@ -416,7 +416,7 @@ impl Rest<'_> {
                 terms.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()).then(a.term_id.cmp(&b.term_id)));
                 let total = terms.len() as u64;
                 let mut out = Vec::new();
-                for term in terms.iter().skip(((page - 1) * per_page) as usize).take(per_page as usize) {
+                for term in terms.iter().skip(((page - 1).saturating_mul(per_page)) as usize).take(per_page as usize) {
                     let base = self.tax(&term.taxonomy).map_or_else(|| term.taxonomy.clone(), |t| t.base);
                     out.push(json!({
                         "id": term.term_id,

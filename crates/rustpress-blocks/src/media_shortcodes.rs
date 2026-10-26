@@ -148,8 +148,8 @@ pub fn video(env: &Env<'_>, post_id: u64, atts: &Atts, content: &str) -> Option<
     let (mut is_vimeo, mut is_youtube) = (false, false);
     let mut primary = false;
     if !src.is_empty() {
-        is_vimeo = regex::Regex::new(r"^https?://(.+\.)?vimeo\.com/.*").is_ok_and(|re| re.is_match(&src));
-        is_youtube = regex::Regex::new(r"^https?://(?:www\.)?(?:youtube\.com/watch|youtu\.be/)").is_ok_and(|re| re.is_match(&src));
+        is_vimeo = rustpress_core::formatting::cached_plain_regex(r"^https?://(.+\.)?vimeo\.com/.*").is_match(&src);
+        is_youtube = rustpress_core::formatting::cached_plain_regex(r"^https?://(?:www\.)?(?:youtube\.com/watch|youtu\.be/)").is_match(&src);
         if !is_youtube && !is_vimeo {
             match check_filetype(&src) {
                 Some((ext, _)) if VIDEO_EXTENSIONS.contains(&ext.as_str()) => {}

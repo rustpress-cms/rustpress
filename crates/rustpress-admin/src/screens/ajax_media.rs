@@ -1,5 +1,6 @@
 //! The Ajax actions of the media library and the JSON of `wp_prepare_attachment_for_js()`.
 
+use rustpress_core::OrLog;
 use rustpress_auth::CurrentUser;
 use rustpress_core::options::php_to_json;
 use rustpress_db::{AttachmentQuery, Post};
@@ -75,7 +76,8 @@ pub async fn attachment_js_with(ctx: &Ctx<'_>, post: &Post, extra_sizes: &[Strin
         None => ctx.tr("(no author)"),
     };
     let link = site.permalink(post).await.unwrap_or_default();
-    let can_edit = ctx.can("upload_files");
+    let can_edit = ctx.user.can_edit_post(post);
+    let can_delete = ctx.user.can_delete_post(post);
     let nonce = |action: &str| ctx.create_nonce(&format!("{action}_{}", post.id));
     let mut response = Map::new();
     response.insert("id".into(), json!(post.id));
@@ -99,10 +101,15 @@ pub async fn attachment_js_with(ctx: &Ctx<'_>, post: &Post, extra_sizes: &[Strin
     response.insert("icon".into(), json!(format!("{}/wp-includes/images/media/{}", site.settings.siteurl.trim_end_matches('/'), mime_icon(&post.post_mime_type))));
     let date_ts = rustpress_core::datetime::SiteTimezone::gmt_timestamp(&post.post_date_gmt).unwrap_or(0);
     response.insert("dateFormatted".into(), json!(site.date(&site.options.string("date_format", "F j, Y"), date_ts)));
-    response.insert("nonces".into(), json!({"update": false, "delete": false, "edit": false}));
+    let mut nonces = json!({"update": false, "delete": false, "edit": false});
     if can_edit {
-        response.insert("nonces".into(), json!({"update": nonce("update-post"), "delete": nonce("delete-post"), "edit": ctx.create_nonce(&format!("image_editor-{}", post.id))}));
+        nonces["update"] = json!(nonce("update-post"));
+        nonces["edit"] = json!(ctx.create_nonce(&format!("image_editor-{}", post.id)));
     }
+    if can_delete {
+        nonces["delete"] = json!(nonce("delete-post"));
+    }
+    response.insert("nonces".into(), nonces);
     response.insert("editLink".into(), if can_edit { json!(ctx.admin_url(&format!("post.php?post={}&action=edit", post.id))) } else { json!(false) });
     // Audio and video carry their tags.
     let stored_meta = meta("_wp_attachment_metadata").map(|raw| php_to_json(&rustpress_core::options::maybe_unserialize(&raw)));
@@ -130,8 +137,10 @@ pub async fn attachment_js_with(ctx: &Ctx<'_>, post: &Post, extra_sizes: &[Strin
     }
     if post.post_parent != 0
         && let Some(parent) = db.post(post.post_parent).await.ok().flatten()
+        && ctx.user.can_read_post(&parent)
     {
-        response.insert("uploadedToLink".into(), if ctx.can("edit_posts") { json!(ctx.admin_url(&format!("post.php?post={}&action=edit", parent.id))) } else { json!("") });
+        // `get_edit_post_link()` is null without `edit_post`.
+        response.insert("uploadedToLink".into(), if ctx.user.can_edit_post(&parent) { json!(ctx.admin_url(&format!("post.php?post={}&action=edit", parent.id))) } else { Json::Null });
         response.insert("uploadedToTitle".into(), json!(if parent.post_title.is_empty() { ctx.tr("(no title)") } else { parent.post_title.clone() }));
     }
     let filesize = stored_meta.as_ref().and_then(|m| m.get("filesize")).and_then(Json::as_u64).unwrap_or_else(|| {
@@ -208,7 +217,7 @@ fn failure(value: Json) -> AdminResponse {
 }
 
 /// The attachment query of `query-attachments`: `query[...]` fields of the form.
-fn attachment_query(request: &AdminRequest, user: &CurrentUser) -> AttachmentQuery {
+fn attachment_query(request: &AdminRequest) -> AttachmentQuery {
     let q = |name: &str| request.post_field(&format!("query[{name}]")).filter(|v| !v.is_empty());
     let mut query = AttachmentQuery { orderby: "date".into(), desc: true, limit: 40, ..Default::default() };
     if let Some(mime) = q("post_mime_type") {
@@ -232,7 +241,7 @@ fn attachment_query(request: &AdminRequest, user: &CurrentUser) -> AttachmentQue
         query.limit = if per_page == 0 { 40 } else { per_page.min(100) };
     }
     let paged = q("paged").and_then(|v| v.parse::<u64>().ok()).unwrap_or(1).max(1);
-    query.offset = (paged - 1) * query.limit;
+    query.offset = (paged - 1).saturating_mul(query.limit);
     if let Some(parent) = q("post_parent").and_then(|v| v.parse::<u64>().ok()) {
         query.parent = Some(parent);
     }
@@ -260,9 +269,6 @@ fn attachment_query(request: &AdminRequest, user: &CurrentUser) -> AttachmentQue
     if let Some(author) = q("author").and_then(|v| v.parse::<u64>().ok()) {
         query.author = Some(author);
     }
-    if !user.can("edit_others_posts") && !user.can("upload_files") {
-        query.author = Some(user.id);
-    }
     query
 }
 
@@ -273,12 +279,18 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUs
     if matches!(action, "upload-attachment" | "async-upload") && !nonce_ok("_wpnonce", "media-form") {
         return text(403, "-1");
     }
+    // Without `upload_files` the uploads explain themselves, the library answers a bare error, and the crop checks
+    // its nonce first (and then `edit_post`).
     if !ctx.can("upload_files") {
-        return failure(json!({"message": tr("Sorry, you are not allowed to upload files."), "filename": ""}));
+        match action {
+            "upload-attachment" | "async-upload" => return failure(json!({"message": tr("Sorry, you are not allowed to upload files."), "filename": ""})),
+            "crop-image" => {}
+            _ => return send_json(200, &json!({"success": false})),
+        }
     }
     match action {
         "query-attachments" => {
-            let query = attachment_query(request, user);
+            let query = attachment_query(request);
             let limit = query.limit;
             let (posts, total) = env.db.list_attachments(&query).await.unwrap_or_default();
             let mut items = Vec::new();
@@ -307,7 +319,10 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUs
             if !nonce_ok("nonce", &format!("update-post_{id}")) {
                 return send_json(200, &json!({"success": false}));
             }
-            let Some(post) = env.db.post(id).await.ok().flatten() else { return send_json(200, &json!({"success": false})) };
+            let Some(post) = env.db.post(id).await.ok().flatten().filter(|p| user.can_edit_post(p)) else { return send_json(200, &json!({"success": false})) };
+            if post.post_type != "attachment" {
+                return send_json(200, &json!({"success": false}));
+            }
             let Some(writer) = env.writer else { return text(500, "0") };
             let content = Content { site: env.site, db: env.db, writer, user, now: env.now };
             let changes = |name: &str| request.request(&format!("changes[{name}]")).map(str::to_owned);
@@ -322,25 +337,11 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUs
                 return send_json(200, &json!({"success": false}));
             }
             if let Some(alt) = changes("alt") {
-                let _ = writer.update_post_meta(id, "_wp_attachment_image_alt", &crate::sanitize::text_field(&alt)).await;
+                writer.update_post_meta(id, "_wp_attachment_image_alt", &crate::sanitize::text_field(&alt)).await.or_log();
             }
-            let _ = post;
             let Some(updated) = env.db.post(id).await.ok().flatten() else { return send_json(200, &json!({"success": false})) };
             let _ = headers("");
             success(attachment_js(&ctx, &updated).await.unwrap_or(Json::Null))
-        }
-        "delete-post" => {
-            let id: u64 = request.request("id").and_then(|v| v.parse().ok()).unwrap_or(0);
-            if !nonce_ok("_ajax_nonce", &format!("delete-post_{id}")) {
-                return text(403, "-1");
-            }
-            let Some(writer) = env.writer else { return text(500, "0") };
-            let content = Content { site: env.site, db: env.db, writer, user, now: env.now };
-            // Attachments are deleted for good (the media trash is off).
-            match content.delete_attachment(id, uploads_dir(env)).await {
-                Ok(true) => text(200, "1"),
-                _ => text(200, "0"),
-            }
         }
         "upload-attachment" | "async-upload" => {
             if !nonce_ok("_wpnonce", "media-form") {
@@ -373,7 +374,7 @@ async fn crop_image(ctx: &Ctx<'_>) -> AdminResponse {
         return text(403, "-1");
     }
     let Some(parent) = env.db.post(id).await.ok().flatten().filter(|p| p.post_type == "attachment") else { return send_json(200, &json!({"success": false})) };
-    if id == 0 || !(parent.post_author == user.id || user.can("edit_others_posts")) {
+    if id == 0 || !user.can_edit_post(&parent) {
         return send_json(200, &json!({"success": false}));
     }
     let context = request.request("context").unwrap_or_default().replace('_', "-");
@@ -425,13 +426,13 @@ async fn crop_image(ctx: &Ctx<'_>) -> AdminResponse {
         Some((meta, final_relative, _)) => (meta, final_relative),
         None => return failure_message(),
     };
-    let _ = writer.update_post_meta(new_id, "_wp_attached_file", &final_relative).await;
-    let _ = writer.update_post_meta(new_id, "_wp_attachment_metadata", &String::from_utf8_lossy(&rustpress_phpser::serialize(&metadata))).await;
+    writer.update_post_meta(new_id, "_wp_attached_file", &final_relative).await.or_log();
+    writer.update_post_meta(new_id, "_wp_attachment_metadata", &String::from_utf8_lossy(&rustpress_phpser::serialize(&metadata))).await.or_log();
     if !context.is_empty() {
-        let _ = writer.update_post_meta(new_id, "_wp_attachment_context", &context).await;
+        writer.update_post_meta(new_id, "_wp_attachment_context", &context).await.or_log();
     }
     if let Some(alt) = meta_value("_wp_attachment_image_alt").filter(|a| !a.trim().is_empty()) {
-        let _ = writer.update_post_meta(new_id, "_wp_attachment_image_alt", &alt).await;
+        writer.update_post_meta(new_id, "_wp_attachment_image_alt", &alt).await.or_log();
     }
     let Some(created) = env.db.post(new_id).await.ok().flatten() else { return failure_message() };
     let extra_names: Vec<String> = if context == "site-icon" { extra.iter().map(|(name, ..)| name.clone()).collect() } else { Vec::new() };

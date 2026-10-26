@@ -74,8 +74,17 @@ impl QueryVars {
         self.0.contains_key(key)
     }
 
+    /// The number PHP's `intval()` reads: leading digits count (`5abc` is 5) and a number too large for an integer is
+    /// `PHP_INT_MAX`. `None` without leading digits (or for a negative number).
     pub fn u64(&self, key: &str) -> Option<u64> {
-        self.get(key)?.trim().parse().ok()
+        let value = self.get(key)?.trim_start();
+        let value = value.strip_prefix('+').unwrap_or(value);
+        let end = value.find(|c: char| !c.is_ascii_digit()).unwrap_or(value.len());
+        let digits = &value[..end];
+        if digits.is_empty() {
+            return None;
+        }
+        Some(digits.parse::<i64>().map_or(i64::MAX as u64, |n| n as u64))
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (&str, &str)> {

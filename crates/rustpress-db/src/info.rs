@@ -25,7 +25,8 @@ impl Db {
         )
         .fetch_one(&self.pool)
         .await?;
-        let table = self.prefix.table("posts");
+        // The bare name: `TABLE_NAME` holds it without the quotes of `Prefix::table()`.
+        let table = format!("{}posts", self.prefix.as_str());
         let collation: Option<String> = sqlx::query_scalar(AssertSqlSafe("SELECT TABLE_COLLATION FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?".to_owned())).bind(&table).fetch_optional(&self.pool).await?;
         let collation = collation.unwrap_or_default();
         let charset = collation.split('_').next().unwrap_or_default().to_owned();

@@ -2,6 +2,7 @@
 //! the media modal's last helpers and the embeds. Every action starts with the check WordPress makes first, so the
 //! answers to a request that is not allowed are the same.
 
+use rustpress_core::OrLog;
 use rustpress_auth::CurrentUser;
 use serde_json::{Value as Json, json};
 
@@ -28,15 +29,7 @@ fn success(data: Json) -> AdminResponse {
 
 /// `current_user_can( 'delete_post', $id )` for posts and pages.
 fn can_delete(user: &CurrentUser, post: &rustpress_db::Post) -> bool {
-    let page = post.post_type == "page";
-    let own = post.post_author == user.id;
-    let (posts, others, published, private) = if page { ("delete_pages", "delete_others_pages", "delete_published_pages", "delete_private_pages") } else { ("delete_posts", "delete_others_posts", "delete_published_posts", "delete_private_posts") };
-    user.can(if own { posts } else { others })
-        && match post.post_status.as_str() {
-            "publish" | "future" => user.can(published),
-            "private" => user.can(private),
-            _ => true,
-        }
+    user.can_delete_post(post)
 }
 
 pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUser, token: &str, action: &str) -> AdminResponse {
@@ -95,7 +88,7 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUs
             let post_id = int(request, "post_id") as u64;
             let post = env.db.post(post_id).await.ok().flatten();
             if request.request("metakeyselect").is_some() || request.request("metakeyinput").is_some() {
-                let allowed = post.as_ref().is_some_and(|p| user.can(if p.post_type == "page" { "edit_pages" } else { "edit_posts" }) && (p.post_author == user.id || user.can("edit_others_posts")));
+                let allowed = post.as_ref().is_some_and(|p| user.can_edit_post(p));
                 if !allowed {
                     return text(200, "-1");
                 }
@@ -124,6 +117,8 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUs
             let done = match action {
                 "trash-post" => content.trash_post(post.id).await,
                 "untrash-post" => content.untrash_post(post.id).await,
+                // Attachments go for good (the media trash is off).
+                _ if post.post_type == "attachment" => content.delete_attachment(post.id, super::ajax_media::uploads_dir(env)).await,
                 // `wp_delete_post()` moves to the trash first when it is on; a second delete removes.
                 _ => content.delete_post(post.id, post.post_status == "trash").await,
             };
@@ -138,7 +133,7 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUs
                 return text(200, "");
             }
             let post = env.db.post(post_id as u64).await.ok().flatten();
-            let allowed = post.as_ref().is_some_and(|p| user.can(if p.post_type == "page" { "edit_pages" } else { "edit_posts" }) && (p.post_author == user.id || user.can("edit_others_posts")));
+            let allowed = post.as_ref().is_some_and(|p| user.can_edit_post(p));
             match (allowed, post) {
                 (true, Some(post)) => {
                     let link = env.site.permalink(&post).await.unwrap_or_default();
@@ -152,7 +147,7 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUs
         "set-post-thumbnail" | "get-post-thumbnail-html" => {
             let post_id = int(request, "post_id") as u64;
             let post = env.db.post(post_id).await.ok().flatten();
-            let allowed = post.as_ref().is_some_and(|p| user.can(if p.post_type == "page" { "edit_pages" } else { "edit_posts" }) && (p.post_author == user.id || user.can("edit_others_posts")));
+            let allowed = post.as_ref().is_some_and(|p| user.can_edit_post(p));
             let json_request = request.request("json").is_some_and(|v| !v.is_empty() && v != "0");
             if action == "set-post-thumbnail" {
                 if !allowed {
@@ -189,7 +184,7 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUs
                 return denied();
             }
             let post = env.db.post(id).await.ok().flatten();
-            let allowed = post.as_ref().is_some_and(|p| user.can(if p.post_type == "page" { "edit_pages" } else { "edit_posts" }) && (p.post_author == user.id || user.can("edit_others_posts")));
+            let allowed = post.as_ref().is_some_and(|p| user.can_edit_post(p));
             if !allowed {
                 return error(None);
             }
@@ -198,9 +193,9 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUs
                     let content = Content { site: env.site, db: env.db, writer, user, now: env.now };
                     for (key, value) in request.form.iter().chain(request.query.iter()) {
                         let Some(attachment) = key.strip_prefix("attachments[").and_then(|r| r.strip_suffix(']')).and_then(|r| r.parse::<u64>().ok()) else { continue };
-                        let Some(target) = env.db.post(attachment).await.ok().flatten().filter(|p| p.post_type == "attachment") else { continue };
+                        let Some(target) = env.db.post(attachment).await.ok().flatten().filter(|p| p.post_type == "attachment" && user.can_edit_post(p)) else { continue };
                         let data = crate::content::PostData { id: Some(target.id), menu_order: value.parse().ok(), ..Default::default() };
-                        let _ = content.insert_post(&data).await;
+                        content.insert_post(&data).await.or_log();
                     }
                 }
                 return send_json(200, &json!({"success": true}));
@@ -284,7 +279,7 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUs
             }
             let post_id = int(request, "post_ID");
             let allowed = if post_id > 0 {
-                env.db.post(post_id as u64).await.ok().flatten().is_some_and(|p| user.can(if p.post_type == "page" { "edit_pages" } else { "edit_posts" }) && (p.post_author == user.id || user.can("edit_others_posts")))
+                env.db.post(post_id as u64).await.ok().flatten().is_some_and(|p| user.can_edit_post(&p))
             } else {
                 user.can("edit_posts")
             };
@@ -332,7 +327,7 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUs
                 return error(None);
             }
             if let Some(writer) = env.writer {
-                let _ = writer.update_user_meta(user.id, "wporg_favorites", username).await;
+                writer.update_user_meta(user.id, "wporg_favorites", username).await.or_log();
             }
             success(Json::Bool(true))
         }
@@ -400,7 +395,7 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUs
                 return text(200, "-1");
             }
             let post = env.db.post(post_id).await.ok().flatten();
-            let allowed = post.as_ref().is_some_and(|p| user.can(if p.post_type == "page" { "edit_pages" } else { "edit_posts" }) && (p.post_author == user.id || user.can("edit_others_posts")));
+            let allowed = post.as_ref().is_some_and(|p| user.can_edit_post(p));
             if !allowed {
                 return text(200, "-1");
             }

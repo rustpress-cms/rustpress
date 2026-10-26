@@ -116,7 +116,14 @@ async fn img_caption_shortcode(env: &Env<'_>, post: Option<&Arc<Post>>, mut atts
     let class = class.trim_matches([' ', '\t', '\n', '\r', '\0', '\x0B']);
     // HTML5 captions never added the extra 10px to the image width.
     let style = format!("style=\"width: {width}px\" ");
-    let inner = do_shortcode(env, post, &content).await?;
+    // Captions inside captions are expanded as deep as blocks are rendered, no deeper.
+    let depth = env.with_state(|s| {
+        s.render_depth += 1;
+        s.render_depth
+    });
+    let inner = if depth > crate::render::MAX_RENDER_DEPTH { Ok(content.clone()) } else { do_shortcode(env, post, &content).await };
+    env.with_state(|s| s.render_depth -= 1);
+    let inner = inner?;
     Ok(format!(
         "<figure {id_attr}{describedby}{style}class=\"{}\">{inner}<figcaption {caption_id_attr}class=\"wp-caption-text\">{caption}</figcaption></figure>",
         esc_attr(class)

@@ -3,6 +3,7 @@
 //! exporter writes the report (HTML and JSON) into a ZIP in `uploads/wp-personal-data-exports`. RustPress cannot
 //! send e-mail, so the export is only offered as a download.
 
+use rustpress_core::OrLog;
 use rustpress_auth::CurrentUser;
 use rustpress_core::formatting::{esc_attr, esc_html, esc_url};
 use rustpress_core::i18n::sprintf;
@@ -332,7 +333,7 @@ pub async fn export(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUs
     if exporter as usize != EXPORTERS.len() || !done {
         return json(200, &json!({"success": true, "data": Json::Object(response)}));
     }
-    let _ = writer.delete_post_meta(request_id, "_export_data_raw").await;
+    writer.delete_post_meta(request_id, "_export_data_raw").await.or_log();
 
     // The groups and their items, the first data of an item last (`array_merge( $new, $old )`).
     let mut groups: Vec<(String, String, String, Vec<(String, Vec<(String, String)>)>)> = Vec::new();
@@ -362,10 +363,10 @@ pub async fn export(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUs
                 if let Err(message) = env.mail_ctx().export_email(request_id, &exports_url).await {
                     return error(&message);
                 }
-                let _ = writer.update_post_meta(request_id, "_wp_user_request_completed_timestamp", &env.now.to_string()).await;
+                writer.update_post_meta(request_id, "_wp_user_request_completed_timestamp", &env.now.to_string()).await.or_log();
                 let system = rustpress_auth::CurrentUser::system();
                 let content = crate::content::Content { site: env.site, db: env.db, writer, user: &system, now: env.now };
-                let _ = content.insert_post(&PostData { id: Some(request_id), post_status: Some("request-completed".into()), ..Default::default() }).await;
+                content.insert_post(&PostData { id: Some(request_id), post_status: Some("request-completed".into()), ..Default::default() }).await.or_log();
                 return json(200, &json!({"success": true, "data": Json::Object(response)}));
             }
             let url = format!("{exports_url}{name}");
@@ -479,7 +480,7 @@ async fn generate_file(ctx: &Ctx<'_>, request_id: u64, email: &str, groups: &Gro
         Some(name) => name,
         None => {
             let name = format!("wp-personal-data-file-{}.zip", crate::sanitize::random_password(32, false));
-            let _ = writer.update_post_meta(request_id, "_export_file_name", &name).await;
+            writer.update_post_meta(request_id, "_export_file_name", &name).await.or_log();
             name
         }
     };
@@ -560,8 +561,8 @@ pub async fn erase(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUse
     // `wp_privacy_process_personal_data_erasure_page()`: the last page of the last eraser completes the request.
     if done && let Some(writer) = env.writer {
         let content = crate::content::Content { site: env.site, db: env.db, writer, user, now: env.now };
-        let _ = writer.update_post_meta(request_id, "_wp_user_request_completed_timestamp", &env.now.to_string()).await;
-        let _ = content.insert_post(&PostData { id: Some(request_id), post_status: Some("request-completed".into()), ..Default::default() }).await;
+        writer.update_post_meta(request_id, "_wp_user_request_completed_timestamp", &env.now.to_string()).await.or_log();
+        content.insert_post(&PostData { id: Some(request_id), post_status: Some("request-completed".into()), ..Default::default() }).await.or_log();
         // `wp_privacy_personal_data_erased`: the person is told that their data is gone.
         env.mail_ctx().erasure_fulfillment_notification(request_id).await;
     }

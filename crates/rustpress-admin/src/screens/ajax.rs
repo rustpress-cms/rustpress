@@ -1,5 +1,6 @@
 //! `wp-admin/admin-ajax.php`: the requests the administration scripts make behind the scenes.
 
+use rustpress_core::OrLog;
 use serde_json::{Map, Value as Json, json};
 
 use super::{AdminEnv, AdminRequest, AdminResponse};
@@ -89,7 +90,7 @@ async fn autosave(env: &AdminEnv<'_>, user: &CurrentUser, token: &str, fields: &
     }
     let Some(writer) = env.writer else { return fail(tr("Error while saving.")) };
     let content = Content { site: env.site, db: env.db, writer, user, now: env.now };
-    let may_edit = user.can(if post.post_type == "page" { "edit_pages" } else { "edit_posts" }) && (post.post_author == user.id || user.can("edit_others_posts") || user.can("edit_others_pages"));
+    let may_edit = user.can_edit_post(&post);
     if !may_edit {
         return fail(tr("Sorry, you are not allowed to edit this item."));
     }
@@ -161,7 +162,7 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse
     let sanitize_key = |s: &str| s.chars().filter(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '_' | '-')).collect::<String>();
     let write_meta = |key: String, value: String| async move {
         if let Some(writer) = env.writer {
-            let _ = writer.update_user_meta(user.id, &key, &value).await;
+            writer.update_user_meta(user.id, &key, &value).await.or_log();
         }
     };
 
@@ -170,7 +171,7 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse
         | "media-create-image-subsizes" | "send-link-to-editor" | "send-attachment-to-editor" | "parse-embed" | "parse-media-shortcode" | "save-wporg-username" | "activate-plugin" | "add-menu-item" | "menu-locations-save" | "menu-get-metabox" | "menu-quick-search"
         | "widgets-order" | "save-widget" | "delete-inactive-widgets" | "update-widget" | "health-check-is-in-debug-mode" | "health-check-dotorg-communication" | "health-check-background-updates" | "health-check-loopback-requests" | "wp-fullscreen-save-post"
         | "press-this-save-post" | "press-this-add-category" | "get-comments" => super::ajax_legacy::handle(env, request, &user, &session.token, &action).await,
-        "delete-post" if env.db.post(request.request("id").and_then(|v| v.trim().parse().ok()).unwrap_or(0)).await.ok().flatten().is_some_and(|p| p.post_type != "attachment") => super::ajax_legacy::handle(env, request, &user, &session.token, &action).await,
+        "delete-post" => super::ajax_legacy::handle(env, request, &user, &session.token, &action).await,
         "inline-save" => super::quick_edit::inline_save(env, request, &user, &session.token).await,
         "heartbeat" => {
             let mut response = Map::new();
@@ -188,7 +189,8 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse
             }
             if let Some(Json::Object(received)) = data.get("wp-refresh-post-lock") {
                 let post_id: u64 = str_field(received, "post_id").parse().unwrap_or(0);
-                if post_id != 0 && user.can("edit_posts") {
+                let post = if post_id != 0 { env.db.post(post_id).await.ok().flatten() } else { None };
+                if post.is_some_and(|p| user.can_edit_post(&p)) {
                     let mut send = Map::new();
                     match post_lock_holder(env, &user, post_id).await {
                         Some(holder) => {
@@ -198,7 +200,7 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse
                         None => {
                             let lock = format!("{}:{}", env.now, user.id);
                             if let Some(writer) = env.writer {
-                                let _ = writer.update_post_meta(post_id, "_edit_lock", &lock).await;
+                                writer.update_post_meta(post_id, "_edit_lock", &lock).await.or_log();
                             }
                             send.insert("new_lock".into(), Json::String(lock));
                         }
@@ -210,7 +212,8 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse
                 let post_id: u64 = str_field(received, "post_id").parse().unwrap_or(0);
                 let nonce = |a: &str| env.auth.create_nonce(a, user.id, &session.token, env.now).unwrap_or_default();
                 let mut value = json!({"check": 1});
-                if post_id != 0 && user.can("edit_posts") {
+                let post = if post_id != 0 { env.db.post(post_id).await.ok().flatten() } else { None };
+                if post.is_some_and(|p| user.can_edit_post(&p)) {
                     value = json!({"replace": {
                         "getpermalinknonce": nonce("getpermalink"),
                         "samplepermalinknonce": nonce("samplepermalink"),
@@ -294,7 +297,7 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse
         }
         "add-tag" | "inline-save-tax" | "delete-tag" => super::ajax_terms::handle(env, request, &user, &session.token, &action).await,
         "dim-comment" | "delete-comment" | "replyto-comment" | "edit-comment" => super::ajax_comments::handle(env, request, &user, &session.token, &action).await,
-        "query-attachments" | "get-attachment" | "save-attachment" | "delete-post" | "upload-attachment" | "async-upload" | "set-attachment-thumbnail" | "crop-image" => super::ajax_media::handle(env, request, &user, &session.token, &action).await,
+        "query-attachments" | "get-attachment" | "save-attachment" | "upload-attachment" | "async-upload" | "set-attachment-thumbnail" | "crop-image" => super::ajax_media::handle(env, request, &user, &session.token, &action).await,
         "image-editor" => super::image_edit::editor(env, request, &user, &session.token).await,
         "imgedit-preview" => super::image_edit::preview(env, request, &user, &session.token).await,
         "ajax-tag-search" | "get-tagcloud" | "wp-remove-post-lock" | "dismiss-wp-pointer" | "sample-permalink" | "find_posts" | "save-user-color-scheme" | "generate-password" | "destroy-sessions" | "autocomplete-user" | "wp-link-ajax" | "get-community-events" | "send-password-reset" | "edit-theme-plugin-file" | "health-check-get-sizes" | "health-check-site-status-result" | "delete-plugin" | "delete-theme" | "toggle-auto-updates" | "query-themes" | "install-theme" | "install-plugin" | "update-theme" | "update-plugin" | "search-plugins" | "search-install-plugins" => super::ajax_misc::handle(env, request, &user, &session.token, &action).await,

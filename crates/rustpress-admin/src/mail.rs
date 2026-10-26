@@ -1,6 +1,7 @@
 //! The e-mail WordPress sends on its own: new users, changed passwords, the requests for personal data. The texts
 //! are those of WordPress (`mail_texts`); what is sent is decided by what the site has (an SMTP server or none).
 
+use rustpress_core::OrLog;
 use std::sync::Arc;
 
 use rustpress_auth::password::fast_hash;
@@ -206,7 +207,7 @@ impl MailCtx<'_> {
         if self.send(&admin_email, &subject, &content).await
             && let Some(writer) = self.writer
         {
-            let _ = writer.update_post_meta(request_id, "_wp_admin_notified", "1").await;
+            writer.update_post_meta(request_id, "_wp_admin_notified", "1").await.or_log();
         }
     }
 
@@ -252,7 +253,7 @@ impl MailCtx<'_> {
         if self.send(&request.post_title, &subject, &content).await
             && let Some(writer) = self.writer
         {
-            let _ = writer.update_post_meta(request_id, "_wp_user_notified", "1").await;
+            writer.update_post_meta(request_id, "_wp_user_notified", "1").await.or_log();
         }
     }
 }

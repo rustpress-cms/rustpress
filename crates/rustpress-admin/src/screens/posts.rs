@@ -194,41 +194,79 @@ async fn bulk_action(ctx: &Ctx<'_>, info: &TypeInfo) -> Option<AdminResponse> {
         sendback = add_query_arg(&sendback, "locked", &locked.to_string());
         return Some(redirect(&ctx.admin_url(&sendback)));
     }
+    // `delete_all` (Empty Trash): every post of the type with the status of the view is deleted.
+    let action = if action == "delete_all" {
+        let status: String = request.request("post_status").unwrap_or_default().chars().filter(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-')).collect();
+        ids = if status.is_empty() {
+            Vec::new()
+        } else {
+            let query = PostQuery { post_types: vec![info.name.clone()], statuses: vec![status], ..Default::default() };
+            ctx.env.db.posts(&query).await.unwrap_or_default().into_iter().map(|p| p.id).collect()
+        };
+        "delete".to_owned()
+    } else {
+        action
+    };
+    if ids.is_empty() {
+        return Some(redirect(&ctx.admin_url(&sendback)));
+    }
+    // Every post is checked on its own (`current_user_can( 'delete_post', $id )`); one that may not be touched
+    // ends the request, as `wp_die()` does in WordPress.
+    let may_delete = |post: &Option<Post>| post.as_ref().is_some_and(|p| ctx.user.can_delete_post(p));
     let mut done = 0i64;
+    let mut locked = 0i64;
     let key;
     match action.as_str() {
         "trash" => {
-            key = "trashed";
             for id in &ids {
-                if content.trash_post(*id).await.unwrap_or(false) {
-                    done += 1;
+                let post = ctx.env.db.post(*id).await.ok().flatten();
+                if !may_delete(&post) {
+                    return Some(super::common::die_plain(ctx, "Sorry, you are not allowed to move this item to the Trash."));
                 }
+                if super::ajax::post_lock_holder(ctx.env, &ctx.user, *id).await.is_some() {
+                    locked += 1;
+                    continue;
+                }
+                if !content.trash_post(*id).await.unwrap_or(false) {
+                    return Some(super::common::die_plain(ctx, "Error in moving the item to Trash."));
+                }
+                done += 1;
             }
+            sendback = add_query_arg(&sendback, "trashed", &done.to_string());
             sendback = add_query_arg(&sendback, "ids", &ids.iter().map(u64::to_string).collect::<Vec<_>>().join(","));
+            sendback = add_query_arg(&sendback, "locked", &locked.to_string());
+            return Some(redirect(&ctx.admin_url(&sendback)));
         }
         "untrash" => {
             key = "untrashed";
             for id in &ids {
-                if content.untrash_post(*id).await.unwrap_or(false) {
-                    done += 1;
+                let post = ctx.env.db.post(*id).await.ok().flatten();
+                if !may_delete(&post) {
+                    return Some(super::common::die_plain(ctx, "Sorry, you are not allowed to restore this item from the Trash."));
                 }
+                if !content.untrash_post(*id).await.unwrap_or(false) {
+                    return Some(super::common::die_plain(ctx, "Error in restoring the item from Trash."));
+                }
+                done += 1;
             }
         }
         "delete" => {
             key = "deleted";
             for id in &ids {
-                if content.delete_post(*id, true).await.unwrap_or(false) {
-                    done += 1;
+                let post = ctx.env.db.post(*id).await.ok().flatten();
+                if !may_delete(&post) {
+                    return Some(super::common::die_plain(ctx, "Sorry, you are not allowed to delete this item."));
                 }
-            }
-        }
-        "delete_all" => {
-            key = "deleted";
-            let trashed = PostQuery { post_types: vec![info.name.clone()], statuses: vec!["trash".into()], ..Default::default() };
-            for post in ctx.env.db.posts(&trashed).await.unwrap_or_default() {
-                if content.delete_post(post.id, true).await.unwrap_or(false) {
-                    done += 1;
+                let Some(post) = post else { continue };
+                if post.post_type == "attachment" {
+                    if !content.delete_attachment(*id, super::ajax_media::uploads_dir(ctx.env)).await.unwrap_or(false) {
+                        return Some(super::common::die_plain(ctx, "Error in deleting the attachment."));
+                    }
+                } else if !content.delete_post(*id, false).await.unwrap_or(false) {
+                    // `wp_delete_post()` without `force`: a post that is not in the trash goes there first.
+                    return Some(super::common::die_plain(ctx, "Error in deleting the item."));
                 }
+                done += 1;
             }
         }
         _ => return None,
@@ -452,12 +490,12 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     let (posts, levels): (Vec<Post>, Vec<usize>) = if hierarchical_display {
         let all = db.posts(&query).await.unwrap_or_default();
         let flat = hierarchical_order(all);
-        let start = ((paged - 1) * per_page) as usize;
+        let start = ((paged - 1).saturating_mul(per_page)) as usize;
         let slice: Vec<(Post, usize)> = flat.into_iter().skip(start).take(per_page as usize).collect();
         (slice.iter().map(|(p, _)| p.clone()).collect(), slice.iter().map(|(_, l)| *l).collect())
     } else {
         query.limit = Some(per_page);
-        query.offset = (paged - 1) * per_page;
+        query.offset = (paged - 1).saturating_mul(per_page);
         let posts = db.posts(&query).await.unwrap_or_default();
         let levels = vec![0; posts.len()];
         (posts, levels)
@@ -520,7 +558,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         rows.push_str(&format!("<tr class=\"no-items\"><td class=\"colspanchange\" colspan=\"{}\">{not_found}</td></tr>", columns.len()));
     }
     for (post, level) in posts.iter().zip(levels.iter()) {
-        let row_env = RowEnv { info: &info, columns: &columns, status_param: &status_param, hierarchical_display, sticky: &sticky, taxonomies: &taxonomies, edit_cap, pending: &pending, authors: &authors, parents: &parents };
+        let row_env = RowEnv { info: &info, columns: &columns, status_param: &status_param, hierarchical_display, sticky: &sticky, taxonomies: &taxonomies, pending: &pending, authors: &authors, parents: &parents };
         rows.push_str(&post_row(ctx, post, *level, &row_env).await);
     }
 
@@ -682,7 +720,6 @@ pub(super) struct RowEnv<'a> {
     pub hierarchical_display: bool,
     pub sticky: &'a [u64],
     pub taxonomies: &'a [(String, bool)],
-    pub edit_cap: &'a str,
     pub pending: &'a [(u64, u64)],
     pub authors: &'a [rustpress_db::User],
     pub parents: &'a [Post],
@@ -690,7 +727,7 @@ pub(super) struct RowEnv<'a> {
 
 /// `WP_Posts_List_Table::single_row()`.
 pub(super) async fn post_row(ctx: &Ctx<'_>, post: &Post, level: usize, row: &RowEnv<'_>) -> String {
-    let RowEnv { info, columns, status_param, hierarchical_display, sticky, taxonomies, edit_cap, pending, authors, parents } = *row;
+    let RowEnv { info, columns, status_param, hierarchical_display, sticky, taxonomies, pending, authors, parents } = *row;
     let tr = |s: &str| ctx.tr(s);
     let site = ctx.site();
     let db = ctx.env.db;
@@ -726,7 +763,7 @@ pub(super) async fn post_row(ctx: &Ctx<'_>, post: &Post, level: usize, row: &Row
     );
     out.push_str(&format!("\t\t{}<tr id=\"post-{}\" class=\"{class}\">\n\t\t\t", if hierarchical_display { "\t" } else { "" }, post.id));
     let title = draft_or_title(ctx, post);
-    let can_edit = ctx.can(edit_cap) && (post.post_author == ctx.user.id || ctx.can("edit_others_posts") || ctx.can("edit_others_pages"));
+    let can_edit = ctx.user.can_edit_post(post);
     for column in columns {
         match column.key.as_str() {
             "cb" => {
@@ -947,7 +984,7 @@ async fn row_actions_for(ctx: &Ctx<'_>, post: &Post, title: &str, can_edit: bool
         actions.push(("edit".into(), format!("<a href=\"{edit_url}\" aria-label=\"{}\">{}</a>", esc_attr(&rustpress_core::i18n::sprintf(&tr("Edit &#8220;%s&#8221;"), &[title])), tr("Edit"))));
         actions.push(("inline hide-if-no-js".into(), format!("<button type=\"button\" class=\"button-link editinline\" aria-label=\"{}\" aria-expanded=\"false\">{}</button>", esc_attr(&rustpress_core::i18n::sprintf(&tr("Quick edit &#8220;%s&#8221; inline"), &[title])), tr("Quick&nbsp;Edit"))));
     }
-    let can_delete = ctx.can(if info.name == "page" { "delete_pages" } else { "delete_posts" }) && (post.post_author == ctx.user.id || ctx.can("delete_others_posts") || ctx.can("delete_others_pages"));
+    let can_delete = ctx.user.can_delete_post(post);
     if can_delete {
         let nonce_url = |action: &str| {
             let url = ctx.admin_url(&format!("post.php?post={}&action={action}", post.id));

@@ -6,6 +6,7 @@
 //! `wp-content/uploads/fonts` and are listed in `_wp_font_face_file` meta. Font collections come from
 //! WordPress.org in WordPress; RustPress makes no outbound requests, so there are none.
 
+use rustpress_core::OrLog;
 use rustpress_blocks::php_json::{self, Flags};
 use rustpress_content::content::PostData;
 use rustpress_core::formatting::esc_url_raw;
@@ -163,7 +164,7 @@ impl Rest<'_> {
         };
         let total = self.site.db.count_posts(&query).await?;
         query.limit = Some(per_page);
-        query.offset = args.u64("offset").unwrap_or((page - 1) * per_page);
+        query.offset = args.u64("offset").unwrap_or((page - 1).saturating_mul(per_page));
         let posts = self.site.db.posts(&query).await?;
         let mut items = Vec::new();
         for post in &posts {
@@ -365,7 +366,7 @@ impl Rest<'_> {
         };
         let total = self.site.db.count_posts(&query).await?;
         query.limit = Some(per_page);
-        query.offset = args.u64("offset").unwrap_or((page - 1) * per_page);
+        query.offset = args.u64("offset").unwrap_or((page - 1).saturating_mul(per_page));
         let posts = self.site.db.posts(&query).await?;
         let mut resp = Resp::item(Value::Array(posts.iter().map(|p| self.prepare_face(p, true)).collect()));
         resp.total = Some(total);
@@ -557,7 +558,7 @@ impl Rest<'_> {
             }
         }
         if let Ok(content_api) = self.content() {
-            let _ = content_api.delete_post(face, true).await;
+            content_api.delete_post(face, true).await.or_log();
         }
         Ok(())
     }

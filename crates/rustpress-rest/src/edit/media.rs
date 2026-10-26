@@ -5,10 +5,10 @@ use rustpress_content::media::{UploadedFile, handle_upload};
 use rustpress_db::{AttachmentQuery, Post};
 use serde_json::{Map, Value, json};
 
+use super::caps::TypeCaps;
 use super::{Args, Body};
 use crate::error::RestError;
 use crate::params::Params;
-use crate::posts::Kind;
 use crate::{Outcome, Resp, Rest, Result};
 
 impl Rest<'_> {
@@ -77,7 +77,7 @@ impl Rest<'_> {
 
     async fn media_list(&self, args: &Args, params: &Params) -> Result<Outcome> {
         let context = args.str("context").unwrap_or_else(|| "view".to_owned());
-        if context == "edit" && !self.can("upload_files") {
+        if context == "edit" && !self.can(&TypeCaps::of("attachment").edit_posts) {
             return Ok(Err(self.forbidden("rest_forbidden_context", "Sorry, you are not allowed to edit posts in this post type.")));
         }
         let per_page = args.u64("per_page").unwrap_or(10).clamp(1, 100);
@@ -93,14 +93,17 @@ impl Rest<'_> {
             orderby: args.str("orderby").unwrap_or_else(|| "date".to_owned()),
             desc: args.str("order").as_deref() != Some("asc"),
             limit: per_page,
-            offset: (page - 1) * per_page,
+            offset: (page - 1).saturating_mul(per_page),
             ..Default::default()
         };
         let _ = params;
         let (posts, total) = self.site.db.list_attachments(&query).await?;
         let mut items = Vec::new();
         for post in &posts {
-            items.push(self.prepare_media_edit(post, &context).await?);
+            let permitted = if context == "edit" { self.can_edit_post(post) } else { self.check_read_permission(post).await };
+            if permitted {
+                items.push(self.prepare_media_edit(post, &context).await?);
+            }
         }
         let mut resp = Resp::item(Value::Array(items));
         resp.total = Some(total);
@@ -118,6 +121,9 @@ impl Rest<'_> {
         let context = args.str("context").unwrap_or_else(|| "view".to_owned());
         if context == "edit" && !self.can_edit_post(&post) {
             return Ok(Err(self.forbidden("rest_forbidden_context", "Sorry, you are not allowed to edit this post.")));
+        }
+        if !self.check_read_permission(&post).await {
+            return Ok(Err(self.forbidden("rest_forbidden", "Sorry, you are not allowed to do that.")));
         }
         Ok(Ok(Resp::item(self.prepare_media_edit(&post, &context).await?)))
     }
@@ -149,6 +155,19 @@ impl Rest<'_> {
         };
         let uploads = self.access.as_ref().map(|a| a.uploads.clone()).unwrap_or_default();
         let parent = args.u64("post").or_else(|| extra_fields.iter().find(|(k, _)| k == "post").and_then(|(_, v)| v.parse().ok())).unwrap_or(0);
+        // Attaching to a post needs the right to edit it, and only a real post can be the parent.
+        if parent != 0 {
+            let parent_post = self.site.db.post(parent).await?;
+            if !parent_post.as_ref().is_some_and(|p| self.can_edit_post(p)) {
+                return Ok(Err(self.forbidden("rest_cannot_edit", "Sorry, you are not allowed to upload media to this post.")));
+            }
+            if parent_post.is_some_and(|p| matches!(p.post_type.as_str(), "revision" | "attachment")) {
+                return Ok(Err(RestError::new("rest_invalid_param", "Invalid parent type.", 400)));
+            }
+        }
+        if args.u64("author").is_some_and(|a| a != 0 && Some(a) != self.user().map(|u| u.id)) && !self.can("edit_others_posts") {
+            return Ok(Err(self.forbidden("rest_cannot_edit_others", "Sorry, you are not allowed to create posts as this user.")));
+        }
         let id = match handle_upload(&content, &uploads, file, parent).await {
             Ok(id) => id,
             Err(rustpress_content::media::UploadError(message)) => return Ok(Err(RestError::new("rest_upload_unknown_error", &message, 500))),
@@ -161,7 +180,9 @@ impl Rest<'_> {
         for (key, value) in &args.map {
             update.map.insert(key.clone(), value.clone());
         }
-        let _ = self.apply_media_fields(id, &update).await;
+        if let Err(e) = self.apply_media_fields(id, &update).await {
+            return Ok(Err(e));
+        }
         let Some(post) = self.site.db.post(id).await? else { return Ok(Err(RestError::new("rest_post_invalid_id", "Invalid post ID.", 404))) };
         let resp = Resp::item(self.prepare_media_edit(&post, "edit").await?);
         let location = self.rest_url(&format!("wp/v2/media/{id}"));
@@ -197,6 +218,9 @@ impl Rest<'_> {
         if !self.can_edit_post(&post) {
             return Ok(Err(self.forbidden("rest_cannot_edit", "Sorry, you are not allowed to edit this post.")));
         }
+        if args.u64("author").is_some_and(|a| a != 0 && Some(a) != self.user().map(|u| u.id)) && !self.can("edit_others_posts") {
+            return Ok(Err(self.forbidden("rest_cannot_edit_others", "Sorry, you are not allowed to update posts as this user.")));
+        }
         if let Err(e) = self.apply_media_fields(id, args).await {
             return Ok(Err(e));
         }
@@ -221,8 +245,9 @@ impl Rest<'_> {
             Err(e) => return Ok(Err(e)),
         };
         let uploads = self.access.as_ref().map(|a| a.uploads.clone()).unwrap_or_default();
-        let _ = content.delete_attachment(id, uploads).await;
-        let _ = Kind::Attachment;
+        if !content.delete_attachment(id, uploads).await.unwrap_or(false) {
+            return Ok(Err(RestError::new("rest_cannot_delete", "The post cannot be deleted.", 500)));
+        }
         Ok(Ok(Resp::item(json!({"deleted": true, "previous": previous}))))
     }
 }

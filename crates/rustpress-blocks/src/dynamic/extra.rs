@@ -5,6 +5,7 @@
 use std::sync::Arc;
 
 use regex::Regex;
+use rustpress_core::formatting::cached_plain_regex as cached_regex;
 use rustpress_core::formatting::{esc_attr, esc_html, esc_url, strip_tags, wpautop};
 use rustpress_core::kses::kses_post;
 use rustpress_core::i18n::sprintf;
@@ -132,7 +133,7 @@ pub(super) async fn categories(bc: &BlockCtx<'_>) -> Result<String> {
 pub(super) async fn tag_cloud(bc: &BlockCtx<'_>) -> Result<String> {
     let smallest = bc.attr_str("smallestFontSize").unwrap_or("8pt").to_owned();
     let largest = bc.attr_str("largestFontSize").unwrap_or("22pt").to_owned();
-    let unit = Regex::new(r"(?i)^[0-9.]+([a-z%]+)$").ok().and_then(|re| re.captures(&smallest).map(|c| c[1].to_owned())).unwrap_or_else(|| "pt".to_owned());
+    let unit = Some(cached_regex(r"(?i)^[0-9.]+([a-z%]+)$")).and_then(|re| re.captures(&smallest).map(|c| c[1].to_owned())).unwrap_or_else(|| "pt".to_owned());
     let args = TagCloud {
         taxonomy: bc.attr_str("taxonomy").filter(|t| !t.is_empty()).unwrap_or("post_tag").to_owned(),
         smallest: general::floatval(&smallest),
@@ -403,9 +404,7 @@ fn word_count(text: &str, kind: rustpress_core::locale::WordCountType) -> u64 {
     }
     let mut text = format!("{text}\n");
     let replace = |text: &mut String, pattern: &str, with: &str| {
-        if let Ok(re) = Regex::new(pattern) {
-            *text = re.replace_all(text, with).into_owned();
-        }
+        *text = cached_regex(pattern).replace_all(text, with).into_owned();
     };
     replace(&mut text, r"(?i)</?[a-z][^>]*?>", "\n");
     replace(&mut text, r"(?s)<!--.*?-->", "");
@@ -424,7 +423,7 @@ fn word_count(text: &str, kind: rustpress_core::locale::WordCountType) -> u64 {
         WordCountType::CharactersIncludingSpaces => "[^\x0C\n\r\t\x0B\u{AD}\u{2028}\u{2029}]".to_owned(),
         WordCountType::Words => r"\S\s+".to_owned(),
     };
-    Regex::new(&pattern).map_or(0, |re| re.find_iter(&text).count() as u64)
+    cached_regex(&pattern).find_iter(&text).count() as u64
 }
 
 pub(super) async fn post_time_to_read(bc: &BlockCtx<'_>) -> Result<String> {
@@ -589,7 +588,9 @@ pub(super) async fn term_template(bc: &BlockCtx<'_>) -> Result<String> {
             match chunk {
                 Content::Html(html) => inner.push_str(html),
                 Content::InnerBlock => {
-                    inner.push_str(&bc.env.render_block(&bc.block.inner_blocks[index], &ctx, Some(bc.block)).await?);
+                    if let Some(block) = bc.block.inner_blocks.get(index) {
+                        inner.push_str(&bc.env.render_block(block, &ctx, Some(bc.block)).await?);
+                    }
                     index += 1;
                 }
             }
@@ -656,7 +657,7 @@ pub(super) fn social_link(bc: &BlockCtx<'_>) -> Result<String> {
     if url.contains('@') && !url.contains("://") && !url.contains(' ') && !url.starts_with("mailto:") {
         url = format!("mailto:{url}");
     }
-    let has_scheme = Regex::new(r"^[A-Za-z][A-Za-z0-9+.-]*:").is_ok_and(|re| re.is_match(&url));
+    let has_scheme = cached_regex(r"^[A-Za-z][A-Za-z0-9+.-]*:").is_match(&url);
     if !has_scheme && !url.starts_with("//") && !url.starts_with('#') {
         url = format!("https://{url}");
     }

@@ -168,7 +168,7 @@ impl Rest<'_> {
         let total = selected.len() as u64;
         let max_pages = total.div_ceil(per_page);
         let context = params.get("context").unwrap_or("view");
-        let list: Vec<Value> = selected.into_iter().skip(((page - 1) * per_page) as usize).take(per_page as usize).map(|a| self.ability_json(a, context)).collect();
+        let list: Vec<Value> = selected.into_iter().skip(((page - 1).saturating_mul(per_page)) as usize).take(per_page as usize).map(|a| self.ability_json(a, context)).collect();
         let mut resp = Resp::item(Value::Array(list));
         resp.total = Some(total);
         resp.total_pages = Some(max_pages);

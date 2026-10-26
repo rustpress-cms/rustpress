@@ -1,5 +1,6 @@
 //! `wp-admin/options-privacy.php`: the privacy policy page and the policy guide.
 
+use rustpress_core::OrLog;
 use rustpress_core::formatting::{esc_html, esc_url};
 use rustpress_core::i18n::sprintf;
 use rustpress_db::{Order, OrderBy, PostQuery};
@@ -81,7 +82,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         if action == "set-privacy-page" {
             let previous = site.options.u64("wp_page_for_privacy_policy", 0);
             let chosen: u64 = request.post_field("page_for_privacy_policy").and_then(|v| v.parse().ok()).unwrap_or(0);
-            let _ = writer.update_option("wp_page_for_privacy_policy", &chosen.to_string()).await;
+            writer.update_option("wp_page_for_privacy_policy", &chosen.to_string()).await.or_log();
             let (message, kind) = if chosen != 0 {
                 (tr("Privacy Policy page updated successfully."), "success")
             } else if previous != 0 {
@@ -95,7 +96,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
             let data = PostData { post_title: Some(tr("Privacy Policy")), post_status: Some("draft".into()), post_type: Some("page".into()), post_content: Some(DEFAULT_CONTENT.replace("{{home}}", &home)), ..Default::default() };
             match content.insert_post(&data).await {
                 Ok(id) => {
-                    let _ = writer.update_option("wp_page_for_privacy_policy", &id.to_string()).await;
+                    writer.update_option("wp_page_for_privacy_policy", &id.to_string()).await.or_log();
                     return redirect(&ctx.admin_url(&format!("post.php?post={id}&action=edit")));
                 }
                 Err(_) => notices.push_str(&settings_error("page_for_privacy_policy", &tr("Unable to create a Privacy Policy page."), "error")),

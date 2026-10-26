@@ -10,7 +10,7 @@ use crate::util::{LinkParams, Links, link_header};
 use crate::{Outcome, Resp, Rest, Result};
 
 /// The post types with `show_in_rest` (`WP_REST_Users_Controller` lists their authors).
-const AUTHOR_TYPES: &[&str] = &["post", "page", "attachment", "wp_block", "wp_template", "wp_template_part", "wp_navigation", "wp_font_family", "wp_font_face", "wp_global_styles"];
+pub(crate) const AUTHOR_TYPES: &[&str] = &["post", "page", "attachment", "wp_block", "wp_template", "wp_template_part", "wp_navigation", "wp_font_family", "wp_font_face", "wp_global_styles"];
 
 impl Rest<'_> {
     pub(crate) async fn users_collection(&self, params: &Params) -> Result<Outcome> {
@@ -68,7 +68,7 @@ impl Rest<'_> {
 
         let total = users.len() as u64;
         let max_pages = total.div_ceil(per_page);
-        let start = if offset > 0 { offset } else { (page - 1) * per_page } as usize;
+        let start = if offset > 0 { offset } else { (page - 1).saturating_mul(per_page) } as usize;
         let context = params.get("context").unwrap_or("view");
         let mut items = Vec::new();
         for user in users.iter().skip(start).take(per_page as usize) {

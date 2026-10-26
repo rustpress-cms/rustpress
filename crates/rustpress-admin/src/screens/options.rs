@@ -1,5 +1,6 @@
 //! `wp-admin/options.php`: saves the settings of the settings screens.
 
+use rustpress_core::OrLog;
 use rustpress_core::formatting::{esc_html, esc_url_raw, strip_tags};
 use rustpress_phpser::{Key, Value};
 
@@ -271,9 +272,9 @@ pub async fn handle(ctx: &Ctx<'_>) -> AdminResponse {
             && stored.get("hash").and_then(Value::as_str) == Some(hash)
             && let Some(email) = stored.get("newemail").and_then(Value::as_str).filter(|e| !e.is_empty())
         {
-            let _ = writer.update_option("admin_email", email).await;
-            let _ = writer.delete_option("adminhash").await;
-            let _ = writer.delete_option("new_admin_email").await;
+            writer.update_option("admin_email", email).await.or_log();
+            writer.delete_option("adminhash").await.or_log();
+            writer.delete_option("new_admin_email").await.or_log();
             target = "options-general.php?updated=true";
         }
         return redirect(&ctx.admin_url(target));
@@ -282,8 +283,8 @@ pub async fn handle(ctx: &Ctx<'_>) -> AdminResponse {
         if !ctx.verify_nonce("dismiss-1-new_admin_email") {
             return nonce_ays(ctx);
         }
-        let _ = writer.delete_option("adminhash").await;
-        let _ = writer.delete_option("new_admin_email").await;
+        writer.delete_option("adminhash").await.or_log();
+        writer.delete_option("new_admin_email").await.or_log();
         return redirect(&ctx.admin_url("options-general.php?updated=true"));
     }
     if action != "update" || !request.post {
@@ -389,7 +390,7 @@ pub async fn handle(ctx: &Ctx<'_>) -> AdminResponse {
             digest.iter().take(16).map(|b| format!("{b:02x}")).collect::<String>()
         };
         let stored = Value::Array(vec![(Key::Str(b"hash".to_vec()), Value::Str(hash.as_bytes().to_vec())), (Key::Str(b"newemail".to_vec()), Value::Str(email.as_bytes().to_vec()))]);
-        let _ = writer.update_option("adminhash", &String::from_utf8_lossy(&rustpress_phpser::serialize(&stored))).await;
+        writer.update_option("adminhash", &String::from_utf8_lossy(&rustpress_phpser::serialize(&stored))).await.or_log();
         let link = ctx.admin_url(&format!("options.php?adminhash={hash}"));
         if ctx.env.mailer.is_some() {
             // `update_option_new_admin_email()`: the new address gets the link.
@@ -402,6 +403,7 @@ pub async fn handle(ctx: &Ctx<'_>) -> AdminResponse {
                 .replace("###SITENAME###", &sitename)
                 .replace("###SITEURL###", &ctx.site().settings.home);
             let subject = rustpress_core::i18n::sprintf(&ctx.tr("[%s] New Admin Email Address"), &[&sitename]);
+            // A mail that cannot be sent is no error of the request (as `wp_mail()` in WordPress).
             let _ = ctx.env.send_mail(&email, &subject, &content).await;
         } else {
         errors.push(SettingsError {
@@ -416,7 +418,7 @@ pub async fn handle(ctx: &Ctx<'_>) -> AdminResponse {
     if errors.is_empty() {
         errors.push(SettingsError { setting: "general".into(), code: "settings_updated".into(), message: ctx.tr("Settings saved."), kind: "success".into() });
     }
-    let _ = writer.set_transient("settings_errors", &serialize_errors(&errors), 30, ctx.env.now).await;
+    writer.set_transient("settings_errors", &serialize_errors(&errors), 30, ctx.env.now).await.or_log();
     let goback = with_settings_updated(&referer(ctx).unwrap_or_else(|| ctx.request.request_uri.clone()));
     redirect(&goback)
 }

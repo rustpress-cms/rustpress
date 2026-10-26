@@ -538,7 +538,7 @@ impl Site {
                 q.private_author = Some(viewer.id);
             }
             q.limit = Some(r.per_page);
-            q.offset = (paged - 1) * r.per_page;
+            q.offset = (paged - 1).saturating_mul(r.per_page);
             posts = self.db.posts(&q).await?;
             found = self.db.count_posts(&q).await?;
             r.max_pages = found.div_ceil(r.per_page);

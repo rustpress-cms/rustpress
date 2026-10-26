@@ -1,6 +1,7 @@
 //! More actions of `admin-ajax.php`: tag search and cloud, post locks, pointers, permalink samples,
 //! the "find posts" box, the colour scheme and password helpers of the profile.
 
+use rustpress_core::OrLog;
 use rustpress_auth::CurrentUser;
 use rustpress_core::formatting::{esc_attr, esc_html, esc_url};
 use rustpress_core::slug::sanitize_title;
@@ -79,7 +80,7 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUs
             }
         }
         if let Some(writer) = env.writer {
-            let _ = writer.update_option_with_autoload("_transient_health-check-site-status-result", &serde_json::Value::Object(counts).to_string(), "on").await;
+            writer.update_option_with_autoload("_transient_health-check-site-status-result", &serde_json::Value::Object(counts).to_string(), "on").await.or_log();
         }
         return json(200, &json!({"success": true}));
     }
@@ -169,7 +170,7 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUs
             if !nonce_ok(request.request("_ajax_nonce").or(request.request("_wpnonce")).unwrap_or_default(), &format!("update-post_{post_id}")) {
                 return text(403, "-1");
             }
-            let may_edit = user.can("edit_posts") && (post.post_author == user.id || user.can("edit_others_posts"));
+            let may_edit = user.can_edit_post(&post);
             if !may_edit {
                 return text(403, "-1");
             }
@@ -178,7 +179,7 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUs
                 return text(200, "0");
             }
             if let Some(writer) = env.writer {
-                let _ = writer.update_post_meta(post_id, "_edit_lock", &format!("{}:{}", env.now - 150 + 5, holder)).await;
+                writer.update_post_meta(post_id, "_edit_lock", &format!("{}:{}", env.now - 150 + 5, holder)).await.or_log();
             }
             text(200, "1")
         }
@@ -194,7 +195,7 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUs
             }
             dismissed.push(pointer);
             if let Some(writer) = env.writer {
-                let _ = writer.update_user_meta(user.id, "dismissed_wp_pointers", &dismissed.join(",")).await;
+                writer.update_user_meta(user.id, "dismissed_wp_pointers", &dismissed.join(",")).await.or_log();
             }
             text(200, "1")
         }
@@ -208,7 +209,7 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUs
             }
             let Some(stored) = env.db.post(post_id).await.ok().flatten() else { return text(403, "-1") };
             let mut post = stored.clone();
-            let may_edit = user.can("edit_posts") && (post.post_author == user.id || user.can("edit_others_posts"));
+            let may_edit = user.can_edit_post(&post);
             if !may_edit {
                 return text(403, "-1");
             }
@@ -315,7 +316,7 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUs
             }
             let mut posts = env.db.posts(&query).await.unwrap_or_default();
             posts.sort_by(|a, b| b.post_date.cmp(&a.post_date).then(a.id.cmp(&b.id)));
-            let posts: Vec<_> = posts.into_iter().skip(((page - 1) * 20) as usize).take(20).collect();
+            let posts: Vec<_> = posts.into_iter().skip(((page - 1).saturating_mul(20)) as usize).take(20).collect();
             if posts.is_empty() {
                 return text(200, "0");
             }
@@ -371,7 +372,7 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUs
             }
             let previous = env.db.user_meta(user.id, "admin_color").await.ok().flatten().unwrap_or_default();
             if let Some(writer) = env.writer {
-                let _ = writer.update_user_meta(user.id, "admin_color", &scheme).await;
+                writer.update_user_meta(user.id, "admin_color", &scheme).await.or_log();
             }
             json(200, &json!({"success": true, "data": {"previousScheme": format!("admin-color-{previous}"), "currentScheme": format!("admin-color-{scheme}")}}))
         }
@@ -385,10 +386,10 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUs
             }
             let Some(writer) = env.writer else { return failure() };
             let message = if target == user.id {
-                let _ = rustpress_auth::session::destroy_other_sessions(env.db, writer, target, token, env.now).await;
+                rustpress_auth::session::destroy_other_sessions(env.db, writer, target, token, env.now).await.or_log();
                 tr("You are now logged out everywhere else.")
             } else {
-                let _ = rustpress_auth::session::destroy_all_sessions(writer, target).await;
+                rustpress_auth::session::destroy_all_sessions(writer, target).await.or_log();
                 rustpress_core::i18n::sprintf(&tr("%s has been logged out."), &[&target_user.display_name])
             };
             json(200, &json!({"success": true, "data": {"message": message}}))
@@ -410,7 +411,8 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUs
                 return fail(status, tr("Sorry, you are not allowed to delete plugins for this site."));
             }
             let Some(root) = env.loader.includes.parent() else { return fail(status, tr("Plugin could not be deleted.")) };
-            let name = crate::plugins::installed(root).into_iter().find(|p| p.file == plugin).map(|p| p.name).unwrap_or_default();
+            let found = crate::plugins::installed(root).into_iter().find(|p| p.file == plugin);
+            let name = found.as_ref().map(|p| p.name.clone()).unwrap_or_default();
             status["plugin"] = json!(plugin);
             status["pluginName"] = json!(name);
             let active: Vec<String> = match site.options.value("active_plugins") {
@@ -421,6 +423,11 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUs
                 return fail(status, tr("You cannot delete a plugin while it is active on the main site."));
             }
             if env.writer.is_none() {
+                return fail(status, tr("Plugin could not be deleted."));
+            }
+            // Only a plugin that is installed is deleted: a path like `./x.php` passes `validate_file()` but would
+            // name the whole plugin directory.
+            if found.is_none() || plugin.split('/').any(|part| part.is_empty() || part == "." || part == "..") || plugin.matches('/').count() > 1 {
                 return fail(status, tr("Plugin could not be deleted."));
             }
             let plugins_dir = root.join("wp-content").join("plugins");
@@ -503,7 +510,7 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUs
             auto.retain(|a| known.contains(a));
             if let Some(writer) = env.writer {
                 let items = auto.iter().enumerate().map(|(i, a)| (rustpress_phpser::Key::Int(i as i64), rustpress_phpser::Value::Str(a.clone().into_bytes()))).collect();
-                let _ = writer.update_option(option, &String::from_utf8_lossy(&rustpress_phpser::serialize(&rustpress_phpser::Value::Array(items)))).await;
+                writer.update_option(option, &String::from_utf8_lossy(&rustpress_phpser::serialize(&rustpress_phpser::Value::Array(items)))).await.or_log();
             }
             json(200, &json!({"success": true}))
         }
@@ -531,7 +538,7 @@ pub async fn attach(ctx: &Ctx<'_>, ids: &[u64], parent: u64) -> u64 {
     let mut count = 0;
     for id in ids {
         let Some(post) = ctx.env.db.post(*id).await.ok().flatten().filter(|p| p.post_type == "attachment") else { continue };
-        let may_edit = ctx.can("edit_posts") && (post.post_author == ctx.user.id || ctx.can("edit_others_posts"));
+        let may_edit = ctx.user.can_edit_post(&post);
         if !may_edit {
             continue;
         }

@@ -164,6 +164,8 @@ impl<'a> Rest<'a> {
         let outcome = match &self.request {
             Some(_) => match self.dispatch_edit(route, &params).await? {
                 Some(outcome) => outcome,
+                // A write that no handler takes is no read: WordPress has no route for it.
+                None if !matches!(self.method(), "GET" | "HEAD") => Err(crate::error::RestError::new("rest_no_route", "No route was found matching the URL and request method.", 404)),
                 None => self.dispatch(route, &params).await?,
             },
             None => self.dispatch(route, &params).await?,

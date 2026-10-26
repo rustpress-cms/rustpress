@@ -117,6 +117,83 @@ pub fn check_filetype(filename: &str) -> Option<(String, String)> {
     MIME_TYPES.iter().find(|(exts, _)| exts.split('|').any(|e| e == extension)).map(|(_, mime)| (extension, (*mime).to_owned()))
 }
 
+/// The part of `sanitize_file_name()` for names with several extensions: an inner one of two to five letters (and
+/// an optional digit) that is no allowed type gets a `_`, so `x.php.jpg` is stored as `x.php_.jpg`.
+pub fn mark_inner_extensions(name: &str, allowed: impl Fn(&str) -> bool) -> String {
+    let parts: Vec<&str> = name.split('.').collect();
+    if parts.len() <= 2 {
+        return name.to_owned();
+    }
+    let mut out = parts[0].to_owned();
+    for part in &parts[1..parts.len() - 1] {
+        out.push('.');
+        out.push_str(part);
+        let letters = part.trim_end_matches(|c: char| c.is_ascii_digit());
+        let shaped = (2..=5).contains(&letters.len()) && letters.chars().all(|c| c.is_ascii_alphabetic()) && part.len() - letters.len() <= 1;
+        if shaped && !allowed(part) {
+            out.push('_');
+        }
+    }
+    out.push('.');
+    out.push_str(parts[parts.len() - 1]);
+    out
+}
+
+/// `wp_get_image_mime()`: the type of an image from its first bytes.
+pub fn image_mime(bytes: &[u8]) -> Option<&'static str> {
+    let at = |offset: usize, magic: &[u8]| bytes.get(offset..offset + magic.len()) == Some(magic);
+    if at(0, &[0xFF, 0xD8, 0xFF]) {
+        Some("image/jpeg")
+    } else if at(0, &[0x89, b'P', b'N', b'G', b'\r', b'\n', 0x1A, b'\n']) {
+        Some("image/png")
+    } else if at(0, b"GIF87a") || at(0, b"GIF89a") {
+        Some("image/gif")
+    } else if at(0, b"RIFF") && at(8, b"WEBP") {
+        Some("image/webp")
+    } else if at(4, b"ftypavif") || at(4, b"ftypavis") {
+        Some("image/avif")
+    } else if at(4, b"ftypheic") || at(4, b"ftypheix") || at(4, b"ftypmif1") || at(4, b"ftypmsf1") {
+        Some("image/heic")
+    } else if at(0, b"BM") {
+        Some("image/bmp")
+    } else if at(0, &[b'I', b'I', b'*', 0]) || at(0, &[b'M', b'M', 0, b'*']) {
+        Some("image/tiff")
+    } else if at(0, &[0, 0, 1, 0]) {
+        Some("image/vnd.microsoft.icon")
+    } else {
+        None
+    }
+}
+
+/// `wp_check_filetype_and_ext()` for images: an image whose bytes are of another image type gets that extension,
+/// a file named as an image that is none is refused. `None`: refused.
+pub fn check_image_upload(name: &str, mime: &str, bytes: &[u8]) -> Option<(String, String)> {
+    if !mime.starts_with("image/") {
+        return Some((name.to_owned(), mime.to_owned()));
+    }
+    let real = image_mime(bytes)?;
+    if real == mime || real == "image/heic" {
+        return Some((name.to_owned(), mime.to_owned()));
+    }
+    let ext = match real {
+        "image/jpeg" => "jpg",
+        "image/png" => "png",
+        "image/gif" => "gif",
+        "image/bmp" => "bmp",
+        "image/tiff" => "tif",
+        "image/webp" => "webp",
+        "image/avif" => "avif",
+        "image/vnd.microsoft.icon" => "ico",
+        _ => return None,
+    };
+    let renamed = match name.rsplit_once('.') {
+        Some((stem, _)) => format!("{stem}.{ext}"),
+        None => format!("{name}.{ext}"),
+    };
+    let (_, new_mime) = check_filetype(&renamed)?;
+    Some((renamed, new_mime))
+}
+
 /// What an upload request carries.
 pub struct UploadedFile {
     pub name: String,
@@ -366,13 +443,18 @@ pub async fn handle_upload(content: &Content<'_>, uploads: &Path, file: Uploaded
     if file.bytes.is_empty() {
         return Err(UploadError(rustpress_core::i18n::sprintf(&tr("File is empty. Please upload something more substantial. This error could also be caused by uploads being disabled in your php.ini or by %s being defined as smaller than %s in php.ini."), &["post_max_size", "upload_max_filesize"])));
     }
-    let name = sanitize::file_name(&file.name);
+    let unfiltered = content.user.can("unfiltered_html");
+    let allowed = |ext: &str| check_filetype(&format!("x.{ext}")).is_some_and(|(_, mime)| unfiltered || !UNFILTERED.contains(&mime.as_str()));
+    let name = mark_inner_extensions(&sanitize::file_name(&file.name), allowed);
     let Some((_ext, mime)) = check_filetype(&name) else {
         return Err(UploadError(tr("Sorry, you are not allowed to upload this file type.")));
     };
-    if UNFILTERED.contains(&mime.as_str()) && !content.user.can("unfiltered_html") {
+    if UNFILTERED.contains(&mime.as_str()) && !unfiltered {
         return Err(UploadError(tr("Sorry, you are not allowed to upload this file type.")));
     }
+    let Some((name, mime)) = check_image_upload(&name, &mime, &file.bytes) else {
+        return Err(UploadError(tr("Sorry, you are not allowed to upload this file type.")));
+    };
     let subdir = upload_subdir(content);
     let dir: PathBuf = if subdir.is_empty() { uploads.to_path_buf() } else { uploads.join(&subdir) };
     std::fs::create_dir_all(&dir).map_err(|e| UploadError(e.to_string()))?;
@@ -419,4 +501,36 @@ pub async fn handle_upload(content: &Content<'_>, uploads: &Path, file: Uploaded
     let serialized = String::from_utf8_lossy(&rustpress_phpser::serialize(&metadata)).into_owned();
     w.update_post_meta(id, "_wp_attachment_metadata", &serialized).await.map_err(|e| UploadError(e.to_string()))?;
     Ok(id)
+}
+
+#[cfg(test)]
+mod upload_tests {
+    use super::*;
+
+    fn allowed(ext: &str) -> bool {
+        check_filetype(&format!("x.{ext}")).is_some()
+    }
+
+    #[test]
+    fn inner_extensions_get_an_underscore() {
+        assert_eq!(mark_inner_extensions("x.php.jpg", allowed), "x.php_.jpg");
+        assert_eq!(mark_inner_extensions("x.phtml5.jpg", allowed), "x.phtml5_.jpg");
+        // Allowed types, numbers and long parts stay.
+        assert_eq!(mark_inner_extensions("x.jpg.png", allowed), "x.jpg.png");
+        assert_eq!(mark_inner_extensions("report.2024.pdf", allowed), "report.2024.pdf");
+        assert_eq!(mark_inner_extensions("a.verylongpart.pdf", allowed), "a.verylongpart.pdf");
+        assert_eq!(mark_inner_extensions("plain.jpg", allowed), "plain.jpg");
+    }
+
+    #[test]
+    fn images_are_checked_by_their_bytes() {
+        let png = [0x89, b'P', b'N', b'G', b'\r', b'\n', 0x1A, b'\n', 0, 0];
+        assert_eq!(image_mime(&png), Some("image/png"));
+        assert_eq!(image_mime(&[0xFF, 0xD8, 0xFF, 0xE0]), Some("image/jpeg"));
+        assert_eq!(image_mime(b"<?php echo 1;"), None);
+        // A PNG named .jpg is renamed, PHP named .jpg is refused, other files pass.
+        assert_eq!(check_image_upload("a.jpg", "image/jpeg", &png), Some(("a.png".to_owned(), "image/png".to_owned())));
+        assert_eq!(check_image_upload("a.jpg", "image/jpeg", b"<?php echo 1;"), None);
+        assert_eq!(check_image_upload("a.pdf", "application/pdf", b"%PDF-1.7"), Some(("a.pdf".to_owned(), "application/pdf".to_owned())));
+    }
 }

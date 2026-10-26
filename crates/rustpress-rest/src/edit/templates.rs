@@ -1,6 +1,7 @@
 //! `wp/v2/templates` and `wp/v2/template-parts` (`WP_REST_Templates_Controller`, `block-template-utils.php`):
 //! the files of the theme and the customizations stored as `wp_template` / `wp_template_part` posts.
 
+use rustpress_core::OrLog;
 use std::path::{Path, PathBuf};
 
 use rustpress_blocks::parser::{Block, parse_blocks};
@@ -722,7 +723,7 @@ impl Rest<'_> {
         // Resetting a customized theme template deletes the stored one.
         if let (Some(tpl), Some("theme")) = (&existing, args.str("source").as_deref()) {
             if tpl.wp_id != 0 {
-                let _ = content.delete_post(tpl.wp_id, true).await;
+                content.delete_post(tpl.wp_id, true).await.or_log();
             }
             let id = tpl.id.clone();
             return Ok(match self.block_template(kind, &id).await? {
@@ -797,13 +798,17 @@ impl Rest<'_> {
         let force = args.bool("force").unwrap_or(false);
         if force {
             let previous = self.tpl_json(&tpl, true).await;
-            let _ = content.delete_post(tpl.wp_id, true).await;
+            if !content.delete_post(tpl.wp_id, true).await.unwrap_or(false) {
+                return Ok(Err(RestError::new("rest_cannot_delete", "The template cannot be deleted.", 500)));
+            }
             return Ok(Ok(Resp::item(json!({"deleted": true, "previous": previous}))));
         }
         if tpl.status == "trash" {
             return Ok(Err(RestError::new("rest_template_already_trashed", "The template has already been deleted.", 410)));
         }
-        let _ = content.trash_post(tpl.wp_id).await;
+        if !content.trash_post(tpl.wp_id).await.unwrap_or(false) {
+            return Ok(Err(RestError::new("rest_cannot_delete", "The template cannot be deleted.", 500)));
+        }
         let mut trashed = tpl.clone();
         trashed.status = "trash".into();
         Ok(Ok(Resp::item(self.tpl_json(&trashed, true).await)))

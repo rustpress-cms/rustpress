@@ -90,7 +90,7 @@ impl Rest<'_> {
             return Ok(Err(RestError::new("rest_post_invalid_page_number", "The page number requested is larger than the number of pages available.", 400)));
         }
         if query.offset == 0 {
-            query.offset = (page - 1) * per_page;
+            query.offset = (page - 1).saturating_mul(per_page);
         }
         let posts = self.site.db.posts(&query).await?;
         let context = params.get("context").unwrap_or("view");

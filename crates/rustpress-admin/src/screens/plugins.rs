@@ -1,6 +1,7 @@
 //! `wp-admin/plugins.php`: the installed plugins. RustPress runs no PHP plugins; the screen lists them and
 //! records which ones are switched on in `active_plugins`, the way WordPress would.
 
+use rustpress_core::OrLog;
 use rustpress_core::formatting::{esc_attr, esc_html, esc_url, wptexturize};
 
 use super::notices::notice;
@@ -149,7 +150,7 @@ async fn actions(ctx: &Ctx<'_>, action: &str, installed: &[PluginInfo], active: 
             } else if action == "deactivate" {
                 active.retain(|p| p != &file);
             }
-            let _ = writer.update_option("active_plugins", &serialize_list(active)).await;
+            writer.update_option("active_plugins", &serialize_list(active)).await.or_log();
             Some(back(&format!("{}=true&", if action == "activate" { "activate" } else { "deactivate" })))
         }
         "activate-selected" | "deactivate-selected" => {
@@ -169,7 +170,7 @@ async fn actions(ctx: &Ctx<'_>, action: &str, installed: &[PluginInfo], active: 
             } else {
                 active.retain(|p| !selected.contains(p));
             }
-            let _ = writer.update_option("active_plugins", &serialize_list(active)).await;
+            writer.update_option("active_plugins", &serialize_list(active)).await.or_log();
             Some(back(&format!("{}=true&", if action == "activate-selected" { "activate-multi" } else { "deactivate-multi" })))
         }
         "enable-auto-update" | "disable-auto-update" | "enable-auto-update-selected" | "disable-auto-update-selected" => {
@@ -200,7 +201,7 @@ async fn actions(ctx: &Ctx<'_>, action: &str, installed: &[PluginInfo], active: 
                 return Some(back(""));
             }
             auto.retain(|p| is_installed(p));
-            let _ = writer.update_option("auto_update_plugins", &serialize_list(&auto)).await;
+            writer.update_option("auto_update_plugins", &serialize_list(&auto)).await.or_log();
             let flag = match action {
                 "enable-auto-update" => "enabled-auto-update",
                 "disable-auto-update" => "disabled-auto-update",

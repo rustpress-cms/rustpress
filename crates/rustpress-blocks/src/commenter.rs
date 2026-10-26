@@ -46,7 +46,7 @@ pub async fn unapproved_author_email(env: &Env<'_>, now: i64) -> Result<String> 
     if id != 0 && !given.is_empty() {
         if let Some(comment) = env.site.db.comment_any(id).await? {
             let expected = COMMENTER.try_with(|c| (c.hash)(&comment.comment_date_gmt)).unwrap_or_default();
-            if !expected.is_empty() && expected == given {
+            if !expected.is_empty() && rustpress_core::hash_equals(&expected, &given) {
                 let sent = rustpress_core::datetime::SiteTimezone::gmt_timestamp(&comment.comment_date_gmt).unwrap_or(0);
                 if now < sent + 600 && !comment.comment_author_email.is_empty() {
                     return Ok(comment.comment_author_email);

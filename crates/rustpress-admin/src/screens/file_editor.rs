@@ -639,11 +639,9 @@ async fn warning_dialog(ctx: &Ctx<'_>, pointer: &str, theme: Option<&ThemeInfo>)
     if dismissed.split(',').any(|p| p == pointer) {
         return String::new();
     }
-    let return_url = ctx
-        .request
-        .request("_wp_http_referer")
-        .filter(|r| !r.is_empty() && !r.contains("theme-editor.php") && !r.contains("plugin-editor.php") && !r.contains("wp-login.php"))
-        .map_or_else(|| ctx.admin_url(""), str::to_owned);
+    let return_url = super::common::wp_get_referer(ctx)
+        .filter(|r| !r.contains("theme-editor.php") && !r.contains("plugin-editor.php") && !r.contains("wp-login.php"))
+        .unwrap_or_else(|| ctx.admin_url(""));
     let mut h = String::from("\t<div id=\"file-editor-warning\" class=\"notification-dialog-wrap file-editor-warning hide-if-no-js hidden\">\n\t\t<div class=\"notification-dialog-background\"></div>\n\t\t<div class=\"notification-dialog\">\n\t\t\t<div class=\"file-editor-warning-content\">\n\t\t\t\t<div class=\"file-editor-warning-message\">\n");
     h.push_str(&format!("\t\t\t\t\t<h1>{}</h1>\n", tr("Heads up!")));
     if let Some(theme) = theme {

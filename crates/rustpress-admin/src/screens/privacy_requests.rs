@@ -2,6 +2,7 @@
 //! (the `user_request` posts), and what is done with them. RustPress cannot send e-mail, so a request is added
 //! as confirmed, and the steps that need the person's confirmation are not offered.
 
+use rustpress_core::OrLog;
 use rustpress_core::datetime::SiteTimezone;
 use rustpress_core::formatting::{esc_attr, esc_html, esc_url};
 use crate::sanitize::{is_email, sanitize_email};
@@ -183,7 +184,7 @@ async fn cleanup(ctx: &Ctx<'_>, kind: Kind) {
     for post in ctx.env.db.posts(&query).await.unwrap_or_default() {
         let modified = SiteTimezone::gmt_timestamp(&post.post_modified_gmt).unwrap_or(0);
         if modified < ctx.env.now - 86_400 {
-            let _ = content.insert_post(&PostData { id: Some(post.id), post_status: Some("request-failed".into()), post_password: Some(String::new()), ..Default::default() }).await;
+            content.insert_post(&PostData { id: Some(post.id), post_status: Some("request-failed".into()), post_password: Some(String::new()), ..Default::default() }).await.or_log();
         }
     }
 }
@@ -260,11 +261,11 @@ async fn handle_actions(ctx: &Ctx<'_>, kind: Kind) -> Option<Result<Vec<Settings
                         Ok(id) if id != 0 => {
                             if send_email {
                                 // The result of the mail does not change the message, as in WordPress.
-                                let _ = ctx.env.mail_ctx().send_user_request(id).await;
+                                ctx.env.mail_ctx().send_user_request(id).await.or_log();
                                 add(&mut errors, "username_or_email_for_privacy_request", tr("Confirmation request initiated successfully."), "success");
                             } else {
                                 if let Some(writer) = ctx.env.writer {
-                                    let _ = writer.add_post_meta(id, "_wp_user_request_confirmed_timestamp", &ctx.env.now.to_string()).await;
+                                    writer.add_post_meta(id, "_wp_user_request_confirmed_timestamp", &ctx.env.now.to_string()).await.or_log();
                                 }
                                 add(&mut errors, "username_or_email_for_privacy_request", tr("Request added successfully."), "success");
                             }
@@ -306,7 +307,7 @@ async fn handle_actions(ctx: &Ctx<'_>, kind: Kind) -> Option<Result<Vec<Settings
                 if let (Some(content), Some(writer)) = (content(ctx), ctx.env.writer) {
                     for id in &ids {
                         let Some(post) = ctx.env.db.post(*id).await.ok().flatten().filter(|p| p.post_type == "user_request") else { continue };
-                        let _ = writer.update_post_meta(post.id, "_wp_user_request_completed_timestamp", &ctx.env.now.to_string()).await;
+                        writer.update_post_meta(post.id, "_wp_user_request_completed_timestamp", &ctx.env.now.to_string()).await.or_log();
                         if content.insert_post(&PostData { id: Some(post.id), post_status: Some("request-completed".into()), ..Default::default() }).await.is_ok() {
                             count += 1;
                         }
@@ -500,7 +501,7 @@ pub async fn page(ctx: &Ctx<'_>, kind: Kind) -> AdminResponse {
     };
     let total = db.count_posts(&query).await.unwrap_or(0);
     query.limit = Some(per_page);
-    query.offset = (paged - 1) * per_page;
+    query.offset = (paged - 1).saturating_mul(per_page);
     let posts = db.posts(&query).await.unwrap_or_default();
 
     // The views with the numbers per status.

@@ -148,7 +148,7 @@ impl Rest<'_> {
         // WordPress counts without padding parents, so `X-WP-Total` can be lower than the list.
         let total = if hide_empty { terms.iter().filter(|t| t.count > 0).count() as u64 } else { terms.len() as u64 };
         let max_pages = total.div_ceil(per_page);
-        let start = if offset > 0 { offset } else { (page - 1) * per_page } as usize;
+        let start = if offset > 0 { offset } else { (page - 1).saturating_mul(per_page) } as usize;
         let context = params.get("context").unwrap_or("view");
         let mut items = Vec::new();
         for term in terms.iter().skip(start).take(per_page as usize) {

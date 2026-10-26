@@ -1,5 +1,6 @@
 //! `wp/v2/users/<id|me>/application-passwords` (`WP_REST_Application_Passwords_Controller`).
 
+use rustpress_core::OrLog;
 use rustpress_auth::app_passwords::{self, AppPassword};
 use serde_json::{Value, json};
 
@@ -139,7 +140,7 @@ impl Rest<'_> {
                 };
                 let count = list.len();
                 if count > 0 {
-                    let _ = writer.delete_user_meta(target, app_passwords::META_KEY).await;
+                    writer.delete_user_meta(target, app_passwords::META_KEY).await.or_log();
                 }
                 Ok(Ok(Resp::item(json!({"deleted": true, "count": count}))))
             }

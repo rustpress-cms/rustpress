@@ -11,7 +11,7 @@ use crate::render::BlockCtx;
 fn icon_file(includes: &std::path::Path, name: &str) -> Option<std::path::PathBuf> {
     let key = name.strip_prefix("core/")?;
     let manifest = std::fs::read_to_string(includes.join("assets").join("icon-library-manifest.php")).ok()?;
-    let anchor = regex::Regex::new(&format!(r"(?m)^\s*'{}'\s*=>", regex::escape(key))).ok()?;
+    let anchor = rustpress_core::formatting::cached_plain_regex(&format!(r"(?m)^\s*'{}'\s*=>", regex::escape(key)));
     let start = anchor.find(&manifest)?.start();
     let rest = &manifest[start..];
     let end = rest.find("

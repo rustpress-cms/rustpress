@@ -109,9 +109,9 @@ impl Content<'_> {
         if let Some(url) = &update.author_url {
             fields.push(("comment_author_url", Val::Str(if url.trim().is_empty() { String::new() } else { rustpress_core::formatting::esc_url_raw(url.trim()) })));
         }
+        // The caller has run the `pre_comment_content` filters.
         if let Some(content) = &update.content {
-            let cleaned = if self.user.can("unfiltered_html") { content.clone() } else { super::kses_post(content) };
-            fields.push(("comment_content", Val::Str(cleaned)));
+            fields.push(("comment_content", Val::Str(content.clone())));
         }
         if let Some(date) = &update.date {
             fields.push(("comment_date_gmt", Val::Str(self.gmt_from_local(date))));
@@ -125,9 +125,10 @@ impl Content<'_> {
         Ok(())
     }
 
-    /// `wp_insert_comment()` for a reply written by a signed-in user in the administration area.
-    pub async fn insert_reply(&self, post_id: u64, parent: u64, text: &str, approved: &str) -> Result<u64> {
-        let content = if self.user.can("unfiltered_html") { text.to_owned() } else { super::kses_post(text) };
+    /// `wp_insert_comment()` for a reply written by a signed-in user in the administration area. `content` has been
+    /// through the `pre_comment_content` filters.
+    pub async fn insert_reply(&self, post_id: u64, parent: u64, content: &str, comment_type: &str, approved: &str) -> Result<u64> {
+        let content = content.to_owned();
         let user_row = self.db.user(self.user.id).await?;
         let fields: Vec<(&str, Val)> = vec![
             ("comment_post_ID", Val::Int(post_id as i64)),
@@ -141,7 +142,7 @@ impl Content<'_> {
             ("comment_karma", Val::Int(0)),
             ("comment_approved", Val::Str(approved.to_owned())),
             ("comment_agent", Val::Str(String::new())),
-            ("comment_type", Val::Str("comment".into())),
+            ("comment_type", Val::Str(comment_type.to_owned())),
             ("comment_parent", Val::Int(parent as i64)),
             ("user_id", Val::Int(self.user.id as i64)),
         ];

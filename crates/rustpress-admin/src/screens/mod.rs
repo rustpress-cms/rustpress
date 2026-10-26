@@ -342,10 +342,11 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse
         }
         "media.php" => bare_pages::media(&ctx.admin_url("")),
         // The screens of themes that are not block themes.
-        "widgets.php" | "nav-menus.php" if !ctx.can("edit_theme_options") => higher_permission(&ctx, "Sorry, you are not allowed to edit theme options on this site.", 403),
-        "widgets.php" => die(env, 500, "WordPress &rsaquo; Error", &sprintf_html(&ctx.tr("The theme you are currently using is not widget-aware, meaning that it has no sidebars that you are able to change. For information on making your theme widget-aware, please <a href=\"%s\">follow these instructions</a>."), "https://developer.wordpress.org/themes/functionality/widgets/")),
+        // `nav-menus.php` first says that the theme has neither menus nor widgets, then checks the capability.
         "nav-menus.php" => die(env, 500, "WordPress &rsaquo; Error", &ctx.tr("Your theme does not support navigation menus or widgets.")),
-        "link-manager.php" | "link-add.php" | "link.php" if !(ctx.can("manage_links") && ctx.can("install_plugins")) => die(env, 500, "WordPress &rsaquo; Error", &ctx.tr("Sorry, you are not allowed to edit the links for this site.")),
+        "widgets.php" if !ctx.can("edit_theme_options") => higher_permission(&ctx, "Sorry, you are not allowed to edit theme options on this site.", 403),
+        "widgets.php" => die(env, 500, "WordPress &rsaquo; Error", &sprintf_html(&ctx.tr("The theme you are currently using is not widget-aware, meaning that it has no sidebars that you are able to change. For information on making your theme widget-aware, please <a href=\"%s\">follow these instructions</a>."), "https://developer.wordpress.org/themes/functionality/widgets/")),
+        "link-manager.php" | "link-add.php" | "link.php" if !(ctx.user.can_manage_links_if_enabled() && ctx.can("install_plugins")) => die(env, 500, "WordPress &rsaquo; Error", &ctx.tr("Sorry, you are not allowed to edit the links for this site.")),
         "network.php" if !ctx.can("setup_network") => die_message(env, 500, &ctx.tr("Sorry, you are not allowed to manage options for this site.")),
         "customize.php" if !ctx.can("edit_theme_options") => higher_permission(&ctx, "Sorry, you are not allowed to customize this site.", 403),
         "press-this.php" if !ctx.can("edit_posts") => die(env, 403, &ctx.tr("You need a higher level of permission."), &ctx.tr("Sorry, you are not allowed to create posts as this user.")),

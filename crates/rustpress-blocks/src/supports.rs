@@ -150,7 +150,7 @@ pub fn render_typography_support(env: &crate::env::Env<'_>, attrs: &Map<String, 
     if fluid.is_empty() || fluid == size {
         return content;
     }
-    let Ok(pattern) = regex::Regex::new(&format!(r"font-size\s*:\s*{}\s*;?", regex::escape(size))) else { return content };
+    let pattern = rustpress_core::formatting::cached_plain_regex(&format!(r"font-size\s*:\s*{}\s*;?", regex::escape(size)));
     let replacement = format!("font-size:{};", rustpress_core::formatting::esc_attr(&fluid));
     pattern.replace(&content, regex::NoExpand(&replacement)).into_owned()
 }

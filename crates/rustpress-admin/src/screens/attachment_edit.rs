@@ -1,6 +1,7 @@
 //! `post.php` for an attachment: the "Edit Media" screen (`edit_form_image_editor()` and
 //! `attachment_submitbox_metadata()`) and its save. The inline image editor is not part of RustPress.
 
+use rustpress_core::OrLog;
 use rustpress_core::formatting::{esc_attr, esc_html, esc_url};
 use rustpress_core::i18n::sprintf;
 use rustpress_db::{Post, User, UserListQuery};
@@ -165,7 +166,7 @@ pub async fn form(ctx: &Ctx<'_>, post: &Post) -> AdminResponse {
     // The lock, as `wp_set_post_lock()` leaves it.
     let lock = format!("{}:{}", ctx.env.now, ctx.user.id);
     if let Some(writer) = ctx.env.writer {
-        let _ = writer.update_post_meta(id, "_edit_lock", &lock).await;
+        writer.update_post_meta(id, "_edit_lock", &lock).await.or_log();
     }
     let message = match ctx.request.get("message") {
         Some("1" | "4") => format!("<div id=\"message\" class=\"notice notice-success is-dismissible updated\"><p>{}</p></div>", tr("Media file updated.")),
@@ -227,7 +228,7 @@ pub async fn form(ctx: &Ctx<'_>, post: &Post) -> AdminResponse {
 pub async fn save(ctx: &Ctx<'_>, post: &Post) -> AdminResponse {
     let request = ctx.request;
     let tr = |s: &str| ctx.tr(s);
-    if !ctx.can("edit_post") && !ctx.can("upload_files") {
+    if !ctx.user.can_edit_post(post) {
         return die(ctx.env, 403, "WordPress &rsaquo; Error", &format!("<p>{}</p>", tr("Sorry, you are not allowed to edit this post.")));
     }
     let Some(writer) = ctx.env.writer else {
@@ -253,10 +254,10 @@ pub async fn save(ctx: &Ctx<'_>, post: &Post) -> AdminResponse {
     if let Some(alt) = field("_wp_attachment_image_alt") {
         let current = ctx.env.db.post_meta_value(post.id, "_wp_attachment_image_alt").await.ok().flatten().unwrap_or_default();
         if current != alt {
-            let _ = writer.update_post_meta(post.id, "_wp_attachment_image_alt", &rustpress_core::formatting::strip_tags(alt)).await;
+            writer.update_post_meta(post.id, "_wp_attachment_image_alt", &rustpress_core::formatting::strip_tags(alt)).await.or_log();
         }
     }
-    let _ = writer.update_post_meta(post.id, "_edit_last", &ctx.user.id.to_string()).await;
-    let _ = writer.update_post_meta(post.id, "_edit_lock", &format!("{}:{}", ctx.env.now, ctx.user.id)).await;
+    writer.update_post_meta(post.id, "_edit_last", &ctx.user.id.to_string()).await.or_log();
+    writer.update_post_meta(post.id, "_edit_lock", &format!("{}:{}", ctx.env.now, ctx.user.id)).await.or_log();
     redirect(&rustpress_core::urls::add_query_arg(&edit_link(ctx, post.id), "message", "1"))
 }

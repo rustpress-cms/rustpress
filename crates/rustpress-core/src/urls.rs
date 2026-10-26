@@ -72,8 +72,7 @@ impl Site {
             return Ok(0);
         }
         // `?p=N`, `?page_id=N`, `?attachment_id=N`.
-        if let Ok(re) = regex::Regex::new(r"[?&](?:p|page_id|attachment_id)=(\d+)")
-            && let Some(caps) = re.captures(url)
+        if let Some(caps) = crate::formatting::cached_plain_regex(r"[?&](?:p|page_id|attachment_id)=(\d+)").captures(url)
         {
             let id: u64 = caps[1].parse().unwrap_or(0);
             if id != 0 {

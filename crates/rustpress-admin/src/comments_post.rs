@@ -1,6 +1,7 @@
 //! `wp-comments-post.php`: a visitor (or a signed-in user) sends a comment. This follows
 //! `wp_handle_comment_submission()`, `wp_new_comment()`, `wp_allow_comment()` and the notifications that follow.
 
+use rustpress_core::OrLog;
 use rustpress_auth::{Auth, CurrentUser, Roles};
 use rustpress_core::Site;
 use rustpress_core::formatting::{esc_html, esc_url, esc_url_raw};
@@ -324,7 +325,7 @@ impl CommentEnv<'_> {
         if approved == "1" {
             let system = CurrentUser::system();
             let content = crate::content::Content { site: self.site, db: self.db, writer, user: &system, now: self.now };
-            let _ = content.update_comment_count(c.post_id).await;
+            content.update_comment_count(c.post_id).await.or_log();
         }
         // `comment_post`: the moderators and the author of the post are told.
         self.notify(id, &approved, user).await;

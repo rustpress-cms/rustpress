@@ -79,7 +79,7 @@ impl Rest<'_> {
         let total = self.site.db.count_comments(&query).await?;
         let max_pages = total.div_ceil(per_page);
         if query.offset == 0 {
-            query.offset = (page - 1) * per_page;
+            query.offset = (page - 1).saturating_mul(per_page);
         }
         let comments = self.site.db.comments_query(&query).await?;
         let context = params.get("context").unwrap_or("view");

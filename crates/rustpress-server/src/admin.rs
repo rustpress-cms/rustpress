@@ -238,8 +238,8 @@ pub enum RestAuth {
     User(rustpress_auth::CurrentUser),
     /// An application password in a Basic authorization header: the user and the entry.
     AppPassword(rustpress_auth::CurrentUser, String),
-    /// A Basic authorization header whose password is no application password.
-    BadAppPassword,
+    /// A Basic authorization header whose password is no application password: the code and message of the error.
+    BadAppPassword(&'static str, &'static str),
     /// A cookie with a nonce that does not match.
     BadNonce,
 }
@@ -273,7 +273,7 @@ pub async fn rest_auth(loaded: &Loaded, headers: &HeaderMap, query: &str, body_n
         && let Some((login, password)) = basic_credentials(headers)
     {
         return match rustpress_auth::app_passwords::authenticate(&loaded.site.db, &login, &password).await {
-            Some((user_id, uuid)) => {
+            Ok((user_id, uuid)) => {
                 let account = match loaded.site.db.user(user_id).await.ok().flatten() {
                     Some(user) => loaded.site.db.auth_user_by_login(&user.user_login).await.ok().flatten(),
                     None => None,
@@ -281,12 +281,13 @@ pub async fn rest_auth(loaded: &Loaded, headers: &HeaderMap, query: &str, body_n
                 match account {
                     Some(account) => match rustpress_auth::CurrentUser::load(&loaded.site.db, &parts.roles, &account).await {
                         Ok(current) => RestAuth::AppPassword(current, uuid),
-                        Err(_) => RestAuth::BadAppPassword,
+                        Err(_) => RestAuth::Anonymous,
                     },
-                    None => RestAuth::BadAppPassword,
+                    None => RestAuth::Anonymous,
                 }
             }
-            None => RestAuth::BadAppPassword,
+            Err(None) => RestAuth::Anonymous,
+            Err(Some((code, message))) => RestAuth::BadAppPassword(code, message),
         };
     }
     let Some(session) = session else { return RestAuth::Anonymous };
@@ -314,7 +315,9 @@ fn pairs_of(text: &str) -> Vec<(String, String)> {
 
 /// `wp-login.php`.
 #[allow(clippy::too_many_arguments)]
-pub async fn login_page(loaded: &Loaded, writer: Option<&rustpress_db::Writer>, method_post: bool, path: &str, request_uri: &str, query: &str, body: &str, headers: &HeaderMap, remote_addr: Option<String>) -> Response<Body> {
+#[allow(clippy::too_many_arguments)]
+pub async fn login_page(loaded: &Loaded, writer: Option<&rustpress_db::Writer>, method_post: bool, path: &str, request_uri: &str, query: &str, body: &str, headers: &HeaderMap, client: &crate::client::Client) -> Response<Body> {
+    let remote_addr = client.ip.clone();
     let Some(parts) = &loaded.admin else { return plain(StatusCode::NOT_FOUND, "Not Found") };
     let mut loader = parts.loader.clone();
     // Nobody is signed in on this page: the nonces belong to user 0 without a session.
@@ -330,7 +333,7 @@ pub async fn login_page(loaded: &Loaded, writer: Option<&rustpress_db::Writer>, 
         loader,
         languages: parts.languages.clone(),
         privacy_policy: parts.privacy_policy.clone(),
-        https: loaded.site.settings.siteurl.starts_with("https"),
+        https: client.https,
         now: now(),
         mailer: parts.mailer.clone(),
     };
@@ -362,7 +365,8 @@ pub async fn login_page(loaded: &Loaded, writer: Option<&rustpress_db::Writer>, 
 }
 
 /// `wp-comments-post.php`: a comment is sent.
-pub async fn comments_post(loaded: &Loaded, writer: Option<&rustpress_db::Writer>, body: &str, headers: &HeaderMap, remote_addr: Option<String>) -> Response<Body> {
+pub async fn comments_post(loaded: &Loaded, writer: Option<&rustpress_db::Writer>, body: &str, headers: &HeaderMap, client: &crate::client::Client) -> Response<Body> {
+    let remote_addr = client.ip.clone();
     let Some(parts) = &loaded.admin else { return plain(StatusCode::NOT_FOUND, "Not Found") };
     let env = rustpress_admin::comments_post::CommentEnv {
         site: &loaded.site,
@@ -373,7 +377,7 @@ pub async fn comments_post(loaded: &Loaded, writer: Option<&rustpress_db::Writer
         mailer: parts.mailer.clone(),
         now: now(),
         user: frontend_user(loaded, headers).await,
-        https: loaded.site.settings.siteurl.starts_with("https"),
+        https: client.https,
     };
     let request = rustpress_admin::comments_post::CommentRequest { form: pairs_of(body), remote_addr, user_agent: headers.get(header::USER_AGENT).and_then(|v| v.to_str().ok()).map(str::to_owned) };
     let reply = rustpress_admin::comments_post::handle(&env, &request).await;
@@ -394,7 +398,7 @@ pub async fn comments_post(loaded: &Loaded, writer: Option<&rustpress_db::Writer
 
 /// A file in `wp-admin` (`index.php`, `options-general.php`, ...).
 #[allow(clippy::too_many_arguments)]
-pub async fn admin_page(loaded: &Loaded, config: &Config, writer: Option<&rustpress_db::Writer>, file: &str, method_post: bool, request_uri: &str, query: &str, body: &[u8], headers: &HeaderMap) -> Response<Body> {
+pub async fn admin_page(loaded: &Loaded, config: &Config, writer: Option<&rustpress_db::Writer>, file: &str, method_post: bool, request_uri: &str, query: &str, body: &[u8], headers: &HeaderMap, client: &crate::client::Client) -> Response<Body> {
     let Some(parts) = &loaded.admin else { return plain(StatusCode::NOT_FOUND, "Not Found") };
     let themes = config.wp_root.join("wp-content").join("themes");
     let block_theme = [&loaded.site.settings.stylesheet, &loaded.site.settings.template].iter().any(|t| themes.join(t.as_str()).join("templates").join("index.html").is_file());
@@ -405,7 +409,7 @@ pub async fn admin_page(loaded: &Loaded, config: &Config, writer: Option<&rustpr
         auth: &parts.auth,
         roles: &parts.roles,
         loader: parts.loader.clone(),
-        https: loaded.site.settings.siteurl.starts_with("https"),
+        https: client.https,
         now: now(),
         languages: parts.languages.clone(),
         available_translations: available_translations(&loaded.site, now()).await,
@@ -430,7 +434,7 @@ pub async fn admin_page(loaded: &Loaded, config: &Config, writer: Option<&rustpr
         files,
         cookies: cookies_of(headers),
         request_uri: request_uri.to_owned(),
-        remote_addr: None,
+        remote_addr: client.ip.clone(),
         user_agent: headers.get(header::USER_AGENT).and_then(|v| v.to_str().ok()).map(str::to_owned),
     };
     let reply = rustpress_admin::screens::handle(&env, &request).await;

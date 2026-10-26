@@ -2,6 +2,7 @@
 //! password form and the reset of a password (`lostpassword`, `rp`), registration, the message pages (`checkemail`,
 //! `confirmaction`) and the check of the administration e-mail address.
 
+use rustpress_core::OrLog;
 use super::*;
 use crate::content::{Content, UserData};
 use rustpress_auth::password::{hash_portable, verify_fast_hash};
@@ -169,7 +170,7 @@ impl LoginEnv<'_> {
                 return self.redirect(response, request, &self.login_url(), true);
             }
             if let Some(writer) = self.writer {
-                let _ = writer.update_option("admin_email_lifespan", &(self.now + remind_interval).to_string()).await;
+                writer.update_option("admin_email_lifespan", &(self.now + remind_interval).to_string()).await.or_log();
             }
             let target = rustpress_core::urls::add_query_arg(&redirect_to, "admin_email_remind_later", "1");
             return self.redirect(response, request, &target, true);
@@ -180,7 +181,7 @@ impl LoginEnv<'_> {
                 return self.nonce_ays(request);
             }
             if let Some(writer) = self.writer {
-                let _ = writer.update_option("admin_email_lifespan", &(self.now + 6 * MONTH).to_string()).await;
+                writer.update_option("admin_email_lifespan", &(self.now + 6 * MONTH).to_string()).await.or_log();
             }
             return self.redirect(response, request, &redirect_to, true);
         }
@@ -291,7 +292,7 @@ impl LoginEnv<'_> {
             Some(_) if correct => return Err("expired_key"),
             _ => {}
         }
-        if stored == key || (correct && expiration.is_none()) {
+        if rustpress_core::hash_equals(&stored, &key) || (correct && expiration.is_none()) {
             return Err("expired_key");
         }
         Err("invalid_key")
@@ -348,8 +349,8 @@ impl LoginEnv<'_> {
             if let Some(writer) = self.writer {
                 // `reset_password()`.
                 let hash = rustpress_auth::password::hash_password(&pass1);
-                let _ = writer.update_rows("users", "ID", user.id, &[("user_pass", Val::Str(hash)), ("user_activation_key", Val::Str(String::new()))]).await;
-                let _ = writer.update_user_meta(user.id, "default_password_nag", "").await;
+                writer.update_rows("users", "ID", user.id, &[("user_pass", Val::Str(hash)), ("user_activation_key", Val::Str(String::new()))]).await.or_log();
+                writer.update_user_meta(user.id, "default_password_nag", "").await.or_log();
                 self.mail_ctx().password_change_notification(&user.user_login, &user.user_email).await;
                 let message = info_notice(&format!("{} <a href=\"{}\">{}</a>", self.tr("Your password has been reset."), esc_url(&self.login_url()), self.tr("Log in")), &["message", "reset-pass"]);
                 let mut page = self.header_with(action, &self.tr("Password Reset"), &message, &[], &[], false);
@@ -466,10 +467,10 @@ impl LoginEnv<'_> {
             Ok(id) if id != 0 => id,
             _ => return Err(fail(self)),
         };
-        let _ = writer.update_user_meta(user_id, "default_password_nag", "1").await;
+        writer.update_user_meta(user_id, "default_password_nag", "1").await.or_log();
         if let Some(lang) = request.cookie("wp_lang").filter(|l| !l.is_empty()) {
             if self.languages.iter().any(|l| l.locale == lang) {
-                let _ = writer.update_user_meta(user_id, "locale", lang).await;
+                writer.update_user_meta(user_id, "locale", lang).await.or_log();
             }
         }
         self.new_user_notification(user_id).await;
@@ -526,8 +527,8 @@ impl LoginEnv<'_> {
         if let Some(writer) = self.writer {
             let system = CurrentUser::system();
             let content = Content { site: self.site, db: self.db, writer, user: &system, now: self.now };
-            let _ = writer.update_post_meta(request_id, "_wp_user_request_confirmed_timestamp", &self.now.to_string()).await;
-            let _ = content.insert_post(&crate::content::PostData { id: Some(request_id), post_status: Some("request-confirmed".into()), ..Default::default() }).await;
+            writer.update_post_meta(request_id, "_wp_user_request_confirmed_timestamp", &self.now.to_string()).await.or_log();
+            content.insert_post(&crate::content::PostData { id: Some(request_id), post_status: Some("request-confirmed".into()), ..Default::default() }).await.or_log();
         }
         let message = match post.post_name.as_str() {
             "export_personal_data" => format!("<p class=\"success\">{}</p><p>{}</p>", self.tr("Thanks for confirming your export request."), self.tr("The site administrator has been notified. You will receive a link to download your export via email when they fulfill your request.")),

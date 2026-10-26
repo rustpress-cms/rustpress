@@ -130,7 +130,7 @@ fn tokens(text: &str) -> Vec<&str> {
     let mut i = 0;
     while i < bytes.len() {
         if bytes[i] == b'%'
-            && let Some(offset) = bytes[i + 2..].iter().position(|&b| b == b'%').filter(|_| i + 2 <= bytes.len())
+            && let Some(offset) = bytes.get(i + 2..).and_then(|rest| rest.iter().position(|&b| b == b'%'))
         {
             let end = i + 2 + offset;
             out.push(&text[i..=end]);
@@ -461,4 +461,17 @@ pub fn taxonomy_base(base: &str) -> String {
 pub fn serialize_rules(rules: &[(String, String)]) -> String {
     let items = rules.iter().map(|(k, v)| (Key::Str(k.clone().into_bytes()), Value::Str(v.clone().into_bytes()))).collect();
     String::from_utf8_lossy(&rustpress_phpser::serialize(&Value::Array(items))).into_owned()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::tokens;
+
+    #[test]
+    fn tokens_of_a_structure_ending_in_a_percent_sign() {
+        assert_eq!(tokens("/%year%/%postname%/"), vec!["%year%", "%postname%"]);
+        assert_eq!(tokens("/%postname%/%"), vec!["%postname%"]);
+        assert_eq!(tokens("%"), Vec::<&str>::new());
+        assert_eq!(tokens("%%"), Vec::<&str>::new());
+    }
 }

@@ -39,11 +39,17 @@ fn newest(env: &Env<'_>) -> bool {
     newest_site(env.site)
 }
 
-/// The descendants of `parent` in depth-first order (`WP_Comment::get_children( 'flat' )`).
+/// The descendants of `parent` in depth-first order (`WP_Comment::get_children( 'flat' )`). Iterative, and each
+/// comment once: a damaged table with a comment that is its own ancestor neither loops nor overflows the stack.
 fn descendants<'a>(all: &'a [Comment], parent: u64, out: &mut Vec<&'a Comment>) {
-    for child in all.iter().filter(|c| c.comment_parent == parent) {
-        out.push(child);
-        descendants(all, child.comment_id, out);
+    let mut seen = std::collections::HashSet::from([parent]);
+    let mut stack: Vec<&'a Comment> = all.iter().filter(|c| c.comment_parent == parent).rev().collect();
+    while let Some(comment) = stack.pop() {
+        if !seen.insert(comment.comment_id) {
+            continue;
+        }
+        out.push(comment);
+        stack.extend(all.iter().filter(|c| c.comment_parent == comment.comment_id).rev());
     }
 }
 
@@ -87,7 +93,7 @@ pub async fn comments_for_post(env: &Env<'_>, post_id: u64) -> Result<CommentPag
         } else {
             1
         };
-        let start = ((page - 1) * per) as usize;
+        let start = usize::try_from(page.saturating_sub(1).saturating_mul(per)).unwrap_or(usize::MAX);
         (top.iter().skip(start).take(per as usize).copied().collect(), max_pages, page)
     } else {
         (top, 0, 0)
@@ -135,8 +141,9 @@ pub fn page_of_comment(env: &Env<'_>, all: &[Comment], comment: &Comment) -> u64
     let mut target = comment;
     // A reply sits on the page of its top-level ancestor.
     if max_depth > 1 {
+        let mut seen = std::collections::HashSet::from([target.comment_id]);
         while target.comment_parent != 0 {
-            match all.iter().find(|c| c.comment_id == target.comment_parent) {
+            match all.iter().find(|c| c.comment_id == target.comment_parent).filter(|p| seen.insert(p.comment_id)) {
                 Some(parent) => target = parent,
                 None => break,
             }

@@ -78,7 +78,7 @@ async fn custom_query(bc: &BlockCtx<'_>, page: u64) -> Result<LoopData> {
     let offset = q.get("offset").and_then(|v| v.as_u64().or_else(|| v.as_str().and_then(|s| s.parse().ok()))).unwrap_or(0);
     query.limit = Some(effective_per_page);
     if per_page.is_some() {
-        query.offset = effective_per_page * (page - 1) + offset;
+        query.offset = effective_per_page.saturating_mul(page.saturating_sub(1)).saturating_add(offset);
     }
     // Taxonomy filters (term IDs).
     let mut has_tax = false;
@@ -222,7 +222,9 @@ pub(super) async fn post_template(bc: &BlockCtx<'_>) -> Result<String> {
             match chunk {
                 Content::Html(html) => inner.push_str(html),
                 Content::InnerBlock => {
-                    inner.push_str(&bc.env.render_block(&bc.block.inner_blocks[index], &ctx, Some(bc.block)).await?);
+                    if let Some(block) = bc.block.inner_blocks.get(index) {
+                        inner.push_str(&bc.env.render_block(block, &ctx, Some(bc.block)).await?);
+                    }
                     index += 1;
                 }
             }

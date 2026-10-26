@@ -336,7 +336,19 @@ impl Content<'_> {
         if post_status == "private" {
             post_password.clear();
         }
-        let post_parent = data.post_parent.or(before.as_ref().map(|p| p.post_parent)).unwrap_or(0);
+        let mut post_parent = data.post_parent.or(before.as_ref().map(|p| p.post_parent)).unwrap_or(0);
+        // `wp_check_post_hierarchy_for_loops()`: a parent that is the post itself or one of its descendants is none.
+        if post_id != 0 && post_parent != 0 {
+            let mut seen = std::collections::HashSet::new();
+            let mut ancestor = post_parent;
+            while ancestor != 0 && seen.insert(ancestor) {
+                if ancestor == post_id {
+                    post_parent = 0;
+                    break;
+                }
+                ancestor = self.db.post(ancestor).await?.map_or(0, |p| p.post_parent);
+            }
+        }
         let post_mime_type = pick(&data.post_mime_type, before.as_ref().map(|p| &p.post_mime_type));
 
         // Trash

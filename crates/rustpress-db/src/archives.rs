@@ -59,7 +59,7 @@ impl Db {
                     _ => "WEEK( `post_date`, 0 )".to_owned(),
                 };
                 let sql = format!(
-                    "SELECT {week}, YEAR( `post_date` ), DATE_FORMAT( {aggregate}(`post_date`), '%Y-%m-%d' ), count( `ID` ) FROM `{table}` {filter} GROUP BY {week}, YEAR( `post_date` ) ORDER BY {aggregate}(`post_date`) {order}{limit}"
+                    "SELECT {week}, YEAR( `post_date` ), DATE_FORMAT( {aggregate}(`post_date`), '%Y-%m-%d' ), count( `ID` ) FROM {table} {filter} GROUP BY {week}, YEAR( `post_date` ) ORDER BY {aggregate}(`post_date`) {order}{limit}"
                 );
                 let rows: Vec<(i32, i32, String, i64)> = sqlx::query_as(AssertSqlSafe(sql)).bind(post_type).fetch_all(&self.pool).await?;
                 Ok(rows.into_iter().map(|(week, year, yyyymmdd, n)| ArchiveRow { week, year, yyyymmdd, posts: n as u64, ..ArchiveRow::default() }).collect())
