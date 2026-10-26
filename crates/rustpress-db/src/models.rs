@@ -112,9 +112,12 @@ pub struct Comment {
     pub comment_type: String,
     pub comment_parent: u64,
     pub user_id: u64,
+    #[sqlx(rename = "comment_author_IP")]
+    pub comment_author_ip: String,
+    pub comment_agent: String,
 }
 
 pub(crate) const COMMENT_COLUMNS: &str = "comment_ID, comment_post_ID, comment_author, \
     comment_author_email, comment_author_url, CAST(comment_date AS CHAR) AS comment_date, \
     CAST(comment_date_gmt AS CHAR) AS comment_date_gmt, comment_content, comment_approved, \
-    comment_type, comment_parent, user_id";
+    comment_type, comment_parent, user_id, comment_author_IP, comment_agent";

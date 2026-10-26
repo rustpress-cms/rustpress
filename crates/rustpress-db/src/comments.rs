@@ -169,8 +169,17 @@ pub struct CommentQuery {
     pub post_in: Vec<u64>,
     pub parent_in: Vec<u64>,
     pub parent_not_in: Vec<u64>,
-    /// Comment types to include (`""` is the classic comment).
+    /// Comment types to include (`""` is the classic comment); empty for all.
     pub types: Vec<String>,
+    /// Comment types to leave out.
+    pub types_not_in: Vec<String>,
+    /// `status` of `WP_Comment_Query`: `approve`, `hold`, `all`, `any` or a `comment_approved` value; empty is `all`.
+    pub statuses: Vec<String>,
+    /// Only comments of published posts without a password (what an anonymous visitor may list).
+    pub public_posts: bool,
+    pub author_in: Vec<u64>,
+    pub author_not_in: Vec<u64>,
+    pub author_email: Option<String>,
     pub search: Option<String>,
     pub after: Option<String>,
     pub before: Option<String>,
@@ -189,6 +198,12 @@ impl Default for CommentQuery {
             parent_in: Vec::new(),
             parent_not_in: Vec::new(),
             types: vec![String::new(), "comment".into()],
+            types_not_in: Vec::new(),
+            statuses: vec!["approve".into()],
+            public_posts: true,
+            author_in: Vec::new(),
+            author_not_in: Vec::new(),
+            author_email: None,
             search: None,
             after: None,
             before: None,
@@ -202,9 +217,38 @@ impl Default for CommentQuery {
 
 impl CommentQuery {
     fn push_filters(&self, qb: &mut sqlx::QueryBuilder<sqlx::MySql>, db: &Db) {
-        qb.push(" FROM ").push(db.prefix.table("comments")).push(" c JOIN ").push(db.prefix.table("posts")).push(" p ON p.ID = c.comment_post_ID");
-        qb.push(" WHERE c.comment_approved = '1' AND (p.post_status = 'publish' OR (p.post_type = 'attachment' AND p.post_status = 'inherit')) AND p.post_password = ''");
+        qb.push(" FROM ").push(db.prefix.table("comments")).push(" c");
+        if self.public_posts {
+            qb.push(" JOIN ").push(db.prefix.table("posts")).push(" p ON p.ID = c.comment_post_ID");
+        }
+        qb.push(" WHERE 1=1");
+        // `status`: the clauses are joined with OR; `any` leaves the status open.
+        let statuses: Vec<&str> = if self.statuses.is_empty() { vec!["all"] } else { self.statuses.iter().map(String::as_str).collect() };
+        if !statuses.contains(&"any") {
+            qb.push(" AND ( ");
+            for (index, status) in statuses.iter().enumerate() {
+                if index > 0 {
+                    qb.push(" OR ");
+                }
+                match *status {
+                    "hold" => qb.push("c.comment_approved = '0'"),
+                    "approve" => qb.push("c.comment_approved = '1'"),
+                    "all" | "" => qb.push("( c.comment_approved = '0' OR c.comment_approved = '1' )"),
+                    other => qb.push("c.comment_approved = ").push_bind(other.to_owned()),
+                };
+            }
+            qb.push(" )");
+        }
+        if self.public_posts {
+            qb.push(" AND (p.post_status = 'publish' OR (p.post_type = 'attachment' AND p.post_status = 'inherit')) AND p.post_password = ''");
+        }
         push_ids(qb, "c.comment_type", &self.types, false);
+        push_ids(qb, "c.comment_type", &self.types_not_in, true);
+        push_numbers(qb, "c.user_id", &self.author_in, false);
+        push_numbers(qb, "c.user_id", &self.author_not_in, true);
+        if let Some(email) = &self.author_email {
+            qb.push(" AND c.comment_author_email = ").push_bind(email.clone());
+        }
         push_numbers(qb, "c.comment_ID", &self.ids, false);
         push_numbers(qb, "c.comment_ID", &self.exclude_ids, true);
         push_numbers(qb, "c.comment_post_ID", &self.post_in, false);

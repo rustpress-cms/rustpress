@@ -38,6 +38,8 @@ impl std::fmt::Display for ContentError {
     }
 }
 
+impl std::error::Error for ContentError {}
+
 pub type Result<T> = std::result::Result<T, ContentError>;
 
 /// A term given by ID or by name (tags are given by name).

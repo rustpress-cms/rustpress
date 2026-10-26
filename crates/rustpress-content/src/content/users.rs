@@ -14,6 +14,8 @@ pub struct UserData {
     pub user_pass: Option<String>,
     pub user_email: Option<String>,
     pub user_url: Option<String>,
+    /// The slug (`user_nicename`); without one a new user's slug comes from the login.
+    pub user_nicename: Option<String>,
     pub display_name: Option<String>,
     pub nickname: Option<String>,
     pub first_name: Option<String>,
@@ -110,9 +112,25 @@ impl Content<'_> {
             return Err(ContentError::Message(tr("Sorry, that email address is already used!")));
         }
 
-        let nicename = match &existing {
-            Some(user) => user.user_nicename.clone(),
-            None => {
+        let nicename = match (&existing, data.user_nicename.as_deref().filter(|n| !n.is_empty())) {
+            // `sanitize_user( $nicename, true )`, `sanitize_title()`, then a number when another user has it.
+            (_, Some(wanted)) => {
+                let base = rustpress_core::slug::sanitize_title(&sanitize::user_login(wanted, true));
+                if base.chars().count() > 50 {
+                    return Err(ContentError::Message(tr("Nicename may not be longer than 50 characters.")));
+                }
+                let own = existing.as_ref().map_or(0, |u| u.id);
+                let mut nicename = base.clone();
+                let mut suffix = 2;
+                while self.db.user_nicename_taken(&nicename, own).await? {
+                    let keep: String = base.chars().take(49 - suffix.to_string().len()).collect();
+                    nicename = format!("{keep}-{suffix}");
+                    suffix += 1;
+                }
+                nicename
+            }
+            (Some(user), None) => user.user_nicename.clone(),
+            (None, None) => {
                 let base: String = rustpress_core::slug::sanitize_title_save(&login, &self.site.locale()).chars().take(50).collect();
                 let mut nicename = base.clone();
                 let mut suffix = 2;
@@ -168,7 +186,8 @@ impl Content<'_> {
         pairs.extend(meta("nickname", nickname.as_ref().or(if update { None } else { Some(&login) }), &login));
         pairs.extend(meta("first_name", data.first_name.as_ref().map(|v| sanitize::text_field(v)).as_ref(), ""));
         pairs.extend(meta("last_name", data.last_name.as_ref().map(|v| sanitize::text_field(v)).as_ref(), ""));
-        pairs.extend(meta("description", data.description.as_ref().map(|v| sanitize::textarea_field(v)).as_ref(), ""));
+        // `pre_user_description`: `wp_filter_kses`.
+        pairs.extend(meta("description", data.description.as_ref().map(|v| rustpress_core::kses::kses_data(v)).as_ref(), ""));
         pairs.extend(meta("rich_editing", data.rich_editing.as_ref(), "true"));
         pairs.extend(meta("syntax_highlighting", data.syntax_highlighting.as_ref(), "true"));
         pairs.extend(meta("comment_shortcuts", data.comment_shortcuts.as_ref(), "false"));
@@ -205,8 +224,14 @@ impl Content<'_> {
                 self.writer.execute(format!("UPDATE {} SET link_owner = {to} WHERE link_owner = {id}", self.writer.table("links"))).await.ok();
             }
             _ => {
-                for (post_id, _) in posts {
-                    self.delete_post(post_id, true).await?;
+                // The types with `delete_with_user` (or with authors and no say); `wp_delete_post()` without force
+                // puts posts and pages into the trash.
+                for (post_id, post_type) in posts {
+                    let delete_with_user = matches!(post_type.as_str(), "post" | "page" | "attachment" | "revision" | "wp_template" | "wp_template_part")
+                        || self.site.types.post_type(&post_type).is_some_and(|t| t.supports("author"));
+                    if delete_with_user {
+                        self.delete_post(post_id, !matches!(post_type.as_str(), "post" | "page")).await?;
+                    }
                 }
                 self.writer.execute(format!("DELETE FROM {} WHERE link_owner = {id}", self.writer.table("links"))).await.ok();
             }

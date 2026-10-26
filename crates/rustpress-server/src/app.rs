@@ -593,9 +593,12 @@ async fn rest_edit_route(app: &Arc<App>, request: Request<Body>) -> std::result:
         return Err(Request::from_parts(parts, Body::empty()));
     }
     let uploads = app.config.wp_root.join("wp-content").join("uploads");
-    let access = user.map(|user| rustpress_rest::edit::Access { user, app_password, writer: app.writer.as_ref(), now: crate::admin::now(), uploads, nonce });
+    let roles = loaded.admin.as_ref().map(|admin| &admin.roles);
+    let access = user.map(|user| rustpress_rest::edit::Access { user, app_password, writer: app.writer.as_ref(), now: crate::admin::now(), uploads, nonce, roles });
+    let remote_addr = crate::client::Client::of(&app.config, &parts, &loaded.site.settings.siteurl).ip;
+    let user_agent = parts.headers.get(header::USER_AGENT).and_then(|v| v.to_str().ok()).map(str::to_owned);
     let rest = Rest::new(&loaded.site, &loaded.theme, &loaded.registry).with_host(parts.headers.get(header::HOST).and_then(|v| v.to_str().ok()).unwrap_or_default());
-    let reply = rest.handle_as(&route, &rest_query, access, rustpress_rest::edit::Request { method, body: rest_body, basic: crate::admin::basic_credentials(&parts.headers) }).await;
+    let reply = rest.handle_as(&route, &rest_query, access, rustpress_rest::edit::Request { method, body: rest_body, basic: crate::admin::basic_credentials(&parts.headers), remote_addr, user_agent }).await;
     let response = match reply {
         Ok(reply) => rest_response(reply),
         Err(e) => {

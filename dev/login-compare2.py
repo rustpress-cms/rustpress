@@ -17,6 +17,19 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+# `localhost` resolves to ::1 first, and Windows gives up on it only after about two seconds; connecting to
+# 127.0.0.1 directly keeps the `Host: localhost:port` header the sites expect.
+import socket
+
+_getaddrinfo = socket.getaddrinfo
+
+
+def _ipv4_localhost(host, *args, **kwargs):
+    return _getaddrinfo('127.0.0.1' if host == 'localhost' else host, *args, **kwargs)
+
+
+socket.getaddrinfo = _ipv4_localhost
+
 HERE = __file__.rsplit('\\', 1)[0].rsplit('/', 1)[0]
 
 

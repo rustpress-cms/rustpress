@@ -39,6 +39,8 @@ pub enum Error {
     Blocks(#[from] rustpress_blocks::Error),
     #[error(transparent)]
     Theme(#[from] rustpress_theme::Error),
+    #[error(transparent)]
+    Content(#[from] rustpress_content::content::ContentError),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -406,7 +408,16 @@ impl<'a> Rest<'a> {
         if params.get("per_page").is_none_or(|p| p.is_empty() || p == "0") {
             params.set("per_page", "100");
         }
-        self.dispatch(&route, &params).await
+        // What a visitor may not see is read as the signed-in user (the author of a comment, for instance).
+        let outcome = self.dispatch(&route, &params).await?;
+        if outcome.is_err()
+            && self.access.is_some()
+            && matches!(self.method(), "GET" | "HEAD")
+            && let Some(outcome) = Box::pin(self.dispatch_edit(&route, &params)).await?
+        {
+            return Ok(outcome);
+        }
+        Ok(outcome)
     }
 
     /// `_embed`: replaces nothing, adds `_embedded` next to `_links` of every item.
@@ -459,10 +470,14 @@ impl<'a> Rest<'a> {
     fn index(&self) -> Value {
         let s = &self.site.settings;
         let o = &self.site.options;
-        let gmt_offset = {
+        // `get_option( 'gmt_offset' )`: the stored text, unless a time zone name makes
+        // `wp_timezone_override_offset()` compute the number.
+        let gmt_offset = if o.string("timezone_string", "").is_empty() {
+            Value::from(o.string("gmt_offset", "0"))
+        } else {
             let v = o.string("gmt_offset", "0");
             let n = v.trim().parse::<f64>().unwrap_or(0.0);
-            // `floatval()`: a whole number prints without a fraction.
+            // A whole number prints without a fraction.
             if n.fract() == 0.0 { Value::from(n as i64) } else { Value::from(n) }
         };
         let routes = self.routes_of(None);

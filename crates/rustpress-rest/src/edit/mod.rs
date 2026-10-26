@@ -5,6 +5,7 @@
 mod app_passwords;
 mod block_renderer;
 mod caps;
+mod comments;
 mod editor;
 mod fonts;
 mod export;
@@ -13,7 +14,7 @@ mod hints;
 mod icons;
 mod media;
 mod navigation;
-mod pending_writes;
+mod user_writes;
 mod plugins;
 mod posts;
 mod settings;
@@ -44,6 +45,8 @@ pub struct Access<'a> {
     pub uploads: PathBuf,
     /// The nonces of the user's session (`wp_create_nonce()`), for content rendered as the user.
     pub nonce: Option<std::sync::Arc<dyn Fn(&str) -> String + Send + Sync>>,
+    /// The roles, for the capabilities of other users (`user_can()`).
+    pub roles: Option<&'a rustpress_auth::Roles>,
 }
 
 /// A file of a multipart upload.
@@ -74,6 +77,10 @@ pub struct Request {
     pub body: Body,
     /// The user and password of an `Authorization: Basic` header.
     pub basic: Option<(String, String)>,
+    /// `$_SERVER['REMOTE_ADDR']`.
+    pub remote_addr: Option<String>,
+    /// The `User-Agent` header.
+    pub user_agent: Option<String>,
 }
 
 /// The parameters of a request: the query string and the body in one map (the body wins).
@@ -185,16 +192,7 @@ impl Args {
 }
 
 fn params_keys(params: &Params) -> Vec<String> {
-    let mut keys: Vec<String> = Vec::new();
-    for pair in params.raw().split('&').filter(|p| !p.is_empty()) {
-        let key = pair.split('=').next().unwrap_or_default();
-        let decoded = String::from_utf8_lossy(&rustpress_core::rewrite::urldecode(key.replace('+', " ").as_bytes())).into_owned();
-        let name = decoded.split('[').next().unwrap_or_default().to_owned();
-        if !keys.contains(&name) {
-            keys.push(name);
-        }
-    }
-    keys
+    params.names()
 }
 
 impl Rest<'_> {
@@ -249,7 +247,7 @@ impl Rest<'_> {
             ["wp", "v2", "users"] if get && (self.access.is_some()) => self.users_list(&args).await.map(Some),
             ["wp", "v2", "users"] if method == "POST" => self.users_create(&args).await.map(Some),
             ["wp", "v2", "users", id] if !get && *id != "me" => self.users_write(id, &method, &args).await.map(Some),
-            ["wp", "v2", "comments"] | ["wp", "v2", "comments", _] if !get => self.comments_write(segments.get(3).copied(), &method).await.map(Some),
+            ["wp", "v2", "comments"] | ["wp", "v2", "comments", _] if !get => self.comments_write(segments.get(3).copied(), &method, &args, params).await.map(Some),
             ["wp", "v2", "users", id] if get && self.access.is_some() && id.parse::<u64>().is_ok() => self.users_get(id, &args).await.map(Some),
             ["wp", "v2", "plugins", ..] => self.plugins_route(&segments, &method, &args).await.map(Some),
             ["wp", "v2", "settings"] => self.settings(&method, &args).await.map(Some),

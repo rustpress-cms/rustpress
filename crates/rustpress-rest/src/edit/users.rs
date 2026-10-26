@@ -34,9 +34,8 @@ impl Rest<'_> {
         if self.can("edit_users") || id == me {
             allow.extend(["POST", "PUT", "PATCH"]);
         }
-        if self.can("delete_users") || id == me && self.can("read") && false {
-            allow.push("DELETE");
-        } else if id == me {
+        // `delete_user` is `delete_users`, for the user's own account too.
+        if self.can("delete_users") {
             allow.push("DELETE");
         }
         allow
@@ -88,16 +87,7 @@ impl Rest<'_> {
             data.insert("roles".into(), json!(roles));
             let registered = rustpress_core::datetime::SiteTimezone::gmt_timestamp(&user.user_registered).and_then(|ts| chrono::DateTime::<chrono::Utc>::from_timestamp(ts, 0)).map(|d| d.format("%Y-%m-%dT%H:%M:%S+00:00").to_string()).unwrap_or_else(|| rfc3339(&user.user_registered));
             data.insert("registered_date".into(), json!(registered));
-            if self.user().is_some_and(|u| u.id == user.id) {
-                let me = self.user().expect("user");
-                let mut caps = Map::new();
-                for (name, granted) in &me.allcaps {
-                    caps.insert(name.clone(), Value::Bool(*granted));
-                }
-                data.insert("capabilities".into(), Value::Object(caps));
-            } else {
-                data.insert("capabilities".into(), Value::Object(Map::new()));
-            }
+            data.insert("capabilities".into(), Value::Object(self.ordered_allcaps(&roles, &extra)));
             data.insert("extra_capabilities".into(), Value::Object(extra));
         }
         if self.site.show_avatars() {
@@ -111,7 +101,14 @@ impl Rest<'_> {
         {
             meta_object.insert("persisted_preferences".into(), php_to_json(&value));
         }
-        data.insert("meta".into(), if meta_object.is_empty() { Value::Array(Vec::new()) } else { Value::Object(meta_object) });
+        // The edit context always shows the registered meta, empty as `[]`.
+        if context == "edit" && !meta_object.contains_key("persisted_preferences") {
+            meta_object.insert("persisted_preferences".into(), Value::Array(Vec::new()));
+        }
+        // `meta` is not part of the embed context.
+        if context != "embed" {
+            data.insert("meta".into(), if meta_object.is_empty() { Value::Array(Vec::new()) } else { Value::Object(meta_object) });
+        }
         let mut links = Links::new();
         let allow: Vec<Value> = self.user_allow(user.id).into_iter().map(Value::from).collect();
         let mut self_link = Map::new();
@@ -121,6 +118,30 @@ impl Rest<'_> {
         links.add("collection", vec![], self.rest_url("wp/v2/users"));
         data.insert("_links".into(), links.finish());
         Ok(Value::Object(data))
+    }
+
+    /// `WP_User::get_role_caps()`: the capabilities of the roles in their order (`array_merge()`), then the user's own.
+    fn ordered_allcaps(&self, roles: &[String], own: &Map<String, Value>) -> Map<String, Value> {
+        let key = format!("{}user_roles", self.site.db.table_prefix());
+        let definitions = self.site.options.get(&key).and_then(|raw| rustpress_phpser::unserialize(raw.as_bytes()).ok());
+        let mut caps = Map::new();
+        for role in roles {
+            let Some(rustpress_phpser::Value::Array(items)) = &definitions else { break };
+            let Some((_, definition)) = items.iter().find(|(k, _)| matches!(k, rustpress_phpser::Key::Str(name) if name.as_slice() == role.as_bytes())) else { continue };
+            let rustpress_phpser::Value::Array(fields) = definition else { continue };
+            let Some((_, rustpress_phpser::Value::Array(capabilities))) = fields.iter().find(|(k, _)| matches!(k, rustpress_phpser::Key::Str(name) if name.as_slice() == b"capabilities")) else { continue };
+            for (name, value) in capabilities {
+                let name = match name {
+                    rustpress_phpser::Key::Str(name) => String::from_utf8_lossy(name).into_owned(),
+                    rustpress_phpser::Key::Int(n) => n.to_string(),
+                };
+                caps.insert(name, Value::Bool(value.as_i64().is_some_and(|v| v != 0) || matches!(value, rustpress_phpser::Value::Bool(true))));
+            }
+        }
+        for (name, value) in own {
+            caps.insert(name.clone(), value.clone());
+        }
+        caps
     }
 
     fn role_exists(&self, name: &str) -> bool {
@@ -135,44 +156,15 @@ impl Rest<'_> {
         let Some(user) = self.site.db.user(me.id).await? else {
             return Ok(Err(RestError::new("rest_user_invalid_id", "Invalid user ID.", 404)));
         };
-        if matches!(method, "POST" | "PUT" | "PATCH") {
-            if let Err(e) = self.update_user_fields(user.id, args).await {
-                return Ok(Err(e));
-            }
+        // `update_current_item()` and `delete_current_item()`.
+        if matches!(method, "POST" | "PUT" | "PATCH" | "DELETE") {
+            return self.users_write(&user.id.to_string(), method, args).await;
         }
         let user = self.site.db.user(me.id).await?.unwrap_or(user);
         let context = args.str("context").unwrap_or_else(|| "view".to_owned());
         let mut resp = Resp::item(self.prepare_user_edit(&user, &context).await?);
         resp.allow = Some(self.user_allow(user.id).join(", "));
         Ok(Ok(resp))
-    }
-
-    async fn update_user_fields(&self, id: u64, args: &Args) -> std::result::Result<(), RestError> {
-        let content = self.content()?;
-        let existing = self.site.db.user(id).await.map_err(|e| RestError::new("rest_error", &e.to_string(), 500))?;
-        let Some(_) = existing else { return Err(RestError::new("rest_user_invalid_id", "Invalid user ID.", 404)) };
-        let data = UserData {
-            id: Some(id),
-            user_pass: args.str("password"),
-            user_email: args.str("email"),
-            user_url: args.str("url"),
-            display_name: args.str("name"),
-            nickname: args.str("nickname"),
-            first_name: args.str("first_name"),
-            last_name: args.str("last_name"),
-            description: args.str("description"),
-            locale: args.str("locale"),
-            ..Default::default()
-        };
-        content.insert_user(&data).await.map_err(|e| RestError::new("rest_user_invalid_argument", &e.to_string(), 400))?;
-        if let Some(Value::Object(meta)) = args.get("meta")
-            && let Some(preferences) = meta.get("persisted_preferences")
-        {
-            let writer = self.writer()?;
-            let serialized = String::from_utf8_lossy(&rustpress_phpser::serialize(&json_to_php(preferences))).into_owned();
-            writer.update_user_meta(id, &format!("{}persisted_preferences", self.site.db.table_prefix()), &serialized).await.map_err(|e| RestError::new("rest_error", &e.to_string(), 500))?;
-        }
-        Ok(())
     }
 
     /// The IDs of the users with a published post of a type of the REST API (`has_published_posts`, `count_user_posts()`).

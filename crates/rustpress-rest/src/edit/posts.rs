@@ -409,7 +409,7 @@ impl Rest<'_> {
     }
 
     /// `rest_parse_date()`: the shape of an ISO 8601 date the REST API accepts.
-    fn valid_date(date: &str) -> bool {
+    pub(crate) fn valid_date(date: &str) -> bool {
         static SHAPE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
         SHAPE.get_or_init(|| regex::Regex::new(r"^\d{4}-\d{2}-\d{2}[Tt ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}(?::\d{2})?)?$").expect("pattern")).is_match(date)
     }

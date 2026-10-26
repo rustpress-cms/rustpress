@@ -28,7 +28,12 @@ impl Rest<'_> {
                         && let Some(allow) = self.hint_allow(&href).await
                         && let Some(link) = map.get_mut("_links").and_then(|l| l.pointer_mut("/self/0")).and_then(Value::as_object_mut)
                     {
-                        link.insert("targetHints".into(), json!({"allow": allow}));
+                        // Nothing allowed leaves no hint at all.
+                        if allow.is_empty() {
+                            link.remove("targetHints");
+                        } else {
+                            link.insert("targetHints".into(), json!({"allow": allow}));
+                        }
                     }
                     if let Some(embedded) = map.get_mut("_embedded").and_then(Value::as_object_mut) {
                         for (_, value) in embedded.iter_mut() {
@@ -52,10 +57,21 @@ impl Rest<'_> {
             return Some(self.user_allow(id));
         }
         if base == "comments" {
+            // `get_item_permissions_check()` and `check_edit_permission()`; nothing allowed is no hint at all.
             let comment = db.comment_any(id).await.ok().flatten()?;
-            let post = db.post(comment.comment_post_id).await.ok().flatten()?;
-            let mut allow = vec!["GET"];
-            if self.can_edit_post(&post) {
+            let post = db.post(comment.comment_post_id).await.ok().flatten();
+            let params = crate::params::Params::parse("");
+            let mut allow = Vec::new();
+            let readable = self.check_read_comment(&comment, &params, true).await.unwrap_or(false);
+            let post_readable = match &post {
+                Some(post) => self.check_read_post_permission(post, &params, false, true).await,
+                None => true,
+            };
+            if readable && post_readable {
+                allow.push("GET");
+            }
+            let editable = self.user().is_some_and(|u| u.id != 0 && (u.can("moderate_comments") || u.can_edit_comment(post.as_ref())));
+            if editable {
                 allow.extend(["POST", "PUT", "PATCH", "DELETE"]);
             }
             return Some(allow);

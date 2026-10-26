@@ -11,6 +11,8 @@ use crate::login::Mail;
 use rustpress_auth::setcookie::SetCookie as SetCookieOut;
 use crate::mail::MailCtx;
 use crate::mail_comments::PostAuthor;
+pub use rustpress_content::comment_rules::{comments_open, filter_email, filter_text, filter_url};
+use rustpress_content::comment_rules::{self, NewComment};
 
 /// A request to `wp-comments-post.php`.
 #[derive(Debug, Clone, Default)]
@@ -71,34 +73,7 @@ fn strip_trim(text: &str) -> String {
     rustpress_core::formatting::strip_tags(text).trim().to_owned()
 }
 
-/// `comments_open()`: open, and not closed for old posts.
-pub fn comments_open(site: &Site, post: &rustpress_db::Post, now: i64) -> bool {
-    if post.comment_status != "open" {
-        return false;
-    }
-    if site.options.string("close_comments_for_old_posts", "0") != "0" && post.post_type == "post" {
-        let days = site.options.string("close_comments_days_old", "14").parse::<i64>().unwrap_or(0);
-        if days != 0
-            && post.post_date_gmt != "0000-00-00 00:00:00"
-            && let Some(posted) = rustpress_core::datetime::SiteTimezone::gmt_timestamp(&post.post_date_gmt)
-            && now - posted > days * 86_400
-        {
-            return false;
-        }
-    }
-    true
-}
 
-/// A word list of the settings (`moderation_keys`, `disallowed_keys`): one regular expression per line.
-fn matches_list(list: &str, texts: &[&str]) -> bool {
-    for word in list.lines().map(str::trim).filter(|w| !w.is_empty()) {
-        let Ok(pattern) = regex::Regex::new(&format!("(?iu){}", regex::escape(word))) else { continue };
-        if texts.iter().any(|text| pattern.is_match(text)) {
-            return true;
-        }
-    }
-    false
-}
 
 impl CommentEnv<'_> {
     fn tr(&self, text: &str) -> String {
@@ -116,62 +91,6 @@ impl CommentEnv<'_> {
         CommentReply { status, headers, cookies: Vec::new(), body: crate::die::page_with_back_link(self.site, &self.tr("Comment Submission Failure"), html, &back) }
     }
 
-    /// `check_comment()`: whether a comment may appear at once.
-    async fn check_comment(&self, author: &str, email: &str, url: &str, content: &str, ip: &str, agent: &str, comment_type: &str, user_id: Option<u64>) -> bool {
-        let options = &self.site.options;
-        if options.string("comment_moderation", "0") == "1" {
-            return false;
-        }
-        // Links that were not written as links count, too.
-        let rendered = rustpress_blocks::content::comment_text(self.site, content);
-        let max_links = options.string("comment_max_links", "2").parse::<usize>().unwrap_or(0);
-        if max_links > 0 {
-            static LINK: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
-            let count = LINK.get_or_init(|| regex::Regex::new(r"(?i)<a [^>]*href").expect("pattern")).find_iter(&rendered).count();
-            if count >= max_links {
-                return false;
-            }
-        }
-        let keys = options.string("moderation_keys", "");
-        if !keys.trim().is_empty() && matches_list(keys.trim(), &[author, email, url, &rendered, ip, agent]) {
-            return false;
-        }
-        if options.string("comment_previously_approved", "1") == "1" {
-            if comment_type != "trackback" && comment_type != "pingback" && !author.is_empty() && !email.is_empty() {
-                let known = self.db.user_by_email(&crate::sanitize::sanitize_email(email)).await.ok().flatten();
-                let ok = match known {
-                    Some(user) => self.db.has_approved_comment(Some(user.id), author, email).await.unwrap_or(false),
-                    None => self.db.has_approved_comment(None, author, email).await.unwrap_or(false),
-                };
-                return ok && (keys.trim().is_empty() || !email.contains(keys.trim()));
-            }
-            return false;
-        }
-        let _ = user_id;
-        false
-    }
-
-    /// `wp_check_comment_data()`: `1`, `0`, or `trash`/`spam` for a comment the disallowed list names.
-    async fn check_comment_data(&self, c: &NewComment) -> String {
-        if let Some(user_id) = c.user_id.filter(|id| *id != 0)
-            && let Some(author) = self.db.auth_user_by_id(user_id).await.ok().flatten()
-            && let Ok(user) = CurrentUser::load(self.db, self.roles, &author).await
-        {
-            let post_author = self.db.post(c.post_id).await.ok().flatten().map_or(0, |p| p.post_author);
-            if user_id == post_author || user.can("moderate_comments") {
-                return "1".into();
-            }
-        }
-        let mut approved = if self.check_comment(&c.author, &c.email, &c.url, &c.content, &c.ip, &c.agent, &c.comment_type, c.user_id).await { "1".to_owned() } else { "0".to_owned() };
-        let disallowed = self.site.options.string("disallowed_keys", "");
-        if !disallowed.trim().is_empty() {
-            let without_html = rustpress_core::formatting::strip_tags(&c.content);
-            if matches_list(disallowed.trim(), &[&c.author, &c.email, &c.url, &c.content, &without_html, &c.ip, &c.agent]) {
-                approved = "trash".into();
-            }
-        }
-        approved
-    }
 
     /// `wp_handle_comment_submission()`.
     async fn submit(&self, request: &CommentRequest) -> Result<(rustpress_db::Comment, bool), Failure> {
@@ -275,22 +194,13 @@ impl CommentEnv<'_> {
         let date = self.site.date("Y-m-d H:i:s", self.now);
         let date_gmt = self.site.date_utc("Y-m-d H:i:s", self.now);
         // `wp_allow_comment()`: a duplicate, a flood.
-        if self.db.duplicate_comment(c.post_id, c.parent, &c.author, &c.email, &c.content).await.ok().flatten().is_some() {
+        if comment_rules::is_duplicate(self.db, &c).await {
             return Err(failure(tr("Duplicate comment detected; it looks as though you&#8217;ve already said that!"), 409));
         }
-        let moderator = user.is_some_and(|u| u.can("manage_options") || u.can("moderate_comments"));
-        if !moderator {
-            let hour_ago = self.site.date_utc("Y-m-d H:i:s", self.now - 3600);
-            let by_user = user.map(|u| u.id);
-            let last = self.db.last_comment_since(by_user, &c.ip, &c.email, &hour_ago).await;
-            if let Some(last) = last.ok().flatten() {
-                let last = rustpress_core::datetime::SiteTimezone::gmt_timestamp(&last).unwrap_or(0);
-                if self.now - last < 15 {
-                    return Err(failure(tr("You are posting comments too quickly. Slow down."), 429));
-                }
-            }
+        if comment_rules::is_flood(self.site, self.db, user, &c.ip, &c.email, self.now).await {
+            return Err(failure(tr("You are posting comments too quickly. Slow down."), 429));
         }
-        let mut approved = self.check_comment_data(&c).await;
+        let mut approved = comment_rules::check_comment_data(self.site, self.db, self.roles, &c).await;
         // `wp_filter_comment()`.
         let home = self.site.settings.home.clone();
         c.agent = c.agent.clone();
@@ -299,7 +209,7 @@ impl CommentEnv<'_> {
         c.url = filter_url(&c.url);
         c.email = filter_email(&c.email);
         if approved != "trash" && approved != "spam" {
-            approved = self.check_comment_data(&c).await;
+            approved = comment_rules::check_comment_data(self.site, self.db, self.roles, &c).await;
         }
         let Some(writer) = self.writer else { return Err(failure(tr("<strong>Error:</strong> The comment could not be saved. Please try again later."), 500)) };
         let fields: Vec<(&str, Val)> = vec![
@@ -400,36 +310,9 @@ impl CommentEnv<'_> {
 }
 
 /// A comment on its way in.
-struct NewComment {
-    post_id: u64,
-    author: String,
-    email: String,
-    url: String,
-    content: String,
-    comment_type: String,
-    parent: u64,
-    user_id: Option<u64>,
-    ip: String,
-    agent: String,
-}
 
-/// `pre_comment_author_name`: `sanitize_text_field`, `wp_filter_kses`, `_wp_specialchars`.
-pub fn filter_text(text: &str) -> String {
-    let text = rustpress_core::kses::kses_data(&crate::sanitize::text_field(text));
-    rustpress_core::formatting::specialchars_noquotes(&text)
-}
 
-/// `pre_comment_author_email`: `trim`, `sanitize_email`, `wp_filter_kses`.
-pub fn filter_email(email: &str) -> String {
-    rustpress_core::kses::kses_data(&crate::sanitize::sanitize_email(email.trim()))
-}
 
-/// `pre_comment_author_url`: `wp_strip_all_tags`, `sanitize_url`, `wp_filter_kses`.
-pub fn filter_url(url: &str) -> String {
-    let url = rustpress_core::formatting::strip_tags(url);
-    let url = if url.trim().is_empty() { String::new() } else { esc_url_raw(url.trim()) };
-    rustpress_core::kses::kses_data(&url)
-}
 
 /// Handles a request to `wp-comments-post.php`.
 pub async fn handle(env: &CommentEnv<'_>, request: &CommentRequest) -> CommentReply {

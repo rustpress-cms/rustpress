@@ -31,6 +31,18 @@ impl Params {
         &self.raw
     }
 
+    /// The names of the parameters (`a` for `a[]`), the ones set after parsing included.
+    pub fn names(&self) -> Vec<String> {
+        let mut names: Vec<String> = Vec::new();
+        for (key, _) in &self.pairs {
+            let name = key.trim_end_matches("[]").to_owned();
+            if !names.contains(&name) {
+                names.push(name);
+            }
+        }
+        names
+    }
+
     pub fn set(&mut self, key: &str, value: &str) {
         let same = |k: &str| k == key || k.strip_suffix("[]") == Some(key);
         match self.pairs.iter().position(|(k, _)| same(k)) {

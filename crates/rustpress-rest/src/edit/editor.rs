@@ -221,10 +221,6 @@ impl Rest<'_> {
                 }
             }
             ["wp", "v2", "global-styles", id] if self.can("edit_theme_options") && id.parse::<u64>().is_ok() => return self.global_styles_user(id, method, args).await.map(Some),
-            ["wp", "v2", "comments"] if get && params.get("context") == Some("edit") => {
-                // Notes (`type=note`) are not supported; the editor asks for them once.
-                empty_list()
-            }
             ["wp", "v2", base @ ("blocks" | "navigation")] | ["wp", "v2", base @ ("blocks" | "navigation"), _] => {
                 let info = crate::meta::core_post_type(base);
                 let kind = crate::posts::Kind::Custom(&info);
