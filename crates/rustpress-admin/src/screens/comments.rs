@@ -393,6 +393,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         current_page: paged,
         bulk_actions: if ctx.can("moderate_comments") { bulk_actions } else { Vec::new() },
         has_items: !comments.is_empty(),
+        view_mode: super::common::list_mode(ctx).await,
     };
     let has_items = !comments.is_empty();
     // `extra_tablenav()`: the filter by type, and "Empty Spam" / "Empty Trash".

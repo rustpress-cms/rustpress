@@ -191,6 +191,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         current_page: paged,
         bulk_actions: bulk,
         has_items: !users.is_empty(),
+        view_mode: super::common::list_mode(ctx).await,
     };
     let role_options = |suffix: &str| -> String {
         let options: Vec<String> = all_roles.iter().rev().map(|(slug, name)| format!("\t<option value='{}'>{}</option>", esc_attr(slug), site.trx(name, "User role"))).collect();

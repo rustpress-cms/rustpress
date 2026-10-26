@@ -145,3 +145,43 @@ pub fn past_last_page(ctx: &Ctx<'_>, paged: u64, total_items: u64, per_page: u64
     let total_pages = total_items.div_ceil(per_page.max(1));
     (paged > total_pages && total_pages > 0).then(|| super::redirect(&rustpress_core::urls::add_query_arg(&ctx.request.request_uri, "paged", &total_pages.to_string())))
 }
+
+/// `get_all_user_settings()`: the `wp-settings-{id}` cookie, or the stored `user-settings` without one.
+pub async fn user_settings(ctx: &Ctx<'_>) -> Vec<(String, String)> {
+    let raw = match ctx.request.cookie(&format!("wp-settings-{}", ctx.user.id)) {
+        Some(cookie) => cookie.chars().filter(|c| c.is_ascii_alphanumeric() || matches!(c, '=' | '&' | '_' | '-')).collect::<String>(),
+        None => ctx.env.db.user_meta(ctx.user.id, &format!("{}user-settings", ctx.env.db.table_prefix())).await.ok().flatten().unwrap_or_default(),
+    };
+    // `parse_str()` only when there is a `=` after the first character.
+    if raw.find('=').is_none_or(|i| i == 0) {
+        return Vec::new();
+    }
+    raw.split('&').filter_map(|pair| pair.split_once('=').map(|(k, v)| (k.to_owned(), v.to_owned()))).filter(|(k, _)| !k.is_empty()).collect()
+}
+
+/// `get_user_setting( $name )`.
+pub async fn user_setting(ctx: &Ctx<'_>, name: &str) -> Option<String> {
+    user_settings(ctx).await.into_iter().find(|(k, _)| k == name).map(|(_, v)| v)
+}
+
+/// `set_user_setting( $name, $value )`: stored as the `user-settings` option with its time; the cookies follow with
+/// the page (`wp_user_settings()`).
+pub async fn set_user_setting(ctx: &Ctx<'_>, name: &str, value: &str) {
+    let Some(writer) = ctx.env.writer else { return };
+    let mut all = user_settings(ctx).await;
+    match all.iter_mut().find(|(k, _)| k == name) {
+        Some(entry) => entry.1 = value.to_owned(),
+        None => all.push((name.to_owned(), value.to_owned())),
+    }
+    let clean = |s: &str| s.chars().filter(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-')).collect::<String>();
+    let settings = all.iter().map(|(k, v)| (clean(k), clean(v))).filter(|(k, _)| !k.is_empty()).map(|(k, v)| format!("{k}={v}")).collect::<Vec<_>>().join("&");
+    let prefix = ctx.env.db.table_prefix();
+    use rustpress_core::OrLog;
+    writer.update_user_meta(ctx.user.id, &format!("{prefix}user-settings"), &settings).await.or_log();
+    writer.update_user_meta(ctx.user.id, &format!("{prefix}user-settings-time"), &ctx.env.now.to_string()).await.or_log();
+}
+
+/// The view mode of the list tables (`get_user_setting( 'posts_list_mode', 'list' )`).
+pub async fn list_mode(ctx: &Ctx<'_>) -> String {
+    user_setting(ctx, "posts_list_mode").await.filter(|m| !m.is_empty()).unwrap_or_else(|| "list".to_owned())
+}

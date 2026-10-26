@@ -493,6 +493,15 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
             query.ids = vec![0];
         }
     }
+    // `$mode`: the view of `?mode=` is stored for the user (`set_user_setting( 'posts_list_mode' )`).
+    let mode = match request.request("mode").filter(|m| !m.is_empty()) {
+        Some(requested) => {
+            let mode = if requested == "excerpt" { "excerpt" } else { "list" };
+            super::common::set_user_setting(ctx, "posts_list_mode", mode).await;
+            mode.to_owned()
+        }
+        None => super::common::list_mode(ctx).await,
+    };
     let total_items = db.count_posts(&query).await.unwrap_or(0);
     if !hierarchical_display
         && let Some(response) = super::common::past_last_page(ctx, paged, total_items, per_page)
@@ -554,6 +563,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         current_page: paged,
         bulk_actions,
         has_items: !posts.is_empty(),
+        view_mode: mode.clone(),
     };
 
     // Rows
@@ -571,7 +581,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         rows.push_str(&format!("<tr class=\"no-items\"><td class=\"colspanchange\" colspan=\"{}\">{not_found}</td></tr>", columns.len()));
     }
     for (post, level) in posts.iter().zip(levels.iter()) {
-        let row_env = RowEnv { info: &info, columns: &columns, status_param: &status_param, hierarchical_display, sticky: &sticky, taxonomies: &taxonomies, pending: &pending, authors: &authors, parents: &parents };
+        let row_env = RowEnv { info: &info, columns: &columns, status_param: &status_param, hierarchical_display, sticky: &sticky, taxonomies: &taxonomies, pending: &pending, authors: &authors, parents: &parents , mode: &mode };
         rows.push_str(&post_row(ctx, post, *level, &row_env).await);
     }
 
@@ -677,7 +687,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     }
     let notice = result_notice(ctx, &info);
     // `if ( $wp_list_table->has_items() )`: an empty list has no Quick Edit.
-    let inline = if posts.is_empty() { String::new() } else { super::inline_edit::inline_edit(ctx, &info, posts.first(), columns.len(), &taxonomies).await };
+    let inline = if posts.is_empty() { String::new() } else { super::inline_edit::inline_edit(ctx, &info, posts.first(), columns.len(), &taxonomies, &mode).await };
     let content = format!(
         "<div class=\"wrap\">\n{heading}{notice}\n{}\n<form id=\"posts-filter\" method=\"get\">\n\n{search_box}{hidden_fields}\n\n\n{table_html}\n</form>\n\n\n{inline}<div id=\"ajax-response\"></div>\n<div class=\"clear\"></div>\n</div>\n\n",
         views(&filter_heading, &links)
@@ -736,11 +746,13 @@ pub(super) struct RowEnv<'a> {
     pub pending: &'a [(u64, u64)],
     pub authors: &'a [rustpress_db::User],
     pub parents: &'a [Post],
+    /// `list` or `excerpt` (`$mode`).
+    pub mode: &'a str,
 }
 
 /// `WP_Posts_List_Table::single_row()`.
 pub(super) async fn post_row(ctx: &Ctx<'_>, post: &Post, level: usize, row: &RowEnv<'_>) -> String {
-    let RowEnv { info, columns, status_param, hierarchical_display, sticky, taxonomies, pending, authors, parents } = *row;
+    let RowEnv { info, columns, status_param, hierarchical_display, sticky, taxonomies, pending, authors, parents, mode } = *row;
     let tr = |s: &str| ctx.tr(s);
     let site = ctx.site();
     let db = ctx.env.db;
@@ -839,8 +851,9 @@ pub(super) async fn post_row(ctx: &Ctx<'_>, post: &Post, level: usize, row: &Row
                     None => (String::new(), String::new()),
                 };
                 let inline = if can_edit { inline_data(ctx, post, &info, &taxonomies, is_sticky).await } else { String::new() };
+                let excerpt = if mode == "excerpt" && !info.hierarchical && ctx.user.can_read_post(post) { list_excerpt(ctx, post).await } else { String::new() };
                 out.push_str(&format!(
-                    "<th scope=\"row\" class=\"title column-title has-row-actions column-primary page-title\" data-colname=\"{}\" aria-label=\"{}\"><div class=\"locked-info\"><span class=\"locked-avatar\">{locked_avatar}</span> <span class=\"locked-text\">{locked_text}</span></div>\n<strong>{name_html}{states}</strong>\n{inline}{}<button type=\"button\" class=\"toggle-row\"><span class=\"screen-reader-text\">{}</span></button></th>",
+                    "<th scope=\"row\" class=\"title column-title has-row-actions column-primary page-title\" data-colname=\"{}\" aria-label=\"{}\"><div class=\"locked-info\"><span class=\"locked-avatar\">{locked_avatar}</span> <span class=\"locked-text\">{locked_text}</span></div>\n<strong>{name_html}{states}</strong>\n{excerpt}{inline}{}<button type=\"button\" class=\"toggle-row\"><span class=\"screen-reader-text\">{}</span></button></th>",
                     esc_attr(&column.label),
                     esc_attr(&aria),
                     row_actions_for(ctx, post, &title, can_edit, &info).await,
@@ -1115,4 +1128,17 @@ fn comments_bubble(ctx: &Ctx<'_>, post: &Post, pending: u64) -> String {
         ));
     }
     out
+}
+
+/// The excerpt of a row in the excerpt view: `esc_html( get_the_excerpt() )`, in a span for a protected post.
+async fn list_excerpt(ctx: &Ctx<'_>, post: &Post) -> String {
+    let query = rustpress_core::QueryResult::blank();
+    let env = rustpress_blocks::Env::new(ctx.site(), &query, ctx.env.theme, ctx.env.registry);
+    let shared = std::sync::Arc::new(post.clone());
+    let excerpt = rustpress_blocks::excerpt::get_the_excerpt(&env, &shared).await.unwrap_or_default();
+    if rustpress_blocks::content::post_password_required(post) {
+        format!("<span class=\"protected-post-excerpt\">{}</span>", esc_html(&excerpt))
+    } else {
+        esc_html(&excerpt)
+    }
 }

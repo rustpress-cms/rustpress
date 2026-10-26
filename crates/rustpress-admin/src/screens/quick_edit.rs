@@ -215,7 +215,9 @@ pub(super) async fn inline_save(env: &AdminEnv<'_>, request: &AdminRequest, user
     if post.post_parent != 0 && let Ok(Some(parent)) = env.db.post(post.post_parent).await {
         parents.push(parent);
     }
-    let row_env = RowEnv { info: &info, columns: &columns, status_param: &status_param, hierarchical_display: false, sticky: &sticky, taxonomies: &taxonomies, pending: &pending, authors: &authors, parents: &parents };
+    // `$mode = 'excerpt' === $_POST['post_view'] ? 'excerpt' : 'list'`
+    let mode = if request.post_field("post_view") == Some("excerpt") { "excerpt".to_owned() } else { "list".to_owned() };
+    let row_env = RowEnv { info: &info, columns: &columns, status_param: &status_param, hierarchical_display: false, sticky: &sticky, taxonomies: &taxonomies, pending: &pending, authors: &authors, parents: &parents, mode: &mode };
     text(200, &post_row(&ctx, &post, level, &row_env).await)
 }
 

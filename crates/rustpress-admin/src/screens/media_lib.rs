@@ -174,6 +174,7 @@ async fn list_mode(ctx: &Ctx<'_>, title: String) -> AdminResponse {
             actions
         },
         has_items: !items.is_empty(),
+        view_mode: super::common::list_mode(ctx).await,
     };
     let nonce_field = ctx.nonce_field("bulk-media");
     // `print_table_description()`: the description of the sortable column, then the direction.

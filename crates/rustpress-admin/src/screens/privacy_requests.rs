@@ -555,6 +555,7 @@ pub async fn page(ctx: &Ctx<'_>, kind: Kind) -> AdminResponse {
         current_page: paged,
         bulk_actions: vec![("resend".into(), tr("Resend confirmation requests")), ("complete".into(), tr("Mark requests as completed")), ("delete".into(), tr("Delete requests"))],
         has_items,
+        view_mode: super::common::list_mode(ctx).await,
     };
     let list_heading = match kind {
         Kind::Export => tr("Export personal data list"),

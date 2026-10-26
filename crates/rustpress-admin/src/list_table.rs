@@ -52,6 +52,8 @@ pub struct Table<'a> {
     /// `(name, label)`; an empty list hides the bulk action selector.
     pub bulk_actions: Vec<(String, String)>,
     pub has_items: bool,
+    /// `table-view-{mode}` of the table (`get_user_setting( 'posts_list_mode', 'list' )`).
+    pub view_mode: String,
 }
 
 /// `submit_button( $text, $type, $name, false, array( 'id' => $id ) )`.
@@ -290,8 +292,8 @@ impl Table<'_> {
             out.push('\n');
             ""
         };
-        out.push_str(&format!("{indent}<h2 class='screen-reader-text'>{list_heading}</h2><table class=\"wp-list-table widefat fixed striped table-view-list {}\">
-", self.plural));
+        out.push_str(&format!("{indent}<h2 class='screen-reader-text'>{list_heading}</h2><table class=\"wp-list-table widefat fixed striped table-view-{} {}\">
+", self.view_mode, self.plural));
         let caption_html = if caption.is_empty() { String::new() } else { format!("<caption class=\"screen-reader-text\">{caption}</caption>") };
         out.push_str(&format!("		{caption_html}	<thead>
 	<tr>
@@ -305,7 +307,12 @@ impl Table<'_> {
         out.push_str(&format!("	<tbody id=\"the-list\"
 		{data_lists}		>
 		"));
-        out.push_str(rows);
+        // `row_actions()`: in the excerpt view every row shows its actions.
+        if self.view_mode == "excerpt" {
+            out.push_str(&rows.replace("<div class=\"row-actions\">", "<div class=\"row-actions visible\">"));
+        } else {
+            out.push_str(rows);
+        }
         out.push_str("	</tbody>
 
 	<tfoot>

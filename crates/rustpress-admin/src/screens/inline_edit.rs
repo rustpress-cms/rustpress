@@ -248,7 +248,7 @@ fn render(nodes: &[Node], scopes: &[&Scope], out: &mut String) {
 }
 
 /// Quick Edit and Bulk Edit rows (`WP_Posts_List_Table::inline_edit()`).
-pub async fn inline_edit(ctx: &Ctx<'_>, info: &TypeInfo, first: Option<&Post>, columns: usize, taxonomies: &[(String, bool)]) -> String {
+pub async fn inline_edit(ctx: &Ctx<'_>, info: &TypeInfo, first: Option<&Post>, columns: usize, taxonomies: &[(String, bool)], mode: &str) -> String {
     let site = ctx.site();
     let supports = |feature: &str| site.post_type_supports(&info.name, feature);
     let is_page = info.name == "page";
@@ -317,7 +317,7 @@ pub async fn inline_edit(ctx: &Ctx<'_>, info: &TypeInfo, first: Option<&Post>, c
         scope.var("STANDARD", esc_html(&ctx.tr("Standard")));
         scope.var("NONCE_FIELD", format!("<input type=\"hidden\" id=\"_inline_edit\" name=\"_inline_edit\" value=\"{}\" />", ctx.create_nonce("inlineeditnonce")));
         scope.var("SUBMIT", format!("<input type=\"submit\" name=\"bulk_edit\" id=\"bulk_edit\" class=\"button button-primary\" value=\"{}\"  />", esc_attr(&ctx.tr("Update"))));
-        scope.var("M", "list");
+        scope.var("M", mode);
         scope.var("SCREEN_ID", format!("edit-{}", info.name));
         scope.var("NOTICE", "<div class=\"notice notice-error notice-alt inline hidden\"><p class=\"error\"></p></div>");
         if !bulk {
