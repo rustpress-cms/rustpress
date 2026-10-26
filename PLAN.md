@@ -345,6 +345,19 @@ Vollständiger Review des Bestands (fünf Durchgänge über alle Krates, ~77 000
 14. `spawn_blocking` für Bild/ZIP/Verzeichnisse (P11); Body-Klone (P12); O(n²)-Scans (P13).
 15. Messen: `wrk`/`oha` gegen Startseite, Einzelbeitrag mit 50 Kommentaren, `/wp-json/wp/v2/posts?per_page=100`, `edit.php` mit 100 Beiträgen – vorher/nachher.
 
+**Stand Phase 3 (26.10.2026, Release-Build, Median/Minimum aus 20 Abrufen; RustPress unter Windows mit der DB in WSL, die Referenz in WSL):**
+
+| Adresse | vorher | jetzt | Referenz |
+|---|---|---|---|
+| `/` | 88 ms | 56 / 36 ms | 64 / 54 ms |
+| `/testbeitrag-1/` | ~100 ms | 78 / 52 ms | 65 / 56 ms |
+| `/?cat=1` | 72 ms | 71 / 42 ms | 67 / 56 ms |
+| `/wp-json/wp/v2/posts` | 54 ms | 26 / 19 ms | 57 / 46 ms |
+| `/wp-json/wp/v2/posts?per_page=100` | 385 ms | 95 / 64 ms | 111 / 92 ms |
+| `…?per_page=100&_fields=id` | 330 ms | 25 ms | 19 ms |
+
+Erledigt: P1 (Regex-Cache), P2 teilweise (`rustpress_core::files`), P3 (Kommentar-Cache je Render), P4 (`_fields`, Terme/Meta/Beitragsbilder/Revisionszahlen gebündelt pro Liste), Seitenliste ohne Eltern-Abfragen. Die Streuung der Mediane kommt von der Latenz Windows→WSL-Datenbank (jede Abfrage ~0,3–0,5 ms). Offen: P5 (Admin-Listen), P6 (targetHints), P7 (globales Stylesheet), P8 (Query-Block mehrfach), P11–P16.
+
 ### Phase 4 – Wartbarkeit und Tests
 16. Duplikate zusammenführen, toten Code entfernen, lange Funktionen teilen (A4).
 17. Testsuiten (B9): DB-Schema-Tests, Rollenmatrix, feindliche Eingaben, Golden-Tests in CI.

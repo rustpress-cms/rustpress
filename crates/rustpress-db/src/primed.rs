@@ -24,6 +24,17 @@ pub(crate) fn primed_post(id: u64) -> Option<Option<Post>> {
 }
 
 impl Db {
+    /// Rows already read (a list of pages) go to the request's cache, so that `get_post()` of one of them, for a
+    /// permalink of a child page for example, needs no query.
+    pub fn remember_posts(posts: &[Post]) {
+        let _ = PRIMED_POSTS.try_with(|cache| {
+            let mut cache = cache.borrow_mut();
+            for post in posts {
+                cache.entry(post.id).or_insert_with(|| Some(post.clone()));
+            }
+        });
+    }
+
     /// The meta of all `post_ids` in one query, for the request's cache. Without the scope it does nothing.
     pub async fn prime_post_meta(&self, post_ids: &[u64]) -> Result<()> {
         let Ok(missing) = PRIMED_META.try_with(|cache| {

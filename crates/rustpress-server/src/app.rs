@@ -290,6 +290,7 @@ fn admin_file_of(path: &str) -> Option<String> {
 
 async fn page(app: &App, uri: &axum::http::Uri, request_headers: &axum::http::HeaderMap) -> Result<Response<Body>> {
     let (path, query) = (uri.path(), uri.query().unwrap_or(""));
+    let started = std::time::Instant::now();
     let loaded = app.current().await;
     if let Some((route, rest_query)) = rest_route(&loaded.site.settings.home_path(), path, query) {
         let rest = Rest::new(&loaded.site, &loaded.theme, &loaded.registry).with_host(request_headers.get(header::HOST).and_then(|v| v.to_str().ok()).unwrap_or_default());
@@ -320,12 +321,16 @@ async fn page(app: &App, uri: &axum::http::Uri, request_headers: &axum::http::He
         }
         None => None,
     };
+    let before_query = started.elapsed();
     let mut result = loaded.site.query_as(path, query, viewer.as_ref()).await?;
+    let query_done = started.elapsed();
     result.http_host = request_headers.get(header::HOST).and_then(|v| v.to_str().ok()).map(str::to_owned);
     // Physical PHP endpoints (wp-login.php, xmlrpc.php, ...) do not exist here; they get the
     // 404 page rather than a canonical redirect. Only `/index.php` is WordPress' own alias for `/`.
     let php_endpoint = path.ends_with(".php") && path != "/index.php";
     let canonical = if php_endpoint { None } else { loaded.site.canonical_redirect_for_request(path, query, &result).await? };
+    let canonical_done = started.elapsed();
+    tracing::debug!(setup_ms = before_query.as_secs_f64() * 1000.0, query_ms = (query_done - before_query).as_secs_f64() * 1000.0, canonical_ms = (canonical_done - query_done).as_secs_f64() * 1000.0, path, "page prepared");
     if let Some(target) = canonical {
         // A relative `Location` (RFC 9110) keeps the client's own scheme and host, and
         // never trusts the `Host` header.

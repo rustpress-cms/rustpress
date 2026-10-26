@@ -407,6 +407,7 @@ pub(super) async fn page_list(bc: &BlockCtx<'_>) -> Result<String> {
     if pages.is_empty() {
         return Ok(String::new());
     }
+    rustpress_db::Db::remember_posts(&pages);
     let queried_id = bc.env.query.queried_object_id();
     let mut active_ancestors: Vec<u64> = Vec::new();
     #[derive(Clone)]
