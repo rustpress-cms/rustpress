@@ -615,7 +615,10 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
     out.push_str("\n\t</head>\n");
     out.push_str(&format!("<body class=\"{}\">\n", esc_attr(&classes.join(" "))));
     out.push_str("<script>\n\tdocument.body.className = document.body.className.replace('no-js','js');\n</script>\n\n");
-    out.push_str("<script>\n\t\t(function() {\n\t\t\tvar request, b = document.body, c = 'className', cs = 'customize-support', rcs = new RegExp('(^|\\\\s+)(no-)?'+cs+'(\\\\s+|$)');\n\n\t\t\t\trequest = true;\n\t\n\t\t\tb[c] = b[c].replace( rcs, ' ' );\n\t\t\t// The customizer requires postMessage and CORS (if the site is cross domain).\n\t\t\tb[c] += ( window.postMessage && request ? ' ' : ' no-' ) + cs;\n\t\t}());\n\t\n//# sourceURL=wp_customize_support_script\n</script>\n\n");
+    // Only who may customize the site gets the script (`wp_admin_bar_customize_menu()`).
+    if env.user.can("edit_theme_options") {
+        out.push_str("<script>\n\t\t(function() {\n\t\t\tvar request, b = document.body, c = 'className', cs = 'customize-support', rcs = new RegExp('(^|\\\\s+)(no-)?'+cs+'(\\\\s+|$)');\n\n\t\t\t\trequest = true;\n\t\n\t\t\tb[c] = b[c].replace( rcs, ' ' );\n\t\t\t// The customizer requires postMessage and CORS (if the site is cross domain).\n\t\t\tb[c] += ( window.postMessage && request ? ' ' : ' no-' ) + cs;\n\t\t}());\n\t\n//# sourceURL=wp_customize_support_script\n</script>\n\n");
+    }
     out.push_str("<div id=\"wpwrap\">\n\n");
     out.push_str(&format!(
         "<div id=\"adminmenumain\" role=\"navigation\" aria-label=\"{}\">\n<a href=\"#wpbody-content\" class=\"screen-reader-shortcut\">{}</a>\n<a href=\"#wp-toolbar\" class=\"screen-reader-shortcut\">{}</a>\n<div id=\"adminmenuback\"></div>\n<div id=\"adminmenuwrap\">\n<ul id=\"adminmenu\">\n\n",

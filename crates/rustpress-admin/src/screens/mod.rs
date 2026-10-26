@@ -342,8 +342,14 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse
         }
         "media.php" => bare_pages::media(&ctx.admin_url("")),
         // The screens of themes that are not block themes.
+        "widgets.php" | "nav-menus.php" if !ctx.can("edit_theme_options") => higher_permission(&ctx, "Sorry, you are not allowed to edit theme options on this site.", 403),
         "widgets.php" => die(env, 500, "WordPress &rsaquo; Error", &sprintf_html(&ctx.tr("The theme you are currently using is not widget-aware, meaning that it has no sidebars that you are able to change. For information on making your theme widget-aware, please <a href=\"%s\">follow these instructions</a>."), "https://developer.wordpress.org/themes/functionality/widgets/")),
         "nav-menus.php" => die(env, 500, "WordPress &rsaquo; Error", &ctx.tr("Your theme does not support navigation menus or widgets.")),
+        "link-manager.php" | "link-add.php" | "link.php" if !(ctx.can("manage_links") && ctx.can("install_plugins")) => die(env, 500, "WordPress &rsaquo; Error", &ctx.tr("Sorry, you are not allowed to edit the links for this site.")),
+        "network.php" if !ctx.can("setup_network") => die_message(env, 500, &ctx.tr("Sorry, you are not allowed to manage options for this site.")),
+        "customize.php" if !ctx.can("edit_theme_options") => higher_permission(&ctx, "Sorry, you are not allowed to customize this site.", 403),
+        "press-this.php" if !ctx.can("edit_posts") => die(env, 403, &ctx.tr("You need a higher level of permission."), &ctx.tr("Sorry, you are not allowed to create posts as this user.")),
+        "press-this.php" if !ctx.can("activate_plugins") => die(env, 200, &ctx.tr("Installation Required"), &ctx.tr("Press This is not available. Please contact your site administrator.")),
         "link-manager.php" | "link-add.php" | "link.php" => {
             let url = ctx.admin_url(&format!("update.php?action=install-plugin&plugin=link-manager&_wpnonce={}", ctx.create_nonce("install-plugin_link-manager")));
             die(env, 500, "WordPress &rsaquo; Error", &sprintf_html(&ctx.tr("If you are looking to use the link manager, please install the <a href=\"%s\">Link Manager plugin</a>."), &rustpress_core::formatting::esc_url(&url)))
@@ -387,6 +393,11 @@ fn die_message(env: &AdminEnv<'_>, status: u16, message: &str) -> AdminResponse 
     die(env, status, "WordPress &rsaquo; Error", message)
 }
 
+/// `wp_die( '<h1>…permission</h1><p>message</p>', 403 )`.
+fn higher_permission(ctx: &Ctx<'_>, message: &str, status: u16) -> AdminResponse {
+    die(ctx.env, status, "WordPress &rsaquo; Error", &format!("<h1>{}</h1><p>{}</p>", ctx.tr("You need a higher level of permission."), ctx.tr(message)))
+}
+
 /// `sprintf()` with one string, not escaped.
 fn sprintf_html(format: &str, value: &str) -> String {
     rustpress_core::i18n::sprintf(format, &[value])
@@ -403,6 +414,8 @@ fn menu_capabilities(file: &str) -> Option<&'static [&'static str]> {
         "themes.php" => &["switch_themes", "edit_theme_options"],
         "theme-editor.php" => &["edit_themes"],
         "site-editor.php" | "font-library.php" => &["edit_theme_options"],
+        "edit.php" | "post-new.php" | "edit-comments.php" | "tools.php" => &["edit_posts"],
+        "upload.php" | "media-new.php" => &["upload_files"],
         "import.php" => &["import"],
         "export.php" => &["export"],
         "site-health.php" => &["view_site_health_checks"],

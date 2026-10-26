@@ -128,6 +128,8 @@ impl CurrentUser {
         // `map_meta_cap()`: capabilities without a post or user in question that stand for another one.
         let capability = match capability {
             "manage_privacy_options" | "view_site_health_checks" | "export_others_personal_data" | "erase_others_personal_data" => "manage_options",
+            "setup_network" => "manage_options",
+            "customize" => "edit_theme_options",
             other => other,
         };
         self.allcaps.get(capability).copied().unwrap_or(false)
