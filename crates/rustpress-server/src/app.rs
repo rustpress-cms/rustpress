@@ -354,9 +354,8 @@ async fn page(app: &App, uri: &axum::http::Uri, request_headers: &axum::http::He
     }
     if result.flags.is_feed {
         let request_uri = uri.path_and_query().map_or(path, |p| p.as_str());
-        let ids: Vec<u64> = result.posts.iter().map(|p| p.id).collect();
         let feed = rustpress_db::Db::with_term_cache(async {
-            loaded.site.db.prime_terms(&ids).await?;
+            loaded.site.db.prime_loop(&result.posts).await?;
             render_feed(&loaded.theme, &loaded.site, &result, &loaded.registry, request_uri).await
         })
         .await;
@@ -397,9 +396,8 @@ async fn page(app: &App, uri: &axum::http::Uri, request_headers: &axum::http::He
         return Ok(with_api_link(response, &loaded));
     }
     // The terms of the posts of the main query are read once (`update_object_term_cache()`).
-    let ids: Vec<u64> = result.posts.iter().map(|p| p.id).collect();
     let document = rustpress_db::Db::with_term_cache(async {
-        loaded.site.db.prime_terms(&ids).await?;
+        loaded.site.db.prime_loop(&result.posts).await?;
         rustpress_theme::render_document_with(&loaded.theme, &loaded.site, &result, &loaded.registry, &extras).await
     })
     .await?;

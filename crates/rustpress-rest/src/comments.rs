@@ -42,10 +42,16 @@ impl Rest<'_> {
         let orderby = try_param!(params.one_of("orderby", &["date", "date_gmt", "id", "include", "post", "parent", "type"], "date_gmt"));
         let post_in = params.id_list("post").unwrap_or_default();
         for id in &post_in {
-            if let Some(post) = self.site.db.post(*id).await?
-                && (!(post.post_status == "publish" || (post.post_type == "attachment" && post.post_status == "inherit")) || !post.post_password.is_empty()) {
-                    return Ok(Err(RestError::new("rest_cannot_read_post", "Sorry, you are not allowed to read the post for this comment.", 401)));
+            // `check_read_post_permission()`: a protected post asks for `edit_post` unless its password (or the edit
+            // context of an editor) opens it; otherwise the post has to be readable.
+            if let Some(post) = self.site.db.post(*id).await? {
+                let unlocked = post_in.len() == 1
+                    && ((params.get("context") == Some("edit") && self.can_edit_post(&post)) || params.get("password").is_some_and(|p| rustpress_core::hash_equals(&post.post_password, p)));
+                let allowed = if !post.post_password.is_empty() && !unlocked { self.can_edit_post(&post) } else { self.check_read_permission(&post).await };
+                if !allowed {
+                    return Ok(Err(self.forbidden("rest_cannot_read_post", "Sorry, you are not allowed to read the post for this comment.")));
                 }
+            }
         }
 
         let mut query = CommentQuery {

@@ -93,6 +93,9 @@ impl Db {
 
     /// Post meta values of a key for posts (`_edit_lock` and the like).
     pub async fn post_meta_value(&self, post_id: u64, key: &str) -> Result<Option<String>> {
+        if let Some(primed) = crate::primed::primed_meta(post_id) {
+            return Ok(primed.into_iter().find(|m| m.meta_key.as_deref() == Some(key)).and_then(|m| m.meta_value));
+        }
         let sql = format!("SELECT meta_value FROM {} WHERE post_id = ? AND meta_key = ? ORDER BY meta_id LIMIT 1", self.prefix.table("postmeta"));
         Ok(sqlx::query_scalar::<_, Option<String>>(AssertSqlSafe(sql)).bind(post_id).bind(key).fetch_optional(&self.pool).await?.flatten())
     }

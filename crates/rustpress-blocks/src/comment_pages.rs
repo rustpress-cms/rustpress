@@ -71,11 +71,22 @@ pub async fn comments_for_template(env: &Env<'_>, post_id: u64) -> Result<Commen
 /// The comments of a post shown on the requested page.
 /// The comments `comments_template()` lists: the approved ones and the pending ones of the viewer.
 pub async fn listed_comments(env: &Env<'_>, post_id: u64) -> Result<Vec<Comment>> {
-    let include = crate::commenter::include_unapproved(env).await?;
-    if include.user.is_none() && include.email.is_none() {
-        return Ok(env.site.db.approved_comments(post_id).await?);
+    if let Some(listed) = env.with_state(|s| s.listed_comments.get(&post_id).cloned()) {
+        return Ok(listed);
     }
-    Ok(env.site.db.comments_with_pending(post_id, include.user, include.email.as_deref()).await?)
+    let include = crate::commenter::include_unapproved(env).await?;
+    let listed = if include.user.is_none() && include.email.is_none() {
+        env.site.db.approved_comments(post_id).await?
+    } else {
+        env.site.db.comments_with_pending(post_id, include.user, include.email.as_deref()).await?
+    };
+    env.with_state(|s| {
+        for comment in &listed {
+            s.comments.insert(comment.comment_id, comment.clone());
+        }
+        s.listed_comments.insert(post_id, listed.clone());
+    });
+    Ok(listed)
 }
 
 pub async fn comments_for_post(env: &Env<'_>, post_id: u64) -> Result<CommentPage> {

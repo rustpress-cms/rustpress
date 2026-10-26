@@ -41,10 +41,14 @@ pub async fn render_body(theme: &Theme, site: &Site, query: &QueryResult, regist
     // A singular template renders inside the main loop, even when it has no query block.
     let in_loop = query.flags.is_singular() && query.posts.len() == 1;
     env.with_state(|s| s.media.in_main_loop = in_loop);
+    let started = std::time::Instant::now();
     let content = env.render_markup(&markup, &root).await?;
+    let blocks_done = started.elapsed();
     env.with_state(|s| s.media.in_main_loop = false);
     let content = site.texturize(&content);
+    let texturize_done = started.elapsed();
     let content = rustpress_blocks::images::filter_content_tags(&env, &content, "template").await?.replace("]]>", "]]&gt;");
+    tracing::debug!(blocks_ms = blocks_done.as_secs_f64() * 1000.0, texturize_ms = (texturize_done - blocks_done).as_secs_f64() * 1000.0, images_ms = (started.elapsed() - texturize_done).as_secs_f64() * 1000.0, "template rendered");
     let wrapped = format!("<div class=\"wp-site-blocks\">{content}</div>");
     let html = add_skip_link(&wrapped, &site.tr("Skip to content"));
     Ok(RenderedBody { template_slug: slug, html, state: env.take_state() })

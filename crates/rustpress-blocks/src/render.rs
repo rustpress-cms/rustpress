@@ -83,7 +83,12 @@ impl<'a> Env<'a> {
                 s.render_depth += 1;
                 s.render_depth
             });
+            let started = std::time::Instant::now();
             let result = if depth > MAX_RENDER_DEPTH { Ok(block.inner_html.clone()) } else { self.render_block_unguarded(block, available, parent).await };
+            let elapsed = started.elapsed();
+            if elapsed.as_micros() > 1500 {
+                tracing::debug!(block = block.name.as_deref().unwrap_or(""), depth, ms = elapsed.as_secs_f64() * 1000.0, "slow block");
+            }
             self.with_state(|s| s.render_depth -= 1);
             result
         })

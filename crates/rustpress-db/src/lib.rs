@@ -19,6 +19,7 @@ mod info;
 mod models;
 mod options;
 mod posts;
+mod primed;
 mod terms;
 mod users;
 mod write;

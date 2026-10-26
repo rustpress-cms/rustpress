@@ -104,7 +104,7 @@ impl Rest<'_> {
         }
         let posts = self.site.db.posts(&query).await?;
         let ids: Vec<u64> = posts.iter().map(|p| p.id).collect();
-        self.site.db.prime_terms(&ids).await?;
+        self.site.db.prime_loop(&posts).await?;
         self.site.db.prime_revisions(&ids).await?;
         let mut items = Vec::with_capacity(posts.len());
         for post in &posts {

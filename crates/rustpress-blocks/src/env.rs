@@ -164,6 +164,10 @@ pub struct State {
     pub id_counters: HashMap<String, u64>,
     /// How many blocks are being rendered inside each other right now.
     pub render_depth: u32,
+    /// Comments read during this render, by ID, and the listed comments of each post (every comment block asked
+    /// the database again before).
+    pub comments: HashMap<u64, rustpress_db::Comment>,
+    pub listed_comments: HashMap<u64, Vec<rustpress_db::Comment>>,
     /// Counter behind wp_unique_id().
     pub unique_counter: u64,
     /// `do_blocks()` took `wpautop` off the `the_content` filter and `_restore_wpautop_hook()` put it back

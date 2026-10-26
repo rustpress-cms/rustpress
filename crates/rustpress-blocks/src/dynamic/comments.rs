@@ -37,7 +37,14 @@ fn comments_open(post: &Post) -> bool {
 
 async fn current_comment(bc: &BlockCtx<'_>) -> Result<Option<Comment>> {
     let Some(id) = bc.context.get("commentId").and_then(Value::as_u64) else { return Ok(None) };
-    Ok(bc.env.site.db.comment(id).await?)
+    if let Some(comment) = bc.env.with_state(|s| s.comments.get(&id).cloned()) {
+        return Ok(Some(comment));
+    }
+    let comment = bc.env.site.db.comment(id).await?;
+    if let Some(comment) = &comment {
+        bc.env.with_state(|s| s.comments.insert(id, comment.clone()));
+    }
+    Ok(comment)
 }
 
 /// Renders the block's own inner blocks (used by blocks that skip the generic inner rendering).

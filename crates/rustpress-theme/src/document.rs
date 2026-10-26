@@ -646,7 +646,9 @@ pub async fn render_document_with(theme: &Theme, site: &Site, query: &QueryResul
     if crate::classic::is_ported(theme) {
         return crate::classic::render_document(theme, site, query, registry).await;
     }
+    let started = std::time::Instant::now();
     let rendered = render_body(theme, site, query, registry).await?;
+    let body_done = started.elapsed();
     let state = &rendered.state;
     let wp_root = &theme.wp_root;
     let version = wp_version(wp_root);
@@ -901,5 +903,6 @@ pub async fn render_document_with(theme: &Theme, site: &Site, query: &QueryResul
         esc_attr(&classes.join(" ")),
         rendered.html
     );
+    tracing::debug!(body_ms = body_done.as_secs_f64() * 1000.0, total_ms = started.elapsed().as_secs_f64() * 1000.0, path = query.url_path.as_str(), "document rendered");
     Ok(Document { status: query.status(), html })
 }

@@ -386,6 +386,9 @@ impl Db {
     }
 
     pub async fn post(&self, id: u64) -> Result<Option<Post>> {
+        if let Some(primed) = crate::primed::primed_post(id) {
+            return Ok(primed);
+        }
         let query = PostQuery {
             id: Some(id),
             post_types: Vec::new(),
@@ -468,6 +471,9 @@ impl Db {
         Ok(query.fetch_optional(&self.pool).await?)
     }
     pub async fn post_meta(&self, post_id: u64) -> Result<Vec<PostMeta>> {
+        if let Some(primed) = crate::primed::primed_meta(post_id) {
+            return Ok(primed);
+        }
         let sql = format!(
             "SELECT meta_id, post_id, meta_key, meta_value FROM {} WHERE post_id = ? ORDER BY meta_id",
             self.prefix.table("postmeta")

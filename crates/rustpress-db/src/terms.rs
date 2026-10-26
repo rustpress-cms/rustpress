@@ -23,7 +23,9 @@ struct PostTerm {
 impl Db {
     /// Runs `future` with a cache of the terms of posts for this request (see [`Db::prime_terms`]).
     pub async fn with_term_cache<F: std::future::Future>(future: F) -> F::Output {
-        PRIMED_TERMS.scope(RefCell::new(HashMap::new()), PRIMED_REVISIONS.scope(RefCell::new(HashMap::new()), future)).await
+        let posts = crate::primed::PRIMED_POSTS.scope(RefCell::new(HashMap::new()), future);
+        let meta = crate::primed::PRIMED_META.scope(RefCell::new(HashMap::new()), posts);
+        PRIMED_TERMS.scope(RefCell::new(HashMap::new()), PRIMED_REVISIONS.scope(RefCell::new(HashMap::new()), meta)).await
     }
 
     /// How many revisions a post has and the ID of the newest (by ID), from the primed cache or one query.
