@@ -127,10 +127,10 @@ fn help(ctx: &Ctx<'_>, kind: Kind) -> Help {
                     title: tr("Overview"),
                     content: format!(
                         "<p>{}</p><p>{}</p><p>{}</p><p><strong>{}</strong></p>",
-                        tr("This screen is where you manage requests for erasing personal data."),
-                        tr("Privacy Laws around the world require businesses and online services to delete, anonymize, or forget the data they collect about an individual, and to do so on request. The rights those laws enshrine are sometimes called the \"Right to be Forgotten\". It allows individuals to request that their personal data be removed from a business or service."),
+                        tr("This screen is where you manage requests to erase personal data."),
+                        tr("Privacy Laws around the world require businesses and online services to delete, anonymize, or forget the data they collect about an individual. The rights those laws enshrine are sometimes called the \"Right to be Forgotten\"."),
                         tr("The tool associates data stored in WordPress with a supplied email address, including profile data and comments."),
-                        tr("Note: As this tool only gathers data from WordPress and participating plugins, you may need to do more to comply with erasure requests. For example, you are also responsible for ensuring that data collected by or stored with the 3rd party services your organization uses gets erased.")
+                        tr("Note: As this tool only gathers data from WordPress and participating plugins, you may need to do more to comply with erasure requests. For example, you are also responsible for ensuring that data collected by or stored with the 3rd party services your organization uses gets deleted.")
                     ),
                 },
                 HelpTab {
@@ -138,12 +138,12 @@ fn help(ctx: &Ctx<'_>, kind: Kind) -> Help {
                     title: tr("Default Data"),
                     content: format!(
                         "<p>{}</p><p>{}</p><p>{}</p><p>{}</p><p>{}</p><p>{}</p>",
-                        tr("WordPress collects (but <em>never</em> publishes) a limited amount of data from registered users who have logged in to the site. Generally, these users are people who contribute to the site in some way -- content, store management, and so on. With rare exceptions, these users do not include occasional visitors who might have registered to comment on articles or buy products. The data WordPress retains can include:"),
+                        tr("WordPress collects (but <em>never</em> publishes) a limited amount of data from logged-in users but then deletes it or anonymizes it. That data can include:"),
                         tr("<strong>Profile Information</strong> &mdash; user email address, username, display name, nickname, first name, last name, description/bio, and registration date."),
-                        tr("<strong>Community Events Location</strong> &mdash; The IP Address of the user, which populates the Upcoming Community Events dashboard widget with relevant information."),
+                        tr("<strong>Community Events Location</strong> &mdash; The IP Address of the user which is used for the Upcoming Community Events shown in the dashboard widget."),
                         tr("<strong>Session Tokens</strong> &mdash; User login information, IP Addresses, Expiration Date, User Agent (Browser/OS), and Last Login."),
-                        tr("<strong>Comments</strong> &mdash; For user comments, Email Address, IP Address, User Agent (Browser/OS), Date/Time, Comment Content, and Content URL."),
-                        tr("<strong>Media</strong> &mdash; A list of URLs for media files the user uploads.")
+                        tr("<strong>Comments</strong> &mdash; WordPress does not delete comments. The software does anonymize (but, again, <em>never</em> publishes) the associated Email Address, IP Address, and User Agent (Browser/OS)."),
+                        tr("<strong>Media</strong> &mdash; A list of URLs for all media file uploads made by the user.")
                     ),
                 },
                 HelpTab {
@@ -481,7 +481,8 @@ pub async fn page(ctx: &Ctx<'_>, kind: Kind) -> AdminResponse {
     cleanup(ctx, kind).await;
 
     let db = ctx.env.db;
-    let per_page = db.user_meta(ctx.user.id, &format!("{}_requests_per_page", kind.request_type())).await.ok().flatten().and_then(|v| v.parse::<u64>().ok()).filter(|v| *v >= 1).unwrap_or(20);
+    let per_page_option = format!("{}_requests_per_page", kind.request_type());
+    let per_page = super::common::items_per_page(ctx, &per_page_option, 20).await;
     let paged = request.request("paged").and_then(|p| p.parse::<u64>().ok()).filter(|p| *p > 0).unwrap_or(1);
     let filter_status = request.request("filter-status").unwrap_or_default().to_owned();
     let orderby_param = request.request("orderby").unwrap_or_default().to_owned();
@@ -535,17 +536,19 @@ pub async fn page(ctx: &Ctx<'_>, kind: Kind) -> AdminResponse {
     if rows.is_empty() {
         rows = format!("<tr class=\"no-items\"><td class=\"colspanchange\" colspan=\"5\">{}</td></tr>", tr("No items found."));
     }
+    let mut columns = vec![
+        Column::new("cb", ""),
+        Column::new("email", &tr("Requester")).sortable("requester", request.request("orderby").is_some(), None, None),
+        Column::new("status", &tr("Status")),
+        Column::new("created_timestamp", &tr("Requested")).sortable("requested", request.request("orderby").is_some(), None, None),
+        Column::new("next_steps", &tr("Next steps")),
+    ];
+    let screen_options = super::common::list_screen_options(ctx, kind.file().trim_end_matches(".php"), &mut columns, (&per_page_option, per_page), None).await;
     let table = Table {
         site: ctx.site(),
         plural: "privacy_requests".into(),
         singular: "privacy_request".into(),
-        columns: vec![
-            Column::new("cb", ""),
-            Column::new("email", &tr("Requester")).sortable("requester", request.request("orderby").is_some(), None, None),
-            Column::new("status", &tr("Status")),
-            Column::new("created_timestamp", &tr("Requested")).sortable("requested", request.request("orderby").is_some(), None, None),
-            Column::new("next_steps", &tr("Next steps")),
-        ],
+        columns,
         primary: "email".into(),
         current_url: format!("{}{}", ctx.admin_url(""), request.request_uri.trim_start_matches("/wp-admin/")),
         orderby: orderby_param.clone(),
@@ -603,6 +606,6 @@ pub async fn page(ctx: &Ctx<'_>, kind: Kind) -> AdminResponse {
         esc_attr(request.request("order").unwrap_or_default()),
         list_html.trim_end_matches(['\n', '\t', ' ']).to_owned() + "\n\t"
     );
-    let screen = Screen { file: kind.file().into(), parent_file: "tools.php".into(), submenu_file: Some(kind.file().into()), title: tr(heading), help: Some(help(ctx, kind)), ..Default::default() };
+    let screen = Screen { file: kind.file().into(), parent_file: "tools.php".into(), submenu_file: Some(kind.file().into()), title: tr(heading), help: Some(help(ctx, kind)), options: Some(screen_options), ..Default::default() };
     render(ctx, &screen, &h, &Assets { scripts: vec!["privacy-tools".into()], ..Default::default() }).await
 }

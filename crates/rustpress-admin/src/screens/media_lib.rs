@@ -39,8 +39,88 @@ fn help(ctx: &Ctx<'_>) -> Help {
     let tr = |s: &str| ctx.tr(s);
     Help {
         tabs: vec![
-            HelpTab { id: "overview".into(), title: tr("Overview"), content: format!("<p>{}</p><p>{}</p>", tr("All the files you&#8217;ve uploaded are listed in the Media Library, with the most recent uploads listed first."), tr("You can view your media in a simple visual grid or a list with columns. Switch between these views using the icons to the left above the media.")) },
-            HelpTab { id: "attachment-details".into(), title: tr("Attachment Details"), content: format!("<p>{}</p>", tr("Clicking an item will display an Attachment Details dialog, which allows you to preview media and make quick edits. Any changes you make to the attachment details will be automatically saved.")) },
+            HelpTab {
+                id: "overview".into(),
+                title: tr("Overview"),
+                content: format!(
+                    "<p>{}</p><p>{}</p><p>{}</p>",
+                    tr("All the files you&#8217;ve uploaded are listed in the Media Library, with the most recent uploads listed first."),
+                    tr("You can view your media in a simple visual grid or a list with columns. Switch between these views using the icons to the left above the media."),
+                    tr("To delete media items, click the <strong>Bulk select</strong> button at the top of the screen. Select any items you wish to delete, then click the <strong>Delete permanently</strong> button. Clicking the <strong>Cancel</strong> button takes you back to viewing your media.")
+                ),
+            },
+            HelpTab {
+                id: "attachment-details".into(),
+                title: tr("Attachment Details"),
+                content: format!(
+                    "<p>{}</p><p>{}</p><p>{}</p>",
+                    tr("Clicking an item will display an Attachment Details dialog, which allows you to preview media and make quick edits. Any changes you make to the attachment details will be automatically saved."),
+                    tr("Use the buttons at the top of the dialog, or <code>alt</code>/<code>option</code> plus the left or right arrow keys on your keyboard, to navigate between media items quickly."),
+                    tr("You can also delete individual items and access the extended edit screen from the details dialog.")
+                ),
+            },
+        ],
+        sidebar: format!("<p><strong>{}</strong></p><p>{}</p><p>{}</p>", tr("For more information:"), tr("<a href=\"https://wordpress.org/documentation/article/media-library-screen/\">Documentation on Media Library</a>"), tr("<a href=\"https://wordpress.org/support/forums/\">Support forums</a>")),
+    }
+}
+
+/// The help of `media-new.php`.
+fn new_help(ctx: &Ctx<'_>) -> Help {
+    let tr = |s: &str| ctx.tr(s);
+    Help {
+        tabs: vec![HelpTab {
+            id: "overview".into(),
+            title: tr("Overview"),
+            content: format!(
+                "<p>{}</p><ul><li>{}</li><li>{}</li><li>{}</li></ul>",
+                tr("You can upload media files here without creating a post first. This allows you to upload files to use with posts and pages later and/or to get a web link for a particular file that you can share. There are three options for uploading files:"),
+                tr("<strong>Drag and drop</strong> your files into the area below. Multiple files are allowed."),
+                tr("Clicking <strong>Select Files</strong> opens a navigation window showing you files in your operating system. Selecting <strong>Open</strong> after clicking on the file you want activates a progress bar on the uploader screen."),
+                tr("Revert to the <strong>Browser Uploader</strong> by clicking the link below the drag and drop box.")
+            ),
+        }],
+        sidebar: format!(
+            "<p><strong>{}</strong></p><p>{}</p><p>{}</p>",
+            tr("For more information:"),
+            tr("<a href=\"https://wordpress.org/documentation/article/media-add-new-screen/\">Documentation on Uploading Media Files</a>"),
+            tr("<a href=\"https://wordpress.org/support/forums/\">Support forums</a>")
+        ),
+    }
+}
+
+/// The help of the list view of the library.
+fn list_help(ctx: &Ctx<'_>) -> Help {
+    let tr = |s: &str| ctx.tr(s);
+    Help {
+        tabs: vec![
+            HelpTab {
+                id: "overview".into(),
+                title: tr("Overview"),
+                content: format!(
+                    "<p>{}</p><p>{}</p><p>{}</p>",
+                    tr("All the files you&#8217;ve uploaded are listed in the Media Library, with the most recent uploads listed first. You can use the Screen Options tab to customize the display of this screen."),
+                    tr("You can narrow the list by file type/status or by date using the dropdown menus above the media table."),
+                    tr("You can view your media in a simple visual grid or a list with columns. Switch between these views using the icons to the left above the media.")
+                ),
+            },
+            HelpTab {
+                id: "actions-links".into(),
+                title: tr("Available Actions"),
+                content: format!(
+                    "<p>{}</p><ul><li>{}</li><li>{}</li><li>{}</li><li>{}</li><li>{}</li></ul>",
+                    tr("Hovering over a row reveals action links that allow you to manage media items. You can perform the following actions:"),
+                    tr("<strong>Edit</strong> takes you to a simple screen to edit that individual file&#8217;s metadata. You can also reach that screen by clicking on the media file name or thumbnail."),
+                    tr("<strong>Delete Permanently</strong> will delete the file from the media library (as well as from any posts to which it is currently attached)."),
+                    tr("<strong>View</strong> will take you to a public display page for that file."),
+                    tr("<strong>Copy URL</strong> copies the URL for the media file to your clipboard."),
+                    tr("<strong>Download file</strong> downloads the original media file to your device.")
+                ),
+            },
+            HelpTab {
+                id: "attaching-files".into(),
+                title: tr("Attaching Files"),
+                content: format!("<p>{}</p>", tr("If a media file has not been attached to any content, you will see that in the Uploaded To column, and can click on Attach to launch a small popup that will allow you to search for existing content and attach the file.")),
+            },
         ],
         sidebar: format!("<p><strong>{}</strong></p><p>{}</p><p>{}</p>", tr("For more information:"), tr("<a href=\"https://wordpress.org/documentation/article/media-library-screen/\">Documentation on Media Library</a>"), tr("<a href=\"https://wordpress.org/support/forums/\">Support forums</a>")),
     }
@@ -81,7 +161,7 @@ pub async fn upload_php(ctx: &Ctx<'_>) -> AdminResponse {
         super::media_ui::enqueue(ctx, &mut assets, 0).await;
         assets.scripts.extend(["media-grid".to_owned(), "media".to_owned()]);
         assets.localize.push(("media-grid".into(), "_wpMediaGridSettings".into(), serde_json::json!({"adminUrl": "/wp-admin/", "queryVars": request.query.iter().filter(|(k, _)| ["s", "m", "attachment-filter", "item", "post__in", "post_mime_type", "orderby", "order"].contains(&k.as_str())).map(|(k, v)| (k.clone(), serde_json::Value::String(v.clone()))).collect::<serde_json::Map<_, _>>()})));
-        let mut h = format!("\t\t<div class=\"wrap\" id=\"wp-media-grid\" data-search=\"{}\">\n\t\t<h1 class=\"wp-heading-inline\">{}</h1>\n\n", esc_attr(request.get("s").unwrap_or_default()), esc_html(&title));
+        let mut h = format!("\t\t\t<div class=\"wrap\" id=\"wp-media-grid\" data-search=\"{}\">\n\t\t<h1 class=\"wp-heading-inline\">{}</h1>\n\n", esc_attr(request.get("s").unwrap_or_default()), esc_html(&title));
         if ctx.can("upload_files") {
             h.push_str(&format!("\t\t\t\t\t<a href=\"{}\" class=\"page-title-action aria-button-if-js\">{}</a>\n\t\t\t", esc_url(&ctx.admin_url("media-new.php")), tr("Add Media File")));
         }
@@ -116,7 +196,7 @@ async fn list_mode(ctx: &Ctx<'_>, title: String) -> AdminResponse {
     let month = request.get("m").and_then(|m| m.parse::<u32>().ok()).unwrap_or(0);
     let orderby = request.get("orderby").filter(|o| ["title", "author", "parent", "date"].contains(o)).unwrap_or("date").to_owned();
     let desc = request.get("order").map_or(true, |o| o.eq_ignore_ascii_case("desc"));
-    let per_page = db.user_meta(ctx.user.id, "upload_per_page").await.ok().flatten().and_then(|v| v.parse::<u64>().ok()).filter(|v| *v >= 1).unwrap_or(20);
+    let per_page = super::common::items_per_page(ctx, "upload_per_page", 20).await;
     let paged = request.get("paged").and_then(|p| p.parse::<u64>().ok()).filter(|p| *p > 0).unwrap_or(1);
     let mut query = AttachmentQuery { orderby: orderby.clone(), desc, limit: per_page, offset: (paged - 1).saturating_mul(per_page), ..Default::default() };
     if let Some(mime) = filter.strip_prefix("post_mime_type:") {
@@ -154,6 +234,7 @@ async fn list_mode(ctx: &Ctx<'_>, title: String) -> AdminResponse {
     if detached {
         columns.retain(|c| c.key != "parent");
     }
+    let screen_options = super::common::list_screen_options(ctx, "upload", &mut columns, ("upload_per_page", per_page), None).await;
     let table = Table {
         site,
         plural: "media".into(),
@@ -246,7 +327,7 @@ async fn list_mode(ctx: &Ctx<'_>, title: String) -> AdminResponse {
         search_word = tr("Search"),
         select = tr("Select")
     ));
-    let screen = Screen { file: "upload.php".into(), parent_file: "upload.php".into(), submenu_file: Some("upload.php".into()), title, help: Some(help(ctx)), ..Default::default() };
+    let screen = Screen { file: "upload.php".into(), parent_file: "upload.php".into(), submenu_file: Some("upload.php".into()), title, help: Some(list_help(ctx)), options: Some(screen_options), ..Default::default() };
     render(ctx, &screen, &h, &Assets { scripts: vec!["media".into(), "clipboard".into()], ..Default::default() }).await
 }
 
@@ -464,6 +545,6 @@ pub async fn media_new(ctx: &Ctx<'_>) -> AdminResponse {
         max = sprintf(&tr("Maximum upload file size: %s."), &[&super::ajax_media::size_format(super::media_ui::MAX_UPLOAD)]),
         nonce_field = format!("<input type=\"hidden\" id=\"_wpnonce\" name=\"_wpnonce\" value=\"{nonce}\" /><input type=\"hidden\" name=\"_wp_http_referer\" value=\"{}\" />", esc_url(&request.request_uri)),
     ));
-    let screen = Screen { file: "media-new.php".into(), parent_file: "upload.php".into(), submenu_file: Some("media-new.php".into()), title, help: Some(help(ctx)), ..Default::default() };
+    let screen = Screen { file: "media-new.php".into(), parent_file: "upload.php".into(), submenu_file: Some("media-new.php".into()), title, help: Some(new_help(ctx)), ..Default::default() };
     render(ctx, &screen, &h, &assets).await
 }

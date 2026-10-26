@@ -244,8 +244,58 @@ pub async fn row_html(ctx: &Ctx<'_>, comment: &Comment, index: usize, current_st
 fn help(ctx: &Ctx<'_>) -> Help {
     let tr = |s: &str| ctx.tr(s);
     Help {
-        tabs: vec![HelpTab { id: "overview".into(), title: tr("Overview"), content: format!("<p>{}</p>", tr("You can manage comments made on your site similarly to the way you manage posts and other content. This screen is customizable in the same ways as other management screens, and you can act on comments using the on-hover action links or the Bulk Actions.")) }],
-        sidebar: format!("<p><strong>{}</strong></p><p>{}</p>", tr("For more information:"), tr("<a href=\"https://wordpress.org/support/forums/\">Support forums</a>")),
+        tabs: vec![
+            HelpTab {
+                id: "overview".into(),
+                title: tr("Overview"),
+                content: format!("<p>{}</p>", tr("You can manage comments made on your site similar to the way you manage posts and other content. This screen is customizable in the same ways as other management screens, and you can act on comments using the on-hover action links or the bulk actions.")),
+            },
+            HelpTab {
+                id: "moderating-comments".into(),
+                title: tr("Moderating Comments"),
+                content: [
+                    "A red bar on the left means the comment is waiting for you to moderate it.",
+                    "In the <strong>Author</strong> column, in addition to the author&#8217;s name, email address, and site URL, the commenter&#8217;s IP address is shown. Clicking on this link will show you all the comments made from this IP address.",
+                    "In the <strong>Comment</strong> column, hovering over any comment gives you options to approve, reply (and approve), quick edit, edit, spam mark, or trash that comment.",
+                    "In the <strong>In response to</strong> column, there are three elements. The text is the name of the post that inspired the comment, and links to the post editor for that entry. The View Post link leads to that post on your live site. The small bubble with the number in it shows the number of approved comments that post has received. If there are pending comments, a red notification circle with the number of pending comments is displayed. Clicking the notification circle will filter the comments screen to show only pending comments on that post.",
+                    "In the <strong>Submitted on</strong> column, the date and time the comment was left on your site appears. Clicking on the date/time link will take you to that comment on your live site.",
+                    "Many people take advantage of keyboard shortcuts to moderate their comments more quickly. Use the link to the side to learn more.",
+                ]
+                .iter()
+                .map(|p| format!("<p>{}</p>", tr(p)))
+                .collect(),
+            },
+        ],
+        sidebar: format!(
+            "<p><strong>{}</strong></p><p>{}</p><p>{}</p><p>{}</p><p>{}</p>",
+            tr("For more information:"),
+            tr("<a href=\"https://wordpress.org/documentation/article/comments-screen/\">Documentation on Comments</a>"),
+            tr("<a href=\"https://wordpress.org/documentation/article/understand-comment-spam/\">Documentation on Comment Spam</a>"),
+            tr("<a href=\"https://wordpress.org/documentation/article/keyboard-shortcuts-classic-editor/#keyboard-shortcuts-for-comments\">Documentation on Keyboard Shortcuts</a>"),
+            tr("<a href=\"https://wordpress.org/support/forums/\">Support forums</a>")
+        ),
+    }
+}
+
+/// The help of `comment.php?action=editcomment`.
+fn edit_help(ctx: &Ctx<'_>) -> Help {
+    let tr = |s: &str| ctx.tr(s);
+    Help {
+        tabs: vec![HelpTab {
+            id: "overview".into(),
+            title: tr("Overview"),
+            content: format!(
+                "<p>{}</p><p>{}</p>",
+                tr("You can edit the information left in a comment if needed. This is often useful when you notice that a commenter has made a typographical error."),
+                tr("You can also moderate the comment from this screen using the Status box, where you can also change the timestamp of the comment.")
+            ),
+        }],
+        sidebar: format!(
+            "<p><strong>{}</strong></p><p>{}</p><p>{}</p>",
+            tr("For more information:"),
+            tr("<a href=\"https://wordpress.org/documentation/article/comments-screen/\">Documentation on Comments</a>"),
+            tr("<a href=\"https://wordpress.org/support/forums/\">Support forums</a>")
+        ),
     }
 }
 
@@ -302,7 +352,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     let kind = request.get("comment_type").unwrap_or_default().to_owned();
     let orderby = request.get("orderby").filter(|o| ["comment_author", "comment_post_ID", "comment_date", "comment_ID"].contains(o)).unwrap_or("comment_date").to_owned();
     let desc = request.get("order").map_or(true, |o| o.eq_ignore_ascii_case("desc"));
-    let per_page = db.user_meta(ctx.user.id, "edit_comments_per_page").await.ok().flatten().and_then(|v| v.parse::<u64>().ok()).filter(|v| *v >= 1).unwrap_or(20);
+    let per_page = super::common::items_per_page(ctx, "edit_comments_per_page", 20).await;
     let paged = request.get("paged").and_then(|p| p.parse::<u64>().ok()).filter(|p| *p > 0).unwrap_or(1);
     let (status, user_id) = match status_param.as_str() {
         "mine" => ("all", Some(ctx.user.id)),
@@ -312,8 +362,10 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     };
     // `$_REQUEST['user_id']` filters every view.
     let user_id = request.get("user_id").and_then(|u| u.trim().parse::<u64>().ok()).filter(|u| *u != 0).or(user_id);
-    let query = CommentListQuery { status: status.to_owned(), post_id, user_id, author_email: None, kind: kind.clone(), search: (!search.is_empty()).then(|| search.clone()), orderby: orderby.clone(), desc, limit: per_page, offset: (paged - 1).saturating_mul(per_page) };
-    let (comments, total) = db.list_comments_admin(&query).await.unwrap_or_default();
+    let query = CommentListQuery { status: status.to_owned(), post_id, user_id, author_email: None, kind: kind.clone(), search: (!search.is_empty()).then(|| search.clone()), orderby: orderby.clone(), desc, limit: per_page + per_page.min(8), offset: (paged - 1).saturating_mul(per_page) };
+    // `$number = $comments_per_page + min( 8, $comments_per_page )`: the rows after the page fill the hidden
+    // `#the-extra-comment-list`, from which the list takes the next row when one is moved away.
+    let (mut comments, total) = db.list_comments_admin(&query).await.unwrap_or_default();
     if let Some(response) = super::common::past_last_page(ctx, paged, total, per_page) {
         return response;
     }
@@ -354,7 +406,14 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         links.retain(|(class, _)| class == "all" || class == "mine" || class == "approved");
     }
 
-    let ncols = if post_id.is_some() { 4 } else { 5 };
+    // `get_column_count()`: the columns the user did not hide.
+    let hidden_columns = super::common::hidden_columns(ctx, "edit-comments").await;
+    let ncols = ["cb", "author", "comment", "response", "date"].iter().filter(|c| (post_id.is_none() || **c != "response") && !hidden_columns.iter().any(|h| h == *c)).count();
+    let extra_comments = comments.split_off(comments.len().min(per_page as usize));
+    let mut extra_rows = String::new();
+    for (index, comment) in extra_comments.iter().enumerate() {
+        extra_rows.push_str(&row_html(ctx, comment, per_page as usize + index, &status_param, &post_counts).await);
+    }
     let mut rows = String::new();
     for (index, comment) in comments.iter().enumerate() {
         rows.push_str(&row_html(ctx, comment, index, &status_param, &post_counts).await);
@@ -371,7 +430,9 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         Column::new("date", &tr("Submitted on")).sortable("comment_date", false, None, None),
     ];
     // The comments of one post do not name the post.
-    let columns: Vec<Column> = columns.into_iter().filter(|c| post_id.is_none() || c.key != "response").collect();
+    let mut columns: Vec<Column> = columns.into_iter().filter(|c| post_id.is_none() || c.key != "response").collect();
+    let mode = super::common::request_list_mode(ctx).await;
+    let screen_options = super::common::list_screen_options(ctx, "edit-comments", &mut columns, ("edit_comments_per_page", per_page), Some(mode.clone())).await;
     let bulk_actions: Vec<(String, String)> = match status_param.as_str() {
         "spam" => vec![("unspam".into(), tr("Not Spam")), ("delete".into(), tr("Delete permanently"))],
         "trash" => vec![("untrash".into(), tr("Restore")), ("delete".into(), tr("Delete permanently"))],
@@ -393,7 +454,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         current_page: paged,
         bulk_actions: if ctx.can("moderate_comments") { bulk_actions } else { Vec::new() },
         has_items: !comments.is_empty(),
-        view_mode: super::common::list_mode(ctx).await,
+        view_mode: mode,
     };
     let has_items = !comments.is_empty();
     // `extra_tablenav()`: the filter by type, and "Empty Spam" / "Empty Trash".
@@ -432,7 +493,10 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     let table_html = table_html.replace("<tbody id=\"the-list\"\n\t\t\t\t\t>", "<tbody id=\"the-comment-list\" data-wp-lists=\"list:comment\">");
 
     let no_items = match status_param.as_str() { "moderated" => tr("No comments awaiting moderation."), "trash" => tr("No comments found in Trash."), _ => tr("No comments found.") };
-    let table_html = table_html.replacen("\t</tbody>\n\n\t<tfoot>", &format!("\t</tbody>\n\t<tbody id=\"the-extra-comment-list\" data-wp-lists=\"list:comment\" style=\"display: none;\">\n\t\t<tr class=\"no-items\"><td class=\"colspanchange\" colspan=\"{ncols}\">{no_items}</td></tr>\t</tbody>\n\n\t<tfoot>"), 1);
+    if extra_rows.is_empty() {
+        extra_rows = format!("<tr class=\"no-items\"><td class=\"colspanchange\" colspan=\"{ncols}\">{no_items}</td></tr>");
+    }
+    let table_html = table_html.replacen("\t</tbody>\n\n\t<tfoot>", &format!("\t</tbody>\n\n\t<tbody id=\"the-extra-comment-list\" data-wp-lists=\"list:comment\" style=\"display: none;\">\n\t\t{extra_rows}\t</tbody>\n\n\t<tfoot>"), 1);
     let heading = tr("Comments");
     // The title of the page: with the number of comments in moderation, of the post when one is chosen.
     let post_filter = request.request("p").and_then(|p| p.parse::<u64>().ok()).filter(|id| *id != 0);
@@ -517,8 +581,8 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
 ");
     // The reply form spans the columns of the list.
     let reply = reply_form(ctx);
-    h.push_str(&if post_id.is_some() { reply.replace("colspan=\"5\"", "colspan=\"4\"") } else { reply });
-    let screen = Screen { file: "edit-comments.php".into(), parent_file: "edit-comments.php".into(), submenu_file: Some("edit-comments.php".into()), title, help: Some(help(ctx)), view_item, ..Default::default() };
+    h.push_str(&reply.replace("colspan=\"5\"", &format!("colspan=\"{ncols}\"")));
+    let screen = Screen { file: "edit-comments.php".into(), parent_file: "edit-comments.php".into(), submenu_file: Some("edit-comments.php".into()), title, help: Some(help(ctx)), options: Some(screen_options), view_item, ..Default::default() };
     render(ctx, &screen, &h, &Assets { scripts: vec!["admin-comments".into(), "wp-lists".into()], late_scripts: vec!["wplink".into(), "jquery-ui-autocomplete".into()], ..Default::default() }).await
 }
 
@@ -916,6 +980,6 @@ async fn edit_form(ctx: &Ctx<'_>, comment: &Comment) -> AdminResponse {
     h.push_str(&format!("<div id=\"postbox-container-2\" class=\"postbox-container\">\n<div id=\"normal-sortables\" class=\"meta-box-sortables\"></div></div>\n\n<input type=\"hidden\" name=\"c\" value=\"{id}\" />\n<input type=\"hidden\" name=\"p\" value=\"{}\" />\n<input name=\"referredby\" type=\"hidden\" id=\"referredby\" value=\"\" />\n<input type=\"hidden\" name=\"_wp_original_http_referer\" value=\"\" /><input type=\"hidden\" name=\"noredir\" value=\"1\" />\n\n</div><!-- /post-body -->\n</div>\n</div>\n</form>\n\n<script>\ntry{{document.post.name.focus();}}catch(e){{}}\n</script>\n\t\n", comment.comment_post_id));
     // The form wraps everything from the nonce on.
     let h = format!("<form name=\"post\" action=\"comment.php\" method=\"post\" id=\"post\">\n{h}");
-    let screen = Screen { file: "comment.php".into(), parent_file: "edit-comments.php".into(), submenu_file: Some("edit-comments.php".into()), title: tr("Edit Comment"), help: Some(help(ctx)), ..Default::default() };
+    let screen = Screen { file: "comment.php".into(), parent_file: "edit-comments.php".into(), submenu_file: Some("edit-comments.php".into()), title: tr("Edit Comment"), help: Some(edit_help(ctx)), content_inline: true, ..Default::default() };
     render(ctx, &screen, &h, &Assets { scripts: vec!["comment".into()], late_scripts: vec!["quicktags".into(), "wplink".into(), "jquery-ui-autocomplete".into()], footer: "<script>window.quicktags && quicktags({id: 'content'});</script>\n".into(), ..Default::default() }).await
 }

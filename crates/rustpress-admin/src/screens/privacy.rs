@@ -65,7 +65,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         return die(ctx.env, 403, "WordPress &rsaquo; Error", &format!("<p>{}</p>", tr("Sorry, you are not allowed to manage privacy options on this site.")));
     }
     let assets = Assets { scripts: vec!["privacy-tools".into()], ..Default::default() };
-    let screen = |title: &str, help: crate::chrome::Help| Screen { file: "options-privacy.php".into(), parent_file: "options-general.php".into(), submenu_file: Some("options-privacy.php".into()), title: tr(title), help: Some(help), early_classes: vec!["privacy-settings ".into()], ..Default::default() };
+    let screen = |title: &str, help: crate::chrome::Help| Screen { file: "options-privacy.php".into(), content_inline: true, parent_file: "options-general.php".into(), submenu_file: Some("options-privacy.php".into()), title: tr(title), help: Some(help), early_classes: vec!["privacy-settings ".into()], ..Default::default() };
     if ctx.request.get("tab") == Some("policyguide") {
         return redirect(&ctx.admin_url("privacy-policy-guide.php"));
     }

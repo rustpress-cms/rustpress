@@ -254,10 +254,59 @@ async fn has_translations(ctx: &Ctx<'_>, name: &str) -> bool {
     transient(ctx, name).await.is_some_and(|t| matches!(field(&t, "translations"), Some(Value::Array(items)) if !items.is_empty()))
 }
 
+/// The notice when no plugin or theme was chosen to update, if there are updates to choose from.
+async fn upgrade_error_notice(ctx: &Ctx<'_>, upgrade_error: Option<&str>) -> String {
+    let available = match upgrade_error {
+        Some("themes") => {
+            let updates = crate::updates::theme_updates(ctx.site()).await;
+            crate::themes::installed(&wp_root(ctx)).iter().any(|t| updates.contains_key(&t.stylesheet))
+        }
+        Some(_) => {
+            let response = transient(ctx, "update_plugins").await;
+            let files: Vec<String> = match response.as_ref().and_then(|t| field(t, "response")) {
+                Some(Value::Array(items)) => items.iter().filter_map(|(k, _)| if let Key::Str(name) = k { Some(String::from_utf8_lossy(name).into_owned()) } else { None }).collect(),
+                _ => Vec::new(),
+            };
+            crate::plugins::installed(&wp_root(ctx)).iter().any(|p| files.contains(&p.file))
+        }
+        None => false,
+    };
+    if !available {
+        return String::new();
+    }
+    let message = if upgrade_error == Some("themes") { ctx.tr("Please select one or more themes to update.") } else { ctx.tr("Please select one or more plugins to update.") };
+    super::notices::notice(&message, "", false, "", &["error"], true)
+}
+
 pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     let tr = |s: &str| ctx.tr(s);
     if !(ctx.can("update_core") || ctx.can("update_themes") || ctx.can("update_plugins") || ctx.can("update_languages")) {
         return die(ctx.env, 403, "WordPress &rsaquo; Error", &format!("<h1>{}</h1><p>{}</p>", tr("You need a higher level of permission."), tr("Sorry, you are not allowed to update this site.")));
+    }
+    // The update actions check the capability and the nonce first; the updates themselves need WordPress.org and
+    // are not carried out, so a valid request shows the overview.
+    // Updating plugins or themes without choosing any goes back to the overview with a notice.
+    let mut action = ctx.request.get("action").unwrap_or("upgrade-core");
+    let chosen = ctx.request.form.iter().any(|(k, _)| k == "checked" || k.starts_with("checked["));
+    let mut upgrade_error = None;
+    if (action == "do-theme-upgrade" || (action == "do-plugin-upgrade" && ctx.request.get("plugins").is_none())) && !chosen {
+        upgrade_error = Some(if action == "do-theme-upgrade" { "themes" } else { "plugins" });
+        action = "upgrade-core";
+    }
+    let gate = match action {
+        "do-core-upgrade" | "do-core-reinstall" => Some(("update_core", "upgrade-core")),
+        "do-plugin-upgrade" => Some(("update_plugins", "upgrade-core")),
+        "do-theme-upgrade" => Some(("update_themes", "upgrade-core")),
+        "do-translation-upgrade" => Some(("update_languages", "upgrade-translations")),
+        _ => None,
+    };
+    if let Some((capability, nonce_action)) = gate {
+        if !ctx.can(capability) {
+            return die(ctx.env, 500, "WordPress &rsaquo; Error", &tr("Sorry, you are not allowed to update this site."));
+        }
+        if !ctx.verify_nonce(nonce_action) {
+            return die(ctx.env, 403, &tr("An error occurred."), &tr("The link you followed has expired."));
+        }
     }
     let site = ctx.site();
     let version = ctx.env.loader.version.clone();
@@ -271,9 +320,10 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     };
     let translations = has_translations(ctx, "update_core").await || has_translations(ctx, "update_plugins").await || has_translations(ctx, "update_themes").await;
     let content = format!(
-        "<div class=\"wrap\">\n\t<h1>{}</h1>\n\t<p>{}</p>\n\n\t<h2 class=\"wp-current-version\">{}</h2>{last}\n{}\n\t{}{}{}{}\n\t</div>\n",
+        "\t<div class=\"wrap\">\n\t<h1>{}</h1>\n\t<p>{}</p>\n\n\t{}<h2 class=\"wp-current-version\">{}</h2>{last}\n{}\n\t{}{}{}{}\n\t</div>\n",
         tr("WordPress Updates"),
         tr("Updates may take several minutes to complete. If there is no feedback after 5 minutes, or if there are errors please refer to the Help section above."),
+        upgrade_error_notice(ctx, upgrade_error).await,
         sprintf(&tr("Current version: %s"), &[&version]),
         auto_update_status(ctx),
         core_section(ctx, &version).await,
@@ -281,7 +331,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         theme_section(ctx).await,
         translation_section(ctx, translations)
     );
-    let screen = Screen { file: "update-core.php".into(), parent_file: "index.php".into(), submenu_file: Some("update-core.php".into()), title: tr("WordPress Updates"), help: Some(super::pages::load(ctx, "update-core").help), ..Default::default() };
+    let screen = Screen { file: "update-core.php".into(), content_inline: true, parent_file: "index.php".into(), submenu_file: Some("update-core.php".into()), title: tr("WordPress Updates"), help: Some(super::pages::load(ctx, "update-core").help), ..Default::default() };
     let counts = crate::updates::counts(site).await;
     let totals = serde_json::json!({"counts": {"plugins": counts.plugins, "themes": counts.themes, "wordpress": counts.wordpress, "translations": counts.translations, "total": counts.total()}, "title": ""});
     let assets = Assets {

@@ -1,10 +1,12 @@
 # Stops a running dev server, builds and starts it in a hidden process and waits until it answers.
-Get-Process rustpress-server -ErrorAction SilentlyContinue | Stop-Process -Force
-Start-Sleep 1
+Get-Process rustpress-server -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+# The executable stays locked until the process is really gone.
+for ($i = 0; $i -lt 20 -and (Get-Process rustpress-server -ErrorAction SilentlyContinue); $i++) { Start-Sleep 1 }
+if (Get-Process rustpress-server -ErrorAction SilentlyContinue) { 'server still running: build would fail'; exit 1 }
 $repo = Split-Path -Parent $PSScriptRoot
 Set-Location $repo
 cargo build -q -p rustpress-server
-if ($LASTEXITCODE -ne 0) { exit 1 }
+if ($LASTEXITCODE -ne 0) { 'build failed'; exit 1 }
 Start-Process pwsh -ArgumentList '-NoProfile', '-File', "$repo\dev\serve-admin.ps1" -WindowStyle Hidden
 for ($i = 0; $i -lt 60; $i++) {
     Start-Sleep 2

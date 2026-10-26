@@ -157,7 +157,9 @@ pub fn load(ctx: &Ctx<'_>, name: &str) -> Baked {
 /// A screen that is only its baked content.
 pub async fn simple(ctx: &Ctx<'_>, file: &str, name: &str, title: &str, parent: &str, assets: Assets) -> AdminResponse {
     let baked = load(ctx, name);
-    let screen = Screen { file: file.to_owned(), parent_file: parent.to_owned(), submenu_file: Some(file.to_owned()), title: ctx.tr(title), help: Some(baked.help), ..Default::default() };
+    // `tools.php` closes its PHP block right before the page.
+    let content_inline = file == "tools.php";
+    let screen = Screen { file: file.to_owned(), parent_file: parent.to_owned(), submenu_file: Some(file.to_owned()), title: ctx.tr(title), help: Some(baked.help), content_inline, ..Default::default() };
     render(ctx, &screen, &format!("{}\n", baked.content.trim_end_matches('\n')), &assets).await
 }
 
@@ -172,7 +174,7 @@ pub async fn tools(ctx: &Ctx<'_>) -> AdminResponse {
         Some(start) => format!("{}</div>\n", &baked.content[..start]),
         None => baked.content.clone(),
     };
-    let screen = Screen { file: "tools.php".to_owned(), parent_file: "tools.php".to_owned(), submenu_file: Some("tools.php".to_owned()), title: ctx.tr("Tools"), help: Some(baked.help), ..Default::default() };
+    let screen = Screen { file: "tools.php".to_owned(), content_inline: true, parent_file: "tools.php".to_owned(), submenu_file: Some("tools.php".to_owned()), title: ctx.tr("Tools"), help: Some(baked.help), ..Default::default() };
     render(ctx, &screen, &format!("{}\n", content.trim_end_matches('\n')), &Assets::default()).await
 }
 

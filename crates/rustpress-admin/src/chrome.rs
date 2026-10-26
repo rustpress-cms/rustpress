@@ -24,6 +24,8 @@ pub struct Screen {
     pub title: String,
     /// The contextual help (`get_current_screen()->add_help_tab()`).
     pub help: Option<Help>,
+    /// "Screen Options": the columns that can be hidden, the items per page, the view mode.
+    pub options: Option<ScreenOptions>,
     /// The "View Post" entry of the toolbar: `(label, address)`.
     pub view_item: Option<(String, String)>,
     /// `view_item` is the archive of the post type.
@@ -36,6 +38,9 @@ pub struct Screen {
     pub early_classes: Vec<String>,
     /// The content has no indentation of its own: the frame leaves none either.
     pub flush_content: bool,
+    /// The page's markup follows the help and the screen options on the same line (`?>` right before it in the
+    /// PHP file); otherwise a line break comes first.
+    pub content_inline: bool,
 }
 
 impl Screen {
@@ -77,6 +82,115 @@ pub struct Help {
     pub tabs: Vec<HelpTab>,
     /// HTML of the sidebar ("For more information").
     pub sidebar: String,
+}
+
+/// What `WP_Screen::render_screen_options()` shows for a list table.
+#[derive(Debug, Clone, Default)]
+pub struct ScreenOptions {
+    /// `(column, title, hidden)` of the columns that can be hidden (`render_list_table_columns_preferences()`).
+    pub columns: Vec<(String, String, bool)>,
+    /// `(option, value)` of "Number of items per page" (`render_per_page_options()`).
+    pub per_page: Option<(String, u64)>,
+    /// The view mode (`list` or `excerpt`) of the posts and comments lists (`render_view_mode()`).
+    pub view_mode: Option<String>,
+    /// `(id, title, hidden)` of the meta boxes that can be hidden (`meta_box_prefs()`); `None` without meta boxes.
+    pub meta_boxes: Option<Vec<(String, String, bool)>>,
+    /// Whether the welcome panel of the dashboard shows; `None` where there is none.
+    pub welcome: Option<bool>,
+}
+
+/// `WP_Screen::render_screen_meta()`: the help, the screen options and the buttons that open them.
+fn screen_meta_with(help: Option<&Help>, options: Option<&ScreenOptions>, tr: &dyn Fn(&str) -> String, tr_x: &dyn Fn(&str, &str) -> String, nonce: &str) -> String {
+    let empty = Help::default();
+    let help = help.unwrap_or(&empty);
+    let full = screen_meta(help, &tr("Help"));
+    // The help part ends with the wrapper of the help; what follows depends on the options and the buttons.
+    let mut help_part = if help.tabs.is_empty() {
+        full.strip_suffix("\t\t\t\t</div>\n\t\t").unwrap_or(&full).to_owned()
+    } else {
+        full.split("\t\t\t\t</div>\n\t\t\t\t<div id=\"screen-meta-links\">").next().unwrap_or(&full).to_owned()
+    };
+    if !help.tabs.is_empty() && help.sidebar.is_empty() {
+        help_part = help_part.replacen("id=\"contextual-help-wrap\" class=\"hidden\"", "id=\"contextual-help-wrap\" class=\"hidden no-sidebar\"", 1);
+    }
+    let mut out = help_part;
+    out.push_str("\t\t");
+    if let Some(options) = options {
+        out.push_str(&format!("<div id=\"screen-options-wrap\" class=\"hidden\" tabindex=\"-1\" aria-label=\"{}\">\n<form id='adv-settings' method='post'>\n", esc_attr(&tr("Screen Options Tab"))));
+        // `render_meta_boxes_preferences()`
+        if let Some(boxes) = &options.meta_boxes {
+            out.push_str(&format!(
+                "\t\t<fieldset class=\"metabox-prefs\">\n\t\t<legend>{}</legend>\n\t\t<p>\n\t\t\t{}\t\t\t{}\t\t</p>\n\t\t<div class=\"metabox-prefs-container\">\n\t\t",
+                tr("Screen elements"),
+                tr("Some screen elements can be shown or hidden by using the checkboxes."),
+                tr("Expand or collapse the elements by clicking on their headings, and arrange them by dragging their headings or by clicking on the up and down arrows.")
+            ));
+            for (id, title, hidden) in boxes {
+                let id = esc_attr(id);
+                out.push_str(&format!(
+                    "<label for=\"{id}-hide\"><input class=\"hide-postbox-tog\" name=\"{id}-hide\" type=\"checkbox\" id=\"{id}-hide\" value=\"{id}\" {} />{title}</label>",
+                    if *hidden { "" } else { " checked='checked'" }
+                ));
+            }
+            if let Some(shown) = options.welcome {
+                out.push_str(&format!(
+                    "<label for=\"wp_welcome_panel-hide\"><input type=\"checkbox\" id=\"wp_welcome_panel-hide\"{} />{}</label>\n",
+                    if shown { " checked='checked'" } else { "" },
+                    tr_x("Welcome", "Welcome panel")
+                ));
+            }
+            out.push_str("\t\t</div>\n\t\t</fieldset>\n\t\t");
+        }
+        if !options.columns.is_empty() {
+            out.push_str(&format!("\t\t<fieldset class=\"metabox-prefs\">\n\t\t<legend>{}</legend>\n\t\t", tr("Columns")));
+            for (column, title, hidden) in &options.columns {
+                let id = format!("{column}-hide");
+                out.push_str(&format!(
+                    "<label><input class=\"hide-column-tog\" name=\"{id}\" type=\"checkbox\" id=\"{id}\" value=\"{column}\"{} />{}</label>\n",
+                    if *hidden { "" } else { " checked='checked'" },
+                    rustpress_core::formatting::wp_strip_all_tags(title)
+                ));
+            }
+            out.push_str("\t\t</fieldset>\n\t\t");
+        }
+        if let Some((option, value)) = &options.per_page {
+            out.push_str(&format!(
+                "\t\t<fieldset class=\"screen-options\">\n\t\t<legend>{}</legend>\n\t\t\t\t\t\t\t<label for=\"{o}\">{}</label>\n\t\t\t\t<input type=\"number\" step=\"1\" min=\"1\" max=\"999\" class=\"screen-per-page small-text\" name=\"wp_screen_options[value]\"\n\t\t\t\t\tid=\"{o}\"\n\t\t\t\t\tvalue=\"{value}\" />\n\t\t\t\t\t\t\t<input type=\"hidden\" name=\"wp_screen_options[option]\" value=\"{o}\" />\n\t\t</fieldset>\n\t\t",
+                tr("Pagination"),
+                tr("Number of items per page:"),
+                o = esc_attr(option)
+            ));
+        }
+        if let Some(mode) = &options.view_mode {
+            let checked = |value: &str| if mode == value { " checked='checked'" } else { "" };
+            out.push_str(&format!(
+                "\t\t<fieldset class=\"metabox-prefs view-mode\">\n\t\t\t<legend>{}</legend>\n\t\t\t<label for=\"list-view-mode\">\n\t\t\t\t<input id=\"list-view-mode\" type=\"radio\" name=\"mode\" value=\"list\" {} />\n\t\t\t\t{}\t\t\t</label>\n\t\t\t<label for=\"excerpt-view-mode\">\n\t\t\t\t<input id=\"excerpt-view-mode\" type=\"radio\" name=\"mode\" value=\"excerpt\" {} />\n\t\t\t\t{}\t\t\t</label>\n\t\t</fieldset>\n\t\t",
+                tr("View mode"),
+                checked("list"),
+                tr("Compact view"),
+                checked("excerpt"),
+                tr("Extended view")
+            ));
+        }
+        // `screen_options_show_submit`: the items per page and the view mode need the button.
+        if options.per_page.is_some() || options.view_mode.is_some() {
+            out.push_str(&format!("<p class=\"submit\"><input type=\"submit\" name=\"screen-options-apply\" id=\"screen-options-apply\" class=\"button button-primary\" value=\"{}\"  /></p>", esc_attr(&tr("Apply"))));
+        }
+        out.push_str(&format!("\n<input type=\"hidden\" id=\"screenoptionnonce\" name=\"screenoptionnonce\" value=\"{nonce}\" />\n</form>\n</div>"));
+    }
+    out.push_str("\t\t</div>\n\t\t");
+    if help.tabs.is_empty() && options.is_none() {
+        return out;
+    }
+    out.push_str("\t\t<div id=\"screen-meta-links\">\n\t\t");
+    if options.is_some() {
+        out.push_str(&format!("\t\t\t<div id=\"screen-options-link-wrap\" class=\"hide-if-no-js screen-meta-toggle\">\n\t\t\t<button type=\"button\" id=\"show-settings-link\" class=\"button button-compact show-settings\" aria-controls=\"screen-options-wrap\" aria-expanded=\"false\">{}</button>\n\t\t\t</div>\n\t\t\t", tr("Screen Options")));
+    }
+    if !help.tabs.is_empty() {
+        out.push_str(&format!("\t\t\t<div id=\"contextual-help-link-wrap\" class=\"hide-if-no-js screen-meta-toggle\">\n\t\t\t<button type=\"button\" id=\"contextual-help-link\" class=\"button button-compact show-settings\" aria-controls=\"contextual-help-wrap\" aria-expanded=\"false\">{}</button>\n\t\t\t</div>\n\t\t", esc_html(&tr("Help"))));
+    }
+    out.push_str("\t\t</div>\n\t\t\n");
+    out
 }
 
 /// `WP_Screen::render_screen_meta()` with the help tabs and the Help button.
@@ -634,9 +748,21 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
     bar.view_archive = screen.view_archive;
     out.push_str(&adminbar::render_admin(site, env.user, &bar));
     out.push_str("\n<div id=\"wpbody\" role=\"main\">\n\n<div id=\"wpbody-content\">\n");
-    match &screen.help {
-        Some(help) => {
+    match (&screen.help, &screen.options) {
+        (help, Some(options)) => {
+            let nonce = env.loader.nonce.as_ref().map(|n| n("screen-options-nonce")).unwrap_or_default();
+            let tr_x = |text: &str, context: &str| env.site.trx(text, context);
+            let mut meta = screen_meta_with(help.as_ref(), Some(options), &tr, &tr_x, &nonce);
+            if screen.content_inline && meta.ends_with("\t\t\n") {
+                meta.pop();
+            }
+            out.push_str(&meta);
+        }
+        (Some(help), None) => {
             let mut meta = screen_meta(help, &tr("Help"));
+            if screen.content_inline && meta.ends_with("\t\t\n") {
+                meta.pop();
+            }
             // A page that starts at the left edge needs none of the indentation the frame leaves.
             if screen.flush_content && meta.ends_with("</div>
 		") {
@@ -644,7 +770,7 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
             }
             out.push_str(&meta);
         }
-        None => out.push_str("\t\t"),
+        (None, None) => out.push_str("\t\t"),
     }
     out.push_str(content);
     out.push_str("\n<div class=\"clear\"></div></div><!-- wpbody-content -->\n<div class=\"clear\"></div></div><!-- wpbody -->\n<div class=\"clear\"></div></div><!-- wpcontent -->\n\n");

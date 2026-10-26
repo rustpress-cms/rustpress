@@ -308,11 +308,15 @@ impl Table<'_> {
 		{data_lists}		>
 		"));
         // `row_actions()`: in the excerpt view every row shows its actions.
-        if self.view_mode == "excerpt" {
-            out.push_str(&rows.replace("<div class=\"row-actions\">", "<div class=\"row-actions visible\">"));
-        } else {
-            out.push_str(rows);
+        let mut rows = if self.view_mode == "excerpt" { rows.replace("<div class=\"row-actions\">", "<div class=\"row-actions visible\">") } else { rows.to_owned() };
+        // `single_row_columns()`: the cells of a hidden column carry `hidden`.
+        for column in self.columns.iter().filter(|c| c.hidden) {
+            let key = &column.key;
+            for quote in ['\'', '"'] {
+                rows = rows.replace(&format!("class={quote}{key} column-{key}{quote}"), &format!("class={quote}{key} column-{key} hidden{quote}"));
+            }
         }
+        out.push_str(&rows);
         out.push_str("	</tbody>
 
 	<tfoot>

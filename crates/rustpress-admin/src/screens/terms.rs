@@ -200,20 +200,57 @@ fn ordered(terms: &[Term], tree: bool, orderby: &str, desc: bool, search: &str) 
     flat.into_iter().map(|t| if search.is_empty() { let d = depth(&t); (t, d, 0) } else { (t, 0, 0) }).collect()
 }
 
-fn help(ctx: &Ctx<'_>, info: &TaxInfo) -> Help {
+/// The help of `edit-tags.php`: only categories, tags and link categories have one.
+fn help(ctx: &Ctx<'_>, info: &TaxInfo) -> Option<Help> {
     let tr = |s: &str| ctx.tr(s);
-    let overview = if info.name == "category" {
-        format!("<p>{}</p>", tr("You can use categories to define sections of your site and group related posts. The default category is Uncategorized until you change it in your writing settings."))
-    } else {
-        format!("<p>{}</p>", tr("You can assign keywords to your posts using <strong>tags</strong>. Unlike categories, tags have no hierarchy, meaning there&#8217;s no relationship from one tag to another."))
-    };
-    Help {
-        tabs: vec![HelpTab { id: "overview".into(), title: tr("Overview"), content: overview }],
-        sidebar: format!("<p><strong>{}</strong></p><p>{}</p>", tr("For more information:"), tr("<a href=\"https://wordpress.org/support/forums/\">Support forums</a>")),
+    let name = info.name.as_str();
+    if !["category", "link_category", "post_tag"].contains(&name) {
+        return None;
     }
+    let mut overview = match name {
+        "category" => format!(
+            "<p>{}</p>",
+            rustpress_core::i18n::sprintf(&tr("You can use categories to define sections of your site and group related posts. The default category is &#8220;Uncategorized&#8221; until you change it in your <a href=\"%s\">writing settings</a>."), &["options-writing.php"])
+        ),
+        "link_category" => format!("<p>{}</p>", tr("You can create groups of links by using Link Categories. Link Category names must be unique and Link Categories are separate from the categories you use for posts.")),
+        _ => format!("<p>{}</p>", tr("You can assign keywords to your posts using <strong>tags</strong>. Unlike categories, tags have no hierarchy, meaning there is no relationship from one tag to another.")),
+    };
+    overview.push_str(&format!(
+        "<p>{}</p>",
+        if name == "link_category" {
+            tr("You can delete Link Categories in the Bulk Action pull-down, but that action does not delete the links within the category. Instead, it moves them to the default Link Category.")
+        } else {
+            tr("What&#8217;s the difference between categories and tags? Normally, tags are ad-hoc keywords that identify important information in your post (names, subjects, etc) that may or may not recur in other posts, while categories are pre-determined sections. If you think of your site like a book, the categories are like the Table of Contents and the tags are like the terms in the index.")
+        }
+    ));
+    let mut tabs = vec![HelpTab { id: "overview".into(), title: tr("Overview"), content: overview }];
+    if name != "link_category" {
+        let category = name == "category";
+        let mut adding = format!(
+            "<p>{}</p><ul><li>{}</li><li>{}</li>",
+            if category { tr("When adding a new category on this screen, you&#8217;ll fill in the following fields:") } else { tr("When adding a new tag on this screen, you&#8217;ll fill in the following fields:") },
+            tr("<strong>Name</strong> &mdash; The name is how it appears on your site."),
+            tr("<strong>Slug</strong> &mdash; The &#8220;slug&#8221; is the URL-friendly version of the name. It is usually all lowercase and contains only letters, numbers, and hyphens.")
+        );
+        if category {
+            adding.push_str(&format!("<li>{}</li>", tr("<strong>Parent</strong> &mdash; Categories, unlike tags, can have a hierarchy. You might have a Jazz category, and under that have child categories for Bebop and Big Band. Totally optional. To create a subcategory, just choose another category from the Parent dropdown.")));
+        }
+        adding.push_str(&format!(
+            "<li>{}</li></ul><p>{}</p>",
+            tr("<strong>Description</strong> &mdash; The description is not prominent by default; however, some themes may display it."),
+            tr("You can change the display of this screen using the Screen Options tab to set how many items are displayed per screen and to display/hide columns in the table.")
+        ));
+        tabs.push(HelpTab { id: "adding-terms".into(), title: if category { tr("Adding Categories") } else { tr("Adding Tags") }, content: adding });
+    }
+    let documentation = match name {
+        "category" => tr("<a href=\"https://wordpress.org/documentation/article/posts-categories-screen/\">Documentation on Categories</a>"),
+        "link_category" => tr("<a href=\"https://codex.wordpress.org/Links_Link_Categories_Screen\">Documentation on Link Categories</a>"),
+        _ => tr("<a href=\"https://wordpress.org/documentation/article/posts-tags-screen/\">Documentation on Tags</a>"),
+    };
+    Some(Help { tabs, sidebar: format!("<p><strong>{}</strong></p><p>{documentation}</p><p>{}</p>", tr("For more information:"), tr("<a href=\"https://wordpress.org/support/forums/\">Support forums</a>")) })
 }
 
-fn screen_for(info: &TaxInfo, title: String, help: Help, file: &str) -> Screen {
+fn screen_for(info: &TaxInfo, title: String, help: Option<Help>, file: &str) -> Screen {
     let parent = match info.post_type.as_str() {
         "post" => "edit.php".to_owned(),
         other => format!("edit.php?post_type={other}"),
@@ -223,7 +260,7 @@ fn screen_for(info: &TaxInfo, title: String, help: Help, file: &str) -> Screen {
         other => format!("edit-tags.php?taxonomy={}&amp;post_type={other}", info.name),
     };
     let id = format!("edit-{}", info.name);
-    Screen { file: file.into(), parent_file: parent, submenu_file: Some(submenu), post_type: info.post_type.clone(), id, title, help: Some(help), ..Default::default() }
+    Screen { file: file.into(), parent_file: parent, submenu_file: Some(submenu), post_type: info.post_type.clone(), id, title, help, ..Default::default() }
 }
 
 /// `edit-tags.php`.
@@ -334,10 +371,9 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     let terms = ctx.env.db.terms(&info.name).await.unwrap_or_default();
     let hierarchical_view = info.hierarchical && request.get("orderby").is_none();
     let list = ordered(&terms, hierarchical_view, &orderby, desc, &search);
-    let per_page = {
-        let key = format!("{}edit_{}_per_page", ctx.env.db.table_prefix(), info.name);
-        ctx.env.db.user_meta(ctx.user.id, &key).await.ok().flatten().and_then(|v| v.parse::<u64>().ok()).filter(|v| *v >= 1).unwrap_or(20)
-    };
+    // `edit_{$taxonomy}_per_page`.
+    let per_page_option = format!("edit_{}_per_page", info.name);
+    let per_page = super::common::items_per_page(ctx, &per_page_option, 20).await;
     let paged = request.get("paged").and_then(|p| p.parse::<u64>().ok()).filter(|p| *p > 0).unwrap_or(1);
     let total = list.len() as u64;
     if let Some(response) = super::common::past_last_page(ctx, paged, total, per_page) {
@@ -365,13 +401,14 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         let r = row(ctx, &info, term, *level, *pad, &request.request_uri).await;
         rows.push_str(&if hierarchical_view { format!("	{r}") } else { r });
     }
-    let columns = vec![
+    let mut columns = vec![
         Column::new("cb", ""),
         Column::new("name", &tr("Name")).sortable("name", false, Some(&tr("Name")), Some("asc")),
         Column::new("description", &tr("Description")).sortable("description", false, Some(&tr("Description")), None),
         Column::new("slug", &tr("Slug")).sortable("slug", false, Some(&tr("Slug")), None),
         Column::new("posts", &tr("Count")).sortable("count", false, Some(&tr("Count")), None),
     ];
+    let screen_options = super::common::list_screen_options(ctx, &format!("edit-{}", info.name), &mut columns, (&per_page_option, per_page), None).await;
     let mut table = Table {
         site,
         plural: "tags".into(),
@@ -459,8 +496,9 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         }
     }
     h.push_str("</div><!-- /col-right -->\n\n</div><!-- /col-container -->\n\n</div><!-- /wrap -->\n\n<script>\ntry{document.forms.addtag['tag-name'].focus();}catch(e){}\n</script>\n\t\n");
-    h.push_str(&inline_edit(ctx, &info));
-    let screen = screen_for(&info, title, help(ctx, &info), "edit-tags.php");
+    h.push_str(&inline_edit(ctx, &info, table.columns.iter().filter(|c| !c.hidden).count()));
+    let mut screen = screen_for(&info, title, help(ctx, &info), "edit-tags.php");
+    screen.options = Some(screen_options);
     let assets = Assets { scripts: vec!["admin-tags".into(), "inline-edit-tax".into()], ..Default::default() };
     render(ctx, &screen, &h, &assets).await
 }
@@ -507,10 +545,10 @@ async fn add_form(ctx: &Ctx<'_>, info: &TaxInfo) -> String {
     h
 }
 
-fn inline_edit(ctx: &Ctx<'_>, info: &TaxInfo) -> String {
+fn inline_edit(ctx: &Ctx<'_>, info: &TaxInfo, column_count: usize) -> String {
     let tr = |s: &str| ctx.tr(s);
     format!(
-        "\t\t<form method=\"get\">\n\t\t<table style=\"display: none\"><tbody id=\"inlineedit\">\n\n\t\t\t<tr id=\"inline-edit\" class=\"inline-edit-row\" style=\"display: none\">\n\t\t\t<td colspan=\"5\" class=\"colspanchange\">\n\t\t\t<div class=\"inline-edit-wrapper\">\n\n\t\t\t<fieldset>\n\t\t\t\t<legend class=\"inline-edit-legend\">{quick}</legend>\n\t\t\t\t<div class=\"inline-edit-col\">\n\t\t\t\t<label>\n\t\t\t\t\t<span class=\"title\">{name}</span>\n\t\t\t\t\t<span class=\"input-text-wrap\"><input type=\"text\" name=\"name\" class=\"ptitle\" value=\"\" /></span>\n\t\t\t\t</label>\n\n\t\t\t\t<label>\n\t\t\t\t\t<span class=\"title\">{slug}</span>\n\t\t\t\t\t<span class=\"input-text-wrap\"><input type=\"text\" name=\"slug\" class=\"ptitle\" value=\"\" /></span>\n\t\t\t\t</label>\n\t\t\t\t</div>\n\t\t\t</fieldset>\n\n\t\t\t\n\t\t\t<div class=\"inline-edit-save submit\">\n\t\t\t\t<button type=\"button\" class=\"save button button-primary\">{update}</button>\n\t\t\t\t<button type=\"button\" class=\"cancel button\">{cancel}</button>\n\t\t\t\t<span class=\"spinner\"></span>\n\n\t\t\t\t<input type=\"hidden\" id=\"_inline_edit\" name=\"_inline_edit\" value=\"{nonce}\" />\t\t\t\t<input type=\"hidden\" name=\"taxonomy\" value=\"{tax}\" />\n\t\t\t\t<input type=\"hidden\" name=\"post_type\" value=\"{pt}\" />\n\n\t\t\t\t<div class=\"notice notice-error notice-alt inline hidden\"><p class=\"error\"></p></div>\t\t\t</div>\n\t\t\t</div>\n\n\t\t\t</td></tr>\n\n\t\t</tbody></table>\n\t\t</form>\n\t\t",
+        "\t\t<form method=\"get\">\n\t\t<table style=\"display: none\"><tbody id=\"inlineedit\">\n\n\t\t\t<tr id=\"inline-edit\" class=\"inline-edit-row\" style=\"display: none\">\n\t\t\t<td colspan=\"{column_count}\" class=\"colspanchange\">\n\t\t\t<div class=\"inline-edit-wrapper\">\n\n\t\t\t<fieldset>\n\t\t\t\t<legend class=\"inline-edit-legend\">{quick}</legend>\n\t\t\t\t<div class=\"inline-edit-col\">\n\t\t\t\t<label>\n\t\t\t\t\t<span class=\"title\">{name}</span>\n\t\t\t\t\t<span class=\"input-text-wrap\"><input type=\"text\" name=\"name\" class=\"ptitle\" value=\"\" /></span>\n\t\t\t\t</label>\n\n\t\t\t\t<label>\n\t\t\t\t\t<span class=\"title\">{slug}</span>\n\t\t\t\t\t<span class=\"input-text-wrap\"><input type=\"text\" name=\"slug\" class=\"ptitle\" value=\"\" /></span>\n\t\t\t\t</label>\n\t\t\t\t</div>\n\t\t\t</fieldset>\n\n\t\t\t\n\t\t\t<div class=\"inline-edit-save submit\">\n\t\t\t\t<button type=\"button\" class=\"save button button-primary\">{update}</button>\n\t\t\t\t<button type=\"button\" class=\"cancel button\">{cancel}</button>\n\t\t\t\t<span class=\"spinner\"></span>\n\n\t\t\t\t<input type=\"hidden\" id=\"_inline_edit\" name=\"_inline_edit\" value=\"{nonce}\" />\t\t\t\t<input type=\"hidden\" name=\"taxonomy\" value=\"{tax}\" />\n\t\t\t\t<input type=\"hidden\" name=\"post_type\" value=\"{pt}\" />\n\n\t\t\t\t<div class=\"notice notice-error notice-alt inline hidden\"><p class=\"error\"></p></div>\t\t\t</div>\n\t\t\t</div>\n\n\t\t\t</td></tr>\n\n\t\t</tbody></table>\n\t\t</form>\n\t\t",
         quick = tr("Quick Edit"),
         name = tr("Name"),
         slug = tr("Slug"),
@@ -611,7 +649,7 @@ pub async fn edit_page(ctx: &Ctx<'_>) -> AdminResponse {
     }
     h.push_str("\n</div>\n\n</form>\n</div>\n\n<script>\ntry{document.forms.edittag.name.focus();}catch(e){}\n</script>\n\t\n");
     let title = info.labels.edit_item.clone();
-    let mut screen = screen_for(&info, title, Help::default(), "term.php");
+    let mut screen = screen_for(&info, title, Some(Help::default()), "term.php");
     if let Ok(link) = site.term_link(&term).await {
         screen.view_item = Some((info.labels.view_item.clone(), link));
     }

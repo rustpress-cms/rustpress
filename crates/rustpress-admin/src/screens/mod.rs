@@ -117,6 +117,8 @@ pub struct AdminRequest {
     pub request_uri: String,
     pub remote_addr: Option<String>,
     pub user_agent: Option<String>,
+    /// `$_SERVER['HTTP_REFERER']`.
+    pub referer: Option<String>,
 }
 
 impl AdminRequest {
@@ -281,6 +283,10 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse
         return die(env, 500, "WordPress &rsaquo; Error", "<p>The user could not be loaded.</p>");
     };
     let ctx = Ctx { env, request, user, token: session.token.clone() };
+    // `admin.php` saves the Screen Options before any page runs.
+    if let Some(response) = common::set_screen_options(&ctx).await {
+        return response;
+    }
     // `user_can_access_admin_page()`: the pages of the menu are only for those the menu is for.
     if let Some(capabilities) = menu_capabilities(&request.file) {
         if !capabilities.iter().any(|capability| ctx.can(capability)) {

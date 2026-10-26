@@ -434,6 +434,15 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     };
     let mu_note_top = if must_use { format!("<div class=\"alignleft actions\"><p>{}</p></div>", rustpress_core::i18n::sprintf(&tr("Files in the %s directory are executed automatically."), &["<code>/wp-content/mu-plugins</code>"])) } else { String::new() };
     let mu_note_bottom = if must_use { "<div class=\"alignleft actions\"></div>".to_owned() } else { String::new() };
+    // Screen Options: the description and the automatic updates can be hidden, `plugins_per_page` defaults to 999.
+    let hidden = super::common::hidden_columns(ctx, "plugins").await;
+    let is_hidden = |column: &str| if hidden.iter().any(|h| h == column) { " hidden" } else { "" };
+    let mut option_columns = vec![("description".to_owned(), tr("Description"), !is_hidden("description").is_empty())];
+    if !must_use {
+        option_columns.push(("auto-updates".to_owned(), tr("Automatic Updates"), !is_hidden("auto-updates").is_empty()));
+    }
+    let screen_options = crate::chrome::ScreenOptions { columns: option_columns, per_page: Some(("plugins_per_page".into(), super::common::items_per_page(ctx, "plugins_per_page", 999).await)), ..Default::default() };
+    let rows = rows.replace("<td class='column-description desc'>", &format!("<td class='column-description desc{}'>", is_hidden("description"))).replace("<td class='column-auto-updates'>", &format!("<td class='column-auto-updates{}'>", is_hidden("auto-updates")));
     let checkbox_head = |id: &str, tfoot: bool| {
         if must_use {
             return format!("<td  {} class='manage-column column-cb check-column'  ></td>", if tfoot { String::new() } else { "id='cb'".to_owned() });
@@ -442,9 +451,9 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     };
     let heads = |tfoot: bool| {
         let id = |n: &str| if tfoot { " ".to_owned() } else { format!("id='{n}' ") };
-        let mut out = format!("<th scope=\"col\" {}class='manage-column column-name column-primary'  >{}</th><th scope=\"col\" {}class='manage-column column-description'  >{}</th>", id("name"), tr("Plugin"), id("description"), tr("Description"));
+        let mut out = format!("<th scope=\"col\" {}class='manage-column column-name column-primary'  >{}</th><th scope=\"col\" {}class='manage-column column-description{}'  >{}</th>", id("name"), tr("Plugin"), id("description"), is_hidden("description"), tr("Description"));
         if !must_use {
-            out.push_str(&format!("<th scope=\"col\" {}class='manage-column column-auto-updates'  >{}</th>", id("auto-updates"), tr("Automatic Updates")));
+            out.push_str(&format!("<th scope=\"col\" {}class='manage-column column-auto-updates{}'  >{}</th>", id("auto-updates"), is_hidden("auto-updates"), tr("Automatic Updates")));
         }
         out
     };
@@ -487,6 +496,6 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     let tail_at = baked.content.find("\t<span class=\"spinner\"></span>").unwrap_or(0);
     let tail = &baked.content[tail_at..];
     let content = format!("{heading}{views_html}\n{search_form}{table}\n{tail}");
-    let screen = Screen { file: "plugins.php".into(), parent_file: "plugins.php".into(), submenu_file: Some("plugins.php".into()), title: tr("Plugins"), help: Some(baked.help), ..Default::default() };
+    let screen = Screen { file: "plugins.php".into(), parent_file: "plugins.php".into(), submenu_file: Some("plugins.php".into()), title: tr("Plugins"), help: Some(baked.help), options: Some(screen_options), ..Default::default() };
     render(ctx, &screen, &content, &Assets { scripts: vec!["updates".into(), "plugin-install".into()], styles: vec!["thickbox".into()], ..Default::default() }).await
 }

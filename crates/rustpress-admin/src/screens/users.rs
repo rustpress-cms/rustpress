@@ -90,7 +90,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     let search = request.get("s").map(|s| s.trim().to_owned()).unwrap_or_default();
     let orderby = request.get("orderby").filter(|o| ["login", "email", "registered", "name"].contains(o)).unwrap_or("login").to_owned();
     let desc = request.get("order").is_some_and(|o| o.eq_ignore_ascii_case("desc"));
-    let per_page = db.user_meta(ctx.user.id, "users_per_page").await.ok().flatten().and_then(|v| v.parse::<u64>().ok()).filter(|v| *v >= 1).unwrap_or(20);
+    let per_page = super::common::items_per_page(ctx, "users_per_page", 20).await;
     let paged = request.get("paged").and_then(|p| p.parse::<u64>().ok()).filter(|p| *p > 0).unwrap_or(1);
     let query = UserListQuery {
         search: (!search.is_empty()).then(|| search.clone()),
@@ -162,7 +162,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     for user in &users {
         rows.push_str(&row(ctx, user, counts.iter().find(|(id, _)| *id == user.id).map_or(0, |(_, n)| *n), &role_count).await);
     }
-    let columns = vec![
+    let mut columns = vec![
         Column::new("cb", ""),
         Column::new("username", &tr("Username")).sortable("login", false, Some(&tr("Username")), Some("asc")),
         Column::new("name", &tr("Name")),
@@ -170,6 +170,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         Column::new("role", &tr("Role")),
         Column::new("posts", &tr("Posts")),
     ];
+    let screen_options = super::common::list_screen_options(ctx, "users", &mut columns, ("users_per_page", per_page), None).await;
     let mut bulk = Vec::new();
     if ctx.can("delete_users") {
         bulk.push(("delete".to_owned(), tr("Delete")));
@@ -249,15 +250,54 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         if role.is_empty() { "\t\t\n".to_owned() } else { format!("\t\t\t\t\t<input type=\"hidden\" name=\"role\" value=\"{}\" />\n", esc_attr(&role)) },
         table_html
     ));
-    let screen = Screen { file: "users.php".into(), parent_file: "users.php".into(), submenu_file: Some("users.php".into()), title, help: Some(help(ctx)), ..Default::default() };
+    let screen = Screen { file: "users.php".into(), parent_file: "users.php".into(), submenu_file: Some("users.php".into()), title, help: Some(help(ctx)), options: Some(screen_options), ..Default::default() };
     render(ctx, &screen, &h, &Assets::default()).await
 }
 
 fn help(ctx: &Ctx<'_>) -> Help {
     let tr = |s: &str| ctx.tr(s);
     Help {
-        tabs: vec![HelpTab { id: "overview".into(), title: tr("Overview"), content: format!("<p>{}</p>", tr("This table shows all users associated with this site.")) }],
-        sidebar: format!("<p><strong>{}</strong></p><p>{}</p>", tr("For more information:"), tr("<a href=\"https://wordpress.org/support/forums/\">Support forums</a>")),
+        tabs: vec![
+            HelpTab {
+                id: "overview".into(),
+                title: tr("Overview"),
+                content: format!(
+                    "<p>{}</p><p>{}</p>",
+                    tr("This screen lists all the existing users for your site. Each user has one of five defined roles as set by the site admin: Site Administrator, Editor, Author, Contributor, or Subscriber. Users with roles other than Administrator will see fewer options in the dashboard navigation when they are logged in, based on their role."),
+                    tr("To add a new user for your site, click the Add User button at the top of the screen or Add User in the Users menu section.")
+                ),
+            },
+            HelpTab {
+                id: "screen-content".into(),
+                title: tr("Screen Content"),
+                content: format!(
+                    "<p>{}</p><ul><li>{}</li><li>{}</li><li>{}</li></ul>",
+                    tr("You can customize the display of this screen in a number of ways:"),
+                    tr("You can hide/display columns based on your needs and decide how many users to list per screen using the Screen Options tab."),
+                    tr("You can filter the list of users by User Role using the text links above the users list to show All, Administrator, Editor, Author, Contributor, or Subscriber. The default view is to show all users. Unused User Roles are not listed."),
+                    tr("You can view all posts made by a user by clicking on the number under the Posts column.")
+                ),
+            },
+            HelpTab {
+                id: "action-links".into(),
+                title: tr("Available Actions"),
+                content: format!(
+                    "<p>{}</p><ul><li>{}</li><li>{}</li><li>{}</li>{}</ul>",
+                    tr("Hovering over a row in the users list will display action links that allow you to manage users. You can perform the following actions:"),
+                    tr("<strong>Edit</strong> takes you to the editable profile screen for that user. You can also reach that screen by clicking on the username."),
+                    tr("<strong>Delete</strong> brings you to the Delete Users screen for confirmation, where you can permanently remove a user from your site and delete their content. You can also delete multiple users at once by using bulk actions."),
+                    tr("<strong>View</strong> takes you to a public author archive which lists all the posts published by the user."),
+                    if ctx.can("edit_users") { format!("<li>{}</li>", tr("<strong>Send password reset</strong> sends the user an email with a link to set a new password.")) } else { String::new() }
+                ),
+            },
+        ],
+        sidebar: format!(
+            "<p><strong>{}</strong></p><p>{}</p><p>{}</p><p>{}</p>",
+            tr("For more information:"),
+            tr("<a href=\"https://wordpress.org/documentation/article/users-screen/\">Documentation on Managing Users</a>"),
+            tr("<a href=\"https://wordpress.org/documentation/article/roles-and-capabilities/\">Descriptions of Roles and Capabilities</a>"),
+            tr("<a href=\"https://wordpress.org/support/forums/\">Support forums</a>")
+        ),
     }
 }
 

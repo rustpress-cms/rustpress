@@ -264,6 +264,6 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     ));
 
     let baked = super::pages::load(ctx, "options-permalink");
-    let screen = Screen { file: "options-permalink.php".into(), parent_file: "options-general.php".into(), submenu_file: Some("options-permalink.php".into()), title: tr("Permalink Settings"), help: Some(baked.help), ..Default::default() };
+    let screen = Screen { file: "options-permalink.php".into(), content_inline: true, parent_file: "options-general.php".into(), submenu_file: Some("options-permalink.php".into()), title: tr("Permalink Settings"), help: Some(baked.help), ..Default::default() };
     render(ctx, &screen, &h, &Assets::default()).await
 }

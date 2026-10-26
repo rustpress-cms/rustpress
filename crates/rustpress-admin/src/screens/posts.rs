@@ -6,7 +6,7 @@ use rustpress_db::{OrderBy, Order, Post, PostQuery};
 
 use super::notices;
 use super::{AdminResponse, Ctx, redirect, render};
-use crate::chrome::{Assets, Screen};
+use crate::chrome::{Assets, Help, HelpTab, Screen};
 use crate::content::Content;
 use crate::list_table::{Column, Table, row_actions, submit_button, view_link, views};
 
@@ -338,10 +338,8 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     let month = request.get("m").and_then(|a| a.parse::<u32>().ok()).unwrap_or(0);
     let search = request.get("s").map(|s| s.trim().to_owned()).filter(|s| !s.is_empty());
     let paged = request.get("paged").and_then(|p| p.parse::<u64>().ok()).filter(|p| *p > 0).unwrap_or(1);
-    let per_page = {
-        let key = format!("{}edit_{}_per_page", db.table_prefix(), info.name);
-        db.user_meta(ctx.user.id, &key).await.ok().flatten().and_then(|v| v.parse::<u64>().ok()).filter(|v| *v >= 1).unwrap_or(20)
-    };
+    let per_page_option = format!("edit_{}_per_page", info.name);
+    let per_page = super::common::items_per_page(ctx, &per_page_option, 20).await;
 
     // Counts
     let counts = db.post_status_counts(&info.name).await.unwrap_or_default();
@@ -493,15 +491,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
             query.ids = vec![0];
         }
     }
-    // `$mode`: the view of `?mode=` is stored for the user (`set_user_setting( 'posts_list_mode' )`).
-    let mode = match request.request("mode").filter(|m| !m.is_empty()) {
-        Some(requested) => {
-            let mode = if requested == "excerpt" { "excerpt" } else { "list" };
-            super::common::set_user_setting(ctx, "posts_list_mode", mode).await;
-            mode.to_owned()
-        }
-        None => super::common::list_mode(ctx).await,
-    };
+    let mode = super::common::request_list_mode(ctx).await;
     let total_items = db.count_posts(&query).await.unwrap_or(0);
     if !hierarchical_display
         && let Some(response) = super::common::past_last_page(ctx, paged, total_items, per_page)
@@ -537,7 +527,8 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     }
 
     // The table
-    let columns = list_columns(ctx, &info, &status_param, &taxonomies);
+    let mut columns = list_columns(ctx, &info, &status_param, &taxonomies);
+    let screen_options = super::common::list_screen_options(ctx, &format!("edit-{}", info.name), &mut columns, (&per_page_option, per_page), Some(mode.clone())).await;
 
     let bulk_actions = {
         let mut list: Vec<(String, String)> = Vec::new();
@@ -578,7 +569,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         } else {
             tr("No posts found.")
         };
-        rows.push_str(&format!("<tr class=\"no-items\"><td class=\"colspanchange\" colspan=\"{}\">{not_found}</td></tr>", columns.len()));
+        rows.push_str(&format!("<tr class=\"no-items\"><td class=\"colspanchange\" colspan=\"{}\">{not_found}</td></tr>", columns.iter().filter(|c| !c.hidden).count()));
     }
     for (post, level) in posts.iter().zip(levels.iter()) {
         let row_env = RowEnv { info: &info, columns: &columns, status_param: &status_param, hierarchical_display, sticky: &sticky, taxonomies: &taxonomies, pending: &pending, authors: &authors, parents: &parents , mode: &mode };
@@ -687,7 +678,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     }
     let notice = result_notice(ctx, &info);
     // `if ( $wp_list_table->has_items() )`: an empty list has no Quick Edit.
-    let inline = if posts.is_empty() { String::new() } else { super::inline_edit::inline_edit(ctx, &info, posts.first(), columns.len(), &taxonomies, &mode).await };
+    let inline = if posts.is_empty() { String::new() } else { super::inline_edit::inline_edit(ctx, &info, posts.first(), columns.iter().filter(|c| !c.hidden).count(), &taxonomies, &mode).await };
     let content = format!(
         "<div class=\"wrap\">\n{heading}{notice}\n{}\n<form id=\"posts-filter\" method=\"get\">\n\n{search_box}{hidden_fields}\n\n\n{table_html}\n</form>\n\n\n{inline}<div id=\"ajax-response\"></div>\n<div class=\"clear\"></div>\n</div>\n\n",
         views(&filter_heading, &links)
@@ -700,7 +691,9 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         submenu_file: Some(edit_base),
         post_type: info.name.clone(),
         title: info.label.clone(),
-        help: None,
+        help: list_help(ctx, &info),
+        options: Some(screen_options),
+        content_inline: true,
         view_item: archive_item.clone(),
         view_archive: archive_item.is_some(),
         ..Default::default()
@@ -1140,5 +1133,50 @@ async fn list_excerpt(ctx: &Ctx<'_>, post: &Post) -> String {
         format!("<span class=\"protected-post-excerpt\">{}</span>", esc_html(&excerpt))
     } else {
         esc_html(&excerpt)
+    }
+}
+
+/// The help of the posts and pages lists (`edit.php`); other post types have none.
+fn list_help(ctx: &Ctx<'_>, info: &TypeInfo) -> Option<Help> {
+    let tr = |s: &str| ctx.tr(s);
+    let li = |items: &[&str]| format!("<ul>{}</ul>", items.iter().map(|s| format!("<li>{}</li>", tr(s))).collect::<String>());
+    let tab = |id: &str, title: &str, content: String| HelpTab { id: id.into(), title: tr(title), content };
+    let sidebar = |documentation: &str| format!("<p><strong>{}</strong></p><p>{}</p><p>{}</p>", tr("For more information:"), tr(documentation), tr("<a href=\"https://wordpress.org/support/forums/\">Support forums</a>"));
+    match info.name.as_str() {
+        "post" => Some(Help {
+            tabs: vec![
+                tab("overview", "Overview", format!("<p>{}</p>", tr("This screen provides access to all of your posts. You can customize the display of this screen to suit your workflow."))),
+                tab("screen-content", "Screen Content", format!("<p>{}</p>{}", tr("You can customize the display of this screen&#8217;s contents in a number of ways:"), li(&[
+                    "You can hide/display columns based on your needs and decide how many posts to list per screen using the Screen Options tab.",
+                    "You can filter the list of posts by post status using the text links above the posts list to only show posts with that status. The default view is to show all posts.",
+                    "You can view posts in a simple title list or with an excerpt using the Screen Options tab.",
+                    "You can refine the list to show only posts in a specific category or from a specific month by using the dropdown menus above the posts list. Click the Filter button after making your selection. You also can refine the list by clicking on the post author, category or tag in the posts list.",
+                ]))),
+                tab("action-links", "Available Actions", format!("<p>{}</p>{}", tr("Hovering over a row in the posts list will display action links that allow you to manage your post. You can perform the following actions:"), li(&[
+                    "<strong>Edit</strong> takes you to the editing screen for that post. You can also reach that screen by clicking on the post title.",
+                    "<strong>Quick Edit</strong> provides inline access to the metadata of your post, allowing you to update post details without leaving this screen.",
+                    "<strong>Trash</strong> removes your post from this list and places it in the Trash, from which you can permanently delete it.",
+                    "<strong>Preview</strong> will show you what your draft post will look like if you publish it. View will take you to your live site to view the post. Which link is available depends on your post&#8217;s status.",
+                ]))),
+                tab("bulk-actions", "Bulk actions", format!(
+                    "<p>{}</p><p>{}</p>",
+                    tr("You can also edit or move multiple posts to the Trash at once. Select the posts you want to act on using the checkboxes, then select the action you want to take from the Bulk actions menu and click Apply."),
+                    rustpress_core::i18n::sprintf(&tr("When using Bulk Edit, you can change the metadata (categories, author, etc.) for all selected posts at once. To remove a post from the grouping, just click the %s button next to its name in the Bulk Edit area that appears."), &[&format!("<span class=\"dashicons dashicons-dismiss\" aria-hidden=\"true\" style=\"font-size: 16px; width: 16px; vertical-align: middle;\"></span><span class=\"screen-reader-text\">{}</span>", tr("remove"))])
+                )),
+            ],
+            sidebar: sidebar("<a href=\"https://wordpress.org/documentation/article/posts-screen/\">Documentation on Managing Posts</a>"),
+        }),
+        "page" => Some(Help {
+            tabs: vec![
+                tab("overview", "Overview", format!("<p>{}</p>", tr("Pages are similar to posts in that they have a title, body text, and associated metadata, but they are different in that they are not part of the chronological blog stream, kind of like permanent posts. Pages are not categorized or tagged, but can have a hierarchy. You can nest pages under other pages by making one the &#8220;Parent&#8221; of the other, creating a group of pages."))),
+                tab("managing-pages", "Managing Pages", format!(
+                    "<p>{}</p><p>{}</p>",
+                    tr("Managing pages is very similar to managing posts, and the screens can be customized in the same way."),
+                    tr("You can also perform the same types of actions, including narrowing the list by using the filters, acting on a page using the action links that appear when you hover over a row, or using the Bulk actions menu to edit the metadata for multiple pages at once.")
+                )),
+            ],
+            sidebar: sidebar("<a href=\"https://wordpress.org/documentation/article/pages-screen/\">Documentation on Managing Pages</a>"),
+        }),
+        _ => None,
     }
 }

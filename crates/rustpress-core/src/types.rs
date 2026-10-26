@@ -341,6 +341,16 @@ impl Types {
         self.taxonomies.iter().find(|t| t.name == name)
     }
 
+    /// `in_array( $name, get_post_types() )`: a built-in, internal or registered post type.
+    pub fn is_post_type(&self, name: &str) -> bool {
+        BUILT_IN_POST_TYPES.contains(&name) || is_internal_post_type(name) || self.post_type(name).is_some()
+    }
+
+    /// `in_array( $name, get_taxonomies() )`: a built-in or registered taxonomy.
+    pub fn is_taxonomy(&self, name: &str) -> bool {
+        BUILT_IN_TAXONOMIES.contains(&name) || matches!(name, "wp_template_part_area" | "wp_pattern_category") || self.taxonomy(name).is_some()
+    }
+
     /// `get_post_types( [ 'public' => true ] )`: the built-in public types, then the custom ones.
     pub fn public_post_types(&self) -> Vec<&str> {
         let mut all: Vec<&str> = BUILT_IN_POST_TYPES.to_vec();

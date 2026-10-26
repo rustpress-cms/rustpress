@@ -291,6 +291,6 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         format!("{}\n", baked.content.trim_end_matches('\n'))
     };
     let assets = Assets { scripts: vec!["site-health".into()], styles: vec!["site-health".into()], localize: vec![("site-health".into(), "SiteHealth".into(), data)], ..Default::default() };
-    let screen = Screen { file: "site-health.php".into(), parent_file: "tools.php".into(), submenu_file: Some("site-health.php".into()), title: sprintf(&tr("Site Health - %s"), &[&if ctx.request.get("tab") == Some("debug") { tr("Info") } else { tr("Status") }]), help: Some(baked.help), early_classes: vec!["site-health".into()], ..Default::default() };
+    let screen = Screen { file: "site-health.php".into(), content_inline: true, parent_file: "tools.php".into(), submenu_file: Some("site-health.php".into()), title: sprintf(&tr("Site Health - %s"), &[&if ctx.request.get("tab") == Some("debug") { tr("Info") } else { tr("Status") }]), help: Some(baked.help), early_classes: vec!["site-health".into()], ..Default::default() };
     render(ctx, &screen, &content, &assets).await
 }

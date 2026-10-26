@@ -14,6 +14,12 @@ fn help(ctx: &Ctx<'_>, overview: &str, docs: &str) -> Help {
     }
 }
 
+/// `add_help_tab()` after the overview.
+fn with_tab(mut help: Help, id: &str, title: String, content: String) -> Help {
+    help.tabs.push(HelpTab { id: id.into(), title, content });
+    help
+}
+
 async fn finish(ctx: &Ctx<'_>, file: &str, title: String, body: String, help: Help, assets: Assets) -> AdminResponse {
     let screen = Screen { file: file.into(), parent_file: "options-general.php".into(), submenu_file: Some(file.into()), title, help: Some(help), ..Default::default() };
     render(ctx, &screen, &body, &assets).await
@@ -85,7 +91,17 @@ pub async fn writing(ctx: &Ctx<'_>) -> AdminResponse {
     h.push_str(&submit(ctx));
     h.push_str("</form>\n</div>\n");
     let overview = format!("<p>{}</p><p>{}</p>", tr("You can submit content in several different ways; this screen holds the settings for all of them. The top section controls the editor within the dashboard, while the rest control external publishing methods. For more information on any of these methods, use the documentation links."), tr("You must click the Save Changes button at the bottom of the screen for new settings to take effect."));
-    finish(ctx, "options-writing.php", title, h, help(ctx, &overview, &tr("<a href=\"https://wordpress.org/documentation/article/settings-writing-screen/\">Documentation on Writing Settings</a>")), Assets { scripts: vec!["user-profile".into()], ..Default::default() }).await
+    finish(ctx, "options-writing.php", title, h, with_tab(
+            with_tab(
+                help(ctx, &overview, &tr("<a href=\"https://wordpress.org/documentation/article/settings-writing-screen/\">Documentation on Writing Settings</a>")),
+                "options-postemail",
+                tr("Post Via Email"),
+                format!("<p>{}</p>", tr("Post via email settings allow you to send your WordPress installation an email with the content of your post. You must set up a secret email account with POP3 access to use this, and any mail received at this address will be posted, so it&#8217;s a good idea to keep this address very secret.")),
+            ),
+            "options-services",
+            tr("Update Services"),
+            format!("<p>{}</p>", tr("If desired, WordPress will automatically alert various services of your new posts.")),
+        ), Assets { scripts: vec!["user-profile".into()], ..Default::default() }).await
 }
 
 fn random_string(len: usize) -> String {
@@ -166,13 +182,29 @@ pub async fn reading(ctx: &Ctx<'_>) -> AdminResponse {
     ));
     h.push_str(&submit(ctx));
     h.push_str("</form>\n</div>\n");
-    let overview = format!("<p>{}</p><p>{}</p>", tr("This screen contains the settings that affect the display of your content."), tr("You must click the Save Changes button at the bottom of the screen for new settings to take effect."));
+    let overview = format!(
+        "<p>{}</p><p>{}</p><p>{}</p><p>{}</p>",
+        tr("This screen contains the settings that affect the display of your content."),
+        sprintf(&tr("You can choose what&#8217;s displayed on the homepage of your site. It can be posts in reverse chronological order (classic blog), or a fixed/static page. To set a static homepage, you first need to create two <a href=\"%s\">Pages</a>. One will become the homepage, and the other will be where your posts are displayed."), &["post-new.php?post_type=page"]),
+        sprintf(&tr("You can also control the display of your content in RSS feeds, including the maximum number of posts to display and whether to show full text or an excerpt. <a href=\"%s\">Learn more about feeds</a>."), &[&tr("https://developer.wordpress.org/advanced-administration/wordpress/feeds/")]),
+        tr("You must click the Save Changes button at the bottom of the screen for new settings to take effect.")
+    );
     let assets = Assets {
         head: "<script>\n\tjQuery( function($) {\n\t\tvar section = $('#front-static-pages'),\n\t\t\tstaticPage = section.find('input:radio[value=\"page\"]'),\n\t\t\tselects = section.find('select'),\n\t\t\tcheck_disabled = function(){\n\t\t\t\tselects.prop( 'disabled', ! staticPage.prop('checked') );\n\t\t\t};\n\t\tcheck_disabled();\n\t\tsection.find( 'input:radio' ).on( 'change', check_disabled );\n\t} );\n</script>\n".into(),
         footer: "<script>\n\tjQuery( function($) {\n\t\tvar $showOnFront = $( 'input[name=\"show_on_front\"]' ),\n\t\t\t$pageSelects = $( '#page_on_front, #page_for_posts' );\n\t\t$showOnFront.on( 'change', function() {\n\t\t\t$pageSelects.prop( 'disabled', 'page' !== $showOnFront.filter( ':checked' ).val() );\n\t\t}).trigger( 'change' );\n\t});\n</script>\n".into(),
         ..Default::default()
     };
-    finish(ctx, "options-reading.php", title, h, help(ctx, &overview, &tr("<a href=\"https://wordpress.org/documentation/article/settings-reading-screen/\">Documentation on Reading Settings</a>")), assets).await
+    finish(ctx, "options-reading.php", title, h, with_tab(
+            help(ctx, &overview, &tr("<a href=\"https://wordpress.org/documentation/article/settings-reading-screen/\">Documentation on Reading Settings</a>")),
+            "site-visibility",
+            tr("Search engine visibility"),
+            format!(
+                "<p>{}</p><p>{}</p><p>{}</p>",
+                tr("You can choose whether or not your site will be crawled by robots, ping services, and spiders. If you want those services to ignore your site, click the checkbox next to &#8220;Discourage search engines from indexing this site&#8221; and click the Save Changes button at the bottom of the screen."),
+                tr("Note that even when set to discourage search engines, your site is still visible on the web and not all search engines adhere to this directive."),
+                tr("When this setting is in effect, a reminder is shown in the At a Glance box of the Dashboard that says, &#8220;Search engines discouraged&#8221;, to remind you that you have directed search engines to not crawl your site.")
+            )
+        ), assets).await
 }
 
 fn avatar_choice(ctx: &Ctx<'_>, key: &str, label: &str, current: &str) -> String {
@@ -352,7 +384,7 @@ pub async fn discussion(ctx: &Ctx<'_>) -> AdminResponse {
     ));
     h.push_str(&submit(ctx));
     h.push_str("</form>\n</div>\n");
-    let overview = format!("<p>{}</p><p>{}</p>", tr("Discussion Settings control the default settings for comments, comment moderation, and avatars."), tr("You must click the Save Changes button at the bottom of the screen for new settings to take effect."));
+    let overview = format!("<p>{}</p><p>{}</p>", tr("This screen provides many options for controlling the management and display of comments and links to your posts/pages. So many, in fact, they will not all fit here! :) Use the documentation links to get information on what each discussion setting does."), tr("You must click the Save Changes button at the bottom of the screen for new settings to take effect."));
     finish(ctx, "options-discussion.php", title, h, help(ctx, &overview, &tr("<a href=\"https://wordpress.org/documentation/article/settings-discussion-screen/\">Documentation on Discussion Settings</a>")), Assets::default()).await
 }
 
@@ -392,7 +424,15 @@ pub async fn media(ctx: &Ctx<'_>) -> AdminResponse {
     ));
     h.push_str(&submit(ctx));
     h.push_str("\n</form>\n\n</div>\n");
-    let overview = format!("<p>{}</p><p>{}</p><p>{}</p>", tr("You can set maximum sizes for images inserted into your written content; these are used as a starting point when you add images. Image sizes and the crop setting apply to new uploads."), tr("Thumbnail, medium and large are the sizes WordPress generates for every image you upload."), tr("You must click the Save Changes button at the bottom of the screen for new settings to take effect."));
+    // The paths of the uploads only show where they were changed (`upload_url_path`, `upload_path`).
+    let options = &ctx.site().options;
+    let upload_path = options.string("upload_path", "");
+    let custom_uploads = !options.string("upload_url_path", "").is_empty() || (!upload_path.is_empty() && upload_path != "wp-content/uploads");
+    let mut overview = format!("<p>{}</p>", tr("You can set maximum sizes for images inserted into your written content; you can also insert an image as Full Size."));
+    if custom_uploads {
+        overview.push_str(&format!("<p>{}</p>", tr("Uploading Files allows you to choose the folder and path for storing your uploaded files.")));
+    }
+    overview.push_str(&format!("<p>{}</p>", tr("You must click the Save Changes button at the bottom of the screen for new settings to take effect.")));
     let _ = esc_attr("");
     finish(ctx, "options-media.php", title, h, help(ctx, &overview, &tr("<a href=\"https://wordpress.org/documentation/article/settings-media-screen/\">Documentation on Media Settings</a>")), Assets::default()).await
 }

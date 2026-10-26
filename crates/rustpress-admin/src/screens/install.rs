@@ -70,7 +70,7 @@ pub async fn plugin_install(ctx: &Ctx<'_>) -> AdminResponse {
         content = format!("{browse}{tail}");
     }
     let content = content.replace("{{site}}", ctx.site().settings.siteurl.trim_end_matches('/'));
-    let screen = Screen { file: "plugin-install.php".into(), parent_file: "plugins.php".into(), submenu_file: Some("plugin-install.php".into()), title: tr("Add Plugins"), help: Some(baked.help), ..Default::default() };
+    let screen = Screen { file: "plugin-install.php".into(), content_inline: true, parent_file: "plugins.php".into(), submenu_file: Some("plugin-install.php".into()), title: tr("Add Plugins"), help: Some(baked.help), ..Default::default() };
     render(ctx, &screen, &content, &Assets { scripts: vec!["plugin-install".into(), "updates".into()], styles: vec!["thickbox".into()], ..Default::default() }).await
 }
 
@@ -84,7 +84,7 @@ pub async fn theme_install(ctx: &Ctx<'_>) -> AdminResponse {
     let content = fresh_nonces(ctx, &baked.content, &[("111475f3f0", "theme-upload".to_owned()), ("5381e0bb1b", format!("save_wporg_username_{}", ctx.user.id))])
         .replace("value=\"/wp-admin/theme-install.php?tab=upload\"", &format!("value=\"{}\"", esc_attr(&ctx.request.request_uri)))
         .replace("{{site}}", ctx.site().settings.siteurl.trim_end_matches('/'));
-    let screen = Screen { file: "theme-install.php".into(), parent_file: "themes.php".into(), submenu_file: Some("themes.php".into()), title: tr("Add Themes"), help: Some(baked.help), ..Default::default() };
+    let screen = Screen { file: "theme-install.php".into(), content_inline: true, parent_file: "themes.php".into(), submenu_file: Some("themes.php".into()), title: tr("Add Themes"), help: Some(baked.help), ..Default::default() };
     let installed: Vec<String> = wp_root(ctx).map(|root| themes::installed(&root).into_iter().map(|t| t.stylesheet).collect()).unwrap_or_default();
     let settings = serde_json::json!({
         "themes": "",

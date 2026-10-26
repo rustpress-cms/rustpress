@@ -147,14 +147,7 @@ fn nonce_ays(ctx: &Ctx<'_>) -> AdminResponse {
 
 /// `wp_get_referer()`: the page the form came from.
 fn referer(ctx: &Ctx<'_>) -> Option<String> {
-    let value = ctx.request.request("_wp_http_referer").filter(|r| !r.is_empty())?;
-    // A path on this site, or an address on it.
-    if value.starts_with('/') && !value.starts_with("//") {
-        return Some(value.to_owned());
-    }
-    let site = &ctx.site().settings.siteurl;
-    let host = |url: &str| url.split_once("://").map(|(_, rest)| rest.split('/').next().unwrap_or_default().to_owned());
-    (host(value) == host(site)).then(|| value.to_owned())
+    super::common::wp_get_referer(ctx)
 }
 
 /// `add_query_arg( 'settings-updated', 'true', $url )`.

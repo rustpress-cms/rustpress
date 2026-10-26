@@ -9,7 +9,7 @@ use rustpress_core::i18n::sprintf;
 use rustpress_db::{Comment, CommentListQuery, Order, OrderBy, Post, PostQuery};
 
 use super::{AdminResponse, Ctx, render};
-use crate::chrome::{Assets, Screen};
+use crate::chrome::{Assets, Help, HelpTab, Screen};
 
 /// `Theme Name:` of the active theme's `style.css`.
 fn theme_name(ctx: &Ctx<'_>) -> String {
@@ -52,15 +52,8 @@ struct Widget {
 fn postbox(ctx: &Ctx<'_>, widget: &Widget, closed: bool, hidden: bool, body: &str) -> String {
     let tr = |s: &str| ctx.tr(s);
     let id = widget.id;
-    let mut classes = String::from("postbox ");
-    if closed {
-        classes.push_str("closed ");
-    }
-    if hidden {
-        classes.push_str("hide-if-js");
-    }
-    let classes = classes.trim_end_matches(' ').to_owned();
-    let classes = if classes == "postbox" { "postbox ".to_owned() } else { classes };
+    // `'postbox ' . postbox_classes() . $hidden_class`
+    let classes = format!("postbox {}{}", if closed { "closed" } else { "" }, if hidden { " hide-if-js" } else { "" });
     let tooltip = |class: &str, label: &str, extra: &str, indicator: &str, bubble: &str| {
         format!(
             "<span class=\"wp-tooltip wp-is-tooltip\">\n\t\t\t\t<button aria-label=\"{label}\" type=\"button\" class=\"{class} wp-tooltip__toggle\"{extra} aria-describedby=\"{id}-title\">\n\t\t\t\t\t\t\t<span class=\"screen-reader-text\">{label}</span>\n\t\t\t\t\t\t\t<span class=\"{indicator}\" aria-hidden=\"true\"></span>\n\t\t\t\t\t\t</button>\n\t\t\t\t<span popover=\"hint\" id=\"{id}-{bubble}\" class=\"wp-tooltip__bubble\" role=\"tooltip\"><span id=\"{id}-{bubble}-text\" class=\"wp-tooltip__text\">{label}</span></span></span>"
@@ -537,8 +530,82 @@ async fn welcome_panel(ctx: &Ctx<'_>) -> String {
         .replace("Learn more about the %s version.", &sprintf(&tr("Learn more about the %s version."), &[&esc_html(&version)]));
     let option: i64 = ctx.env.db.user_meta(ctx.user.id, "show_welcome_panel").await.ok().flatten().and_then(|v| v.parse().ok()).unwrap_or(0);
     let admin_email = ctx.site().options.string("admin_email", "");
-    let hide = option == 0 || (option == 2 && ctx.user.email != admin_email);
+    let hide = !welcome_shown(ctx, option);
     format!("\t<div id=\"welcome-panel\" class=\"welcome-panel{}\">\n{body}", if hide { " hidden" } else { "" })
+}
+
+/// Whether the welcome panel shows: `show_welcome_panel` is 0 to hide it, 2 shows it only to the user with the
+/// site's admin email.
+fn welcome_shown(ctx: &Ctx<'_>, option: i64) -> bool {
+    let admin_email = ctx.site().options.string("admin_email", "");
+    !(option == 0 || (option == 2 && ctx.user.email != admin_email))
+}
+
+/// The help of the dashboard (`index.php`).
+fn help(ctx: &Ctx<'_>) -> Help {
+    let tr = |s: &str| ctx.tr(s);
+    let p = |s: &str| format!("<p>{}</p>", tr(s));
+    let mut content = p("The boxes on your Dashboard screen are:");
+    if ctx.can("edit_theme_options") {
+        content.push_str(&p("<strong>Welcome</strong> &mdash; Shows links for some of the most common tasks when setting up a new site."));
+    }
+    if ctx.can("view_site_health_checks") {
+        content.push_str(&p("<strong>Site Health Status</strong> &mdash; Informs you of any potential issues that should be addressed to improve the performance or security of your website."));
+    }
+    if ctx.can("edit_posts") {
+        content.push_str(&p("<strong>At a Glance</strong> &mdash; Displays a summary of the content on your site and identifies which theme and version of WordPress you are using."));
+    }
+    content.push_str(&p("<strong>Activity</strong> &mdash; Shows the upcoming scheduled posts, recently published posts, and the most recent comments on your posts and allows you to moderate them."));
+    if ctx.can("edit_posts") {
+        content.push_str(&p("<strong>Quick Draft</strong> &mdash; Allows you to create a new post and save it as a draft. Also displays links to the 3 most recent draft posts you've started."));
+    }
+    content.push_str(&format!(
+        "<p>{}</p>",
+        sprintf(&tr("<strong>WordPress Events and News</strong> &mdash; Upcoming events near you as well as the latest news from the official WordPress project and the <a href=\"%s\">WordPress Planet</a>."), &[&tr("https://planet.wordpress.org/")])
+    ));
+    // The version links to its notes unless it is a development version.
+    let version = &ctx.env.loader.version;
+    let mut version_text = sprintf(&tr("Version %s"), &[version]);
+    if !["alpha", "beta", "RC"].iter().any(|v| version.contains(v)) {
+        let url = sprintf(&rustpress_core::formatting::esc_url(&tr("https://wordpress.org/documentation/wordpress-version/version-%s/")), &[&rustpress_core::slug::sanitize_title(version)]);
+        version_text = format!("<a href=\"{url}\">{version_text}</a>");
+    }
+    Help {
+        tabs: vec![
+            HelpTab {
+                id: "overview".into(),
+                title: tr("Overview"),
+                content: format!("{}{}", p("Welcome to your WordPress Dashboard!"), p("The Dashboard is the first place you will come to every time you log into your site. It is where you will find all your WordPress tools. If you need help, just click the &#8220;Help&#8221; tab above the screen title.")),
+            },
+            HelpTab {
+                id: "help-navigation".into(),
+                title: tr("Navigation"),
+                content: format!(
+                    "{}{}",
+                    p("The left-hand navigation menu provides links to all of the WordPress administration screens, with submenu items displayed on hover. You can minimize this menu to a narrow icon strip by clicking on the Collapse Menu arrow at the bottom."),
+                    p("Links in the Toolbar at the top of the screen connect your dashboard and the front end of your site, and provide access to your profile and helpful WordPress information.")
+                ),
+            },
+            HelpTab {
+                id: "help-layout".into(),
+                title: tr("Layout"),
+                content: format!(
+                    "{}{}{}{}",
+                    p("You can use the following controls to arrange your Dashboard screen to suit your workflow. This is true on most other administration screens as well."),
+                    p("<strong>Screen Options</strong> &mdash; Use the Screen Options tab to choose which Dashboard boxes to show."),
+                    p("<strong>Drag and Drop</strong> &mdash; To rearrange the boxes, drag and drop by clicking on the title bar of the selected box and releasing when you see a gray dotted-line rectangle appear in the location you want to place the box."),
+                    p("<strong>Box Controls</strong> &mdash; Click the title bar of the box to expand or collapse it. Some boxes added by plugins may have configurable content, and will show a &#8220;Configure&#8221; link in the title bar if you hover over it.")
+                ),
+            },
+            HelpTab { id: "help-content".into(), title: tr("Content"), content },
+        ],
+        sidebar: format!(
+            "<p><strong>{}</strong></p><p>{}</p><p>{}</p><p>{version_text}</p>",
+            tr("For more information:"),
+            tr("<a href=\"https://wordpress.org/documentation/article/dashboard-screen/\">Documentation on Dashboard</a>"),
+            tr("<a href=\"https://wordpress.org/support/forums/\">Support forums</a>")
+        ),
+    }
 }
 
 /// The meta of a screen: closed and hidden boxes and their order.
@@ -629,7 +696,14 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         ctx.create_nonce("meta-box-order"),
         events_templates(ctx)
     );
-    let screen = Screen { file: "index.php".into(), parent_file: "index.php".into(), submenu_file: Some("index.php".into()), title, ..Default::default() };
+    // Screen Options: the boxes in the order they were added, and the welcome panel.
+    let welcome_option: i64 = ctx.env.db.user_meta(ctx.user.id, "show_welcome_panel").await.ok().flatten().and_then(|v| v.trim().parse().ok()).unwrap_or(0);
+    let options = crate::chrome::ScreenOptions {
+        meta_boxes: Some(widgets.iter().map(|w| (w.id.to_owned(), w.title.clone(), hidden.iter().any(|h| h == w.id))).collect()),
+        welcome: ctx.can("edit_theme_options").then(|| welcome_shown(ctx, welcome_option)),
+        ..Default::default()
+    };
+    let screen = Screen { file: "index.php".into(), parent_file: "index.php".into(), submenu_file: Some("index.php".into()), title, help: Some(help(ctx)), options: Some(options), ..Default::default() };
     let list_args = "<script>list_args = {\"class\":\"WP_Comments_List_Table\",\"screen\":{\"id\":\"dashboard\",\"base\":\"dashboard\"}};</script>\n";
     let mut scripts = Vec::new();
     let mut styles = vec!["thickbox".to_owned()];

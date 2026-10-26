@@ -455,11 +455,76 @@ async fn form_on(ctx: &Ctx<'_>, user: &User, own: bool, errors: &[String], file:
     render(ctx, &screen, &h, &Assets { scripts, ..Default::default() }).await
 }
 
+/// The help of `profile.php` and `user-edit.php`.
 fn help(ctx: &Ctx<'_>) -> Help {
     let tr = |s: &str| ctx.tr(s);
+    let overview: String = [
+        "Your profile contains information about you (your &#8220;account&#8221;) as well as some personal options related to using WordPress.",
+        "You can change your password, turn on keyboard shortcuts, change the color scheme of your WordPress administration screens, and turn off the WYSIWYG (Visual) editor, among other things. You can hide the Toolbar (formerly called the Admin Bar) from the front end of your site, however it cannot be disabled on the admin screens.",
+        "You can select the language you wish to use while using the WordPress administration screen without affecting the language site visitors see.",
+        "Your username cannot be changed, but you can use other fields to enter your real name or a nickname, and change which name to display on your posts.",
+        "You can log out of other devices, such as your phone or a public computer, by clicking the Log Out Everywhere Else button.",
+        "Required fields are indicated; the rest are optional. Profile information will only be displayed if your theme is set up to do so.",
+        "Remember to click the Update Profile button when you are finished.",
+    ]
+    .iter()
+    .map(|p| format!("<p>{}</p>", tr(p)))
+    .collect();
     Help {
-        tabs: vec![HelpTab { id: "overview".into(), title: tr("Overview"), content: format!("<p>{}</p>", tr("Your profile contains information about you (your &#8220;account&#8221;) as well as some personal options related to using WordPress.")) }],
-        sidebar: format!("<p><strong>{}</strong></p><p>{}</p>", tr("For more information:"), tr("<a href=\"https://wordpress.org/support/forums/\">Support forums</a>")),
+        tabs: vec![HelpTab { id: "overview".into(), title: tr("Overview"), content: overview }],
+        sidebar: format!(
+            "<p><strong>{}</strong></p><p>{}</p><p>{}</p>",
+            tr("For more information:"),
+            tr("<a href=\"https://wordpress.org/documentation/article/users-your-profile-screen/\">Documentation on User Profiles</a>"),
+            tr("<a href=\"https://wordpress.org/support/forums/\">Support forums</a>")
+        ),
+    }
+}
+
+/// The help of `user-new.php`.
+fn new_help(ctx: &Ctx<'_>) -> Help {
+    let tr = |s: &str| ctx.tr(s);
+    let p = |s: &str| format!("<p>{}</p>", tr(s));
+    Help {
+        tabs: vec![
+            HelpTab {
+                id: "overview".into(),
+                title: tr("Overview"),
+                content: [
+                    "To add a new user to your site, fill in the form on this screen and click the Add User button at the bottom.",
+                    "New users are automatically assigned a password, which they can change after logging in. You can view or edit the assigned password by clicking the Show Password button. The username cannot be changed once the user has been added.",
+                    "By default, new users will receive an email letting them know they&#8217;ve been added as a user for your site. This email will also contain a password reset link. Uncheck the box if you do not want to send the new user a welcome email.",
+                    "Remember to click the Add User button at the bottom of this screen when you are finished.",
+                ]
+                .iter()
+                .map(|s| p(s))
+                .collect(),
+            },
+            HelpTab {
+                id: "user-roles".into(),
+                title: tr("User Roles"),
+                content: format!(
+                    "{}<ul>{}</ul>",
+                    p("Here is a basic overview of the different user roles and the permissions associated with each one:"),
+                    [
+                        "Subscribers can read comments/comment/receive newsletters, etc. but cannot create regular site content.",
+                        "Contributors can write and manage their posts but not publish posts or upload media files.",
+                        "Authors can publish and manage their own posts, and are able to upload files.",
+                        "Editors can publish posts, manage posts as well as manage other people&#8217;s posts, etc.",
+                        "Administrators have access to all the administration features.",
+                    ]
+                    .iter()
+                    .map(|s| format!("<li>{}</li>", tr(s)))
+                    .collect::<String>()
+                ),
+            },
+        ],
+        sidebar: format!(
+            "<p><strong>{}</strong></p><p>{}</p><p>{}</p>",
+            tr("For more information:"),
+            tr("<a href=\"https://wordpress.org/documentation/article/users-add-new-screen/\">Documentation on Adding New Users</a>"),
+            tr("<a href=\"https://wordpress.org/support/forums/\">Support forums</a>")
+        ),
     }
 }
 
@@ -778,6 +843,6 @@ pub async fn user_new(ctx: &Ctx<'_>) -> AdminResponse {
     ));
     h.push_str(&format!("\t\t\t<tr class=\"form-field\">\n\t\t<th scope=\"row\"><label for=\"role\">{}</label></th>\n\t\t<td><select name=\"role\" id=\"role\">\n\t\t\t{}\t\t\t</select>\n\t\t</td>\n\t</tr>\n", tr("Role"), role_options(&names, ctx, &default_role)));
     h.push_str(&format!("\t\t</table>\n\n\t\n\t<p class=\"submit\"><input type=\"submit\" name=\"createuser\" id=\"createusersub\" class=\"button button-primary\" value=\"{}\"  /></p>\n</form>\n</div>\n\n", esc_attr(&tr("Add User"))));
-    let screen = Screen { file: "user-new.php".into(), parent_file: "users.php".into(), submenu_file: Some("user-new.php".into()), title: tr("Add User"), help: Some(help(ctx)), ..Default::default() };
+    let screen = Screen { file: "user-new.php".into(), parent_file: "users.php".into(), submenu_file: Some("user-new.php".into()), title: tr("Add User"), help: Some(new_help(ctx)), ..Default::default() };
     render(ctx, &screen, &h, &Assets { scripts: vec!["wp-ajax-response".into(), "user-profile".into()], ..Default::default() }).await
 }

@@ -142,6 +142,9 @@ impl CurrentUser {
             "manage_privacy_options" | "view_site_health_checks" | "export_others_personal_data" | "erase_others_personal_data" => "manage_options",
             "setup_network" => "manage_options",
             "customize" => "edit_theme_options",
+            // `install_languages`, which `wp_maybe_grant_install_languages_cap()` grants to those who may update the
+            // core or install plugins or themes.
+            "install_languages" | "update_languages" => return ["update_core", "install_plugins", "install_themes"].iter().any(|c| self.allcaps.get(*c).copied().unwrap_or(false)),
             // Without the link manager switched on nobody manages links.
             "manage_links" if !self.site_caps.link_manager_enabled => return false,
             other => other,

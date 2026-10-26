@@ -131,7 +131,8 @@ pub async fn dropdown_pages(ctx: &Ctx<'_>, name: &str, id: &str, selected_id: u6
 /// `wp_get_referer()`: the `_wp_http_referer` of the form when it is not this request and stays on the site
 /// (`wp_validate_redirect()`).
 pub fn wp_get_referer(ctx: &Ctx<'_>) -> Option<String> {
-    let raw = ctx.request.request("_wp_http_referer").filter(|r| !r.is_empty())?;
+    // `wp_get_raw_referer()`: the form field, else the `Referer` header.
+    let raw = ctx.request.request("_wp_http_referer").filter(|r| !r.is_empty()).or_else(|| ctx.request.referer.as_deref().filter(|r| !r.is_empty()))?;
     let uri = &ctx.request.request_uri;
     if raw == uri || raw == format!("{}{uri}", ctx.site().settings.home.trim_end_matches('/')) {
         return None;
@@ -184,4 +185,109 @@ pub async fn set_user_setting(ctx: &Ctx<'_>, name: &str, value: &str) {
 /// The view mode of the list tables (`get_user_setting( 'posts_list_mode', 'list' )`).
 pub async fn list_mode(ctx: &Ctx<'_>) -> String {
     user_setting(ctx, "posts_list_mode").await.filter(|m| !m.is_empty()).unwrap_or_else(|| "list".to_owned())
+}
+
+/// `$mode` of the posts and comments lists: `?mode=` is stored for the user (`set_user_setting( 'posts_list_mode' )`),
+/// else the stored one.
+pub async fn request_list_mode(ctx: &Ctx<'_>) -> String {
+    match ctx.request.request("mode").filter(|m| !m.is_empty()) {
+        Some(requested) => {
+            let mode = if requested == "excerpt" { "excerpt" } else { "list" };
+            set_user_setting(ctx, "posts_list_mode", mode).await;
+            mode.to_owned()
+        }
+        None => list_mode(ctx).await,
+    }
+}
+
+/// `get_user_option( $option )`: the meta with the blog prefix first, then the plain one.
+pub async fn user_option(ctx: &Ctx<'_>, name: &str) -> Option<String> {
+    let db = ctx.env.db;
+    if let Ok(Some(value)) = db.user_meta(ctx.user.id, &format!("{}{name}", db.table_prefix())).await {
+        return Some(value);
+    }
+    db.user_meta(ctx.user.id, name).await.ok().flatten()
+}
+
+/// `get_hidden_columns( $screen )`: the columns the user hid (`manage{screen}columnshidden`).
+pub async fn hidden_columns(ctx: &Ctx<'_>, screen_id: &str) -> Vec<String> {
+    let Some(raw) = user_option(ctx, &format!("manage{screen_id}columnshidden")).await else { return Vec::new() };
+    match rustpress_phpser::unserialize(raw.as_bytes()) {
+        Ok(rustpress_phpser::Value::Array(items)) => items.iter().filter_map(|(_, v)| v.as_str().map(str::to_owned)).collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// The items per page of a list screen: the user's `$option` between 1 and 999, else `default`
+/// (`render_per_page_options()`, `get_items_per_page()`).
+pub async fn items_per_page(ctx: &Ctx<'_>, option: &str, default: u64) -> u64 {
+    user_option(ctx, option).await.and_then(|v| v.trim().parse::<i64>().ok()).filter(|v| *v >= 1).map_or(default, |v| v as u64)
+}
+
+/// The "Screen Options" of a list table: the hideable columns (`render_list_table_columns_preferences()`) marked
+/// hidden in `columns`, the items per page and, for the posts and comments lists, the view mode.
+pub async fn list_screen_options(ctx: &Ctx<'_>, screen_id: &str, columns: &mut [crate::list_table::Column], per_page: (&str, u64), view_mode: Option<String>) -> crate::chrome::ScreenOptions {
+    let hidden = hidden_columns(ctx, screen_id).await;
+    const SPECIAL: [&str; 8] = ["_title", "cb", "comment", "media", "name", "title", "username", "blogname"];
+    let mut toggles = Vec::new();
+    for column in columns.iter_mut() {
+        column.hidden = hidden.iter().any(|h| *h == column.key);
+        if SPECIAL.contains(&column.key.as_str()) || column.label.is_empty() {
+            continue;
+        }
+        toggles.push((column.key.clone(), column.label.clone(), column.hidden));
+    }
+    crate::chrome::ScreenOptions { columns: toggles, per_page: Some((per_page.0.to_owned(), per_page.1)), view_mode, ..Default::default() }
+}
+
+/// `set_screen_options()`: a POST of the Screen Options stores "Number of items per page" for the user and goes
+/// back to the list (without its page number). Options other than the known ones are left to filters, which
+/// RustPress does not have, so they are not stored and the page runs as usual.
+pub async fn set_screen_options(ctx: &Ctx<'_>) -> Option<AdminResponse> {
+    let request = ctx.request;
+    if !request.post || !request.form.iter().any(|(k, _)| k.starts_with("wp_screen_options[")) {
+        return None;
+    }
+    let tr = |s: &str| ctx.tr(s);
+    let nonce = request.request("screenoptionnonce").unwrap_or_default();
+    if ctx.env.auth.verify_nonce(nonce, "screen-options-nonce", ctx.user.id, &ctx.token, ctx.env.now).is_none() {
+        return Some(die(ctx.env, 403, &tr("An error occurred."), &tr("The link you followed has expired.")));
+    }
+    let option = request.post_field("wp_screen_options[option]")?;
+    let value = request.post_field("wp_screen_options[value]").unwrap_or_default();
+    let sanitized: String = option.to_lowercase().chars().filter(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '_' | '-')).collect();
+    if sanitized != option {
+        return None;
+    }
+    let kind = option.replace("edit_", "").replace("_per_page", "");
+    let types = &ctx.site().types;
+    let map_option = if types.is_taxonomy(&kind) {
+        "edit_tags_per_page"
+    } else if types.is_post_type(&kind) {
+        "edit_per_page"
+    } else {
+        option
+    };
+    const PER_PAGE: [&str; 8] = ["edit_per_page", "users_per_page", "edit_comments_per_page", "upload_per_page", "edit_tags_per_page", "plugins_per_page", "export_personal_data_requests_per_page", "remove_personal_data_requests_per_page"];
+    if !PER_PAGE.contains(&map_option) {
+        return None;
+    }
+    // `(int) $value` between 1 and 999.
+    let digits: String = value.trim_start().chars().enumerate().take_while(|(i, c)| c.is_ascii_digit() || (*i == 0 && matches!(c, '-' | '+'))).map(|(_, c)| c).collect();
+    let number = digits.parse::<i64>().unwrap_or(0);
+    if !(1..=999).contains(&number) {
+        return None;
+    }
+    if let Some(writer) = ctx.env.writer {
+        use rustpress_core::OrLog;
+        writer.update_user_meta(ctx.user.id, option, &number.to_string()).await.or_log();
+    }
+    let mut url = wp_get_referer(ctx).unwrap_or_else(|| request.request_uri.clone());
+    for arg in ["pagenum", "apage", "paged"] {
+        url = rustpress_core::urls::remove_query_arg(&url, arg);
+    }
+    if let Some(mode) = request.post_field("mode") {
+        url = rustpress_core::urls::add_query_arg(&url, "mode", mode);
+    }
+    Some(super::redirect(&url))
 }

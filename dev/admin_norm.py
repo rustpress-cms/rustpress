@@ -13,7 +13,9 @@ if start >= 0:
 # The command palette item of the toolbar.
 text = re.sub(r"<li role='group' id='wp-admin-bar-command-palette'.*?</li>", "", text, flags=re.S)
 # Help tabs and screen options, up to the beginning of the page proper.
-text = re.sub(r'<div id="screen-meta".*?<div id="screen-meta-links">.*?</div>\s*</div>\s*', "", text, flags=re.S)
+import os
+if not os.environ.get("KEEP_SCREEN_META"):
+    text = re.sub(r'<div id="screen-meta".*?<div id="screen-meta-links">.*?</div>\s*</div>\s*', "", text, flags=re.S)
 text = re.sub(r"<script.*?</script>", "<script/>", text, flags=re.S)
 text = text.replace("localhost:3001", "localhost:8080")
 text = re.sub(r"(nonce|_wpnonce)([\"' =:]+(?:value=\")?)[0-9a-f]{10}", r"\1\2N", text)

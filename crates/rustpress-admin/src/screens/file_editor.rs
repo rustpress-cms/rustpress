@@ -937,7 +937,7 @@ pub async fn theme_editor(ctx: &Ctx<'_>) -> AdminResponse {
     }
     h.push_str("<br class=\"clear\" />\n</div>\n");
     h.push_str(&warning_dialog(ctx, "theme_editor_notice", Some(&theme)).await);
-    let screen = Screen { file: "theme-editor.php".into(), parent_file: "tools.php".into(), submenu_file: Some("theme-editor.php".into()), title: tr("Edit Themes"), help: Some(help_theme(ctx)), ..Default::default() };
+    let screen = Screen { file: "theme-editor.php".into(), content_inline: true, parent_file: "tools.php".into(), submenu_file: Some("theme-editor.php".into()), title: tr("Edit Themes"), help: Some(help_theme(ctx)), ..Default::default() };
     render(ctx, &screen, &h, &editor_assets(ctx, &file.to_string_lossy(), "theme")).await
 }
 
@@ -962,7 +962,7 @@ pub async fn plugin_editor(ctx: &Ctx<'_>) -> AdminResponse {
     }
     let Some(root) = wp_root(ctx.env) else { return die(ctx.env, 500, "WordPress &rsaquo; Error", "<p>The WordPress files are not available.</p>") };
     let plugins: Vec<PluginInfo> = plugin_scan::installed(&root);
-    let screen = |title: String, help: Option<Help>| Screen { file: "plugin-editor.php".into(), parent_file: "tools.php".into(), submenu_file: Some("plugin-editor.php".into()), title, help, ..Default::default() };
+    let screen = |title: String, help: Option<Help>| Screen { file: "plugin-editor.php".into(), content_inline: true, parent_file: "tools.php".into(), submenu_file: Some("plugin-editor.php".into()), title, help, ..Default::default() };
     if plugins.is_empty() {
         let h = format!("<div class=\"wrap\">\n\t\t<h1>{}</h1>\n\t\t{}\t</div>\n", esc_html(&tr("Edit Plugins")), notice(&tr("No plugins are currently available."), "", false, "message", &["error"], true));
         return render(ctx, &screen(tr("Edit Plugins"), None), &h, &Assets::default()).await;
