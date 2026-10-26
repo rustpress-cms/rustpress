@@ -515,8 +515,21 @@ pub async fn edit_page(ctx: &Ctx<'_>) -> AdminResponse {
     let tr = |s: &str| ctx.tr(s);
     let taxonomy = request.request("taxonomy").unwrap_or_default().to_owned();
     let id: u64 = request.request("tag_ID").and_then(|v| v.parse().ok()).unwrap_or(0);
-    // An unknown taxonomy is no taxonomy at all: the term is looked up by its ID and brings its own.
-    let taxonomy = if tax_info(ctx, &taxonomy, request.request("post_type")).is_some() {
+    // Without a term the list of the taxonomy is the place to go to: the tags if none is named, none if it is unknown.
+    if id == 0 {
+        let target = if taxonomy.is_empty() {
+            ctx.admin_url("edit-tags.php?taxonomy=post_tag")
+        } else if tax_info(ctx, &taxonomy, request.request("post_type")).is_some() {
+            ctx.admin_url(&format!("edit-tags.php?taxonomy={taxonomy}"))
+        } else {
+            ctx.admin_url("edit-tags.php")
+        };
+        return super::redirect(&target);
+    }
+    // No taxonomy named means the tags; an unknown one is no taxonomy at all: the term is looked up by its ID and brings its own.
+    let taxonomy = if taxonomy.is_empty() {
+        "post_tag".to_owned()
+    } else if tax_info(ctx, &taxonomy, request.request("post_type")).is_some() {
         taxonomy
     } else {
         ctx.env.db.term_by_id(None, id).await.ok().flatten().map(|t| t.taxonomy).unwrap_or_default()

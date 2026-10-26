@@ -347,9 +347,28 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse
             let url = ctx.admin_url(&format!("update.php?action=install-plugin&plugin=link-manager&_wpnonce={}", ctx.create_nonce("install-plugin_link-manager")));
             die(env, 500, "WordPress &rsaquo; Error", &sprintf_html(&ctx.tr("If you are looking to use the link manager, please install the <a href=\"%s\">Link Manager plugin</a>."), &rustpress_core::formatting::esc_url(&url)))
         }
-        "ms-admin.php" => redirect(&ctx.admin_url("")),
+        "ms-admin.php" | "ms-edit.php" => redirect(&ctx.admin_url("")),
+        // Without a network the files of its administration send the user to the pages of the site.
+        "ms-options.php" => redirect(&ctx.admin_url("settings.php")),
+        "ms-sites.php" => redirect(&ctx.admin_url("sites.php")),
+        "ms-themes.php" => redirect(&ctx.admin_url("themes.php")),
+        "ms-upgrade-network.php" => redirect(&ctx.admin_url("upgrade.php")),
+        "ms-users.php" => redirect(&ctx.admin_url("users.php")),
+        "moderation.php" => redirect(&ctx.admin_url("edit-comments.php?comment_status=moderated")),
+        "ms-delete-site.php" | "my-sites.php" => die_message(env, 500, &ctx.tr("Multisite support is not enabled.")),
+        "network.php" => die_message(env, 500, &rustpress_core::i18n::sprintf(&ctx.tr("You must define the %1$s constant as true in your %2$s file to allow creation of a Network."), &["<code>WP_ALLOW_MULTISITE</code>", "<code>wp-config.php</code>"])),
+        "press-this.php" => {
+            let url = ctx.admin_url(&format!("update.php?action=install-plugin&plugin=press-this&from=press-this&_wpnonce={}", ctx.create_nonce("install-plugin_press-this")));
+            let link = format!("<a href=\"{}\" class=\"install-now\" data-slug=\"press-this\" data-name=\"press-this\" aria-label=\"{}\">{}</a>", rustpress_core::formatting::esc_url(&url), esc_attr(&ctx.tr("Install Now")), ctx.tr("Install Now"));
+            let mut response = die(env, 200, &ctx.tr("Installation Required"), &format!("{}<br />{link}", ctx.tr("The Press This plugin is required.")));
+            response.status = 200;
+            response
+        }
+        // Files that only define functions or print parts of a screen.
+        "custom-background.php" | "custom-header.php" | "edit-form-advanced.php" | "edit-form-blocks.php" | "edit-form-comment.php" | "edit-link-form.php" | "edit-tag-form.php" | "install-helper.php" | "link-parse-opml.php" | "options-head.php" | "site-health-info.php" | "widgets-form.php" | "widgets-form-blocks.php" => bare_pages::include_only(200),
+        "upgrade-functions.php" => bare_pages::include_only(500),
         "authorize-application.php" => authorize_app::page(&ctx).await,
-        "about.php" | "credits.php" | "freedoms.php" | "contribute.php" => pages::about(&ctx, &request.file).await,
+        "about.php" | "credits.php" | "freedoms.php" | "contribute.php" | "privacy.php" => pages::about(&ctx, &request.file).await,
         "site-health.php" => site_health::page(&ctx).await,
         "export-personal-data.php" => privacy_requests::page(&ctx, privacy_requests::Kind::Export).await,
         "erase-personal-data.php" => privacy_requests::page(&ctx, privacy_requests::Kind::Erase).await,
@@ -360,6 +379,11 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse
     cookies.extend(std::mem::take(&mut response.cookies));
     response.cookies = cookies;
     response
+}
+
+/// `wp_die( $message )` of a plain message: the title is the one of an error.
+fn die_message(env: &AdminEnv<'_>, status: u16, message: &str) -> AdminResponse {
+    die(env, status, "WordPress &rsaquo; Error", message)
 }
 
 /// `sprintf()` with one string, not escaped.

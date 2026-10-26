@@ -239,7 +239,8 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         revision_id = to.unwrap_or(0);
     }
     let action = rustpress_content::sanitize::text_field(request.request("action").unwrap_or_default());
-    let edit_php = ctx.admin_url("edit.php");
+    // `wp_redirect( 'edit.php' )`: the address stays relative.
+    let edit_php = "edit.php".to_owned();
 
     if action == "restore" {
         let Some((revision, post)) = revision_and_parent(env, &ctx.user, revision_id).await else { return redirect(&edit_php) };

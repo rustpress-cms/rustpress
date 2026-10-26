@@ -29,6 +29,7 @@ fn source(name: &str) -> &'static str {
         "about" => include_str!("../data/pages/about.json"),
         "credits" => include_str!("../data/pages/credits.json"),
         "freedoms" => include_str!("../data/pages/freedoms.json"),
+        "privacy" => include_str!("../data/pages/privacy.json"),
         "contribute" => include_str!("../data/pages/contribute.json"),
         "update-core" => include_str!("../data/pages/update-core.json"),
         _ => "{}",
@@ -186,6 +187,7 @@ pub async fn about(ctx: &Ctx<'_>, file: &str) -> AdminResponse {
         "credits.php" => ("credits", "Credits"),
         "freedoms.php" => ("freedoms", "Freedoms"),
         "contribute.php" => ("contribute", "Get Involved"),
+        "privacy.php" => ("privacy", "Privacy"),
         _ => ("about", "About"),
     };
     simple(ctx, file, name, title, file, Assets::default()).await

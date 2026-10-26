@@ -6,6 +6,11 @@ use rustpress_core::formatting::esc_attr;
 use super::{AdminEnv, AdminResponse, page_headers, redirect};
 
 /// A response with the headers of an admin page and no body.
+/// A file of `wp-admin` that only defines functions: asked directly it answers with nothing but the type of its content.
+pub fn include_only(status: u16) -> AdminResponse {
+    AdminResponse { status, headers: vec![("Content-Type".into(), "text/html; charset=UTF-8".into())], cookies: Vec::new(), body: String::new(), bytes: Vec::new() }
+}
+
 pub fn empty() -> AdminResponse {
     AdminResponse { status: 200, headers: page_headers(), cookies: Vec::new(), body: String::new(), bytes: Vec::new() }
 }
