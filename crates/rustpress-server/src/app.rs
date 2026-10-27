@@ -43,6 +43,15 @@ pub struct App {
 
 impl App {
     pub async fn new(config: Config) -> Result<Arc<Self>> {
+        Self::build(config, true).await
+    }
+
+    /// For a process that answers one request and ends (CGI): without the background jobs.
+    pub async fn for_one_request(config: Config) -> Result<Arc<Self>> {
+        Self::build(config, false).await
+    }
+
+    async fn build(config: Config, background: bool) -> Result<Arc<Self>> {
         let db = Db::connect(&config.database_url, &config.table_prefix).await?;
         let writer = if config.allow_writes { Some(rustpress_db::Writer::connect(&config.database_url, &config.table_prefix).await?) } else { None };
         let loaded = Self::load(&config, &db).await?;
@@ -57,7 +66,7 @@ impl App {
             reloading: std::sync::atomic::AtomicBool::new(false),
         });
         let _ = app.this.set(Arc::downgrade(&app));
-        if app.writer.is_some() {
+        if background && app.writer.is_some() {
             tokio::spawn(scheduler(app.clone()));
         }
         Ok(app)

@@ -3,7 +3,28 @@ use tracing_subscriber::EnvFilter;
 
 fn main() {
     let runtime = tokio::runtime::Builder::new_multi_thread().enable_all().thread_stack_size(16 * 1024 * 1024).build().expect("tokio runtime");
-    runtime.block_on(async { runtime.spawn(run_server()).await.expect("server task") });
+    let task = if rustpress_server::cgi::is_cgi() { runtime.spawn(run_cgi()) } else { runtime.spawn(run_server()) };
+    runtime.block_on(async { task.await.expect("server task") });
+}
+
+/// One request from the web server (CGI); log lines go to its error log.
+async fn run_cgi() {
+    tracing_subscriber::fmt().with_writer(std::io::stderr).with_ansi(false).with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("warn"))).init();
+    let started = std::time::Instant::now();
+    let result = async {
+        let config = rustpress_server::cgi::config().map_err(|e| e.to_string())?;
+        let app = App::for_one_request(config).await.map_err(|e| e.to_string())?;
+        let loaded = started.elapsed();
+        rustpress_server::cgi::serve(app).await.map_err(|e| e.to_string())?;
+        tracing::debug!(load_ms = loaded.as_secs_f64() * 1000.0, total_ms = started.elapsed().as_secs_f64() * 1000.0, "cgi request");
+        Ok::<_, String>(())
+    }
+    .await;
+    if let Err(message) = result {
+        eprintln!("rustpress: {message}");
+        rustpress_server::cgi::write_failure();
+        std::process::exit(1);
+    }
 }
 
 async fn run_server() {
