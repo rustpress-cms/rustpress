@@ -12,6 +12,7 @@ impl Rest<'_> {
         Box::pin(async move {
             match data {
                 Value::Array(items) => {
+                    self.prime_hint_targets(items).await;
                     for item in items {
                         self.refine_hints(item).await;
                     }
@@ -44,6 +45,29 @@ impl Rest<'_> {
                 _ => {}
             }
         })
+    }
+
+    /// The comments of a list and their posts in two queries instead of two per item.
+    async fn prime_hint_targets(&self, items: &[Value]) {
+        let ids: Vec<u64> = items
+            .iter()
+            .filter_map(|item| item.pointer("/_links/self/0/href").and_then(Value::as_str))
+            .filter_map(|href| href.split("/wp/v2/comments/").nth(1)?.split(['?', '&', '/']).next()?.parse().ok())
+            .collect();
+        if ids.is_empty() {
+            return;
+        }
+        let db = &self.site.db;
+        if db.prime_comments(&ids).await.is_err() {
+            return;
+        }
+        let mut posts = Vec::new();
+        for id in &ids {
+            if let Ok(Some(comment)) = db.comment_any(*id).await {
+                posts.push(comment.comment_post_id);
+            }
+        }
+        let _ = db.prime_posts(&posts).await;
     }
 
     /// The methods the user may use on the item an `href` names.
@@ -81,13 +105,13 @@ impl Rest<'_> {
             "tags" => self.tax("post_tag"),
             _ => None,
         }) {
-            let term = db.term_by_id(Some(&tax.name), id).await.ok().flatten()?;
+            // The item was just read: the ID of its link is a term of the taxonomy.
             let mut allow = vec!["GET"];
             if self.can("manage_categories") {
                 allow.extend(["POST", "PUT", "PATCH"]);
                 // The default category cannot be deleted.
                 let default_category = self.site.options.u64("default_category", 1);
-                if !(tax.name == "category" && term.term_id == default_category) {
+                if !(tax.name == "category" && id == default_category) {
                     allow.push("DELETE");
                 }
             }

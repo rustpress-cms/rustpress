@@ -108,7 +108,8 @@ impl Db {
         if missing.is_empty() {
             return Ok(());
         }
-        let query = crate::CommentQuery { ids: missing.clone(), types: Vec::new(), ..Default::default() };
+        // `get_comment()` knows every comment: any status, type and post.
+        let query = crate::CommentQuery { ids: missing.clone(), types: Vec::new(), statuses: vec!["any".into()], public_posts: false, ..Default::default() };
         let rows = self.comments_query(&query).await?;
         let _ = PRIMED_COMMENTS.try_with(|cache| {
             let mut cache = cache.borrow_mut();
