@@ -97,6 +97,46 @@ async fn add_meta(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUser
     response.send()
 }
 
+/// `get_image_send_to_editor()`: `get_image_tag()` of the size, linked to `url`, in a `[caption]` when there is one
+/// (`image_add_caption()`).
+#[allow(clippy::too_many_arguments)]
+async fn image_send_to_editor(env: &AdminEnv<'_>, post: &rustpress_db::Post, caption: &str, align: &str, url: &str, rel: bool, size: &str, alt: &str) -> String {
+    use rustpress_core::formatting::{esc_attr, esc_url};
+    let (meta, attached) = rustpress_blocks::images::load_metadata(env.site, post).await.unwrap_or((None, None));
+    let full = rustpress_blocks::images::attachment_url(env.site, attached.as_deref().unwrap_or_default());
+    // `image_downsize()`: the generated size if there is one, else the original.
+    let (src, width, height) = match &meta {
+        Some(meta) => {
+            let down = rustpress_blocks::images::image_downsize(&full, meta, size);
+            (down.url, down.width, down.height)
+        }
+        None => (full, 0, 0),
+    };
+    let mut hw = String::new();
+    if width != 0 {
+        hw.push_str(&format!("width=\"{width}\" "));
+    }
+    if height != 0 {
+        hw.push_str(&format!("height=\"{height}\" "));
+    }
+    let mut html = format!("<img src=\"{}\" alt=\"{}\" {hw}class=\"align{} size-{} wp-image-{}\" />", esc_url(&src), esc_attr(alt), esc_attr(align), esc_attr(size), post.id);
+    if !url.is_empty() {
+        let rel = if rel { format!(" rel=\"attachment wp-att-{}\"", post.id) } else { String::new() };
+        html = format!("<a href=\"{}\"{rel}>{html}</a>", esc_url(url));
+    }
+    if caption.is_empty() || width == 0 {
+        return html;
+    }
+    // `image_add_caption()`: line breaks inside tags become spaces, the others `<br />`; the alignment moves to the
+    // shortcode.
+    let caption = caption.replace("\r\n", "\n").replace('\r', "\n");
+    let caption = rustpress_core::formatting::cached_plain_regex(r"<[a-zA-Z0-9]+(?: [^<>]+>)*").replace_all(&caption, |m: &regex::Captures<'_>| rustpress_core::formatting::cached_plain_regex(r"[\r\n\t]+").replace_all(&m[0], " ").into_owned());
+    let caption = rustpress_core::formatting::cached_plain_regex(r"[ \n\t]*\n[\t ]*").replace_all(&caption, "<br />");
+    let html = rustpress_core::formatting::cached_plain_regex(r#"(class=["'][^'"]*)align(none|left|right|center)\s?"#).replace(&html, "$1").into_owned();
+    let align = if align.is_empty() { "none" } else { align };
+    format!("[caption id=\"attachment_{}\" align=\"align{align}\" width=\"{width}\"]{html} {caption}[/caption]", post.id)
+}
+
 fn success(data: Json) -> AdminResponse {
     send_json(200, &json!({"success": true, "data": data}))
 }
@@ -357,25 +397,38 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUs
                 let name = if text_of.is_empty() { src.rsplit('/').next().unwrap_or_default().to_owned() } else { text_of };
                 return success(Json::from(format!("<a href=\"{}\">{name}</a>", rustpress_core::formatting::esc_url(&src))));
             }
-            let id = request.request("attachment[id]").and_then(|v| v.parse::<u64>().ok()).unwrap_or(0);
-            match env.db.post(id).await.ok().flatten() {
-                Some(post) if post.post_type == "attachment" => {
-                    let url = request.request("attachment[url]").unwrap_or_default();
-                    let title = request.request("attachment[post_title]").unwrap_or_default();
-                    let html = if post.post_mime_type.starts_with("image") {
-                        let alt = request.request("attachment[image_alt]").unwrap_or_default();
-                        let src = post.guid.clone();
-                        let image = format!("<img src=\"{}\" alt=\"{}\" class=\"wp-image-{id}\" />", rustpress_core::formatting::esc_url(&src), rustpress_core::formatting::esc_attr(alt));
-                        if url.is_empty() { image } else { format!("<a href=\"{}\">{image}</a>", rustpress_core::formatting::esc_url(url)) }
-                    } else if url.is_empty() {
-                        title.to_owned()
-                    } else {
-                        format!("<a href=\"{}\">{title}</a>", rustpress_core::formatting::esc_url(url))
-                    };
-                    success(Json::from(html))
+            // `wp_ajax_send_attachment_to_editor()`
+            let field = |name: &str| request.post_field(&format!("attachment[{name}]")).map(str::to_owned);
+            let id = field("id").and_then(|v| v.trim().parse::<u64>().ok()).unwrap_or(0);
+            let Some(mut post) = (if id > 0 { env.db.post(id).await.ok().flatten() } else { None }).filter(|p| p.post_type == "attachment") else { return error(None) };
+            // An attachment that belongs to no post is attached to the one it is inserted into.
+            let insert_into = int(request, "post_id");
+            if user.can_edit_post(&post) && post.post_parent == 0 && insert_into > 0
+                && let Some(writer) = env.writer
+            {
+                let content = Content { site: env.site, db: env.db, writer, user, now: env.now };
+                let data = crate::content::PostData { id: Some(post.id), post_parent: Some(insert_into as u64), ..Default::default() };
+                if content.insert_post(&data).await.is_ok() {
+                    post.post_parent = insert_into as u64;
                 }
-                _ => error(None),
             }
+            let url = field("url").unwrap_or_default();
+            let rel = url.contains("attachment_id") || env.site.permalink(&post).await.ok().as_deref() == Some(url.as_str());
+            let html = if post.post_mime_type.starts_with("image") {
+                let caption = field("post_excerpt").filter(|c| !c.trim().is_empty()).unwrap_or_default();
+                let align = field("align").unwrap_or_else(|| "none".into());
+                let size = field("image-size").unwrap_or_else(|| "medium".into());
+                let alt = field("image_alt").unwrap_or_default();
+                image_send_to_editor(env, &post, &caption, &align, &url, rel, &size, &alt).await
+            } else if post.post_mime_type.starts_with("video") || post.post_mime_type.starts_with("audio") {
+                // `stripslashes_deep( $_POST['html'] )`: the shortcode the media modal made.
+                request.post_field("html").unwrap_or_default().to_owned()
+            } else {
+                let title = field("post_title").unwrap_or_default();
+                let rel = if rel { format!(" rel=\"attachment wp-att-{}\"", post.id) } else { String::new() };
+                if url.is_empty() { title } else { format!("<a href=\"{}\"{rel}>{title}</a>", rustpress_core::formatting::esc_url(&url)) }
+            };
+            success(Json::from(html))
         }
         "parse-embed" => {
             let shortcode = request.post_field("shortcode").unwrap_or_default();
