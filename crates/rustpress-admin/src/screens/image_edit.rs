@@ -230,32 +230,40 @@ async fn save(ctx: &Ctx<'_>, state: &mut State) -> Result<Json, String> {
     let tr = |s: &str| ctx.tr(s);
     let request = ctx.request;
     let Some(writer) = env.writer else { return Err(tr("Unable to save the image.")) };
-    let mut image = image::open(state.path()).map_err(|_| tr("Unable to create new image."))?;
     let target = request.request("target").unwrap_or_default().chars().filter(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-')).collect::<String>();
     let scale = request.request("do") == Some("scale");
     let full_width = request.request("fwidth").and_then(|v| v.parse::<u32>().ok()).unwrap_or(0);
     let full_height = request.request("fheight").and_then(|v| v.parse::<u32>().ok()).unwrap_or(0);
-    let mut scaled = false;
-    if scale {
-        let (original_width, original_height) = (image.width(), image.height());
-        if full_width > original_width || full_height > original_height {
-            return Err(tr("Images cannot be scaled to a size larger than the original."));
-        }
-        if full_width > 0 && full_height > 0 {
-            let diff = (f64::from(original_width) / f64::from(original_height) * 100.0).round() / 100.0 - (f64::from(full_width) / f64::from(full_height) * 100.0).round() / 100.0;
-            if -0.1 < diff && diff < 0.1 {
-                image = image.resize_exact(full_width, full_height, image::imageops::FilterType::Lanczos3);
-                scaled = true;
+    let history = request.request("history").filter(|h| !h.is_empty()).map(str::to_owned);
+    let source = state.path();
+    // Decoding and changing the image happen on a blocking thread; the messages are translated afterwards.
+    let edited = rustpress_content::media::blocking(move || -> Result<(DynamicImage, bool), &'static str> {
+        let mut image = rustpress_content::media::open_image(&source).map_err(|_| "Unable to create new image.")?;
+        let mut scaled = false;
+        if scale {
+            let (original_width, original_height) = (image.width(), image.height());
+            if full_width > original_width || full_height > original_height {
+                return Err("Images cannot be scaled to a size larger than the original.");
             }
+            if full_width > 0 && full_height > 0 {
+                let diff = (f64::from(original_width) / f64::from(original_height) * 100.0).round() / 100.0 - (f64::from(full_width) / f64::from(full_height) * 100.0).round() / 100.0;
+                if -0.1 < diff && diff < 0.1 {
+                    image = image.resize_exact(full_width, full_height, image::imageops::FilterType::Lanczos3);
+                    scaled = true;
+                }
+            }
+            if !scaled {
+                return Err("Error while saving the scaled image. Please reload the page and try again.");
+            }
+        } else if let Some(history) = history {
+            image = apply_changes(image, &history);
+        } else {
+            return Err("Nothing to save, the image has not changed.");
         }
-        if !scaled {
-            return Err(tr("Error while saving the scaled image. Please reload the page and try again."));
-        }
-    } else if let Some(history) = request.request("history").filter(|h| !h.is_empty()) {
-        image = apply_changes(image, history);
-    } else {
-        return Err(tr("Nothing to save, the image has not changed."));
-    }
+        Ok((image, scaled))
+    })
+    .await;
+    let (image, scaled) = edited.map_err(tr)?;
     let Some(mut meta) = state.meta.clone() else { return Err(tr("Image data does not exist. Please re-upload the image.")) };
     if meta.get("sizes").is_none() {
         set(&mut meta, "sizes", Value::Array(Vec::new()));
@@ -282,7 +290,15 @@ async fn save(ctx: &Ctx<'_>, state: &mut State) -> Result<Json, String> {
         }
         break candidate_path;
     };
-    rustpress_content::media::save_image(&image, &new_path, &state.mime).map_err(|_| tr("Unable to save the image."))?;
+    let (image, saved) = {
+        let (path, mime) = (new_path.clone(), state.mime.clone());
+        rustpress_content::media::blocking(move || {
+            let saved = rustpress_content::media::save_image(&image, &path, &mime);
+            (image, saved)
+        })
+        .await
+    };
+    saved.map_err(|_| tr("Unable to save the image."))?;
     let new_size = std::fs::metadata(&new_path).map(|m| m.len() as i64).unwrap_or(0);
     let new_basename = new_path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
     let new_relative = match state.relative.rsplit_once('/') {
@@ -316,7 +332,10 @@ async fn save(ctx: &Ctx<'_>, state: &mut State) -> Result<Json, String> {
         fw = image.width();
         fh = image.height();
         if matches!(target.as_str(), "nothumb" | "all")
-            && let Some((_, _, sizes)) = rustpress_content::media::generate_sizes(&env.site.options, &new_path, &state.mime) {
+            && let Some((_, _, sizes)) = {
+                let (options, path, mime) = (env.site.options.clone(), new_path.clone(), state.mime.clone());
+                rustpress_content::media::blocking(move || rustpress_content::media::generate_sizes(&options, &path, &mime)).await
+            } {
                 let size_names: Vec<String> = rustpress_content::media::registered_sizes(&env.site.options).into_iter().map(|(n, ..)| n).collect();
                 for name in &size_names {
                     let current = meta.get("sizes").and_then(|s| s.get(name)).cloned();
@@ -484,16 +503,22 @@ pub async fn preview(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentU
         return text(403, "-1");
     }
     let Some(state) = load(env, id).await else { return text(403, "-1") };
-    let Ok(mut image) = image::open(state.path()) else { return text(403, "-1") };
-    if let Some(history) = request.request("history").filter(|h| !h.is_empty()) {
-        image = apply_changes(image, history);
-    }
-    let ratio = preview_ratio(image.width(), image.height());
-    let (w, h) = (((f64::from(image.width()) * ratio) as u32).max(1), ((f64::from(image.height()) * ratio) as u32).max(1));
-    if (w, h) != (image.width(), image.height()) {
-        image = image.resize_exact(w, h, image::imageops::FilterType::Lanczos3);
-    }
-    let Some((bytes, content_type)) = encode(&image, &state.mime) else { return text(403, "-1") };
+    let history = request.request("history").filter(|h| !h.is_empty()).map(str::to_owned);
+    let (source, mime) = (state.path(), state.mime.clone());
+    let encoded = rustpress_content::media::blocking(move || {
+        let mut image = rustpress_content::media::open_image(&source).ok()?;
+        if let Some(history) = history {
+            image = apply_changes(image, &history);
+        }
+        let ratio = preview_ratio(image.width(), image.height());
+        let (w, h) = (((f64::from(image.width()) * ratio) as u32).max(1), ((f64::from(image.height()) * ratio) as u32).max(1));
+        if (w, h) != (image.width(), image.height()) {
+            image = image.resize_exact(w, h, image::imageops::FilterType::Lanczos3);
+        }
+        encode(&image, &mime)
+    })
+    .await;
+    let Some((bytes, content_type)) = encoded else { return text(403, "-1") };
     let mut response = text(200, "");
     response.headers.retain(|(k, _)| k != "Content-Type");
     response.headers.push(("Content-Type".into(), content_type.into()));

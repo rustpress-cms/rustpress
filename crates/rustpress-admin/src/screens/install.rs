@@ -227,7 +227,11 @@ async fn upload(ctx: &Ctx<'_>, plugin: bool) -> AdminResponse {
         lines
     };
 
-    let entries = match read_zip(&file.bytes) {
+    let unpacked = {
+        let bytes = file.bytes.clone();
+        rustpress_content::media::blocking(move || read_zip(&bytes)).await
+    };
+    let entries = match unpacked {
         Ok(entries) => entries,
         Err(reason) => {
             lines.push(format!("<p>{}</p>", ctx.tr(&reason)));
@@ -264,7 +268,11 @@ async fn upload(ctx: &Ctx<'_>, plugin: bool) -> AdminResponse {
         }
         return feedback(ctx, parent, submenu, &title, &heading, &lines).await;
     }
-    if write_tree(&destination, &files).is_err() {
+    let written = {
+        let destination = destination.clone();
+        rustpress_content::media::blocking(move || write_tree(&destination, &files)).await
+    };
+    if written.is_err() {
         let _ = std::fs::remove_dir_all(&destination);
         return feedback(ctx, parent, submenu, &title, &heading, &failed(lines, tr("Could not create directory."))).await;
     }

@@ -271,6 +271,26 @@ fn resize_dimensions(orig_w: u32, orig_h: u32, dest_w: u32, dest_h: u32, crop: b
     Some((s_x, s_y, crop_w, crop_h, new_w.max(1), new_h.max(1)))
 }
 
+/// The largest width or height an image may have to be decoded. Together with the decoder's allocation limit
+/// (512 MiB) this keeps a small file that claims huge dimensions (a decompression bomb) from taking the memory of
+/// the server; GD in PHP fails on such images as well, at its memory limit.
+const MAX_IMAGE_SIDE: u32 = 20_000;
+
+/// Decodes the image at `path` (its format from the extension, like `image::open`) within the limits.
+pub fn open_image(path: &Path) -> image::ImageResult<image::DynamicImage> {
+    let mut limits = image::Limits::default();
+    limits.max_image_width = Some(MAX_IMAGE_SIDE);
+    limits.max_image_height = Some(MAX_IMAGE_SIDE);
+    let mut reader = image::ImageReader::open(path)?;
+    reader.limits(limits);
+    reader.decode()
+}
+
+/// Runs work that blocks (decoding, resizing and writing images) on the blocking threads instead of an async worker.
+pub async fn blocking<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static) -> T {
+    tokio::task::spawn_blocking(work).await.unwrap_or_else(|e| std::panic::resume_unwind(e.into_panic()))
+}
+
 pub fn save_image(image: &image::DynamicImage, path: &Path, mime: &str) -> Result<(), UploadError> {
     let result = match mime {
         "image/jpeg" => {
@@ -316,7 +336,7 @@ pub fn generate_image_metadata_with(options: &rustpress_core::options::Options, 
         return None;
     }
     let full = uploads.join(relative);
-    let mut decoded = image::open(&full).ok()?;
+    let mut decoded = open_image(&full).ok()?;
     let (mut width, mut height) = (decoded.width(), decoded.height());
     let mut relative = relative.to_owned();
     let mut original_image: Option<String> = None;
@@ -388,7 +408,7 @@ pub fn generate_image_metadata_with(options: &rustpress_core::options::Options, 
 /// `WP_Image_Editor::multi_resize()` for the sizes of the site: the files written next to `full` and their
 /// entries for the metadata, in the order of the sizes. Sizes that would not be smaller than the image are skipped.
 pub fn generate_sizes(options: &rustpress_core::options::Options, full: &Path, mime: &str) -> Option<(u32, u32, Vec<(String, Value)>)> {
-    let decoded = image::open(full).ok()?;
+    let decoded = open_image(full).ok()?;
     let (width, height) = (decoded.width(), decoded.height());
     let dir = full.parent()?.to_path_buf();
     let name = full.file_name()?.to_string_lossy().into_owned();
@@ -414,7 +434,7 @@ pub fn generate_sizes(options: &rustpress_core::options::Options, full: &Path, m
 /// `WP_Image_Editor_GD::crop()` and `save()` as `wp_crop_image()` uses them: the part `(x, y, width, height)` of the
 /// image at `src`, scaled to `dst_w` x `dst_h`, saved next to it as `cropped-<name>`. Returns the path.
 pub fn crop_image(src: &Path, x: u32, y: u32, w: u32, h: u32, dst_w: u32, dst_h: u32, mime: &str) -> Result<PathBuf, UploadError> {
-    let decoded = image::open(src).map_err(|e| UploadError(e.to_string()))?;
+    let decoded = open_image(src).map_err(|e| UploadError(e.to_string()))?;
     let (w, h) = (w.min(decoded.width().saturating_sub(x)), h.min(decoded.height().saturating_sub(y)));
     if w == 0 || h == 0 {
         return Err(UploadError("empty crop".into()));
@@ -486,7 +506,11 @@ pub async fn handle_upload(content: &Content<'_>, uploads: &Path, file: Uploaded
         other => other.to_string(),
     }))?;
     let mut stored_relative = relative.clone();
-    let metadata = match generate_image_metadata(&content.site.options, uploads, &relative, &mime) {
+    let generated = {
+        let (options, uploads, relative, mime) = (content.site.options.clone(), uploads.to_path_buf(), relative.clone(), mime.clone());
+        blocking(move || generate_image_metadata(&options, &uploads, &relative, &mime)).await
+    };
+    let metadata = match generated {
         Some((meta, final_relative, _)) => {
             stored_relative = final_relative;
             meta
@@ -532,5 +556,18 @@ mod upload_tests {
         assert_eq!(check_image_upload("a.jpg", "image/jpeg", &png), Some(("a.png".to_owned(), "image/png".to_owned())));
         assert_eq!(check_image_upload("a.jpg", "image/jpeg", b"<?php echo 1;"), None);
         assert_eq!(check_image_upload("a.pdf", "application/pdf", b"%PDF-1.7"), Some(("a.pdf".to_owned(), "application/pdf".to_owned())));
+    }
+
+    #[test]
+    fn images_beyond_the_limits_are_not_decoded() {
+        let dir = std::env::temp_dir().join(format!("rustpress-open-image-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (small, wide) = (dir.join("small.png"), dir.join("wide.png"));
+        image::DynamicImage::new_luma8(40, 30).save(&small).unwrap();
+        // A few hundred bytes that claim more pixels than any upload may have.
+        image::DynamicImage::new_luma8(MAX_IMAGE_SIDE + 1, 1).save(&wide).unwrap();
+        assert_eq!(open_image(&small).map(|i| (i.width(), i.height())).ok(), Some((40, 30)));
+        assert!(open_image(&wide).is_err());
+        std::fs::remove_dir_all(&dir).ok();
     }
 }

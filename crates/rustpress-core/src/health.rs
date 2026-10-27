@@ -63,25 +63,31 @@ pub async fn directory_sizes(site: &Site, root: &Path) -> Value {
     let fonts = uploads.join("fonts");
     let themes = content.join("themes");
     let plugins = content.join("plugins");
-    let exclude = [&themes, &plugins, &uploads, &fonts];
-    let inside: u64 = [&themes, &plugins, &uploads].iter().map(|p| dir_size(p)).sum();
-    let _ = exclude;
-    let paths: Vec<(&str, std::path::PathBuf, Option<u64>)> = vec![
-        ("wordpress_size", root.to_path_buf(), Some(dir_size(root).saturating_sub(inside))),
-        ("themes_size", themes.clone(), None),
-        ("plugins_size", plugins.clone(), None),
-        ("uploads_size", uploads.clone(), None),
-        ("fonts_size", fonts.clone(), None),
-    ];
+    // Walking the whole installation blocks: it runs on a blocking thread. `None`: the directory does not exist.
+    let sizes: Vec<(&str, Option<u64>)> = {
+        let root = root.to_path_buf();
+        tokio::task::spawn_blocking(move || {
+            let size = |path: &Path| path.is_dir().then(|| dir_size(path));
+            let inside: u64 = [&themes, &plugins, &uploads].iter().map(|p| dir_size(p)).sum();
+            vec![
+                ("wordpress_size", size(&root).map(|all| all.saturating_sub(inside))),
+                ("themes_size", size(&themes)),
+                ("plugins_size", size(&plugins)),
+                ("uploads_size", size(&uploads)),
+                ("fonts_size", size(&fonts)),
+            ]
+        })
+        .await
+        .unwrap_or_default()
+    };
     let mut out = Map::new();
     out.insert("raw".into(), json!(0));
     let mut total = 0u64;
-    for (name, path, known) in paths {
-        if !path.is_dir() {
+    for (name, bytes) in sizes {
+        let Some(bytes) = bytes else {
             out.insert(name.into(), json!({"size": site.tr("The directory does not exist.")}));
             continue;
-        }
-        let bytes = known.unwrap_or_else(|| dir_size(&path));
+        };
         total += bytes;
         let size = size_format(site, bytes, 2);
         let mut entry = Map::new();

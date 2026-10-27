@@ -382,7 +382,10 @@ async fn crop_image(ctx: &Ctx<'_>) -> AdminResponse {
     let attached = meta_value("_wp_attached_file").unwrap_or_default();
     let failure_message = || send_json(200, &json!({"success": false, "data": {"message": ctx.tr("Image could not be processed.")}}));
     let source = uploads.join(&attached);
-    let Ok(cropped) = rustpress_content::media::crop_image(&source, detail("x1"), detail("y1"), detail("width"), detail("height"), detail("dst_width"), detail("dst_height"), &parent.post_mime_type) else { return failure_message() };
+    let (x, y, width, height, dst_width, dst_height) = (detail("x1"), detail("y1"), detail("width"), detail("height"), detail("dst_width"), detail("dst_height"));
+    let mime = parent.post_mime_type.clone();
+    let cropped = rustpress_content::media::blocking(move || rustpress_content::media::crop_image(&source, x, y, width, height, dst_width, dst_height, &mime)).await;
+    let Ok(cropped) = cropped else { return failure_message() };
     let Some(writer) = env.writer else { return text(500, "0") };
     // A site icon that already is one needs no copy.
     if meta_value("_wp_attachment_context").as_deref() == Some(context.as_str()) && context == "site-icon" {
@@ -419,7 +422,11 @@ async fn crop_image(ctx: &Ctx<'_>) -> AdminResponse {
     };
     let Ok(new_id) = content.insert_post(&data).await else { return failure_message() };
     let extra = if context == "site-icon" { rustpress_content::media::site_icon_sizes() } else { Vec::new() };
-    let (metadata, final_relative) = match rustpress_content::media::generate_image_metadata_with(&env.site.options, context != "site-icon", &extra, &uploads, &relative, &parent.post_mime_type) {
+    let generated = {
+        let (options, registered, extra, uploads, relative, mime) = (env.site.options.clone(), context != "site-icon", extra.clone(), uploads.clone(), relative.clone(), parent.post_mime_type.clone());
+        rustpress_content::media::blocking(move || rustpress_content::media::generate_image_metadata_with(&options, registered, &extra, &uploads, &relative, &mime)).await
+    };
+    let (metadata, final_relative) = match generated {
         Some((meta, final_relative, _)) => (meta, final_relative),
         None => return failure_message(),
     };
