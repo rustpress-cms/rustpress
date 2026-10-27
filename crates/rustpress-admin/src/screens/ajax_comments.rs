@@ -45,6 +45,13 @@ async fn counts_response(ctx: &Ctx<'_>, id: u64, action: &str) -> AdminResponse 
 }
 
 /// `current_user_can( 'edit_comment', $comment )`: `edit_post` of the post the comment is on.
+/// The approved and pending comments of a post, for the count bubble of a row.
+async fn post_comment_counts(env: &AdminEnv<'_>, post_id: u64) -> std::collections::HashMap<u64, (u64, u64)> {
+    let approved = env.db.count_comments_for_post_with_status(post_id, "1").await.unwrap_or(0);
+    let pending = env.db.count_comments_for_post_with_status(post_id, "0").await.unwrap_or(0);
+    std::collections::HashMap::from([(post_id, (approved, pending))])
+}
+
 pub async fn can_edit_comment(env: &AdminEnv<'_>, user: &CurrentUser, comment: &Comment) -> bool {
     let post = env.db.post(comment.comment_post_id).await.ok().flatten();
     user.can_edit_comment(post.as_ref())
@@ -233,10 +240,10 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUs
             // `comment_post`: the moderators and the author of the post are told.
             env.mail_ctx().new_comment_notify(env.roles, id, true, user.id).await;
             let Some(new_comment) = env.db.comment_any(id).await.ok().flatten() else { return text(200, "1") };
-            let html = if request.request("mode") == Some("dashboard") {
-                super::dashboard::comment_row(&ctx, &new_comment, 0).await
-            } else {
-                comments::row_html(&ctx, &new_comment, 0, "all", &std::collections::HashMap::new()).await
+            let html = match request.request("mode") {
+                Some("dashboard") => super::dashboard::comment_row(&ctx, &new_comment, 0).await,
+                Some("single") => comments::row_html_in(&ctx, &new_comment, 0, "all", &std::collections::HashMap::new(), comments::RowTable::PostBox).await,
+                _ => comments::row_html(&ctx, &new_comment, 0, "all", &post_comment_counts(env, post_id).await).await,
             };
             let position: i64 = request.request("position").and_then(|p| p.parse().ok()).filter(|p| *p != 0).unwrap_or(-1);
             let counts = env.db.comment_counts(None).await.unwrap_or_default();
@@ -286,7 +293,12 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUs
                 return text(200, &e.to_string());
             }
             let Some(updated) = env.db.comment_any(id).await.ok().flatten() else { return text(200, "-1") };
-            let html = comments::row_html(&ctx, &updated, 0, "all", &std::collections::HashMap::new()).await;
+            // `$_POST['checkbox']` of 1 is a row of the comments screen, anything else one of the box of the edit form.
+            let html = if request.post_field("checkbox") == Some("1") {
+                comments::row_html(&ctx, &updated, 0, "all", &post_comment_counts(env, updated.comment_post_id).await).await
+            } else {
+                comments::row_html_in(&ctx, &updated, 0, "all", &std::collections::HashMap::new(), comments::RowTable::PostBox).await
+            };
             let position: i64 = request.request("position").and_then(|p| p.parse().ok()).filter(|p| *p != 0).unwrap_or(-1);
             let mut x = AjaxResponse::new("edit-comment");
             x.add("edit_comment", id, Some(position), Ok(&html), &[]);

@@ -504,10 +504,28 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUs
             if !allowed {
                 return text(200, "-1");
             }
-            let count = env.db.count_comments_for_post_with_status(post_id, "1").await.unwrap_or(0) + env.db.count_comments_for_post_with_status(post_id, "0").await.unwrap_or(0);
-            // The rows of the comment table in the box of the classic post screen belong to that screen; without them there is "no items".
-            let _ = count;
-            text(200, "1")
+            // `WP_Post_Comments_List_Table::prepare_items()`: approved and pending, newest first, `start` and `number` of
+            // the request.
+            // The box lists ten (`get_per_page()`), whatever `number` fetched; no `number` fetches 10 + 8.
+            const PER_PAGE: usize = 10;
+            let int = |name: &str| request.request(name).and_then(|v| v.trim().parse::<i64>().ok()).unwrap_or(0);
+            let number = if request.request("number").is_some() { int("number") } else { (PER_PAGE + 8) as i64 };
+            // `number` 0 (or less) is no limit for `get_comments()`.
+            let limit = u64::try_from(number).ok().filter(|n| *n > 0).unwrap_or(u64::MAX / 2);
+            let query = rustpress_db::CommentListQuery { status: "all".into(), post_id: Some(post_id), limit, offset: u64::try_from(int("start")).unwrap_or(0), desc: true, ..Default::default() };
+            let mut comments = env.db.list_comments_admin(&query).await.map(|(c, _)| c).unwrap_or_default();
+            comments.truncate(PER_PAGE);
+            if comments.is_empty() {
+                return text(200, "1");
+            }
+            let ctx = Ctx { env, request, user: user.clone(), token: token.to_owned() };
+            let mut rows = String::new();
+            for (index, comment) in comments.iter().enumerate() {
+                rows.push_str(&super::comments::row_html(&ctx, comment, index, "all", &std::collections::HashMap::new()).await);
+            }
+            let mut response = super::ajax_terms::AjaxResponse::new("get-comments");
+            response.add("comments", 0, Some(1), Ok(&rows), &[]);
+            response.send()
         }
         _ => text(400, "0"),
     }

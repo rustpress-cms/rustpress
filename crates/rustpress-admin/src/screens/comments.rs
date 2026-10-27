@@ -126,7 +126,8 @@ fn count_bubble(ctx: &Ctx<'_>, post_id: u64, approved: u64, pending: u64) -> Str
     format!("<span class=\"post-com-count-wrapper post-com-count-{post_id}\">{approved_html}{pending_html}</span>")
 }
 
-fn author_block(ctx: &Ctx<'_>, comment: &Comment) -> String {
+/// `column_author()`: the address, the e-mail and the IP only for whoever may edit the comment (`user_can`).
+fn author_block(ctx: &Ctx<'_>, comment: &Comment, user_can: bool, current_status: &str) -> String {
     let mut out = String::new();
     let author = if comment.comment_author.is_empty() { ctx.tr("Anonymous") } else { comment.comment_author.clone() };
     let avatar_html = if ctx.site().show_avatars() && comment.comment_type != "pingback" && comment.comment_type != "trackback" { avatar(ctx, &comment.comment_author_email, 32) } else { String::new() };
@@ -135,19 +136,47 @@ fn author_block(ctx: &Ctx<'_>, comment: &Comment) -> String {
     if !url.is_empty() && url != "http://" {
         let display = url.trim_start_matches("https://").trim_start_matches("http://").trim_start_matches("www.");
         let display = display.split(['?', '#']).next().unwrap_or(display).trim_end_matches('/');
-        out.push_str(&format!("<a href=\"{}\" rel=\"noopener noreferrer\">{}</a><br />", esc_url(url), esc_html(display)));
+        // `wp_html_excerpt( $display, 49, '&hellip;' )` beyond 50 characters.
+        let display = if display.chars().count() > 50 { format!("{}&hellip;", esc_html(&display.chars().take(49).collect::<String>())) } else { esc_html(display) };
+        out.push_str(&format!("<a href=\"{}\" rel=\"noopener noreferrer\">{display}</a><br />", esc_url(url)));
+    }
+    if !user_can {
+        return out;
     }
     if !comment.comment_author_email.is_empty() {
         let email = antispambot(&comment.comment_author_email);
         out.push_str(&format!("<a href=\"mailto:{email}\">{email}</a><br />"));
     }
+    let ip = comment.comment_author_ip.trim();
+    if !ip.is_empty() {
+        let mut url = rustpress_core::urls::add_query_arg(&rustpress_core::urls::add_query_arg(&ctx.admin_url("edit-comments.php"), "s", ip), "mode", "detail");
+        if current_status == "spam" {
+            url = rustpress_core::urls::add_query_arg(&url, "comment_status", "spam");
+        }
+        out.push_str(&format!("<a href=\"{}\">{}</a>", esc_url(&url), esc_html(ip)));
+    }
     out
+}
+
+/// Which list table a row belongs to: `WP_Comments_List_Table` or `WP_Post_Comments_List_Table` (the comments box
+/// of the classic edit form: author and comment only).
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum RowTable {
+    List,
+    PostBox,
 }
 
 /// One `<tr>` of the list.
 pub async fn row_html(ctx: &Ctx<'_>, comment: &Comment, index: usize, current_status: &str, counts: &std::collections::HashMap<u64, (u64, u64)>) -> String {
+    row_html_in(ctx, comment, index, current_status, counts, RowTable::List).await
+}
+
+/// `single_row()` of either list table.
+pub async fn row_html_in(ctx: &Ctx<'_>, comment: &Comment, index: usize, current_status: &str, counts: &std::collections::HashMap<u64, (u64, u64)>, table: RowTable) -> String {
     let site = ctx.site();
     let tr = |s: &str| ctx.tr(s);
+    let doing_ajax = ctx.request.file == "admin-ajax.php";
+    let post_box = table == RowTable::PostBox;
     let db = ctx.env.db;
     let id = comment.comment_id;
     let status = match comment.comment_approved.as_str() {
@@ -181,9 +210,11 @@ pub async fn row_html(ctx: &Ctx<'_>, comment: &Comment, index: usize, current_st
             push("approve", format!("<a href=\"{}\" data-wp-lists=\"dim:the-comment-list:comment-{id}:unapproved:e7e7d3:e7e7d3:new=approved\" class=\"vim-a aria-button-if-js\" aria-label=\"{}\">{}</a>", url("approvecomment", &approve_nonce), tr("Approve this comment"), tr("Approve")));
             push("unapprove", format!("<a href=\"{}\" data-wp-lists=\"dim:the-comment-list:comment-{id}:unapproved:e7e7d3:e7e7d3:new=unapproved\" class=\"vim-u aria-button-if-js\" aria-label=\"{}\">{}</a>", url("unapprovecomment", &approve_nonce), tr("Unapprove this comment"), tr("Unapprove")));
         }
+        // Reply and quick edit are hidden without JavaScript unless the row came through Ajax.
+        let js_only = if doing_ajax { "" } else { " hide-if-no-js" };
         if status != "spam" && status != "trash" {
-            push("reply hide-if-no-js", format!("<button type=\"button\" data-comment-id=\"{id}\" data-post-id=\"{post_id}\" data-action=\"replyto\" class=\"vim-r comment-inline button-link\" aria-expanded=\"false\" aria-label=\"{}\">{}</button>", tr("Reply to this comment"), tr("Reply")));
-            push("quickedit hide-if-no-js", format!("<button type=\"button\" data-comment-id=\"{id}\" data-post-id=\"{post_id}\" data-action=\"edit\" class=\"vim-q comment-inline button-link\" aria-expanded=\"false\" aria-label=\"{}\">{}</button>", tr("Quick edit this comment inline"), tr("Quick&nbsp;Edit")));
+            push(&format!("reply{js_only}"), format!("<button type=\"button\" data-comment-id=\"{id}\" data-post-id=\"{post_id}\" data-action=\"replyto\" class=\"vim-r comment-inline button-link\" aria-expanded=\"false\" aria-label=\"{}\">{}</button>", tr("Reply to this comment"), tr("Reply")));
+            push(&format!("quickedit{js_only}"), format!("<button type=\"button\" data-comment-id=\"{id}\" data-post-id=\"{post_id}\" data-action=\"edit\" class=\"vim-q comment-inline button-link\" aria-expanded=\"false\" aria-label=\"{}\">{}</button>", tr("Quick edit this comment inline"), tr("Quick&nbsp;Edit")));
             push("edit", format!("<a href=\"comment.php?action=editcomment&amp;c={id}\" aria-label=\"{}\">{}</a>", tr("Edit this comment"), tr("Edit")));
         }
         if status != "spam" {
@@ -213,7 +244,18 @@ pub async fn row_html(ctx: &Ctx<'_>, comment: &Comment, index: usize, current_st
     } else {
         actions_html.push_str(&format!("<button type=\"button\" class=\"toggle-row\"><span class=\"screen-reader-text\">{}</span></button>", tr("Show more details")));
     }
-    let author = author_block(ctx, comment);
+    let user_can = ctx.user.can_edit_comment(post.as_ref());
+    let author = author_block(ctx, comment, user_can, current_status);
+    // `get_comment_class()`: a comment by a registered user, and by the author of the post.
+    let mut by_user = String::new();
+    if comment.user_id > 0
+        && let Ok(Some(commenter)) = db.user(comment.user_id).await
+    {
+        by_user = format!(" byuser comment-author-{}", rustpress_core::formatting::sanitize_html_class(&commenter.user_nicename));
+        if post.as_ref().is_some_and(|p| p.post_author == comment.user_id) {
+            by_user.push_str(" bypostauthor");
+        }
+    }
     let reply_to = if comment.comment_parent != 0 {
         match db.comment_any(comment.comment_parent).await.ok().flatten() {
             Some(parent) => {
@@ -248,9 +290,16 @@ pub async fn row_html(ctx: &Ctx<'_>, comment: &Comment, index: usize, current_st
     let response_cell = if ctx.request.get("p").and_then(|p| p.parse::<u64>().ok()).is_some_and(|p| p > 0) { String::new() } else { format!("<td class='response column-response' data-colname=\"{}\">{response}</td>", tr("In response to")) };
     let link = comment_link(ctx, comment).await;
     let time = sprintf(&tr("%1$s at %2$s"), &[&site.date(&tr("Y/m/d"), rustpress_core::datetime::SiteTimezone::gmt_timestamp(&comment.comment_date_gmt).unwrap_or(0)), &site.date(&tr("g:i a"), rustpress_core::datetime::SiteTimezone::gmt_timestamp(&comment.comment_date_gmt).unwrap_or(0))]);
+    if post_box {
+        return format!(
+            "<tr id='comment-{id}' class='{kind}{by_user} {alt} {thread_alt} depth-1 {status}'><td class='author column-author' data-colname=\"{}\">{author}</td><th class='comment column-comment has-row-actions column-primary' data-colname=\"{}\" scope=\"row\"><div class=\"comment-author\">{author}</div>{reply_to}{text}{inline}{actions_html}</th></tr>\n",
+            tr("Author"),
+            site.trx("Comment", "column name")
+        );
+    }
     let checkbox = if can_moderate { format!("\t\t<input id=\"cb-select-{id}\" type=\"checkbox\" name=\"delete_comments[]\" value=\"{id}\" />\n\t\t<label for=\"cb-select-{id}\">\n\t\t\t<span class=\"screen-reader-text\">\n\t\t\t{}\t\t\t</span>\n\t\t</label>\n\t\t\t", tr("Select comment")) } else { String::new() };
     format!(
-        "<tr id='comment-{id}' class='{kind} {alt} {thread_alt} depth-1 {status}'><td class=\"check-column\">{checkbox}</td><td class='author column-author' data-colname=\"{a}\">{author}</td><th class='comment column-comment has-row-actions column-primary' data-colname=\"{c}\" scope=\"row\"><div class=\"comment-author\">{author}</div>{reply_to}{text}{inline}{actions_html}</th>{response_cell}<td class='date column-date' data-colname=\"{d}\"><div class=\"submitted-on\">{}</div></td></tr>\n",
+        "<tr id='comment-{id}' class='{kind}{by_user} {alt} {thread_alt} depth-1 {status}'><td class=\"check-column\">{checkbox}</td><td class='author column-author' data-colname=\"{a}\">{author}</td><th class='comment column-comment has-row-actions column-primary' data-colname=\"{c}\" scope=\"row\"><div class=\"comment-author\">{author}</div>{reply_to}{text}{inline}{actions_html}</th>{response_cell}<td class='date column-date' data-colname=\"{d}\"><div class=\"submitted-on\">{}</div></td></tr>\n",
         if status == "approved" { format!("<a href=\"{}\">{time}</a>", esc_url(&link)) } else { time.clone() },
         a = tr("Author"),
         c = tr("Comment"),
