@@ -15,6 +15,22 @@ tokio::task_local! {
     pub(crate) static PRIMED_POSTS: RefCell<HashMap<u64, Option<Post>>>;
     pub(crate) static PRIMED_COMMENTS: RefCell<HashMap<u64, Option<Comment>>>;
     pub(crate) static PRIMED_APPROVED: RefCell<HashMap<u64, Vec<Comment>>>;
+    /// All meta rows of a user, read at the first `get_user_meta()` (`update_meta_cache( 'user', ... )`).
+    pub(crate) static PRIMED_USER_META: RefCell<HashMap<u64, Vec<(String, Option<String>)>>>;
+}
+
+/// The meta of a user from the request's cache, if it was read already. `Err`: there is no cache.
+pub(crate) fn primed_user_meta(user_id: u64) -> std::result::Result<Option<Vec<(String, Option<String>)>>, ()> {
+    PRIMED_USER_META.try_with(|cache| cache.borrow().get(&user_id).cloned()).map_err(|_| ())
+}
+
+pub(crate) fn remember_user_meta(user_id: u64, rows: Vec<(String, Option<String>)>) {
+    let _ = PRIMED_USER_META.try_with(|cache| cache.borrow_mut().insert(user_id, rows));
+}
+
+/// A write to `wp_usermeta`: the cached rows are read again when asked for.
+pub(crate) fn forget_user_meta() {
+    let _ = PRIMED_USER_META.try_with(|cache| cache.borrow_mut().clear());
 }
 
 pub(crate) fn primed_comment(id: u64) -> Option<Option<Comment>> {

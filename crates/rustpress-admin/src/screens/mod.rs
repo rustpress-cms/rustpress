@@ -437,7 +437,7 @@ fn menu_capabilities(file: &str) -> Option<&'static [&'static str]> {
 
 /// A screen of WordPress that RustPress does not have yet.
 async fn unavailable(ctx: &Ctx<'_>, file: &str) -> AdminResponse {
-    let exists = ctx.env.loader.includes.parent().is_some_and(|root| root.join("wp-admin").join(file).is_file());
+    let exists = ctx.env.loader.includes.parent().is_some_and(|root| rustpress_core::files::is_file(&root.join("wp-admin").join(file)));
     if !exists {
         return die(ctx.env, 404, "WordPress &rsaquo; Error", &format!("<p>{}</p>", ctx.tr("The requested page does not exist.")));
     }
@@ -505,9 +505,8 @@ pub async fn render(ctx: &Ctx<'_>, screen: &Screen, content: &str, assets: &Asse
     if !assets.inline.iter().any(|(handle, _, _)| handle == "mediaelement-core") {
         // `var mejsL10n`: the strings of MediaElement.js, read from the script loader of WordPress and translated.
         let mut strings = serde_json::Map::new();
-        if let Ok(php) = std::fs::read_to_string(env.loader.includes.join("script-loader.php"))
-            && let Ok(re) = regex::Regex::new(r"'(mejs\.[a-z-]+)'\s*=>\s*__\(\s*'((?:[^'\\]|\\.)*)'\s*\)")
-        {
+        if let Some(php) = rustpress_core::files::read(&env.loader.includes.join("script-loader.php")) {
+            let re = rustpress_core::formatting::cached_plain_regex(r"'(mejs\.[a-z-]+)'\s*=>\s*__\(\s*'((?:[^'\\]|\\.)*)'\s*\)");
             for found in re.captures_iter(&php) {
                 strings.insert(found[1].to_owned(), serde_json::Value::from(ctx.tr(&found[2].replace("\\'", "'"))));
             }

@@ -527,14 +527,14 @@ fn not_modified(etag: &str, headers: &HeaderMap) -> Option<Response<Body>> {
     Some(response)
 }
 
+/// A file of a registered script or style. The sources come from `script-loader.php`, not from the request (that only
+/// names handles); they are still kept below the root. Read through the file cache: every admin page loads them.
 fn read_file(root: &Path, relative: &str) -> String {
-    let path = root.join(relative.trim_start_matches('/'));
-    let Ok(canonical) = std::fs::canonicalize(&path) else { return String::new() };
-    let Ok(base) = std::fs::canonicalize(root) else { return String::new() };
-    if !canonical.starts_with(&base) {
+    let relative = relative.trim_start_matches('/');
+    if relative.split(['/', '\\']).any(|segment| segment == "..") {
         return String::new();
     }
-    std::fs::read_to_string(canonical).unwrap_or_default()
+    rustpress_core::files::read(&root.join(relative)).map(|text| text.to_string()).unwrap_or_default()
 }
 
 /// `wp-admin/load-styles.php`.

@@ -38,8 +38,8 @@ fn touch_time(ctx: &Ctx<'_>, date: &str) -> String {
     out
 }
 
-/// `wp_dropdown_users()` of the Quick Edit authors (`show` = `display_name_with_login`).
-async fn authors(ctx: &Ctx<'_>, info: &TypeInfo, bulk: bool) -> String {
+/// The users `wp_dropdown_users()` lists as authors in Quick Edit and Bulk Edit (read once for both).
+async fn author_users(ctx: &Ctx<'_>, info: &TypeInfo) -> Vec<User> {
     let roles: &[&str] = if info.name == "page" { &["administrator", "editor"] } else { &["administrator", "editor", "author", "contributor"] };
     let mut users: Vec<User> = Vec::new();
     for role in roles {
@@ -51,13 +51,18 @@ async fn authors(ctx: &Ctx<'_>, info: &TypeInfo, bulk: bool) -> String {
         }
     }
     users.sort_by_key(|u| u.display_name.to_lowercase());
+    users
+}
+
+/// `wp_dropdown_users()` of the Quick Edit authors (`show` = `display_name_with_login`).
+fn authors(ctx: &Ctx<'_>, users: &[User], bulk: bool) -> String {
     let mut out = String::from("<select name='post_author' class='authors'>\n");
     if bulk {
         out.push_str(&format!("\t<option value='-1'>{}</option>\n", ctx.tr("&mdash; No Change &mdash;")));
     }
     // `wp_dropdown_users()` selects the author of an author archive: the list filtered by `author=`.
     let selected = ctx.request.get("author").and_then(|a| a.parse::<u64>().ok()).unwrap_or(0);
-    for user in &users {
+    for user in users {
         out.push_str(&format!("\t<option value='{}'{}>{} ({})</option>\n", user.id, if selected == user.id { " selected='selected'" } else { "" }, esc_html(&user.display_name), esc_html(&user.user_login)));
     }
     out.push_str("</select>");
@@ -275,6 +280,7 @@ pub async fn inline_edit(ctx: &Ctx<'_>, info: &TypeInfo, first: Option<&Post>, c
 
     let hclass = if hier.is_empty() { "page" } else { "post" };
     let mut html = head.trim_start_matches("\n\t\t").to_owned();
+    let author_users = if supports("author") && can_edit_others { author_users(ctx, info).await } else { Vec::new() };
     for bulk in [false, true] {
         let mut scope = Scope::default();
         scope.flag("BULK", bulk);
@@ -306,7 +312,7 @@ pub async fn inline_edit(ctx: &Ctx<'_>, info: &TypeInfo, first: Option<&Post>, c
         scope.var("DATE", touch_time(ctx, &date));
         // `wp_dropdown_users()` for the authors: only a user who may edit the posts of others gets it.
         let authors_label = |dropdown: String| format!("<label class=\"inline-edit-author\"><span class=\"title\">{}</span>{dropdown}</label>", ctx.tr("Author"));
-        let authors_html = if supports("author") && can_edit_others { authors_label(authors(ctx, info, bulk).await) } else { String::new() };
+        let authors_html = if supports("author") && can_edit_others { authors_label(authors(ctx, &author_users, bulk)) } else { String::new() };
         scope.var("AUTHOR_QUICK", if bulk { String::new() } else { authors_html.clone() });
         scope.var("AUTHOR_BULK", if bulk { authors_html } else { String::new() });
         // `get_default_post_to_edit()` has no author yet.

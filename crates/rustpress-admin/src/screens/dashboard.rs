@@ -526,7 +526,7 @@ fn events_templates(ctx: &Ctx<'_>) -> String {
 async fn welcome_panel(ctx: &Ctx<'_>) -> String {
     let tr = |s: &str| ctx.tr(s);
     let version = ctx.env.loader.version.split('-').next().unwrap_or_default().to_owned();
-    let svg = ctx.env.loader.includes.parent().and_then(|root| std::fs::read_to_string(root.join("wp-admin").join("images").join("dashboard-background.svg")).ok()).unwrap_or_default();
+    let svg = ctx.env.loader.includes.parent().and_then(|root| rustpress_core::files::read(&root.join("wp-admin").join("images").join("dashboard-background.svg")).map(|svg| svg.to_string())).unwrap_or_default();
     let body = translate(ctx, include_str!("dashboard_welcome.tpl"))
         .replace("{{background_svg}}", &svg)
         .replace("{{admin}}", &ctx.admin_url(""))

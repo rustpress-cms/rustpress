@@ -399,20 +399,20 @@ impl Boot {
 
 /// The strings of the first `array(...)` after `key` in an `*.asset.php` file.
 fn asset_list(includes: &std::path::Path, file: &str, key: &str) -> Vec<String> {
-    let asset = std::fs::read_to_string(includes.join(file)).unwrap_or_default();
+    let asset = rustpress_core::files::read_string(&includes.join(file));
     let Some(rest) = asset.split(&format!("'{key}' => array(")).nth(1) else { return Vec::new() };
     let body = rest.split(')').next().unwrap_or_default();
     body.split('\'').skip(1).step_by(2).map(str::to_owned).collect()
 }
 
 fn asset_version(includes: &std::path::Path, file: &str) -> String {
-    let asset = std::fs::read_to_string(includes.join(file)).unwrap_or_default();
+    let asset = rustpress_core::files::read_string(&includes.join(file));
     asset.split("'version' => '").nth(1).and_then(|rest| rest.split('\'').next()).unwrap_or_default().to_owned()
 }
 
 /// The `module_dependencies` ids of an `*.asset.php` file.
 fn asset_module_dependencies(includes: &std::path::Path, file: &str) -> Vec<String> {
-    let asset = std::fs::read_to_string(includes.join(file)).unwrap_or_default();
+    let asset = rustpress_core::files::read_string(&includes.join(file));
     let Some(rest) = asset.split("'module_dependencies' => array(").nth(1) else { return Vec::new() };
     let body = rest.split("), 'version'").next().unwrap_or_default();
     body.split("'id' => '").skip(1).filter_map(|part| part.split('\'').next()).map(str::to_owned).collect()
@@ -431,7 +431,7 @@ fn emoji_scripts(env: &ChromeEnv<'_>, editor: bool) -> String {
         "svgExt": ".svg",
         "source": {"concatemoji": format!("{root}/wp-includes/js/wp-emoji-release.min.js?ver={}", env.loader.version)}
     });
-    let loader = std::fs::read_to_string(env.loader.includes.join("js").join("wp-emoji-loader.min.js")).unwrap_or_default();
+    let loader = rustpress_core::files::read_string(&env.loader.includes.join("js").join("wp-emoji-loader.min.js"));
     let json = rustpress_blocks::php_json::encode_with(&settings, rustpress_blocks::php_json::Flags { unescaped_slashes: true, unescaped_unicode: false });
     format!("<script id=\"wp-emoji-settings\" type=\"application/json\">\n{json}\n</script>\n<script type=\"module\">\n{}\n//# sourceURL={root}/wp-includes/js/wp-emoji-loader.min.js\n</script>\n", loader.trim_end())
 }
@@ -494,7 +494,7 @@ fn command_palette_call(env: &ChromeEnv<'_>) -> String {
 
 /// The `version` of a script module (`wp-includes/js/dist/script-modules/<path>.min.asset.php`).
 fn module_version(includes: &std::path::Path, path: &str) -> String {
-    let asset = std::fs::read_to_string(includes.join("js/dist/script-modules").join(format!("{path}.min.asset.php"))).unwrap_or_default();
+    let asset = rustpress_core::files::read_string(&includes.join("js/dist/script-modules").join(format!("{path}.min.asset.php")));
     asset.split("'version' => '").nth(1).and_then(|rest| rest.split('\'').next()).unwrap_or_default().to_owned()
 }
 

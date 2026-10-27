@@ -38,6 +38,18 @@ impl Db {
 
     /// One `wp_usermeta` value (`get_user_meta( $id, $key, true )`).
     pub async fn user_meta(&self, user_id: u64, key: &str) -> Result<Option<String>> {
+        match crate::primed::primed_user_meta(user_id) {
+            Ok(Some(rows)) => return Ok(rows.into_iter().find(|(k, _)| k == key).and_then(|(_, v)| v)),
+            // Inside a request: all rows of the user in one query, the next keys come from the cache.
+            Ok(None) => {
+                let sql = format!("SELECT meta_key, meta_value FROM {} WHERE user_id = ? ORDER BY umeta_id", self.prefix.table("usermeta"));
+                let rows: Vec<(String, Option<String>)> = sqlx::query_as(AssertSqlSafe(sql)).bind(user_id).fetch_all(&self.pool).await?;
+                let value = rows.iter().find(|(k, _)| k == key).and_then(|(_, v)| v.clone());
+                crate::primed::remember_user_meta(user_id, rows);
+                return Ok(value);
+            }
+            Err(()) => {}
+        }
         let sql = format!("SELECT meta_value FROM {} WHERE user_id = ? AND meta_key = ? ORDER BY umeta_id LIMIT 1", self.prefix.table("usermeta"));
         Ok(sqlx::query_scalar::<_, Option<String>>(AssertSqlSafe(sql)).bind(user_id).bind(key).fetch_optional(&self.pool).await?.flatten())
     }

@@ -56,6 +56,7 @@ impl Writer {
     /// `update_user_meta( $user_id, $key, $value )` for a single value: every row with the key is
     /// updated, and one is added if there is none.
     pub async fn update_user_meta(&self, user_id: u64, key: &str, value: &str) -> Result<()> {
+        crate::primed::forget_user_meta();
         let table = self.prefix.table("usermeta");
         let update = format!("UPDATE {table} SET meta_value = ? WHERE user_id = ? AND meta_key = ?");
         let existing: i64 = sqlx::query_scalar(AssertSqlSafe(format!("SELECT COUNT(*) FROM {table} WHERE user_id = ? AND meta_key = ?"))).bind(user_id).bind(key).fetch_one(&self.pool).await?;
@@ -69,6 +70,7 @@ impl Writer {
 
     /// `delete_user_meta( $user_id, $key )`.
     pub async fn delete_user_meta(&self, user_id: u64, key: &str) -> Result<()> {
+        crate::primed::forget_user_meta();
         let sql = format!("DELETE FROM {} WHERE user_id = ? AND meta_key = ?", self.prefix.table("usermeta"));
         sqlx::query(AssertSqlSafe(sql)).bind(user_id).bind(key).execute(&self.pool).await?;
         Ok(())
@@ -120,6 +122,9 @@ impl Writer {
 
     /// `INSERT` into a table (given without prefix); returns the new auto-increment id.
     pub async fn insert_row(&self, table: &str, fields: &[(&str, Val)]) -> Result<u64> {
+        if table == "usermeta" {
+            crate::primed::forget_user_meta();
+        }
         let columns: Vec<String> = fields.iter().map(|(c, _)| format!("`{c}`")).collect();
         let marks = vec!["?"; fields.len()].join(", ");
         let sql = format!("INSERT INTO {} ({}) VALUES ({marks})", self.prefix.table(table), columns.join(", "));
@@ -135,6 +140,9 @@ impl Writer {
         if fields.is_empty() {
             return Ok(0);
         }
+        if table == "usermeta" {
+            crate::primed::forget_user_meta();
+        }
         let sets: Vec<String> = fields.iter().map(|(c, _)| format!("`{c}` = ?")).collect();
         let sql = format!("UPDATE {} SET {} WHERE `{key_column}` = ?", self.prefix.table(table), sets.join(", "));
         let mut query = sqlx::query(AssertSqlSafe(sql));
@@ -146,6 +154,9 @@ impl Writer {
 
     /// `DELETE FROM table WHERE column = value`.
     pub async fn delete_rows(&self, table: &str, column: &str, value: u64) -> Result<u64> {
+        if table == "usermeta" {
+            crate::primed::forget_user_meta();
+        }
         let sql = format!("DELETE FROM {} WHERE `{column}` = ?", self.prefix.table(table));
         Ok(sqlx::query(AssertSqlSafe(sql)).bind(value).execute(&self.pool).await?.rows_affected())
     }
@@ -194,11 +205,17 @@ impl Writer {
 
     /// Runs a statement with no arguments (maintenance queries such as term counts).
     pub async fn execute(&self, sql: String) -> Result<u64> {
+        if sql.contains("usermeta") {
+            crate::primed::forget_user_meta();
+        }
         Ok(sqlx::query(AssertSqlSafe(sql)).execute(&self.pool).await?.rows_affected())
     }
 
     /// `DELETE FROM table WHERE <condition>`; the condition is built by the caller from trusted parts.
     pub async fn delete_rows_where(&self, table: &str, condition: &str) -> Result<u64> {
+        if table == "usermeta" {
+            crate::primed::forget_user_meta();
+        }
         let sql = format!("DELETE FROM {} WHERE {condition}", self.prefix.table(table));
         Ok(sqlx::query(AssertSqlSafe(sql)).execute(&self.pool).await?.rows_affected())
     }

@@ -53,6 +53,19 @@ pub fn is_void(name: &str) -> bool {
 /// All tags of `html` starting at byte `from`, in document order. Comments,
 /// doctype and the contents of `script`/`style`/`textarea`/`title` are skipped.
 pub fn tags(html: &str, from: usize) -> Vec<Tag> {
+    scan(html, from, false)
+}
+
+/// The position of `needle` (lower case ASCII) in `haystack`, ignoring ASCII case.
+fn find_ascii_ci(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    if needle.is_empty() || haystack.len() < needle.len() {
+        return None;
+    }
+    haystack.windows(needle.len()).position(|window| window.eq_ignore_ascii_case(needle))
+}
+
+/// [`tags`], or only up to the first start tag.
+fn scan(html: &str, from: usize, first_start_only: bool) -> Vec<Tag> {
     let bytes = html.as_bytes();
     let mut out = Vec::new();
     let mut i = from;
@@ -131,13 +144,13 @@ pub fn tags(html: &str, from: usize) -> Vec<Tag> {
             attrs.push(Attr { name: attr_name, value, range: attr_start..j });
         }
         out.push(Tag { name: name.clone(), is_closer, attrs, start, end: j, name_end });
+        if first_start_only && !is_closer {
+            break;
+        }
         i = j;
         if !is_closer && matches!(name.as_str(), "script" | "style" | "textarea" | "title") {
             let close = format!("</{name}");
-            i = html[i..]
-                .to_ascii_lowercase()
-                .find(&close)
-                .map_or(bytes.len(), |p| i + p);
+            i = find_ascii_ci(&bytes[i..], close.as_bytes()).map_or(bytes.len(), |p| i + p);
         }
     }
     out
@@ -145,7 +158,7 @@ pub fn tags(html: &str, from: usize) -> Vec<Tag> {
 
 /// First start tag at or after `from`.
 pub fn first_start_tag(html: &str, from: usize) -> Option<Tag> {
-    tags(html, from).into_iter().find(|t| !t.is_closer)
+    scan(html, from, true).into_iter().find(|t| !t.is_closer)
 }
 
 /// Escapes a value for use inside a double-quoted attribute (`esc_attr`: entities that are complete stay).

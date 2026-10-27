@@ -50,6 +50,11 @@ pub fn read(path: &Path) -> Option<Arc<str>> {
     entry(path, |e| e.text.clone())
 }
 
+/// [`read`] as an owned string, empty when the file is missing (`file_get_contents()` of a file that should be there).
+pub fn read_string(path: &Path) -> String {
+    read(path).map(|text| text.to_string()).unwrap_or_default()
+}
+
 /// The size of a file in bytes, `None` if it is missing.
 pub fn size(path: &Path) -> Option<u64> {
     entry(path, |e| e.size)

@@ -254,8 +254,10 @@ impl Rest<'_> {
         if method == "OPTIONS" {
             return Ok(Some(self.options(route)));
         }
-        let body = self.request.as_ref().map(|r| r.body.clone()).unwrap_or_default();
-        let args = Args::new(params, &body);
+        // The body is only read here: an upload is not copied.
+        let no_body = Body::None;
+        let body = self.request.as_ref().map_or(&no_body, |r| &r.body);
+        let args = Args::new(params, body);
         let get = method == "GET";
         // The index of a namespace.
         if get && crate::namespaces().iter().any(|ns| *ns == segments.join("/")) {

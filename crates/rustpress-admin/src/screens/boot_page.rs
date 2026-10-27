@@ -9,7 +9,7 @@ use crate::chrome::{Assets, Boot, BootRoute, Screen};
 
 /// The routes the registry lists for a page, in its order.
 fn routes_of(ctx: &Ctx<'_>, page: &str) -> Vec<BootRoute> {
-    let registry = std::fs::read_to_string(ctx.env.loader.includes.join("build/routes/registry.php")).unwrap_or_default();
+    let registry = rustpress_core::files::read_string(&ctx.env.loader.includes.join("build/routes/registry.php"));
     let field = |entry: &str, key: &str| -> Option<String> {
         let after = entry.split(&format!("'{key}'")).nth(1)?;
         let value = after.split("=>").nth(1)?.split(',').next()?.trim();
