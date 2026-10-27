@@ -55,7 +55,12 @@ impl Rest<'_> {
         let template = meta_value("_wp_page_template").filter(|t| !t.is_empty() && t != "default").unwrap_or_default();
         data.insert("template".into(), Value::from(template));
         data.insert("meta".into(), Value::Array(Vec::new()));
-        data.insert("class_list".into(), Value::from(post_class(&env, post, &[], false, false).await?));
+        // `get_post_class()` names the post type only outside the administration.
+        let mut classes = post_class(&env, post, &[], false, false).await?;
+        if self.admin && classes.get(1) == Some(&post.post_type) {
+            classes.remove(1);
+        }
+        data.insert("class_list".into(), Value::from(classes));
 
         // `description`: the content filters plus `prepend_attachment()`.
         let prefix = rustpress_blocks::content::attachment_prefix(&env, post, metadata.as_ref(), attached_file.as_deref(), &alt).await?;

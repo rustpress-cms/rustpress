@@ -521,7 +521,7 @@ pub async fn media_new(ctx: &Ctx<'_>) -> AdminResponse {
     let assets = Assets { scripts: vec!["plupload-handlers".into(), "moxiejs".into(), "plupload".into()], ..Default::default() };
     let nonce = ctx.create_nonce("media-form");
     let ajax_url = site.site_url("wp-admin/async-upload.php");
-    let init = serde_json::json!({"browse_button": "plupload-browse-button", "container": "plupload-upload-ui", "drop_element": "drag-drop-area", "file_data_name": "async-upload", "url": ajax_url, "filters": {"max_file_size": format!("{}b", super::media_ui::MAX_UPLOAD)}, "multipart_params": {"post_id": 0, "_wpnonce": nonce, "type": "", "tab": "", "short": "1"}});
+    let init = serde_json::json!({"browse_button": "plupload-browse-button", "container": "plupload-upload-ui", "drop_element": "drag-drop-area", "file_data_name": "async-upload", "url": ajax_url, "filters": {"max_file_size": format!("{}b", super::media_ui::max_upload())}, "multipart_params": {"post_id": 0, "_wpnonce": nonce, "type": "", "tab": "", "short": "1"}});
     // `?>` right before the page.
     let mut h = format!("<div class=\"wrap\">\n\t<h1>{}</h1>\n\n", esc_html(&title));
     h.push_str(&format!("\t<form enctype=\"multipart/form-data\" method=\"post\" action=\"{}\" class=\"wp-upload-form media-upload-form type-form validate\" id=\"file-form\">\n\n\t\t<div id=\"media-upload-notice\">\n\t\t</div>\n\t<div id=\"media-upload-error\">\n\t\t</div>\n\t\t<script>\n\t\tvar resize_height = 1024, resize_width = 1024,\n\twpUploaderInit = {init};\n\t</script>\n\n", esc_url(&ctx.admin_url("media-new.php"))));
@@ -534,7 +534,7 @@ pub async fn media_new(ctx: &Ctx<'_>) -> AdminResponse {
         upload = tr("Upload"),
         cancel = tr("Cancel"),
         html_bypass = tr("You are using the browser&#8217;s built-in file uploader. The WordPress uploader includes multiple file selection and drag and drop capability. <button type=\"button\" class=\"button-link\">Switch to the multi-file uploader</button>."),
-        max = sprintf(&tr("Maximum upload file size: %s."), &[&super::ajax_media::size_format(super::media_ui::MAX_UPLOAD)]),
+        max = sprintf(&tr("Maximum upload file size: %s."), &[&super::ajax_media::size_format(super::media_ui::max_upload())]),
         nonce_field = format!("<input type=\"hidden\" id=\"_wpnonce\" name=\"_wpnonce\" value=\"{nonce}\" /><input type=\"hidden\" name=\"_wp_http_referer\" value=\"{}\" />", esc_url(&request.request_uri)),
     ));
     let screen = Screen { file: "media-new.php".into(), parent_file: "upload.php".into(), submenu_file: Some("media-new.php".into()), title, help: Some(new_help(ctx)), content_inline: true, ..Default::default() };

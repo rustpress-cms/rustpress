@@ -123,18 +123,22 @@ impl Registry {
     /// The core blocks in registration order: the static blocks of `require-static-blocks.php`,
     /// then the dynamic ones of `require-dynamic-blocks.php`.
     pub fn registration_order(&self) -> Vec<String> {
-        let mut names = Vec::new();
+        // The widget blocks, then the blocks with a PHP file (their `init` callbacks come first), then the static ones.
+        let mut names = vec!["core/legacy-widget".to_owned(), "core/widget-group".to_owned()];
+        if let Ok(text) = std::fs::read_to_string(self.blocks_dir.join("require-dynamic-blocks.php")) {
+            for line in text.lines() {
+                if let Some(file) = line.split("/blocks/").nth(1).and_then(|l| l.split(".php").next()) {
+                    let name = format!("core/{file}");
+                    if !names.contains(&name) {
+                        names.push(name);
+                    }
+                }
+            }
+        }
         if let Ok(text) = std::fs::read_to_string(self.blocks_dir.join("require-static-blocks.php")) {
             for line in text.lines() {
                 if let Some(name) = line.trim().strip_prefix('\'').and_then(|l| l.split('\'').next()) {
                     names.push(format!("core/{name}"));
-                }
-            }
-        }
-        if let Ok(text) = std::fs::read_to_string(self.blocks_dir.join("require-dynamic-blocks.php")) {
-            for line in text.lines() {
-                if let Some(file) = line.split("/blocks/").nth(1).and_then(|l| l.split(".php").next()) {
-                    names.push(format!("core/{file}"));
                 }
             }
         }

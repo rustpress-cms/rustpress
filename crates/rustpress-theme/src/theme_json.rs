@@ -75,7 +75,7 @@ fn do_opt_in(settings: &mut Map<String, Value>) {
         }
         opt_in_path(settings, path);
     }
-    settings.remove("appearanceTools");
+    settings.shift_remove("appearanceTools");
 }
 
 fn lookup<'a>(map: &'a Map<String, Value>, path: &[&str]) -> Option<&'a Value> {
@@ -453,7 +453,8 @@ fn set_spacing_sizes(layer: &mut Value, origin: &str) {
         return;
     }
     let Some(spacing) = layer.get_mut("settings").and_then(|s| s.get_mut("spacing")).and_then(Value::as_object_mut) else { return };
-    let mut by_origin = match spacing.remove("spacingSizes") {
+    // `_wp_array_set()` replaces the sizes where they are.
+    let mut by_origin = match spacing.get_mut("spacingSizes").map(Value::take) {
         Some(Value::Array(items)) => {
             let mut map = Map::new();
             map.insert(origin.to_owned(), Value::Array(items));

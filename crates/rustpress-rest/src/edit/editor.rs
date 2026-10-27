@@ -75,7 +75,11 @@ impl Rest<'_> {
             if uri.is_empty() { name } else { format!("<a href=\"{uri}\">{name}</a>") }
         };
         let content_url = format!("{}/wp-content/themes/{}", self.site.settings.siteurl.trim_end_matches('/'), stylesheet);
-        let tags: Vec<String> = header("Tags").split(',').map(|t| t.trim().to_owned()).filter(|t| !t.is_empty()).collect();
+        let mut tags: Vec<String> = header("Tags").split(',').map(|t| t.trim().to_owned()).filter(|t| !t.is_empty()).collect();
+        // In the administration `get_theme_feature_list()` exists and names the features (`translate_header()`).
+        if self.admin {
+            tags = tags.into_iter().map(|t| rustpress_theme::theme_headers::feature_label(&t).map_or(t, |label| self.site.tr(label))).collect();
+        }
         let screenshot = ["png", "jpg", "jpeg", "gif", "webp"].iter().find(|e| dir.join(format!("screenshot.{e}")).is_file()).map(|e| format!("{content_url}/screenshot.{e}")).unwrap_or_default();
         let supports = json!({
             "align-wide": false, "automatic-feed-links": true, "block-templates": true, "block-template-parts": false, "custom-background": false, "custom-header": false, "custom-logo": false,
@@ -180,8 +184,12 @@ impl Rest<'_> {
                         list.push(self.theme_object_for(&slug).await);
                     }
                 }
+                // The list has one page (`X-WP-Total` and `X-WP-TotalPages` of `get_items()`).
+                let total = list.len() as u64;
                 let mut resp = Resp::item(Value::Array(list));
                 resp.allow = Some("GET".to_owned());
+                resp.total = Some(total);
+                resp.total_pages = Some(1);
                 Ok(resp)
             }
             ["wp", "v2", "themes", name] if get && (self.can("switch_themes") || (self.can("edit_posts") && *name == self.theme.stylesheet)) && self.installed_themes().iter().any(|t| t == name) => Ok(Resp::item(self.theme_object_for(name).await)),
@@ -239,8 +247,8 @@ impl Rest<'_> {
     fn global_styles_theme(&self, stylesheet: &str) -> Value {
         let mut data = Map::new();
         if stylesheet == self.theme.stylesheet {
-            data.insert("styles".into(), self.theme.json.styles());
             data.insert("settings".into(), self.theme.json.settings_by_origin());
+            data.insert("styles".into(), self.theme.json.styles());
         }
         let mut links = Links::new();
         links.self_link(self.rest_url(&format!("wp/v2/global-styles/themes/{stylesheet}")));

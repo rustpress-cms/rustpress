@@ -216,6 +216,7 @@ impl Theme {
     pub fn style_variations(&self) -> Vec<Value> {
         let files = self.variation_files();
         let partials = read_partials(&[self.stylesheet_dir.join("styles"), self.template_dir.join("styles")]);
+        let block_order = self.registry.registration_order();
         let mut out = Vec::new();
         for path in files {
             let Some(raw) = read_file(&path) else { continue };
@@ -238,7 +239,7 @@ impl Theme {
             }
             if let Some(styles) = map.get("styles") {
                 let mut styles = styles.clone();
-                unwrap_shared_variations(&mut styles, &partials);
+                unwrap_shared_variations(&mut styles, &partials, &block_order);
                 crate::theme_json::resolve_custom_vars(&mut styles);
                 variation.insert("styles".into(), styles);
             }
@@ -403,9 +404,10 @@ impl ThemeAccess for Theme {
 
 /// `WP_Theme_JSON::unwrap_shared_block_style_variations()`: `styles.variations.<name>` is copied to every block
 /// that the style partial of that name is registered for.
-fn unwrap_shared_variations(styles: &mut Value, partials: &[Value]) {
-    let Some(shared) = styles.as_object_mut().and_then(|m| m.remove("variations")).and_then(|v| v.as_object().cloned()) else { return };
-    // Block names in alphabetical order, the variations of each in the order of the partials.
+fn unwrap_shared_variations(styles: &mut Value, partials: &[Value], block_order: &[String]) {
+    let Some(shared) = styles.as_object_mut().and_then(|m| m.shift_remove("variations")).and_then(|v| v.as_object().cloned()) else { return };
+    // The blocks in the order they are registered (`get_blocks_metadata()`), the variations of each in the order of
+    // the partials.
     let mut targets: Vec<(String, String)> = Vec::new();
     for partial in partials {
         let Some(name) = partial.get("slug").and_then(Value::as_str) else { continue };
@@ -413,19 +415,21 @@ fn unwrap_shared_variations(styles: &mut Value, partials: &[Value]) {
             targets.push((block.to_owned(), name.to_owned()));
         }
     }
-    targets.sort_by(|a, b| a.0.cmp(&b.0));
+    let rank = |block: &str| block_order.iter().position(|b| b == block).unwrap_or(usize::MAX);
+    targets.sort_by_key(|(block, _)| rank(block));
     for (block, name) in targets {
         let Some(top) = shared.get(&name) else { continue };
         let mut merged = top.clone();
         if let Some(existing) = styles.get("blocks").and_then(|b| b.get(&block)).and_then(|b| b.get("variations")).and_then(|v| v.get(&name)) {
             crate::theme_json::deep_merge(&mut merged, existing);
         }
+        // The variation replaces what was there (`_wp_array_set()`, in its place) instead of being merged into it.
+        if let Some(slot) = styles.get_mut("blocks").and_then(|b| b.get_mut(&block)).and_then(|b| b.get_mut("variations")).and_then(Value::as_object_mut) {
+            slot.insert(name, merged);
+            continue;
+        }
         let mut patch = Value::Object(Map::new());
         patch["blocks"][&block]["variations"][&name] = merged;
-        // The variation replaces what was there instead of being merged into it.
-        if let Some(slot) = styles.get_mut("blocks").and_then(|b| b.get_mut(&block)).and_then(|b| b.get_mut("variations")).and_then(Value::as_object_mut) {
-            slot.remove(&name);
-        }
         crate::theme_json::deep_merge(styles, &patch);
     }
 }

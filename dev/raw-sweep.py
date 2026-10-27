@@ -26,7 +26,7 @@ EXTRA = ['edit.php?post_type=page', 'edit-tags.php?taxonomy=category', 'term.php
 def normalize(body, port):
     body = body.replace(f'localhost:{port}', 'localhost:PORT')
     body = re.sub(r'(value|_wpnonce=|nonce["\']?\s*[:=]\s*["\']?)([0-9a-f]{10})\b', r'\1NONCE', body)
-    body = re.sub(r'"[0-9a-f]{10}"', '"NONCE"', body)
+    body = re.sub(r'\b[0-9a-f]{10}\b', 'NONCE', body)
     body = re.sub(r'\b1[0-9]{9}:([0-9]+)\b', r'TIME:\1', body)
     body = re.sub(r'"max_file_size":"[0-9]+b"', '"max_file_size":"SIZE"', body)
     return body.split('\n')

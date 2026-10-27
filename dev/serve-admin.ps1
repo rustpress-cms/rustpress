@@ -14,5 +14,7 @@ $env:RUSTPRESS_ALLOW_WRITES = '1'
 $env:RUSTPRESS_RELOAD_SECS = '1'
 # Application passwords over plain HTTP, like the mu-plugin the reference gets for the comparison.
 $env:RUSTPRESS_ENVIRONMENT_TYPE = 'local'
+# The upload limit of the reference's PHP (upload_max_filesize = 2M), so the pages compare byte for byte.
+$env:RUSTPRESS_MAX_UPLOAD_SIZE = '2097152'
 Set-Location (Split-Path -Parent $PSScriptRoot)
 cargo run -q -p rustpress-server

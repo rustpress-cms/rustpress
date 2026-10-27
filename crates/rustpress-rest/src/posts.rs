@@ -402,7 +402,12 @@ impl Rest<'_> {
         }
         // `class_list` belongs to the types that have pages of their own.
         if !matches!(kind, Kind::Custom(info) if !info.public) && (wanted("class_list") || wanted("permalink_template") || wanted("generated_slug")) {
-            data.insert("class_list".into(), Value::from(post_class(&env, post, &[], false, false).await?));
+            // `get_post_class()` names the post type only outside the administration.
+            let mut classes = post_class(&env, post, &[], false, false).await?;
+            if self.admin && classes.get(1) == Some(&post.post_type) {
+                classes.remove(1);
+            }
+            data.insert("class_list".into(), Value::from(classes));
         }
 
         if wanted("_links") || wanted("_embedded") {

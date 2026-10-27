@@ -120,7 +120,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     assets.early_scripts.push("wp-block-styles".into());
     assets.early_scripts.push("wp-block-directory".into());
     assets.inline.push(("wp-block-styles".into(), super::block_editor::block_styles_script(ctx), "after".into()));
-    shared_inline(ctx, &mut assets, &preloaded, false).await;
+    shared_inline(ctx, &mut assets, &preloaded, super::block_editor::EditorPage::Site).await;
     // The classic editor's TinyMCE settings are not needed by the site editor.
     assets.inline.retain(|(handle, _, position)| !(handle == "wp-block-library" && position == "before"));
     assets.inline.push(("wp-edit-site".into(), format!("wp.domReady( function() {{\n\t\t\twp.editSite.initializeEditor( \"site-editor\", {} );\n\t\t}} );", inline_json(&settings)), "after".into()));

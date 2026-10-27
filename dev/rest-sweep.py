@@ -2,7 +2,9 @@
 """Calls every GET route of the reference WordPress (:8080) on both servers (as rpadmin) and lists the routes whose
 status or top-level shape differ.
 
-    python dev/rest-sweep.py [--only substring] [--shape]
+    python dev/rest-sweep.py [--only substring] [--shape] [--raw]
+
+--raw compares the bodies with the order of their members (the editors' preloads print them as they are).
 
 Routes with parameters get sample values (see SAMPLES); routes with other patterns are skipped."""
 import importlib.util
@@ -53,6 +55,9 @@ def main():
                 if '--shape' in args:
                     if rc.shape(ja) != rc.shape(jb):
                         note = 'shape'
+                elif '--raw' in args:
+                    if json.dumps(rc.normalize(ja, 8080)) != json.dumps(rc.normalize(jb, 3001)):
+                        note = 'order' if rc.normalize(ja, 8080) == rc.normalize(jb, 3001) else 'body'
                 elif rc.normalize(ja, 8080) != rc.normalize(jb, 3001):
                     note = 'body'
             except ValueError:

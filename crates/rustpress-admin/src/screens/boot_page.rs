@@ -42,7 +42,7 @@ async fn render_boot(ctx: &Ctx<'_>, page: &str, file: &str, parent_file: &str, t
     ];
     let preloaded = preload_paths(ctx, paths).await;
     let mut assets = Assets { boot: Some(Boot { page: page.to_owned(), routes, extra_modules: extras.0, module_data: extras.1 }), ..Default::default() };
-    shared_inline(ctx, &mut assets, &preloaded, true).await;
+    shared_inline(ctx, &mut assets, &preloaded, super::block_editor::EditorPage::Boot).await;
     assets.inline.retain(|(handle, _, position)| !(handle == "wp-block-library" && position == "before") && handle != "wp-blocks");
     let content = format!(
         "<div class=\"wrap hide-if-js\">\n\t<h1 class=\"wp-heading-inline\">{}</h1>\n\t<div class=\"notice notice-error hide-if-js\"><p>{}</p></div></div>\n{CRITICAL_STYLES}\t<div id=\"{page}-wp-admin-app\" class=\"boot-layout-container\"></div>\n\t",

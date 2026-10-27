@@ -12,7 +12,8 @@
 //! Environment: `RUSTPRESS_CONFIG` (path of the TOML file), `RUSTPRESS_DATABASE_URL`, `RUSTPRESS_ALLOW_WRITES`,
 //! `RUSTPRESS_WP_CONFIG`,
 //! `RUSTPRESS_TABLE_PREFIX`, `RUSTPRESS_WP_ROOT`, `RUSTPRESS_LISTEN`, `RUSTPRESS_RELOAD_SECS`,
-//! `RUSTPRESS_TRUSTED_PROXIES` (addresses separated by commas).
+//! `RUSTPRESS_TRUSTED_PROXIES` (addresses separated by commas). The administration reads
+//! `RUSTPRESS_MAX_UPLOAD_SIZE` (bytes, `wp_max_upload_size()`, 64 MiB by default) itself.
 
 use std::path::PathBuf;
 

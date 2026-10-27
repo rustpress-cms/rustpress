@@ -311,7 +311,7 @@ async fn debug_data(ctx: &Ctx<'_>) -> Vec<Section> {
     info.push(Section { id: "wp-plugins-inactive", label: tr("Inactive Plugins"), description: String::new(), show_count: true, fields: inactive });
 
     // Media handling
-    let max = super::media_ui::MAX_UPLOAD;
+    let max = super::media_ui::max_upload();
     info.push(Section {
         id: "wp-media",
         label: tr("Media Handling"),

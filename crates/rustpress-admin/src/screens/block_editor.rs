@@ -14,9 +14,38 @@ use crate::chrome::{Assets, Screen};
 
 const STATIC: &str = include_str!("../data/editor_static.json");
 
-/// `wp_json_encode( $value, JSON_HEX_TAG )`: safe inside an inline script.
+/// `wp_json_encode( $value, JSON_HEX_TAG | JSON_UNESCAPED_SLASHES )`: safe inside an inline script.
 pub(super) fn inline_json(value: &Value) -> String {
-    value.to_string().replace('<', "\\u003C").replace('>', "\\u003E")
+    rustpress_blocks::php_json::encode_with(value, rustpress_blocks::php_json::Flags { unescaped_slashes: true, unescaped_unicode: false }).replace('<', "\\u003C").replace('>', "\\u003E")
+}
+
+/// The page an editor runs on: the order of the block data and the encoding of the preloads differ.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum EditorPage {
+    /// `edit-form-blocks.php`.
+    Post,
+    /// `site-editor.php`.
+    Site,
+    /// A page of `@wordpress/boot`.
+    Boot,
+}
+
+/// `get_all_registered_block_bindings_sources()` as the editors list them: the sources of WordPress, then the theme's.
+fn bindings_sources(ctx: &Ctx<'_>) -> Value {
+    let site = ctx.site();
+    let mut sources: Vec<Value> = [("core/pattern-overrides", "Pattern Overrides", &["pattern/overrides"][..]), ("core/post-data", "Post Data", &["postId", "postType"]), ("core/post-meta", "Post Meta", &["postId", "postType"]), ("core/term-data", "Term Data", &["termId", "taxonomy"])]
+        .into_iter()
+        .map(|(name, label, uses)| json!({"name": name, "label": site.trx(label, "block bindings source"), "usesContext": uses}))
+        .collect();
+    let domain = site.settings.template.clone();
+    for source in ctx.env.theme.block_bindings_sources() {
+        let label = match &source.label_context {
+            Some(context) => site.i18n().pgettext(&domain, context, &source.label),
+            None => site.i18n().gettext(&domain, &source.label),
+        };
+        sources.push(json!({"name": source.name, "label": label, "usesContext": source.uses_context}));
+    }
+    Value::Array(sources)
 }
 
 fn statics() -> Value {
@@ -42,7 +71,7 @@ async fn preload_one(ctx: &Ctx<'_>, method: &str, path: &str) -> Option<Value> {
     let env = ctx.env;
     let writer = env.writer?;
     let (route, query) = path.split_once('?').map_or((path, ""), |(r, q)| (r, q));
-    let rest = rustpress_rest::Rest::new(ctx.site(), env.theme, env.registry).with_host(ctx.request.host.as_deref().unwrap_or_default());
+    let rest = rustpress_rest::Rest::new(ctx.site(), env.theme, env.registry).with_host(ctx.request.host.as_deref().unwrap_or_default()).in_admin();
     let (auth, user_id, token, now) = (env.auth.clone(), ctx.user.id, ctx.token.clone(), env.now);
     let nonce: std::sync::Arc<dyn Fn(&str) -> String + Send + Sync> = std::sync::Arc::new(move |action: &str| auth.create_nonce(action, user_id, &token, now).unwrap_or_default());
     let access = Access { user: ctx.user.clone(), app_password: None, writer: Some(writer), now: env.now, uploads: super::ajax_media::uploads_dir(env), nonce: Some(nonce), roles: Some(env.roles), salts: Some(env.auth.salts()), comment_notify: None };
@@ -50,17 +79,33 @@ async fn preload_one(ctx: &Ctx<'_>, method: &str, path: &str) -> Option<Value> {
     if reply.status >= 400 {
         return None;
     }
-    let body: Value = serde_json::from_str(&reply.body).unwrap_or(Value::Null);
+    let mut body: Value = serde_json::from_str(&reply.body).unwrap_or(Value::Null);
+    keep_empty_objects(&mut body);
+    // The headers of the response in the order the controllers set them (the counts are numbers), `Allow` last.
+    let header = |name: &str| reply.headers.iter().find(|(n, _)| n == name).map(|(_, v)| v.clone());
     let mut headers = Map::new();
-    for (name, value) in &reply.headers {
-        if matches!(name.as_str(), "Link" | "Allow" | "X-WP-Total" | "X-WP-TotalPages") && !(name == "Link" && value.contains("api.w.org")) {
-            headers.insert(name.clone(), Value::from(value.clone()));
+    for name in ["X-WP-Total", "X-WP-TotalPages"] {
+        if let Some(value) = header(name) {
+            headers.insert(name.into(), value.parse::<u64>().map_or_else(|_| Value::from(value.clone()), Value::from));
         }
     }
-    if let Some(allow) = reply.headers.iter().find(|(n, _)| n == "Allow") {
-        headers.insert("Allow".into(), Value::from(allow.1.clone()));
+    if let Some(link) = header("Link").filter(|l| !l.contains("api.w.org")) {
+        headers.insert("Link".into(), Value::from(link));
+    }
+    if let Some(allow) = header("Allow") {
+        headers.insert("Allow".into(), Value::from(allow));
     }
     Some(json!({"body": body, "headers": Value::Object(headers)}))
+}
+
+/// The empty objects of a REST answer stay objects (`new stdClass()`) when it is encoded again.
+fn keep_empty_objects(value: &mut Value) {
+    match value {
+        Value::Object(map) if map.is_empty() => *value = rustpress_blocks::php_json::empty_object(),
+        Value::Object(map) => map.values_mut().for_each(keep_empty_objects),
+        Value::Array(items) => items.iter_mut().for_each(keep_empty_objects),
+        _ => {}
+    }
 }
 
 async fn preload(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, global_styles_id: Option<u64>) -> Value {
@@ -78,7 +123,6 @@ async fn preload(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, global_styles_id: 
         ("GET".into(), format!("/wp/v2/types/{}?context=edit", info.name)),
         ("GET".into(), "/wp/v2/users/me".into()),
         ("OPTIONS".into(), "/wp/v2/media".into()),
-        ("OPTIONS".into(), format!("/wp/v2/{base}")),
         ("OPTIONS".into(), "/wp/v2/pages".into()),
         ("OPTIONS".into(), "/wp/v2/blocks".into()),
         ("OPTIONS".into(), "/wp/v2/templates".into()),
@@ -91,7 +135,9 @@ async fn preload(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, global_styles_id: 
     ];
     if let Some(id) = global_styles_id {
         paths.push(("OPTIONS".into(), format!("/wp/v2/global-styles/{id}")));
-        paths.push(("GET".into(), format!("/wp/v2/global-styles/{id}?context=edit")));
+        // The context the client asks with depends on the user's rights.
+        let context = if ctx.can("edit_theme_options") { "edit" } else { "view" };
+        paths.push(("GET".into(), format!("/wp/v2/global-styles/{id}?context={context}")));
     }
     paths.push(("GET".into(), "/wp/v2/block-patterns/categories".into()));
     paths.push(("GET".into(), "/?_fields=description,gmt_offset,home,image_max_bit_depth,image_sizes,image_size_threshold,image_strip_meta,name,site_icon,site_icon_url,site_logo,timezone_string,url,page_for_posts,page_on_front,show_on_front".into()));
@@ -103,7 +149,10 @@ async fn preload(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, global_styles_id: 
     paths.push(("GET".into(), format!("/wp/v2/templates/lookup?slug={lookup}")));
     paths.push(("GET".into(), "/wp/v2/templates/lookup?slug=front-page".into()));
     paths.push(("GET".into(), "/wp/v2/taxonomies?context=edit".into()));
-    paths.push(("GET".into(), format!("/wp/v2/users/{}?context=view&_fields=id,name", post.post_author)));
+    paths.push(("OPTIONS".into(), format!("/wp/v2/{base}")));
+    if site.post_type_supports(&post.post_type, "author") && post.post_author > 0 {
+        paths.push(("GET".into(), format!("/wp/v2/users/{}?context=view&_fields=id,name", post.post_author)));
+    }
     preload_paths(ctx, paths).await
 }
 
@@ -219,7 +268,6 @@ async fn post_settings(ctx: &Ctx<'_>, post: &Post, settings: &mut Map<String, Va
     settings.insert("postLockUtils".into(), json!({"nonce": ctx.create_nonce(&format!("lock-post_{}", post.id)), "unlockNonce": ctx.create_nonce(&format!("update-post_{}", post.id)), "ajaxUrl": ctx.admin_url("admin-ajax.php")}));
     settings.insert("supportsTemplateMode".into(), json!(env.block_theme));
     settings.insert("enableCustomFields".into(), json!(false));
-    settings.insert("postContentAttributes".into(), json!({"align": "full", "layout": {"type": "constrained"}}));
 }
 
 pub(super) async fn editor_settings(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo) -> Value {
@@ -254,7 +302,7 @@ pub(super) async fn editor_settings(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo)
     });
     settings.insert("imageEditing".into(), json!(true));
     settings.insert("imageSizes".into(), get("imageSizes"));
-    settings.insert("maxUploadFileSize".into(), json!(super::media_ui::MAX_UPLOAD));
+    settings.insert("maxUploadFileSize".into(), json!(super::media_ui::max_upload()));
     settings.insert("__experimentalDashboardLink".into(), json!(ctx.admin_url("")));
     settings.insert("__unstableGalleryWithImageBlocks".into(), json!(true));
     for key in ["disableCustomColors", "disableCustomFontSizes", "disableCustomGradients", "disableLayoutStyles"] {
@@ -305,24 +353,10 @@ pub(super) async fn editor_settings(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo)
     let mut features = theme.json.settings_by_origin();
     styles.extend(duotone_entries(&features));
     settings.insert("styles".into(), Value::Array(styles));
-    // Legacy settings move out of the features into the editor settings (`get_block_editor_settings()`).
-    for (path, key, negate) in [
-        (["color", "custom"], "disableCustomColors", true),
-        (["color", "customGradient"], "disableCustomGradients", true),
-        (["typography", "customFontSize"], "disableCustomFontSizes", true),
-        (["typography", "lineHeight"], "enableCustomLineHeight", false),
-        (["spacing", "units"], "enableCustomUnits", false),
-        (["spacing", "padding"], "enableCustomSpacing", false),
-        (["spacing", "customSpacingSize"], "disableCustomSpacingSizes", true),
-    ] {
-        let Some(value) = features.get_mut(path[0]).and_then(Value::as_object_mut).and_then(|group| group.remove(path[1])) else { continue };
-        let value = if negate { json!(!value.as_bool().unwrap_or(false)) } else { value };
-        settings.insert(key.into(), value);
-    }
-    settings.insert("__experimentalFeatures".into(), features.clone());
+    settings.insert("__experimentalFeatures".into(), Value::Null);
     // The most specific origin that has any items: the user's, the theme's, then core's.
-    let palette = |path: &[&str]| {
-        let mut node = Some(&features);
+    let palette = |features: &Value, path: &[&str]| {
+        let mut node = Some(features);
         for key in path {
             node = node.and_then(|n| n.get(*key));
         }
@@ -332,11 +366,29 @@ pub(super) async fn editor_settings(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo)
             _ => json!([]),
         }
     };
-    settings.insert("colors".into(), palette(&["color", "palette"]));
-    settings.insert("gradients".into(), palette(&["color", "gradients"]));
-    settings.insert("fontSizes".into(), palette(&["typography", "fontSizes"]));
-    settings.entry("disableCustomSpacingSizes".to_owned()).or_insert(json!(false));
-    settings.insert("spacingSizes".into(), palette(&["spacing", "spacingSizes"]));
+    // `get_block_editor_settings()`: the presets, then the legacy settings move out of the features (keys that are
+    // there already keep their place).
+    settings.insert("colors".into(), palette(&features, &["color", "palette"]));
+    settings.insert("gradients".into(), palette(&features, &["color", "gradients"]));
+    settings.insert("fontSizes".into(), palette(&features, &["typography", "fontSizes"]));
+    for (path, key, negate) in [
+        (["color", "custom"], "disableCustomColors", true),
+        (["color", "customGradient"], "disableCustomGradients", true),
+        (["typography", "customFontSize"], "disableCustomFontSizes", true),
+        (["typography", "lineHeight"], "enableCustomLineHeight", false),
+        (["spacing", "units"], "enableCustomUnits", false),
+        (["spacing", "padding"], "enableCustomSpacing", false),
+        (["spacing", "customSpacingSize"], "disableCustomSpacingSizes", true),
+    ] {
+        let Some(value) = features.get_mut(path[0]).and_then(Value::as_object_mut).and_then(|group| group.shift_remove(path[1])) else { continue };
+        let value = if negate { json!(!value.as_bool().unwrap_or(false)) } else { value };
+        settings.insert(key.into(), value);
+    }
+    settings.insert("spacingSizes".into(), palette(&features, &["spacing", "spacingSizes"]));
+    // The features as they are left.
+    if let Some(slot) = settings.get_mut("__experimentalFeatures") {
+        *slot = features.clone();
+    }
 
     // The assets inside the editor's iframe.
     let root = site.settings.siteurl.trim_end_matches('/').to_owned();
@@ -372,6 +424,10 @@ pub(super) async fn editor_settings(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo)
             "avatarURL": rustpress_blocks::content::avatar_url(&site.options, "", 96).replace("&r=", "&f=y&r="),
         }),
     );
+    // `wp_get_post_content_block_attributes()`: the attributes of the post content block of the single template.
+    if env.block_theme {
+        settings.insert("postContentAttributes".into(), json!({"align": "full", "layout": {"type": "constrained"}}));
+    }
     settings.insert("canUpdateBlockBindings".into(), json!(true));
     settings.insert("canEditCSS".into(), json!((ctx.can("edit_css") || ctx.can("unfiltered_html"))));
     let _ = info;
@@ -417,7 +473,8 @@ pub(super) fn editor_head_styles(ctx: &Ctx<'_>, assets: &mut Assets) {
     }
 }
 
-pub(super) async fn shared_inline(ctx: &Ctx<'_>, assets: &mut Assets, preloaded: &Value, boot: bool) {
+pub(super) async fn shared_inline(ctx: &Ctx<'_>, assets: &mut Assets, preloaded: &Value, page: EditorPage) {
+    let boot = page == EditorPage::Boot;
     let site = ctx.site();
     let root = site.site_url("wp-json/");
     let nonce = ctx.create_nonce("wp_rest");
@@ -470,11 +527,18 @@ pub(super) async fn shared_inline(ctx: &Ctx<'_>, assets: &mut Assets, preloaded:
     ));
     let definitions = statics().get("blockDefinitions").cloned().unwrap_or(Value::Null);
     let categories = statics().get("blockCategories").cloned().unwrap_or(Value::Null);
-    assets.inline.push((
-        "wp-blocks".into(),
-        format!("wp.blocks.setCategories( {} );\nwp.blocks.unstable__bootstrapServerSideBlockDefinitions({});", inline_json(&categories), inline_json(&definitions)),
-        "after".into(),
-    ));
+    let categories = format!("wp.blocks.setCategories( {} );", inline_json(&categories));
+    let definitions = format!("wp.blocks.unstable__bootstrapServerSideBlockDefinitions({});", inline_json(&definitions));
+    let sources = format!("for ( const source of {} ) {{ wp.blocks.registerBlockBindingsSource( source ); }}", inline_json(&bindings_sources(ctx)));
+    // The post editor sets the categories first, the site editor last.
+    let order = match page {
+        EditorPage::Post => vec![categories, definitions, sources],
+        EditorPage::Site => vec![definitions, sources, categories],
+        EditorPage::Boot => Vec::new(),
+    };
+    for code in order {
+        assets.inline.push(("wp-blocks".into(), code, "after".into()));
+    }
 }
 
 /// The block editor for `post`.
@@ -497,10 +561,13 @@ pub async fn render_editor(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo) -> Admin
         editor_modules: true,
         no_emoji: true,
         styles: ["media-views", "editor-buttons", "wp-edit-post", "wp-block-directory", "wp-format-library", "wp-edit-blocks", "wp-commands"].iter().map(|s| (*s).to_owned()).collect(),
-        head_early: "\t<script>\n\t\tif ( typeof performance !== 'undefined' && performance.navigation && performance.navigation.type === 2 ) {\n\t\t\tdocument.location.reload( true );\n\t\t}\n\t</script>\n".into(),
+        head_early: "\t<script>\n\t\tif ( typeof performance !== 'undefined' && performance.navigation && performance.navigation.type === 2 ) {\n\t\t\tdocument.location.reload( true );\n\t\t}\n\t</script>\n\t".into(),
         ..Default::default()
     };
     super::media_ui::enqueue(ctx, &mut assets, post.id).await;
+    // `wp_enqueue_editor()`: the defaults of `wp.editor` for the classic block (`admin_print_footer_scripts`, 45).
+    let rich_editing = ctx.env.db.user_meta(ctx.user.id, "rich_editing").await.ok().flatten();
+    assets.footer = super::editor::default_editor_scripts(ctx, super::editor::can_richedit(ctx, rich_editing.as_deref()));
     editor_head_styles(ctx, &mut assets);
     assets.inline.push(("wp-block-styles".into(), block_styles_script(ctx), "after".into()));
     // Post locks: the heartbeat checks every ten seconds, and the meta box loader nonces are renewed.
@@ -532,7 +599,7 @@ pub async fn render_editor(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo) -> Admin
         inline_json(&settings),
         inline_json(&initial_edits)
     );
-    shared_inline(ctx, &mut assets, &preloaded, false).await;
+    shared_inline(ctx, &mut assets, &preloaded, EditorPage::Post).await;
     assets.inline.push(("wp-edit-post".into(), init, "after".into()));
     assets.inline.push(("wp-editor".into(), format!("var _wpMetaBoxUrl = {};", json!(format!("{}?post={}&action=edit&meta-box-loader=1&meta-box-loader-nonce={}", ctx.admin_url("post.php"), post.id, ctx.create_nonce("meta-box-loader")))), "before".into()));
 

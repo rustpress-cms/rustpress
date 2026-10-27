@@ -152,6 +152,55 @@ pub fn classic_editor(ctx: &Ctx<'_>, content: &str, post_type: &str, post_status
     Editor { html, preinit, init, scripts, rich }
 }
 
+/// `_WP_Editors::print_default_editor_scripts()` of `wp_enqueue_editor()`: the settings `wp.editor.initialize()`
+/// starts with, then the link dialog.
+pub fn default_editor_scripts(ctx: &Ctx<'_>, rich: bool) -> String {
+    let site = ctx.site();
+    let site_url = &ctx.env.loader.site_url;
+    let version = &ctx.env.loader.version;
+    let settings = if rich {
+        // `default_settings()` with the toolbar and the plugins of the default editor (the same keys as the post
+        // editor's, without the parts the post editor adds).
+        let lang = site.locale().split('_').next().unwrap_or("en").to_owned();
+        let common = MCE_INIT
+            .split_once("{'content':{")
+            .and_then(|(_, rest)| rest.split_once(",content_css:"))
+            .map(|(common, _)| common.replace("resize:false", "resize:\"vertical\""))
+            .unwrap_or_default()
+            .replace("{LANG}", &lang)
+            .replace("{LANG_ATTR}", &site.language_tag())
+            .replace("{TINYMCE_VERSION}", &tinymce_version(ctx));
+        format!(
+            "{{{common},content_css:\"{site_url}/wp-includes/css/dashicons.min.css?ver={version},{site_url}/wp-includes/js/tinymce/skins/wordpress/wp-content.css?ver={version}\",toolbar1:\"bold,italic,bullist,numlist,link\",wpautop:false,indent:true,elementpath:false,plugins:\"charmap,colorpicker,hr,lists,paste,tabfocus,textcolor,fullscreen,wordpress,wpautoresize,wpeditimage,wpemoji,wpgallery,wplink,wptextpattern\"}}"
+        )
+    } else {
+        "{}".to_owned()
+    };
+    let mut out = format!(
+        "\t\t<script>\n\t\twindow.wp = window.wp || {{}};\n\t\twindow.wp.editor = window.wp.editor || {{}};\n\t\twindow.wp.editor.getDefaultSettings = function() {{\n\t\t\treturn {{\n\t\t\t\ttinymce: {settings},\n\t\t\t\tquicktags: {{\n\t\t\t\t\tbuttons: 'strong,em,link,ul,ol,li,code'\n\t\t\t\t}}\n\t\t\t}};\n\t\t}};\n\n\t\t"
+    );
+    if rich {
+        out.push_str(&format!(
+            "\t\t\tvar tinyMCEPreInit = {{\n\t\t\t\tbaseURL: \"{site_url}/wp-includes/js/tinymce\",\n\t\t\t\tsuffix: \".min\",\n\t\t\t\tmceInit: {{}},\n\t\t\t\tqtInit: {{}},\n\t\t\t\tload_ext: function(url,lang){{var sl=tinymce.ScriptLoader;sl.markDone(url+'/langs/'+lang+'.js');sl.markDone(url+'/langs/'+lang+'_dlg.js');}}\n\t\t\t}};\n\t\t\t"
+        ));
+    }
+    out.push_str("\t\t</script>\n\t\t");
+    out.push_str(&link_dialog(ctx));
+    out
+}
+
+/// The version TinyMCE's files are cached with (`$tinymce_version`, the version of `wp-tinymce-root`).
+fn tinymce_version(ctx: &Ctx<'_>) -> String {
+    default_scripts(&ctx.env.loader)
+        .deps
+        .get("wp-tinymce-root")
+        .map(|s| match &s.ver {
+            crate::deps::Ver::Value(v) => v.clone(),
+            _ => String::new(),
+        })
+        .unwrap_or_default()
+}
+
 /// `_WP_Editors::wp_link_dialog()`.
 pub fn link_dialog(ctx: &Ctx<'_>) -> String {
     let tr = |s: &str| ctx.tr(s);

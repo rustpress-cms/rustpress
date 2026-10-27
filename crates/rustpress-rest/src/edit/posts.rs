@@ -664,7 +664,10 @@ impl Rest<'_> {
                     Some(a) => vec![self.prepare_revision(a, parent, kind, context).await?],
                     None => Vec::new(),
                 };
-                Ok(Ok(Resp::item(Value::Array(items))))
+                // Creating an autosave needs the right to edit the post.
+                let mut resp = Resp::item(Value::Array(items));
+                resp.allow = Some(if self.user().is_some_and(|u| u.can_edit_post(parent)) { "GET, POST" } else { "GET" }.to_owned());
+                Ok(Ok(resp))
             }
             "POST" => {
                 let content = match self.content() {

@@ -12,8 +12,11 @@ fn bake() -> Json {
     serde_json::from_str(BAKE).unwrap_or(Json::Null)
 }
 
-/// `wp_max_upload_size()`: what the server accepts, in bytes.
-pub const MAX_UPLOAD: u64 = 64 * 1024 * 1024;
+/// `wp_max_upload_size()`: what the server accepts, in bytes (`RUSTPRESS_MAX_UPLOAD_SIZE`, 64 MiB unless set).
+pub fn max_upload() -> u64 {
+    static SIZE: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
+    *SIZE.get_or_init(|| std::env::var("RUSTPRESS_MAX_UPLOAD_SIZE").ok().and_then(|v| v.trim().parse().ok()).unwrap_or(64 * 1024 * 1024))
+}
 
 fn admin_path(ctx: &Ctx<'_>, file: &str) -> String {
     ctx.admin_url(file).strip_prefix(&ctx.env.loader.site_url).map_or_else(|| format!("/wp-admin/{file}"), str::to_owned)
@@ -66,7 +69,7 @@ pub async fn enqueue(ctx: &Ctx<'_>, assets: &mut Assets, post_id: u64) {
             "defaults": {
                 "file_data_name": "async-upload",
                 "url": admin_path(ctx, "async-upload.php"),
-                "filters": {"max_file_size": format!("{MAX_UPLOAD}b"), "mime_types": [{"extensions": baked.get("mime_extensions").cloned().unwrap_or(Json::Null)}]},
+                "filters": {"max_file_size": format!("{}b", max_upload()), "mime_types": [{"extensions": baked.get("mime_extensions").cloned().unwrap_or(Json::Null)}]},
                 "multipart_params": {"action": "upload-attachment", "_wpnonce": ctx.create_nonce("media-form")},
             },
             "browser": {"mobile": false, "supported": true},

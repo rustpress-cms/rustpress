@@ -208,6 +208,15 @@ impl Theme {
         dirs.iter().filter_map(|dir| std::fs::read_to_string(dir.join("functions.php")).ok()).find_map(|php| crate::functions_php::theme_support_list(&php, "post-formats")).unwrap_or_default()
     }
 
+    /// The block bindings sources the theme and its parent register, the child's first.
+    pub fn block_bindings_sources(&self) -> Vec<crate::functions_php::BindingSource> {
+        let mut dirs = vec![self.stylesheet_dir().to_path_buf()];
+        if self.template_dir() != self.stylesheet_dir() {
+            dirs.push(self.template_dir().to_path_buf());
+        }
+        dirs.iter().filter_map(|dir| std::fs::read_to_string(dir.join("functions.php")).ok()).flat_map(|php| crate::functions_php::block_bindings_sources(&php)).collect()
+    }
+
     /// `current_theme_supports( $feature )` for what the `functions.php` of the theme (or its parent) adds.
     pub fn adds_theme_support(&self, feature: &str) -> bool {
         let mut dirs = vec![self.stylesheet_dir().to_path_buf()];

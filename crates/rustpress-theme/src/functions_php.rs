@@ -282,6 +282,35 @@ pub fn adds_theme_support(php: &str, feature: &str) -> bool {
     call_arguments(php, "add_theme_support").into_iter().any(|arguments| arguments.trim_start().starts_with(&quoted))
 }
 
+/// A source of block bindings the theme registers (`register_block_bindings_source()`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BindingSource {
+    pub name: String,
+    pub label: String,
+    /// The context of `_x()` around the label.
+    pub label_context: Option<String>,
+    pub uses_context: Option<Vec<String>>,
+}
+
+/// The `register_block_bindings_source()` calls with a literal name and label, in source order.
+pub fn block_bindings_sources(php: &str) -> Vec<BindingSource> {
+    let quoted = r"'((?:[^'\\]|\\.)*)'";
+    let label_re = regex::Regex::new(&format!(r"'label'\s*=>\s*(_x|__)\(\s*{quoted}(?:\s*,\s*{quoted})?")).expect("valid pattern");
+    let context_re = regex::Regex::new(r"'uses_context'\s*=>\s*(?:array\(|\[)([^\])]*)").expect("valid pattern");
+    let string_re = regex::Regex::new(quoted).expect("valid pattern");
+    let unescape = |s: &str| s.replace("\\'", "'").replace("\\\\", "\\");
+    call_arguments(php, "register_block_bindings_source")
+        .into_iter()
+        .filter_map(|arguments| {
+            let name = string_re.captures(arguments)?.get(1)?.as_str().to_owned();
+            let label = label_re.captures(arguments)?;
+            let label_context = if &label[1] == "_x" { label.get(3).map(|m| unescape(m.as_str())) } else { None };
+            let uses_context = context_re.captures(arguments).map(|c| string_re.captures_iter(&c[1]).map(|s| unescape(&s[1])).collect());
+            Some(BindingSource { name, label: unescape(&label[2]), label_context, uses_context })
+        })
+        .collect()
+}
+
 /// Whether `wp_style_add_data( $handle, 'path', ... )` lets WordPress inline the stylesheet.
 pub fn theme_stylesheet_has_path(php: &str, handle: &str) -> bool {
     let quoted = format!("'{handle}'");

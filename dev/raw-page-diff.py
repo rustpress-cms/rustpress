@@ -42,7 +42,7 @@ def main():
         part = body[a if a >= 0 else 0:(b + len(end)) if b >= 0 else len(body)]
         part = part.replace(f'localhost:{port}', 'localhost:PORT')
         part = re.sub(r'(value|_wpnonce=|nonce["\']?\s*[:=]\s*["\']?)([0-9a-f]{10})\b', r'\1NONCE', part)
-        part = re.sub(r'"[0-9a-f]{10}"', '"NONCE"', part)
+        part = re.sub(r'\b[0-9a-f]{10}\b', 'NONCE', part)
         part = re.sub(r'\b1[0-9]{9}:([0-9]+)\b', r'TIME:\1', part)
         texts.append((status, part.split('\n')))
     print('status', texts[0][0], texts[1][0], 'lines', len(texts[0][1]), len(texts[1][1]))
