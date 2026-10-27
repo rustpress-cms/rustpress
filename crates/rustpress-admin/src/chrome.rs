@@ -345,6 +345,8 @@ pub struct Assets {
     pub inline: Vec<(String, String, String)>,
     /// The screen runs the block editor: its script modules (math blocks, routing) are loaded too.
     pub editor_modules: bool,
+    /// The site editor enqueues the router before the math module.
+    pub route_first: bool,
     /// The post editor prints no emoji detection script.
     pub no_emoji: bool,
     /// The update screens print neither the heartbeat nor the session check (`wp_auth_check_load()`).
@@ -497,14 +499,19 @@ fn module_version(includes: &std::path::Path, path: &str) -> String {
 }
 
 /// `WP_Script_Modules::print_import_map()` and `print_enqueued_script_modules()`.
-fn script_modules(env: &ChromeEnv<'_>, editor: bool, boot: Option<&Boot>) -> String {
+fn script_modules(env: &ChromeEnv<'_>, editor: bool, route_first: bool, boot: Option<&Boot>) -> String {
     let root = env.loader.site_url.trim_end_matches('/').to_owned();
     let includes = &env.loader.includes;
     let url = |path: &str| format!("{root}/wp-includes/js/dist/script-modules/{path}.min.js?ver={}", module_version(includes, path));
     let mut imports = vec![("@wordpress/video-conversion/worker".to_owned(), url("video-conversion/worker")), ("@wordpress/vips/worker".to_owned(), url("vips/worker"))];
     if editor {
         imports.push(("@wordpress/latex-to-mathml".to_owned(), url("latex-to-mathml/index")));
-        imports.push(("@wordpress/route".to_owned(), url("route/index")));
+        let route = ("@wordpress/route".to_owned(), url("route/index"));
+        if route_first {
+            imports.insert(imports.len() - 1, route);
+        } else {
+            imports.push(route);
+        }
     }
     // The modules of a boot page: the router first, the routes after the boot module, then what boot depends on.
     let route_url = |name: &str, kind: &str| {
@@ -829,7 +836,7 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
             note = tr("The login page will open in a new tab. After logging in you can close it and return to this page.")
         ));
     }
-    let modules = script_modules(env, assets.editor_modules, assets.boot.as_ref());
+    let modules = script_modules(env, assets.editor_modules, assets.route_first, assets.boot.as_ref());
     // `print_a11y_script_module_html()`: the live regions, when `@wordpress/a11y` is in the import map.
     let a11y = modules.contains("\"@wordpress/a11y\":");
     out.push_str(&modules);

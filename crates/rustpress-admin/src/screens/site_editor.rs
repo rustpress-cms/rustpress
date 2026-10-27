@@ -109,6 +109,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
 
     let mut assets = Assets {
         editor_modules: true,
+        route_first: true,
         scripts: ["wp-edit-site", "wp-format-library"].iter().map(|s| (*s).to_owned()).collect(),
         styles: ["wp-edit-site", "wp-format-library", "wp-edit-blocks", "wp-commands"].iter().map(|s| (*s).to_owned()).collect(),
         ..Default::default()
@@ -126,7 +127,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     assets.inline.push(("wp-edit-site".into(), format!("wp.domReady( function() {{\n\t\t\twp.editSite.initializeEditor( \"site-editor\", {} );\n\t\t}} );", inline_json(&settings)), "after".into()));
 
     let content = format!(
-        "\n<div class=\"edit-site\" id=\"site-editor\">\n\t\t<div class=\"wrap hide-if-js site-editor-no-js\">\n\t\t<h1 class=\"wp-heading-inline\">{}</h1>\n\t\t<div class=\"notice notice-error hide-if-js\"><p>{}</p></div>\t</div>\n</div>\n",
+        "\n<div class=\"edit-site\" id=\"site-editor\">\n\t\t<div class=\"wrap hide-if-js site-editor-no-js\">\n\t\t<h1 class=\"wp-heading-inline\">{}</h1>\n\t\t<div class=\"notice notice-error hide-if-js\"><p>{}</p></div>\t</div>\n</div>\n\n",
         esc_html(&tr("Edit Site")),
         tr("The site editor requires JavaScript. Please enable JavaScript in your browser settings.")
     );

@@ -117,17 +117,18 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     h.push_str(&esc_html(&tr("Authorize Application")));
     h.push_str("</h1>\n\n\t");
     if let Some(message) = &error {
-        h.push_str(&notice(message, "error", false, "", &[], true));
+        h.push_str(notice(message, "error", false, "", &[], true).trim_end_matches('\n'));
     }
-    h.push_str("\n\n\t<div class=\"card auth-app-card\">\n\t\t<h2 class=\"title\">");
+    h.push_str("\n\t<div class=\"card auth-app-card\">\n\t\t<h2 class=\"title\">");
     h.push_str(&tr("An application would like to connect to your account."));
     h.push_str("</h2>\n\t\t");
     if app_name.is_empty() {
-        h.push_str(&format!("			<p>{}</p>", tr("Would you like to give this application access to your account? You should only do this if you trust the application in question.")));
+        h.push_str(&format!("			<p>{}</p>\n\t\t", tr("Would you like to give this application access to your account? You should only do this if you trust the application in question.")));
     } else {
         h.push_str(&format!("\t\t\t<p>\n\t\t\t\t{}\t\t\t</p>\n\t\t", sprintf(&tr("Would you like to give the application identifying itself as %s access to your account? You should only do this if you trust the application in question."), &[&format!("<strong>{}</strong>", esc_html(&app_name))])));
     }
-    h.push_str("\n\n\t\t");
+    // The indentation of the PHP lines between the paragraph and the form stays.
+    h.push_str("\n\t\t\n\t\t");
     if !new_password.is_empty() {
         let message = format!(
             "<p class=\"application-password-display\">\n\t\t\t\t<label for=\"new-application-password-value\">{}\n\t\t\t\t</label>\n\t\t\t\t<input id=\"new-application-password-value\" type=\"text\" class=\"code\" readonly=\"readonly\" value=\"{}\" />\n\t\t\t</p>\n\t\t\t<p>{}</p>",
@@ -149,7 +150,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
             None => tr("You will be returned to the WordPress Dashboard, and no changes will be made."),
         };
         h.push_str(&format!(
-            "\t\t\t<form action=\"{}\" method=\"post\" class=\"form-wrap\">\n\t\t\t\t{}\t\t\t\t<input type=\"hidden\" name=\"action\" value=\"authorize_application_password\" />\n\t\t\t\t<input type=\"hidden\" name=\"app_id\" value=\"{}\" />\n\t\t\t\t<input type=\"hidden\" name=\"success_url\" value=\"{}\" />\n\t\t\t\t<input type=\"hidden\" name=\"reject_url\" value=\"{}\" />\n\n\t\t\t\t<div class=\"form-field\">\n\t\t\t\t\t<label for=\"app_name\">{}</label>\n\t\t\t\t\t<input type=\"text\" id=\"app_name\" name=\"app_name\" value=\"{}\" required />\n\t\t\t\t</div>\n\n\t\t\t\t<input type=\"submit\" name=\"approve\" id=\"approve\" class=\"button button-primary\" value=\"{}\" aria-describedby=\"description-approve\"  />\t\t\t\t<p class=\"description\" id=\"description-approve\">\n\t\t\t\t\t{success_text}\t\t\t\t</p>\n\n\t\t\t\t<input type=\"submit\" name=\"reject\" id=\"reject\" class=\"button\" value=\"{}\" aria-describedby=\"description-reject\"  />\t\t\t\t<p class=\"description\" id=\"description-reject\">\n\t\t\t\t\t{reject_text}\t\t\t\t</p>\n\t\t\t</form>\n\t\t",
+            "\t\t\t<form action=\"{}\" method=\"post\" class=\"form-wrap\">\n\t\t\t\t{}\t\t\t\t<input type=\"hidden\" name=\"action\" value=\"authorize_application_password\" />\n\t\t\t\t<input type=\"hidden\" name=\"app_id\" value=\"{}\" />\n\t\t\t\t<input type=\"hidden\" name=\"success_url\" value=\"{}\" />\n\t\t\t\t<input type=\"hidden\" name=\"reject_url\" value=\"{}\" />\n\n\t\t\t\t<div class=\"form-field\">\n\t\t\t\t\t<label for=\"app_name\">{}</label>\n\t\t\t\t\t<input type=\"text\" id=\"app_name\" name=\"app_name\" value=\"{}\" required />\n\t\t\t\t</div>\n\n\t\t\t\t\n\t\t\t\t<input type=\"submit\" name=\"approve\" id=\"approve\" class=\"button button-primary\" value=\"{}\" aria-describedby=\"description-approve\"  />\t\t\t\t<p class=\"description\" id=\"description-approve\">\n\t\t\t\t\t{success_text}\t\t\t\t</p>\n\n\t\t\t\t<input type=\"submit\" name=\"reject\" id=\"reject\" class=\"button\" value=\"{}\" aria-describedby=\"description-reject\"  />\t\t\t\t<p class=\"description\" id=\"description-reject\">\n\t\t\t\t\t{reject_text}\t\t\t\t</p>\n\t\t\t</form>\n\t\t",
             esc_url(&ctx.admin_url("authorize-application.php")),
             ctx.nonce_field("authorize_application_password"),
             esc_attr(&app_id),

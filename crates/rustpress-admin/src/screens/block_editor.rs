@@ -316,8 +316,13 @@ pub(super) async fn editor_settings(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo)
         // `site-editor.php`
         settings.insert("siteUrl".into(), json!(site.settings.siteurl));
         settings.insert("postsPerPage".into(), json!(site.options.string("posts_per_page", "10")));
+        // `site-editor.php` passes the theme styles among its own settings: their key comes here.
+        settings.insert("styles".into(), Value::Null);
         let types: Vec<Value> = rustpress_rest::edit::default_template_types(site).into_iter().map(|(slug, title, description)| json!({"title": title, "description": description, "slug": slug})).collect();
         settings.insert("defaultTemplateTypes".into(), Value::Array(types));
+        // The order of `site-editor.php`'s own settings.
+        settings.insert("defaultTemplatePartAreas".into(), get("defaultTemplatePartAreas"));
+        settings.insert("supportsLayout".into(), json!(true));
         settings.insert("supportsTemplatePartsMode".into(), json!(false));
     } else {
         post_settings(ctx, post, &mut settings).await;
@@ -425,7 +430,7 @@ pub(super) async fn editor_settings(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo)
         }),
     );
     // `wp_get_post_content_block_attributes()`: the attributes of the post content block of the single template.
-    if env.block_theme {
+    if env.block_theme && !site_mode {
         settings.insert("postContentAttributes".into(), json!({"align": "full", "layout": {"type": "constrained"}}));
     }
     settings.insert("canUpdateBlockBindings".into(), json!(true));
