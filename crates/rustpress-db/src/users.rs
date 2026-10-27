@@ -4,8 +4,13 @@ use crate::{Db, Result};
 
 impl Db {
     pub async fn user(&self, id: u64) -> Result<Option<User>> {
+        if let Some(primed) = crate::primed::primed_user(id) {
+            return Ok(primed);
+        }
         let sql = format!("SELECT {USER_COLUMNS} FROM {} WHERE ID = ?", self.prefix.table("users"));
-        Ok(sqlx::query_as(AssertSqlSafe(sql)).bind(id).fetch_optional(&self.pool).await?)
+        let user: Option<User> = sqlx::query_as(AssertSqlSafe(sql)).bind(id).fetch_optional(&self.pool).await?;
+        crate::primed::remember_user(id, user.clone());
+        Ok(user)
     }
 
     pub async fn user_by_nicename(&self, nicename: &str) -> Result<Option<User>> {

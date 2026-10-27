@@ -354,6 +354,9 @@ async fn recent_comments(ctx: &Ctx<'_>) -> String {
         return String::new();
     }
     let mut out = format!("<div id=\"latest-comments\" class=\"activity-block table-view-list\"><h3>{}</h3><ul id=\"the-comment-list\" data-wp-lists=\"list:comment\">", tr("Recent Comments"));
+    // The posts and commenting users of the rows, read together.
+    db.prime_posts(&comments.iter().map(|c| c.comment_post_id).collect::<Vec<_>>()).await.or_log();
+    db.prime_users(&comments.iter().map(|c| c.user_id).collect::<Vec<_>>()).await.or_log();
     for (index, comment) in comments.iter().enumerate() {
         out.push_str(&comment_row(ctx, comment, index).await);
     }

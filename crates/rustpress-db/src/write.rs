@@ -31,6 +31,15 @@ pub struct Writer {
     prefix: Prefix,
 }
 
+/// A write to `table` (without prefix): the request's cache of its rows is dropped.
+fn forget_cached(table: &str) {
+    match table {
+        "usermeta" => crate::primed::forget_user_meta(),
+        "users" => crate::primed::forget_users(),
+        _ => {}
+    }
+}
+
 impl Writer {
     /// Connects with a `mysql://user:pass@host:port/database` URL; the session can write.
     pub async fn connect(url: &str, prefix: &str) -> Result<Self> {
@@ -122,9 +131,7 @@ impl Writer {
 
     /// `INSERT` into a table (given without prefix); returns the new auto-increment id.
     pub async fn insert_row(&self, table: &str, fields: &[(&str, Val)]) -> Result<u64> {
-        if table == "usermeta" {
-            crate::primed::forget_user_meta();
-        }
+        forget_cached(table);
         let columns: Vec<String> = fields.iter().map(|(c, _)| format!("`{c}`")).collect();
         let marks = vec!["?"; fields.len()].join(", ");
         let sql = format!("INSERT INTO {} ({}) VALUES ({marks})", self.prefix.table(table), columns.join(", "));
@@ -140,9 +147,7 @@ impl Writer {
         if fields.is_empty() {
             return Ok(0);
         }
-        if table == "usermeta" {
-            crate::primed::forget_user_meta();
-        }
+        forget_cached(table);
         let sets: Vec<String> = fields.iter().map(|(c, _)| format!("`{c}` = ?")).collect();
         let sql = format!("UPDATE {} SET {} WHERE `{key_column}` = ?", self.prefix.table(table), sets.join(", "));
         let mut query = sqlx::query(AssertSqlSafe(sql));
@@ -154,9 +159,7 @@ impl Writer {
 
     /// `DELETE FROM table WHERE column = value`.
     pub async fn delete_rows(&self, table: &str, column: &str, value: u64) -> Result<u64> {
-        if table == "usermeta" {
-            crate::primed::forget_user_meta();
-        }
+        forget_cached(table);
         let sql = format!("DELETE FROM {} WHERE `{column}` = ?", self.prefix.table(table));
         Ok(sqlx::query(AssertSqlSafe(sql)).bind(value).execute(&self.pool).await?.rows_affected())
     }
@@ -166,6 +169,7 @@ impl Writer {
         if ids.is_empty() {
             return Ok(0);
         }
+        forget_cached(table);
         let marks = vec!["?"; ids.len()].join(",");
         let sql = format!("UPDATE {} SET `{column}` = ? WHERE `{key_column}` IN ({marks})", self.prefix.table(table));
         let mut query = value.bind(sqlx::query(AssertSqlSafe(sql)));
@@ -208,14 +212,15 @@ impl Writer {
         if sql.contains("usermeta") {
             crate::primed::forget_user_meta();
         }
+        if sql.contains("users") {
+            crate::primed::forget_users();
+        }
         Ok(sqlx::query(AssertSqlSafe(sql)).execute(&self.pool).await?.rows_affected())
     }
 
     /// `DELETE FROM table WHERE <condition>`; the condition is built by the caller from trusted parts.
     pub async fn delete_rows_where(&self, table: &str, condition: &str) -> Result<u64> {
-        if table == "usermeta" {
-            crate::primed::forget_user_meta();
-        }
+        forget_cached(table);
         let sql = format!("DELETE FROM {} WHERE {condition}", self.prefix.table(table));
         Ok(sqlx::query(AssertSqlSafe(sql)).execute(&self.pool).await?.rows_affected())
     }

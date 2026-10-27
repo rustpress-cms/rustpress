@@ -25,7 +25,8 @@ impl Db {
     pub async fn with_term_cache<F: std::future::Future>(future: F) -> F::Output {
         let comments = crate::primed::PRIMED_COMMENTS.scope(RefCell::new(HashMap::new()), crate::primed::PRIMED_APPROVED.scope(RefCell::new(HashMap::new()), future));
         let posts = crate::primed::PRIMED_POSTS.scope(RefCell::new(HashMap::new()), comments);
-        let user_meta = crate::primed::PRIMED_USER_META.scope(RefCell::new(HashMap::new()), posts);
+        let users = crate::primed::PRIMED_USERS.scope(RefCell::new(HashMap::new()), posts);
+        let user_meta = crate::primed::PRIMED_USER_META.scope(RefCell::new(HashMap::new()), users);
         let meta = crate::primed::PRIMED_META.scope(RefCell::new(HashMap::new()), user_meta);
         PRIMED_TERMS.scope(RefCell::new(HashMap::new()), PRIMED_REVISIONS.scope(RefCell::new(HashMap::new()), meta)).await
     }

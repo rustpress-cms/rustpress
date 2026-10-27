@@ -7,7 +7,7 @@ use std::collections::HashMap;
 
 use sqlx::AssertSqlSafe;
 
-use crate::models::{Comment, Post, PostMeta};
+use crate::models::{Comment, Post, PostMeta, User};
 use crate::{Db, PostQuery, Result};
 
 tokio::task_local! {
@@ -17,6 +17,22 @@ tokio::task_local! {
     pub(crate) static PRIMED_APPROVED: RefCell<HashMap<u64, Vec<Comment>>>;
     /// All meta rows of a user, read at the first `get_user_meta()` (`update_meta_cache( 'user', ... )`).
     pub(crate) static PRIMED_USER_META: RefCell<HashMap<u64, Vec<(String, Option<String>)>>>;
+    /// Users read in this request (`get_userdata()` and the `users` cache group).
+    pub(crate) static PRIMED_USERS: RefCell<HashMap<u64, Option<User>>>;
+}
+
+/// A user from the request's cache: `Some(None)` is a user known to be missing.
+pub(crate) fn primed_user(id: u64) -> Option<Option<User>> {
+    PRIMED_USERS.try_with(|cache| cache.borrow().get(&id).cloned()).ok().flatten()
+}
+
+pub(crate) fn remember_user(id: u64, user: Option<User>) {
+    let _ = PRIMED_USERS.try_with(|cache| cache.borrow_mut().insert(id, user));
+}
+
+/// A write to `wp_users`: users are read again when asked for.
+pub(crate) fn forget_users() {
+    let _ = PRIMED_USERS.try_with(|cache| cache.borrow_mut().clear());
 }
 
 /// The meta of a user from the request's cache, if it was read already. `Err`: there is no cache.
@@ -88,6 +104,27 @@ impl Db {
                 cache.entry(row.post_id).or_default().push(row);
             }
         });
+        Ok(())
+    }
+
+    /// The users of `ids` in one query, for the request's cache (the authors of a list).
+    pub async fn prime_users(&self, ids: &[u64]) -> Result<()> {
+        let Ok(missing) = PRIMED_USERS.try_with(|cache| {
+            let cache = cache.borrow();
+            let mut missing: Vec<u64> = ids.iter().copied().filter(|id| *id != 0 && !cache.contains_key(id)).collect();
+            missing.sort_unstable();
+            missing.dedup();
+            missing
+        }) else {
+            return Ok(());
+        };
+        if missing.is_empty() {
+            return Ok(());
+        }
+        let rows = self.users_by_ids(&missing).await?;
+        for id in missing {
+            remember_user(id, rows.iter().find(|u| u.id == id).cloned());
+        }
         Ok(())
     }
 
