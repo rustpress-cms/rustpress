@@ -17,7 +17,8 @@ use crate::parser::Content;
 use crate::render::BlockCtx;
 
 /// The posts a query block iterates over and the numbers for pagination.
-pub(super) struct LoopData {
+#[derive(Debug, Clone)]
+pub(crate) struct LoopData {
     pub posts: Vec<Post>,
     pub max_pages: u64,
     /// `found_posts` and `posts_per_page` of the query.
@@ -45,8 +46,20 @@ fn custom_page(bc: &BlockCtx<'_>) -> u64 {
     QueryVars::parse(&bc.env.query.raw_query).u64(&page_key(bc)).filter(|p| *p > 0).unwrap_or(1)
 }
 
-/// `build_query_vars_from_query_block` + running the query.
+/// [`run_custom_query`], once per render for the same query, page and current post: the post template, the
+/// total, the no-results block and every pagination block of a query ask for the same loop.
 async fn custom_query(bc: &BlockCtx<'_>, page: u64) -> Result<LoopData> {
+    let key = format!("{}|{page}|{}", query_ctx(bc).map(|q| Value::Object(q.clone()).to_string()).unwrap_or_default(), bc.context.post.as_ref().map_or(0, |p| p.id));
+    if let Some(data) = bc.env.with_state(|s| s.query_loops.get(&key).cloned()) {
+        return Ok(data);
+    }
+    let data = run_custom_query(bc, page).await?;
+    bc.env.with_state(|s| s.query_loops.insert(key, data.clone()));
+    Ok(data)
+}
+
+/// `build_query_vars_from_query_block` + running the query.
+async fn run_custom_query(bc: &BlockCtx<'_>, page: u64) -> Result<LoopData> {
     let site = bc.env.site;
     let q = query_ctx(bc).cloned().unwrap_or_default();
     let get = |k: &str| q.get(k).filter(|v| !crate::style_engine::is_empty(v));

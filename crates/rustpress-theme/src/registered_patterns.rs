@@ -149,9 +149,9 @@ impl Theme {
         }
         let domain = crate::theme_headers::text_domain(self.stylesheet_dir());
         for dir in &dirs {
-            let Ok(source) = std::fs::read_to_string(dir.join("functions.php")) else { continue };
+            let Some(source) = rustpress_core::files::read(&dir.join("functions.php")) else { continue };
             let domain = crate::theme_headers::text_domain(dir);
-            let mut rest = source.as_str();
+            let mut rest: &str = &source;
             while let Some(at) = rest.find("register_block_style(") {
                 rest = &rest[at + "register_block_style(".len()..];
                 let Some((block, after)) = php_literal(rest) else { continue };
@@ -193,7 +193,7 @@ impl Theme {
             dirs.push(self.template_dir().to_path_buf());
         }
         dirs.iter()
-            .filter_map(|dir| std::fs::read_to_string(dir.join("functions.php")).ok())
+            .filter_map(|dir| rustpress_core::files::read(&dir.join("functions.php")))
             .flat_map(|php| crate::functions_php::block_style_inline_named(&php))
             .find(|(b, n, _)| b == block && n == name)
             .map(|(_, _, css)| css)
@@ -205,7 +205,7 @@ impl Theme {
         if self.template_dir() != self.stylesheet_dir() {
             dirs.push(self.template_dir().to_path_buf());
         }
-        dirs.iter().filter_map(|dir| std::fs::read_to_string(dir.join("functions.php")).ok()).find_map(|php| crate::functions_php::theme_support_list(&php, "post-formats")).unwrap_or_default()
+        dirs.iter().filter_map(|dir| rustpress_core::files::read(&dir.join("functions.php"))).find_map(|php| crate::functions_php::theme_support_list(&php, "post-formats")).unwrap_or_default()
     }
 
     /// The block bindings sources the theme and its parent register, the child's first.
@@ -214,7 +214,7 @@ impl Theme {
         if self.template_dir() != self.stylesheet_dir() {
             dirs.push(self.template_dir().to_path_buf());
         }
-        dirs.iter().filter_map(|dir| std::fs::read_to_string(dir.join("functions.php")).ok()).flat_map(|php| crate::functions_php::block_bindings_sources(&php)).collect()
+        dirs.iter().filter_map(|dir| rustpress_core::files::read(&dir.join("functions.php"))).flat_map(|php| crate::functions_php::block_bindings_sources(&php)).collect()
     }
 
     /// `current_theme_supports( $feature )` for what the `functions.php` of the theme (or its parent) adds.
@@ -223,7 +223,7 @@ impl Theme {
         if self.template_dir() != self.stylesheet_dir() {
             dirs.push(self.template_dir().to_path_buf());
         }
-        dirs.iter().filter_map(|dir| std::fs::read_to_string(dir.join("functions.php")).ok()).any(|php| crate::functions_php::adds_theme_support(&php, feature))
+        dirs.iter().filter_map(|dir| rustpress_core::files::read(&dir.join("functions.php"))).any(|php| crate::functions_php::adds_theme_support(&php, feature))
     }
 }
 
@@ -271,9 +271,9 @@ impl Theme {
         }
         let mut out = Vec::new();
         for dir in &dirs {
-            let Ok(source) = std::fs::read_to_string(dir.join("functions.php")) else { continue };
+            let Some(source) = rustpress_core::files::read(&dir.join("functions.php")) else { continue };
             let domain = crate::theme_headers::text_domain(dir);
-            let mut rest = source.as_str();
+            let mut rest: &str = &source;
             while let Some(at) = rest.find("register_block_style(") {
                 rest = &rest[at + "register_block_style(".len()..];
                 let Some((_, after)) = php_literal(rest) else { continue };
@@ -331,7 +331,7 @@ impl Theme {
     /// its parent) registers in `functions.php`.
     pub fn pattern_categories(&self) -> Vec<PatternCategory> {
         let mut out = Vec::new();
-        if let Ok(source) = std::fs::read_to_string(self.wp_root.join("wp-includes").join("block-patterns.php")) {
+        if let Some(source) = rustpress_core::files::read(&self.wp_root.join("wp-includes").join("block-patterns.php")) {
             self.scan_pattern_categories(&source, "default", &mut out);
         }
         let mut dirs = vec![self.stylesheet_dir().to_path_buf()];
@@ -339,7 +339,7 @@ impl Theme {
             dirs.push(self.template_dir().to_path_buf());
         }
         for dir in dirs {
-            if let Ok(source) = std::fs::read_to_string(dir.join("functions.php")) {
+            if let Some(source) = rustpress_core::files::read(&dir.join("functions.php")) {
                 self.scan_pattern_categories(&source, &crate::theme_headers::text_domain(&dir), &mut out);
             }
         }

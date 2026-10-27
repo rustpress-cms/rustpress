@@ -249,7 +249,12 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     let baked = super::pages::load(ctx, "themes");
     let searching = request.get("search").is_some_and(|s| !s.is_empty());
     let count = if searching { ctx.tr("&hellip;") } else { installed.len().to_string() };
-    let mut content = baked.content.replace("{{cards}}", &cards).replace("{{count}}", &count).replace("{{notices}}", &notices);
+    let mut content = baked
+        .content
+        .replace("{{cards}}", &cards)
+        .replace("{{count}}", &count)
+        .replace("{{notices}}", &notices)
+        .replace("{{auto_update_message}}", &crate::updates::auto_update_message(ctx).await);
     if searching {
         content = content.replacen("class=\"theme-browser\"", "class=\"theme-browser search-loading\"", 1);
     }

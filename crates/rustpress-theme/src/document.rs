@@ -10,7 +10,6 @@ use rustpress_core::{Queried, QueryResult, Site};
 use serde_json::Value;
 
 use crate::Result;
-use crate::global_styles::GlobalStyles;
 use crate::page::render_body;
 use crate::theme::Theme;
 
@@ -310,7 +309,7 @@ fn rtl_variant(rtl: bool, path: &std::path::Path, url: &str) -> Option<(std::pat
         if let Some(stem) = text.strip_suffix(".min.css") { format!("{stem}-rtl.min.css") } else if let Some(stem) = text.strip_suffix(".css") { format!("{stem}-rtl.css") } else { text.to_owned() }
     };
     let candidate = std::path::PathBuf::from(with_rtl(&path.to_string_lossy()));
-    if !candidate.is_file() {
+    if !rustpress_core::files::is_file(&candidate) {
         return None;
     }
     let swapped = match url.split_once('?') {
@@ -694,11 +693,11 @@ pub async fn render_document_with(theme: &Theme, site: &Site, query: &QueryResul
         let Some(slug) = handle.strip_prefix("wp-block-") else { continue };
         // `wp-block-group-theme` is the `theme.min.css` of the group block.
         let (slug, file_name) = match slug.strip_suffix("-theme") {
-            Some(block) if registry.blocks_dir().join(block).join("theme.min.css").is_file() => (block, "theme.min.css"),
+            Some(block) if rustpress_core::files::is_file(&registry.blocks_dir().join(block).join("theme.min.css")) => (block, "theme.min.css"),
             _ => (slug, "style.min.css"),
         };
         let path = registry.blocks_dir().join(slug).join(file_name);
-        if path.is_file() {
+        if rustpress_core::files::is_file(&path) {
             // Block styles are read from the -rtl file, but name the usual URL as their source.
             let url = format!("{includes_url}/blocks/{slug}/{file_name}?ver={version}");
             let variant = rtl_variant(rtl, &path, &url);
@@ -722,7 +721,7 @@ pub async fn render_document_with(theme: &Theme, site: &Site, query: &QueryResul
         sheets.push(Sheet { id: "wp-emoji-styles".into(), file: None, inline: Some(EMOJI_CSS.into()), extra: Vec::new(), rtl_link: None, linked: false });
     }
     let common = wp_root.join("wp-includes").join("css").join("dist").join("block-library").join("common.min.css");
-    if common.is_file() {
+    if rustpress_core::files::is_file(&common) {
         let url = format!("{includes_url}/css/dist/block-library/common.min.css?ver={version}");
         let rtl_link = rtl_variant(rtl, &common, &url).map(|(_, rtl_url)| rtl_url);
         sheets.push(Sheet { id: "wp-block-library".into(), file: Some((common, url)), inline: None, extra: Vec::new(), rtl_link, linked: false });
@@ -742,7 +741,7 @@ pub async fn render_document_with(theme: &Theme, site: &Site, query: &QueryResul
     const SKIP_LINK: usize = usize::MAX;
     const THEME_STYLE: usize = usize::MAX - 1;
     let skip_link_file = wp_root.join("wp-includes").join("css").join("wp-block-template-skip-link.min.css");
-    let theme_style_file = theme.theme_style_handle().and_then(|_| if theme.theme_style_path() { ["style.min.css", "style.css"].iter().map(|f| theme.template_dir().join(f)).find(|p| p.is_file()) } else { Some(theme.template_dir().join("style.css")) });
+    let theme_style_file = theme.theme_style_handle().and_then(|_| if theme.theme_style_path() { ["style.min.css", "style.css"].iter().map(|f| theme.template_dir().join(f)).find(|p| rustpress_core::files::is_file(p)) } else { Some(theme.template_dir().join("style.css")) });
     if let Some(len) = rustpress_core::files::size(&skip_link_file) {
         by_size.push((SKIP_LINK, len));
     }
@@ -814,7 +813,7 @@ pub async fn render_document_with(theme: &Theme, site: &Site, query: &QueryResul
                 }
             }
         }
-        let mut chunks = GlobalStyles::new(&theme.json, registry).stylesheet_chunks(Some(&queued));
+        let mut chunks = theme.global_style_chunks(registry, Some(&queued));
         let presets = rustpress_blocks::duotone::global_styles_presets(&state.duotone);
         if !presets.is_empty() {
             chunks.push(presets);
@@ -841,7 +840,7 @@ pub async fn render_document_with(theme: &Theme, site: &Site, query: &QueryResul
     if !supports.is_empty() {
         styles.push_str(&format!("<style id=\"core-block-supports-inline-css\">\n{supports}\n/*# sourceURL=core-block-supports-inline-css */\n</style>\n"));
     }
-    if !skip_link_inline && skip_link_file.is_file() {
+    if !skip_link_inline && rustpress_core::files::is_file(&skip_link_file) {
         styles.push_str(&format!("<link rel='stylesheet' id='wp-block-template-skip-link-css' href='{includes_url}/css/wp-block-template-skip-link.min.css?ver={version}' media='all' />\n"));
     } else if let Some(css) = read(&skip_link_file) {
         styles.push_str(&format!("<style id=\"wp-block-template-skip-link-inline-css\">\n{}\n/*# sourceURL=/wp-includes/css/wp-block-template-skip-link.min.css */\n</style>\n", css.trim_end()));

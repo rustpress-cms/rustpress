@@ -726,8 +726,8 @@ async fn head(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State, registry: &Re
     }
     let mut sheets: Vec<Sheet> = Vec::new();
     let common = wp_root.join("wp-includes/css/dist/block-library/common.min.css");
-    let common_present = common.is_file();
-    if common.is_file() {
+    let common_present = rustpress_core::files::is_file(&common);
+    if common_present {
         sheets.push(Sheet { id: "wp-block-library".into(), path: common, url: String::new(), source: "/wp-includes/css/dist/block-library/common.min.css".into() });
     }
     let mut handles: Vec<String> = Vec::new();
@@ -743,13 +743,13 @@ async fn head(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State, registry: &Re
     for handle in &handles {
         let Some(slug) = handle.strip_prefix("wp-block-") else { continue };
         let path = registry.blocks_dir().join(slug).join("style.min.css");
-        if path.is_file() {
+        if rustpress_core::files::is_file(&path) {
             let url = format!("{includes_url}/blocks/{slug}/style.min.css?ver={version}");
             sheets.push(Sheet { id: handle.clone(), path, source: url.split('?').next().unwrap_or(&url).to_owned(), url });
         }
     }
     // Smallest files first until the inline budget is used up.
-    let mut by_size: Vec<(usize, u64)> = sheets.iter().enumerate().filter_map(|(i, s)| std::fs::metadata(&s.path).ok().map(|m| (i, m.len()))).collect();
+    let mut by_size: Vec<(usize, u64)> = sheets.iter().enumerate().filter_map(|(i, s)| rustpress_core::files::size(&s.path).map(|len| (i, len))).collect();
     by_size.sort_by_key(|(_, size)| *size);
     let mut budget = 0u64;
     let mut inline: Vec<usize> = Vec::new();

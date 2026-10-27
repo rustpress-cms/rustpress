@@ -54,3 +54,8 @@ pub fn read(path: &Path) -> Option<Arc<str>> {
 pub fn size(path: &Path) -> Option<u64> {
     entry(path, |e| e.size)
 }
+
+/// Whether `path` is a file (`is_file()`, looked at again at most every two seconds).
+pub fn is_file(path: &Path) -> bool {
+    size(path).is_some()
+}

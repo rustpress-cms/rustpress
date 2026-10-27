@@ -4,8 +4,15 @@ use std::path::Path;
 
 /// `Text Domain:` of the theme in `dir` (its directory name without one).
 pub fn text_domain(dir: &Path) -> String {
-    let bytes = std::fs::read(dir.join("style.css")).unwrap_or_default();
-    let head = String::from_utf8_lossy(&bytes[..bytes.len().min(8192)]).into_owned();
+    let path = dir.join("style.css");
+    let head = match rustpress_core::files::read(&path) {
+        Some(text) => String::from_utf8_lossy(&text.as_bytes()[..text.len().min(8192)]).into_owned(),
+        // Not UTF-8 (or missing): the bytes as they are.
+        None => {
+            let bytes = std::fs::read(&path).unwrap_or_default();
+            String::from_utf8_lossy(&bytes[..bytes.len().min(8192)]).into_owned()
+        }
+    };
     head.lines()
         .find_map(|line| {
             let line = line.trim().trim_start_matches(['*', '/', '#', '@']).trim();

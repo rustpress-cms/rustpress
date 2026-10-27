@@ -120,6 +120,36 @@ const PSEUDO_ORDER: &[&str] = &[":link", ":any-link", ":visited", ":hover", ":fo
 
 const LAYOUT_TYPES: &[(&str, &str)] = &[("default", "is-layout-flow"), ("constrained", "is-layout-constrained"), ("flex", "is-layout-flex"), ("grid", "is-layout-grid")];
 
+/// Whether the rules of block `name` belong on a page whose block style handles are `handles` (all without a list;
+/// blocks outside `core/` always).
+fn block_on_page(name: &str, handles: Option<&[String]>) -> bool {
+    match (handles, name.strip_prefix("core/")) {
+        (Some(handles), Some(short)) => handles.iter().any(|h| h.strip_prefix("wp-block-") == Some(short)),
+        _ => true,
+    }
+}
+
+/// The global stylesheet of a theme before the blocks of a page are known, computed once per theme
+/// ([`Theme::global_style_chunks`](crate::Theme::global_style_chunks)).
+pub struct PreparedStyles {
+    main: String,
+    blocks: Vec<(String, Vec<String>)>,
+}
+
+impl PreparedStyles {
+    /// [`GlobalStyles::stylesheet_chunks`] for the block style handles of a page.
+    pub fn chunks(&self, handles: Option<&[String]>) -> Vec<String> {
+        let mut chunks = vec![self.main.clone()];
+        for (name, block) in &self.blocks {
+            if block_on_page(name, handles) {
+                chunks.extend(block.iter().cloned());
+            }
+        }
+        chunks.retain(|c| !c.is_empty());
+        chunks
+    }
+}
+
 pub struct GlobalStyles<'a> {
     json: &'a ThemeJson,
     registry: &'a Registry,
@@ -148,6 +178,11 @@ impl<'a> GlobalStyles<'a> {
     /// (`wp_add_global_styles_for_blocks()`). Empty chunks are dropped; `print_inline_style()`
     /// joins the rest with newlines.
     pub fn stylesheet_chunks(&self, handles: Option<&[String]>) -> Vec<String> {
+        self.prepare().chunks(handles)
+    }
+
+    /// The parts of [`GlobalStyles::stylesheet_chunks`] that do not depend on the page, for [`PreparedStyles::chunks`].
+    pub fn prepare(&self) -> PreparedStyles {
         let settings = self.settings();
         let styles = self.json.styles();
         let mut main = String::new();
@@ -160,10 +195,7 @@ impl<'a> GlobalStyles<'a> {
         if let Some(extra) = styles.get("css").and_then(Value::as_str) {
             main.push_str(extra);
         }
-        let mut chunks = vec![main];
-        chunks.extend(self.block_chunks(&settings, &styles, handles));
-        chunks.retain(|c| !c.is_empty());
-        chunks
+        PreparedStyles { main, blocks: self.block_chunk_groups(&settings, &styles) }
     }
 
     /// The stylesheets of the block editor settings: `wp_get_global_stylesheet( [ 'variables' ] )`,
@@ -445,32 +477,32 @@ impl<'a> GlobalStyles<'a> {
     /// The block nodes of `styles.blocks` as separate chunks: the block itself, then each element
     /// and each pseudo-class of an element (`get_styles_block_nodes()`).
     fn block_chunks(&self, settings: &Value, styles: &Value, handles: Option<&[String]>) -> Vec<String> {
-        let mut chunks = Vec::new();
-        let Some(blocks) = styles.get("blocks").and_then(Value::as_object) else { return chunks };
+        self.block_chunk_groups(settings, styles).into_iter().filter(|(name, _)| block_on_page(name, handles)).flat_map(|(_, chunks)| chunks).collect()
+    }
+
+    /// The chunks of every styled block, grouped by block name in the order of `styles.blocks`.
+    fn block_chunk_groups(&self, settings: &Value, styles: &Value) -> Vec<(String, Vec<String>)> {
+        let mut groups = Vec::new();
+        let Some(blocks) = styles.get("blocks").and_then(Value::as_object) else { return groups };
         for (name, node) in blocks {
             if !node.is_object() {
                 continue;
             }
-            let on_page = match (handles, name.strip_prefix("core/")) {
-                (Some(handles), Some(short)) => handles.iter().any(|h| h.strip_prefix("wp-block-") == Some(short)),
-                _ => true,
-            };
-            if !on_page {
-                continue;
-            }
             let (selector, _) = self.block_selector(name);
-            chunks.push(self.block_rules(name, node, settings, None));
-            let Some(elements) = node.get("elements").and_then(Value::as_object) else { continue };
-            for (element, element_node) in elements {
-                let Some((_, element_selector)) = ELEMENTS.iter().find(|(n, _)| n == element) else { continue };
-                if !element_node.is_object() {
-                    continue;
+            let mut chunks = vec![self.block_rules(name, node, settings, None)];
+            if let Some(elements) = node.get("elements").and_then(Value::as_object) {
+                for (element, element_node) in elements {
+                    let Some((_, element_selector)) = ELEMENTS.iter().find(|(n, _)| n == element) else { continue };
+                    if !element_node.is_object() {
+                        continue;
+                    }
+                    let combined = element_selector.split(',').map(|s| format!("{selector} {}", s.trim())).collect::<Vec<_>>().join(", ");
+                    chunks.extend(self.element_chunks(element_node, &combined, settings));
                 }
-                let combined = element_selector.split(',').map(|s| format!("{selector} {}", s.trim())).collect::<Vec<_>>().join(", ");
-                chunks.extend(self.element_chunks(element_node, &combined, settings));
             }
+            groups.push((name.clone(), chunks));
         }
-        chunks
+        groups
     }
 
     /// An element node followed by its pseudo-class nodes, one chunk each.

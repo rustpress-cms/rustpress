@@ -351,7 +351,7 @@ pub async fn render(theme: &Theme, site: &Site, q: &QueryResult, registry: &Regi
     }
     for handle in &handles {
         let Some(slug) = handle.strip_prefix("wp-block-") else { continue };
-        if registry.blocks_dir().join(slug).join("style.min.css").is_file() {
+        if rustpress_core::files::is_file(&registry.blocks_dir().join(slug).join("style.min.css")) {
             body.push_str(&format!("<link rel='stylesheet' id='{handle}-css' href='{includes_url}/blocks/{slug}/style.min.css?ver={version}' media='all' />\n"));
         }
     }

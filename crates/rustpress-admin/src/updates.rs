@@ -89,6 +89,29 @@ pub fn update_data(site: &Site, counts: UpdateCounts) -> serde_json::Value {
     })
 }
 
+/// `wp_next_scheduled( $hook )` for an event without arguments: the first timestamp of the `cron` option that has it.
+pub async fn next_scheduled(site: &Site, hook: &str) -> Option<i64> {
+    // `md5( serialize( array() ) )`, the key of the arguments.
+    const NO_ARGS: &str = "40cd750bba9870f18aada2478b24840a";
+    let raw = site.options.fetch(&site.db, "cron").await.ok().flatten()?;
+    let Value::Array(events) = rustpress_phpser::unserialize(raw.as_bytes()).ok()? else { return None };
+    events.iter().find_map(|(key, hooks)| match key {
+        Key::Int(timestamp) if field(hooks, hook).and_then(|h| field(h, NO_ARGS)).is_some() => Some(*timestamp),
+        _ => None,
+    })
+}
+
+/// `wp_get_auto_update_message()`: when WP-Cron runs the next update check.
+pub async fn auto_update_message(ctx: &crate::screens::Ctx<'_>) -> String {
+    let Some(next) = next_scheduled(ctx.site(), "wp_version_check").await else {
+        return ctx.tr("Automatic update not scheduled. There may be a problem with WP-Cron.");
+    };
+    let now = ctx.env.now;
+    let diff = crate::screens::media_lib::human_time_diff(ctx, next, now);
+    let message = if now - next > 0 { "Automatic update overdue by %s. There may be a problem with WP-Cron." } else { "Automatic update scheduled in %s." };
+    rustpress_core::i18n::sprintf(&ctx.tr(message), &[&diff])
+}
+
 /// The plugin files the transient `update_plugins` has an update for.
 pub async fn plugin_updates(site: &Site) -> Vec<String> {
     let Some(plugins) = transient(site, "update_plugins").await else { return Vec::new() };

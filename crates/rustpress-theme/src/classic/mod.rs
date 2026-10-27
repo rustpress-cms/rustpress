@@ -22,7 +22,7 @@ const PORTS: &[&str] = &["twentyseventeen"];
 
 /// Whether the active theme is a classic theme with a port (a theme without `theme.json`).
 pub fn is_ported(theme: &Theme) -> bool {
-    !theme.template_dir().join("theme.json").is_file() && PORTS.contains(&theme.template.as_str())
+    !rustpress_core::files::is_file(&theme.template_dir().join("theme.json")) && PORTS.contains(&theme.template.as_str())
 }
 
 /// The sizes a ported theme registers with `add_image_size()`.

@@ -168,6 +168,8 @@ pub struct State {
     /// the database again before).
     pub comments: HashMap<u64, rustpress_db::Comment>,
     pub listed_comments: HashMap<u64, Vec<rustpress_db::Comment>>,
+    /// The loops of custom query blocks, by query, page and current post.
+    pub(crate) query_loops: HashMap<String, crate::dynamic::query::LoopData>,
     /// Counter behind wp_unique_id().
     pub unique_counter: u64,
     /// `do_blocks()` took `wpautop` off the `the_content` filter and `_restore_wpautop_hook()` put it back

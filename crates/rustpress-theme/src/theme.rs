@@ -74,6 +74,7 @@ pub struct Theme {
     /// `add_theme_support( 'wp-block-styles' )`: core blocks load their `theme.css`, too.
     wp_block_styles: bool,
     pattern_cache: Mutex<HashMap<String, Option<String>>>,
+    global_styles: std::sync::OnceLock<crate::global_styles::PreparedStyles>,
 }
 
 impl Theme {
@@ -171,6 +172,7 @@ impl Theme {
             theme_style_path,
             wp_block_styles,
             pattern_cache: Mutex::new(HashMap::new()),
+            global_styles: std::sync::OnceLock::new(),
         })
     }
 
@@ -309,13 +311,18 @@ impl Theme {
         if relative.contains("..") {
             return None;
         }
-        [&self.stylesheet_dir, &self.template_dir].into_iter().map(|d| d.join(relative)).find(|p| p.is_file())
+        [&self.stylesheet_dir, &self.template_dir].into_iter().map(|d| d.join(relative)).find(|p| rustpress_core::files::is_file(p))
     }
 
     /// `Version:` of the theme's `style.css` header.
     pub fn version(&self) -> String {
-        let text = std::fs::read_to_string(self.template_dir.join("style.css")).unwrap_or_default();
+        let text = rustpress_core::files::read(&self.template_dir.join("style.css")).unwrap_or_default();
         text.lines().find_map(|l| l.trim().strip_prefix("Version:").map(|v| v.trim().to_owned())).unwrap_or_default()
+    }
+
+    /// `wp_get_global_stylesheet()` in chunks for the block style handles of a page; the sheet is computed once.
+    pub fn global_style_chunks(&self, registry: &Registry, handles: Option<&[String]>) -> Vec<String> {
+        self.global_styles.get_or_init(|| crate::global_styles::GlobalStyles::new(&self.json, registry).prepare()).chunks(handles)
     }
 
     pub fn stylesheet_dir(&self) -> &Path {
@@ -369,7 +376,7 @@ impl ThemeAccess for Theme {
             return cached.clone();
         }
         let result = self.patterns.get(slug).and_then(|path| {
-            let source = std::fs::read_to_string(path).ok()?;
+            let source = rustpress_core::files::read(path)?;
             let rendered = if source.contains("return array(") && source.contains("'content'") { phpt::pattern_array_content(&source, &self.host) } else { phpt::render(&source, &self.host) };
             match rendered {
                 Ok(markup) => Some(markup),

@@ -10,7 +10,7 @@ use crate::render::BlockCtx;
 /// The file of a core icon (`core/<name>`) in the icon library, if the library has it.
 fn icon_file(includes: &std::path::Path, name: &str) -> Option<std::path::PathBuf> {
     let key = name.strip_prefix("core/")?;
-    let manifest = std::fs::read_to_string(includes.join("assets").join("icon-library-manifest.php")).ok()?;
+    let manifest = rustpress_core::files::read(&includes.join("assets").join("icon-library-manifest.php"))?;
     let anchor = rustpress_core::formatting::cached_plain_regex(&format!(r"(?m)^\s*'{}'\s*=>", regex::escape(key)));
     let start = anchor.find(&manifest)?.start();
     let rest = &manifest[start..];
@@ -126,7 +126,7 @@ pub(super) fn icon(bc: &BlockCtx<'_>) -> Result<String> {
     let Some(block_type) = bc.block_type.as_deref() else { return Ok(String::new()) };
     let Some(includes) = block_type.dir.parent().and_then(std::path::Path::parent) else { return Ok(String::new()) };
     let Some(file) = icon_file(includes, name) else { return Ok(String::new()) };
-    let Ok(raw) = std::fs::read_to_string(&file) else { return Ok(String::new()) };
+    let Some(raw) = rustpress_core::files::read(&file) else { return Ok(String::new()) };
     let label = string_attr(bc, "ariaLabel").unwrap_or_default();
     let Some(mut svg) = get_icon(&sanitize(&raw), &styles.classnames, label) else { return Ok(String::new()) };
 

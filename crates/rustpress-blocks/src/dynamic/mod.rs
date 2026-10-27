@@ -21,7 +21,7 @@ mod media;
 mod navigation;
 mod post_content;
 mod post_meta;
-mod query;
+pub(crate) mod query;
 mod latest_posts;
 mod search;
 mod simple;
