@@ -61,21 +61,20 @@ pub async fn enqueue(ctx: &Ctx<'_>, assets: &mut Assets, post_id: u64) {
     for handle in ["media-views", "wp-mediaelement", "imgareaselect"] {
         assets.styles.push(handle.to_owned());
     }
-    // The uploader (`wp_plupload_default_settings()`); `pluploadL10n` comes from the script loader.
-    assets.localize.push((
-        "wp-plupload".into(),
-        "_wpPluploadSettings".into(),
-        json!({
-            "defaults": {
-                "file_data_name": "async-upload",
-                "url": admin_path(ctx, "async-upload.php"),
-                "filters": {"max_file_size": format!("{}b", max_upload()), "mime_types": [{"extensions": baked.get("mime_extensions").cloned().unwrap_or(Json::Null)}]},
-                "multipart_params": {"action": "upload-attachment", "_wpnonce": ctx.create_nonce("media-form")},
-            },
-            "browser": {"mobile": false, "supported": true},
-            "limitExceeded": false,
-        }),
-    ));
+    // The uploader (`wp_plupload_default_settings()` adds its data as it is: the values keep their types);
+    // `pluploadL10n` comes from the script loader.
+    let plupload = json!({
+        "defaults": {
+            "file_data_name": "async-upload",
+            "url": admin_path(ctx, "async-upload.php"),
+            "filters": {"max_file_size": format!("{}b", max_upload()), "mime_types": [{"extensions": baked.get("mime_extensions").cloned().unwrap_or(Json::Null)}]},
+            "multipart_params": {"action": "upload-attachment", "_wpnonce": ctx.create_nonce("media-form")},
+        },
+        "browser": {"mobile": false, "supported": true},
+        "limitExceeded": false,
+    });
+    let encoded = rustpress_blocks::php_json::encode_with(&plupload, rustpress_blocks::php_json::Flags { unescaped_slashes: true, unescaped_unicode: false }).replace('<', "\\u003C").replace('>', "\\u003E");
+    assets.raw_data.push(("wp-plupload".into(), format!("var _wpPluploadSettings = {encoded};")));
     assets.localize.push(("mce-view".into(), "mceViewL10n".into(), json!({"shortcodes": ["wp_caption", "caption", "gallery", "playlist", "audio", "video", "embed"]})));
 
     // The settings of the views.

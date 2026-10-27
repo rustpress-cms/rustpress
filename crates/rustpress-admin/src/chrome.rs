@@ -338,6 +338,9 @@ pub struct Assets {
     pub pre_footer: String,
     /// `wp_localize_script()`: `(handle, object name, data)`.
     pub localize: Vec<(String, String, serde_json::Value)>,
+    /// Code added to the data of a script as it is (`$wp_scripts->add_data( $handle, 'data', ... )`), after the
+    /// localizations: `(handle, code)`.
+    pub raw_data: Vec<(String, String)>,
     /// `wp_add_inline_script()`: `(handle, code, position)`.
     pub inline: Vec<(String, String, String)>,
     /// The screen runs the block editor: its script modules (math blocks, routing) are loaded too.
@@ -660,6 +663,9 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
     }
     for (handle, object, data) in &assets.localize {
         scripts.localize_over(handle, object, data);
+    }
+    for (handle, code) in &assets.raw_data {
+        scripts.append_data(handle, code);
     }
     for (handle, code, position) in &assets.inline {
         scripts.add_inline_script(handle, code, position);

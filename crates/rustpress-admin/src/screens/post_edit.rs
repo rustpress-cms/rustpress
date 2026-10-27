@@ -1005,6 +1005,7 @@ async fn form(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, is_new: bool) -> Admi
             assets.post_header_styles.extend(media.styles);
         }
         assets.localize.extend(media.localize);
+        assets.raw_data.extend(media.raw_data);
         assets.inline.extend(media.inline);
         assets.pre_footer.push_str(&media.pre_footer);
     }

@@ -79,11 +79,11 @@ impl Styles {
         std::mem::take(&mut self.out)
     }
 
+    /// `WP_Styles::reset()`: the inline code of concatenated styles stays, so the late styles print it once more.
     fn reset(&mut self) {
         self.do_concat = false;
         self.concat.clear();
         self.print_html.clear();
-        self.print_code.clear();
     }
 
     /// `_print_styles()`.

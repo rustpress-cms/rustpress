@@ -110,6 +110,15 @@ impl Scripts {
         self.localize(handle, object_name, l10n)
     }
 
+    /// Appends code to the data of `handle` (`add_data( $handle, 'data', "$data\n$script" )`).
+    pub fn append_data(&mut self, handle: &str, code: &str) -> bool {
+        let script = match self.deps.get_data(handle, "data") {
+            Some(Extra::Text(data)) if !data.is_empty() => format!("{data}\n{code}"),
+            _ => code.to_owned(),
+        };
+        self.deps.add_data(handle, "data", Extra::Text(script))
+    }
+
     /// `var object = {…};` as `WP_Scripts::localize()` prints it.
     fn l10n_script(object_name: &str, l10n: &Value) -> String {
         // Scalar values lose their HTML entities before they are encoded (`html_entity_decode()`).

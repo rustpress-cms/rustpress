@@ -402,7 +402,7 @@ async fn row(ctx: &Ctx<'_>, post: &Post, detached: bool) -> String {
     let parent = match db.post(post.post_parent).await.ok().flatten().filter(|_| post.post_parent != 0) {
         Some(parent) => {
             let parent_title = if parent.post_title.is_empty() { tr("(no title)") } else { parent.post_title.clone() };
-            let detach = if can_edit { format!("<br />\n<a href=\"upload.php?parent_post_id={}&media[]={}&_wpnonce={}\" class=\"hide-if-no-js detach-from-parent\" aria-label=\"{}\">{}</a>", parent.id, post.id, ctx.create_nonce("bulk-media"), esc_attr(&sprintf(&tr("Detach from %s"), &[&format!("&#8220;{}&#8221;", esc_html(&parent_title))])), tr("Detach")) } else { String::new() };
+            let detach = if can_edit { format!("<br /><a href=\"upload.php?parent_post_id={}&media[]={}&_wpnonce={}\" class=\"hide-if-no-js detach-from-parent\" aria-label=\"{}\">{}</a>", parent.id, post.id, ctx.create_nonce("bulk-media"), esc_attr(&sprintf(&tr("Detach from %s"), &[&format!("&#8220;{}&#8221;", esc_html(&parent_title))])), tr("Detach")) } else { String::new() };
             let heading = if ctx.user.can_edit_post(&parent) {
                 format!("<strong><a href=\"{}\">{}</a></strong>", esc_url(&ctx.admin_url(&format!("post.php?post={}&action=edit", parent.id))).replace("&#038;", "&amp;"), esc_html(&parent_title))
             } else if ctx.user.can_read_post(&parent) {
@@ -410,7 +410,7 @@ async fn row(ctx: &Ctx<'_>, post: &Post, detached: bool) -> String {
             } else {
                 tr("(Private post)")
             };
-            format!("{heading}\n{detach}")
+            format!("{heading}{detach}")
         }
         None if can_edit => format!("{}\t\t\t<br /><a href=\"#the-list\" onclick=\"findPosts.open( 'media[]', '{}' ); return false;\" class=\"hide-if-no-js aria-button-if-js\" aria-label=\"{}\">{}</a>", tr("(Unattached)"), post.id, esc_attr(&sprintf(&tr("Attach %s to existing content"), &[&quote])), tr("Attach")),
         None => format!("{}\t\t\t", tr("(Unattached)")),

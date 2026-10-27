@@ -222,7 +222,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     }
     let format = site.trx("Y-m-d H:i:s", "timezone date format");
     h.push_str(&format!(
-        "\t<tr>\n<th scope=\"row\"><label for=\"timezone_string\">{}</label></th>\n<td>\n\n<select id=\"timezone_string\" name=\"timezone_string\" aria-describedby=\"timezone-description\">\n\t{}\n</select>\n\n<p class=\"description\" id=\"timezone-description\">\n{}</p>\n\n",
+        "\t<tr>\n<th scope=\"row\"><label for=\"timezone_string\">{}</label></th>\n<td>\n\n<select id=\"timezone_string\" name=\"timezone_string\" aria-describedby=\"timezone-description\">\n\t{}</select>\n\n<p class=\"description\" id=\"timezone-description\">\n{}</p>\n\n",
         tr("Timezone"),
         timezones::choice(site, &tzstring),
         rustpress_core::i18n::sprintf(&tr("Choose either a city in the same timezone as you or a %s (Coordinated Universal Time) time offset."), &["<abbr>UTC</abbr>"])
