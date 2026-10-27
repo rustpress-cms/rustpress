@@ -2,6 +2,7 @@
 //! the files of the theme and the customizations stored as `wp_template` / `wp_template_part` posts.
 
 use rustpress_core::OrLog;
+use rustpress_core::i18n::sprintf;
 use std::path::{Path, PathBuf};
 
 use rustpress_blocks::parser::{Block, parse_blocks};
@@ -316,35 +317,132 @@ impl Rest<'_> {
         Ok(out)
     }
 
-    /// The title and description of a template named `page-about`, `single-post-hello`, `category-news`, ...
+    /// The title and description of a template named `page-about`, `single-post-hello`, `category-news`, ... as
+    /// `_build_block_template_result_from_post()` gives them to a template without either.
     async fn describe_custom_template(&self, tpl: &mut Tpl) {
-        let Some((kind, rest)) = tpl.slug.split_once('-') else { return };
+        // `preg_match( '/(author|page|single|tag|category|taxonomy)-(.+)/', $slug )`: the first match anywhere.
+        let slug = tpl.slug.clone();
+        let found = ["author", "page", "single", "tag", "category", "taxonomy"]
+            .iter()
+            .filter_map(|kind| slug.match_indices(&format!("{kind}-")).next().map(|(at, _)| (at, *kind)))
+            .filter(|(at, kind)| slug.len() > at + kind.len() + 1)
+            .min_by_key(|(at, kind)| (*at, std::cmp::Reverse(kind.len())));
+        let Some((at, kind)) = found else { return };
+        let rest = &slug[at + kind.len() + 1..];
         let site = self.site;
         let tr = |s: &str| site.tr(s);
         match kind {
-            "category" | "tag" => {
-                let taxonomy = if kind == "category" { "category" } else { "post_tag" };
-                if let Ok(Some(term)) = site.db.term_by_slug(taxonomy, rest).await {
-                    let label = if kind == "category" { rustpress_core::i18n::sprintf(&tr("Category: %s"), &[&term.name]) } else { rustpress_core::i18n::sprintf(&tr("Tag: %s"), &[&term.name]) };
-                    tpl.title = label;
-                    tpl.description = rustpress_core::i18n::sprintf(&tr("Template for %s"), &[&term.name]);
-                } else {
-                    tpl.title = if kind == "category" { rustpress_core::i18n::sprintf(&tr("Deleted category: %s"), &[rest]) } else { rustpress_core::i18n::sprintf(&tr("Deleted tag: %s"), &[rest]) };
+            "author" => {
+                let user = site.db.user_by_nicename(rest).await.ok().flatten();
+                let user = match user {
+                    Some(user) if self.user_can(user.id, "edit_posts").await.unwrap_or(false) => Some(user),
+                    _ => None,
+                };
+                match user {
+                    None => tpl.title = sprintf(&tr("Deleted author: %s"), &[rest]),
+                    Some(user) => {
+                        tpl.title = sprintf(&tr("Author: %s"), &[&user.display_name]);
+                        tpl.description = sprintf(&tr("Template for %s"), &[&user.display_name]);
+                        // `get_users()` of editors with the same display name.
+                        let query = rustpress_db::UserListQuery { search: Some(user.display_name.clone()), ..Default::default() };
+                        let mut same = 0;
+                        for other in site.db.list_users(&query).await.map(|(users, _)| users).unwrap_or_default() {
+                            if other.display_name == user.display_name && self.user_can(other.id, "edit_posts").await.unwrap_or(false) {
+                                same += 1;
+                            }
+                        }
+                        if same > 1 {
+                            tpl.title = sprintf(&tr("%1$s (%2$s)"), &[&tpl.title, rest]);
+                        }
+                    }
                 }
             }
             "page" => {
-                let query = PostQuery { post_types: vec!["page".into()], statuses: vec!["publish".into()], name: Some(rest.to_owned()), limit: Some(1), ..Default::default() };
-                if let Ok(posts) = site.db.posts(&query).await
-                    && let Some(page) = posts.first()
-                {
-                    tpl.title = rustpress_core::i18n::sprintf(&site.trx("Page: %s", "Template name"), &[&page.post_title]);
-                    tpl.description = rustpress_core::i18n::sprintf(&tr("Template for %s"), &[&page.post_title]);
-                } else {
-                    tpl.title = rustpress_core::i18n::sprintf(&tr("Not found: %s"), &[rest]);
+                self.describe_single(tpl, "page", rest).await;
+            }
+            "single" => {
+                // `get_post_types()`: the ones of WordPress in the order it registers them, then the others.
+                const CORE: [&str; 16] = [
+                    "post", "page", "attachment", "revision", "nav_menu_item", "custom_css", "customize_changeset", "oembed_cache", "user_request", "wp_block", "wp_template",
+                    "wp_template_part", "wp_global_styles", "wp_navigation", "wp_font_family", "wp_font_face",
+                ];
+                let mut types: Vec<String> = CORE.iter().map(|t| (*t).to_owned()).collect();
+                types.extend(site.types.post_types.iter().map(|t| t.name.clone()).filter(|name| !CORE.contains(&name.as_str())));
+                for post_type in types {
+                    if let Some(name) = rest.strip_prefix(&format!("{post_type}-"))
+                        && self.describe_single(tpl, &post_type, name).await
+                    {
+                        break;
+                    }
                 }
             }
-            _ => {}
+            "tag" => {
+                self.describe_term(tpl, "post_tag", rest).await;
+            }
+            "category" => {
+                self.describe_term(tpl, "category", rest).await;
+            }
+            _ => {
+                // `get_taxonomies()`, WordPress' own first.
+                const CORE: [&str; 8] = ["category", "post_tag", "nav_menu", "link_category", "post_format", "wp_theme", "wp_template_part_area", "wp_pattern_category"];
+                let mut taxonomies: Vec<String> = CORE.iter().map(|t| (*t).to_owned()).collect();
+                taxonomies.extend(site.types.taxonomies.iter().map(|t| t.name.clone()).filter(|name| !CORE.contains(&name.as_str())));
+                for taxonomy in taxonomies {
+                    if let Some(name) = rest.strip_prefix(&format!("{taxonomy}-"))
+                        && self.describe_term(tpl, &taxonomy, name).await
+                    {
+                        break;
+                    }
+                }
+            }
         }
+    }
+
+    /// `$post_type_object->labels->singular_name` (the core types in the site's language).
+    fn type_singular(&self, post_type: &str) -> String {
+        match post_type {
+            "post" => self.site.trx("Post", "post type singular name"),
+            "page" => self.site.trx("Page", "post type singular name"),
+            "attachment" => self.site.trx("Media", "post type general name"),
+            other => self.site.types.post_type(other).map_or_else(|| other.to_owned(), |t| t.singular_label()),
+        }
+    }
+
+    /// `_wp_build_title_and_description_for_single_post_type_block_template()`. Its query for posts of the same title
+    /// asks for one post only, so the slug is never appended.
+    async fn describe_single(&self, tpl: &mut Tpl, post_type: &str, slug: &str) -> bool {
+        let site = self.site;
+        let singular = self.type_singular(post_type);
+        let query = PostQuery { post_types: vec![post_type.to_owned()], statuses: vec!["publish".into()], name: Some(slug.to_owned()), limit: Some(1), ..Default::default() };
+        let Some(post) = site.db.posts(&query).await.ok().and_then(|posts| posts.into_iter().next()) else {
+            tpl.title = sprintf(&site.tr("Not found: %1$s (%2$s)"), &[&singular, slug]);
+            return false;
+        };
+        tpl.title = sprintf(&site.tr("%1$s: %2$s"), &[&singular, &post.post_title]);
+        tpl.description = sprintf(&site.tr("Template for %s"), &[&post.post_title]);
+        true
+    }
+
+    /// `_wp_build_title_and_description_for_taxonomy_block_template()`.
+    async fn describe_term(&self, tpl: &mut Tpl, taxonomy: &str, slug: &str) -> bool {
+        let site = self.site;
+        let singular = match taxonomy {
+            "category" => site.trx("Category", "taxonomy singular name"),
+            "post_tag" => site.trx("Tag", "taxonomy singular name"),
+            other => site.types.taxonomy(other).map_or_else(|| other.to_owned(), |t| t.singular_label()),
+        };
+        let Some(term) = site.db.term_by_slug(taxonomy, slug).await.ok().flatten() else {
+            tpl.title = sprintf(&site.tr("Not found: %1$s (%2$s)"), &[&singular, slug]);
+            return false;
+        };
+        tpl.title = sprintf(&site.tr("%1$s: %2$s"), &[&singular, &term.name]);
+        tpl.description = sprintf(&site.tr("Template for %s"), &[&term.name]);
+        // Two terms of the taxonomy with this name: the slug tells them apart.
+        let same = site.db.terms(taxonomy).await.map(|terms| terms.iter().filter(|t| t.name == term.name).count()).unwrap_or(0);
+        if same > 1 {
+            tpl.title = sprintf(&site.tr("%1$s (%2$s)"), &[&tpl.title, slug]);
+        }
+        true
     }
 
     /// `get_block_templates()`.

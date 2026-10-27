@@ -5,7 +5,7 @@ use rustpress_auth::app_passwords::{self, AppPassword};
 use serde_json::{Value, json};
 
 use super::Args;
-use crate::error::RestError;
+use crate::error::{Msg, RestError};
 use crate::util::Links;
 use crate::{Outcome, Resp, Rest, Result};
 
@@ -17,6 +17,18 @@ fn sanitize_text_field(text: &str) -> String {
 
 fn mysql_time(timestamp: i64) -> String {
     rustpress_core::datetime::SiteTimezone::utc().format("Y-m-d\\TH:i:s", timestamp)
+}
+
+/// The schema of `name` (`minLength` 1, `pattern` `.*\S.*`) as `rest_validate_value_from_schema()` checks it.
+fn invalid_name(name: &str) -> Option<RestError> {
+    if name.is_empty() {
+        return Some(RestError::invalid_param("name", Msg::new("%1$s must be at least %2$s character long.").with(&["name", "1"]), "rest_too_short"));
+    }
+    // `\S` of PCRE: anything but ASCII white space.
+    if name.chars().all(|c| matches!(c, ' ' | '\t' | '\n' | '\x0b' | '\x0c' | '\r')) {
+        return Some(RestError::invalid_param("name", Msg::new("%1$s does not match pattern %2$s.").with(&["name", ".*\\S.*"]), "rest_invalid_pattern"));
+    }
+    None
 }
 
 impl Rest<'_> {
@@ -102,8 +114,8 @@ impl Rest<'_> {
                 if args.get("name").is_none() {
                     return Ok(Err(RestError::missing_params(&["name"])));
                 }
-                if name.trim().is_empty() {
-                    return Ok(Err(RestError::new("rest_invalid_param", "Invalid parameter(s): name", 400)));
+                if let Some(error) = invalid_name(&name) {
+                    return Ok(Err(error));
                 }
                 let app_id = args.str("app_id").unwrap_or_default();
                 let writer = match self.writer() {
@@ -165,8 +177,8 @@ impl Rest<'_> {
                     return Ok(Err(RestError::new("rest_application_password_not_found", "Application password not found.", 404).after_permission_check()));
                 };
                 if let Some(name) = args.str("name") {
-                    if name.trim().is_empty() {
-                        return Ok(Err(RestError::new("rest_invalid_param", "Invalid parameter(s): name", 400)));
+                    if let Some(error) = invalid_name(&name) {
+                        return Ok(Err(error));
                     }
                     item.name = sanitize_text_field(&name);
                 }

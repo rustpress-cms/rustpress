@@ -5,7 +5,7 @@ use rustpress_content::content::UserData;
 use serde_json::{Value, json};
 
 use super::Args;
-use crate::error::RestError;
+use crate::error::{Msg, RestError};
 use crate::{Outcome, Resp, Rest, Result};
 
 macro_rules! bail {
@@ -50,7 +50,7 @@ impl Rest<'_> {
                 bail!(RestError::invalid_param_with_data("password", "Passwords cannot be empty.", "rest_user_invalid_password", json!({"status": 400})));
             }
             if password.contains('\\') {
-                bail!(RestError::invalid_param_with_data("password", "Passwords cannot contain the \"\\\" character.", "rest_user_invalid_password", json!({"status": 400})));
+                bail!(RestError::invalid_param_with_data("password", Msg::new("Passwords cannot contain the \"%s\" character.").with(&["\\"]), "rest_user_invalid_password", json!({"status": 400})));
             }
         }
         self.update_user_route(id, args).await
@@ -164,7 +164,7 @@ impl Rest<'_> {
             bail!(self.forbidden("rest_user_cannot_delete", "Sorry, you are not allowed to delete this user."));
         }
         if !args.bool("force").unwrap_or(false) {
-            bail!(RestError::new("rest_trash_not_supported", "Users do not support trashing. Set 'force=true' to delete.", 501));
+            bail!(RestError::new("rest_trash_not_supported", Msg::new("Users do not support trashing. Set '%s' to delete.").with(&["force=true"]), 501));
         }
         let reassign = args.u64("reassign").filter(|r| *r != 0);
         if let Some(to) = reassign

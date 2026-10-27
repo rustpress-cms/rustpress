@@ -215,19 +215,36 @@ impl Catalog {
     }
 }
 
+tokio::task_local! {
+    static ADMIN_REQUEST: bool;
+}
+
+/// Runs `future` as a request of the administration (`is_admin()`, also `admin-ajax.php`): its texts are looked up
+/// in the administration's language pack as well, after WordPress' own.
+pub async fn in_admin<F: std::future::Future>(future: F) -> F::Output {
+    ADMIN_REQUEST.scope(true, future).await
+}
+
+/// `is_admin()` for the translations: whether the running request is one of the administration.
+pub fn is_admin_request() -> bool {
+    ADMIN_REQUEST.try_with(|admin| *admin).unwrap_or(false)
+}
+
 /// All catalogs of the site by text domain (`default` is WordPress itself).
 #[derive(Debug, Default)]
 pub struct I18n {
     pub locale: String,
     domains: HashMap<String, Arc<Catalog>>,
+    /// `admin-{locale}.mo`, which `load_default_textdomain()` adds to `default` when `is_admin()`.
+    admin: Option<Arc<Catalog>>,
     data: std::sync::OnceLock<crate::locale::LocaleData>,
     texturize: std::sync::OnceLock<crate::formatting::Texturize>,
 }
 
 impl I18n {
-    /// Loads the core catalog and those of `themes` (`(slug, directory)`) for `locale`.
+    /// Loads the core catalog, the one of the administration and those of `themes` (`(slug, directory)`) for `locale`.
     pub fn load(wp_root: &Path, locale: &str, themes: &[(String, std::path::PathBuf)]) -> Self {
-        let mut i18n = Self { locale: locale.to_owned(), domains: HashMap::new(), data: std::sync::OnceLock::new(), texturize: std::sync::OnceLock::new() };
+        let mut i18n = Self { locale: locale.to_owned(), domains: HashMap::new(), admin: None, data: std::sync::OnceLock::new(), texturize: std::sync::OnceLock::new() };
         if locale.is_empty() || locale == "en_US" || locale.contains(['/', '\\', '.']) {
             return i18n;
         }
@@ -236,6 +253,7 @@ impl I18n {
         if let Some(core) = read(languages.join(format!("{locale}.mo"))) {
             i18n.domains.insert("default".to_owned(), Arc::new(core));
         }
+        i18n.admin = read(languages.join(format!("admin-{locale}.mo"))).map(Arc::new);
         for (slug, dir) in themes {
             // The language pack in wp-content/languages wins over the theme's bundled files.
             let catalog = read(languages.join("themes").join(format!("{slug}-{locale}.mo"))).or_else(|| read(dir.join("languages").join(format!("{locale}.mo"))));
@@ -270,9 +288,17 @@ impl I18n {
         })
     }
 
-    /// Whether the `domain` catalog knows this message (for checking message ids against a language pack).
+    /// Whether the `domain` catalogs know this message (for checking message ids against a language pack); for
+    /// `default` the administration's pack counts as well.
     pub fn has(&self, domain: &str, context: Option<&str>, text: &str) -> bool {
-        self.domains.get(domain).is_some_and(|c| c.contains(context, text))
+        self.domains.get(domain).is_some_and(|c| c.contains(context, text)) || (domain == "default" && self.admin.as_ref().is_some_and(|c| c.contains(context, text)))
+    }
+
+    /// The catalogs of `domain` in the order `WP_Translation_Controller` asks them: WordPress' own, then (in a
+    /// request of the administration) `admin-{locale}.mo`. The first translation wins.
+    fn catalogs<'a>(&'a self, domain: &str) -> impl Iterator<Item = &'a Catalog> + 'a {
+        let admin = (domain == "default" && is_admin_request()).then_some(self.admin.as_deref()).flatten();
+        self.domains.get(domain).map(Arc::as_ref).into_iter().chain(admin)
     }
 
     /// The names and conventions of the locale (`WP_Locale`), read from the catalog once.
@@ -281,29 +307,29 @@ impl I18n {
     }
 
     pub fn is_translated(&self) -> bool {
-        !self.domains.is_empty()
+        !self.domains.is_empty() || self.admin.is_some()
     }
 
     /// `__( $text, $domain )`.
     pub fn gettext(&self, domain: &str, text: &str) -> String {
-        self.domains.get(domain).and_then(|c| c.get(None, text)).unwrap_or(text).to_owned()
+        self.catalogs(domain).find_map(|c| c.get(None, text)).unwrap_or(text).to_owned()
     }
 
     /// `_x( $text, $context, $domain )`.
     pub fn pgettext(&self, domain: &str, context: &str, text: &str) -> String {
-        self.domains.get(domain).and_then(|c| c.get(Some(context), text)).unwrap_or(text).to_owned()
+        self.catalogs(domain).find_map(|c| c.get(Some(context), text)).unwrap_or(text).to_owned()
     }
 
     /// `_n( $single, $plural, $number, $domain )`.
     pub fn ngettext(&self, domain: &str, singular: &str, plural: &str, n: i64) -> String {
         let fallback = if n == 1 { singular } else { plural };
-        self.domains.get(domain).and_then(|c| c.get_plural(None, singular, n)).unwrap_or(fallback).to_owned()
+        self.catalogs(domain).find_map(|c| c.get_plural(None, singular, n)).unwrap_or(fallback).to_owned()
     }
 
     /// `_nx( $single, $plural, $number, $context, $domain )`.
     pub fn npgettext(&self, domain: &str, context: &str, singular: &str, plural: &str, n: i64) -> String {
         let fallback = if n == 1 { singular } else { plural };
-        self.domains.get(domain).and_then(|c| c.get_plural(Some(context), singular, n)).unwrap_or(fallback).to_owned()
+        self.catalogs(domain).find_map(|c| c.get_plural(Some(context), singular, n)).unwrap_or(fallback).to_owned()
     }
 }
 

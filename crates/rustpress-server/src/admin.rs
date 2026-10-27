@@ -439,7 +439,8 @@ pub async fn admin_page(loaded: &Loaded, config: &Config, writer: Option<&rustpr
         host: headers.get(header::HOST).and_then(|v| v.to_str().ok()).map(str::to_owned),
     };
     // The caches that lists prime for the request (terms, meta, rows of posts).
-    let reply = rustpress_db::Db::with_term_cache(rustpress_admin::screens::handle(&env, &request)).await;
+    // `is_admin()`: the administration's language pack joins WordPress' own (`load_default_textdomain()`).
+    let reply = rustpress_core::i18n::in_admin(rustpress_db::Db::with_term_cache(rustpress_admin::screens::handle(&env, &request))).await;
     let mut response = if reply.bytes.is_empty() { Response::new(Body::from(reply.body)) } else { Response::new(Body::from(reply.bytes)) };
     *response.status_mut() = StatusCode::from_u16(reply.status).unwrap_or(StatusCode::OK);
     for (name, value) in &reply.headers {

@@ -20,9 +20,15 @@ impl AjaxResponse {
 
     /// `WP_Ajax_Response::add()`: `data` is the text, or an error `(code, message)`.
     pub fn add(&mut self, what: &str, id: u64, position: Option<i64>, data: Result<&str, (&str, &str)>, supplemental: &[(&str, String)]) {
+        self.add_with_old(what, id, None, position, data, supplemental);
+    }
+
+    /// [`AjaxResponse::add`] with the `old_id` attribute of an entry that replaces another.
+    pub fn add_with_old(&mut self, what: &str, id: u64, old_id: Option<u64>, position: Option<i64>, data: Result<&str, (&str, &str)>, supplemental: &[(&str, String)]) {
         let cdata = |text: &str| format!("<![CDATA[{}]]>", text.replace("]]>", "]]]]><![CDATA[>"));
+        let old = old_id.map(|o| format!(" old_id='{o}'")).unwrap_or_default();
         let position = position.map(|p| format!(" position='{p}'")).unwrap_or_default();
-        let mut x = format!("<response action='{}_{id}'><{what} id='{id}'{position}>", self.action);
+        let mut x = format!("<response action='{}_{id}'><{what} id='{id}'{old}{position}>", self.action);
         match data {
             Ok(text) => x.push_str(&format!("<response_data>{}</response_data>", cdata(text))),
             Err((code, message)) => x.push_str(&format!("<wp_error code='{code}'>{}</wp_error>", cdata(message))),

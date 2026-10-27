@@ -5,7 +5,7 @@ use rustpress_content::content::TermData;
 use serde_json::json;
 
 use super::Args;
-use crate::error::RestError;
+use crate::error::{Msg, RestError};
 use crate::params::Params;
 use crate::terms::Tax;
 use crate::{Outcome, Resp, Rest, Result};
@@ -95,21 +95,18 @@ impl Rest<'_> {
             }
             ("DELETE", Some(id)) => {
                 let id: u64 = id.parse().unwrap_or(0);
-                if !self.can_manage_terms(tax) {
+                // `delete_item_permissions_check()`: the term must exist, then `delete_term` (never the default category).
+                let term = if id > 0 { self.site.db.term_by_id(Some(&tax.name), id).await? } else { None };
+                let Some(term) = term else {
+                    return Ok(Err(RestError::new("rest_term_invalid", "Term does not exist.", 404)));
+                };
+                let default_category = tax.name == "category" && term.term_id == self.site.options.u64("default_category", 1);
+                if !self.can_manage_terms(tax) || default_category {
                     return Ok(Err(self.forbidden("rest_cannot_delete", "Sorry, you are not allowed to delete this term.")));
                 }
                 if !args.bool("force").unwrap_or(false) {
-                    return Ok(Err(RestError::new("rest_trash_not_supported", "Terms do not support trashing. Set force=true to delete.", 501)));
+                    return Ok(Err(RestError::new("rest_trash_not_supported", Msg::new("Terms do not support trashing. Set '%s' to delete.").with(&["force=true"]), 501)));
                 }
-                let view = {
-                    let mut p = Params::parse("context=view");
-                    p.set("context", "edit");
-                    p
-                };
-                let _ = view;
-                let Some(term) = self.site.db.term_by_id(Some(&tax.name), id).await? else {
-                    return Ok(Err(RestError::new("rest_term_invalid", "Term does not exist.", 404)));
-                };
                 let previous = match self.terms_item(tax, &id.to_string(), &Params::parse("context=view")).await? {
                     Ok(resp) => resp.data,
                     Err(_) => json!({"id": term.term_id}),

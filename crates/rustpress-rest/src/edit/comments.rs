@@ -6,7 +6,7 @@ use rustpress_db::{Comment, Val};
 use serde_json::{Value, json};
 
 use super::Args;
-use crate::error::RestError;
+use crate::error::{Msg, RestError};
 use crate::params::Params;
 use crate::{Outcome, Resp, Rest, Result};
 
@@ -196,7 +196,7 @@ impl Rest<'_> {
     }
 
     /// `user_can( $user_id, $capability )` for another user.
-    async fn user_can(&self, user_id: u64, capability: &str) -> Result<bool> {
+    pub(crate) async fn user_can(&self, user_id: u64, capability: &str) -> Result<bool> {
         let Some(roles) = self.access.as_ref().and_then(|a| a.roles) else { return Ok(false) };
         let Some(author) = self.site.db.auth_user_by_id(user_id).await? else { return Ok(false) };
         Ok(rustpress_auth::CurrentUser::load(&self.site.db, roles, &author).await.is_ok_and(|u| u.can(capability)))
@@ -220,7 +220,7 @@ impl Rest<'_> {
                     .insert_row("commentmeta", &[("comment_id", Val::Int(comment.comment_id as i64)), ("meta_key", Val::Str("_wp_note_status".into())), ("meta_value", Val::Str(status.clone()))])
                     .await?;
             }
-            _ => return Ok(Some(RestError::invalid_param("meta", "meta[_wp_note_status] is not one of resolved and reopen.", "rest_not_in_enum"))),
+            _ => return Ok(Some(RestError::invalid_param("meta", Msg::new("%1$s is not one of %2$l.").with(&["meta[_wp_note_status]"]).with_list(&["resolved", "reopen"]), "rest_not_in_enum"))),
         }
         Ok(None)
     }

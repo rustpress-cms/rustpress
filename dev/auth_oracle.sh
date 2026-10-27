@@ -35,6 +35,8 @@ foreach ( array( 'rpadmin', 'rpeditor' ) as $login ) {
 		'id' => $user->ID,
 		'login' => $login,
 		'stored_hash_prefix' => substr( $user->user_pass, 0, 4 ),
+		// The part of the hash the cookies carry (`wp_generate_auth_cookie()`): another password, other cookies.
+		'pass_frag' => substr( $user->user_pass, 8, 4 ),
 		'expiration' => $expiration,
 		'token' => $token,
 		'cookies' => array(),

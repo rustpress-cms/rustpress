@@ -225,6 +225,11 @@ async fn list_mode(ctx: &Ctx<'_>, title: String) -> AdminResponse {
     let mut rows = String::new();
     // `$this->detached`: the unattached view has no "Uploaded to" column and offers to attach.
     let detached = filter == "detached";
+    // What every row reads: its meta, its author and the post it is attached to.
+    let ids: Vec<u64> = items.iter().map(|p| p.id).collect();
+    db.prime_post_meta(&ids).await.or_log();
+    db.prime_users(&items.iter().map(|p| p.post_author).collect::<Vec<_>>()).await.or_log();
+    db.prime_posts(&items.iter().map(|p| p.post_parent).collect::<Vec<_>>()).await.or_log();
     for item in &items {
         rows.push_str(&row(ctx, item, detached).await);
     }
@@ -539,7 +544,7 @@ pub async fn media_new(ctx: &Ctx<'_>) -> AdminResponse {
         cancel = tr("Cancel"),
         html_bypass = tr("You are using the browser&#8217;s built-in file uploader. The WordPress uploader includes multiple file selection and drag and drop capability. <button type=\"button\" class=\"button-link\">Switch to the multi-file uploader</button>."),
         max = sprintf(&tr("Maximum upload file size: %s."), &[&super::ajax_media::size_format(super::media_ui::max_upload())]),
-        nonce_field = format!("<input type=\"hidden\" id=\"_wpnonce\" name=\"_wpnonce\" value=\"{nonce}\" /><input type=\"hidden\" name=\"_wp_http_referer\" value=\"{}\" />", esc_url(&request.request_uri)),
+        nonce_field = format!("<input type=\"hidden\" id=\"_wpnonce\" name=\"_wpnonce\" value=\"{nonce}\" /><input type=\"hidden\" name=\"_wp_http_referer\" value=\"{}\" />", super::referer_field_value(&request.request_uri)),
     ));
     let screen = Screen { file: "media-new.php".into(), parent_file: "upload.php".into(), submenu_file: Some("media-new.php".into()), title, help: Some(new_help(ctx)), content_inline: true, ..Default::default() };
     render(ctx, &screen, &h, &assets).await

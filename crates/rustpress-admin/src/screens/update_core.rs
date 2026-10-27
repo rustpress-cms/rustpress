@@ -36,7 +36,7 @@ pub(super) fn wp_root(ctx: &Ctx<'_>) -> std::path::PathBuf {
 }
 
 fn nonce_fields(ctx: &Ctx<'_>) -> String {
-    format!("<input type=\"hidden\" id=\"_wpnonce\" name=\"_wpnonce\" value=\"{}\" /><input type=\"hidden\" name=\"_wp_http_referer\" value=\"{}\" />", ctx.create_nonce("upgrade-core"), esc_url(&ctx.request.request_uri))
+    format!("<input type=\"hidden\" id=\"_wpnonce\" name=\"_wpnonce\" value=\"{}\" /><input type=\"hidden\" name=\"_wp_http_referer\" value=\"{}\" />", ctx.create_nonce("upgrade-core"), super::referer_field_value(&ctx.request.request_uri))
 }
 
 /// `list_core_update()` for one offer.

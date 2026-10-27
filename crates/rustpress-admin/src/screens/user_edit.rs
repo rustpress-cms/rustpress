@@ -99,7 +99,7 @@ fn language_select(ctx: &Ctx<'_>, current: &str, with_site_default: bool, show_a
     }
     if with_site_default {
         options.push_str(&format!("<option value=\"site-default\" data-installed=\"1\"{}>{}</option>
-", selected(current == "site-default"), ctx.tr("Site Default")));
+", selected(current == "site-default"), ctx.site().trx("Site Default", "default site language")));
     }
     options.push_str(&format!("<option value=\"\" lang=\"en\" data-installed=\"1\"{}>English (United States)</option>
 ", selected(current.is_empty())));
@@ -836,7 +836,7 @@ pub async fn user_new(ctx: &Ctx<'_>) -> AdminResponse {
     h.push_str("\n<div id=\"ajax-response\"></div>\n\n");
     h.push_str(&format!("<p>{}</p>\n", tr("Create a brand new user and add them to this site.")));
     h.push_str("<form method=\"post\" name=\"createuser\" id=\"createuser\" class=\"validate\" novalidate=\"novalidate\"\n\t>\n<input name=\"action\" type=\"hidden\" value=\"createuser\" />\n");
-    h.push_str(&format!("\t<input type=\"hidden\" id=\"_wpnonce_create-user\" name=\"_wpnonce_create-user\" value=\"{}\" /><input type=\"hidden\" name=\"_wp_http_referer\" value=\"{}\" />\t<table class=\"form-table\" role=\"presentation\">\n", ctx.create_nonce("create-user"), esc_url(&request.request_uri)));
+    h.push_str(&format!("\t<input type=\"hidden\" id=\"_wpnonce_create-user\" name=\"_wpnonce_create-user\" value=\"{}\" /><input type=\"hidden\" name=\"_wp_http_referer\" value=\"{}\" />\t<table class=\"form-table\" role=\"presentation\">\n", ctx.create_nonce("create-user"), super::referer_field_value(&request.request_uri)));
     h.push_str(&format!("\t<tr class=\"form-field form-required\">\n\t\t<th scope=\"row\"><label for=\"user_login\">{} <span class=\"description\">{}</span></label></th>\n\t\t<td><input name=\"user_login\" type=\"text\" id=\"user_login\" class=\"ltr\" value=\"{}\" aria-required=\"true\" autocapitalize=\"none\" autocorrect=\"off\" autocomplete=\"off\" maxlength=\"60\" /></td>\n\t</tr>\n", tr("Username"), tr("(required)"), esc_attr(&submitted("user_login"))));
     h.push_str(&format!("\t<tr class=\"form-field form-required\">\n\t\t<th scope=\"row\"><label for=\"email\">{} <span class=\"description\">{}</span></label></th>\n\t\t<td><input name=\"email\" type=\"email\" id=\"email\" value=\"{}\" /></td>\n\t</tr>\n", tr("Email"), tr("(required)"), esc_attr(&submitted("email"))));
     h.push_str(&format!("\t\t<tr class=\"form-field\">\n\t\t<th scope=\"row\"><label for=\"first_name\">{} </label></th>\n\t\t<td><input name=\"first_name\" type=\"text\" id=\"first_name\" value=\"{}\" /></td>\n\t</tr>\n", tr("First Name"), esc_attr(&submitted("first_name"))));

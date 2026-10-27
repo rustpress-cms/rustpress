@@ -27,15 +27,31 @@ fn is_uuid(value: &str) -> bool {
     parts.len() == 5 && [8, 4, 4, 4, 12].iter().zip(&parts).all(|(n, p)| p.len() == *n && p.chars().all(|c| c.is_ascii_hexdigit()))
 }
 
-/// `wp_is_authorize_application_redirect_url_valid()`: https, or a custom scheme; plain http only in a local environment.
+/// `wp_is_authorize_application_redirect_url_valid()`: a scheme and a host, not `javascript:` or `data:`; plain
+/// `http` only for loopback hosts or in a `local` environment.
 fn redirect_valid(ctx: &Ctx<'_>, url: &str) -> Result<(), String> {
-    let Some((scheme, _)) = url.split_once(':') else { return Err(ctx.tr("The URL provided is not valid.")) };
-    let scheme = scheme.to_lowercase();
-    if matches!(scheme.as_str(), "javascript" | "data" | "vbscript" | "file") {
-        return Err(ctx.tr("The URL scheme is not allowed."));
+    if url.is_empty() {
+        return Ok(());
     }
-    let local = matches!(std::env::var("RUSTPRESS_ENVIRONMENT_TYPE").as_deref(), Ok("local" | "development"));
-    if scheme == "http" && !local {
+    let invalid = || Err(ctx.tr("Invalid URL format."));
+    // `/^[a-zA-Z][a-zA-Z0-9+.-]*:/` (RFC 2396, 3.1).
+    let Some((scheme, rest)) = url.split_once(':') else { return invalid() };
+    let mut chars = scheme.chars();
+    if !chars.next().is_some_and(|c| c.is_ascii_alphabetic()) || !chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '.' | '-')) {
+        return invalid();
+    }
+    // `wp_parse_url( $url, PHP_URL_HOST )`: the authority after `//`, without user and port.
+    let host = rest.strip_prefix("//").map_or("", |authority| {
+        let authority = authority.split(['/', '?', '#']).next().unwrap_or_default();
+        let authority = authority.rsplit_once('@').map_or(authority, |(_, h)| h);
+        if authority.starts_with('[') { authority.split_inclusive(']').next().unwrap_or_default() } else { authority.split(':').next().unwrap_or_default() }
+    });
+    if host.is_empty() || matches!(scheme.to_lowercase().as_str(), "javascript" | "data") {
+        return invalid();
+    }
+    let is_local = ctx.site().environment_type() == "local";
+    let is_loopback = matches!(host.to_lowercase().as_str(), "127.0.0.1" | "[::1]");
+    if scheme == "http" && !is_local && !is_loopback {
         return Err(ctx.tr("The URL must be served over a secure connection."));
     }
     Ok(())
@@ -104,10 +120,10 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         }
     }
     if !app_id.is_empty() && !is_uuid(&app_id) {
-        problems.push(tr("The provided Application ID must be a UUID."));
+        problems.push(tr("The application ID must be a UUID."));
     }
     if !problems.is_empty() {
-        return die(ctx.env, 400, &tr("Cannot Authorize Application"), &format!("{} {}", tr("The Authorize Application request is not allowed."), problems.join(" ")));
+        return die(ctx.env, 500, &tr("Cannot Authorize Application"), &format!("{} {}", tr("The Authorize Application request is not allowed."), problems.join(" ")));
     }
     if !site.app_passwords_available() {
         return die(ctx.env, 501, &tr("Cannot Authorize Application"), &tr("Application passwords are not available."));

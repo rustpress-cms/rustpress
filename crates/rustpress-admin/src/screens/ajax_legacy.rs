@@ -23,6 +23,80 @@ fn error(data: Option<Json>) -> AdminResponse {
 }
 
 /// `wp_send_json_success( $data )`.
+/// `wp_ajax_add_meta()`: a new custom field (`metakeyselect`/`metakeyinput` and `metavalue`), or a changed one
+/// (`meta[<id>][key]` and `meta[<id>][value]`).
+async fn add_meta(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUser, token: &str) -> AdminResponse {
+    let ctx = Ctx { env, request, user: user.clone(), token: token.to_owned() };
+    let tr = |s: &str| ctx.tr(s);
+    let nonce = request.request("_ajax_nonce-add-meta").or(request.request("_ajax_nonce")).or(request.request("_wpnonce")).unwrap_or_default();
+    if env.auth.verify_nonce(nonce, "add-meta", user.id, token, env.now).is_none() {
+        return text(403, "-1");
+    }
+    let post_id = int(request, "post_id");
+    let post = if post_id > 0 { env.db.post(post_id as u64).await.ok().flatten() } else { None };
+    let mut response = super::ajax_terms::AjaxResponse::new("add-meta");
+    let can_edit = |post: &Option<rustpress_db::Post>| post.as_ref().is_some_and(|p| user.can_edit_post(p));
+    if request.post_field("metakeyselect").is_some() || request.post_field("metakeyinput").is_some() {
+        if !can_edit(&post) {
+            return text(200, "-1");
+        }
+        let select = request.post_field("metakeyselect").unwrap_or_default().trim().to_owned();
+        let input = request.post_field("metakeyinput").unwrap_or_default().trim().to_owned();
+        if request.post_field("metakeyselect") == Some("#NONE#") && input.is_empty() {
+            return text(200, "1");
+        }
+        let Some(writer) = env.writer else { return text(200, "0") };
+        let Some(mut post) = post else { return text(200, "-1") };
+        // An auto-draft is saved as a draft first.
+        if post.post_status == "auto-draft" {
+            let content = Content { site: env.site, db: env.db, writer, user, now: env.now };
+            // `gmdate()`: the time in UTC, the names of PHP (not translated).
+            let utc = chrono::DateTime::from_timestamp(env.now, 0).unwrap_or_default().fixed_offset();
+            let gmdate = |format: &str| rustpress_core::datetime::php_date(format, &utc, "UTC", "UTC", false);
+            let title = rustpress_core::i18n::sprintf(&tr("Draft created on %1$s at %2$s"), &[&gmdate(&tr("F j, Y")), &gmdate(&tr("g:i a"))]);
+            let data = crate::content::PostData { id: Some(post.id), post_status: Some("draft".into()), post_title: Some(title), post_type: Some(post.post_type.clone()), ..Default::default() };
+            if content.insert_post(&data).await.is_err() {
+                return text(200, "0");
+            }
+            post = env.db.post(post.id).await.ok().flatten().unwrap_or(post);
+        }
+        // `add_meta()`: the typed key wins over the chosen one.
+        let key = if !input.is_empty() { input } else if select != "#NONE#" { select } else { String::new() };
+        if key.is_empty() || super::meta_boxes::is_protected_meta(&key) {
+            return text(200, &tr("Please provide a custom field value."));
+        }
+        let value = request.post_field("metavalue").unwrap_or_default().trim().to_owned();
+        let Ok(meta_id) = writer.add_post_meta(post.id, &key, &value).await else { return text(200, &tr("Please provide a custom field value.")) };
+        let row = super::meta_boxes::list_meta_row(&ctx, meta_id, &key, &value);
+        response.add("meta", meta_id, Some(1), Ok(&row), &[("postid", post.id.to_string())]);
+        return response.send();
+    }
+    // Changing a field: `meta[<id>][key]` and `meta[<id>][value]` of the first field in the request.
+    let fields = request.form.iter().chain(request.query.iter());
+    let Some(meta_id) = fields.filter_map(|(k, _)| k.strip_prefix("meta[")?.split(']').next()?.parse::<u64>().ok()).next() else { return text(200, "0") };
+    let field = |name: &str| request.post_field(&format!("meta[{meta_id}][{name}]")).unwrap_or_default().to_owned();
+    let (key, value) = (field("key"), field("value"));
+    if key.trim().is_empty() {
+        return text(200, &tr("Please provide a custom field name."));
+    }
+    let Some(meta) = env.db.post_meta_by_id(meta_id).await.ok().flatten() else { return text(200, "0") };
+    let old_key = meta.meta_key.clone().unwrap_or_default();
+    let target = env.db.post(meta.post_id).await.ok().flatten();
+    if super::meta_boxes::is_protected_meta(&old_key) || super::meta_boxes::is_protected_meta(&key) || !can_edit(&target) {
+        return text(200, "-1");
+    }
+    if meta.meta_value.as_deref() != Some(value.as_str()) || old_key != key {
+        let Some(writer) = env.writer else { return text(200, "0") };
+        let changed = writer.update_rows("postmeta", "meta_id", meta_id, &[("meta_key", rustpress_db::Val::Str(key.clone())), ("meta_value", rustpress_db::Val::Str(value.clone()))]).await.unwrap_or(0);
+        if changed == 0 {
+            return text(200, "0");
+        }
+    }
+    let row = super::meta_boxes::list_meta_row(&ctx, meta_id, &key, &value);
+    response.add_with_old("meta", meta_id, Some(meta_id), Some(0), Ok(&row), &[("postid", meta.post_id.to_string())]);
+    response.send()
+}
+
 fn success(data: Json) -> AdminResponse {
     send_json(200, &json!({"success": true, "data": data}))
 }
@@ -74,31 +148,25 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUs
             text(200, "0")
         }
         "delete-meta" => {
+            // `wp_ajax_delete_meta()`
             let id = int(request, "id");
             if !check(&format!("delete-meta_{id}"), None) {
                 return denied();
             }
-            // Custom fields are shown by the classic post screen only; no field, nothing to delete.
-            text(200, "1")
-        }
-        "add-meta" => {
-            if !check("add-meta", Some("_ajax_nonce-add-meta")) {
-                return denied();
+            let Some(meta) = (if id > 0 { env.db.post_meta_by_id(id as u64).await.ok().flatten() } else { None }) else { return text(200, "1") };
+            let key = meta.meta_key.clone().unwrap_or_default();
+            // `delete_post_meta` maps to `edit_post` of the post; protected keys are never deleted here.
+            let post = env.db.post(meta.post_id).await.ok().flatten();
+            if super::meta_boxes::is_protected_meta(&key) || !post.as_ref().is_some_and(|p| user.can_edit_post(p)) {
+                return text(200, "-1");
             }
-            let post_id = int(request, "post_id") as u64;
-            let post = env.db.post(post_id).await.ok().flatten();
-            if request.request("metakeyselect").is_some() || request.request("metakeyinput").is_some() {
-                let allowed = post.as_ref().is_some_and(|p| user.can_edit_post(p));
-                if !allowed {
-                    return text(200, "-1");
-                }
-                if request.request("metakeyselect") == Some("#NONE#") && request.request("metakeyinput").is_none_or(str::is_empty) {
-                    return text(200, "1");
-                }
-                return text(200, &tr("Please provide a custom field value."));
-            }
-            text(200, "0")
+            let deleted = match env.writer {
+                Some(writer) => writer.delete_rows("postmeta", "meta_id", meta.meta_id).await.unwrap_or(0) > 0,
+                None => false,
+            };
+            text(200, if deleted { "1" } else { "0" })
         }
+        "add-meta" => return add_meta(env, request, user, token).await,
         "trash-post" | "untrash-post" | "delete-post" | "delete-page" => {
             let id = int(request, "id");
             if !check(&format!("{action}_{id}"), None) {
@@ -165,8 +233,45 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUs
                     return text(200, "-1");
                 }
             }
-            // The classic "Featured image" box; the block editor sets the image through the REST API.
-            text(200, "0")
+            let Some(post) = post else { return text(200, "0") };
+            let ctx = Ctx { env, request, user: user.clone(), token: token.to_owned() };
+            // `(int) $_POST['thumbnail_id']`; -1 stands for none.
+            let thumbnail_id = request.post_field("thumbnail_id").map_or(0, |v| {
+                let v = v.trim();
+                let (sign, digits) = v.strip_prefix('-').map_or((1, v), |d| (-1, d));
+                let end = digits.find(|c: char| !c.is_ascii_digit()).unwrap_or(digits.len());
+                sign * digits[..end].parse::<i64>().unwrap_or(0)
+            });
+            let box_html = |id: u64, image: Option<String>| super::meta_boxes::post_thumbnail_html(&ctx, post.id, id, image.as_deref());
+            if action == "get-post-thumbnail-html" {
+                let id = u64::try_from(thumbnail_id).unwrap_or(0);
+                let image = if id != 0 { super::meta_boxes::post_thumbnail_image(&ctx, id).await } else { None };
+                return success(Json::from(box_html(id, image)));
+            }
+            let Some(writer) = env.writer else { return text(200, "0") };
+            let current = env.db.post_meta_value(post.id, "_thumbnail_id").await.ok().flatten();
+            let reply = |html: String| if json_request { success(Json::from(html)) } else { text(200, &html) };
+            if thumbnail_id == -1 {
+                // `delete_post_thumbnail()`: true when there was one.
+                if current.is_none() || writer.delete_post_meta(post.id, "_thumbnail_id").await.unwrap_or(0) == 0 {
+                    return text(200, "0");
+                }
+                return reply(box_html(0, None));
+            }
+            // `set_post_thumbnail()`: an attachment with an image is stored, anything else removes the thumbnail.
+            let id = u64::try_from(thumbnail_id).unwrap_or(0);
+            let image = if id != 0 { super::meta_boxes::post_thumbnail_image(&ctx, id).await } else { None };
+            let changed = match image.as_deref() {
+                None => false,
+                Some("") => current.is_some() && writer.delete_post_meta(post.id, "_thumbnail_id").await.unwrap_or(0) > 0,
+                // `update_post_meta()` reports no change when the value stays the same.
+                Some(_) if current.as_deref() == Some(id.to_string().as_str()) => false,
+                Some(_) => writer.update_post_meta(post.id, "_thumbnail_id", &id.to_string()).await.is_ok(),
+            };
+            if !changed {
+                return text(200, "0");
+            }
+            reply(box_html(id, image))
         }
         "save-attachment-compat" | "save-attachment-order" => {
             let key = if action == "save-attachment-compat" { "id" } else { "post_id" };

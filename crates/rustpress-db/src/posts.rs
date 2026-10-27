@@ -480,4 +480,10 @@ impl Db {
         );
         Ok(sqlx::query_as(AssertSqlSafe(sql)).bind(post_id).fetch_all(&self.pool).await?)
     }
+
+    /// `get_metadata_by_mid( 'post', $meta_id )`.
+    pub async fn post_meta_by_id(&self, meta_id: u64) -> Result<Option<PostMeta>> {
+        let sql = format!("SELECT meta_id, post_id, meta_key, meta_value FROM {} WHERE meta_id = ?", self.prefix.table("postmeta"));
+        Ok(sqlx::query_as(AssertSqlSafe(sql)).bind(meta_id).fetch_optional(&self.pool).await?)
+    }
 }

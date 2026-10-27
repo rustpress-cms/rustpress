@@ -237,7 +237,7 @@ impl Rest<'_> {
         let raw = match args.get(PARAM) {
             None => return Err(RestError::missing_params(&[PARAM])),
             Some(Value::String(s)) => s.clone(),
-            Some(_) => return Err(RestError::invalid_param_with_data(PARAM, Msg::new("%s is not of type %s.").with(&[PARAM, "string"]), "rest_invalid_type", json!({"param": PARAM}))),
+            Some(_) => return Err(RestError::invalid_param_with_data(PARAM, Msg::new("%1$s is not of type %2$s.").with(&[PARAM, "string"]), "rest_invalid_type", json!({"param": PARAM}))),
         };
         let Ok(Value::Object(settings)) = serde_json::from_str::<Value>(&raw) else {
             return Err(invalid(PARAM, Msg::new("%s parameter must be a valid JSON string.").with(&[PARAM])));
@@ -456,7 +456,7 @@ impl Rest<'_> {
         let raw = match args.get(PARAM) {
             None => return Err(RestError::missing_params(&[PARAM])),
             Some(Value::String(s)) => s.clone(),
-            Some(_) => return Err(RestError::invalid_param_with_data(PARAM, Msg::new("%s is not of type %s.").with(&[PARAM, "string"]), "rest_invalid_type", json!({"param": PARAM}))),
+            Some(_) => return Err(RestError::invalid_param_with_data(PARAM, Msg::new("%1$s is not of type %2$s.").with(&[PARAM, "string"]), "rest_invalid_type", json!({"param": PARAM}))),
         };
         let Ok(Value::Object(settings)) = serde_json::from_str::<Value>(&raw) else {
             return Err(invalid(PARAM, Msg::new("%s parameter must be a valid JSON string.").with(&[PARAM])));

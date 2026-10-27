@@ -219,7 +219,8 @@ async fn upload(ctx: &Ctx<'_>, plugin: bool) -> AdminResponse {
     let (parent, submenu, title) = if plugin { ("plugins.php", "plugin-install.php", tr("Upload Plugin")) } else { ("themes.php", "theme-install.php", tr("Upload Theme")) };
     let mut lines = vec![format!("<p>{}</p>", tr("Unpacking the package&#8230;")), format!("<p>{}</p>", if plugin { tr("Installing the plugin&#8230;") } else { tr("Installing the theme&#8230;") })];
     let failed = |mut lines: Vec<String>, reason: String| {
-        lines.push(format!("<p>{}</p>", rustpress_core::i18n::sprintf(&ctx.tr("The package could not be installed. %s"), &[&reason])));
+        // `WP_Upgrader_Skin::error()`: the message, then the error data.
+        lines.push(format!("<p>{} {reason}</p>", ctx.tr("The package could not be installed.")));
         lines.push(format!("<p>{}</p>", if plugin { ctx.tr("Plugin installation failed.") } else { ctx.tr("Theme installation failed.") }));
         if plugin {
             lines.push(format!("<p><a href=\"{}\">{}</a></p>", ctx.admin_url("plugin-install.php"), ctx.tr("Go to Plugin Installer")));

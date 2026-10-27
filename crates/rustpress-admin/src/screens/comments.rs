@@ -316,37 +316,73 @@ fn edit_help(ctx: &Ctx<'_>) -> Help {
     }
 }
 
-/// The notices after an action (`approved=1&ids=...`).
-fn notice(ctx: &Ctx<'_>) -> String {
+/// The notices of `edit-comments.php` after an action (`approved=2`, `trashed=1&ids=5`, `same=7`).
+async fn notice(ctx: &Ctx<'_>) -> String {
     let site = ctx.site();
-    let get = |name: &str| ctx.request.get(name).and_then(|v| v.parse::<i64>().ok()).filter(|n| *n > 0);
-    let mut parts: Vec<String> = Vec::new();
-    let number = |n: i64| site.number_i18n(n as u64);
-    if let Some(n) = get("approved") {
-        parts.push(sprintf(&site.trn("%s comment approved.", "%s comments approved.", n), &[&number(n)]));
-    }
-    if let Some(n) = get("spammed") {
-        parts.push(sprintf(&site.trn("%s comment marked as spam.", "%s comments marked as spam.", n), &[&number(n)]));
-    }
-    if let Some(n) = get("unspammed") {
-        parts.push(sprintf(&site.trn("%s comment restored from the spam", "%s comments restored from the spam", n), &[&number(n)]));
-    }
-    if let Some(n) = get("trashed") {
-        parts.push(sprintf(&site.trn("%s comment moved to the Trash.", "%s comments moved to the Trash.", n), &[&number(n)]));
-    }
-    if let Some(n) = get("untrashed") {
-        parts.push(sprintf(&site.trn("%s comment restored from the Trash", "%s comments restored from the Trash", n), &[&number(n)]));
-    }
-    if let Some(n) = get("deleted") {
-        parts.push(sprintf(&site.trn("%s comment permanently deleted", "%s comments permanently deleted", n), &[&number(n)]));
-    }
-    if let Some(n) = get("unapproved") {
-        parts.push(sprintf(&site.trn("%s comment unapproved.", "%s comments unapproved.", n), &[&number(n)]));
-    }
-    if parts.is_empty() {
+    let tr = |s: &str| ctx.tr(s);
+    let request = ctx.request;
+    const NAMES: [&str; 7] = ["approved", "deleted", "trashed", "untrashed", "spammed", "unspammed", "same"];
+    if !NAMES.iter().any(|name| request.request(name).is_some()) {
         return String::new();
     }
-    format!("<div id=\"moderated\" class=\"updated notice is-dismissible\"><p>{}</p></div>\n", parts.join("<br/>\n"))
+    // `(int) $_REQUEST[ $name ]`.
+    let int = |name: &str| -> i64 {
+        let value = request.request(name).unwrap_or_default().trim_start();
+        let (sign, digits) = match value.strip_prefix('-') {
+            Some(rest) => (-1, rest),
+            None => (1, value.strip_prefix('+').unwrap_or(value)),
+        };
+        let end = digits.find(|c: char| !c.is_ascii_digit()).unwrap_or(digits.len());
+        sign * digits[..end].parse::<i64>().unwrap_or(0)
+    };
+    let [approved, deleted, trashed, untrashed, spammed, unspammed, same] = NAMES.map(int);
+    if [approved, deleted, trashed, untrashed, spammed, unspammed, same].iter().all(|n| *n <= 0) {
+        return String::new();
+    }
+    // The counts are printed as they came (`sprintf( _n( ... ), $approved )`).
+    let count = |single: &str, plural: &str, n: i64| sprintf(&site.trn(single, plural, n), &[&n.to_string()]);
+    // `wp_nonce_url( "edit-comments.php?doaction=undo&action=$action&ids=$ids", 'bulk-comments' )`.
+    let undo = |action: &str| {
+        let ids = request.request("ids").unwrap_or("0");
+        let url = esc_html(&add_query_arg(&format!("edit-comments.php?doaction=undo&action={action}&ids={ids}"), "_wpnonce", &ctx.create_nonce("bulk-comments")));
+        format!(" <a href=\"{}\">{}</a><br />", esc_url(&url), tr("Undo"))
+    };
+    let mut messages: Vec<String> = Vec::new();
+    if approved > 0 {
+        messages.push(count("%s comment approved.", "%s comments approved.", approved));
+    }
+    if spammed > 0 {
+        messages.push(count("%s comment marked as spam.", "%s comments marked as spam.", spammed) + &undo("unspam"));
+    }
+    if unspammed > 0 {
+        messages.push(count("%s comment restored from the spam.", "%s comments restored from the spam.", unspammed));
+    }
+    if trashed > 0 {
+        messages.push(count("%s comment moved to the Trash.", "%s comments moved to the Trash.", trashed) + &undo("untrash"));
+    }
+    if untrashed > 0 {
+        messages.push(count("%s comment restored from the Trash.", "%s comments restored from the Trash.", untrashed));
+    }
+    if deleted > 0 {
+        messages.push(count("%s comment permanently deleted.", "%s comments permanently deleted.", deleted));
+    }
+    if same > 0
+        && let Ok(Some(comment)) = ctx.env.db.comment_any(same as u64).await
+    {
+        let edit = format!(" <a href=\"{}\">{}</a>", esc_url(&ctx.admin_url(&format!("comment.php?action=editcomment&c={same}"))), tr("Edit comment"));
+        match comment.comment_approved.as_str() {
+            "1" => messages.push(tr("This comment is already approved.") + &edit),
+            "trash" => messages.push(format!("{} <a href=\"{}\">{}</a>", tr("This comment is already in the Trash."), esc_url(&ctx.admin_url("edit-comments.php?comment_status=trash")), tr("View Trash"))),
+            "spam" => messages.push(tr("This comment is already marked as spam.") + &edit),
+            _ => {}
+        }
+    }
+    if messages.is_empty() {
+        return String::new();
+    }
+    // `wp_admin_notice()` prints the notice through `wp_kses_post()`, without a line break after it.
+    let notice = super::notices::notice(&messages.join("<br />\n"), "", true, "moderated", &["updated"], true);
+    rustpress_core::kses::kses_post(notice.trim_end_matches('\n'))
 }
 
 /// `edit-comments.php`.
@@ -479,7 +515,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         format!(
             "<input type=\"hidden\" id=\"_destroy_nonce\" name=\"_destroy_nonce\" value=\"{}\" /><input type=\"hidden\" name=\"_wp_http_referer\" value=\"{}\" />{}",
             ctx.create_nonce("bulk-destroy"),
-            esc_url(&request.request_uri),
+            super::referer_field_value(&request.request_uri),
             crate::list_table::submit_button(&if status_param == "spam" { esc_attr(&tr("Empty Spam")) } else { esc_attr(&tr("Empty Trash")) }, "apply", "delete_all", "delete_all")
         )
     } else {
@@ -505,7 +541,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         Some("comment_post_ID") => format!("{} {direction}", tr("Table ordered by Post Replied To.")),
         Some(_) => String::new(),
     };
-    let nonce_field = format!("<input type=\"hidden\" id=\"_ajax_fetch_list_nonce\" name=\"_ajax_fetch_list_nonce\" value=\"{}\" /><input type=\"hidden\" name=\"_wp_http_referer\" value=\"{}\" />{}", ctx.create_nonce("fetch-list-wp_list_comments_table"), esc_url(&request.request_uri), if has_items { ctx.nonce_field("bulk-comments") } else { String::new() });
+    let nonce_field = format!("<input type=\"hidden\" id=\"_ajax_fetch_list_nonce\" name=\"_ajax_fetch_list_nonce\" value=\"{}\" /><input type=\"hidden\" name=\"_wp_http_referer\" value=\"{}\" />{}", ctx.create_nonce("fetch-list-wp_list_comments_table"), super::referer_field_value(&request.request_uri), if has_items { ctx.nonce_field("bulk-comments") } else { String::new() });
     let table_html = table.display_opts(has_items, &nonce_field, &type_select, &bottom_extra, &caption, &rows, &tr("Comments list")).replace("<tbody id=\"the-list\"\n\t\t\t\t>", "<tbody id=\"the-comment-list\" data-wp-lists=\"list:comment\">");
     let table_html = table_html.replace("<tbody id=\"the-list\"\n\t\t\t\t\t>", "<tbody id=\"the-comment-list\" data-wp-lists=\"list:comment\">");
 
@@ -569,7 +605,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         h.push_str(&format!("<span class=\"subtitle\">{}</span>\n", sprintf(&tr("Search results for: %s"), &[&format!("<strong>{}</strong>", esc_html(&search))])));
     }
     h.push_str(if post_id.is_some() && search.is_empty() { "<hr class=\"wp-header-end\">\n\n" } else { "\n<hr class=\"wp-header-end\">\n\n" });
-    h.push_str(&notice(ctx));
+    h.push_str(&notice(ctx).await);
     h.push('\n');
     h.push_str(&views(&tr("Filter comments list"), &links));
     let p_input = match post_id {

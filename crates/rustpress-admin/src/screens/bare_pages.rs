@@ -77,10 +77,9 @@ pub fn setup_config(env: &AdminEnv<'_>) -> AdminResponse {
     let message = format!(
         "<p>{}</p>",
         rustpress_core::i18n::sprintf(
-            &env.site.tr("The file %1$s already exists. If you need to reset any of the configuration items in this file, please delete it first. You may try <a href='%2$s'>installing now</a>."),
+            &env.site.tr("The file %1$s already exists. If you need to reset any of the configuration items in this file, please delete it first. You may try <a href=\"%2$s\">installing now</a>."),
             &["<code>wp-config.php</code>", "install.php"]
         )
-        .replace('\'', "\"")
     );
     let body = crate::die::page_with_robots(env.site, &env.site.tr("WordPress &rsaquo; Error"), &message, "noindex, nofollow");
     AdminResponse { status: 409, headers: page_headers(), cookies: Vec::new(), body, bytes: Vec::new() }

@@ -515,7 +515,7 @@ pub async fn page(ctx: &Ctx<'_>, kind: Kind) -> AdminResponse {
     let admin_url = ctx.admin_url(kind.file());
     let mut links: Vec<(String, String)> = vec![(
         "all".into(),
-        view_link(&admin_url, &sprintf(&ctx.site().trn("All <span class=\"count\">(%s)</span>", "All <span class=\"count\">(%s)</span>", all as i64), &[&ctx.site().number_i18n(all)]), filter_status.is_empty()),
+        view_link(&admin_url, &sprintf(&ctx.site().trnx("All <span class=\"count\">(%s)</span>", "All <span class=\"count\">(%s)</span>", all as i64, "requests"), &[&ctx.site().number_i18n(all)]), filter_status.is_empty()),
     )];
     for (status, count) in &counts {
         if *count == 0 {

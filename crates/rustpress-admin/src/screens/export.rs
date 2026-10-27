@@ -354,7 +354,7 @@ async fn date_options(ctx: &Ctx<'_>, post_type: &str) -> String {
     let mut out = String::new();
     for (year, month) in months {
         let ts = SiteTimezone::utc().local_timestamp(&format!("{year:04}-{month:02}-01 00:00:00")).unwrap_or(0);
-        out.push_str(&format!("<option value=\"{year:04}-{month:02}\">{}</option>", esc_html(&site.date(&ctx.tr("F Y"), ts))));
+        out.push_str(&format!("<option value=\"{year:04}-{month:02}\">{}</option>", esc_html(&site.date("F Y", ts))));
     }
     out
 }

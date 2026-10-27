@@ -9,7 +9,7 @@ use serde_json::{Map, Value, json};
 
 use super::Args;
 use super::caps::TypeCaps;
-use crate::error::RestError;
+use crate::error::{Msg, RestError};
 use crate::params::Params;
 use crate::posts::Kind;
 use crate::util::rfc3339;
@@ -545,7 +545,7 @@ impl Rest<'_> {
             return Ok(Ok(Resp::item(json!({"deleted": true, "previous": previous}))));
         }
         if !matches!(kind, Kind::Post | Kind::Page | Kind::Custom(_)) {
-            return Ok(Err(RestError::new("rest_trash_not_supported", "The post does not support trashing. Set force=true to delete.", 501)));
+            return Ok(Err(RestError::new("rest_trash_not_supported", Msg::new("The post does not support trashing. Set '%s' to delete.").with(&["force=true"]), 501)));
         }
         if !matches!(content.trash_post(id).await, Ok(true)) {
             return Ok(Err(RestError::new("rest_cannot_delete", "The post cannot be deleted.", 500)));
@@ -602,7 +602,7 @@ impl Rest<'_> {
                     return Ok(Err(self.forbidden("rest_cannot_delete", "Sorry, you are not allowed to delete this revision.")));
                 }
                 if !args.bool("force").unwrap_or(false) {
-                    return Ok(Err(RestError::new("rest_trash_not_supported", "Revisions do not support trashing. Set 'force=true' to delete.", 501)));
+                    return Ok(Err(RestError::new("rest_trash_not_supported", Msg::new("Revisions do not support trashing. Set '%s' to delete.").with(&["force=true"]), 501)));
                 }
                 let previous = self.prepare_revision(revision, &parent_post, kind, "edit").await?;
                 let content = match self.content() {

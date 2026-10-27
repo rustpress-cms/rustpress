@@ -1,43 +1,45 @@
 {
     "siteurl": "http:\/\/localhost:8080",
     "cookiehash": "37d007a56d816107ce5b52c10342db37",
-    "now": 1792995906,
+    "now": 1793088792,
     "password": "rustpress-dev",
-    "hash_wp": "$wp$2y$10$uxh5\/JkXcKIFIYpy9DmZmOtBaTOeM\/upLZUQOpDuX.YPVP6HXP6qW",
-    "hash_phpass": "$P$BrRiOo5WVZ1NoxlcabIG7bh70Dx7va.",
+    "hash_wp": "$wp$2y$10$lewiuLgKqMmx.RwnWO4ut.SmAr\/pe79YKKr.m3Qmdlm5su.MZ3zTi",
+    "hash_phpass": "$P$BpceTiuVRvgqKwRjHjNTjew.F0S4DF.",
     "hash_md5": "555c833bcb353e8d6aa1eeb6cb46eae1",
-    "hash_bcrypt": "$2y$10$iPxCsxv.d8N4oacfA6GzpuhFOc1WPnHTV1oXQbElu0uINREOCQEDa",
+    "hash_bcrypt": "$2y$10$EmMa1BWUq7XXNwWkmSu1YusYEAl8xEnGbN8WFDmXCtLPyT3PdpveO",
     "users": [
         {
             "id": 3,
             "login": "rpadmin",
             "stored_hash_prefix": "$wp$",
-            "expiration": 1793255106,
-            "token": "Mk3BfZkJXOevwUyBuoCijXddeJvUWWlY6g77biQHchf",
+            "pass_frag": "0$UJ",
+            "expiration": 1793347992,
+            "token": "f5VAwOHMyBwtqxpJ0zPICgxfBLWRHp8AhYqptoZWIxU",
             "cookies": {
-                "auth": "rpadmin|1793255106|Mk3BfZkJXOevwUyBuoCijXddeJvUWWlY6g77biQHchf|49b74d588b27bd9d558aacf16aa3ef85a73d5f3d0adaa953f80808d5b73c78d5",
-                "secure_auth": "rpadmin|1793255106|Mk3BfZkJXOevwUyBuoCijXddeJvUWWlY6g77biQHchf|36758c8c83b4117d2680eaf599296fd155ee52a67663cd3937a5636b8a91ee75",
-                "logged_in": "rpadmin|1793255106|Mk3BfZkJXOevwUyBuoCijXddeJvUWWlY6g77biQHchf|95dc288435aaed369a0be36fe97e6b011c5d52e373f9bdcd0e644e28156bce0c"
+                "auth": "rpadmin|1793347992|f5VAwOHMyBwtqxpJ0zPICgxfBLWRHp8AhYqptoZWIxU|9e93b18414ec7955a228f1fba3880d5f05c95e11f8ef8b2291c95261817eb652",
+                "secure_auth": "rpadmin|1793347992|f5VAwOHMyBwtqxpJ0zPICgxfBLWRHp8AhYqptoZWIxU|0dfc4cbe7a1174b2ed62293e1aefe195ca6ebaf84c9c7bf2e4ebfd2a7e5293ed",
+                "logged_in": "rpadmin|1793347992|f5VAwOHMyBwtqxpJ0zPICgxfBLWRHp8AhYqptoZWIxU|692b024ecbcefca4c0e984fa87eca3c121d628bcb7633be76c09d98ddc1b4181"
             },
             "nonces": {
-                "wp_rest": "0767de4922",
-                "other": "7fc0372942"
+                "wp_rest": "71f9a1a6f9",
+                "other": "b86bb3f28d"
             }
         },
         {
             "id": 4,
             "login": "rpeditor",
             "stored_hash_prefix": "$wp$",
-            "expiration": 1793255106,
-            "token": "SHqgqcDw1x6XAfFaFiES7Ro38xE2SOFXYQTcMELxCgZ",
+            "pass_frag": "0$Yo",
+            "expiration": 1793347992,
+            "token": "UIHPoHWFORHevYDHABvoPMHGQwA3ZP6J7U38M9t5ECv",
             "cookies": {
-                "auth": "rpeditor|1793255106|SHqgqcDw1x6XAfFaFiES7Ro38xE2SOFXYQTcMELxCgZ|56dd4591f2acbf2e9bbe01b6cfa1d860c2a75b35f2829514c7e68da49eb8616e",
-                "secure_auth": "rpeditor|1793255106|SHqgqcDw1x6XAfFaFiES7Ro38xE2SOFXYQTcMELxCgZ|2bceb1057f0377c271e40fceb2d7a3bf84c6fdef9067c461ed92dda594116553",
-                "logged_in": "rpeditor|1793255106|SHqgqcDw1x6XAfFaFiES7Ro38xE2SOFXYQTcMELxCgZ|9aefafacd7786c6d5ea0d3f2cc23e0b8eedf5e13adae91e563db8f41ebc62ece"
+                "auth": "rpeditor|1793347992|UIHPoHWFORHevYDHABvoPMHGQwA3ZP6J7U38M9t5ECv|6d3a36332d88abee111b61c44bccfb8f25feadb21ce4f619d0c5c716626a1bed",
+                "secure_auth": "rpeditor|1793347992|UIHPoHWFORHevYDHABvoPMHGQwA3ZP6J7U38M9t5ECv|32ddad855a4205d5b75f466bf7765d857059295b49d1fe92e54da3d3ac9031a4",
+                "logged_in": "rpeditor|1793347992|UIHPoHWFORHevYDHABvoPMHGQwA3ZP6J7U38M9t5ECv|803d967aa6ee52f2ca3662b0409d967720b9e69cde0198ba9839d201df7fca19"
             },
             "nonces": {
-                "wp_rest": "1c007620e0",
-                "other": "671c974a3f"
+                "wp_rest": "e18676659a",
+                "other": "62ad158319"
             }
         }
     ]

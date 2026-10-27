@@ -624,7 +624,7 @@ pub async fn render_editor(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo) -> Admin
         sample_nonce = ctx.create_nonce("samplepermalink"),
         toggle_nonce = ctx.create_nonce("toggle-custom-fields"),
         post_php = esc_url(&ctx.admin_url("post.php")),
-        referer = esc_url(&ctx.request.request_uri),
+        referer = super::referer_field_value(&ctx.request.request_uri),
         no_js = sprintf(&tr("The block editor requires JavaScript. Please enable JavaScript in your browser settings, or install the <a href=\"%s\">Classic Editor plugin</a>."), &[&classic_link]),
     );
     let title = if is_new { heading.clone() } else { sprintf(&tr("Edit %s &#8220;%s&#8221;"), &[&info.singular, &esc_html(&post.post_title)]) };

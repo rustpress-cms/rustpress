@@ -416,7 +416,8 @@ async fn register_meta_boxes(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, is_new
     // Block themes and themes with `add_theme_support( 'post-thumbnails' )`.
     if supports("thumbnail") && (ctx.env.block_theme || ctx.env.theme.adds_theme_support("post-thumbnails")) && ctx.can("upload_files") {
         let thumbnail = db.post_meta_value(post.id, "_thumbnail_id").await.ok().flatten().and_then(|v| v.parse::<u64>().ok()).unwrap_or(0);
-        boxes.push(MetaBox::new("postimagediv", &esc_html(&tr("Featured image")), "side", "low", post_thumbnail_html(ctx, post.id, thumbnail, None)));
+        let image = if thumbnail != 0 { super::meta_boxes::post_thumbnail_image(ctx, thumbnail).await } else { None };
+        boxes.push(MetaBox::new("postimagediv", &esc_html(&tr("Featured image")), "side", "low", post_thumbnail_html(ctx, post.id, thumbnail, image.as_deref())));
     }
     if supports("excerpt") {
         boxes.push(MetaBox::new("postexcerpt", &tr("Excerpt"), "normal", "core", excerpt_box(ctx, post)));
@@ -482,7 +483,7 @@ async fn comments_box(ctx: &Ctx<'_>, post: &Post) -> String {
         post.id,
         tr("Add Comment"),
         ctx.create_nonce("fetch-list-WP_Post_Comments_List_Table"),
-        esc_url(&ctx.request.request_uri),
+        super::referer_field_value(&ctx.request.request_uri),
         );
     if total < 1 {
         out.push_str(&format!("<p id=\"no-comments\">{}</p>", tr("No comments yet.")));
@@ -593,11 +594,12 @@ async fn category_box(ctx: &Ctx<'_>, post: &Post) -> String {
 async fn tags_box(ctx: &Ctx<'_>, post: &Post) -> String {
     let tr = |s: &str| ctx.tr(s);
     let tags = if post.id != 0 { ctx.env.db.terms_for_post(post.id, Some("post_tag")).await.unwrap_or_default() } else { Vec::new() };
-    let names = tags.iter().map(|t| t.name.clone()).collect::<Vec<_>>().join(&ctx.site().trx(",", "tag delimiter"));
+    // `get_terms_to_edit()` joins with a plain comma; the box puts the delimiter of the language and a space.
+    let names = esc_attr(&tags.iter().map(|t| t.name.clone()).collect::<Vec<_>>().join(",")).replace(',', &format!("{} ", ctx.site().trx(",", "tag delimiter")));
     let inner = format!(
         "<div class=\"tagsdiv\" id=\"post_tag\">\n\t<div class=\"jaxtag\">\n\t<div class=\"nojs-tags hide-if-js\">\n\t\t<label for=\"tax-input-post_tag\">{}</label>\n\t\t<p><textarea name=\"tax_input[post_tag]\" rows=\"3\" cols=\"20\" class=\"the-tags\" id=\"tax-input-post_tag\"  aria-describedby=\"new-tag-post_tag-desc\">{}</textarea></p>\n\t</div>\n\t\t<div class=\"ajaxtag hide-if-no-js\">\n\t\t<label class=\"screen-reader-text\" for=\"new-tag-post_tag\">{}</label>\n\t\t<input data-wp-taxonomy=\"post_tag\" type=\"text\" id=\"new-tag-post_tag\" name=\"newtag[post_tag]\" class=\"newtag form-input-tip\" size=\"16\" autocomplete=\"off\" aria-describedby=\"new-tag-post_tag-desc\" value=\"\" />\n\t\t<input type=\"button\" class=\"button tagadd\" value=\"{}\" />\n\t</div>\n\t<p class=\"howto\" id=\"new-tag-post_tag-desc\">{}</p>\n\t\t</div>\n\t<ul class=\"tagchecklist\" role=\"list\"></ul>\n</div>\n\t<p class=\"hide-if-no-js\"><button type=\"button\" class=\"button-link tagcloud-link\" id=\"link-post_tag\" aria-expanded=\"false\">{}</button></p>\n\t",
         tr("Add or remove tags"),
-        esc_textarea(&names),
+        names,
         tr("Add Tag"),
         tr("Add"),
         tr("Separate tags with commas"),

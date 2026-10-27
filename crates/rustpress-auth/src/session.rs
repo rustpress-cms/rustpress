@@ -57,6 +57,15 @@ pub async fn create_session(db: &Db, writer: &Writer, user_id: u64, expiration: 
     Ok(token)
 }
 
+/// `WP_Session_Tokens::update()`: stores the session of a known token (expiring at `expiration`).
+pub async fn update_session(db: &Db, writer: &Writer, user_id: u64, token: &str, expiration: i64, now: i64) -> Result<(), rustpress_db::Error> {
+    let verifier = sha256_hex(token);
+    let mut sessions = live_sessions(db, user_id, now).await?;
+    sessions.retain(|(k, _)| *k != key(&verifier));
+    sessions.push((key(&verifier), Value::Array(vec![(key("expiration"), Value::Int(expiration)), (key("login"), Value::Int(now))])));
+    store(writer, user_id, sessions).await
+}
+
 /// `WP_Session_Tokens::destroy()`: ends one session.
 pub async fn destroy_session(db: &Db, writer: &Writer, user_id: u64, token: &str, now: i64) -> Result<(), rustpress_db::Error> {
     let verifier = sha256_hex(token);

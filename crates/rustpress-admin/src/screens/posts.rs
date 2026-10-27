@@ -156,9 +156,9 @@ async fn category_tt_ids(ctx: &Ctx<'_>, cat: u64) -> Vec<u64> {
 /// `wp_dropdown_categories()` with `show_option_all` and a hierarchy.
 async fn categories_dropdown(ctx: &Ctx<'_>, selected: u64) -> String {
     let terms = ctx.env.db.terms("category").await.unwrap_or_default();
-    let mut out = format!("<label class=\"screen-reader-text\" for=\"cat\">{}</label>", ctx.site().trx("Filter by category", "category filter label"));
+    let mut out = format!("<label class=\"screen-reader-text\" for=\"cat\">{}</label>", ctx.tr("Filter by category"));
     out.push_str("<select  name='cat' id='cat' class='postform'>\n");
-    out.push_str(&format!("\t<option value='0'>{}</option>\n", ctx.site().trx("All Categories", "all categories")));
+    out.push_str(&format!("\t<option value='0'>{}</option>\n", ctx.tr("All Categories")));
     fn walk(terms: &[rustpress_db::Term], parent: u64, level: usize, selected: u64, out: &mut String) {
         let mut children: Vec<&rustpress_db::Term> = terms.iter().filter(|t| t.parent == parent).collect();
         children.sort_by_key(|t| t.name.to_lowercase());
@@ -634,7 +634,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         if !(months.is_empty() || (months.len() == 1 && months[0].1 == 0)) {
             filters.push_str(&format!("		<label for=\"filter-by-date\" class=\"screen-reader-text\">{}</label>
 		<select name=\"m\" id=\"filter-by-date\">
-", site.trx("Filter by date", "date filter label")));
+", site.tr("Filter by date")));
             filters.push_str(&format!("			<option{} value=\"0\">{}</option>
 		", if month == 0 { " selected='selected'" } else { "" }, tr("All dates")));
             for (year, month_number) in &months {
@@ -938,7 +938,7 @@ pub(super) async fn post_row(ctx: &Ctx<'_>, post: &Post, level: usize, row: &Row
                             format!("<a href=\"{}\">{}</a>", esc_url(&url), esc_html(&t.name))
                         })
                         .collect();
-                    links.join(&site.trx(", ", "tag delimiter"))
+                    links.join(&site.tr(", "))
                 };
                 out.push_str(&format!("<td class='{} column-{}' data-colname=\"{}\">{cell}</td>", column.key, column.key, esc_attr(&label)));
             }
@@ -965,7 +965,7 @@ pub(super) async fn post_row(ctx: &Ctx<'_>, post: &Post, level: usize, row: &Row
                             format!("<a href=\"{}\">{}</a>", esc_url(&url), esc_html(&t.name))
                         })
                         .collect();
-                    links.join(&site.trx(", ", "tag delimiter"))
+                    links.join(&site.tr(", "))
                 };
                 out.push_str(&format!("<td class='{key} column-{key}' data-colname=\"{}\">{cell}</td>", esc_attr(&column.label)));
             }
@@ -1086,7 +1086,7 @@ fn post_states(ctx: &Ctx<'_>, post: &Post, status_param: &str, sticky: bool) -> 
     if states.is_empty() {
         return String::new();
     }
-    let separator = site.trx(", ", "list item separator");
+    let separator = site.tr(", ");
     let count = states.len();
     let mut out = String::from(" &mdash; ");
     for (index, state) in states.iter().enumerate() {

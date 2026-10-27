@@ -151,6 +151,12 @@ pub struct Ctx<'a> {
     pub token: String,
 }
 
+/// The value of `wp_referer_field()`: `esc_url( remove_query_arg( '_wp_http_referer' ) )` of the request, whose query
+/// PHP builds anew (values are encoded again, `5,6` becomes `5%2C6`).
+pub fn referer_field_value(request_uri: &str) -> String {
+    rustpress_core::formatting::esc_url(&rustpress_core::urls::remove_query_arg(request_uri, "_wp_http_referer"))
+}
+
 impl Ctx<'_> {
     pub fn site(&self) -> &Site {
         self.env.site
@@ -183,7 +189,7 @@ impl Ctx<'_> {
         format!(
             "<input type=\"hidden\" id=\"{name}\" name=\"{name}\" value=\"{}\" /><input type=\"hidden\" name=\"_wp_http_referer\" value=\"{}\" />",
             self.create_nonce(action),
-            rustpress_core::formatting::esc_url(&self.request.request_uri)
+            referer_field_value(&self.request.request_uri)
         )
     }
 
@@ -192,7 +198,7 @@ impl Ctx<'_> {
         format!(
             "<input type=\"hidden\" id=\"_wpnonce\" name=\"_wpnonce\" value=\"{}\" /><input type=\"hidden\" name=\"_wp_http_referer\" value=\"{}\" />",
             self.create_nonce(action),
-            rustpress_core::formatting::esc_url(&self.request.request_uri)
+            referer_field_value(&self.request.request_uri)
         )
     }
 
@@ -353,7 +359,7 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse
         // `nav-menus.php` first says that the theme has neither menus nor widgets, then checks the capability.
         "nav-menus.php" => die(env, 500, "WordPress &rsaquo; Error", &ctx.tr("Your theme does not support navigation menus or widgets.")),
         "widgets.php" if !ctx.can("edit_theme_options") => higher_permission(&ctx, "Sorry, you are not allowed to edit theme options on this site.", 403),
-        "widgets.php" => die(env, 500, "WordPress &rsaquo; Error", &sprintf_html(&ctx.tr("The theme you are currently using is not widget-aware, meaning that it has no sidebars that you are able to change. For information on making your theme widget-aware, please <a href=\"%s\">follow these instructions</a>."), "https://developer.wordpress.org/themes/functionality/widgets/")),
+        "widgets.php" => die(env, 500, "WordPress &rsaquo; Error", &ctx.tr("The theme you are currently using is not widget-aware, meaning that it has no sidebars that you are able to change. For information on making your theme widget-aware, please <a href=\"https://developer.wordpress.org/themes/functionality/widgets/\">follow these instructions</a>.")),
         "link-manager.php" | "link-add.php" | "link.php" if !(ctx.user.can_manage_links_if_enabled() && ctx.can("install_plugins")) => die(env, 500, "WordPress &rsaquo; Error", &ctx.tr("Sorry, you are not allowed to edit the links for this site.")),
         "network.php" if !ctx.can("setup_network") => die_message(env, 500, &ctx.tr("Sorry, you are not allowed to manage options for this site.")),
         "customize.php" if !ctx.can("edit_theme_options") => higher_permission(&ctx, "Sorry, you are not allowed to customize this site.", 403),
@@ -375,7 +381,7 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse
         "network.php" => die_message(env, 500, &rustpress_core::i18n::sprintf(&ctx.tr("You must define the %1$s constant as true in your %2$s file to allow creation of a Network."), &["<code>WP_ALLOW_MULTISITE</code>", "<code>wp-config.php</code>"])),
         "press-this.php" => {
             let url = ctx.admin_url(&format!("update.php?action=install-plugin&plugin=press-this&from=press-this&_wpnonce={}", ctx.create_nonce("install-plugin_press-this")));
-            let link = format!("<a href=\"{}\" class=\"install-now\" data-slug=\"press-this\" data-name=\"press-this\" aria-label=\"{}\">{}</a>", rustpress_core::formatting::esc_url(&url), esc_attr(&ctx.tr("Install Now")), ctx.tr("Install Now"));
+            let link = format!("<a href=\"{}\" class=\"install-now\" data-slug=\"press-this\" data-name=\"press-this\" aria-label=\"{}\">{}</a>", rustpress_core::formatting::esc_url(&url), esc_attr(&ctx.site().trx("Install Now", "plugin")), ctx.site().trx("Install Now", "plugin"));
             let mut response = die(env, 200, &ctx.tr("Installation Required"), &format!("{}<br />{link}", ctx.tr("The Press This plugin is required.")));
             response.status = 200;
             response

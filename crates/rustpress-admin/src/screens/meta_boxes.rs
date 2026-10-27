@@ -241,6 +241,59 @@ pub fn trackback_box(ctx: &Ctx<'_>, to_ping: &str, pinged: &str) -> String {
     out
 }
 
+/// `wp_get_attachment_image( $id, array( 266, 266 ) )`, the size of the featured image box when the theme has no
+/// `post-thumbnail` size; empty when the attachment has no image. `None` when there is no such post.
+pub async fn post_thumbnail_image(ctx: &Ctx<'_>, id: u64) -> Option<String> {
+    use rustpress_blocks::images::{attachment_url, calculate_sizes, constrain_dimensions, intermediate_size, is_image, load_metadata, preview_metadata, srcset};
+    const SIZE: u64 = 266;
+    let site = ctx.site();
+    let post = ctx.env.db.post(id).await.ok().flatten()?;
+    if post.post_type != "attachment" {
+        return Some(String::new());
+    }
+    let (meta, attached) = load_metadata(site, &post).await.ok()?;
+    let (meta, attached) = if is_image(&post) {
+        (meta, attached)
+    } else {
+        match preview_metadata(meta.as_ref(), attached.as_deref()) {
+            Some((meta, path)) => (Some(meta), Some(path)),
+            None => return Some(String::new()),
+        }
+    };
+    let Some(attached) = attached else { return Some(String::new()) };
+    let full_url = attachment_url(site, &attached);
+    // `image_downsize()`: the best generated size, else the original; then `image_constrain_size_for_editor()`.
+    let (src, width, height) = match &meta {
+        Some(meta) => {
+            let (url, w, h) = intermediate_size(&full_url, meta, SIZE, SIZE).unwrap_or_else(|| (full_url.clone(), meta.width(), meta.height()));
+            let (w, h) = constrain_dimensions(w, h, SIZE, SIZE);
+            (url, w, h)
+        }
+        None => (full_url, 0, 0),
+    };
+    let alt = ctx.env.db.post_meta_value(id, "_wp_attachment_image_alt").await.ok().flatten().unwrap_or_default();
+    let alt = rustpress_core::formatting::strip_tags(&alt).trim().to_owned();
+    let mut attrs: Vec<(&str, String)> = vec![("src", src.clone()), ("class", format!("attachment-{SIZE}x{SIZE} size-{SIZE}x{SIZE}")), ("alt", alt), ("decoding", "async".into()), ("loading", "lazy".into())];
+    if let Some(meta) = &meta
+        && let (Some(set), Some(sizes)) = (srcset(site, width, height, &src, meta), calculate_sizes(width))
+    {
+        // Lazy images get `auto` in front of their sizes.
+        attrs.extend([("srcset", set), ("sizes", format!("auto, {sizes}"))]);
+    }
+    let mut html = String::from("<img");
+    if width != 0 {
+        html.push_str(&format!(" width=\"{width}\""));
+    }
+    if height != 0 {
+        html.push_str(&format!(" height=\"{height}\""));
+    }
+    for (name, value) in attrs {
+        html.push_str(&format!(" {name}=\"{}\"", esc_attr(&value)));
+    }
+    html.push_str(" />");
+    Some(html)
+}
+
 /// `_wp_post_thumbnail_html()` without a featured image or with one (`image` is `wp_get_attachment_image()`).
 pub fn post_thumbnail_html(ctx: &Ctx<'_>, post_id: u64, thumbnail_id: u64, image: Option<&str>) -> String {
     let tr = |s: &str| ctx.tr(s);
@@ -371,6 +424,32 @@ pub fn is_protected_meta(key: &str) -> bool {
     key.trim().starts_with('_')
 }
 
+/// `_list_meta_row()`: one custom field of the box; empty for a protected key and for a serialized array or object.
+pub fn list_meta_row(ctx: &Ctx<'_>, id: u64, key: &str, raw: &str) -> String {
+    let tr = |s: &str| ctx.tr(s);
+    if is_protected_meta(key) {
+        return String::new();
+    }
+    // A serialized array or object is not shown; a serialized string is.
+    let value = match rustpress_phpser::unserialize(raw.as_bytes()) {
+        Ok(rustpress_phpser::Value::Str(s)) => String::from_utf8_lossy(&s).into_owned(),
+        Ok(_) if raw.trim() != "N;" && !raw.trim().is_empty() && looks_serialized(raw) => return String::new(),
+        _ => raw.to_owned(),
+    };
+    let key = esc_attr(key);
+    let update_nonce = ctx.create_nonce("add-meta");
+    let delete_nonce = ctx.create_nonce(&format!("delete-meta_{id}"));
+    format!(
+        "\n\t<tr id='meta-{id}'>\n\t\t<td class='left'><label class='screen-reader-text' for='meta-{id}-key'>{}</label><input name='meta[{id}][key]' id='meta-{id}-key' type='text' size='20' value='{key}' />\n\t\t<div class='submit'>{}\n\t\t{}</div>{}</td>\n\t\t<td><label class='screen-reader-text' for='meta-{id}-value'>{}</label><textarea name='meta[{id}][value]' id='meta-{id}-value' rows='2' cols='30'>{}</textarea></td>\n\t</tr>",
+        tr("Key"),
+        submit_button(&tr("Delete"), "deletemeta small", &format!("deletemeta[{id}]"), false, None, &[("data-wp-lists", format!("delete:the-list:meta-{id}::_ajax_nonce={delete_nonce}"))]),
+        submit_button(&tr("Update"), "updatemeta small", &format!("meta-{id}-submit"), false, None, &[("data-wp-lists", format!("add:the-list:meta-{id}::_ajax_nonce-add-meta={update_nonce}"))]),
+        format_args!("<input type=\"hidden\" id=\"_ajax_nonce\" name=\"_ajax_nonce\" value=\"{}\" />", ctx.create_nonce("change-meta")),
+        tr("Value"),
+        rustpress_content::sanitize::esc_textarea(&value)
+    )
+}
+
 /// `post_custom_meta_box()` with `list_meta()` and `meta_form()`: `meta` are the post's rows (`has_meta()`), `keys` the
 /// keys `meta_form()` offers.
 pub fn custom_fields_box(ctx: &Ctx<'_>, meta: &[rustpress_db::PostMeta], keys: &[String]) -> String {
@@ -389,27 +468,8 @@ pub fn custom_fields_box(ctx: &Ctx<'_>, meta: &[rustpress_db::PostMeta], keys: &
             "<table id=\"list-table\">\n\t<thead>\n\t<tr>\n\t\t<th class=\"left\">{name_label}</th>\n\t\t<th>{}</th>\n\t</tr>\n\t</thead>\n\t<tbody id='the-list' data-wp-lists='list:meta'>\n\t",
             tr("Value")
         ));
-        let update_nonce = ctx.create_nonce("add-meta");
         for m in rows {
-            let raw = m.meta_value.clone().unwrap_or_default();
-            // A serialized array or object is not shown; a serialized string is.
-            let value = match rustpress_phpser::unserialize(raw.as_bytes()) {
-                Ok(rustpress_phpser::Value::Str(s)) => String::from_utf8_lossy(&s).into_owned(),
-                Ok(_) if raw.trim() != "N;" && !raw.trim().is_empty() && looks_serialized(&raw) => continue,
-                _ => raw.clone(),
-            };
-            let id = m.meta_id;
-            let key = esc_attr(m.meta_key.as_deref().unwrap_or_default());
-            let delete_nonce = ctx.create_nonce(&format!("delete-meta_{id}"));
-            out.push_str(&format!(
-                "\n\t<tr id='meta-{id}'>\n\t\t<td class='left'><label class='screen-reader-text' for='meta-{id}-key'>{}</label><input name='meta[{id}][key]' id='meta-{id}-key' type='text' size='20' value='{key}' />\n\t\t<div class='submit'>{}\n\t\t{}</div>{}</td>\n\t\t<td><label class='screen-reader-text' for='meta-{id}-value'>{}</label><textarea name='meta[{id}][value]' id='meta-{id}-value' rows='2' cols='30'>{}</textarea></td>\n\t</tr>",
-                tr("Key"),
-                submit_button(&tr("Delete"), "deletemeta small", &format!("deletemeta[{id}]"), false, None, &[("data-wp-lists", format!("delete:the-list:meta-{id}::_ajax_nonce={delete_nonce}"))]),
-                submit_button(&tr("Update"), "updatemeta small", &format!("meta-{id}-submit"), false, None, &[("data-wp-lists", format!("add:the-list:meta-{id}::_ajax_nonce-add-meta={update_nonce}"))]),
-                format_args!("<input type=\"hidden\" id=\"_ajax_nonce\" name=\"_ajax_nonce\" value=\"{}\" />", ctx.create_nonce("change-meta")),
-                tr("Value"),
-                rustpress_content::sanitize::esc_textarea(&value)
-            ));
+            out.push_str(&list_meta_row(ctx, m.meta_id, m.meta_key.as_deref().unwrap_or_default(), m.meta_value.as_deref().unwrap_or_default()));
         }
         out.push_str("\t</tbody>\n</table>\n\t");
     }

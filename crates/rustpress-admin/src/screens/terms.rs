@@ -57,8 +57,8 @@ impl TaxLabels {
 pub fn tax_info(ctx: &Ctx<'_>, name: &str, post_type: Option<&str>) -> Option<TaxInfo> {
     let site = ctx.site();
     let (hierarchical, plural, singular, query_var, objects) = match name {
-        "category" => (true, site.tr("Categories"), site.tr("Category"), Some("category_name".to_owned()), vec!["post".to_owned()]),
-        "post_tag" => (false, site.tr("Tags"), site.tr("Tag"), Some("tag".to_owned()), vec!["post".to_owned()]),
+        "category" => (true, site.tr("Categories"), site.trx("Category", "taxonomy singular name"), Some("category_name".to_owned()), vec!["post".to_owned()]),
+        "post_tag" => (false, site.tr("Tags"), site.trx("Tag", "taxonomy singular name"), Some("tag".to_owned()), vec!["post".to_owned()]),
         other => {
             let info = site.types.taxonomy(other).filter(|t| t.public || t.queryable || !t.object_types.is_empty())?;
             (info.hierarchical, info.plural_label(), info.singular_label(), info.query_var.clone(), info.object_types.clone())
@@ -516,7 +516,7 @@ async fn add_form(ctx: &Ctx<'_>, info: &TaxInfo) -> String {
     h.push_str(&format!(
         "<input type=\"hidden\" id=\"_wpnonce_add-tag\" name=\"_wpnonce_add-tag\" value=\"{}\" /><input type=\"hidden\" name=\"_wp_http_referer\" value=\"{}\" />\n",
         ctx.create_nonce("add-tag"),
-        esc_url(&ctx.request.request_uri)
+        super::referer_field_value(&ctx.request.request_uri)
     ));
     h.push_str(&format!(
         "<div class=\"form-field form-required term-name-wrap\">\n\t<label for=\"tag-name\">{}</label>\n\t<input name=\"tag-name\" id=\"tag-name\" type=\"text\" value=\"\" size=\"40\" aria-required=\"true\" aria-describedby=\"name-description\" />\n\t<p id=\"name-description\">{}</p>\n</div>\n",

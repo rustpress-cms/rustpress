@@ -111,7 +111,7 @@ impl Rest<'_> {
         let (singular, plural) = match entry.name.as_str() {
             "post" => (self.site.trx("Post", "post type singular name"), entry.label.clone()),
             "page" => (self.site.trx("Page", "post type singular name"), entry.label.clone()),
-            "attachment" => (self.site.trx("Media", "post type singular name"), entry.label.clone()),
+            "attachment" => (self.site.trx("Media", "post type general name"), entry.label.clone()),
             other => (self.site.types.post_type(other).map_or_else(|| entry.label.clone(), |t| t.singular_label()), entry.label.clone()),
         };
         let plural_caps = if entry.name == "page" { "pages" } else { "posts" };
@@ -257,7 +257,7 @@ impl Rest<'_> {
         if !core_tax {
             put("archives", s(&plural));
         }
-        put("template_name", s(&rustpress_core::i18n::sprintf(&site.tr("%s Archives"), &[&singular])));
+        put("template_name", s(&rustpress_core::i18n::sprintf(&site.trx("%s Archives", "taxonomy template name"), &[&singular])));
         Value::Object(labels)
     }
 
