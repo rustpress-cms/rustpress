@@ -116,3 +116,9 @@
 /?sitemap=index
 /?sitemap=posts&sitemap-subtype=post&paged=1
 /favicon.ico
+/?attachment_id=26
+/?attachment_id=26&feed=rss2
+/?attachment_id=99999&feed=rss2
+/?attachment_id=99999&feed=atom
+/?attachment_id=26&paged=2
+/?attachment=gebaude-ausen

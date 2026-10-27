@@ -175,7 +175,8 @@ impl Site {
         // A comment feed of a single post with plain permalinks is redirected to `get_post_comments_feed_link()`,
         // which carries the port.
         let from_feed_link = q.flags.is_feed && q.flags.is_singular() && !self.uses_pretty_permalinks();
-        if paging && has_port && !from_feed_link {
+        // An attachment (also the feed of one) still goes to its file or to the feed address.
+        if paging && has_port && !from_feed_link && !q.flags.is_attachment {
             return Ok(None);
         }
         self.canonical_redirect(path, query, q).await
@@ -366,7 +367,20 @@ impl Site {
         } else if using_permalinks {
             let queried_id = q.queried_object_id();
             if f.is_attachment {
-                // Attachment pages are handled below.
+                // Only `attachment`/`attachment_id` asked: the attachment's own link (and without `?attachment_id`, also
+                // when the file is where it goes in the end, below).
+                if q.vars.iter().all(|(k, _)| matches!(k, "attachment" | "attachment_id")) && redirect_url.is_none() {
+                    if get.get("attachment_id").is_some_and(|v| !v.is_empty()) {
+                        if let Some((url, post)) = self.post_url(qv("attachment_id")).await? {
+                            rquery = remove_args(&rquery, &["attachment_id"]);
+                            redirect_url = Some(url);
+                            redirect_obj = Some(post);
+                        }
+                    } else if let Queried::Post(post) = &q.queried {
+                        redirect_url = Some(join_pair(&self.permalink(post).await?));
+                        redirect_obj = Some((**post).clone());
+                    }
+                }
             } else if f.is_single && get.get("p").is_some_and(|v| !v.is_empty()) {
                 if let Some((url, post)) = self.post_url(qv("p")).await? {
                     rquery = remove_args(&rquery, &["p", "post_type"]);

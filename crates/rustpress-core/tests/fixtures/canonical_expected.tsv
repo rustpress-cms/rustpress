@@ -116,3 +116,9 @@
 /?sitemap=index	/wp-sitemap.xml
 /?sitemap=posts&sitemap-subtype=post&paged=1	/wp-sitemap-posts-post-1.xml
 /favicon.ico	
+/?attachment_id=26	/wp-content/uploads/2026/10/building-exterior.webp
+/?attachment_id=26&feed=rss2	/wp-content/uploads/2026/10/building-exterior.webp
+/?attachment_id=99999&feed=rss2	/feed/?attachment_id=99999
+/?attachment_id=99999&feed=atom	/feed/atom/?attachment_id=99999
+/?attachment_id=26&paged=2	/wp-content/uploads/2026/10/building-exterior.webp?attachment_id=26
+/?attachment=gebaude-ausen	/wp-content/uploads/2026/10/building-exterior.webp?attachment=gebaude-ausen
