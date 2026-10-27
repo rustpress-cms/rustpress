@@ -176,14 +176,6 @@ pub async fn upload_php(ctx: &Ctx<'_>) -> AdminResponse {
     list_mode(ctx, title).await
 }
 
-fn origin(ctx: &Ctx<'_>) -> String {
-    let siteurl = &ctx.site().settings.siteurl;
-    match siteurl.split_once("://") {
-        Some((scheme, rest)) => format!("{scheme}://{}", rest.split('/').next().unwrap_or_default()),
-        None => siteurl.clone(),
-    }
-}
-
 async fn list_mode(ctx: &Ctx<'_>, title: String) -> AdminResponse {
     let request = ctx.request;
     let tr = |s: &str| ctx.tr(s);
@@ -250,7 +242,7 @@ async fn list_mode(ctx: &Ctx<'_>, title: String) -> AdminResponse {
         singular: String::new(),
         columns,
         primary: "title".into(),
-        current_url: format!("{}{}", origin(ctx), request.request_uri),
+        current_url: format!("{}{}", super::request_origin(ctx.env, ctx.request), request.request_uri),
         orderby: request.get("orderby").unwrap_or_default().to_owned(),
         order: if desc { "desc".into() } else { "asc".into() },
         total_items: total,

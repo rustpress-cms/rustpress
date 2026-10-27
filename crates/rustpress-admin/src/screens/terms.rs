@@ -348,13 +348,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     }
 
     // The list
-    let origin = {
-        let siteurl = &site.settings.siteurl;
-        match siteurl.split_once("://") {
-            Some((scheme, rest)) => format!("{scheme}://{}", rest.split('/').next().unwrap_or_default()),
-            None => siteurl.clone(),
-        }
-    };
+    let origin = super::request_origin(ctx.env, request);
     let search = request.get("s").map(|s| s.trim().to_owned()).unwrap_or_default();
     let orderby = request.get("orderby").filter(|o| ["name", "description", "slug", "count"].contains(o)).unwrap_or("name").to_owned();
     let order_inputs = {

@@ -146,6 +146,10 @@ pub async fn enqueue(ctx: &Ctx<'_>, assets: &mut Assets, post_id: u64) {
 pub fn templates(ctx: &Ctx<'_>) -> String {
     // The templates were taken from the reference; its address is replaced by the site's.
     // `wp_print_media_templates()` leaves an empty line between two templates.
-    let templates = TEMPLATES.replace("</script>\n\t\t<script type=\"text/html\"", "</script>\n\n\t\t<script type=\"text/html\"");
+    let mut templates = TEMPLATES.replace("</script>\n\t\t<script type=\"text/html\"", "</script>\n\n\t\t<script type=\"text/html\"");
+    // The baked templates have the `crossorigin` WordPress gives audio and video under cross-origin isolation only.
+    if !super::client_side_media_processing(ctx) {
+        templates = templates.replace("<audio crossorigin=\"anonymous\" ", "<audio ").replace("<video crossorigin=\"anonymous\" ", "<video ");
+    }
     format!("\n{}\n\t", templates.replace("http://localhost:8080/wp-admin/", &ctx.admin_url("")))
 }

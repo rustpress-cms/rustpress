@@ -69,11 +69,15 @@ pub struct Hooks {
     pub props: HashMap<String, Lit>,
 }
 
+/// Translates a message id, with the context of `_x()` when there is one.
+pub type Translator<'a> = &'a dyn Fn(&str, Option<&str>) -> String;
+
 pub struct Parser<'a> {
     text: &'a str,
     pub at: usize,
     pub vars: &'a Vars,
     hooks: Option<&'a Hooks>,
+    translator: Option<Translator<'a>>,
     /// Inside the middle part of `? :`, where a `:` ends the expression.
     colon_stops: u32,
 }
@@ -83,7 +87,13 @@ const TRANSLATION: [&str; 7] = ["__", "_x", "esc_html__", "esc_attr__", "esc_htm
 
 impl<'a> Parser<'a> {
     pub fn new(text: &'a str, at: usize, vars: &'a Vars) -> Self {
-        Self { text, at, vars, hooks: None, colon_stops: 0 }
+        Self { text, at, vars, hooks: None, translator: None, colon_stops: 0 }
+    }
+
+    /// A parser whose translation calls return the translation instead of the message id.
+    pub fn with_translator(mut self, translator: Translator<'a>) -> Self {
+        self.translator = Some(translator);
+        self
     }
 
     /// A parser that also evaluates the functions and properties of `hooks`.
@@ -311,6 +321,12 @@ impl<'a> Parser<'a> {
         }
         if is_call && TRANSLATION.contains(&word) {
             self.at += 1;
+            if let Some(translate) = self.translator {
+                let args = self.call_args();
+                let Some(text) = args.first().and_then(Lit::as_str) else { return Lit::Unknown };
+                let context = if word.ends_with("_x") { args.get(1).and_then(Lit::as_str) } else { None };
+                return Lit::Str(translate(text, context));
+            }
             let first = self.expr();
             self.skip_call_rest();
             return first;
@@ -328,6 +344,22 @@ impl<'a> Parser<'a> {
             {
                 let args = self.call_args();
                 return function(&args).unwrap_or(Lit::Unknown);
+            }
+            // `sprintf()` of known strings and numbers.
+            if lower == "sprintf" {
+                let args = self.call_args();
+                let texts: Option<Vec<String>> = args
+                    .iter()
+                    .map(|a| match a {
+                        Lit::Str(s) => Some(s.clone()),
+                        Lit::Int(i) => Some(i.to_string()),
+                        _ => None,
+                    })
+                    .collect();
+                return match texts.as_deref() {
+                    Some([format, rest @ ..]) => Lit::Str(crate::i18n::sprintf(format, &rest.iter().map(String::as_str).collect::<Vec<_>>())),
+                    _ => Lit::Unknown,
+                };
             }
             self.skip_call_rest();
             return Lit::Unknown;
@@ -537,6 +569,15 @@ pub fn parse(text: &str) -> Lit {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn translator_and_sprintf() {
+        let translate = |text: &str, context: Option<&str>| format!("{}{text}", context.map_or(String::new(), |c| format!("[{c}]")));
+        let vars = Vars::new();
+        let value = Parser::new("array( 'a' => _x( 'One', 'ctx' ), 'b' => sprintf( __( 'Words: %s' ), '{0}' ) )", 0, &vars).with_translator(&translate).expr();
+        assert_eq!(value.get("a"), Some(&Lit::Str("[ctx]One".into())));
+        assert_eq!(value.get("b"), Some(&Lit::Str("Words: {0}".into())));
+    }
 
     #[test]
     fn scalars_and_translations() {

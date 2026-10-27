@@ -13,14 +13,6 @@ use crate::content::{CommentUpdate, Content};
 use crate::list_table::{Column, Table, view_link, views};
 use crate::sanitize::esc_textarea;
 
-fn origin(ctx: &Ctx<'_>) -> String {
-    let siteurl = &ctx.site().settings.siteurl;
-    match siteurl.split_once("://") {
-        Some((scheme, rest)) => format!("{scheme}://{}", rest.split('/').next().unwrap_or_default()),
-        None => siteurl.clone(),
-    }
-}
-
 /// `antispambot()`: the address with random characters turned into entities.
 pub fn antispambot(email: &str) -> String {
     use rand::Rng;
@@ -548,7 +540,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         singular: String::new(),
         columns,
         primary: "comment".into(),
-        current_url: format!("{}{}", origin(ctx), request.request_uri),
+        current_url: format!("{}{}", super::request_origin(ctx.env, ctx.request), request.request_uri),
         orderby: request.get("orderby").unwrap_or_default().to_owned(),
         order: if desc { "desc".into() } else { "asc".into() },
         total_items: total,

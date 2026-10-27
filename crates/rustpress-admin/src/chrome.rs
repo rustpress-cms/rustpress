@@ -304,8 +304,9 @@ pub struct ChromeEnv<'a> {
     pub cookie_path: String,
     pub now: i64,
     pub secure: bool,
-    /// `$_SERVER['REQUEST_URI']`.
+    /// `$_SERVER['REQUEST_URI']` and `$_SERVER['HTTP_HOST']`.
     pub request_uri: String,
+    pub host: Option<String>,
     /// What `admin_print_styles` prints after the colors: view transitions, emoji styles and the `@font-face` rules.
     pub head_styles: String,
 }
@@ -735,9 +736,13 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
     let ajax = esc_url(&site.site_url("wp-admin/admin-ajax.php"));
     let ajax_path = ajax.strip_prefix(&env.loader.site_url).unwrap_or(&ajax).to_owned();
     // `wp_admin_canonical_url()`: the address of the request without the arguments of a one-time notice.
-    let origin = match env.loader.site_url.split_once("://") {
-        Some((scheme, rest)) => format!("{scheme}://{}", rest.split('/').next().unwrap_or_default()),
-        None => env.loader.site_url.clone(),
+    // `set_url_scheme( 'http://' . $_SERVER['HTTP_HOST'] . $_SERVER['REQUEST_URI'] )`.
+    let origin = match env.host.as_deref().filter(|h| !h.is_empty()) {
+        Some(host) => format!("{}://{host}", if env.secure { "https" } else { "http" }),
+        None => match env.loader.site_url.split_once("://") {
+            Some((scheme, rest)) => format!("{scheme}://{}", rest.split('/').next().unwrap_or_default()),
+            None => env.loader.site_url.clone(),
+        },
     };
     let mut canonical = if env.request_uri.is_empty() { site.site_url(&format!("wp-admin/{}", screen.file)) } else { format!("{origin}{}", env.request_uri) };
     for arg in REMOVABLE_QUERY_ARGS {
@@ -826,10 +831,14 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
     ));
     out.push_str(&assets.pre_footer);
     if !assets.no_auth_check {
+        // `wp_auth_check_html()`: the sign-in form is loaded in the dialog only from the domain of the request.
+        let login_url = site.site_url("wp-login.php");
+        let same_domain = env.host.as_deref().filter(|h| !h.is_empty()).is_none_or(|host| login_url.starts_with(&format!("{}://{host}", if env.secure { "https" } else { "http" })));
+        let src = esc_url(&if assets.empty_locale { format!("{login_url}?interim-login=1&wp_lang") } else { format!("{login_url}?interim-login=1&wp_lang={}", site.locale()) });
+        let (wrap_class, form) = if same_domain { ("hidden", format!("\t\t<div id=\"wp-auth-check-form\" class=\"loading\" data-src=\"{src}\"></div>\n\t\t")) } else { ("hidden fallback", String::new()) };
         out.push_str(&format!(
-            "\t<div id=\"wp-auth-check-wrap\" class=\"hidden\">\n\t<div id=\"wp-auth-check-bg\"></div>\n\t<div id=\"wp-auth-check\">\n\t<button type=\"button\" class=\"wp-auth-check-close button-link\"><span class=\"screen-reader-text\">\n\t\t{close}\t</span></button>\n\t\t\t<div id=\"wp-auth-check-form\" class=\"loading\" data-src=\"{src}\"></div>\n\t\t\t<div class=\"wp-auth-fallback\">\n\t\t<p><b class=\"wp-auth-fallback-expired\" tabindex=\"0\">{expired}</b></p>\n\t\t<p><a href=\"{login}\" target=\"_blank\">{again}</a>\n\t\t{note}</p>\n\t</div>\n\t</div>\n\t</div>\n\t",
+            "\t<div id=\"wp-auth-check-wrap\" class=\"{wrap_class}\">\n\t<div id=\"wp-auth-check-bg\"></div>\n\t<div id=\"wp-auth-check\">\n\t<button type=\"button\" class=\"wp-auth-check-close button-link\"><span class=\"screen-reader-text\">\n\t\t{close}\t</span></button>\n\t{form}\t<div class=\"wp-auth-fallback\">\n\t\t<p><b class=\"wp-auth-fallback-expired\" tabindex=\"0\">{expired}</b></p>\n\t\t<p><a href=\"{login}\" target=\"_blank\">{again}</a>\n\t\t{note}</p>\n\t</div>\n\t</div>\n\t</div>\n\t",
             close = tr("Close dialog"),
-            src = esc_url(&if assets.empty_locale { format!("{}?interim-login=1&wp_lang", site.site_url("wp-login.php")) } else { format!("{}?interim-login=1&wp_lang={}", site.site_url("wp-login.php"), site.locale()) }),
             expired = tr("Session expired"),
             login = esc_url(&site.site_url("wp-login.php")),
             again = tr("Please log in again."),

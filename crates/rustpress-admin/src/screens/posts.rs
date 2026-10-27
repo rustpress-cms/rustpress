@@ -369,13 +369,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     }
     let db = ctx.env.db;
     let edit_base = if info.name == "post" { "edit.php".to_owned() } else { format!("edit.php?post_type={}", info.name) };
-    let origin = {
-        let siteurl = &site.settings.siteurl;
-        match siteurl.split_once("://") {
-            Some((scheme, rest)) => format!("{scheme}://{}", rest.split('/').next().unwrap_or_default()),
-            None => siteurl.clone(),
-        }
-    };
+    let origin = super::request_origin(ctx.env, request);
     let current_url = format!("{origin}{}", request.request_uri);
 
     // Parameters

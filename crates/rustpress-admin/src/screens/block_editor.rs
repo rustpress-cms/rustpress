@@ -266,8 +266,13 @@ async fn post_settings(ctx: &Ctx<'_>, post: &Post, settings: &mut Map<String, Va
         settings.insert("postLock".into(), json!({"isLocked": false, "activePostLock": lock}));
     }
     settings.insert("postLockUtils".into(), json!({"nonce": ctx.create_nonce(&format!("lock-post_{}", post.id)), "unlockNonce": ctx.create_nonce(&format!("update-post_{}", post.id)), "ajaxUrl": ctx.admin_url("admin-ajax.php")}));
+    settings.insert("supportsLayout".into(), json!(true));
     settings.insert("supportsTemplateMode".into(), json!(env.block_theme));
-    settings.insert("enableCustomFields".into(), json!(false));
+    // The user's choice to load the custom fields box; without that box (the type has no custom fields) the key goes.
+    if site.post_type_supports(&post.post_type, "custom-fields") {
+        let enabled = env.db.user_meta(ctx.user.id, "enable_custom_fields").await.ok().flatten().is_some_and(|v| !v.is_empty() && v != "0");
+        settings.insert("enableCustomFields".into(), json!(enabled));
+    }
 }
 
 /// `wp_get_post_content_block_attributes()`: the attributes of the first post content block of the template the post

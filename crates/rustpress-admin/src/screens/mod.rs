@@ -157,6 +157,13 @@ pub fn referer_field_value(request_uri: &str) -> String {
     rustpress_core::formatting::esc_url(&rustpress_core::urls::remove_query_arg(request_uri, "_wp_http_referer"))
 }
 
+/// `wp_is_client_side_media_processing_enabled()`: the browser may process media in a secure context (TLS, or a host
+/// named `localhost`).
+pub fn client_side_media_processing(ctx: &Ctx<'_>) -> bool {
+    let host = ctx.request.host.as_deref().unwrap_or("").split(':').next().unwrap_or("").to_lowercase();
+    ctx.env.https || host == "localhost" || host.ends_with(".localhost")
+}
+
 impl Ctx<'_> {
     pub fn site(&self) -> &Site {
         self.env.site
@@ -250,16 +257,24 @@ async fn user_settings_cookies(env: &AdminEnv<'_>, request: &AdminRequest, user_
     ]
 }
 
+/// `( is_ssl() ? 'https://' : 'http://' ) . $_SERVER['HTTP_HOST']`: where the request went, the site's own address
+/// when the request names no host.
+pub fn request_origin(env: &AdminEnv<'_>, request: &AdminRequest) -> String {
+    match request.host.as_deref().filter(|h| !h.is_empty()) {
+        Some(host) => format!("{}://{host}", if env.https { "https" } else { "http" }),
+        None => {
+            let siteurl = &env.site.settings.siteurl;
+            match siteurl.split_once("://") {
+                Some((scheme, rest)) => format!("{scheme}://{}", rest.split('/').next().unwrap_or_default()),
+                None => siteurl.clone(),
+            }
+        }
+    }
+}
+
 /// `auth_redirect()` for somebody who is not signed in.
 fn auth_redirect(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse {
-    let origin = {
-        let siteurl = &env.site.settings.siteurl;
-        match siteurl.split_once("://") {
-            Some((scheme, rest)) => format!("{scheme}://{}", rest.split('/').next().unwrap_or_default()),
-            None => siteurl.clone(),
-        }
-    };
-    let current = format!("{origin}{}", request.request_uri);
+    let current = format!("{}{}", request_origin(env, request), request.request_uri);
     let login = format!("{}?redirect_to={}&reauth=1", env.site.site_url("wp-login.php"), rustpress_core::canonical::php_urlencode(&current));
     redirect(&login)
 }
@@ -481,6 +496,7 @@ pub async fn render(ctx: &Ctx<'_>, screen: &Screen, content: &str, assets: &Asse
         now: env.now,
         secure: env.https,
         request_uri: ctx.request.request_uri.clone(),
+        host: ctx.request.host.clone(),
         head_styles: format!("{}{}{}", include_str!("../data/head_styles.html"), rustpress_theme::document::font_faces(env.theme), rustpress_theme::document::font_faces_from_style_variations(env.theme)),
     };
     // What the command palette's scripts need on every screen: the fetch layer, the data and preferences persistence.
@@ -500,8 +516,7 @@ pub async fn render(ctx: &Ctx<'_>, screen: &Screen, content: &str, assets: &Asse
     }
     // `wp_set_client_side_media_processing_flag()` on `admin_init`: the browser resizes images when the page is a
     // secure context (SharedArrayBuffer).
-    let host = ctx.request.host.as_deref().unwrap_or("").split(':').next().unwrap_or("").to_lowercase();
-    if env.https || host == "localhost" || host.ends_with(".localhost") {
+    if client_side_media_processing(ctx) {
         assets.inline.push(("wp-block-editor".into(), "window.__clientSideMediaProcessing = true;".into(), "before".into()));
         let chromium = ctx.request.user_agent.as_deref().and_then(|ua| ua.split_once("Chrome/")).map(|(_, rest)| rest.bytes().take_while(u8::is_ascii_digit).fold(0u64, |n, d| n.saturating_mul(10).saturating_add(u64::from(d - b'0'))));
         if chromium.is_some_and(|version| version >= 137) {

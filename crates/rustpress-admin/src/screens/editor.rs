@@ -81,8 +81,9 @@ fn editor_styles(ctx: &Ctx<'_>) -> Vec<String> {
     out
 }
 
-/// `wp_editor( $content, 'content' )` for the post body.
-pub fn classic_editor(ctx: &Ctx<'_>, content: &str, post_type: &str, post_status: &str, rich_editing: Option<&str>) -> Editor {
+/// `wp_editor( $content, 'content' )` for the post body. `post_classes` is what the TinyMCE body class adds for the
+/// post after its type and status (` post-format-…`, ` page-template-…`).
+pub fn classic_editor(ctx: &Ctx<'_>, content: &str, post_type: &str, post_status: &str, post_classes: &str, rich_editing: Option<&str>) -> Editor {
     let site = ctx.site();
     let tr = |s: &str| ctx.tr(s);
     let rich = can_richedit(ctx, rich_editing);
@@ -124,7 +125,7 @@ pub fn classic_editor(ctx: &Ctx<'_>, content: &str, post_type: &str, post_status
         let mut css = vec![format!("{site_url}/wp-includes/css/dashicons.min.css?ver={}", ctx.env.loader.version), format!("{site_url}/wp-includes/js/tinymce/skins/wordpress/wp-content.css?ver={}", ctx.env.loader.version)];
         css.extend(editor_styles(ctx));
         let body_class = format!(
-            "content post-type-{post_type} post-status-{post_status} post-format-standard page-template-default locale-{}",
+            "content post-type-{post_type} post-status-{post_status}{post_classes} locale-{}",
             rustpress_core::formatting::sanitize_html_class(&site.locale().replace('_', "-").to_lowercase())
         );
         let lang = site.locale().split('_').next().unwrap_or("en").to_owned();
@@ -138,10 +139,13 @@ pub fn classic_editor(ctx: &Ctx<'_>, content: &str, post_type: &str, post_status
         plugins = "charmap,colorpicker,hr,lists,media,paste,tabfocus,textcolor,fullscreen,wordpress,wpautoresize,wpeditimage,wpemoji,wpgallery,wplink,wpdialogs,wptextpattern,wpview".to_owned();
     }
     // `editor_js()`: the settings, then (with TinyMCE) its scripts, then the start of the editors.
-    let preinit = format!(
+    let mut preinit = format!(
         "\n\t\t<script>\n\t\ttinyMCEPreInit = {{\n\t\t\tbaseURL: \"{site_url}/wp-includes/js/tinymce\",\n\t\t\tsuffix: \".min\",\n\t\t\tdragDropUpload: true,\t\t\tmceInit: {mce_init},\n\t\t\tqtInit: {{{qt}}},\n\t\t\tref: {{plugins:\"{plugins}\",theme:\"modern\",language:\"{}\"}},\n\t\t\tload_ext: function(url,lang){{var sl=tinymce.ScriptLoader;sl.markDone(url+'/langs/'+lang+'.js');sl.markDone(url+'/langs/'+lang+'_dlg.js');}}\n\t\t}};\n\t\t</script>\n\t\t",
         if rich { site.locale().split('_').next().unwrap_or("en").to_owned() } else { String::new() }
     );
+    if rich {
+        preinit.push_str(&tinymce_scripts(ctx));
+    }
     let init = INIT.to_owned();
     // The quicktags have a link button: `editor_js()` prints the link dialog after the script.
     let init = format!("{init}\t\t{}", link_dialog(ctx));
@@ -197,8 +201,58 @@ pub fn default_editor_scripts(ctx: &Ctx<'_>, rich: bool) -> String {
         ));
     }
     out.push_str("\t\t</script>\n\t\t");
+    if rich {
+        out.push_str(&tinymce_scripts(ctx));
+    }
     out.push_str(&link_dialog(ctx));
     out
+}
+
+/// `_WP_Editors::print_tinymce_scripts()`: `wp_print_scripts( 'wp-tinymce' )`, then the translation.
+pub fn tinymce_scripts(ctx: &Ctx<'_>) -> String {
+    let mut scripts = default_scripts(&ctx.env.loader);
+    scripts.enqueue("wp-tinymce");
+    let tags = scripts.print_footer_scripts(false);
+    format!("{tags}<script>\n{}</script>\n", mce_translation(ctx))
+}
+
+/// `_WP_Editors::wp_mce_translation()`: TinyMCE's strings that the language translates, read from WordPress'
+/// `class-wp-editor.php`.
+fn mce_translation(ctx: &Ctx<'_>) -> String {
+    let site = ctx.site();
+    let locale = site.locale();
+    let mce_locale = if locale.is_empty() { "en".to_owned() } else { locale.chars().take(2).collect::<String>().to_lowercase() };
+    let source = rustpress_core::files::read_string(&ctx.env.loader.includes.join("class-wp-editor.php"));
+    let translate = |text: &str, context: Option<&str>| match context {
+        Some(context) => site.trx(text, context),
+        None => site.tr(text),
+    };
+    let vars = rustpress_core::php_lit::Vars::new();
+    let entries = match source.find("self::$translation = array(") {
+        Some(at) => rustpress_core::php_lit::Parser::new(&source, at + "self::$translation = ".len(), &vars).with_translator(&translate).expr(),
+        None => rustpress_core::php_lit::Lit::Unknown,
+    };
+    let mut strings = serde_json::Map::new();
+    if let rustpress_core::php_lit::Lit::Array(items) = entries {
+        for (key, value) in items {
+            let Some(key) = key.as_ref().and_then(|k| k.as_str()).map(str::to_owned) else { continue };
+            // `array( __( 'Bold' ), 'metaB' )`: the text with its shortcut.
+            let value = match value {
+                rustpress_core::php_lit::Lit::Array(parts) => parts.into_iter().next().and_then(|(_, v)| v.as_str().map(str::to_owned)),
+                other => other.as_str().map(str::to_owned),
+            };
+            // Strings the language leaves as they are are not sent.
+            let Some(value) = value.filter(|v| *v != key) else { continue };
+            let value = if value.contains('&') { rustpress_core::formatting::html_entity_decode(&value) } else { value };
+            strings.insert(key, serde_json::Value::from(value));
+        }
+    }
+    if site.is_rtl() {
+        strings.insert("_dir".into(), serde_json::Value::from("rtl"));
+    }
+    let json = rustpress_blocks::php_json::encode_with(&serde_json::Value::Object(strings), rustpress_blocks::php_json::Flags { unescaped_slashes: false, unescaped_unicode: false });
+    let baseurl = format!("{}/wp-includes/js/tinymce", site.settings.siteurl.trim_end_matches('/'));
+    format!("tinymce.addI18n( '{mce_locale}', {json});\ntinymce.ScriptLoader.markDone( '{baseurl}/langs/{mce_locale}.js' );\n")
 }
 
 /// The version TinyMCE's files are cached with (`$tinymce_version`, the version of `wp-tinymce-root`).

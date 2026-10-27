@@ -550,7 +550,7 @@ pub async fn page(ctx: &Ctx<'_>, kind: Kind) -> AdminResponse {
         singular: "privacy_request".into(),
         columns,
         primary: "email".into(),
-        current_url: format!("{}{}", ctx.admin_url(""), request.request_uri.trim_start_matches("/wp-admin/")),
+        current_url: format!("{}{}", super::request_origin(ctx.env, ctx.request), request.request_uri),
         orderby: orderby_param.clone(),
         order: if order_param.is_empty() { String::new() } else { order_param.to_ascii_lowercase() },
         total_items: total,

@@ -847,7 +847,16 @@ async fn form(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, is_new: bool) -> Admi
     let mut editor_footer = String::new();
     if supports("editor") {
         let rich_editing = db.user_meta(ctx.user.id, "rich_editing").await.ok().flatten();
-        let mut editor = super::editor::classic_editor(ctx, &post.post_content, &info.name, &post.post_status, rich_editing.as_deref());
+        // The body class of the editor: the post format (where the type has formats) and the page template.
+        let mut post_classes = String::new();
+        if supports("post-formats") {
+            let format = db.terms_for_post(post.id, Some("post_format")).await.unwrap_or_default().first().and_then(|t| t.slug.strip_prefix("post-format-").map(str::to_owned));
+            post_classes.push_str(&format!(" post-format-{}", rustpress_core::formatting::sanitize_html_class(format.as_deref().unwrap_or("standard"))));
+        }
+        let template = db.post_meta_value(post.id, "_wp_page_template").await.ok().flatten().filter(|t| !t.is_empty()).unwrap_or_else(|| "default".to_owned());
+        let template = template.rsplit('/').next().unwrap_or_default().trim_end_matches(".php").replace('.', "-");
+        post_classes.push_str(&format!(" page-template-{}", rustpress_core::formatting::sanitize_html_class(&template)));
+        let mut editor = super::editor::classic_editor(ctx, &post.post_content, &info.name, &post.post_status, &post_classes, rich_editing.as_deref());
         // `wp_editor_expand` and the distraction-free mode, not on phones; the media button with `upload_files`.
         let mobile = super::common::wp_is_mobile(ctx);
         let expand = !mobile && super::common::user_setting(ctx, "editor_expand").await.is_none_or(|v| v == "on");
@@ -968,9 +977,6 @@ async fn form(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, is_new: bool) -> Admi
     if supports("editor") || supports("comments") {
         footer_time.extend(["quicktags".into(), "wplink".into(), "jquery-ui-autocomplete".into()]);
     }
-    if editor_scripts.iter().any(|s| s == "wp-tinymce") {
-        footer_time.push("wp-tinymce".into());
-    }
     if media_buttons {
         footer_time.extend(["thickbox".into(), "media-upload".into(), "wp-embed".into()]);
     }
@@ -987,6 +993,8 @@ async fn form(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, is_new: bool) -> Admi
         styles: if thumbnail_support { vec!["thickbox".into()] } else { Vec::new() },
         post_header_styles: if !thumbnail_support && media_buttons { vec!["thickbox".into()] } else { Vec::new() },
         // `wp_page_reload_on_back_button_js()` on `admin_print_scripts-post.php`.
+        // `wp_default_packages_inline_scripts()`: the classic block keeps the old editor object.
+        inline: if editor_scripts.iter().any(|s| s == "wp-tinymce") { vec![("editor".into(), "window.wp.oldEditor = window.wp.editor;".into(), "after".into())] } else { Vec::new() },
         head_early: "\t<script>\n\t\tif ( typeof performance !== 'undefined' && performance.navigation && performance.navigation.type === 2 ) {\n\t\t\tdocument.location.reload( true );\n\t\t}\n\t</script>\n\t".into(),
         ..Default::default()
     };

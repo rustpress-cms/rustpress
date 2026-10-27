@@ -39,14 +39,6 @@ pub fn edit_link(ctx: &Ctx<'_>, user_id: u64) -> String {
     if user_id == ctx.user.id { ctx.admin_url("profile.php") } else { ctx.admin_url(&format!("user-edit.php?user_id={user_id}")) }
 }
 
-fn origin(ctx: &Ctx<'_>) -> String {
-    let siteurl = &ctx.site().settings.siteurl;
-    match siteurl.split_once("://") {
-        Some((scheme, rest)) => format!("{scheme}://{}", rest.split('/').next().unwrap_or_default()),
-        None => siteurl.clone(),
-    }
-}
-
 fn update_message(ctx: &Ctx<'_>, code: &str) -> Option<(String, bool)> {
     let tr = |s: &str| ctx.tr(s);
     let count = ctx.request.get("count").and_then(|c| c.parse::<i64>().ok()).unwrap_or(1);
@@ -84,7 +76,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
             return response;
         }
     let db = ctx.env.db;
-    let current_url = format!("{}{}", origin(ctx), request.request_uri);
+    let current_url = format!("{}{}", super::request_origin(ctx.env, ctx.request), request.request_uri);
     let role = request.get("role").unwrap_or_default().to_owned();
     let search = request.get("s").map(|s| s.trim().to_owned()).unwrap_or_default();
     let orderby = request.get("orderby").filter(|o| ["login", "email", "registered", "name"].contains(o)).unwrap_or("login").to_owned();
