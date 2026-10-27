@@ -1,0 +1,72 @@
+# RustPress mit MariaDB.
+#
+# Bestehende WordPress-Seite: WORDPRESS_DIR in .env auf den WordPress-Ordner (mit wp-config.php) zeigen
+# lassen, den Datenbank-Dump importieren und `docker compose up -d` starten.
+#
+# Neue Seite:
+#   cp .env.example .env            # Passwörter und Adresse eintragen
+#   docker compose up -d            # legt ./wordpress mit den WordPress-Dateien an und startet alles
+#   docker compose run --rm wp config create --dbname=wordpress --dbuser=wordpress --dbpass="$DB_PASSWORD" --dbhost=db
+#   docker compose run --rm wp core install --url="$SITE_URL" --title="Meine Seite" \
+#     --admin_user=admin --admin_email=ich@example.com --prompt=admin_password
+#   docker compose restart rustpress
+#
+# TLS übernimmt ein vorgeschalteter Proxy (Caddy, Traefik, nginx); RustPress lauscht auf Port 3000.
+
+services:
+  db:
+    image: mariadb:11
+    restart: unless-stopped
+    environment:
+      MARIADB_DATABASE: wordpress
+      MARIADB_USER: wordpress
+      MARIADB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD in .env setzen}
+      MARIADB_RANDOM_ROOT_PASSWORD: "1"
+    volumes:
+      - db:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      retries: 20
+
+  # Copies the WordPress files (wp-includes/, wp-admin/ assets, default themes) once; RustPress serves them.
+  wp-files:
+    image: wordpress:latest
+    restart: "no"
+    entrypoint: ["sh", "-c", "test -e /var/www/html/wp-includes || cp -a /usr/src/wordpress/. /var/www/html/; chown -R 33:33 /var/www/html/wp-content"]
+    volumes:
+      - ${WORDPRESS_DIR:-./wordpress}:/var/www/html
+
+  rustpress:
+    build: .
+    image: rustpress
+    restart: unless-stopped
+    # The same user as PHP in the WordPress images, so uploads land with the right owner.
+    user: "33:33"
+    depends_on:
+      db:
+        condition: service_healthy
+      wp-files:
+        condition: service_completed_successfully
+    environment:
+      RUSTPRESS_DATABASE_URL: mysql://wordpress:${DB_PASSWORD}@db:3306/wordpress
+      RUSTPRESS_ALLOW_WRITES: ${ALLOW_WRITES:-1}
+    volumes:
+      - ${WORDPRESS_DIR:-./wordpress}:/var/www/html
+    ports:
+      - "${PORT:-3000}:3000"
+
+  # WP-CLI for setting up a new site; only runs on demand (`docker compose run --rm wp …`).
+  wp:
+    image: wordpress:cli
+    profiles: ["tools"]
+    entrypoint: ["wp"]
+    user: "33:33"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ${WORDPRESS_DIR:-./wordpress}:/var/www/html
+
+volumes:
+  db:

@@ -1,0 +1,5 @@
+target/
+.git/
+dev/
+compat/
+scratch_post.html

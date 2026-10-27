@@ -31,6 +31,20 @@ reload_secs  = 60                # Optionen und Theme werden so oft neu gelesen
 
 `RUSTPRESS_DATABASE_URL`, `RUSTPRESS_TABLE_PREFIX`, `RUSTPRESS_WP_ROOT`, `RUSTPRESS_LISTEN`, `RUSTPRESS_RELOAD_SECS` überschreiben die Datei. Die Datenbankverbindung läuft in einer `READ ONLY`-Session; Schreibzugriffe (Kommentare, Login, Admin) gibt es nicht. TLS übernimmt ein vorgeschalteter Proxy.
 
+## Mit Docker betreiben
+
+Das `Dockerfile` baut ein kleines Alpine-Image mit einem statisch gelinkten `rustpress`; `compose.yaml` startet es zusammen mit MariaDB. Für eine bestehende WordPress-Seite zeigt `WORDPRESS_DIR` in `.env` auf den WordPress-Ordner (mit `wp-config.php`) und der Datenbank-Dump wird in den `db`-Container importiert. Eine neue Seite richtet WP-CLI ein, weil RustPress noch keinen eigenen Installer hat:
+
+```sh
+cp .env.example .env          # Passwort und Adresse eintragen
+docker compose up -d          # legt ./wordpress mit den WordPress-Dateien an
+docker compose run --rm wp config create --dbname=wordpress --dbuser=wordpress --dbpass=<DB_PASSWORD> --dbhost=db
+docker compose run --rm wp core install --url=<SITE_URL> --title="Meine Seite" --admin_user=admin --admin_email=ich@example.com --prompt=admin_password
+docker compose restart rustpress
+```
+
+RustPress lauscht auf Port 3000; TLS übernimmt ein vorgeschalteter Proxy.
+
 ## Sprachen
 
 RustPress kennt keine Sprache im Code. Texte, Monats- und Wochentagsnamen, Anführungszeichen, Zahlenformat, Textrichtung, Pluralregeln und Wortzählung kommen aus denselben Sprachpaketen wie bei WordPress (`wp-content/languages/<locale>.mo`, `languages/themes/<theme>-<locale>.mo`). Eine weitere Sprache braucht deshalb nur ihr Sprachpaket (zum Beispiel mit `wp language core install <locale>` oder aus translate.wordpress.org); die Sprache der Seite ist die Option `WPLANG`. Rechts-nach-links-Sprachen erhalten `dir="rtl"`, die Body-Klasse `rtl` und die `-rtl`-Stylesheets. Das Konzept steht in [PLAN.md](PLAN.md#lokalisierungskonzept).
