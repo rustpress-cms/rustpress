@@ -42,7 +42,7 @@ async fn preload_one(ctx: &Ctx<'_>, method: &str, path: &str) -> Option<Value> {
     let env = ctx.env;
     let writer = env.writer?;
     let (route, query) = path.split_once('?').map_or((path, ""), |(r, q)| (r, q));
-    let rest = rustpress_rest::Rest::new(ctx.site(), env.theme, env.registry);
+    let rest = rustpress_rest::Rest::new(ctx.site(), env.theme, env.registry).with_host(ctx.request.host.as_deref().unwrap_or_default());
     let (auth, user_id, token, now) = (env.auth.clone(), ctx.user.id, ctx.token.clone(), env.now);
     let nonce: std::sync::Arc<dyn Fn(&str) -> String + Send + Sync> = std::sync::Arc::new(move |action: &str| auth.create_nonce(action, user_id, &token, now).unwrap_or_default());
     let access = Access { user: ctx.user.clone(), app_password: None, writer: Some(writer), now: env.now, uploads: super::ajax_media::uploads_dir(env), nonce: Some(nonce), roles: Some(env.roles), salts: Some(env.auth.salts()), comment_notify: None };
@@ -417,10 +417,16 @@ pub(super) fn editor_head_styles(ctx: &Ctx<'_>, assets: &mut Assets) {
     }
 }
 
-pub(super) async fn shared_inline(ctx: &Ctx<'_>, assets: &mut Assets, preloaded: &Value) {
+pub(super) async fn shared_inline(ctx: &Ctx<'_>, assets: &mut Assets, preloaded: &Value, boot: bool) {
     let site = ctx.site();
     let root = site.site_url("wp-json/");
     let nonce = ctx.create_nonce("wp_rest");
+    // `block_editor_rest_api_preload()` encodes with `JSON_HEX_TAG | JSON_UNESCAPED_SLASHES`, the boot pages plainly.
+    let preloaded = if boot {
+        rustpress_blocks::php_json::encode_with(preloaded, rustpress_blocks::php_json::Flags { unescaped_slashes: false, unescaped_unicode: false })
+    } else {
+        rustpress_blocks::php_json::encode_with(preloaded, rustpress_blocks::php_json::Flags { unescaped_slashes: true, unescaped_unicode: false }).replace('<', "\\u003C").replace('>', "\\u003E")
+    };
     // The fetch layer: root URL, nonce and the answers the editor starts with.
     assets.inline.retain(|(handle, _, _)| handle != "wp-api-fetch");
     assets.inline.push((
@@ -430,7 +436,7 @@ pub(super) async fn shared_inline(ctx: &Ctx<'_>, assets: &mut Assets, preloaded:
             json!(root),
             json!(nonce),
             json!(site.site_url("wp-admin/admin-ajax.php?action=rest-nonce")),
-            inline_json(preloaded)
+            preloaded
         ),
         "after".into(),
     ));
@@ -526,7 +532,7 @@ pub async fn render_editor(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo) -> Admin
         inline_json(&settings),
         inline_json(&initial_edits)
     );
-    shared_inline(ctx, &mut assets, &preloaded).await;
+    shared_inline(ctx, &mut assets, &preloaded, false).await;
     assets.inline.push(("wp-edit-post".into(), init, "after".into()));
     assets.inline.push(("wp-editor".into(), format!("var _wpMetaBoxUrl = {};", json!(format!("{}?post={}&action=edit&meta-box-loader=1&meta-box-loader-nonce={}", ctx.admin_url("post.php"), post.id, ctx.create_nonce("meta-box-loader")))), "before".into()));
 

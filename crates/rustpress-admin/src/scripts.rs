@@ -86,6 +86,32 @@ impl Scripts {
     /// `localize()` with the data already as JSON (`wp_json_encode( $l10n, JSON_HEX_TAG | JSON_UNESCAPED_SLASHES )`).
     pub fn localize(&mut self, handle: &str, object_name: &str, l10n: &Value) -> bool {
         let handle = if handle == "jquery" { "jquery-core" } else { handle };
+        let mut script = Self::l10n_script(object_name, l10n);
+        if let Some(Extra::Text(data)) = self.deps.get_data(handle, "data")
+            && !data.is_empty()
+        {
+            script = format!("{data}\n{script}");
+        }
+        self.deps.add_data(handle, "data", Extra::Text(script))
+    }
+
+    /// [`Scripts::localize`] for a page whose value takes the place of the one the loader registered for the same
+    /// object (`userProfileL10n` with the user of the request).
+    pub fn localize_over(&mut self, handle: &str, object_name: &str, l10n: &Value) -> bool {
+        let handle = if handle == "jquery" { "jquery-core" } else { handle };
+        let prefix = format!("var {object_name} = ");
+        if let Some(Extra::Text(data)) = self.deps.get_data(handle, "data")
+            && data.lines().any(|line| line.starts_with(&prefix))
+        {
+            let script = Self::l10n_script(object_name, l10n);
+            let data = data.lines().map(|line| if line.starts_with(&prefix) { script.as_str() } else { line }).collect::<Vec<_>>().join("\n");
+            return self.deps.add_data(handle, "data", Extra::Text(data));
+        }
+        self.localize(handle, object_name, l10n)
+    }
+
+    /// `var object = {…};` as `WP_Scripts::localize()` prints it.
+    fn l10n_script(object_name: &str, l10n: &Value) -> String {
         // Scalar values lose their HTML entities before they are encoded (`html_entity_decode()`).
         let mut l10n = l10n.clone();
         if let Value::Object(map) = &mut l10n {
@@ -101,13 +127,7 @@ impl Scripts {
         }
         let flags = rustpress_blocks::php_json::Flags { unescaped_slashes: true, unescaped_unicode: false };
         let json = rustpress_blocks::php_json::encode_with(&l10n, flags).replace('<', "\\u003C").replace('>', "\\u003E");
-        let mut script = format!("var {object_name} = {json};");
-        if let Some(Extra::Text(data)) = self.deps.get_data(handle, "data")
-            && !data.is_empty()
-        {
-            script = format!("{data}\n{script}");
-        }
-        self.deps.add_data(handle, "data", Extra::Text(script))
+        format!("var {object_name} = {json};")
     }
 
     /// Replaces what `localize()` printed before for `handle` (the settings of a script are

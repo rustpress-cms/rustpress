@@ -209,7 +209,10 @@ impl<'a> Rest<'a> {
                 if let Some(link) = &response_link {
                     response_headers.push(("Link".to_owned(), link.clone()));
                 }
-                response_headers.push(("Allow".to_owned(), allow.clone()));
+                // An empty list sends no header (`rest_send_allow_header()` with nothing allowed).
+                if !allow.is_empty() {
+                    response_headers.push(("Allow".to_owned(), allow.clone()));
+                }
                 let link = response_link.unwrap_or_else(|| self.root_link());
                 headers.insert(1, ("Link".to_owned(), link));
                 if let Some(total) = resp.total {
@@ -218,7 +221,9 @@ impl<'a> Rest<'a> {
                 if let Some(pages) = resp.total_pages {
                     headers.push(("X-WP-TotalPages".to_owned(), pages.to_string()));
                 }
-                headers.push(("Allow".to_owned(), allow));
+                if !allow.is_empty() {
+                    headers.push(("Allow".to_owned(), allow));
+                }
                 if let Some(location) = &resp.location {
                     headers.push(("Location".to_owned(), location.clone()));
                 }
@@ -259,7 +264,13 @@ impl<'a> Rest<'a> {
                 self.refine_hints(&mut data).await;
             }
             if let Some(list) = params.list("_fields") {
+                // The links are no field: `rest_filter_response_fields()` runs before `response_to_data()` adds them.
+                // The index decides itself which ones it has.
+                let index_links = if route.trim_end_matches('/').is_empty() { data.as_object_mut().and_then(|o| o.remove("_links")) } else { None };
                 fields::filter(&mut data, &list);
+                if let (Some(links), Some(object)) = (index_links, data.as_object_mut()) {
+                    object.insert("_links".into(), links);
+                }
             }
         }
         // `?_envelope`: status and headers move into the body, the response itself is a plain 200.
@@ -301,7 +312,7 @@ impl<'a> Rest<'a> {
             return Ok(Err(RestError::invalid_param("context", Msg::new("%1$s is not one of %2$l.").with(&["context"]).with_list(&["view", "embed", "edit"]), "rest_not_in_enum")));
         }
         match segments.as_slice() {
-            [""] => Ok(Ok(Resp::item(self.index()))),
+            [""] => Ok(Ok(Resp::item(self.index(params)))),
             _ if namespaces().iter().any(|ns| *ns == segments.join("/")) => Ok(Ok(Resp::item(self.namespace_index(&segments.join("/"))))),
             ["wp", "v2", "posts"] => self.posts_collection(posts::Kind::Post, params).await,
             ["wp", "v2", "posts", id] => self.posts_item(posts::Kind::Post, id, params).await,
@@ -466,8 +477,8 @@ impl<'a> Rest<'a> {
         Ok(())
     }
 
-    /// `GET /wp-json/`.
-    fn index(&self) -> Value {
+    /// `GET /wp-json/`. Its links depend on `_fields` (`get_index()`), they stay when the fields are filtered.
+    fn index(&self, params: &Params) -> Value {
         let s = &self.site.settings;
         let o = &self.site.options;
         // `get_option( 'gmt_offset' )`: the stored text, unless a time zone name makes
@@ -499,28 +510,60 @@ impl<'a> Rest<'a> {
             if available { serde_json::json!({"application-passwords": {"endpoints": {"authorization": self.site.site_url("wp-admin/authorize-application.php")}}}) } else { Value::Array(Vec::new()) },
         );
         out.insert("routes".into(), Value::Object(routes));
+        // The settings of client-side media processing, for who may upload.
+        if self.client_side_media() && self.can("upload_files") {
+            let mut sizes = Map::new();
+            for (name, width, height, crop) in rustpress_content::media::registered_sizes(o) {
+                sizes.insert(name, serde_json::json!({"width": width, "height": height, "crop": crop}));
+            }
+            out.insert("image_sizes".into(), Value::Object(sizes));
+            out.insert("image_size_threshold".into(), Value::from(2560));
+            out.insert("image_strip_meta".into(), Value::from(true));
+            out.insert("image_max_bit_depth".into(), Value::from(16));
+        }
+        let mut fields = params.list("_fields").unwrap_or_default();
+        if fields.is_empty() {
+            fields.push("_links".to_owned());
+        }
+        if embed_param(params).is_some() {
+            fields.push("_embedded".to_owned());
+        }
+        let included = |name: &str| fields::is_included(name, &fields);
+        let all_links = included("_links") || included("_embedded");
+        let mut links = Map::new();
+        let mut featured = Vec::new();
+        if all_links {
+            links.insert("help".into(), serde_json::json!([{"href": "https://developer.wordpress.org/rest-api/"}]));
+            // `add_active_theme_link_to_index()`: for who may switch themes or edit.
+            if self.can("switch_themes") || self.can("edit_posts") {
+                links.insert("wp:active-theme".into(), serde_json::json!([{"href": self.rest_url(&format!("wp/v2/themes/{}", self.theme.stylesheet))}]));
+            }
+        }
+        // `add_site_logo_to_index()` and `add_site_icon_to_index()`.
         out.insert("site_logo".into(), Value::from(o.u64("site_logo", 0)));
+        if all_links || included("site_logo") {
+            let id = o.u64("site_logo", 0);
+            if id != 0 {
+                featured.push(serde_json::json!({"embeddable": true, "type": "site_logo", "href": self.rest_url(&format!("wp/v2/media/{id}"))}));
+            }
+        }
         out.insert("site_icon".into(), Value::from(o.u64("site_icon", 0)));
         out.insert("site_icon_url".into(), Value::from(""));
-        let mut links = serde_json::json!({"help": [{"href": "https://developer.wordpress.org/rest-api/"}]});
-        // `add_active_theme_link_to_index()`: for who may switch themes or edit.
-        if self.can("switch_themes") || self.can("edit_posts") {
-            links["wp:active-theme"] = serde_json::json!([{"href": self.rest_url(&format!("wp/v2/themes/{}", self.theme.stylesheet))}]);
-        }
-        let mut featured = Vec::new();
-        for (option, kind) in [("site_logo", "site_logo"), ("site_icon", "site_icon")] {
-            let id = o.u64(option, 0);
+        if all_links || included("site_icon") || included("site_icon_url") {
+            let id = o.u64("site_icon", 0);
             if id != 0 {
-                featured.push(serde_json::json!({"embeddable": true, "type": kind, "href": self.rest_url(&format!("wp/v2/media/{id}"))}));
+                featured.push(serde_json::json!({"embeddable": true, "type": "site_icon", "href": self.rest_url(&format!("wp/v2/media/{id}"))}));
             }
         }
         if !featured.is_empty() {
-            links["wp:featuredmedia"] = Value::Array(featured);
+            links.insert("wp:featuredmedia".into(), Value::Array(featured));
         }
-        if links.as_object().is_some_and(|o| o.keys().any(|k| k.starts_with("wp:"))) {
-            links["curies"] = serde_json::json!([{"name": "wp", "href": "https://api.w.org/{rel}", "templated": true}]);
+        if links.keys().any(|k| k.starts_with("wp:")) {
+            links.insert("curies".into(), serde_json::json!([{"name": "wp", "href": "https://api.w.org/{rel}", "templated": true}]));
         }
-        out.insert("_links".into(), links);
+        if !links.is_empty() {
+            out.insert("_links".into(), Value::Object(links));
+        }
         Value::Object(out)
     }
 
@@ -548,6 +591,43 @@ impl<'a> Rest<'a> {
         routes
     }
 
+    /// `rest_handle_options_request()`: the description of the route a path matches (`get_data_for_route()` in the
+    /// `help` context, with the schema), and the methods of its endpoints.
+    pub(crate) fn route_help(&self, path: &str) -> Option<(Value, Vec<String>)> {
+        let (route, entry) = route_patterns().iter().find(|(_, pattern)| pattern.is_match(path)).and_then(|(route, _)| golden_routes().get(route).map(|e| (route, e)))?;
+        let schemas = route_schemas();
+        let schema = schemas.get("routes").and_then(|r| r.get(route)).and_then(Value::as_u64).and_then(|i| schemas.get("schemas")?.get(i as usize)).cloned();
+        let mut data = Map::new();
+        for (key, value) in entry.as_object()? {
+            if key == "_links"
+                && let Some(schema) = &schema
+            {
+                data.insert("schema".into(), self.with_rest_urls(schema.clone()));
+            }
+            data.insert(key.clone(), self.with_rest_urls(value.clone()));
+        }
+        if !data.contains_key("_links")
+            && let Some(schema) = schema
+        {
+            data.insert("schema".into(), self.with_rest_urls(schema));
+        }
+        let methods = entry.get("methods").and_then(Value::as_array).map(|m| m.iter().filter_map(Value::as_str).map(str::to_owned).collect()).unwrap_or_default();
+        Some((Value::Object(data), methods))
+    }
+
+    /// Puts the address of this site's API where the baked data says `@REST@`.
+    fn with_rest_urls(&self, value: Value) -> Value {
+        match value {
+            Value::String(s) => match s.strip_prefix("@REST@") {
+                Some(path) => Value::from(self.rest_url(if path.is_empty() || path == "/" { "/" } else { path.trim_start_matches('/') })),
+                None => Value::String(s),
+            },
+            Value::Array(items) => Value::Array(items.into_iter().map(|v| self.with_rest_urls(v)).collect()),
+            Value::Object(map) => Value::Object(map.into_iter().map(|(k, v)| (k, self.with_rest_urls(v))).collect()),
+            other => other,
+        }
+    }
+
     /// `GET /wp-json/<namespace>`.
     pub(crate) fn namespace_index(&self, namespace: &str) -> Value {
         serde_json::json!({
@@ -562,6 +642,18 @@ impl<'a> Rest<'a> {
 fn golden_routes() -> &'static Map<String, Value> {
     static ROUTES: std::sync::OnceLock<Map<String, Value>> = std::sync::OnceLock::new();
     ROUTES.get_or_init(|| serde_json::from_str(include_str!("index_routes.json")).expect("the route table is valid JSON"))
+}
+
+/// The patterns of the routes, in the order of the index (`dev/gen-rest-index.py`).
+fn route_patterns() -> &'static [(String, regex::Regex)] {
+    static PATTERNS: std::sync::OnceLock<Vec<(String, regex::Regex)>> = std::sync::OnceLock::new();
+    PATTERNS.get_or_init(|| golden_routes().keys().filter_map(|route| regex::Regex::new(&format!("(?i)^{route}$")).ok().map(|re| (route.clone(), re))).collect())
+}
+
+/// The schema of every route that has one (`dev/gen-rest-schemas.py`): `{"schemas": [...], "routes": {route: index}}`.
+fn route_schemas() -> &'static Value {
+    static SCHEMAS: std::sync::OnceLock<Value> = std::sync::OnceLock::new();
+    SCHEMAS.get_or_init(|| serde_json::from_str(include_str!("route_schemas.json")).expect("the route schemas are valid JSON"))
 }
 
 /// The namespaces in the order of the index.
@@ -589,4 +681,20 @@ fn embed_param(params: &Params) -> Option<Option<Vec<String>>> {
     }
     let rels: Vec<String> = value.split([',', ' ', '\t', '\n', '\r']).filter(|r| !r.is_empty()).map(str::to_owned).collect();
     Some(if rels.is_empty() { None } else { Some(rels) })
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn every_route_pattern_compiles() {
+        assert_eq!(super::route_patterns().len(), super::golden_routes().len());
+    }
+
+    #[test]
+    fn options_paths_find_their_route() {
+        let find = |path: &str| super::route_patterns().iter().find(|(_, re)| re.is_match(path)).map(|(route, _)| route.clone());
+        assert_eq!(find("/wp/v2/settings").as_deref(), Some("/wp/v2/settings"));
+        assert_eq!(find("/wp/v2/posts/12").as_deref(), Some(r"/wp/v2/posts/(?P<id>[\d]+)"));
+        assert_eq!(find("/wp/v2/templates/twentytwentyfive//index").as_deref(), Some(r#"/wp/v2/templates/(?P<id>([^\/:<>\*\?"\|]+(?:\/[^\/:<>\*\?"\|]+)?)[\/\w%-]+)"#));
+    }
 }

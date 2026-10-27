@@ -191,7 +191,6 @@ pub async fn reading(ctx: &Ctx<'_>) -> AdminResponse {
     );
     let assets = Assets {
         head: "<script>\n\tjQuery( function($) {\n\t\tvar section = $('#front-static-pages'),\n\t\t\tstaticPage = section.find('input:radio[value=\"page\"]'),\n\t\t\tselects = section.find('select'),\n\t\t\tcheck_disabled = function(){\n\t\t\t\tselects.prop( 'disabled', ! staticPage.prop('checked') );\n\t\t\t};\n\t\tcheck_disabled();\n\t\tsection.find( 'input:radio' ).on( 'change', check_disabled );\n\t} );\n</script>\n".into(),
-        footer: "<script>\n\tjQuery( function($) {\n\t\tvar $showOnFront = $( 'input[name=\"show_on_front\"]' ),\n\t\t\t$pageSelects = $( '#page_on_front, #page_for_posts' );\n\t\t$showOnFront.on( 'change', function() {\n\t\t\t$pageSelects.prop( 'disabled', 'page' !== $showOnFront.filter( ':checked' ).val() );\n\t\t}).trigger( 'change' );\n\t});\n</script>\n".into(),
         ..Default::default()
     };
     finish(ctx, "options-reading.php", title, h, with_tab(
@@ -350,12 +349,12 @@ pub async fn discussion(ctx: &Ctx<'_>) -> AdminResponse {
         tr("Show Avatars")
     ));
     let rating = site.options.string("avatar_rating", "G");
-    let ratings = [("G", tr("Suitable for all audiences")), ("PG", tr("Possibly offensive, usually for audiences 13 and above")), ("R", tr("Intended for adult audiences above 17")), ("X", tr("Even more mature than above"))];
+    let ratings = [("G", tr("G &#8212; Suitable for all audiences")), ("PG", tr("PG &#8212; Possibly offensive, usually for audiences 13 and above")), ("R", tr("R &#8212; Intended for adult audiences above 17")), ("X", tr("X &#8212; Even more mature than above"))];
     let mut rating_html = String::new();
     for (key, label) in &ratings {
-        rating_html.push_str(&format!("\n\t<label><input type='radio' name='avatar_rating' value='{key}'{}/> {key} &#8212; {label}</label><br />", if rating == *key { " checked=\"checked\"" } else { " " }));
+        rating_html.push_str(&format!("\n\t<label><input type='radio' name='avatar_rating' value='{key}'{}/> {label}</label><br />", if rating == *key { " checked=\"checked\"" } else { " " }));
     }
-    h.push_str(&format!("<tr class=\"avatar-settings\">\n<th scope=\"row\">{t}</th>\n<td>{}{rating_html}\n</fieldset></td>\n</tr>\n", legend(&tr("Maximum Rating")), t = tr("Maximum Rating")));
+    h.push_str(&format!("<tr class=\"avatar-settings\">\n<th scope=\"row\">{t}</th>\n<td>{}\n{rating_html}\n</fieldset></td>\n</tr>\n", legend(&tr("Maximum Rating")), t = tr("Maximum Rating")));
     let current = match o("avatar_default").as_str() {
         "" => "mystery".to_owned(),
         other => other.to_owned(),
@@ -385,7 +384,12 @@ pub async fn discussion(ctx: &Ctx<'_>) -> AdminResponse {
     h.push_str(&submit(ctx));
     h.push_str("</form>\n</div>\n\n");
     let overview = format!("<p>{}</p><p>{}</p>", tr("This screen provides many options for controlling the management and display of comments and links to your posts/pages. So many, in fact, they will not all fit here! :) Use the documentation links to get information on what each discussion setting does."), tr("You must click the Save Changes button at the bottom of the screen for new settings to take effect."));
-    finish(ctx, "options-discussion.php", title, h, help(ctx, &overview, &tr("<a href=\"https://wordpress.org/documentation/article/settings-discussion-screen/\">Documentation on Discussion Settings</a>")), Assets::default()).await
+    // `options_discussion_add_js()` on `admin_print_footer_scripts`.
+    let assets = Assets {
+        footer_early: "\t<script>\n\t(function($){\n\t\tvar parent = $( '#show_avatars' ),\n\t\t\tchildren = $( '.avatar-settings' );\n\t\tparent.on( 'change', function(){\n\t\t\tchildren.toggleClass( 'hide-if-js', ! this.checked );\n\t\t});\n\t})(jQuery);\n\t</script>\n\t".into(),
+        ..Default::default()
+    };
+    finish(ctx, "options-discussion.php", title, h, help(ctx, &overview, &tr("<a href=\"https://wordpress.org/documentation/article/settings-discussion-screen/\">Documentation on Discussion Settings</a>")), assets).await
 }
 
 /// `options-media.php`.

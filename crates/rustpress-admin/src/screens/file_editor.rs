@@ -835,10 +835,10 @@ pub async fn theme_editor(ctx: &Ctx<'_>) -> AdminResponse {
 
     let mut h = format!("<div class=\"wrap\">\n<h1>{}</h1>\n\n", esc_html(&tr("Edit Themes")));
     if request.get("a").is_some() {
-        h.push_str(&notice(&tr("File edited successfully."), "", true, "message", &["updated"], true));
+        h.push_str(notice(&tr("File edited successfully."), "", true, "message", &["updated"], true).trim_end_matches('\n'));
     } else if let Some(e) = &edit_error {
         let message = format!("<p>{}</p>\n\t\t<pre>{}</pre>", tr("There was an error while trying to update the file. You may need to fix something and try updating again."), error_message(e.code, &e.message));
-        h.push_str(&notice(&message, "error", false, "message", &[], true));
+        h.push_str(notice(&message, "error", false, "message", &[], true).trim_end_matches('\n'));
     }
     let active_theme = themes::find(&root, &active);
     let active_block = active_theme.as_ref().is_some_and(|t| t.block_theme);
@@ -849,7 +849,7 @@ pub async fn theme_editor(ctx: &Ctx<'_>) -> AdminResponse {
                 tr("Did you know?"),
                 sprintf(&tr("There is no need to change your CSS here &mdash; you can edit and live preview CSS changes in the <a href=\"%s\">built-in CSS editor</a>."), &[&esc_url(url).replace("&#038;", "&amp;")])
             );
-            notice(&message, "info", false, "message", &[], true)
+            notice(&message, "info", false, "message", &[], true).trim_end_matches('\n').to_owned()
         };
         if !active_block && ctx.can("customize") {
             h.push_str(&info(&format!("{}?autofocus%5Bsection%5D=custom_css", ctx.admin_url("customize.php"))));
@@ -859,13 +859,13 @@ pub async fn theme_editor(ctx: &Ctx<'_>) -> AdminResponse {
         let minified = Path::new(&file.to_string_lossy().trim_end_matches(".css").to_owned()).with_extension("").to_string_lossy().into_owned() + ".min.css";
         if Path::new(&minified).exists() {
             let message = format!("<p><strong>{}</strong></p><p>{}</p>", tr("There is a minified version of this stylesheet."), tr("It is likely that this unminified stylesheet will not be served to visitors."));
-            h.push_str(&notice(&message, "warning", false, "wp-css-min-warning", &[], true));
+            h.push_str(notice(&message, "warning", false, "wp-css-min-warning", &[], true).trim_end_matches('\n'));
         }
     }
     let is_active_name = active_theme.as_ref().is_some_and(|t| t.name == theme.name);
     let name = format!("<strong>{}</strong>", wptexturize(&theme.name));
     h.push_str(&format!(
-        "\n<div class=\"fileedit-sub\">\n<div class=\"alignleft\">\n<h2>\n\t{}</h2>\n <span><strong>{}</strong></span>\n</div>\n<div class=\"alignright\">\n\t<form action=\"theme-editor.php\" method=\"get\">\n\t\t<label for=\"theme\" id=\"theme-plugin-editor-selector\">{} </label>\n\t\t<select name=\"theme\" id=\"theme\">\n\t\t\t",
+        "\n<div class=\"fileedit-sub\">\n<div class=\"alignleft\">\n<h2>\n\t{}</h2>\n <span><strong>{}</strong></span></div>\n<div class=\"alignright\">\n\t<form action=\"theme-editor.php\" method=\"get\">\n\t\t<label for=\"theme\" id=\"theme-plugin-editor-selector\">{} </label>\n\t\t<select name=\"theme\" id=\"theme\">\n\t\t",
         sprintf(&tr(if is_active_name { "Editing %s (active)" } else { "Editing %s (inactive)" }), &[&name]),
         sprintf(&tr("File: %s"), &[&esc_html(&file_show)]),
         tr("Select theme to edit:")

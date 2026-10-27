@@ -323,17 +323,18 @@ impl Rest<'_> {
 
     /// `OPTIONS`: the methods the user may use. The schema stays empty.
     fn options(&self, route: &str) -> Outcome {
-        let mut methods = vec!["GET"];
-        let writable = self.access.is_some();
-        let route_ends_with_id = route.rsplit('/').next().is_some_and(|s| s.parse::<u64>().is_ok());
-        if writable && self.can("edit_posts") {
-            methods.push("POST");
-            if route_ends_with_id {
-                methods.extend(["PUT", "PATCH", "DELETE"]);
-            }
-        }
-        let mut resp = crate::Resp::item(serde_json::json!({"namespace": "wp/v2", "methods": methods, "endpoints": [{"methods": methods, "args": {}}], "schema": {}}));
-        resp.allow = Some(methods.join(", "));
+        // A path no route matches gets an empty answer.
+        let Some((data, methods)) = self.route_help(if route.is_empty() { "/" } else { route }) else {
+            let mut resp = crate::Resp::item(serde_json::json!([]));
+            resp.allow = Some(String::new());
+            return Ok(resp);
+        };
+        // `rest_send_allow_header()`: the methods whose permission check passes; reading for everybody, writing
+        // for who may edit.
+        let writes = self.access.is_some() && self.can("edit_posts");
+        let allowed: Vec<&str> = methods.iter().map(String::as_str).filter(|m| *m == "GET" || writes).collect();
+        let mut resp = crate::Resp::item(data);
+        resp.allow = Some(allowed.join(", "));
         Ok(resp)
     }
 

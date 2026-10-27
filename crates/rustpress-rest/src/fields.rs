@@ -3,6 +3,10 @@
 use serde_json::Value;
 
 /// `rest_is_field_included( $field, $fields )`.
+pub fn is_included(field: &str, fields: &[String]) -> bool {
+    included(field, fields)
+}
+
 fn included(field: &str, fields: &[String]) -> bool {
     fields.iter().any(|f| f == field || f.starts_with(&format!("{field}.")) || field.starts_with(&format!("{f}.")))
 }

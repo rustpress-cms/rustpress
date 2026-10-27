@@ -222,7 +222,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     if let Some(code) = request.get("update")
         && let Some((message, error)) = update_message(ctx, code)
     {
-        h.push_str(&super::notices::notice(&message, "", true, "message", &[if error { "error" } else { "updated" }], true).trim_end_matches('\n').to_owned());
+        h.push_str(super::notices::notice(&message, "", true, "message", &[if error { "error" } else { "updated" }], true).trim_end_matches('\n'));
     }
     h.push_str("\n\t\t<div class=\"wrap\">\n\t\t<h1 class=\"wp-heading-inline\">\n\t\t\t");
     h.push_str(&format!("{}\t\t</h1>\n\n", esc_html(&title)));

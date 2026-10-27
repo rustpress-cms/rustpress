@@ -332,6 +332,8 @@ pub struct Assets {
     pub head: String,
     /// Printed after the scripts of the footer (`admin_print_footer_scripts`, late).
     pub footer: String,
+    /// Printed right after the scripts of the footer, before the emoji script (`admin_print_footer_scripts` of a page).
+    pub footer_early: String,
     /// Printed before the scripts of the footer (`admin_footer`: the media templates).
     pub pre_footer: String,
     /// `wp_localize_script()`: `(handle, object name, data)`.
@@ -635,7 +637,7 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
             .collect();
         let flags = rustpress_blocks::php_json::Flags { unescaped_slashes: true, unescaped_unicode: false };
         let hex = |value: &serde_json::Value| rustpress_blocks::php_json::encode_with(value, flags).replace('<', &format!("{}u003C", char::from(92u8))).replace('>', &format!("{}u003E", char::from(92u8)));
-        let init = "( mountId, routes, initModules ) => {\n\t\tconst run = async () => {\n\t\t\tconst mod = await import( \"@wordpress/boot\" );\n\t\t\tmod.initSinglePage( { mountId, routes, initModules } );\n\t\t};\n\t\tif ( document.readyState === \"loading\" ) {\n\t\t\tdocument.addEventListener( \"DOMContentLoaded\", run );\n\t\t} else {\n\t\t\trun();\n\t\t}\n\t}";
+        let init = "( mountId, routes, initModules ) => {\n\tconst run = async () => {\n\t\tconst mod = await import( \"@wordpress/boot\" );\n\t\tmod.initSinglePage( { mountId, routes, initModules } );\n\t};\n\tif ( document.readyState === \"loading\" ) {\n\t\tdocument.addEventListener( \"DOMContentLoaded\", run );\n\t} else {\n\t\trun();\n\t}\n}";
         scripts.add_inline_script(&boot.prerequisites(), &format!("( {init} )( {}, {}, [] );", hex(&serde_json::Value::from(boot.mount_id())), hex(&serde_json::Value::Array(routes))), "after");
     }
     scripts.relocalize(
@@ -657,7 +659,7 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
         scripts.enqueue(handle);
     }
     for (handle, object, data) in &assets.localize {
-        scripts.localize(handle, object, data);
+        scripts.localize_over(handle, object, data);
     }
     for (handle, code, position) in &assets.inline {
         scripts.add_inline_script(handle, code, position);
@@ -821,10 +823,20 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
             note = tr("The login page will open in a new tab. After logging in you can close it and return to this page.")
         ));
     }
-    out.push_str(&script_modules(env, assets.editor_modules, assets.boot.as_ref()));
+    let modules = script_modules(env, assets.editor_modules, assets.boot.as_ref());
+    // `print_a11y_script_module_html()`: the live regions, when `@wordpress/a11y` is in the import map.
+    let a11y = modules.contains("\"@wordpress/a11y\":");
+    out.push_str(&modules);
     out.push_str(&footer_styles);
     out.push_str(&footer_scripts);
+    out.push_str(&assets.footer_early);
     out.push_str(&emoji_scripts(env, assets.no_emoji));
+    if a11y {
+        out.push_str(&format!(
+            "<div style=\"position:absolute;margin:-1px;padding:0;height:1px;width:1px;overflow:hidden;clip-path:inset(50%);border:0;word-wrap:normal !important;\"><p id=\"a11y-speak-intro-text\" class=\"a11y-speak-intro-text\" hidden>{}</p><div id=\"a11y-speak-assertive\" class=\"a11y-speak-region\" aria-live=\"assertive\" aria-relevant=\"additions text\" aria-atomic=\"true\"></div><div id=\"a11y-speak-polite\" class=\"a11y-speak-region\" aria-live=\"polite\" aria-relevant=\"additions text\" aria-atomic=\"true\"></div></div>",
+            esc_html(&tr("Notifications"))
+        ));
+    }
     out.push_str(&assets.footer);
     out.push_str("\n<div class=\"clear\"></div></div><!-- wpwrap -->\n<script>if(typeof wpOnload==='function')wpOnload();</script>\n</body>\n</html>\n");
     out

@@ -172,8 +172,8 @@ async fn form_on(ctx: &Ctx<'_>, user: &User, own: bool, errors: &[String], file:
         ["update", "delete_count", "user_id"].iter().fold(raw, |url, arg| rustpress_core::urls::remove_query_arg(&url, arg))
     };
     // The notices come before the wrap: the one of `new_user_email_admin_notice()`, then those of the page.
-    let notice = |message: &str, kind: &str, dismissible: bool, id: &str, extra: &[&str], paragraph: bool| format!("\t\t{}\n", super::notices::notice(message, kind, dismissible, id, extra, paragraph).trim_end());
-    let mut h = String::new();
+    let notice = |message: &str, kind: &str, dismissible: bool, id: &str, extra: &[&str], paragraph: bool| super::notices::notice(message, kind, dismissible, id, extra, paragraph).trim_end().to_owned();
+    let mut h = String::from("\t\t");
     let updated = request.get("updated").is_some();
     if updated && own && let Some((_, new_email)) = pending_email(ctx, ctx.user.id).await {
         let message = sprintf(&tr("Your email address has not been updated yet. Please check your inbox at %s for a confirmation email."), &[&format!("<code>{}</code>", esc_html(&new_email))]);
@@ -194,12 +194,17 @@ async fn form_on(ctx: &Ctx<'_>, user: &User, own: bool, errors: &[String], file:
     if !errors.is_empty() {
         h.push_str(&notice(&errors.join("</p>\n<p>"), "", false, "", &["error"], true));
     }
-    h.push_str("\t\t<div class=\"wrap\" id=\"profile-page\">\n");
+    h.push_str("\n\t\t<div class=\"wrap\" id=\"profile-page\">\n");
     h.push_str(&format!("\t\t\t<h1 class=\"wp-heading-inline\">\n\t\t\t\t\t{heading}\t\t\t</h1>\n\n\t\t\t"));
-    if !own && ctx.can("create_users") {
-        h.push_str(&format!("\t\t\t\t\t\t\t\t\t<a href=\"user-new.php\" class=\"page-title-action\">{}</a>\n\t\t\t\t\t\t\t\n", tr("Add User")));
+    // `if ( ! IS_PROFILE_PAGE )`: the indentation of the template's PHP lines stays.
+    if !own {
+        h.push_str("\t\t\t\t");
+        if ctx.can("create_users") {
+            h.push_str(&format!("\t\t\t\t\t<a href=\"user-new.php\" class=\"page-title-action\">{}</a>\n\t\t\t\t", tr("Add User")));
+        }
+        h.push_str("\t\t\t");
     }
-    h.push_str(if !own && ctx.can("create_users") { "\t\t\t<hr class=\"wp-header-end\">\n\n" } else { "<hr class=\"wp-header-end\">\n\n" });
+    h.push_str("\n\t\t\t<hr class=\"wp-header-end\">\n\n");
     h.push_str(&format!(
         "\t\t\t<form id=\"your-profile\" action=\"{}\" method=\"post\" novalidate=\"novalidate\"\n\t\t\t\t\t\t\t\t>\n\t\t\t\t{}\t\t\t\t{}\t\t\t\t<p>\n\t\t\t\t\t<input type=\"hidden\" name=\"from\" value=\"profile\" />\n\t\t\t\t\t<input type=\"hidden\" name=\"checkuser_id\" value=\"{}\" />\n\t\t\t\t</p>\n\n",
         esc_url(&action_url),
@@ -207,7 +212,17 @@ async fn form_on(ctx: &Ctx<'_>, user: &User, own: bool, errors: &[String], file:
         if wp_http_referer.is_empty() { String::new() } else { format!("\t\t\t\t\t<input type=\"hidden\" name=\"wp_http_referer\" value=\"{}\" />\n\t\t\t\t", esc_url(&wp_http_referer)) },
         ctx.user.id
     ));
-    h.push_str(&format!("\t\t\t\t<h2>{}</h2>\n\n\t\t\t\t<table class=\"form-table\" role=\"presentation\">\n\t\t\t\t\t\n\t\t\t\t\t\n\t\t\t\t\t\n", tr("Personal Options")));
+    h.push_str(&format!("\t\t\t\t<h2>{}</h2>\n\n\t\t\t\t<table class=\"form-table\" role=\"presentation\">\n\t\t\t\t\t", tr("Personal Options")));
+    // The visual editor only shows to turn it back on, and not on one's own profile without the right to write.
+    let may_write = ctx.can("edit_posts") || ctx.can("edit_pages");
+    if meta(ctx, id, "rich_editing").await == "false" && !(own && !may_write) {
+        h.push_str(&format!(
+            "\t\t\t\t\t\t<tr class=\"user-rich-editing-wrap\">\n\t\t\t\t\t\t\t<th scope=\"row\">{}</th>\n\t\t\t\t\t\t\t<td>\n\t\t\t\t\t\t\t\t<label for=\"rich_editing\"><input name=\"rich_editing\" type=\"checkbox\" id=\"rich_editing\" value=\"false\" checked='checked' />\n\t\t\t\t\t\t\t\t\t{}\t\t\t\t\t\t\t\t</label>\n\t\t\t\t\t\t\t</td>\n\t\t\t\t\t\t</tr>\n\t\t\t\t\t",
+            tr("Visual Editor"),
+            tr("Disable the visual editor when writing")
+        ));
+    }
+    h.push_str("\n\t\t\t\t\t\n\t\t\t\t\t");
     // `$show_syntax_highlighting_preference`: the edited user may edit the theme options, plugins or themes.
     let edited_can = {
         let loaded = match ctx.env.db.auth_user_by_id(id).await.ok().flatten() {
@@ -218,13 +233,13 @@ async fn form_on(ctx: &Ctx<'_>, user: &User, own: bool, errors: &[String], file:
     };
     if edited_can {
         h.push_str(&format!(
-            "\t\t\t\t\t\t\t\t\t\t<tr class=\"user-syntax-highlighting-wrap\">\n\t\t\t\t\t\t<th scope=\"row\">{}</th>\n\t\t\t\t\t\t<td>\n\t\t\t\t\t\t\t<label for=\"syntax_highlighting\"><input name=\"syntax_highlighting\" type=\"checkbox\" id=\"syntax_highlighting\" value=\"false\" {} />\n\t\t\t\t\t\t\t\t{}\t\t\t\t\t\t\t</label>\n\t\t\t\t\t\t</td>\n\t\t\t\t\t</tr>\n",
+            "\t\t\t\t\t<tr class=\"user-syntax-highlighting-wrap\">\n\t\t\t\t\t\t<th scope=\"row\">{}</th>\n\t\t\t\t\t\t<td>\n\t\t\t\t\t\t\t<label for=\"syntax_highlighting\"><input name=\"syntax_highlighting\" type=\"checkbox\" id=\"syntax_highlighting\" value=\"false\" {} />\n\t\t\t\t\t\t\t\t{}\t\t\t\t\t\t\t</label>\n\t\t\t\t\t\t</td>\n\t\t\t\t\t</tr>\n\t\t\t\t\t",
             tr("Syntax Highlighting"),
             checked(syntax == "false").trim_start(),
             tr("Disable syntax highlighting when editing code")
         ));
     }
-    h.push_str(&format!("\t\t\t\t\t\t\t\t\t\t<tr class=\"user-admin-color-wrap\">\n\t\t\t\t\t\t<th scope=\"row\">{}</th>\n\t\t\t\t\t\t<td>\n{}\t\t\t\t\t\t\t</td>\n\t\t\t\t\t</tr>\n\t\t\t\t\t\n", tr("Administration Color Scheme"), color_picker(ctx, &admin_color)));
+    h.push_str(&format!("\n\t\t\t\t\t\t\t\t\t\t<tr class=\"user-admin-color-wrap\">\n\t\t\t\t\t\t<th scope=\"row\">{}</th>\n\t\t\t\t\t\t<td>\n{}\t\t\t\t\t\t\t</td>\n\t\t\t\t\t</tr>\n\t\t\t\t\t\n", tr("Administration Color Scheme"), color_picker(ctx, &admin_color)));
     h.push_str(&format!(
         "\t\t\t\t\t\t\t\t\t\t<tr class=\"user-comment-shortcuts-wrap\">\n\t\t\t\t\t\t<th scope=\"row\">{}</th>\n\t\t\t\t\t\t<td>\n\t\t\t\t\t\t\t<label for=\"comment_shortcuts\">\n\t\t\t\t\t\t\t\t<input type=\"checkbox\" name=\"comment_shortcuts\" id=\"comment_shortcuts\" value=\"true\" {} />\n\t\t\t\t\t\t\t\t{}\t\t\t\t\t\t\t</label>\n\t\t\t\t\t\t\t<a href=\"https://wordpress.org/documentation/article/keyboard-shortcuts-classic-editor/#keyboard-shortcuts-for-comments\">{}</a>\t\t\t\t\t\t</td>\n\t\t\t\t\t</tr>\n\t\t\t\t\t\n",
         tr("Keyboard Shortcuts"),
@@ -258,18 +273,19 @@ async fn form_on(ctx: &Ctx<'_>, user: &User, own: bool, errors: &[String], file:
         esc_attr(&user.user_login),
         tr("Usernames cannot be changed.")
     ));
+    h.push_str("\t\t\t\t\t");
     if !own && ctx.can("promote_users") {
         let names = super::general::role_names(ctx).await;
         let roles = super::users::roles_of(ctx, id).await;
         let current = roles.first().map(|(s, _)| s.clone()).unwrap_or_default();
         h.push_str(&format!(
-            "\t\t\t\t\t\t\t\t\t\t\t<tr class=\"user-role-wrap\">\n\t\t\t\t\t\t\t<th><label for=\"role\">{}</label></th>\n\t\t\t\t\t\t\t<td>\n\t\t\t\t\t\t\t\t<select name=\"role\" id=\"role\">\n\t\t\t\t\t\t\t\t\t{}<option value=\"\">&mdash; {} &mdash;</option>\t\t\t\t\t\t\t</select>\n\t\t\t\t\t\t\t</td>\n\t\t\t\t\t\t</tr>\n\t\t\t\t\t\n",
+            "\t\t\t\t\t\t<tr class=\"user-role-wrap\">\n\t\t\t\t\t\t\t<th><label for=\"role\">{}</label></th>\n\t\t\t\t\t\t\t<td>\n\t\t\t\t\t\t\t\t<select name=\"role\" id=\"role\">\n\t\t\t\t\t\t\t\t\t{}<option value=\"\">{}</option>\t\t\t\t\t\t\t</select>\n\t\t\t\t\t\t\t</td>\n\t\t\t\t\t\t</tr>\n\t\t\t\t\t",
             tr("Role"),
             role_options(&names, ctx, &current),
-            tr("No role for this site")
+            tr("&mdash; No role for this site &mdash;")
         ));
     }
-    h.push_str("\t\t\t\t\t\n");
+    h.push_str("\n\t\t\t\t\t\n");
     let ac = |name: &str| if own { format!(" autocomplete=\"{name}\"") } else { String::new() };
     h.push_str(&format!(
         "\t\t\t\t\t<tr class=\"user-first-name-wrap\">\n\t\t\t\t\t\t<th><label for=\"first_name\">{}</label></th>\n\t\t\t\t\t\t<td>\n\t\t\t\t\t\t\t\t\t\t\t\t\t<input type=\"text\" name=\"first_name\" id=\"first_name\" value=\"{}\"{} class=\"regular-text\" />\n\t\t\t\t\t\t\t\t\t\t\t\t</td>\n\t\t\t\t\t</tr>\n\n",
@@ -313,7 +329,7 @@ async fn form_on(ctx: &Ctx<'_>, user: &User, own: bool, errors: &[String], file:
     h.push_str(&format!("\t\t\t\t<h2>{}</h2>\n\n\t\t\t\t<table class=\"form-table\" role=\"presentation\">\n", tr("Contact Info")));
     let email_note = if own {
         format!(
-            "\n\t\t\t\t\t\t\t\t<p class=\"description\" id=\"email-description\">\n\t\t\t\t\t\t\t\t\t{}\t\t\t\t\t\t\t\t</p>\n",
+            "\t\t\t\t\t\t\t\t<p class=\"description\" id=\"email-description\">\n\t\t\t\t\t\t\t\t\t{}\t\t\t\t\t\t\t\t</p>\n",
             tr("If you change this, an email will be sent at your new address to confirm it. <strong>The new address will not become active until confirmed.</strong>")
         )
     } else {
@@ -389,6 +405,9 @@ async fn form_on(ctx: &Ctx<'_>, user: &User, own: bool, errors: &[String], file:
             tr("Send Reset Link"),
             sprintf(&tr("Send %s a link to reset their password. This will not change their password, nor will it force a change."), &[&user.display_name])
         ));
+    } else {
+        // The indentation of the two PHP lines around the skipped row.
+        h.push_str("\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n");
     }
     // The sessions: where the person is signed in (`WP_Session_Tokens::get_all()`).
     let sessions = session_count(ctx, id).await;
@@ -432,7 +451,9 @@ async fn form_on(ctx: &Ctx<'_>, user: &User, own: bool, errors: &[String], file:
     }
     h.push_str(&format!("<input type=\"hidden\" name=\"action\" value=\"update\" />\n\t\t\t\t<input type=\"hidden\" name=\"user_id\" id=\"user_id\" value=\"{id}\" />\n\n\t\t\t\t<p class=\"submit\"><input type=\"submit\" name=\"submit\" id=\"submit\" class=\"button button-primary\" value=\"{}\"  /></p>\n\t\t\t</form>\n\t\t</div>\n\t\t<script>\n\tif (window.location.hash == '#password') {{\n\t\tdocument.getElementById('pass1').focus();\n\t}}\n</script>\n\n<script>\n\tjQuery( function( $ ) {{\n\t\tvar languageSelect = $( '#locale' );\n\t\t$( 'form' ).on( 'submit', function() {{\n\t\t\t/*\n\t\t\t * Don't show a spinner for English and installed languages,\n\t\t\t * as there is nothing to download.\n\t\t\t */\n\t\t\tif ( ! languageSelect.find( 'option:selected' ).data( 'installed' ) ) {{\n\t\t\t\t$( '#submit', this ).after( '<span class=\"spinner language-install-spinner is-active\" />' );\n\t\t\t}}\n\t\t}});\n\t}} );\n</script>\n\n", if own { tr("Update Profile") } else { tr("Update User") }));
     if app_available {
-        h.push_str(&super::pages::translate_html(ctx, APP_PASSWORDS_TEMPLATES).replace("{{SITE}}", ctx.site().settings.siteurl.trim_end_matches('/')));
+        // The file ends with a line break of its own; the page ends right after the last template.
+        let templates = APP_PASSWORDS_TEMPLATES.strip_suffix('\n').unwrap_or(APP_PASSWORDS_TEMPLATES);
+        h.push_str(&super::pages::translate_html(ctx, templates).replace("{{SITE}}", ctx.site().settings.siteurl.trim_end_matches('/')));
     }
     let (parent_file, submenu_file) = if ctx.can("list_users") { ("users.php", if own { "profile.php" } else { "users.php" }) } else { ("profile.php", "profile.php") };
     let view_item = (!own || file == "user-edit.php").then(|| {
@@ -443,7 +464,7 @@ async fn form_on(ctx: &Ctx<'_>, user: &User, own: bool, errors: &[String], file:
         file: file.to_owned(),
         parent_file: parent_file.into(),
         submenu_file: Some(submenu_file.into()),
-        title: if own { tr("Profile") } else { tr("Edit User") },
+        title: if own { tr("Profile") } else { sprintf(&tr("Edit User %s"), &[&user.display_name]) },
         help: Some(help(ctx)),
         view_item,
         ..Default::default()
@@ -452,7 +473,10 @@ async fn form_on(ctx: &Ctx<'_>, user: &User, own: bool, errors: &[String], file:
     if app_available {
         scripts.push("application-passwords".into());
     }
-    render(ctx, &screen, &h, &Assets { scripts, ..Default::default() }).await
+    // `userProfileL10n` names the user of `?user_id=`.
+    let requested: u64 = request.get("user_id").map_or(0, |v| v.trim().parse().unwrap_or(0));
+    let localize = vec![("user-profile".to_owned(), "userProfileL10n".to_owned(), serde_json::json!({"user_id": requested, "nonce": ctx.create_nonce(&format!("reset-password-for-{requested}"))}))];
+    render(ctx, &screen, &h, &Assets { scripts, localize, ..Default::default() }).await
 }
 
 /// The help of `profile.php` and `user-edit.php`.
