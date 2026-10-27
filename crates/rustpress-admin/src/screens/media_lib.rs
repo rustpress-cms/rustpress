@@ -517,21 +517,13 @@ pub async fn media_new(ctx: &Ctx<'_>) -> AdminResponse {
         }
     }
     let title = tr("Upload Media");
-    let mut assets = Assets { scripts: vec!["plupload-handlers".into(), "moxiejs".into(), "plupload".into()], ..Default::default() };
-    assets.localize.push(("plupload-handlers".into(), "pluploadL10n".into(), {
-        let baked: serde_json::Value = serde_json::from_str(include_str!("../data/media_bake.json")).unwrap_or_default();
-        let mut strings = serde_json::Map::new();
-        if let Some(serde_json::Value::Object(map)) = baked.get("plupload_l10n") {
-            for (key, value) in map {
-                strings.insert(key.clone(), value.as_str().map_or_else(|| value.clone(), |text| serde_json::Value::String(ctx.tr(text))));
-            }
-        }
-        serde_json::Value::Object(strings)
-    }));
+    // `pluploadL10n` comes from the script loader.
+    let assets = Assets { scripts: vec!["plupload-handlers".into(), "moxiejs".into(), "plupload".into()], ..Default::default() };
     let nonce = ctx.create_nonce("media-form");
     let ajax_url = site.site_url("wp-admin/async-upload.php");
     let init = serde_json::json!({"browse_button": "plupload-browse-button", "container": "plupload-upload-ui", "drop_element": "drag-drop-area", "file_data_name": "async-upload", "url": ajax_url, "filters": {"max_file_size": format!("{}b", super::media_ui::MAX_UPLOAD)}, "multipart_params": {"post_id": 0, "_wpnonce": nonce, "type": "", "tab": "", "short": "1"}});
-    let mut h = format!("\t\t<div class=\"wrap\">\n\t<h1>{}</h1>\n\n", esc_html(&title));
+    // `?>` right before the page.
+    let mut h = format!("<div class=\"wrap\">\n\t<h1>{}</h1>\n\n", esc_html(&title));
     h.push_str(&format!("\t<form enctype=\"multipart/form-data\" method=\"post\" action=\"{}\" class=\"wp-upload-form media-upload-form type-form validate\" id=\"file-form\">\n\n\t\t<div id=\"media-upload-notice\">\n\t\t</div>\n\t<div id=\"media-upload-error\">\n\t\t</div>\n\t\t<script>\n\t\tvar resize_height = 1024, resize_width = 1024,\n\twpUploaderInit = {init};\n\t</script>\n\n", esc_url(&ctx.admin_url("media-new.php"))));
     h.push_str(&format!(
         "\t<div id=\"plupload-upload-ui\" class=\"hide-if-no-js\">\n\t\t<div id=\"drag-drop-area\">\n\t\t<div class=\"drag-drop-inside\">\n\t\t<p class=\"drag-drop-info\">{drop}</p>\n\t\t<p>{or}</p>\n\t\t<p class=\"drag-drop-buttons\"><input id=\"plupload-browse-button\" type=\"button\" value=\"{select}\" class=\"button\" /></p>\n\t\t</div>\n\t</div>\n\t\t<p class=\"upload-flash-bypass\">\n\t{bypass}\t</p>\n\t\t</div>\n\n\t<div id=\"html-upload-ui\" class=\"hide-if-js\">\n\t\t<p id=\"async-upload-wrap\">\n\t\t<label class=\"screen-reader-text\" for=\"async-upload\">\n\t\t\t{upload}\t\t</label>\n\t\t<input type=\"file\" name=\"async-upload\" id=\"async-upload\" />\n\t\t<input type=\"submit\" name=\"html-upload\" id=\"html-upload\" class=\"button button-primary\" value=\"{upload}\"  />\t\t<a href=\"#\" onclick=\"try{{top.tb_remove();}}catch(e){{}}; return false;\">{cancel}</a>\n\t</p>\n\t<div class=\"clear\"></div>\n\t\t<p class=\"upload-html-bypass hide-if-no-js\">\n\t{html_bypass}\t</p>\n\t\t</div>\n\n<p class=\"max-upload-size\">\n\t{max}</p>\n\t\n\t<script>\n\tvar post_id = 0, shortform = 3;\n\t</script>\n\t<input type=\"hidden\" name=\"post_id\" id=\"post_id\" value=\"0\" />\n\t{nonce_field}\t<div id=\"media-items\" class=\"hide-if-no-js\"></div>\n\t</form>\n</div>\n\n",
@@ -545,6 +537,6 @@ pub async fn media_new(ctx: &Ctx<'_>) -> AdminResponse {
         max = sprintf(&tr("Maximum upload file size: %s."), &[&super::ajax_media::size_format(super::media_ui::MAX_UPLOAD)]),
         nonce_field = format!("<input type=\"hidden\" id=\"_wpnonce\" name=\"_wpnonce\" value=\"{nonce}\" /><input type=\"hidden\" name=\"_wp_http_referer\" value=\"{}\" />", esc_url(&request.request_uri)),
     ));
-    let screen = Screen { file: "media-new.php".into(), parent_file: "upload.php".into(), submenu_file: Some("media-new.php".into()), title, help: Some(new_help(ctx)), ..Default::default() };
+    let screen = Screen { file: "media-new.php".into(), parent_file: "upload.php".into(), submenu_file: Some("media-new.php".into()), title, help: Some(new_help(ctx)), content_inline: true, ..Default::default() };
     render(ctx, &screen, &h, &assets).await
 }

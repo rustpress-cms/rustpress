@@ -151,6 +151,14 @@ pub fn load(ctx: &Ctx<'_>, name: &str) -> Baked {
         let action = content[start + 8..start + end].to_owned();
         content.replace_range(start..start + end + 2, &ctx.create_nonce(&action));
     }
+    // The bake ends with the line break `admin-footer.php` starts with; the frame prints that one.
+    if content.ends_with('\n') {
+        content.pop();
+    }
+    // It starts with the line break after the screen meta, which the frame prints too.
+    if content.starts_with('\n') {
+        content.remove(0);
+    }
     Baked { help, content }
 }
 
@@ -160,7 +168,7 @@ pub async fn simple(ctx: &Ctx<'_>, file: &str, name: &str, title: &str, parent: 
     // `tools.php` closes its PHP block right before the page.
     let content_inline = file == "tools.php";
     let screen = Screen { file: file.to_owned(), parent_file: parent.to_owned(), submenu_file: Some(file.to_owned()), title: ctx.tr(title), help: Some(baked.help), content_inline, ..Default::default() };
-    render(ctx, &screen, &format!("{}\n", baked.content.trim_end_matches('\n')), &assets).await
+    render(ctx, &screen, &baked.content, &assets).await
 }
 
 /// `tools.php`.
@@ -175,7 +183,7 @@ pub async fn tools(ctx: &Ctx<'_>) -> AdminResponse {
         None => baked.content.clone(),
     };
     let screen = Screen { file: "tools.php".to_owned(), content_inline: true, parent_file: "tools.php".to_owned(), submenu_file: Some("tools.php".to_owned()), title: ctx.tr("Tools"), help: Some(baked.help), ..Default::default() };
-    render(ctx, &screen, &format!("{}\n", content.trim_end_matches('\n')), &Assets::default()).await
+    render(ctx, &screen, &content, &Assets::default()).await
 }
 
 /// `import.php`.
@@ -193,6 +201,10 @@ pub async fn about(ctx: &Ctx<'_>, file: &str) -> AdminResponse {
         _ => ("about", "About"),
     };
     let mut response = simple(ctx, file, name, title, file, Assets::default()).await;
+    // `about.php` has an empty line between the footer and the strings it keeps for translators.
+    if file == "about.php" {
+        response.body.push('\n');
+    }
     // `freedoms.php`: the directories of WordPress.org for whoever cannot manage plugins or themes here.
     if file == "freedoms.php" {
         for (screen, cap, directory) in [("plugins.php", "activate_plugins", "https://wordpress.org/plugins/"), ("themes.php", "switch_themes", "https://wordpress.org/themes/")] {

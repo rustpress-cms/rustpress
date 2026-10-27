@@ -68,6 +68,36 @@ pub async fn counts(site: &Site) -> UpdateCounts {
     counts
 }
 
+/// `wp_get_update_data()`: the counts and the title that sums them up.
+pub fn update_data(site: &Site, counts: UpdateCounts) -> serde_json::Value {
+    let mut titles = Vec::new();
+    if counts.wordpress > 0 {
+        titles.push(rustpress_core::i18n::sprintf(&site.tr("%d WordPress Update"), &[&counts.wordpress.to_string()]));
+    }
+    if counts.plugins > 0 {
+        titles.push(rustpress_core::i18n::sprintf(&site.trn("%d Plugin Update", "%d Plugin Updates", counts.plugins as i64), &[&counts.plugins.to_string()]));
+    }
+    if counts.themes > 0 {
+        titles.push(rustpress_core::i18n::sprintf(&site.trn("%d Theme Update", "%d Theme Updates", counts.themes as i64), &[&counts.themes.to_string()]));
+    }
+    if counts.translations > 0 {
+        titles.push(site.tr("Translation Updates"));
+    }
+    serde_json::json!({
+        "counts": {"plugins": counts.plugins, "themes": counts.themes, "wordpress": counts.wordpress, "translations": counts.translations, "total": counts.total()},
+        "title": rustpress_core::formatting::esc_attr(&titles.join(", ")),
+    })
+}
+
+/// The plugin files the transient `update_plugins` has an update for.
+pub async fn plugin_updates(site: &Site) -> Vec<String> {
+    let Some(plugins) = transient(site, "update_plugins").await else { return Vec::new() };
+    match field(&plugins, "response") {
+        Some(Value::Array(items)) | Some(Value::Object { props: items, .. }) => items.iter().filter_map(|(k, _)| if let Key::Str(s) = k { Some(String::from_utf8_lossy(s).into_owned()) } else { None }).collect(),
+        _ => Vec::new(),
+    }
+}
+
 /// A theme update the transient `update_themes` announces.
 #[derive(Debug, Clone, Default)]
 pub struct ThemeUpdate {

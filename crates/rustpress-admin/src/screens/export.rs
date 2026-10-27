@@ -444,5 +444,5 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         head: "<script>\n\tjQuery( function($) {\n\t\tvar form = $('#export-filters'),\n\t\t\tfilters = form.find('.export-filters');\n\t\tfilters.hide();\n\t\tform.find('input:radio').on( 'change', function() {\n\t\t\tfilters.slideUp('fast');\n\t\t\tswitch ( $(this).val() ) {\n\t\t\t\tcase 'attachment': $('#attachment-filters').slideDown(); break;\n\t\t\t\tcase 'posts': $('#post-filters').slideDown(); break;\n\t\t\t\tcase 'pages': $('#page-filters').slideDown(); break;\n\t\t\t}\n\t\t});\n\t} );\n</script>\n".into(),
         ..Default::default()
     };
-    render(ctx, &screen, &format!("{}\n", content.trim_end_matches('\n')), &assets).await
+    render(ctx, &screen, &content, &assets).await
 }

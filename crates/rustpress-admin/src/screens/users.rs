@@ -217,7 +217,14 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     let table_html = table.display(&nonce_field, &extra_top, &extra_bottom, &caption, &rows, &tr("Users list"));
 
     let title = tr("Users");
-    let mut h = String::from("\t\t<div class=\"wrap\">\n\t\t<h1 class=\"wp-heading-inline\">\n\t\t\t");
+    // The messages of the last action come before the page (`wp_get_admin_notice()`).
+    let mut h = String::from("\t\t");
+    if let Some(code) = request.get("update")
+        && let Some((message, error)) = update_message(ctx, code)
+    {
+        h.push_str(&super::notices::notice(&message, "", true, "message", &[if error { "error" } else { "updated" }], true).trim_end_matches('\n').to_owned());
+    }
+    h.push_str("\n\t\t<div class=\"wrap\">\n\t\t<h1 class=\"wp-heading-inline\">\n\t\t\t");
     h.push_str(&format!("{}\t\t</h1>\n\n", esc_html(&title)));
     if ctx.can("create_users") {
         h.push_str(&format!("\t\t<a href=\"{}\" class=\"page-title-action\">{}</a>\n", esc_url(&ctx.admin_url("user-new.php")), tr("Add User")));
@@ -226,11 +233,6 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         h.push_str(&format!("<span class=\"subtitle\">{}</span>\n", sprintf(&tr("Search results for: %s"), &[&format!("<strong>{}</strong>", esc_html(&search))])));
     }
     h.push_str("\t\t<hr class=\"wp-header-end\">\n\n");
-    if let Some(code) = request.get("update")
-        && let Some((message, error)) = update_message(ctx, code)
-    {
-        h.push_str(&format!("<div id=\"message\" class=\"{} notice is-dismissible\"><p>{message}</p></div>\n", if error { "error" } else { "updated" }));
-    }
     h.push_str(&format!("\t\t{}\n", views(&tr("Filter users list"), &links)));
     // `search_box()` carries the sort order of the list along.
     let mut sort_inputs = String::new();

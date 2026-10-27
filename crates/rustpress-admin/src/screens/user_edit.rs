@@ -804,7 +804,8 @@ pub async fn user_new(ctx: &Ctx<'_>) -> AdminResponse {
         let r = submitted("role");
         if r.is_empty() { ctx.site().options.string("default_role", "subscriber") } else { r }
     };
-    let mut h = format!("\t\t<div class=\"wrap\">\n<h1 id=\"add-new-user\">\n{}</h1>\n\n", tr("Add User"));
+    // `?>` right before the page.
+    let mut h = format!("<div class=\"wrap\">\n<h1 id=\"add-new-user\">\n{}</h1>\n\n", tr("Add User"));
     if !errors.is_empty() {
         h.push_str(&format!("<div class=\"error\"><ul>\n{}</ul></div>\n", errors.iter().map(|e| format!("\t<li>{e}</li>\n")).collect::<String>()));
     }
@@ -842,7 +843,7 @@ pub async fn user_new(ctx: &Ctx<'_>) -> AdminResponse {
         tr("Send the new user an email about their account")
     ));
     h.push_str(&format!("\t\t\t<tr class=\"form-field\">\n\t\t<th scope=\"row\"><label for=\"role\">{}</label></th>\n\t\t<td><select name=\"role\" id=\"role\">\n\t\t\t{}\t\t\t</select>\n\t\t</td>\n\t</tr>\n", tr("Role"), role_options(&names, ctx, &default_role)));
-    h.push_str(&format!("\t\t</table>\n\n\t\n\t<p class=\"submit\"><input type=\"submit\" name=\"createuser\" id=\"createusersub\" class=\"button button-primary\" value=\"{}\"  /></p>\n</form>\n</div>\n\n", esc_attr(&tr("Add User"))));
-    let screen = Screen { file: "user-new.php".into(), parent_file: "users.php".into(), submenu_file: Some("user-new.php".into()), title: tr("Add User"), help: Some(new_help(ctx)), ..Default::default() };
+    h.push_str(&format!("\t\t</table>\n\n\t\n\t<p class=\"submit\"><input type=\"submit\" name=\"createuser\" id=\"createusersub\" class=\"button button-primary\" value=\"{}\"  /></p>\n</form>\n</div>\n", esc_attr(&tr("Add User"))));
+    let screen = Screen { file: "user-new.php".into(), parent_file: "users.php".into(), submenu_file: Some("user-new.php".into()), title: tr("Add User"), help: Some(new_help(ctx)), content_inline: true, ..Default::default() };
     render(ctx, &screen, &h, &Assets { scripts: vec!["wp-ajax-response".into(), "user-profile".into()], ..Default::default() }).await
 }

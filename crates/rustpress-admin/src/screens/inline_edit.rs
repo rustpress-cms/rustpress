@@ -385,5 +385,6 @@ pub async fn inline_edit(ctx: &Ctx<'_>, info: &TypeInfo, first: Option<&Post>, c
         render(&body_nodes, &[&scope], &mut html);
     }
     html.push_str(foot);
-    format!("\t\t{html}\n\t\t\n")
+    // Starts with the empty line after `?>`, ends with the indentation of the closing `<?php`.
+    format!("\n\t\t{html}\t\t")
 }

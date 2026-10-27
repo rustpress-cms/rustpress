@@ -495,5 +495,25 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     let tail = &baked.content[tail_at..];
     let content = format!("{heading}{views_html}\n{search_form}{table}\n{tail}");
     let screen = Screen { file: "plugins.php".into(), parent_file: "plugins.php".into(), submenu_file: Some("plugins.php".into()), title: tr("Plugins"), help: Some(baked.help), options: Some(screen_options), ..Default::default() };
-    render(ctx, &screen, &content, &Assets { scripts: vec!["updates".into(), "plugin-install".into()], styles: vec!["thickbox".into()], ..Default::default() }).await
+    // `_wpUpdatesItemCounts`: the plugin files of every view and the update counts.
+    let upgrades = crate::updates::plugin_updates(site).await;
+    let files = |filter: &dyn Fn(&PluginInfo) -> bool| serde_json::Value::from(installed.iter().filter(|p| filter(p)).map(|p| p.file.clone()).collect::<Vec<_>>());
+    let item_counts = serde_json::json!({
+        "plugins": {
+            "all": files(&|_| true),
+            "search": if searching { files(&|p| [&p.name, &p.description, &p.author].iter().any(|f| f.to_lowercase().contains(&search))) } else { serde_json::json!([]) },
+            "active": files(&|p| is_active(p)),
+            "inactive": files(&|p| !is_active(p)),
+            "recently_activated": [],
+            "upgrade": files(&|p| upgrades.contains(&p.file)),
+            "mustuse": mu.iter().map(|p| p.file.clone()).collect::<Vec<_>>(),
+            "dropins": [],
+            "paused": [],
+            "auto-update-enabled": files(&|p| auto.contains(&p.file)),
+            "auto-update-disabled": files(&|p| !auto.contains(&p.file)),
+        },
+        "totals": crate::updates::update_data(site, crate::updates::counts(site).await),
+    });
+    let assets = Assets { scripts: vec!["updates".into(), "plugin-install".into()], styles: vec!["thickbox".into()], localize: vec![("updates".into(), "_wpUpdatesItemCounts".into(), item_counts)], ..Default::default() };
+    render(ctx, &screen, &content, &assets).await
 }

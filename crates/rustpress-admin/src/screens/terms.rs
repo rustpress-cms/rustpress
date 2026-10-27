@@ -647,14 +647,17 @@ pub async fn edit_page(ctx: &Ctx<'_>) -> AdminResponse {
         let url = ctx.admin_url(&format!("edit-tags.php?action=delete&taxonomy={}&tag_ID={}&_wpnonce={}", info.name, term.term_id, ctx.create_nonce(&format!("delete-tag_{}", term.term_id))));
         h.push_str(&format!("\t\t<span id=\"delete-link\">\n\t\t\t<a class=\"delete\" href=\"{}\">{}</a>\n\t\t</span>\n\t", esc_url(&url), tr("Delete")));
     }
-    h.push_str("\n</div>\n\n</form>\n</div>\n\n<script>\ntry{document.forms.edittag.name.focus();}catch(e){}\n</script>\n\t\n");
+    h.push_str("\n</div>\n\n</form>\n</div>\n\n");
+    if !super::common::wp_is_mobile(ctx) {
+        h.push_str("<script>\ntry{document.forms.edittag.name.focus();}catch(e){}\n</script>\n\t");
+    }
     let title = info.labels.edit_item.clone();
     let mut screen = screen_for(&info, title, Some(Help::default()), "term.php");
     if let Ok(link) = site.term_link(&term).await {
         screen.view_item = Some((info.labels.view_item.clone(), link));
     }
     // The empty help of the screen ends without a line break.
-    render(ctx, &screen, &format!("\n{h}"), &Assets::default()).await
+    render(ctx, &screen, &format!("\n{h}"), &Assets { early_scripts: vec!["admin-tags".into()], ..Default::default() }).await
 }
 
 /// `edit-tags.php?action=editedtag`: saves the edit form of `term.php`.

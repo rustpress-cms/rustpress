@@ -709,7 +709,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         }
         let text = info.labels.search_items.clone();
         format!(
-            "{hidden}\n<p class=\"search-box\">\n\t<label class=\"screen-reader-text\" for=\"post-search-input\">{text}:</label>\n\t<input type=\"search\" id=\"post-search-input\" name=\"s\" value=\"{}\" />\n\t\t{}</p>\n\t\t\n",
+            "{hidden}<p class=\"search-box\">\n\t<label class=\"screen-reader-text\" for=\"post-search-input\">{text}:</label>\n\t<input type=\"search\" id=\"post-search-input\" name=\"s\" value=\"{}\" />\n\t\t{}</p>\n\t\t",
             esc_attr(&search.clone().unwrap_or_default()),
             submit_button(&text, "compact", "", "search-submit")
         )
@@ -718,21 +718,23 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     };
     let filter_heading = info.labels.filter_items_list.clone();
     let mut hidden_fields = format!(
-        "<input type=\"hidden\" name=\"post_status\" class=\"post_status_page\" value=\"{}\" />\n<input type=\"hidden\" name=\"post_type\" class=\"post_type_page\" value=\"{}\" />\n",
+        "<input type=\"hidden\" name=\"post_status\" class=\"post_status_page\" value=\"{}\" />\n<input type=\"hidden\" name=\"post_type\" class=\"post_type_page\" value=\"{}\" />\n\n",
         esc_attr(&status_param),
         esc_attr(&info.name)
     );
     if let Some(a) = request.request("author").filter(|a| !a.is_empty() && *a != "0") {
-        hidden_fields.push_str(&format!("\n<input type=\"hidden\" name=\"author\" value=\"{}\" />\n", esc_attr(a)));
+        hidden_fields.push_str(&format!("<input type=\"hidden\" name=\"author\" value=\"{}\" />\n", esc_attr(a)));
     }
+    hidden_fields.push('\n');
     if request.request("show_sticky").is_some_and(|v| !v.is_empty() && v != "0") {
-        hidden_fields.push_str("\n<input type=\"hidden\" name=\"show_sticky\" value=\"1\" />\n");
+        hidden_fields.push_str("<input type=\"hidden\" name=\"show_sticky\" value=\"1\" />\n");
     }
+    hidden_fields.push('\n');
     let notice = result_notice(ctx, &info);
     // `if ( $wp_list_table->has_items() )`: an empty list has no Quick Edit.
     let inline = if posts.is_empty() { String::new() } else { super::inline_edit::inline_edit(ctx, &info, posts.first(), columns.iter().filter(|c| !c.hidden).count(), &taxonomies, &mode).await };
     let content = format!(
-        "<div class=\"wrap\">\n{heading}{notice}\n{}\n<form id=\"posts-filter\" method=\"get\">\n\n{search_box}{hidden_fields}\n\n\n{table_html}\n</form>\n\n\n{inline}<div id=\"ajax-response\"></div>\n<div class=\"clear\"></div>\n</div>\n\n",
+        "<div class=\"wrap\">\n{heading}{notice}\n{}\n<form id=\"posts-filter\" method=\"get\">\n\n{search_box}\n{hidden_fields}{table_html}\n</form>\n\n{inline}\n<div id=\"ajax-response\"></div>\n<div class=\"clear\"></div>\n</div>\n\n",
         views(&filter_heading, &links)
     );
     // `wp_admin_bar_edit_menu()`: a post type with an archive gets "View Posts" on its list.

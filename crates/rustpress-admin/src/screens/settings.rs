@@ -89,7 +89,7 @@ pub async fn writing(ctx: &Ctx<'_>) -> AdminResponse {
         esc_html(&site.options.string("ping_sites", ""))
     ));
     h.push_str(&submit(ctx));
-    h.push_str("</form>\n</div>\n");
+    h.push_str("</form>\n</div>\n\n");
     let overview = format!("<p>{}</p><p>{}</p>", tr("You can submit content in several different ways; this screen holds the settings for all of them. The top section controls the editor within the dashboard, while the rest control external publishing methods. For more information on any of these methods, use the documentation links."), tr("You must click the Save Changes button at the bottom of the screen for new settings to take effect."));
     finish(ctx, "options-writing.php", title, h, with_tab(
             with_tab(
@@ -383,7 +383,7 @@ pub async fn discussion(ctx: &Ctx<'_>) -> AdminResponse {
         t = tr("Default Avatar")
     ));
     h.push_str(&submit(ctx));
-    h.push_str("</form>\n</div>\n");
+    h.push_str("</form>\n</div>\n\n");
     let overview = format!("<p>{}</p><p>{}</p>", tr("This screen provides many options for controlling the management and display of comments and links to your posts/pages. So many, in fact, they will not all fit here! :) Use the documentation links to get information on what each discussion setting does."), tr("You must click the Save Changes button at the bottom of the screen for new settings to take effect."));
     finish(ctx, "options-discussion.php", title, h, help(ctx, &overview, &tr("<a href=\"https://wordpress.org/documentation/article/settings-discussion-screen/\">Documentation on Discussion Settings</a>")), Assets::default()).await
 }
@@ -423,7 +423,7 @@ pub async fn media(ctx: &Ctx<'_>) -> AdminResponse {
         tr("Organize my uploads into month- and year-based folders")
     ));
     h.push_str(&submit(ctx));
-    h.push_str("\n</form>\n\n</div>\n");
+    h.push_str("\n</form>\n\n</div>\n\n");
     // The paths of the uploads only show where they were changed (`upload_url_path`, `upload_path`).
     let options = &ctx.site().options;
     let upload_path = options.string("upload_path", "");

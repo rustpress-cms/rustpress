@@ -329,8 +329,8 @@ impl Table<'_> {
 </table>
 		");
         out.push_str(&self.tablenav("bottom", nonce_field, extra_bottom));
-        out.push_str("		
-");
+        // The indentation of the closing `<?php` of `display_tablenav()`.
+        out.push_str("		");
         let _ = self.column_info_hidden("");
         out
     }
