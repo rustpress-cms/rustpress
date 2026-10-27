@@ -270,6 +270,29 @@ async fn post_settings(ctx: &Ctx<'_>, post: &Post, settings: &mut Map<String, Va
     settings.insert("enableCustomFields".into(), json!(false));
 }
 
+/// `wp_get_post_content_block_attributes()`: the attributes of the first post content block of the template the post
+/// is shown with (its own, else `page`/`single` or `singular`). Patterns and template parts are not looked into.
+async fn post_content_block_attributes(ctx: &Ctx<'_>, post: &Post) -> Option<Value> {
+    fn first_post_content(blocks: &[rustpress_blocks::parser::Block]) -> Option<&rustpress_blocks::parser::Block> {
+        blocks.iter().find_map(|block| if block.name.as_deref() == Some("core/post-content") { Some(block) } else { first_post_content(&block.inner_blocks) })
+    }
+    if post.id == 0 {
+        return None;
+    }
+    let theme = ctx.env.theme;
+    // `get_page_template_slug()`: `default` is none.
+    let own = ctx.env.db.post_meta_value(post.id, "_wp_page_template").await.ok().flatten().filter(|t| !t.is_empty() && t != "default");
+    let slug = own.unwrap_or_else(|| {
+        let wanted = if post.post_type == "page" { "page" } else { "single" };
+        if theme.template_markup(wanted).is_some() { wanted.to_owned() } else { "singular".to_owned() }
+    });
+    let markup = theme.template_markup(&slug)?;
+    let blocks = rustpress_blocks::parser::parse_blocks(&markup);
+    let block = first_post_content(&blocks)?;
+    // PHP encodes an empty array of attributes as `[]`.
+    Some(if block.attrs.is_empty() { json!([]) } else { Value::Object(block.attrs.clone()) })
+}
+
 pub(super) async fn editor_settings(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo) -> Value {
     let env = ctx.env;
     let site = ctx.site();
@@ -429,9 +452,11 @@ pub(super) async fn editor_settings(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo)
             "avatarURL": rustpress_blocks::content::avatar_url(&site.options, "", 96).replace("&r=", "&f=y&r="),
         }),
     );
-    // `wp_get_post_content_block_attributes()`: the attributes of the post content block of the single template.
-    if env.block_theme && !site_mode {
-        settings.insert("postContentAttributes".into(), json!({"align": "full", "layout": {"type": "constrained"}}));
+    if env.block_theme
+        && !site_mode
+        && let Some(attributes) = post_content_block_attributes(ctx, post).await
+    {
+        settings.insert("postContentAttributes".into(), attributes);
     }
     settings.insert("canUpdateBlockBindings".into(), json!(true));
     settings.insert("canEditCSS".into(), json!((ctx.can("edit_css") || ctx.can("unfiltered_html"))));
