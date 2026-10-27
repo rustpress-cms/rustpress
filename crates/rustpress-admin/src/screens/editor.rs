@@ -7,6 +7,9 @@ use crate::registry::default_scripts;
 
 const MCE_INIT: &str = include_str!("../tinymce_init.tpl");
 
+/// The script of `editor_js()` that starts the editors.
+const INIT: &str = "\t\t<script>\n\t\t\n\t\t( function() {\n\t\t\tvar initialized = [];\n\t\t\tvar initialize  = function() {\n\t\t\t\tvar init, id, inPostbox, $wrap;\n\t\t\t\tvar readyState = document.readyState;\n\n\t\t\t\tif ( readyState !== 'complete' && readyState !== 'interactive' ) {\n\t\t\t\t\treturn;\n\t\t\t\t}\n\n\t\t\t\tfor ( id in tinyMCEPreInit.mceInit ) {\n\t\t\t\t\tif ( initialized.indexOf( id ) > -1 ) {\n\t\t\t\t\t\tcontinue;\n\t\t\t\t\t}\n\n\t\t\t\t\tinit      = tinyMCEPreInit.mceInit[id];\n\t\t\t\t\t$wrap     = tinymce.$( '#wp-' + id + '-wrap' );\n\t\t\t\t\tinPostbox = $wrap.parents( '.postbox' ).length > 0;\n\n\t\t\t\t\tif (\n\t\t\t\t\t\t! init.wp_skip_init &&\n\t\t\t\t\t\t( $wrap.hasClass( 'tmce-active' ) || ! tinyMCEPreInit.qtInit.hasOwnProperty( id ) ) &&\n\t\t\t\t\t\t( readyState === 'complete' || ( ! inPostbox && readyState === 'interactive' ) )\n\t\t\t\t\t) {\n\t\t\t\t\t\ttinymce.init( init );\n\t\t\t\t\t\tinitialized.push( id );\n\n\t\t\t\t\t\tif ( ! window.wpActiveEditor ) {\n\t\t\t\t\t\t\twindow.wpActiveEditor = id;\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t}\n\n\t\t\tif ( typeof tinymce !== 'undefined' ) {\n\t\t\t\tif ( tinymce.Env.ie && tinymce.Env.ie < 11 ) {\n\t\t\t\t\ttinymce.$( '.wp-editor-wrap ' ).removeClass( 'tmce-active' ).addClass( 'html-active' );\n\t\t\t\t} else {\n\t\t\t\t\tif ( document.readyState === 'complete' ) {\n\t\t\t\t\t\tinitialize();\n\t\t\t\t\t} else {\n\t\t\t\t\t\tdocument.addEventListener( 'readystatechange', initialize );\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t}\n\n\t\t\tif ( typeof quicktags !== 'undefined' ) {\n\t\t\t\tfor ( id in tinyMCEPreInit.qtInit ) {\n\t\t\t\t\tquicktags( tinyMCEPreInit.qtInit[id] );\n\n\t\t\t\t\tif ( ! window.wpActiveEditor ) {\n\t\t\t\t\t\twindow.wpActiveEditor = id;\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t}\n\t\t}());\n\t\t</script>\n";
+
 /// What the editor adds to a screen.
 pub struct Editor {
     /// The editor wrapper with its tools and the textarea.
@@ -139,9 +142,7 @@ pub fn classic_editor(ctx: &Ctx<'_>, content: &str, post_type: &str, post_status
         "\n\t\t<script>\n\t\ttinyMCEPreInit = {{\n\t\t\tbaseURL: \"{site_url}/wp-includes/js/tinymce\",\n\t\t\tsuffix: \".min\",\n\t\t\tdragDropUpload: true,\t\t\tmceInit: {mce_init},\n\t\t\tqtInit: {{{qt}}},\n\t\t\tref: {{plugins:\"{plugins}\",theme:\"modern\",language:\"{}\"}},\n\t\t\tload_ext: function(url,lang){{var sl=tinymce.ScriptLoader;sl.markDone(url+'/langs/'+lang+'.js');sl.markDone(url+'/langs/'+lang+'_dlg.js');}}\n\t\t}};\n\t\t</script>\n\t\t",
         if rich { site.locale().split('_').next().unwrap_or("en").to_owned() } else { String::new() }
     );
-    let init = String::from(
-        "\t\t<script>\n\t\t\n\t\t( function() {\n\t\t\tvar initialized = [];\n\t\t\tvar initialize  = function() {\n\t\t\t\tvar init, id, inPostbox, $wrap;\n\t\t\t\tvar readyState = document.readyState;\n\n\t\t\t\tif ( readyState !== 'complete' && readyState !== 'interactive' ) {\n\t\t\t\t\treturn;\n\t\t\t\t}\n\n\t\t\t\tfor ( id in tinyMCEPreInit.mceInit ) {\n\t\t\t\t\tif ( initialized.indexOf( id ) > -1 ) {\n\t\t\t\t\t\tcontinue;\n\t\t\t\t\t}\n\n\t\t\t\t\tinit      = tinyMCEPreInit.mceInit[id];\n\t\t\t\t\t$wrap     = tinymce.$( '#wp-' + id + '-wrap' );\n\t\t\t\t\tinPostbox = $wrap.parents( '.postbox' ).length > 0;\n\n\t\t\t\t\tif (\n\t\t\t\t\t\t! init.wp_skip_init &&\n\t\t\t\t\t\t( $wrap.hasClass( 'tmce-active' ) || ! tinyMCEPreInit.qtInit.hasOwnProperty( id ) ) &&\n\t\t\t\t\t\t( readyState === 'complete' || ( ! inPostbox && readyState === 'interactive' ) )\n\t\t\t\t\t) {\n\t\t\t\t\t\ttinymce.init( init );\n\t\t\t\t\t\tinitialized.push( id );\n\n\t\t\t\t\t\tif ( ! window.wpActiveEditor ) {\n\t\t\t\t\t\t\twindow.wpActiveEditor = id;\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t}\n\n\t\t\tif ( typeof tinymce !== 'undefined' ) {\n\t\t\t\tif ( tinymce.Env.ie && tinymce.Env.ie < 11 ) {\n\t\t\t\t\ttinymce.$( '.wp-editor-wrap ' ).removeClass( 'tmce-active' ).addClass( 'html-active' );\n\t\t\t\t} else {\n\t\t\t\t\tif ( document.readyState === 'complete' ) {\n\t\t\t\t\t\tinitialize();\n\t\t\t\t\t} else {\n\t\t\t\t\t\tdocument.addEventListener( 'readystatechange', initialize );\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t}\n\n\t\t\tif ( typeof quicktags !== 'undefined' ) {\n\t\t\t\tfor ( id in tinyMCEPreInit.qtInit ) {\n\t\t\t\t\tquicktags( tinyMCEPreInit.qtInit[id] );\n\n\t\t\t\t\tif ( ! window.wpActiveEditor ) {\n\t\t\t\t\t\twindow.wpActiveEditor = id;\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t}\n\t\t}());\n\t\t</script>\n",
-    );
+    let init = INIT.to_owned();
     // The quicktags have a link button: `editor_js()` prints the link dialog after the script.
     let init = format!("{init}\t\t{}", link_dialog(ctx));
     let mut scripts = vec!["quicktags".to_owned(), "editor".to_owned(), "wplink".to_owned()];
@@ -150,6 +151,17 @@ pub fn classic_editor(ctx: &Ctx<'_>, content: &str, post_type: &str, post_status
     }
     let _ = (esc_attr(""), tr(""));
     Editor { html, preinit, init, scripts, rich }
+}
+
+/// `_WP_Editors::editor_js()` for editors with quicktags only (`'tinymce' => false`): `(id, buttons)` in the order
+/// they were printed. The link button brings the link dialog.
+pub fn quicktags_editor_js(ctx: &Ctx<'_>, editors: &[(&str, &str)]) -> String {
+    let site_url = &ctx.env.loader.site_url;
+    let qt = editors.iter().map(|(id, buttons)| format!("'{id}':{{id:\"{id}\",buttons:\"{buttons}\"}}")).collect::<Vec<_>>().join(",");
+    format!(
+        "\n\t\t<script>\n\t\ttinyMCEPreInit = {{\n\t\t\tbaseURL: \"{site_url}/wp-includes/js/tinymce\",\n\t\t\tsuffix: \".min\",\n\t\t\t\t\t\tmceInit: {{}},\n\t\t\tqtInit: {{{qt}}},\n\t\t\tref: {{plugins:\"\",theme:\"modern\",language:\"\"}},\n\t\t\tload_ext: function(url,lang){{var sl=tinymce.ScriptLoader;sl.markDone(url+'/langs/'+lang+'.js');sl.markDone(url+'/langs/'+lang+'_dlg.js');}}\n\t\t}};\n\t\t</script>\n\t\t{INIT}\t\t{}",
+        link_dialog(ctx)
+    )
 }
 
 /// `_WP_Editors::print_default_editor_scripts()` of `wp_enqueue_editor()`: the settings `wp.editor.initialize()`

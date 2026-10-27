@@ -1047,7 +1047,7 @@ pub async fn plugin_editor(ctx: &Ctx<'_>) -> AdminResponse {
         (false, false) => "Browsing %s (inactive)",
     };
     h.push_str(&format!(
-        "\n<div class=\"fileedit-sub\">\n<div class=\"alignleft\">\n<h2>\n\t{}</h2>\n <span><strong>{}</strong></span>\n</div>\n<div class=\"alignright\">\n\t<form action=\"plugin-editor.php\" method=\"get\">\n\t\t<label for=\"plugin\" id=\"theme-plugin-editor-selector\">{} </label>\n\t\t<select name=\"plugin\" id=\"plugin\">\n\t\t\t",
+        "\n<div class=\"fileedit-sub\">\n<div class=\"alignleft\">\n<h2>\n\t{}</h2>\n <span><strong>{}</strong></span></div>\n<div class=\"alignright\">\n\t<form action=\"plugin-editor.php\" method=\"get\">\n\t\t<label for=\"plugin\" id=\"theme-plugin-editor-selector\">{} </label>\n\t\t<select name=\"plugin\" id=\"plugin\">\n\t\t",
         sprintf(&tr(heading), &[&format!("<strong>{}</strong>", esc_html(&plugin_name))]),
         sprintf(&tr("File: %s"), &[&esc_html(&file)]),
         tr("Select plugin to edit:")

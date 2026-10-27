@@ -227,8 +227,9 @@ pub async fn row_html(ctx: &Ctx<'_>, comment: &Comment, index: usize, current_st
     };
     let text = rustpress_blocks::content::comment_text(site, &comment.comment_content);
     let raw_text = esc_textarea(&comment.comment_content);
+    // `comment_text()` ends with its own line break.
     let inline = format!(
-        "\n\t\t<div id=\"inline-{id}\" class=\"hidden\">\n\t\t\t<textarea class=\"comment\" rows=\"1\" cols=\"1\">{raw_text}</textarea>\n\t\t\t<div class=\"author-email\">{}</div>\n\t\t\t<div class=\"author\">{}</div>\n\t\t\t<div class=\"author-url\">{}</div>\n\t\t\t<div class=\"comment_status\">{}</div>\n\t\t</div>\n\t\t\t",
+        "\t\t<div id=\"inline-{id}\" class=\"hidden\">\n\t\t\t<textarea class=\"comment\" rows=\"1\" cols=\"1\">{raw_text}</textarea>\n\t\t\t<div class=\"author-email\">{}</div>\n\t\t\t<div class=\"author\">{}</div>\n\t\t\t<div class=\"author-url\">{}</div>\n\t\t\t<div class=\"comment_status\">{}</div>\n\t\t</div>\n\t\t\t",
         esc_html(&comment.comment_author_email),
         esc_html(&comment.comment_author),
         esc_html(&comment.comment_author_url),
@@ -599,7 +600,9 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     let reply = reply_form(ctx);
     h.push_str(&reply.replace("colspan=\"5\"", &format!("colspan=\"{ncols}\"")));
     let screen = Screen { file: "edit-comments.php".into(), parent_file: "edit-comments.php".into(), submenu_file: Some("edit-comments.php".into()), title, help: Some(help(ctx)), options: Some(screen_options), view_item, ..Default::default() };
-    render(ctx, &screen, &h, &Assets { scripts: vec!["admin-comments".into(), "wp-lists".into()], late_scripts: vec!["wplink".into(), "jquery-ui-autocomplete".into()], ..Default::default() }).await
+    // The reply form's editor (`editor_js()`).
+    let footer = super::editor::quicktags_editor_js(ctx, &[("replycontent", "strong,em,link,block,del,ins,img,ul,ol,li,code,close")]);
+    render(ctx, &screen, &h, &Assets { scripts: vec!["admin-comments".into(), "wp-lists".into()], late_scripts: vec!["wplink".into(), "jquery-ui-autocomplete".into()], footer, ..Default::default() }).await
 }
 
 /// `wp_comment_reply()`: the inline editor and reply form.
@@ -1013,9 +1016,9 @@ async fn edit_form(ctx: &Ctx<'_>, comment: &Comment) -> AdminResponse {
         trash = tr("Move to Trash"),
         update = tr("Update")
     ));
-    h.push_str(&format!("<div id=\"postbox-container-2\" class=\"postbox-container\">\n<div id=\"normal-sortables\" class=\"meta-box-sortables\"></div></div>\n\n<input type=\"hidden\" name=\"c\" value=\"{id}\" />\n<input type=\"hidden\" name=\"p\" value=\"{}\" />\n<input name=\"referredby\" type=\"hidden\" id=\"referredby\" value=\"\" />\n<input type=\"hidden\" name=\"_wp_original_http_referer\" value=\"\" /><input type=\"hidden\" name=\"noredir\" value=\"1\" />\n\n</div><!-- /post-body -->\n</div>\n</div>\n</form>\n\n<script>\ntry{{document.post.name.focus();}}catch(e){{}}\n</script>\n\t\n", comment.comment_post_id));
+    h.push_str(&format!("<div id=\"postbox-container-2\" class=\"postbox-container\">\n<div id=\"normal-sortables\" class=\"meta-box-sortables\"></div></div>\n\n<input type=\"hidden\" name=\"c\" value=\"{id}\" />\n<input type=\"hidden\" name=\"p\" value=\"{}\" />\n<input name=\"referredby\" type=\"hidden\" id=\"referredby\" value=\"\" />\n<input type=\"hidden\" name=\"_wp_original_http_referer\" value=\"\" /><input type=\"hidden\" name=\"noredir\" value=\"1\" />\n\n</div><!-- /post-body -->\n</div>\n</div>\n</form>\n\n<script>\ntry{{document.post.name.focus();}}catch(e){{}}\n</script>\n\t", comment.comment_post_id));
     // The form wraps everything from the nonce on.
     let h = format!("<form name=\"post\" action=\"comment.php\" method=\"post\" id=\"post\">\n{h}");
     let screen = Screen { file: "comment.php".into(), parent_file: "edit-comments.php".into(), submenu_file: Some("edit-comments.php".into()), title: tr("Edit Comment"), help: Some(edit_help(ctx)), content_inline: true, ..Default::default() };
-    render(ctx, &screen, &h, &Assets { scripts: vec!["comment".into()], late_scripts: vec!["quicktags".into(), "wplink".into(), "jquery-ui-autocomplete".into()], footer: "<script>window.quicktags && quicktags({id: 'content'});</script>\n".into(), ..Default::default() }).await
+    render(ctx, &screen, &h, &Assets { scripts: vec!["comment".into()], late_scripts: vec!["quicktags".into(), "wplink".into(), "jquery-ui-autocomplete".into()], footer: super::editor::quicktags_editor_js(ctx, &[("content", "strong,em,link,block,del,ins,img,ul,ol,li,code,close")]), ..Default::default() }).await
 }

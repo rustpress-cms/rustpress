@@ -197,7 +197,8 @@ fn is_serialized(data: &str) -> bool {
 async fn all_settings(ctx: &Ctx<'_>) -> AdminResponse {
     let tr = |s: &str| ctx.tr(s);
     let mut h = format!(
-        "<div class=\"wrap\">\n\t<h1>{}</h1>\n\t<div class=\"notice notice-warning\">\n<p>\n<strong>{}</strong> {}</p>\n</div>\t<form name=\"form\" action=\"options.php\" method=\"post\" id=\"all-options\">\n\t\t{}\t\t<input type=\"hidden\" name=\"action\" value=\"update\" />\n\t\t<input type=\"hidden\" name=\"option_page\" value=\"options\" />\n\t\t<table class=\"form-table\" role=\"presentation\">\n",
+        // The empty help of the screen ends without a line break.
+        "\n<div class=\"wrap\">\n\t<h1>{}</h1>\n\n\t<div class=\"notice notice-warning\"><p><strong>{}</strong> {}</p></div>\t<form name=\"form\" action=\"options.php\" method=\"post\" id=\"all-options\">\n\t\t{}\t\t<input type=\"hidden\" name=\"action\" value=\"update\" />\n\t\t<input type=\"hidden\" name=\"option_page\" value=\"options\" />\n\t\t<table class=\"form-table\" role=\"presentation\">\n",
         esc_html(&tr("All Settings")),
         tr("Warning:"),
         tr("This page allows direct access to your site settings. You can break things here. Please be cautious!"),
@@ -224,7 +225,7 @@ async fn all_settings(ctx: &Ctx<'_>) -> AdminResponse {
             (raw.clone(), false, "all-options")
         };
         let attr = rustpress_core::formatting::esc_attr(&name);
-        h.push_str(&format!("<tr>\n\t<th scope=\"row\">\n<label for=\"{attr}\">{}</label>\n</th>\n<td>\n", esc_html(&name)));
+        h.push_str(&format!("<tr>\n\t<th scope=\"row\"><label for=\"{attr}\">{}</label></th>\n<td>\n", esc_html(&name)));
         if value.contains('\n') {
             h.push_str(&format!("\t\t\t<textarea class=\"{class}\" name=\"{attr}\" id=\"{attr}\" cols=\"30\" rows=\"5\">{}</textarea>\n", super::post_edit::esc_textarea_pub(&value)));
         } else {
@@ -237,11 +238,11 @@ async fn all_settings(ctx: &Ctx<'_>) -> AdminResponse {
         h.push_str("\t</td>\n</tr>\n");
     }
     h.push_str(&format!(
-        "</table>\n<input type=\"hidden\" name=\"page_options\" value=\"{}\" />\n<p class=\"submit\">\n{}\n</p>\n</form>\n</div>\n\n",
+        "</table>\n\n<input type=\"hidden\" name=\"page_options\" value=\"{}\" />\n\n<p class=\"submit\">{}</p>\n</form>\n</div>\n\n",
         rustpress_core::formatting::esc_attr(&to_update.join(",")),
         crate::list_table::submit_button(&tr("Save Changes"), "primary", "Update", "Update").trim_end_matches('\n')
     ));
-    let screen = Screen { file: "options.php".into(), parent_file: "options-general.php".into(), submenu_file: None, title: tr("Settings"), help: Some(crate::chrome::Help { tabs: Vec::new(), sidebar: String::new() }), flush_content: true, ..Default::default() };
+    let screen = Screen { file: "options.php".into(), parent_file: "options-general.php".into(), submenu_file: None, title: tr("Settings"), help: Some(crate::chrome::Help { tabs: Vec::new(), sidebar: String::new() }), ..Default::default() };
     render(ctx, &screen, &h, &Assets::default()).await
 }
 

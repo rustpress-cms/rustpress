@@ -160,13 +160,17 @@ pub async fn upload_php(ctx: &Ctx<'_>) -> AdminResponse {
         let mut assets = Assets::default();
         super::media_ui::enqueue(ctx, &mut assets, 0).await;
         assets.scripts.extend(["media-grid".to_owned(), "media".to_owned()]);
-        assets.localize.push(("media-grid".into(), "_wpMediaGridSettings".into(), serde_json::json!({"adminUrl": "/wp-admin/", "queryVars": request.query.iter().filter(|(k, _)| ["s", "m", "attachment-filter", "item", "post__in", "post_mime_type", "orderby", "order"].contains(&k.as_str())).map(|(k, v)| (k.clone(), serde_json::Value::String(v.clone()))).collect::<serde_json::Map<_, _>>()})));
-        let mut h = format!("\t\t\t<div class=\"wrap\" id=\"wp-media-grid\" data-search=\"{}\">\n\t\t<h1 class=\"wp-heading-inline\">{}</h1>\n\n", esc_attr(request.get("s").unwrap_or_default()), esc_html(&title));
+        // `'queryVars' => (object) $q`: an object even when it is empty.
+        let query_vars = request.query.iter().filter(|(k, _)| ["s", "m", "attachment-filter", "item", "post__in", "post_mime_type", "orderby", "order"].contains(&k.as_str())).map(|(k, v)| (k.clone(), serde_json::Value::String(v.clone()))).collect::<serde_json::Map<_, _>>();
+        let query_vars = if query_vars.is_empty() { rustpress_blocks::php_json::empty_object() } else { serde_json::Value::Object(query_vars) };
+        assets.localize.push(("media-grid".into(), "_wpMediaGridSettings".into(), serde_json::json!({"adminUrl": "/wp-admin/", "queryVars": query_vars})));
+        // `?>` right before the page.
+        let mut h = format!("\t<div class=\"wrap\" id=\"wp-media-grid\" data-search=\"{}\">\n\t\t<h1 class=\"wp-heading-inline\">{}</h1>\n\n", esc_attr(request.get("s").unwrap_or_default()), esc_html(&title));
         if ctx.can("upload_files") {
             h.push_str(&format!("\t\t\t\t\t<a href=\"{}\" class=\"page-title-action aria-button-if-js\">{}</a>\n\t\t\t", esc_url(&ctx.admin_url("media-new.php")), tr("Add Media File")));
         }
         h.push_str(&format!("\n\t\t<hr class=\"wp-header-end\">\n\n\t\t<div class=\"notice error hide-if-js\"><p>{}</p></div>\t</div>\n\t", sprintf(&tr("The grid view for the Media Library requires JavaScript. <a href=\"%s\">Switch to the list view</a>."), &["upload.php?mode=list"])));
-        let screen = Screen { file: "upload.php".into(), parent_file: "upload.php".into(), submenu_file: Some("upload.php".into()), title, help: Some(help(ctx)), ..Default::default() };
+        let screen = Screen { file: "upload.php".into(), parent_file: "upload.php".into(), submenu_file: Some("upload.php".into()), title, help: Some(help(ctx)), content_inline: true, ..Default::default() };
         return render(ctx, &screen, &h, &assets).await;
     }
     list_mode(ctx, title).await

@@ -389,8 +389,13 @@ async fn recent_comments(ctx: &Ctx<'_>) -> String {
         list.push_str("</ul>");
         out.push_str(&list);
     }
-    out.push_str(&super::comments::reply_form_html(ctx, true));
-    out.push_str("\t</div>");
+    // `wp_comment_trashnotice()` ends with the indentation of its closing `<?php`, then the widget closes.
+    let form = super::comments::reply_form_html(ctx, true);
+    match form.strip_suffix("\n\n") {
+        Some(form) => out.push_str(&format!("{form}\n\t")),
+        None => out.push_str(&form),
+    }
+    out.push_str("</div>");
     out
 }
 
@@ -687,12 +692,14 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         columns.push_str(&format!("\t<div id=\"postbox-container-{}\" class=\"postbox-container\">\n\t<div id=\"{column}-sortables\" class=\"meta-box-sortables\">{boxes}</div>\t</div>\n", index + 1));
     }
 
-    let welcome = if ctx.can("edit_theme_options") { welcome_panel(ctx).await } else { String::new() };
+    // The empty line after the panel belongs to it (`<?php endif; ?>` swallows the line break before it).
+    let welcome = if ctx.can("edit_theme_options") { format!("{}\n", welcome_panel(ctx).await) } else { String::new() };
     let content = format!(
-        "<div class=\"wrap\">\n\t<h1>{title}</h1>\n\n\t\n\n{welcome}\n\n\t<div id=\"dashboard-widgets-wrap\">\n\t<div id=\"dashboard-widgets\" class=\"metabox-holder\">\n{columns}</div>\n\n\t<input type=\"hidden\" id=\"closedpostboxesnonce\" name=\"closedpostboxesnonce\" value=\"{}\" /><input type=\"hidden\" id=\"meta-box-order-nonce\" name=\"meta-box-order-nonce\" value=\"{}\" />\t</div><!-- dashboard-widgets-wrap -->\n\n</div><!-- wrap -->\n\n\n{}\t",
+        "<div class=\"wrap\">\n\t<h1>{title}</h1>\n\n\t\n\n{welcome}\t<div id=\"dashboard-widgets-wrap\">\n\t<div id=\"dashboard-widgets\" class=\"metabox-holder\">\n{columns}</div>\n\n\t<input type=\"hidden\" id=\"closedpostboxesnonce\" name=\"closedpostboxesnonce\" value=\"{}\" /><input type=\"hidden\" id=\"meta-box-order-nonce\" name=\"meta-box-order-nonce\" value=\"{}\" />\t</div><!-- dashboard-widgets-wrap -->\n\n</div><!-- wrap -->\n\n\n{}",
         ctx.create_nonce("closedpostboxes"),
         ctx.create_nonce("meta-box-order"),
-        events_templates(ctx)
+        // The templates end with the indentation of their closing `<?php`.
+        events_templates(ctx).trim_end_matches('\n')
     );
     // Screen Options: the boxes in the order they were added, and the welcome panel.
     let welcome_option: i64 = ctx.env.db.user_meta(ctx.user.id, "show_welcome_panel").await.ok().flatten().and_then(|v| v.trim().parse().ok()).unwrap_or(0);
@@ -731,7 +738,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     if ctx.can("upload_files") {
         scripts.push("media-upload".to_owned());
     }
-    let assets = Assets { scripts, styles, localize, late_scripts: vec!["wplink".into(), "jquery-ui-autocomplete".into()], pre_footer: format!("{list_args}{list_args}"), ..Default::default() };
+    let assets = Assets { scripts, styles, localize, late_scripts: vec!["wplink".into(), "jquery-ui-autocomplete".into()], pre_footer: format!("{list_args}{list_args}"), footer: super::editor::quicktags_editor_js(ctx, &[("replycontent", "strong,em,link,block,del,ins,img,ul,ol,li,code,close")]), ..Default::default() };
     render(ctx, &screen, &content, &assets).await
 }
 
