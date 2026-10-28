@@ -1,95 +1,158 @@
+<div align="center">
+
 # RustPress
 
-Ein WordPress-Ersatz in Rust: Bestehende WordPress-Seiten laufen **ohne PHP** und **ohne Konvertierung der Datenbank**. RustPress liest die vorhandene MySQL/MariaDB (`wp_*`-Schema, nur lesend) und das vorhandene `wp-content/` und liefert dieselben Antworten wie WordPress.
+**WordPress, without PHP.** A drop-in replacement for WordPress written in Rust: point it at an existing WordPress database and `wp-content/`, and it serves the same pages.
 
-Unterstützt werden **Block-Themes** (`theme.json` + HTML-Templates) und als Rust-Nachbau das klassische Theme **Twenty Seventeen**. Andere klassische PHP-Themes und PHP-Plugins laufen bewusst nicht; wichtige Plugins sollen später als native Module nachgebaut werden. Der aktuelle Stand und die Planung stehen in [PLAN.md](PLAN.md).
+**English** · [Deutsch](README.de.md)
 
-## Was funktioniert (Meilenstein 1, lesend)
+[![CI](https://github.com/rustpress-cms/rustpress/actions/workflows/ci.yml/badge.svg)](https://github.com/rustpress-cms/rustpress/actions/workflows/ci.yml)
+[![License: GPL v2+](https://img.shields.io/badge/license-GPL--2.0--or--later-blue.svg)](LICENSE)
+[![Rust](https://img.shields.io/badge/rust-stable-orange.svg?logo=rust)](https://www.rust-lang.org)
+[![Edition 2024](https://img.shields.io/badge/edition-2024-orange.svg?logo=rust)](https://doc.rust-lang.org/edition-guide/rust-2024/)
+[![WordPress](https://img.shields.io/badge/WordPress-7.1.3_compatible-21759b.svg?logo=wordpress)](compat/reports)
+[![PHP](https://img.shields.io/badge/PHP-not_required-777bb4.svg?logo=php&logoColor=white)](#how-it-works)
+[![Database](https://img.shields.io/badge/MySQL%20%7C%20MariaDB-supported-4479a1.svg?logo=mariadb&logoColor=white)](#getting-started)
+[![Docker](https://img.shields.io/badge/docker-ready-2496ed.svg?logo=docker&logoColor=white)](#docker)
+[![Shared hosting](https://img.shields.io/badge/shared_hosting-CGI-success.svg)](#shared-hosting-cgi)
+[![Status](https://img.shields.io/badge/status-experimental-yellow.svg)](#status)
 
-- Seiten, Beiträge, Archive, Suche, 404 mit dem Block-Theme der Seite, verglichen mit WordPress Body für Body (inklusive Bildern: Beitragsbild, Logo, Bild-Blöcke, Galerien, `srcset` und Lazy-Loading)
-- Canonical-Redirects (`/beitrag` → `/beitrag/`, `?p=5` → Permalink, …)
-- Feeds (RSS2, Atom, Kommentar-Feeds), Sitemaps, `robots.txt`
-- REST-API `wp/v2` zum Lesen (Beiträge, Seiten, Medien, Kategorien, Schlagwörter, Benutzer, Kommentare)
-- Statische Dateien aus `wp-content/` und `wp-includes/`
-- Alle Sprachen, für die WordPress ein Sprachpaket hat (siehe [Sprachen](#sprachen))
+[![Last commit](https://img.shields.io/github/last-commit/rustpress-cms/rustpress.svg)](https://github.com/rustpress-cms/rustpress/commits/main)
+[![Commit activity](https://img.shields.io/github/commit-activity/m/rustpress-cms/rustpress.svg)](https://github.com/rustpress-cms/rustpress/graphs/commit-activity)
+[![Code size](https://img.shields.io/github/languages/code-size/rustpress-cms/rustpress.svg)](https://github.com/rustpress-cms/rustpress)
+[![Top language](https://img.shields.io/github/languages/top/rustpress-cms/rustpress.svg)](https://github.com/rustpress-cms/rustpress)
+[![Issues](https://img.shields.io/github/issues/rustpress-cms/rustpress.svg)](https://github.com/rustpress-cms/rustpress/issues)
+[![Pull requests](https://img.shields.io/github/issues-pr/rustpress-cms/rustpress.svg)](https://github.com/rustpress-cms/rustpress/pulls)
+[![Stars](https://img.shields.io/github/stars/rustpress-cms/rustpress.svg?style=social)](https://github.com/rustpress-cms/rustpress/stargazers)
+[![Dependabot](https://img.shields.io/badge/dependabot-enabled-025e8c.svg?logo=dependabot)](.github/dependabot.yml)
+[![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](#contributing)
 
-## Starten
+</div>
+
+---
+
+## How it works
+
+RustPress reads the existing MySQL/MariaDB database (the usual `wp_*` schema, no conversion) and the existing `wp-content/` folder, and answers requests the way WordPress would: same HTML, same feeds, same REST responses, same redirects. There is no PHP interpreter. Themes and core behaviour are ported to Rust and checked against a real WordPress, page by page and byte by byte.
+
+- **Block themes** (`theme.json` + HTML templates) run as they are. The classic theme **Twenty Seventeen** is rebuilt natively in Rust.
+- Other classic PHP themes and PHP plugins do **not** run. Important plugins are meant to be rebuilt as native modules later.
+- Theme assets, uploads, translations and `block.json` files are read from the WordPress files on disk, so a WordPress installation (or the files the installer downloads) is still needed.
+
+## Features
+
+- Pages, posts, archives, search and 404 with the site's block theme, including images (`srcset`, lazy loading, galleries)
+- Canonical redirects, permalinks of every kind, feeds (RSS2, Atom, comment feeds), sitemaps, `robots.txt`
+- REST API `wp/v2` (posts, pages, media, categories, tags, users, comments), read and write
+- Administration (`wp-admin`): sign-in, posts and pages with the block editor, media, comments, users, settings, privacy tools, export
+- A WordPress-style installer (`setup-config.php`, `install.php`) that can download and verify the WordPress files itself
+- Shared hosting as a CGI program: one statically linked binary, configured from `wp-config.php`
+- E-mail over SMTP (password reset, new users, comment notifications, privacy requests)
+- Every language that WordPress has a language pack for, including right-to-left languages
+
+## Compatibility
+
+`rustpress-compat` crawls a reference WordPress 7.1.3 and RustPress side by side and compares status, headers and bodies. Latest runs ([reports](compat/reports)):
+
+| Theme | URLs compared | identical | known, documented differences | unexpected |
+|---|---:|---:|---:|---:|
+| Twenty Twenty-Five | 918 | 897 | 21 | **0** |
+| Twenty Twenty-Four | 913 | 894 | 19 | **0** |
+| Twenty Twenty-Three | 910 | 894 | 16 | **0** |
+| Twenty Twenty-Two | 913 | 894 | 19 | **0** |
+
+Accepted differences are listed with their reason in [`compat/known.toml`](compat/known.toml).
+
+## Getting started
 
 ```sh
 cargo run --release -p rustpress-server
 ```
 
-Konfiguration über eine TOML-Datei (`RUSTPRESS_CONFIG=pfad.toml`) und/oder Umgebungsvariablen, die Variablen gewinnen:
+Configuration comes from a TOML file (`RUSTPRESS_CONFIG=path.toml`) and/or environment variables; the variables win:
 
 ```toml
-database_url = "mysql://wordpress:geheim@127.0.0.1:3306/wordpress"
+database_url = "mysql://wordpress:secret@127.0.0.1:3306/wordpress"
 table_prefix = "wp_"
-wp_root      = "/var/www/html"   # enthält wp-content/ und wp-includes/
+wp_root      = "/var/www/html"   # contains wp-content/ and wp-includes/
 listen       = "127.0.0.1:3000"
-reload_secs  = 60                # Optionen und Theme werden so oft neu gelesen
+reload_secs  = 60                # options and theme are re-read this often
+allow_writes = false             # true: sign-in, comments and wp-admin
 ```
 
-`RUSTPRESS_DATABASE_URL`, `RUSTPRESS_TABLE_PREFIX`, `RUSTPRESS_WP_ROOT`, `RUSTPRESS_LISTEN`, `RUSTPRESS_RELOAD_SECS` überschreiben die Datei. Die Datenbankverbindung läuft in einer `READ ONLY`-Session; Schreibzugriffe (Kommentare, Login, Admin) gibt es nicht. TLS übernimmt ein vorgeschalteter Proxy.
+| Variable | Meaning |
+|---|---|
+| `RUSTPRESS_DATABASE_URL` | MySQL/MariaDB connection |
+| `RUSTPRESS_TABLE_PREFIX` | table prefix (default `wp_`) |
+| `RUSTPRESS_WP_ROOT` | WordPress folder |
+| `RUSTPRESS_WP_CONFIG` | `wp-config.php` with the keys and salts (default: the one in `wp_root`) |
+| `RUSTPRESS_LISTEN` | address to listen on |
+| `RUSTPRESS_ALLOW_WRITES` | `1` enables writing (sign-in, admin, comments) |
+| `RUSTPRESS_TRUSTED_PROXIES` | reverse proxies whose `X-Forwarded-*` headers are trusted |
+| `RUSTPRESS_SMTP_URL`, `RUSTPRESS_MAIL_FROM` | outgoing mail |
 
-## Mit Docker betreiben
+Without `allow_writes` the database session is `READ ONLY` and the administration area stays closed. TLS is left to a reverse proxy.
 
-Das `Dockerfile` baut ein kleines Alpine-Image mit einem statisch gelinkten `rustpress`; `compose.yaml` startet es zusammen mit MariaDB. Für eine bestehende WordPress-Seite zeigt `WORDPRESS_DIR` in `.env` auf den WordPress-Ordner (mit `wp-config.php`) und der Datenbank-Dump wird in den `db`-Container importiert. Eine neue Seite richtet WP-CLI ein, weil RustPress noch keinen eigenen Installer hat:
+## Docker
+
+The `Dockerfile` builds a small Alpine image with a statically linked binary; `compose.yaml` runs it together with MariaDB.
 
 ```sh
-cp .env.example .env          # Passwort und Adresse eintragen
-docker compose up -d          # legt ./wordpress mit den WordPress-Dateien an
-docker compose run --rm wp config create --dbname=wordpress --dbuser=wordpress --dbpass=<DB_PASSWORD> --dbhost=db
-docker compose run --rm wp core install --url=<SITE_URL> --title="Meine Seite" --admin_user=admin --admin_email=ich@example.com --prompt=admin_password
-docker compose restart rustpress
+cp .env.example .env     # set the password and address
+docker compose up -d     # creates ./wordpress with the WordPress files
 ```
 
-RustPress lauscht auf Port 3000; TLS übernimmt ein vorgeschalteter Proxy.
+Then open the site in the browser and follow the installer, or point `WORDPRESS_DIR` in `.env` at an existing WordPress folder and import its database dump.
 
-## Sprachen
+## Shared hosting (CGI)
 
-RustPress kennt keine Sprache im Code. Texte, Monats- und Wochentagsnamen, Anführungszeichen, Zahlenformat, Textrichtung, Pluralregeln und Wortzählung kommen aus denselben Sprachpaketen wie bei WordPress (`wp-content/languages/<locale>.mo`, `languages/themes/<theme>-<locale>.mo`). Eine weitere Sprache braucht deshalb nur ihr Sprachpaket (zum Beispiel mit `wp language core install <locale>` oder aus translate.wordpress.org); die Sprache der Seite ist die Option `WPLANG`. Rechts-nach-links-Sprachen erhalten `dir="rtl"`, die Body-Klasse `rtl` und die `-rtl`-Stylesheets. Das Konzept steht in [PLAN.md](PLAN.md#lokalisierungskonzept).
+On hosts that only offer Apache with CGI, RustPress runs as a single static binary in `cgi-bin/`. It detects CGI mode by itself (`GATEWAY_INTERFACE`), reads the database settings from `wp-config.php` and takes over the site through `.htaccess`. On an empty webspace the installer downloads WordPress 7.1.3 from wordpress.org (checksum-verified) for the theme files and translations. The binary is built by CI and attached to every [release](https://github.com/rustpress-cms/rustpress/releases).
 
-## Entwickeln und testen
+## Development
 
-Die Tests vergleichen RustPress mit einem echten WordPress. Dafür gibt es einen Referenz-Stack (rootless Podman in WSL2; MariaDB auf `:3306`, WordPress 7 mit Twenty Twenty-Five auf `:8080`):
+The tests compare RustPress with a real WordPress. A reference stack (MariaDB on `:3306`, WordPress 7 on `:8080`) is started with:
 
 ```sh
-dev/up.sh     # Container starten
-dev/seed.sh   # Testinhalte anlegen
+dev/up.sh       # start containers
+dev/seed.sh     # create test content
 cargo test --workspace
 ```
 
-Ohne den Stack überspringen sich die Golden-Tests. Unter Windows muss Cargo in PowerShell laufen (Git-Bash's `link.exe` verdeckt den MSVC-Linker).
-
-### Kompatibilitätslauf
-
-`rustpress-compat` vergleicht RustPress mit dem Referenz-WordPress über viele URLs auf einmal (feste Proben, alles, was die Sitemaps und die REST-API der Referenz auflisten, die Dateien der Startseite) und schreibt einen Markdown-Bericht. Verglichen werden Status, Header und je nach Art Body (HTML-Dokumente: Titel, Body-Klassen, jedes Element des Heads, Body, Footer, zuletzt Byte für Byte), Feeds, Sitemaps und REST-Antworten.
+Without the stack the golden tests skip themselves, which is what CI does.
 
 ```sh
 cargo run -p rustpress-compat -- --report compat/reports/twentytwentyfive.md
-dev/compat.ps1                      # TT25, TT24 und TT23 nacheinander auf der Referenz aktivieren und vergleichen
-cargo run -p rustpress-compat -- --dump /ueber-uns/   # beide Antworten nach compat/dump/ schreiben
 ```
 
-Abweichungen, die verstanden und bewusst akzeptiert sind, stehen mit Begründung in `compat/known.toml`; nur andere Abweichungen lassen den Lauf fehlschlagen. Die Berichte liegen unter `compat/reports/`.
+### Crates
 
-## Crates
-
-| Crate | Aufgabe |
+| Crate | Purpose |
 |---|---|
-| `rustpress-phpser` | PHP-`serialize`/`unserialize`, byte-genau |
-| `rustpress-db` | Lesezugriffe auf das WordPress-Schema (sqlx) |
-| `rustpress-core` | Optionen, Rewrite-Regeln, Hauptabfrage, Template-Hierarchie, Canonical, Sitemaps |
-| `rustpress-blocks` | Block-Parser und -Renderer, Block-Supports, Style-Engine |
-| `rustpress-theme` | `theme.json`, Templates, Global Styles, Dokument und Feeds |
-| `rustpress-rest` | REST-API (lesend) |
-| `rustpress-server` | axum-Server |
-| `rustpress-compat` | Vergleichslauf gegen ein echtes WordPress mit Bericht |
+| `rustpress-phpser` | PHP `serialize`/`unserialize`, byte-exact |
+| `rustpress-db` | access to the WordPress schema (sqlx) |
+| `rustpress-core` | options, rewrite rules, main query, template hierarchy, canonical redirects, sitemaps |
+| `rustpress-blocks` | block parser and renderer, block supports, style engine |
+| `rustpress-theme` | `theme.json`, templates, global styles, documents and feeds, Twenty Seventeen |
+| `rustpress-content` | writing posts, terms, users, comments and uploads |
+| `rustpress-auth` | passwords, cookies, sessions, nonces and capabilities |
+| `rustpress-admin` | `wp-admin`, sign-in and the installer |
+| `rustpress-rest` | REST API |
+| `rustpress-mail` | e-mail |
+| `rustpress-server` | axum server and CGI mode |
+| `rustpress-compat` | comparison run against a real WordPress |
 
-## Lizenz
+## Status
 
-RustPress steht unter der GNU General Public License, Version 2 oder (nach deiner Wahl) jeder späteren Version (GPL-2.0-or-later), siehe [LICENSE](LICENSE).
+RustPress is experimental. It is tested against WordPress 7.1.3 and runs a real site in production, but expect rough edges, and keep a backup of your database and the WordPress files before pointing it at a live site.
 
-RustPress ist ein Nachbau von WordPress in Rust. Texte, Vorlagen, Daten und der Nachbau von Twenty Seventeen stammen aus WordPress, © die WordPress-Mitwirkenden, ebenfalls unter GPLv2 oder später.
+## Contributing
 
-RustPress ist ein unabhängiges Projekt und steht in keiner Verbindung zur WordPress Foundation oder zu Automattic. WordPress ist eine eingetragene Marke der WordPress Foundation.
+Issues and pull requests are welcome. Please run `cargo test --workspace` and `cargo clippy --workspace --all-targets` before opening a pull request. Security issues: please report them privately through [GitHub security advisories](https://github.com/rustpress-cms/rustpress/security/advisories/new) instead of a public issue.
+
+## License
+
+RustPress is free software under the GNU General Public License, version 2 or (at your option) any later version (GPL-2.0-or-later); see [LICENSE](LICENSE).
+
+RustPress is a port of WordPress to Rust. Texts, templates, data and the Twenty Seventeen port come from WordPress, © the WordPress contributors, also GPLv2 or later.
+
+RustPress is an independent project and is not affiliated with or endorsed by the WordPress Foundation or Automattic. WordPress is a registered trademark of the WordPress Foundation.
