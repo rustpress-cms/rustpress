@@ -14,6 +14,10 @@ pub struct Client {
     pub https: bool,
 }
 
+/// Whether the web server in front received the request over TLS, when it says so itself (CGI: `HTTPS=on`).
+#[derive(Debug, Clone, Copy)]
+pub struct ServerHttps(pub bool);
+
 impl Client {
     /// `siteurl` decides `https` when no trusted proxy says how the request came in (RustPress itself speaks HTTP).
     pub fn of(config: &Config, parts: &Parts, siteurl: &str) -> Self {
@@ -22,7 +26,10 @@ impl Client {
         let via_proxy = peer.as_deref().is_some_and(trusted);
         let header = |name: &str| parts.headers.get(name).and_then(|v| v.to_str().ok()).map(str::to_owned);
         let mut ip = peer.clone();
-        let mut https = siteurl.starts_with("https:");
+        let mut https = match parts.extensions.get::<ServerHttps>() {
+            Some(ServerHttps(on)) => *on,
+            None => siteurl.starts_with("https:"),
+        };
         if via_proxy {
             // The last address that is not one of our proxies is the visitor.
             if let Some(forwarded) = header("x-forwarded-for") {

@@ -872,6 +872,15 @@ pub async fn filter_content_tags(env: &Env<'_>, content: &str, context: &str) ->
         }
     }
 
+    // `_prime_post_caches( $attachment_ids, false, true )`: the rows and meta of all images in two queries.
+    let mut ids: Vec<u64> = images.iter().map(|(_, id)| *id).filter(|id| *id > 0).collect();
+    ids.sort_unstable();
+    ids.dedup();
+    if ids.len() > 1 {
+        env.site.db.prime_posts(&ids).await?;
+        env.site.db.prime_post_meta(&ids).await?;
+    }
+
     let original = content;
     let mut content = content.to_owned();
     for &(start, end, is_img) in &matches {

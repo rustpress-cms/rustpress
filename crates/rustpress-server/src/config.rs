@@ -36,6 +36,10 @@ pub struct Config {
     pub wp_config: Option<PathBuf>,
     /// The addresses of reverse proxies whose `X-Forwarded-For`/`X-Forwarded-Proto` are believed.
     pub trusted_proxies: Vec<String>,
+    /// The one request of a CGI run came in over HTTPS (`is_ssl()`): like `home_url()` and `site_url()` in
+    /// WordPress, the links then use `https` whatever scheme the `home` and `siteurl` options name.
+    #[serde(skip)]
+    pub request_https: bool,
 }
 
 impl Default for Config {
@@ -49,6 +53,7 @@ impl Default for Config {
             allow_writes: false,
             wp_config: None,
             trusted_proxies: Vec::new(),
+            request_https: false,
         }
     }
 }
@@ -61,8 +66,8 @@ pub enum ConfigError {
     Parse(String, toml::de::Error),
     #[error("`{0}` must be a number")]
     Number(&'static str),
-    #[error("no database configured: set `database_url` or RUSTPRESS_DATABASE_URL")]
-    NoDatabase,
+    #[error("no database configured: set `database_url` or RUSTPRESS_DATABASE_URL, or DB_NAME in a wp-config.php ({0})")]
+    NoDatabase(String),
 }
 
 impl Config {
@@ -74,6 +79,20 @@ impl Config {
     /// Like `load()` with the config file given, and a WordPress directory for when neither the file nor the
     /// environment names one (CGI: the `DOCUMENT_ROOT` of the request).
     pub fn load_with(file: Option<PathBuf>, wp_root: Option<PathBuf>) -> Result<Self, ConfigError> {
+        let config = Self::load_without_database(file, wp_root)?;
+        if config.database_url.is_empty() {
+            let looked = match config.wp_config_path() {
+                Some(path) => format!("{} has none", path.display()),
+                None => format!("none in {}", config.wp_root.display()),
+            };
+            return Err(ConfigError::NoDatabase(looked));
+        }
+        Ok(config)
+    }
+
+    /// Like `load_with()`, but a site that has no database yet is no error: its `database_url` is empty (the
+    /// installer then sets it up).
+    pub fn load_without_database(file: Option<PathBuf>, wp_root: Option<PathBuf>) -> Result<Self, ConfigError> {
         let mut given = toml::Table::new();
         let mut config = match file {
             Some(path) => {
@@ -121,9 +140,6 @@ impl Config {
                     config.table_prefix = prefix;
                 }
             }
-        }
-        if config.database_url.is_empty() {
-            return Err(ConfigError::NoDatabase);
         }
         Ok(config)
     }

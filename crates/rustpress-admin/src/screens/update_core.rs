@@ -1,5 +1,6 @@
 //! `wp-admin/update-core.php`: what the update transients announce for WordPress, plugins, themes and translations.
-//! RustPress does not fetch or install packages; the screen shows the state like WordPress does.
+//! Plugins, themes and translations are not fetched; re-installing WordPress puts the files of the release RustPress
+//! follows into the site (`do_core_upgrade()`), whatever version the site had.
 
 use rustpress_core::formatting::{esc_attr, esc_html, esc_url};
 use rustpress_core::i18n::sprintf;
@@ -72,6 +73,44 @@ pub(super) async fn core_upgrade_version(ctx: &Ctx<'_>) -> Option<String> {
     updates.iter().map(|(_, u)| u).find(|u| text(u, "response") == "upgrade").map(|u| text(u, "current"))
 }
 
+/// The offer of [crate::install::fetch::VERSION] in the shape of the `update_core` transient.
+fn own_offer(ctx: &Ctx<'_>, version: &str) -> Value {
+    let field = |name: &str, value: &str| (Key::Str(name.as_bytes().to_vec()), Value::Str(value.as_bytes().to_vec()));
+    let target = crate::install::fetch::VERSION;
+    let response = if version == target { "latest" } else { "upgrade" };
+    Value::Object { class: b"stdClass".to_vec(), props: vec![field("response", response), field("current", target), field("locale", &ctx.site().locale())] }
+}
+
+/// `do_core_upgrade()`: downloads the release, checks it and copies the core files over the site's.
+async fn do_core_upgrade(ctx: &Ctx<'_>) -> AdminResponse {
+    let tr = |s: &str| ctx.tr(s);
+    let locale = ctx.request.post_field("locale").filter(|l| !l.is_empty()).map(str::to_owned).unwrap_or_else(|| ctx.site().locale());
+    let mut lines = vec![format!("<p>{}</p>", sprintf(&tr("Downloading update from %s&#8230;"), &[&format!("<span class=\"code pre\">{}</span>", esc_html(&crate::install::fetch::package_url(&locale)))]))];
+    let root = wp_root(ctx);
+    let fetch_locale = locale.clone();
+    let result = tokio::task::spawn_blocking(move || crate::install::fetch::install(&root, &fetch_locale, crate::install::fetch::Mode::Replace)).await.unwrap_or_else(|e| Err(e.to_string()));
+    match result {
+        Ok(_) => {
+            for step in ["Unpacking the update&#8230;", "Verifying the unpacked files&#8230;", "Preparing to install the latest version&#8230;", "Copying the required files&#8230;"] {
+                lines.push(format!("<p>{}</p>", tr(step)));
+            }
+            let about = esc_url(&ctx.admin_url("about.php?updated"));
+            lines.push(format!(
+                "<h2>{}</h2>\n<script type=\"text/javascript\">\nwindow.location = '{}';\n</script>",
+                sprintf(&tr("Welcome to WordPress %1$s. You will be redirected to the About WordPress screen. If not, click <a href=\"%2$s\">here</a>."), &[crate::install::fetch::VERSION, &about]),
+                ctx.admin_url("about.php?updated")
+            ));
+        }
+        Err(e) => {
+            lines.push(format!("<p>{}</p>", esc_html(&e)));
+            lines.push(format!("<p><strong>{}</strong></p>", tr("Installation failed.")));
+        }
+    }
+    let content = format!("\t<div class=\"wrap\">\n\t<h1>{}</h1>\n{}\n\t</div>\n", tr("Update WordPress"), lines.join("\n"));
+    let screen = Screen { file: "update-core.php".into(), parent_file: "index.php".into(), submenu_file: Some("update-core.php".into()), title: tr("WordPress Updates"), ..Default::default() };
+    render(ctx, &screen, &content, &Assets::default()).await
+}
+
 /// `core_upgrade_preamble()`.
 async fn core_section(ctx: &Ctx<'_>, version: &str) -> String {
     let tr = |s: &str| ctx.tr(s);
@@ -80,6 +119,12 @@ async fn core_section(ctx: &Ctx<'_>, version: &str) -> String {
         Value::Array(items) => items.iter().map(|(_, v)| v).collect(),
         _ => Vec::new(),
     }).unwrap_or_default();
+    let mut updates = updates;
+    // The release RustPress follows is always on offer: as an update when the files are of another version.
+    let own = own_offer(ctx, version);
+    if !updates.iter().any(|u| text(u, "current") == crate::install::fetch::VERSION) {
+        updates.insert(0, &own);
+    }
     let newer = updates.first().filter(|u| text(u, "response") == "upgrade");
     let mut out = String::new();
     if newer.is_some() {
@@ -283,8 +328,8 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     if !(ctx.can("update_core") || ctx.can("update_themes") || ctx.can("update_plugins") || ctx.can("update_languages")) {
         return die(ctx.env, 403, "WordPress &rsaquo; Error", &format!("<h1>{}</h1><p>{}</p>", tr("You need a higher level of permission."), tr("Sorry, you are not allowed to update this site.")));
     }
-    // The update actions check the capability and the nonce first; the updates themselves need WordPress.org and
-    // are not carried out, so a valid request shows the overview.
+    // The update actions check the capability and the nonce first; only the core update is carried out, a valid
+    // request for the others shows the overview.
     // Updating plugins or themes without choosing any goes back to the overview with a notice.
     let mut action = ctx.request.get("action").unwrap_or("upgrade-core");
     let chosen = ctx.request.form.iter().any(|(k, _)| k == "checked" || k.starts_with("checked["));
@@ -306,6 +351,9 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         }
         if !ctx.verify_nonce(nonce_action) {
             return die(ctx.env, 403, &tr("An error occurred."), &tr("The link you followed has expired."));
+        }
+        if capability == "update_core" {
+            return do_core_upgrade(ctx).await;
         }
     }
     let site = ctx.site();

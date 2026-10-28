@@ -302,6 +302,10 @@ impl Site {
     }
     /// Slugs of a hierarchical term and its ancestors, `parent/child`.
     async fn term_path(&self, term: &Term) -> Result<String> {
+        // A term at the top needs no look at the others (the links of a tag cloud or of the categories of a post).
+        if term.parent == 0 {
+            return Ok(term.slug.clone());
+        }
         let all = self.db.terms(&term.taxonomy).await?;
         let mut path = term.slug.clone();
         let mut parent = term.parent;

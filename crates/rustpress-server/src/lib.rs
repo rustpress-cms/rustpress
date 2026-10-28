@@ -6,6 +6,7 @@ pub mod app;
 pub mod cgi;
 pub mod client;
 pub mod config;
+pub mod install;
 pub mod statics;
 
 pub use app::App;

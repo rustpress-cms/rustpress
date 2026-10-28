@@ -23,7 +23,9 @@ md5.workspace = true
 image.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
+tokio.workspace = true
 zip = { version = "9.1.0", default-features = false, features = ["deflate"] }
+ureq = { version = "3", default-features = false, features = ["rustls"] }
 
 [dev-dependencies]
 tokio.workspace = true

@@ -7,15 +7,13 @@
 
 use std::io::{Read, Write};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::path::PathBuf;
-use std::sync::Arc;
+use std::path::{Path, PathBuf};
 
 use axum::body::Body;
 use axum::extract::ConnectInfo;
 use axum::http::{HeaderName, HeaderValue, Method, Request, Response, header};
 use tower::ServiceExt;
 
-use crate::App;
 use crate::config::{Config, ConfigError};
 
 /// The web server started this process as a CGI program.
@@ -28,24 +26,65 @@ fn var(name: &str) -> Option<String> {
 }
 
 /// The configuration of a CGI run.
+/// Its `database_url` is empty while the site has no `wp-config.php` yet.
 pub fn config() -> Result<Config, ConfigError> {
-    // `SCRIPT_FILENAME` is the program itself; `current_exe()` needs `/proc`, which shared hosting may lack.
+    // The web server starts the program in its own directory; `current_exe()` would need `/proc`, which shared
+    // hosting may lack.
     let file = std::env::var_os("RUSTPRESS_CONFIG").map(PathBuf::from).or_else(|| {
-        let program = var("SCRIPT_FILENAME").map(PathBuf::from).or_else(|| std::env::current_exe().ok())?;
-        let beside = program.with_file_name("rustpress.toml");
+        let beside = std::env::current_dir().ok()?.join("rustpress.toml");
         beside.is_file().then_some(beside)
     });
-    Config::load_with(file, var("DOCUMENT_ROOT").map(PathBuf::from))
+    let mut config = Config::load_without_database(file, var("DOCUMENT_ROOT").map(|root| local_path(PathBuf::from(root))))?;
+    config.request_https = https();
+    Ok(config)
+}
+
+/// `HTTPS=on`: the web server received the request over TLS.
+fn https() -> bool {
+    var("HTTPS").is_some_and(|v| v.eq_ignore_ascii_case("on"))
+}
+
+/// A path as the web server names it, as this process sees it. On shared hosting the web server may see the
+/// webspace under another mount point than the program it starts (Strato: `/home/strato/http/…/htdocs` for
+/// Apache, `/mnt/web…/htdocs` for the program). The working directory is the directory of `SCRIPT_FILENAME`
+/// under the program's own mount point, so the two differ only in what precedes their common end.
+fn local_path(path: PathBuf) -> PathBuf {
+    if path.exists() {
+        return path;
+    }
+    let script_dir = var("SCRIPT_FILENAME").map(PathBuf::from).and_then(|p| p.parent().map(Path::to_path_buf));
+    let mapped = script_dir.zip(std::env::current_dir().ok()).and_then(|(script_dir, cwd)| translate(&path, &script_dir, &cwd));
+    mapped.filter(|p| p.exists()).unwrap_or(path)
+}
+
+/// `path` with the part before the common end of `server_dir` and `local_dir` swapped.
+fn translate(path: &Path, server_dir: &Path, local_dir: &Path) -> Option<PathBuf> {
+    let server: Vec<_> = server_dir.components().collect();
+    let local: Vec<_> = local_dir.components().collect();
+    let common = server.iter().rev().zip(local.iter().rev()).take_while(|(a, b)| a == b).count();
+    if common == 0 || common == server.len() {
+        return None;
+    }
+    let from: PathBuf = server[..server.len() - common].iter().collect();
+    let to: PathBuf = local[..local.len() - common].iter().collect();
+    Some(to.join(path.strip_prefix(&from).ok()?))
 }
 
 /// Answers the one request of this process.
-pub async fn serve(app: Arc<App>) -> std::io::Result<()> {
+///
+/// `Server-Timing` reports start-up (`load`, since `started`) and the whole run (`app`), so the time
+/// spent in RustPress can be told apart from the web server and the network in the browser.
+pub async fn serve(router: axum::Router, started: std::time::Instant, load: std::time::Duration) -> std::io::Result<()> {
     let request = request_from_env()?;
     let head = request.method() == Method::HEAD;
-    let response = match app.router().oneshot(request).await {
+    let mut response = match router.oneshot(request).await {
         Ok(response) => response,
         Err(never) => match never {},
     };
+    let timing = format!("load;dur={:.1}, app;dur={:.1}", load.as_secs_f64() * 1000.0, started.elapsed().as_secs_f64() * 1000.0);
+    if let Ok(value) = timing.parse() {
+        response.headers_mut().insert("server-timing", value);
+    }
     write_response(response, head).await
 }
 
@@ -90,6 +129,7 @@ fn request_from_env() -> std::io::Result<Request<Body>> {
     let port = var("REMOTE_PORT").and_then(|v| v.parse().ok()).unwrap_or(0);
     builder
         .extension(ConnectInfo(SocketAddr::new(ip, port)))
+        .extension(crate::client::ServerHttps(https()))
         .body(Body::from(body))
         .map_err(|e| invalid(e.to_string()))
 }
@@ -118,7 +158,34 @@ async fn write_response(response: Response<Body>, head: bool) -> std::io::Result
     stdout.flush()
 }
 
-/// What the visitor sees when RustPress cannot start; the details go to the error log of the web server.
-pub fn write_failure() {
+/// What the visitor sees when RustPress cannot start. The details go to the error log of the web server and to
+/// `rustpress-error.log` next to the program, since shared hosting rarely shows the former (in `cgi-bin/` the web
+/// server runs files instead of handing them out, so the log stays private).
+pub fn write_failure(message: &str) {
+    if let Ok(mut log) = std::fs::OpenOptions::new().create(true).append(true).open("rustpress-error.log") {
+        let _ = writeln!(log, "{} {} {message}", unix_seconds(), var("REQUEST_URI").unwrap_or_default());
+    }
     let _ = std::io::stdout().lock().write_all(b"Status: 500 Internal Server Error\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nRustPress could not start. The error log of the web server has the details.\n");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn translates_between_mount_points() {
+        let mapped = translate(
+            Path::new("/home/strato/http/power/rid/45/67/1234567/htdocs/STRATO-apps/wordpress_02/app/"),
+            Path::new("/home/strato/http/power/rid/45/67/1234567/htdocs/cgi-bin"),
+            Path::new("/mnt/web100/c1/67/1234567/htdocs/cgi-bin"),
+        );
+        assert_eq!(mapped, Some(PathBuf::from("/mnt/web100/c1/67/1234567/htdocs/STRATO-apps/wordpress_02/app")));
+        assert_eq!(translate(Path::new("/a/x"), Path::new("/a/cgi-bin"), Path::new("/b/other")), None);
+        assert_eq!(translate(Path::new("/elsewhere/x"), Path::new("/a/cgi-bin"), Path::new("/b/cgi-bin")), None);
+    }
+}
+
+/// Seconds since the Unix epoch, enough to order the lines of the error log.
+fn unix_seconds() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
 }

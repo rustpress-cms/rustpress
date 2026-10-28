@@ -202,6 +202,8 @@ pub(super) async fn latest_comments(bc: &BlockCtx<'_>) -> Result<String> {
     };
     let number = bc.attr_u64("commentsToShow").unwrap_or(5);
     let comments = site.db.comments_query(&rustpress_db::CommentQuery { limit: Some(number), types: Vec::new(), ..rustpress_db::CommentQuery::default() }).await?;
+    // `_prime_post_caches()` of the commented posts.
+    site.db.prime_posts(&comments.iter().map(|c| c.comment_post_id).collect::<Vec<_>>()).await?;
     let mut items = String::new();
     let (avatar, date) = (flag(bc, "displayAvatar"), flag(bc, "displayDate"));
     for comment in &comments {

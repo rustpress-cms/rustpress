@@ -88,13 +88,19 @@ async fn has_header_image(ctx: &Ctx<'_>) -> bool {
     header_image_url(ctx).is_some()
 }
 
-/// `get_header_image()`: the theme mod, else the theme's default image.
+/// `get_header_image()`: the theme mod, else the theme's default image, in the scheme of the request
+/// (`set_url_scheme()`; `is_ssl()` shows in the scheme of `siteurl`).
 fn header_image_url(ctx: &Ctx<'_>) -> Option<String> {
     let url = match ctx.mod_str("header_image") {
         Some(url) => url,
         None => format!("{}/assets/images/header.jpg", ctx.theme.template_directory_uri()),
     };
-    if url == "remove-header" || url.is_empty() { None } else { Some(url) }
+    if url == "remove-header" || url.is_empty() {
+        return None;
+    }
+    let scheme = if ctx.site.settings.siteurl.starts_with("https://") { "https" } else { "http" };
+    let rest = url.strip_prefix("http://").or_else(|| url.strip_prefix("https://")).or_else(|| url.strip_prefix("//"));
+    Some(rest.map_or(url.clone(), |rest| format!("{scheme}://{rest}")))
 }
 
 /// A property of a `stdClass` stored in a theme mod.

@@ -11,7 +11,6 @@ use crate::chrome::{Assets, Screen};
 use crate::content::{Content, PostData};
 
 const ROW: &str = include_str!("../data/privacy_row.tpl");
-const DEFAULT_CONTENT: &str = include_str!("../data/privacy_default_content.html");
 
 /// A notice of `settings_errors()`.
 fn settings_error(code: &str, message: &str, kind: &str) -> String {
@@ -93,7 +92,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
             notices.push_str(&settings_error("page_for_privacy_policy", &message, kind));
         } else if action == "create-privacy-page" {
             let home = site.settings.home.trim_end_matches('/').to_owned();
-            let data = PostData { post_title: Some(tr("Privacy Policy")), post_status: Some("draft".into()), post_type: Some("page".into()), post_content: Some(DEFAULT_CONTENT.replace("{{home}}", &home)), ..Default::default() };
+            let data = PostData { post_title: Some(tr("Privacy Policy")), post_status: Some("draft".into()), post_type: Some("page".into()), post_content: Some(crate::privacy_text::default_content(site, &home)), ..Default::default() };
             match content.insert_post(&data).await {
                 Ok(id) => {
                     writer.update_option("wp_page_for_privacy_policy", &id.to_string()).await.or_log();

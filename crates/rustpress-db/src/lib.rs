@@ -20,6 +20,7 @@ mod models;
 mod options;
 mod posts;
 mod primed;
+mod probe;
 mod terms;
 mod users;
 mod write;
@@ -37,6 +38,7 @@ pub use export::{ExportComment, ExportFilter};
 pub use info::ServerInfo;
 pub use models::{AuthUser, Comment, Post, PostMeta, Term, User};
 pub use posts::{Order, OrderBy, PostQuery};
+pub use probe::{Probe, probe};
 pub use write::{Val, Writer};
 
 #[derive(Debug, thiserror::Error)]
@@ -76,12 +78,25 @@ pub struct Db {
     prefix: Prefix,
 }
 
+static ONE_REQUEST: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// The process answers one request and ends (CGI): every connection costs a round trip to the database server
+/// that the request has to wait for, so the pools open one connection each, and the writing one only when the
+/// request writes.
+pub fn set_one_request(on: bool) {
+    ONE_REQUEST.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+
+pub(crate) fn one_request() -> bool {
+    ONE_REQUEST.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 impl Db {
     /// Connects with a `mysql://user:pass@host:port/database` URL.
     pub async fn connect(url: &str, prefix: &str) -> Result<Self> {
         let prefix = Prefix::new(prefix)?;
         let pool = MySqlPoolOptions::new()
-            .max_connections(8)
+            .max_connections(if one_request() { 1 } else { 8 })
             .after_connect(|conn, _meta| {
                 Box::pin(async move {
                     conn.execute("SET SESSION TRANSACTION READ ONLY").await?;

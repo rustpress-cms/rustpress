@@ -45,16 +45,15 @@ impl Writer {
     pub async fn connect(url: &str, prefix: &str) -> Result<Self> {
         let prefix = Prefix::new(prefix)?;
         // Like `wpdb::set_sql_mode()`: no strict mode and zero dates allowed.
-        let pool = MySqlPoolOptions::new()
-            .max_connections(4)
+        let options = MySqlPoolOptions::new()
+            .max_connections(if crate::one_request() { 1 } else { 4 })
             .after_connect(|connection, _| {
                 Box::pin(async move {
                     sqlx::query("SET SESSION sql_mode = 'NO_ENGINE_SUBSTITUTION'").execute(&mut *connection).await?;
                     Ok(())
                 })
-            })
-            .connect(url)
-            .await?;
+            });
+        let pool = if crate::one_request() { options.connect_lazy(url)? } else { options.connect(url).await? };
         Ok(Self { pool, prefix })
     }
 

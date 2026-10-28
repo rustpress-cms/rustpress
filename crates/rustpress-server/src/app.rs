@@ -73,7 +73,14 @@ impl App {
     }
 
     async fn load(config: &Config, db: &Db) -> Result<Loaded> {
-        let site = Site::load_at(db.clone(), &config.wp_root).await?;
+        let mut site = Site::load_at(db.clone(), &config.wp_root).await?;
+        if config.request_https {
+            for url in [&mut site.settings.home, &mut site.settings.siteurl] {
+                if let Some(rest) = url.strip_prefix("http://") {
+                    *url = format!("https://{rest}");
+                }
+            }
+        }
         let theme = Theme::load(&site, &config.wp_root).await?;
         let registry = Registry::new(config.wp_root.join("wp-includes").join("blocks"));
         let admin = if config.allow_writes { Some(crate::admin::AdminParts::load(config, &site).await) } else { None };
@@ -163,6 +170,19 @@ async fn scheduler(app: Arc<App>) {
             Err(e) => tracing::error!(error = %e, "scheduled jobs failed"),
         }
     }
+}
+
+/// `get_site_icon_url( $size )`: the site icon in that size (or the full image), when the site has one.
+async fn site_icon_url(site: &Site, size: u64) -> Option<String> {
+    let id = site.options.u64("site_icon", 0);
+    if id == 0 {
+        return None;
+    }
+    let rows = site.db.post_meta(id).await.ok()?;
+    let value = |key: &str| rows.iter().find(|m| m.meta_key.as_deref() == Some(key)).and_then(|m| m.meta_value.clone());
+    let full = rustpress_blocks::images::attachment_url(site, &value("_wp_attached_file")?);
+    let meta = value("_wp_attachment_metadata").and_then(|raw| rustpress_blocks::images::Metadata::parse(&raw));
+    Some(meta.and_then(|meta| rustpress_blocks::images::intermediate_url(&full, &meta, size, size)).unwrap_or(full))
 }
 
 /// The request with the cookie of the password of protected posts in reach of the renderer.
@@ -420,7 +440,10 @@ async fn page(app: &App, uri: &axum::http::Uri, request_headers: &axum::http::He
         return Ok(with_api_link(typed(StatusCode::OK, "text/plain; charset=utf-8", loaded.site.robots_txt()), &loaded));
     }
     if result.flags.is_favicon {
-        let icon = loaded.site.site_url("wp-includes/images/w-logo-gray-white-bg.png");
+        let icon = match site_icon_url(&loaded.site, 32).await {
+            Some(icon) => icon,
+            None => loaded.site.site_url("wp-includes/images/w-logo-gray-white-bg.png"),
+        };
         let mut response = redirect(&icon);
         *response.status_mut() = StatusCode::FOUND;
         response.headers_mut().insert(header::CONTENT_TYPE, HeaderValue::from_static("text/html; charset=UTF-8"));
