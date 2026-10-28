@@ -7,6 +7,10 @@ updates:
     groups:
       cargo:
         patterns: ["*"]
+    # Major versions change APIs (rand 0.10, hmac 0.13, ...) and are updated by hand.
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: github-actions
     directory: /
     schedule:
