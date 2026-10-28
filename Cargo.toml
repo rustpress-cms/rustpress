@@ -44,11 +44,11 @@ rustpress-server = { path = "crates/rustpress-server" }
 rustpress-mail = { path = "crates/rustpress-mail" }
 
 axum = "0.8"
-base64 = "0.22"
-bcrypt = "0.17"
-hmac = "0.12"
-md-5 = "0.10"
-rand = "0.9"
+base64 = "0.23"
+bcrypt = "0.19"
+hmac = "0.13"
+md-5 = "0.11"
+rand = "0.10"
 subtle = "2"
 chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
 chrono-tz = "0.10"
@@ -56,7 +56,7 @@ fancy-regex = "0.20"
 futures = "0.3"
 md5 = "0.8"
 regex = "1"
-sha2 = "0.10"
+sha2 = "0.11"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 sqlx = { version = "0.9", default-features = false, features = ["mysql", "runtime-tokio", "tls-rustls", "derive"] }
@@ -64,7 +64,7 @@ thiserror = "2"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "signal"] }
 toml = "1"
 tower = { version = "0.5", features = ["util"] }
-tower-http = { version = "0.6", features = ["fs", "trace"] }
+tower-http = { version = "0.7", features = ["fs", "trace"] }
 http-body-util = "0.1"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "webp"] }
 tracing = "0.1"
