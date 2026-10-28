@@ -4,6 +4,8 @@ description = "Compares RustPress with a real WordPress over many URLs and repor
 edition.workspace = true
 version.workspace = true
 license.workspace = true
+repository.workspace = true
+publish = false
 
 [dependencies]
 rustpress-server.workspace = true

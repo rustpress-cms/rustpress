@@ -28,6 +28,7 @@ format_in_format_args = "allow"
 edition = "2024"
 version = "0.1.0"
 license = "GPL-2.0-or-later"
+repository = "https://github.com/rustpress-cms/rustpress"
 
 [workspace.dependencies]
 rustpress-phpser = { path = "crates/rustpress-phpser" }

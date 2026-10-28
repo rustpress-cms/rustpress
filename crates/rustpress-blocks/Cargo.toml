@@ -4,6 +4,8 @@ description = "Gutenberg block parser and renderer"
 edition.workspace = true
 version.workspace = true
 license.workspace = true
+repository.workspace = true
+publish = false
 
 [dependencies]
 futures.workspace = true

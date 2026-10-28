@@ -4,6 +4,8 @@ description = "Passwords, cookies, sessions, nonces and capabilities, compatible
 edition.workspace = true
 version.workspace = true
 license.workspace = true
+repository.workspace = true
+publish = false
 
 [dependencies]
 rustpress-db.workspace = true

@@ -86,4 +86,10 @@ Abweichungen, die verstanden und bewusst akzeptiert sind, stehen mit Begründung
 | `rustpress-server` | axum-Server |
 | `rustpress-compat` | Vergleichslauf gegen ein echtes WordPress mit Bericht |
 
-Lizenz: GPL-2.0-or-later.
+## Lizenz
+
+RustPress steht unter der GNU General Public License, Version 2 oder (nach deiner Wahl) jeder späteren Version (GPL-2.0-or-later), siehe [LICENSE](LICENSE).
+
+RustPress ist ein Nachbau von WordPress in Rust. Texte, Vorlagen, Daten und der Nachbau von Twenty Seventeen stammen aus WordPress, © die WordPress-Mitwirkenden, ebenfalls unter GPLv2 oder später.
+
+RustPress ist ein unabhängiges Projekt und steht in keiner Verbindung zur WordPress Foundation oder zu Automattic. WordPress ist eine eingetragene Marke der WordPress Foundation.

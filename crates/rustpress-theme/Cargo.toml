@@ -4,6 +4,8 @@ description = "Block theme support: theme.json, templates and global styles"
 edition.workspace = true
 version.workspace = true
 license.workspace = true
+repository.workspace = true
+publish = false
 
 [dependencies]
 chrono.workspace = true

@@ -4,6 +4,8 @@ description = "Read-only access to the WordPress MySQL/MariaDB schema"
 edition.workspace = true
 version.workspace = true
 license.workspace = true
+repository.workspace = true
+publish = false
 
 [dependencies]
 sqlx.workspace = true
