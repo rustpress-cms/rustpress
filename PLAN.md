@@ -211,6 +211,8 @@ Vollständiger Review des Bestands (fünf Durchgänge über alle Krates, ~77 000
 
 ## A. Review-Befunde (priorisiert)
 
+**Stand (30.10.2026):** Das ✔ in den Tabellen heißt „bestätigt“, nicht „erledigt“. Erledigt sind alle Punkte aus A1 und A2 außer S12 (zurückgestellt, nur mit eigenen Rollen ohne `unfiltered_html` relevant); S11 braucht keine Änderung (WordPress gibt die URL ebenso aus). Aus A3 offen: P9, P10, Rest von P14/P15. Einzelheiten unter „Stand Phase 1“ und „Stand Phase 3“ in Teil C.
+
 ### A1. Kritisch / hoch – Sicherheit
 
 | # | Stelle | Befund | Fix |
