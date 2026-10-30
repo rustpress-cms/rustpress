@@ -148,6 +148,10 @@ pub fn unpack(package: &[u8], sums: &HashMap<String, String>, wp_root: &Path, mo
     files.sort_by_key(|(p, _)| p == "wp-includes/version.php");
     let mut done = Unpacked::default();
     for (path, data) in &files {
+        // `update_core()` never copies a `wp-config.php` of the package (7.1.4).
+        if path == "wp-config.php" {
+            continue;
+        }
         let target = wp_root.join(path);
         if target.exists() && !overwrite(path, mode) {
             done.kept += 1;

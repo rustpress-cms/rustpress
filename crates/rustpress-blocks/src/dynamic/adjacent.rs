@@ -1,6 +1,7 @@
 //! `core/post-navigation-link`.
 
 use rustpress_core::formatting::esc_url;
+use rustpress_core::kses::kses_post;
 use rustpress_db::Post;
 use serde_json::Value;
 
@@ -40,7 +41,7 @@ pub(super) async fn render(bc: &BlockCtx<'_>) -> Result<String> {
     let mut label = String::new();
     if let Some(l) = bc.attr_str("label").filter(|l| !l.is_empty()) {
         label = l.to_owned();
-        link = label.clone();
+        link = kses_post(&label);
     }
     let show_title = bc.attr_bool("showTitle");
     let link_label = bc.attrs.get("linkLabel").is_some_and(|v| !crate::style_engine::is_empty(v));

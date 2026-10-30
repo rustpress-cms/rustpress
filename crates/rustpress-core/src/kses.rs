@@ -377,6 +377,18 @@ fn hair(attr: &str, allowed_protocols: &[&str]) -> Vec<Attribute> {
         .collect()
 }
 
+/// `_wp_kses_directive_binds_value_restricted_attribute()` (7.1.4) for `object`, the one element of post content whose
+/// attribute values KSES restricts (`data` and `type`): an Interactivity API binding stays only when it binds an
+/// attribute allowed there with any value. Both the whole name and the part before a unique ID (`---`) are checked.
+fn binds_restricted_object_attribute(allowed: &Allowed, name_low: &str) -> bool {
+    let Some(bound) = name_low.strip_prefix("data-wp-bind--") else { return false };
+    let mut names = vec![bound];
+    if let Some(at) = bound.find("---") {
+        names.push(&bound[..at]);
+    }
+    names.iter().any(|name| matches!(*name, "data" | "type") || !allowed.permits("object", name))
+}
+
 /// `wp_kses_attr()`: the start tag with the attributes that are allowed.
 fn attr_tag(element: &str, attr: &str, allowed: &Allowed) -> String {
     static SLASH: OnceLock<Regex> = OnceLock::new();
@@ -395,6 +407,9 @@ fn attr_tag(element: &str, attr: &str, allowed: &Allowed) -> String {
             continue;
         }
         if allowed.post {
+            if element_low == "object" && binds_restricted_object_attribute(allowed, &name_low) {
+                continue;
+            }
             if name_low == "style" {
                 let cleaned = crate::safe_css::safecss_filter_attr(&attribute.decoded);
                 if cleaned.is_empty() {
@@ -620,6 +635,19 @@ mod tests {
         assert_eq!(kses_data("<a href=\"javascript:alert(1)\" title=x>hi</a>"), "<a href=\"alert(1)\" title=\"x\">hi</a>");
         assert_eq!(kses_data("Tom & Jerry <3 &copy; &bogus;"), "Tom &amp; Jerry &lt;3 &copy; &amp;bogus;");
         assert_eq!(kses_data("<a href=\"http://example.com/?a=1&b=2\">x</a>"), "<a href=\"http://example.com/?a=1&amp;b=2\">x</a>");
+    }
+
+    #[test]
+    fn object_bindings_of_restricted_attributes_are_dropped() {
+        let post = Allowed::post();
+        for kept in ["data-wp-bind--class", "data-wp-bind--aria-label", "data-wp-bind--data-x", "data-wp-context"] {
+            assert!(!binds_restricted_object_attribute(&post, kept), "{kept}");
+        }
+        // `data` and `type` have restricted values, `width` and `onload` are not allowed on `object` at all, and a
+        // unique ID makes the whole name one that is not allowed.
+        for dropped in ["data-wp-bind--data", "data-wp-bind--type---x", "data-wp-bind--title---id", "data-wp-bind--width", "data-wp-bind--onload"] {
+            assert!(binds_restricted_object_attribute(&post, dropped), "{dropped}");
+        }
     }
 
     #[test]

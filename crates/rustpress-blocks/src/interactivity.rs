@@ -154,6 +154,8 @@ struct Entry {
     value: Value,
     suffix: Option<String>,
     unique_id: Option<String>,
+    /// The directive attribute itself.
+    attribute_name: String,
 }
 
 /// `extract_directive_value()`: the namespace prefix and the decoded value.
@@ -197,7 +199,7 @@ impl Processor<'_> {
             let Some(value) = editor.get_attribute(&attr.name) else { continue };
             let raw = (attr.value.is_some() || !value.is_empty()).then_some(value);
             let (namespace, value) = extract_value(raw, default.as_deref());
-            out.push(Entry { namespace, value, suffix: parsed.suffix, unique_id: parsed.unique_id });
+            out.push(Entry { namespace, value, suffix: parsed.suffix, unique_id: parsed.unique_id, attribute_name: attr.name.clone() });
         }
         out.sort_by(|a, b| (a.suffix.as_deref().unwrap_or(""), a.unique_id.as_deref().unwrap_or("")).cmp(&(b.suffix.as_deref().unwrap_or(""), b.unique_id.as_deref().unwrap_or(""))));
         out
@@ -332,7 +334,15 @@ impl Processor<'_> {
     fn bind(&mut self, editor: &mut TagEditor) {
         for entry in self.entries(editor, "bind") {
             let Some(name) = entry.suffix.clone().filter(|s| !s.is_empty()) else { continue };
-            if entry.unique_id.is_some() || name.starts_with("on") {
+            if entry.unique_id.is_some() {
+                continue;
+            }
+            // A binding that would change an `object` attribute whose value KSES checks is removed (7.1.4).
+            if editor.tag().name == "object" && !is_bindable_object_attribute(&name) {
+                editor.remove_attribute(&entry.attribute_name);
+                continue;
+            }
+            if name.starts_with("on") {
                 continue;
             }
             let result = self.evaluate(&entry);
@@ -395,6 +405,14 @@ impl Processor<'_> {
             _ => String::new(),
         })
     }
+}
+
+/// `is_bindable_object_attribute()`: what a binding may change on an `object` element.
+fn is_bindable_object_attribute(name: &str) -> bool {
+    let name = name.to_ascii_lowercase();
+    name.starts_with("aria-")
+        || (name.starts_with("data-") && !name.starts_with("data-wp-"))
+        || matches!(name.as_str(), "class" | "dir" | "height" | "hidden" | "id" | "lang" | "role" | "style" | "tabindex" | "title" | "width")
 }
 
 fn is_empty_value(value: &Value) -> bool {
@@ -578,6 +596,12 @@ mod tests {
         assert_eq!(run_one(html), "<button data-wp-bind--aria-expanded=\"state.isSubmenuOpen\" aria-label=\"x\"  class=\"c\" ><svg></svg></button>");
         let html = "<a class=\"c\" data-wp-bind--aria-expanded=\"state.x\" aria-expanded=\"false\">t</a>";
         assert_eq!(run_one(html), "<a class=\"c\" data-wp-bind--aria-expanded=\"state.x\" >t</a>");
+    }
+
+    #[test]
+    fn object_bindings_are_limited() {
+        let html = "<object data-wp-bind--data=\"state.url\" data-wp-bind--aria-label=\"state.label\" type=\"application/pdf\"></object>";
+        assert_eq!(run_one(html), "<object  data-wp-bind--aria-label=\"state.label\" type=\"application/pdf\"></object>");
     }
 
     #[test]

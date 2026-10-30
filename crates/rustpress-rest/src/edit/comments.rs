@@ -64,10 +64,11 @@ impl Rest<'_> {
         }
     }
 
-    /// `check_edit_permission()`: moderators, and those who may edit the comment's post.
+    /// `check_edit_permission()`: moderators, and those who may edit the comment's post. A note is editorial
+    /// content: only edit access to its post counts (7.1.4).
     async fn check_edit_comment(&self, comment: &Comment) -> Result<bool> {
         let Some(user) = self.user().filter(|u| u.id != 0) else { return Ok(false) };
-        if user.can("moderate_comments") {
+        if !comment.comment_type.eq_ignore_ascii_case("note") && user.can("moderate_comments") {
             return Ok(true);
         }
         let post = self.site.db.post(comment.comment_post_id).await?;

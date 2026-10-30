@@ -430,7 +430,7 @@ async fn form_on(ctx: &Ctx<'_>, user: &User, own: bool, errors: &[String], file:
             "\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<tr class=\"user-sessions-wrap hide-if-no-js\">\n\t\t\t\t\t\t\t\t\t<th>{}</th>\n\t\t\t\t\t\t\t\t\t<td>\n\t\t\t\t\t\t\t\t\t\t<p><button type=\"button\" class=\"button\" id=\"destroy-sessions\">{}</button></p>\n\t\t\t\t\t\t\t\t\t\t<p class=\"description\">\n\t\t\t\t\t\t\t\t\t\t\t{}\t\t\t\t\t\t\t\t\t\t</p>\n\t\t\t\t\t\t\t\t\t</td>\n\t\t\t\t\t\t\t\t</tr>\n",
             tr("Sessions"),
             tr("Log Out Everywhere"),
-            sprintf(&tr("Log %s out of all locations."), &[&user.display_name])
+            sprintf(&tr("Log %s out of all locations."), &[&esc_html(&user.display_name)])
         ));
     }
     h.push_str("\t\t\t\t\t\t\t\t\t\t\t\t\t</table>\n\n");

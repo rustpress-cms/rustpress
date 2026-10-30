@@ -462,6 +462,8 @@ pub(super) async fn comments_pagination_previous(bc: &BlockCtx<'_>) -> Result<St
         return Ok(String::new());
     }
     let mut label = bc.attr_str("label").filter(|l| !l.is_empty()).map(str::to_owned).unwrap_or_else(|| bc.env.site.tr("Older Comments"));
+    // Escaped before the arrow, which is HTML.
+    label = esc_html(&label);
     if let Some(arrow) = pagination_arrow(bc, "previous") {
         label = format!("{arrow}{label}");
     }
@@ -476,6 +478,8 @@ pub(super) async fn comments_pagination_next(bc: &BlockCtx<'_>) -> Result<String
         return Ok(String::new());
     }
     let mut label = bc.attr_str("label").filter(|l| !l.is_empty()).map(str::to_owned).unwrap_or_else(|| bc.env.site.tr("Newer Comments"));
+    // Escaped before the arrow, which is HTML.
+    label = esc_html(&label);
     if let Some(arrow) = pagination_arrow(bc, "next") {
         label.push_str(&arrow);
     }
