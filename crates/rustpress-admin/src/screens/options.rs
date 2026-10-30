@@ -289,7 +289,9 @@ pub async fn handle(ctx: &Ctx<'_>) -> AdminResponse {
     }
     // The page of all settings names the options it saves itself.
     let all_options: Option<Vec<String>> = (option_page == "options").then(|| request.post_field("page_options").unwrap_or_default().split(',').map(|o| o.trim().to_owned()).filter(|o| !o.is_empty()).collect());
-    let allowed = if all_options.is_some() { Some(Vec::new()) } else { allowed_options(&option_page) };
+    // `register_setting()` of the plugins.
+    let plugin_settings = ctx.site().plugins.registered_settings(&option_page);
+    let allowed = if all_options.is_some() || !plugin_settings.is_empty() { Some(Vec::new()) } else { allowed_options(&option_page) };
     let Some(options) = allowed else {
         return die(ctx.env, 200, "WordPress &rsaquo; Error", &rustpress_core::i18n::sprintf(&ctx.tr("<strong>Error:</strong> The %s options page is not in the allowed options list."), &[&format!("<code>{}</code>", esc_html(&option_page))]));
     };
@@ -373,6 +375,24 @@ pub async fn handle(ctx: &Ctx<'_>) -> AdminResponse {
         if let Err(e) = writer.update_option(option, &new).await {
             eprintln!("options: {option}: {e}");
             errors.push(SettingsError { setting: option.to_owned(), code: "settings_failed".into(), message: ctx.tr("Settings save failed."), kind: "error".into() });
+        }
+    }
+
+    // A registered setting is what PHP makes of its fields (arrays for `name[key]`), passed through the plugin's
+    // `sanitize_callback`, stored serialized.
+    for (option, plugin) in &plugin_settings {
+        let value = rustpress_core::native::form_value(&request.form, option).map(|value| match value {
+            Value::Str(text) => Value::Str(String::from_utf8_lossy(&text).trim().as_bytes().to_vec()),
+            other => other,
+        });
+        let stored = match plugin.sanitize_setting(option, value) {
+            None | Some(Value::Null | Value::Bool(false)) => String::new(),
+            Some(Value::Str(text)) => String::from_utf8_lossy(&text).into_owned(),
+            Some(other) => String::from_utf8_lossy(&rustpress_phpser::serialize(&other)).into_owned(),
+        };
+        if let Err(e) = writer.update_option(option, &stored).await {
+            eprintln!("options: {option}: {e}");
+            errors.push(SettingsError { setting: (*option).to_owned(), code: "settings_failed".into(), message: ctx.tr("Settings save failed."), kind: "error".into() });
         }
     }
 

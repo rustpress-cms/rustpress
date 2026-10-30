@@ -29,6 +29,8 @@ pub struct SubItem {
     pub capability: String,
     pub slug: String,
     pub classes: String,
+    /// The address of a plugin's page (`options-general.php?page=<slug>`); other entries link their slug.
+    pub href: Option<String>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -54,7 +56,7 @@ fn item(position: u32, title: &str, capability: &str, slug: &str, classes: &str,
 }
 
 fn sub(position: u32, title: &str, capability: &str, slug: &str) -> SubItem {
-    SubItem { position, title: title.to_owned(), capability: capability.to_owned(), slug: slug.to_owned(), classes: String::new() }
+    SubItem { position, title: title.to_owned(), capability: capability.to_owned(), slug: slug.to_owned(), classes: String::new(), href: None }
 }
 
 impl AdminMenu {
@@ -203,6 +205,16 @@ impl AdminMenu {
         }
         menu.items.push(item(99, "", "read", "separator-last", "wp-menu-separator", "", ""));
         menu
+    }
+
+    /// `add_submenu_page()` of the plugins (`admin_menu`): each page goes after the entries its parent has.
+    pub fn with_plugin_pages(mut self, pages: &[rustpress_core::native::AdminPage]) -> Self {
+        for page in pages {
+            let position = self.submenu.iter().find(|(p, _)| p == page.parent).and_then(|(_, list)| list.iter().map(|s| s.position + 1).max()).unwrap_or(0);
+            let href = format!("{}?page={}", page.parent, page.slug);
+            self.add_sub(page.parent, SubItem { position, title: page.menu_title.clone(), capability: page.capability.to_owned(), slug: page.slug.to_owned(), classes: String::new(), href: Some(href) });
+        }
+        self
     }
 
     /// `wp-admin/includes/menu.php`: hide what the user may not use, order the entries, number the
@@ -378,7 +390,8 @@ impl AdminMenu {
                         class.push(esc_attr(&entry.classes));
                     }
                     let class = if class.is_empty() { String::new() } else { format!(" class=\"{}\"", class.join(" ")) };
-                    out.push_str(&format!("<li{class}><a href='{}'{class}{aria}>{}</a></li>", entry.slug, wptexturize(&entry.title)));
+                    let href = entry.href.as_deref().map_or_else(|| entry.slug.clone(), rustpress_core::formatting::esc_url);
+                    out.push_str(&format!("<li{class}><a href='{href}'{class}{aria}>{}</a></li>", wptexturize(&entry.title)));
                 }
                 out.push_str("</ul>");
             }

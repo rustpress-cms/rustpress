@@ -845,6 +845,9 @@ pub async fn render_document_with(theme: &Theme, site: &Site, query: &QueryResul
     } else if let Some(css) = read(&skip_link_file) {
         styles.push_str(&format!("<style id=\"wp-block-template-skip-link-inline-css\">\n{}\n/*# sourceURL=/wp-includes/css/wp-block-template-skip-link.min.css */\n</style>\n", css.trim_end()));
     }
+    // Plugins enqueue on `wp_enqueue_scripts` before the theme does: their stylesheets come before the theme's.
+    let plugin_assets = site.plugins.assets(site);
+    styles.push_str(&crate::plugin_assets::style_links(&plugin_assets.styles));
     // The theme's style.css is only printed when its functions.php enqueues it.
     let theme_css = theme.theme_style_handle().and_then(|handle| ["style.min.css", "style.css"].iter().find_map(|f| read(&theme.template_dir().join(f)).map(|c| (handle, *f, c))));
     if !theme_style_inline && let Some(handle) = theme.theme_style_handle() && theme_style_file.is_some() {
@@ -860,9 +863,17 @@ pub async fn render_document_with(theme: &Theme, site: &Site, query: &QueryResul
     let (importmap, preloads, module_scripts) = script_modules(wp_root, site, &modules);
     // Signed-in viewers get no speculation rules.
     let speculation = if query.viewer.is_some() { String::new() } else { speculation_rules(site, theme) };
-    let mut footer_scripts = format!("{speculation}{}{module_scripts}{}", rustpress_blocks::duotone::footer_svgs(&state.duotone), state.interactivity.data_script().unwrap_or_default());
-    // MediaElement: jQuery in the head, the player scripts in the footer.
-    let styles = if state.mediaelement { format!("{styles}<script id=\"jquery-core-js\" src=\"{includes_url}/js/jquery/jquery.min.js?ver=3.7.1\"></script>\n<script id=\"jquery-migrate-js\" src=\"{includes_url}/js/jquery/jquery-migrate.min.js?ver=3.4.1\"></script>\n") } else { styles };
+    let plugin_footer = site.plugins.wp_footer(site, &state.looped_posts).await?;
+    let mut footer_scripts = format!("{speculation}{}{plugin_footer}{module_scripts}{}", rustpress_blocks::duotone::footer_svgs(&state.duotone), state.interactivity.data_script().unwrap_or_default());
+    // MediaElement: jQuery in the head, the player scripts in the footer. The scripts plugins enqueue for the head
+    // follow, after their dependencies.
+    let mut printer = crate::plugin_assets::ScriptPrinter::new(&includes_url, "3.7.1", "3.4.1");
+    let mut head_scripts = String::new();
+    if state.mediaelement {
+        head_scripts.push_str(&printer.core("jquery"));
+    }
+    head_scripts.push_str(&printer.scripts(&plugin_assets.scripts, false));
+    let styles = format!("{styles}{head_scripts}");
     if toolbar_on {
         footer_scripts.push_str(&format!("<script id=\"hoverintent-js-js\" src=\"{includes_url}/js/hoverintent-js.min.js?ver=2.2.1\"></script>\n<script id=\"admin-bar-js\" src=\"{includes_url}/js/admin-bar.min.js?ver={version}\"></script>\n"));
     }
@@ -872,6 +883,7 @@ pub async fn render_document_with(theme: &Theme, site: &Site, query: &QueryResul
     if state.scripts.iter().any(|s| s == "comment-reply") {
         footer_scripts.push_str(&format!("<script async data-wp-strategy=\"async\" fetchpriority=\"low\" id=\"comment-reply-js\" src=\"{includes_url}/js/comment-reply.min.js?ver={version}\"></script>\n"));
     }
+    footer_scripts.push_str(&printer.scripts(&plugin_assets.scripts, true));
     footer_scripts.push_str(&emoji_detection_script(site, wp_root, &version));
 
     // --- head ------------------------------------------------------------

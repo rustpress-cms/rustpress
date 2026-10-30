@@ -311,9 +311,15 @@ async fn privacy_policy_link(ctx: &Ctx<'_>) -> Result<String> {
 
 // ------------------------------------------------------------------- the loop
 
-/// `twentyseventeen_time_link()`.
-fn time_link(ctx: &Ctx<'_>, post: &Post, permalink: &str) -> String {
+/// `twentyseventeen_time_link()`. While a plugin makes `get_the_date()`, `get_the_time()` and
+/// `get_the_modified_date()` return `false`, the dates are empty and `get_the_time( 'U' )` never equals the
+/// (unfiltered) modification time.
+async fn time_link(ctx: &Ctx<'_>, post: &Post, permalink: &str) -> Result<String> {
     let site = ctx.site;
+    if site.plugins.hides_date(site, post).await? {
+        let time_string = "<time class=\"entry-date published\" datetime=\"\"></time><time class=\"updated\" datetime=\"\"></time>";
+        return Ok(rustpress_core::i18n::sprintf(&t(ctx, "<span class=\"screen-reader-text\">Posted on</span> %s"), &[&format!("<a href=\"{}\" rel=\"bookmark\">{time_string}</a>", esc_url(permalink))]));
+    }
     let posted = site.timezone.local_timestamp(&post.post_date).unwrap_or(0);
     let modified = site.timezone.local_timestamp(&post.post_modified).unwrap_or(0);
     let date_format = site.options.string("date_format", "F j, Y");
@@ -328,7 +334,7 @@ fn time_link(ctx: &Ctx<'_>, post: &Post, permalink: &str) -> String {
     } else {
         format!("<time class=\"entry-date published updated\" datetime=\"{}\">{}</time>", site.date("c", posted), site.date(&date_format, posted))
     };
-    rustpress_core::i18n::sprintf(&t(ctx, "<span class=\"screen-reader-text\">Posted on</span> %s"), &[&format!("<a href=\"{}\" rel=\"bookmark\">{time_string}</a>", esc_url(permalink))])
+    Ok(rustpress_core::i18n::sprintf(&t(ctx, "<span class=\"screen-reader-text\">Posted on</span> %s"), &[&format!("<a href=\"{}\" rel=\"bookmark\">{time_string}</a>", esc_url(permalink))]))
 }
 
 /// `twentyseventeen_posted_on()`.
@@ -339,7 +345,7 @@ async fn posted_on(ctx: &Ctx<'_>, post: &Post, permalink: &str) -> Result<String
         None => (String::new(), String::new()),
     };
     let byline = rustpress_core::i18n::sprintf(&t(ctx, "by %s"), &[&format!("<span class=\"author vcard\"><a class=\"url fn n\" href=\"{}\">{}</a></span>", esc_url(&url), name)]);
-    Ok(format!("<span class=\"posted-on\">{}</span><span class=\"byline\"> {byline}</span>", time_link(ctx, post, permalink)))
+    Ok(format!("<span class=\"posted-on\">{}</span><span class=\"byline\"> {byline}</span>", time_link(ctx, post, permalink).await?))
 }
 
 /// `twentyseventeen_categorized_blog()`.
@@ -411,7 +417,7 @@ async fn content_part(ctx: &Ctx<'_>, post: &Arc<Post>) -> Result<String> {
         if is_single {
             meta.push_str(&posted_on(ctx, post, &permalink).await?);
         } else {
-            meta.push_str(&time_link(ctx, post, &permalink));
+            meta.push_str(&time_link(ctx, post, &permalink).await?);
         }
         meta.push_str("</div><!-- .entry-meta -->");
     }
@@ -543,7 +549,7 @@ async fn excerpt_part(ctx: &Ctx<'_>, post: &Arc<Post>) -> Result<String> {
     let q = ctx.q;
     let permalink = site.permalink(post).await?;
     let classes = post_class(&ctx.env, post, &[], q.flags.is_home && !q.flags.is_paged, q.flags.is_singular()).await?;
-    let meta = if post.post_type == "post" { format!("\t\t\t<div class=\"entry-meta\">\n\t\t\t\t{}\t\t\t</div><!-- .entry-meta -->\n\t\t", time_link(ctx, post, &permalink)) } else { String::new() };
+    let meta = if post.post_type == "post" { format!("\t\t\t<div class=\"entry-meta\">\n\t\t\t\t{}\t\t\t</div><!-- .entry-meta -->\n\t\t", time_link(ctx, post, &permalink).await?) } else { String::new() };
     let title = the_title_for(site, post);
     let heading = if title.is_empty() {
         String::new()
@@ -615,6 +621,7 @@ async fn main_template(ctx: &Ctx<'_>) -> Result<String> {
         if f.is_404 {
             break;
         }
+        ctx.env.with_state(|s| s.looped_posts.push(post.id));
         loop_html.push_str(&if f.is_page {
             page_part(ctx, &post).await?
         } else if f.is_search {
@@ -802,6 +809,8 @@ async fn head(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State, registry: &Re
     // The theme's own styles and scripts (`twentyseventeen_scripts()`).
     let fonts_on = tx(ctx, "on", "Libre Franklin font: on or off") != "off";
     out.push('\n');
+    let plugin_assets = site.plugins.assets(site);
+    out.push_str(&crate::plugin_assets::style_links(&plugin_assets.styles));
     if fonts_on {
         out.push_str(&format!("<link rel='stylesheet' id='twentyseventeen-fonts-css' href='{theme_uri}/assets/fonts/font-libre-franklin.css?ver=20230328' media='all' />\n"));
     }
@@ -810,10 +819,10 @@ async fn head(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State, registry: &Re
     if ctx.mod_str("colorscheme").as_deref() == Some("dark") {
         out.push_str(&format!("<link rel='stylesheet' id='twentyseventeen-colors-dark-css' href='{theme_uri}/assets/css/colors-dark.css?ver=20240412' media='all' />\n"));
     }
-    let jquery = script_version(wp_root, "jquery-core", "3.7.1");
-    let migrate = script_version(wp_root, "jquery-migrate", "3.4.1");
-    out.push_str(&format!("<script id=\"jquery-core-js\" src=\"{includes_url}/js/jquery/jquery.min.js?ver={jquery}\"></script>\n"));
-    out.push_str(&format!("<script id=\"jquery-migrate-js\" src=\"{includes_url}/js/jquery/jquery-migrate.min.js?ver={migrate}\"></script>\n"));
+    // The plugins' scripts are queued first; the theme's global script needs jQuery.
+    let mut printer = crate::plugin_assets::ScriptPrinter::new(&includes_url, &script_version(wp_root, "jquery-core", "3.7.1"), &script_version(wp_root, "jquery-migrate", "3.4.1"));
+    out.push_str(&printer.scripts(&plugin_assets.scripts, false));
+    out.push_str(&printer.core("jquery"));
     let has_menu = menu::has_nav_menu(site, &ctx.mods, "top").await?;
     let mut l10n = vec![("quote", svg("quote-right", false))];
     if has_menu {
@@ -898,13 +907,17 @@ async fn custom_css(ctx: &Ctx<'_>) -> Result<Option<String>> {
 
 // --------------------------------------------------------------------- footer
 
-async fn wp_footer(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State) -> String {
+async fn wp_footer(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State) -> Result<String> {
     let site = ctx.site;
     let wp_root = &ctx.theme.wp_root;
     let version = wp_version(wp_root);
     let modules: Vec<String> = state.script_modules.iter().cloned().collect();
     let (importmap, preloads, module_scripts) = script_modules(wp_root, site, &modules);
-    let mut out = format!("{importmap}{module_scripts}{}{preloads}", state.interactivity.data_script().unwrap_or_default());
+    let plugin_footer = site.plugins.wp_footer(site, &state.looped_posts).await?;
+    let mut out = format!("{plugin_footer}{importmap}{module_scripts}{}{preloads}", state.interactivity.data_script().unwrap_or_default());
+    let plugin_assets = site.plugins.assets(site);
+    let mut printer = crate::plugin_assets::ScriptPrinter::new(&site.site_url("wp-includes"), &script_version(wp_root, "jquery-core", "3.7.1"), &script_version(wp_root, "jquery-migrate", "3.4.1"));
+    out.push_str(&printer.scripts(&plugin_assets.scripts, true));
     out.push_str(&format!("<script data-wp-strategy=\"defer\" defer id=\"jquery-scrollto-js\" src=\"{}/assets/js/jquery.scrollTo.js?ver=2.1.3\"></script>\n", ctx.theme.template_directory_uri()));
     // `comment-reply`, enqueued by `twentyseventeen_scripts()` for singular pages with open comments.
     if let (true, Queried::Post(post)) = (ctx.q.flags.is_singular(), &ctx.q.queried)
@@ -915,7 +928,7 @@ async fn wp_footer(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State) -> Strin
     }
     out.push_str(&emoji_detection_script(site, wp_root, &version));
     out.push_str(&read(&ctx.theme.template_dir().join("assets/images/svg-icons.svg")).unwrap_or_default());
-    out
+    Ok(out)
 }
 
 // ----------------------------------------------------------------------- page
@@ -958,7 +971,7 @@ pub async fn render(ctx: &Ctx<'_>, registry: &Registry) -> Result<Document> {
     body.push_str(&footer(ctx).await?);
     let state = ctx.env.take_state();
     let head_html = head(ctx, &state, registry).await?;
-    let footer_html = wp_footer(ctx, &state).await;
+    let footer_html = wp_footer(ctx, &state).await?;
     let html = format!(
         "<!DOCTYPE html>\n<html {}lang=\"{}\" class=\"no-js no-svg\">\n<head>\n<meta charset=\"UTF-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n<link rel=\"profile\" href=\"https://gmpg.org/xfn/11\">\n\n{head_html}</head>\n\n{body}{footer_html}\n</body>\n</html>\n",
         if site.is_rtl() { "dir=\"rtl\" " } else { "" },

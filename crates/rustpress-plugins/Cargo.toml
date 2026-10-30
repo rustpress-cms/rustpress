@@ -1,0 +1,23 @@
+[package]
+name = "rustpress-plugins"
+description = "Native modules that stand in for WordPress plugins"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+rustpress-core.workspace = true
+rustpress-db.workspace = true
+rustpress-blocks.workspace = true
+rustpress-content.workspace = true
+rustpress-phpser.workspace = true
+serde_json.workspace = true
+futures.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true
+
+[lints]
+workspace = true

@@ -46,8 +46,11 @@ pub(super) async fn latest_posts(bc: &BlockCtx<'_>) -> Result<String> {
 
     let display = |key: &str| attrs.get(key).is_some_and(|v| v.as_bool() == Some(true));
     let mut items = String::new();
+    // The block walks its posts with `the_post()` and then sets up the post that was current before.
+    let previous = super::global_post(bc).await?;
     for post in posts {
         let post = Arc::new(post);
+        bc.env.with_state(|s| s.looped_posts.push(post.id));
         let link = esc_url(&site.permalink(&post).await?);
         let mut title = the_title_for(site, &post);
         if title.is_empty() {
@@ -84,7 +87,9 @@ pub(super) async fn latest_posts(bc: &BlockCtx<'_>) -> Result<String> {
         {
             items.push_str(&format!("<div class=\"wp-block-latest-posts__post-author\">{}</div>", rustpress_core::i18n::sprintf(&site.tr("by %s"), &[&author.display_name])));
         }
-        if display("displayPostDate") {
+        if display("displayPostDate") && site.plugins.hides_date(site, &post).await? {
+            items.push_str("<time datetime=\"\" class=\"wp-block-latest-posts__post-date\"></time>");
+        } else if display("displayPostDate") {
             let ts = site.timezone.local_timestamp(&post.post_date).unwrap_or(0);
             items.push_str(&format!(
                 "<time datetime=\"{}\" class=\"wp-block-latest-posts__post-date\">{}</time>",
@@ -116,6 +121,9 @@ pub(super) async fn latest_posts(bc: &BlockCtx<'_>) -> Result<String> {
             items.push_str(&format!("<div class=\"wp-block-latest-posts__post-full-content\">{}</div>", content.replace("]]>", "]]&gt;")));
         }
         items.push_str("</li>\n");
+    }
+    if let Some(previous) = previous {
+        bc.env.with_state(|s| s.looped_posts.push(previous.id));
     }
 
     let layout = attrs.get("layout");

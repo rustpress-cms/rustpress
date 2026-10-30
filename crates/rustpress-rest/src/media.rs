@@ -54,7 +54,8 @@ impl Rest<'_> {
         data.insert("ping_status".into(), Value::from(post.ping_status.clone()));
         let template = meta_value("_wp_page_template").filter(|t| !t.is_empty() && t != "default").unwrap_or_default();
         data.insert("template".into(), Value::from(template));
-        data.insert("meta".into(), Value::Array(Vec::new()));
+        let registered: Map<String, Value> = self.site.plugins.registered_post_meta("attachment").iter().map(|m| (m.key.to_owned(), m.rest_value(meta_value(m.key).as_deref()))).collect();
+        data.insert("meta".into(), if registered.is_empty() { Value::Array(Vec::new()) } else { Value::Object(registered) });
         // `get_post_class()` names the post type only outside the administration.
         let mut classes = post_class(&env, post, &[], false, false).await?;
         if self.admin && classes.get(1) == Some(&post.post_type) {

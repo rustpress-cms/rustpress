@@ -1632,6 +1632,7 @@ dependencies = [
  "sha2 0.10.9",
  "thiserror",
  "tokio",
+ "tracing",
  "ureq",
  "zip",
 ]
@@ -1720,6 +1721,7 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "fancy-regex",
+ "futures",
  "regex",
  "rustpress-db",
  "rustpress-phpser",
@@ -1753,6 +1755,20 @@ name = "rustpress-phpser"
 version = "0.1.1"
 dependencies = [
  "proptest",
+]
+
+[[package]]
+name = "rustpress-plugins"
+version = "0.1.1"
+dependencies = [
+ "futures",
+ "rustpress-blocks",
+ "rustpress-content",
+ "rustpress-core",
+ "rustpress-db",
+ "rustpress-phpser",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]
@@ -1791,6 +1807,7 @@ dependencies = [
  "rustpress-db",
  "rustpress-mail",
  "rustpress-phpser",
+ "rustpress-plugins",
  "rustpress-rest",
  "rustpress-theme",
  "serde",

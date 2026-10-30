@@ -13,6 +13,7 @@ rustpress-phpser.workspace = true
 chrono.workspace = true
 chrono-tz.workspace = true
 fancy-regex.workspace = true
+futures.workspace = true
 regex.workspace = true
 serde.workspace = true
 serde_json.workspace = true

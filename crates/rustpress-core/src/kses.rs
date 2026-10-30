@@ -29,6 +29,11 @@ pub struct Allowed {
 }
 
 impl Allowed {
+    /// A list of elements with the attributes each keeps (a plugin's own `wp_kses()` rules).
+    pub fn tags(tags: &[(&'static str, &[&'static str])]) -> Self {
+        Self { tags: tags.iter().map(|(name, attrs)| (*name, attrs.to_vec())).collect(), post: false }
+    }
+
     /// `array()`: no tag at all.
     pub fn none() -> Self {
         Self { tags: HashMap::new(), post: false }

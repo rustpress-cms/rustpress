@@ -112,6 +112,22 @@ pub async fn auto_update_message(ctx: &crate::screens::Ctx<'_>) -> String {
     rustpress_core::i18n::sprintf(&ctx.tr(message), &[&diff])
 }
 
+/// The WordPress.org slugs the transient `update_plugins` knows (`response` and `no_update`), by plugin file.
+pub async fn plugin_slugs(site: &Site) -> Vec<(String, String)> {
+    let Some(plugins) = transient(site, "update_plugins").await else { return Vec::new() };
+    let mut slugs = Vec::new();
+    for list in ["response", "no_update"] {
+        if let Some(Value::Array(items) | Value::Object { props: items, .. }) = field(&plugins, list) {
+            for (key, entry) in items {
+                if let (Key::Str(file), Some(slug)) = (key, field(entry, "slug").and_then(Value::as_str)) {
+                    slugs.push((String::from_utf8_lossy(file).into_owned(), slug.to_owned()));
+                }
+            }
+        }
+    }
+    slugs
+}
+
 /// The plugin files the transient `update_plugins` has an update for.
 pub async fn plugin_updates(site: &Site) -> Vec<String> {
     let Some(plugins) = transient(site, "update_plugins").await else { return Vec::new() };

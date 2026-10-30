@@ -16,6 +16,8 @@ pub struct Site {
     pub timezone: SiteTimezone,
     /// Custom post types and taxonomies, inferred from the rewrite rules.
     pub types: crate::types::Types,
+    /// The native modules of the active plugins.
+    pub plugins: crate::native::Plugins,
     /// Translations of the site's locale; empty (English) until [Site::init_i18n] ran.
     i18n: std::sync::OnceLock<std::sync::Arc<crate::i18n::I18n>>,
 }
@@ -35,16 +37,12 @@ impl Site {
     }
 
     /// [Site::load] plus what the plugins and the theme under `wp_root` register: labels and
-    /// REST settings of the custom post types and taxonomies.
+    /// REST settings of the custom post types and taxonomies, and the native modules of the active plugins.
     pub async fn load_at(db: Db, wp_root: &std::path::Path) -> Result<Self> {
         let mut site = Self::load(db).await?;
+        let plugins = site.active_plugins();
         let plain = site.rewrite.is_empty();
         if plain || !site.types.post_types.is_empty() || !site.types.taxonomies.is_empty() {
-            let plugins: Vec<String> = site
-                .options
-                .value("active_plugins")
-                .and_then(|v| v.as_array().map(|items| items.iter().filter_map(|(_, p)| p.as_str().map(str::to_owned)).collect()))
-                .unwrap_or_default();
             let themes = wp_root.join("wp-content").join("themes");
             let mut dirs = vec![themes.join(&site.settings.stylesheet)];
             if site.settings.template != site.settings.stylesheet {
@@ -53,7 +51,16 @@ impl Site {
             let registrations = crate::types::scan_registrations(wp_root, &plugins, &dirs);
             site.types.apply(&registrations, plain);
         }
+        site.plugins = crate::native::Plugins::load(&site, &plugins).await;
         Ok(site)
+    }
+
+    /// The plugin files in `active_plugins`.
+    pub fn active_plugins(&self) -> Vec<String> {
+        self.options
+            .value("active_plugins")
+            .and_then(|v| v.as_array().map(|items| items.iter().filter_map(|(_, p)| p.as_str().map(str::to_owned)).collect()))
+            .unwrap_or_default()
     }
 
     /// `wp_is_application_passwords_available()`: HTTPS, or a local or development environment
@@ -137,7 +144,19 @@ impl Site {
 
     /// Loads the catalogs for the site's locale from `wp_root` (once; later calls do nothing).
     pub fn init_i18n(&self, wp_root: &std::path::Path, themes: &[(String, std::path::PathBuf)]) {
-        let _ = self.i18n.set(std::sync::Arc::new(crate::i18n::I18n::load(wp_root, &self.locale(), themes)));
+        let mut i18n = crate::i18n::I18n::load(wp_root, &self.locale(), themes);
+        for domain in self.plugins.text_domains() {
+            i18n.add_plugin_domain(wp_root, domain);
+        }
+        let _ = self.i18n.set(std::sync::Arc::new(i18n));
+    }
+
+    /// `__( $text, $domain )`.
+    pub fn trd(&self, domain: &str, text: &str) -> String {
+        match self.i18n.get() {
+            Some(i18n) => i18n.gettext(domain, text),
+            None => text.to_owned(),
+        }
     }
 
     pub fn i18n(&self) -> std::sync::Arc<crate::i18n::I18n> {
@@ -259,6 +278,6 @@ impl Site {
             tracing::warn!(pattern, "rewrite rule uses regex features that are not supported; skipped");
         }
         let timezone = SiteTimezone::from_options(&options);
-        Self { db, options, settings, rewrite, timezone, types: crate::types::Types::default(), i18n: std::sync::OnceLock::new() }
+        Self { db, options, settings, rewrite, timezone, types: crate::types::Types::default(), plugins: crate::native::Plugins::default(), i18n: std::sync::OnceLock::new() }
     }
 }

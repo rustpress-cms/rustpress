@@ -41,6 +41,9 @@ pub struct Screen {
     /// The page's markup follows the help and the screen options on the same line (`?>` right before it in the
     /// PHP file); otherwise a line break comes first.
     pub content_inline: bool,
+    /// `$hook_suffix` of a plugin's page (`settings_page_svg-support`): it is the screen's ID, `adminpage` and body
+    /// class.
+    pub hook_suffix: Option<String>,
 }
 
 impl Screen {
@@ -48,6 +51,9 @@ impl Screen {
     pub fn screen_id(&self) -> String {
         if !self.id.is_empty() {
             return self.id.clone();
+        }
+        if let Some(hook) = &self.hook_suffix {
+            return hook.clone();
         }
         let base = self.file.trim_end_matches(".php");
         let post_type = if self.post_type.is_empty() { "post" } else { self.post_type.as_str() };
@@ -361,6 +367,15 @@ pub struct Assets {
     pub inline_styles: Vec<(String, String)>,
     /// Printed in the head after the styles, before the scripts (`admin_head` of the editor).
     pub head_early: String,
+    /// The scripts plugins enqueue on `admin_enqueue_scripts`.
+    pub plugin_scripts: Vec<rustpress_core::native::Asset>,
+    /// The links of the stylesheets plugins enqueue: printed with the styles that are not concatenated, before the
+    /// emoji styles.
+    pub plugin_styles: String,
+    /// What the plugins print on `admin_notices`, the end of `admin-header.php`.
+    pub notices: String,
+    /// What a plugin's `admin_footer_text` prints instead of the thanks for using WordPress.
+    pub footer_text: Option<String>,
 }
 
 /// A page that `@wordpress/boot` renders, with the routes `wp-includes/build/routes/registry.php` lists for it.
@@ -485,7 +500,8 @@ fn command_palette_call(env: &ChromeEnv<'_>) -> String {
                 if sub_label.is_empty() {
                     continue;
                 }
-                commands.push(serde_json::json!({"label": rustpress_core::i18n::sprintf(&site.tr("%1$s > %2$s"), &[&label, &sub_label]), "url": url_of(&sub.slug), "name": format!("{}-{}", item.slug, sub.slug)}));
+                let url = sub.href.as_ref().map_or_else(|| url_of(&sub.slug), |href| site.site_url(&format!("wp-admin/{href}")));
+                commands.push(serde_json::json!({"label": rustpress_core::i18n::sprintf(&site.tr("%1$s > %2$s"), &[&label, &sub_label]), "url": url, "name": format!("{}-{}", item.slug, sub.slug)}));
             }
         }
     }
@@ -686,6 +702,21 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
     scripts.enqueue("wp-commands");
     scripts.enqueue("wp-core-commands");
     scripts.add_inline_script("wp-core-commands", &command_palette_call(env), "after");
+    for script in &assets.plugin_scripts {
+        let deps: Vec<&str> = script.deps.iter().map(String::as_str).collect();
+        let ver = script.ver.clone().map_or(crate::deps::Ver::None, crate::deps::Ver::Value);
+        scripts.add(&script.handle, Some(&script.src), &deps, ver, script.in_footer.then_some(crate::deps::Arg::Int(1)));
+        if let Some(extra) = &script.extra {
+            scripts.append_data(&script.handle, extra);
+        }
+        for code in &script.before {
+            scripts.add_inline_script(&script.handle, code, "before");
+        }
+        for code in &script.after {
+            scripts.add_inline_script(&script.handle, code, "after");
+        }
+        scripts.enqueue(&script.handle);
+    }
     if let Some(boot) = &assets.boot {
         scripts.enqueue(&boot.prerequisites());
     }
@@ -708,7 +739,7 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
         classes.push("is-fullscreen-mode".to_owned());
     }
     classes.extend(screen.early_classes.iter().cloned());
-    classes.push(format!("{}-php", page));
+    classes.push(screen.hook_suffix.clone().unwrap_or_else(|| format!("{}-php", page)));
     classes.push("auto-fold".to_owned());
     classes.push("admin-bar".to_owned());
     if !screen.typenow().is_empty() {
@@ -758,14 +789,17 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
     out.push_str(&format!(
         "<script>\naddLoadEvent = function(func){{if(typeof jQuery!=='undefined')jQuery(function(){{func();}});else if(typeof wpOnload!=='function'){{wpOnload=func;}}else{{var oldonload=wpOnload;wpOnload=function(){{oldonload();func();}}}}}};\nvar ajaxurl = '{ajax_path}',\n\tpagenow = '{pagenow}',\n\ttypenow = '{}',\n\tadminpage = '{}',\n\tthousandsSeparator = '{}',\n\tdecimalPoint = '{}',\n\tisRtl = {};\n</script>\n",
         screen.typenow(),
-        page.to_owned() + "-php",
+        screen.hook_suffix.clone().unwrap_or_else(|| page.to_owned() + "-php"),
         thousands.0,
         thousands.1,
         i32::from(rtl)
     ));
     out.push_str(&admin_styles);
     out.push_str(&colors);
-    out.push_str(&env.head_styles);
+    match env.head_styles.split_once("<style id=\"wp-emoji-styles-inline-css\">") {
+        Some((before, after)) if !assets.plugin_styles.is_empty() => out.push_str(&format!("{before}{}<style id=\"wp-emoji-styles-inline-css\">{after}", assets.plugin_styles)),
+        _ => out.push_str(&env.head_styles),
+    }
     out.push_str(&assets.head_early);
     out.push_str(&head_scripts);
     out.push_str("<script>var _wpColorScheme = {\"icons\":{\"base\":\"#f3f1f1\",\"focus\":\"#fff\",\"current\":\"#fff\"}};</script>\n");
@@ -798,7 +832,7 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
     bar.view_archive = screen.view_archive;
     out.push_str(&adminbar::render_admin(site, env.user, &bar));
     out.push_str("\n<div id=\"wpbody\" role=\"main\">\n\n<div id=\"wpbody-content\">\n");
-    match (&screen.help, &screen.options) {
+    let meta = match (&screen.help, &screen.options) {
         (help, Some(options)) => {
             let nonce = env.loader.nonce.as_ref().map(|n| n("screen-options-nonce")).unwrap_or_default();
             let tr_x = |text: &str, context: &str| env.site.trx(text, context);
@@ -806,7 +840,7 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
             if screen.content_inline && meta.ends_with("\t\t\n") {
                 meta.pop();
             }
-            out.push_str(&meta);
+            meta
         }
         (Some(help), None) => {
             let mut meta = screen_meta(help, &tr("Help"));
@@ -818,15 +852,20 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
 		") {
                 meta.truncate(meta.len() - 2);
             }
-            out.push_str(&meta);
+            meta
         }
-        (None, None) => out.push_str("\t\t"),
+        (None, None) => "\t\t".to_owned(),
+    };
+    // The notices end the header; the line break before the page's markup is the page's own.
+    match meta.strip_suffix('\n') {
+        Some(head) => out.push_str(&format!("{head}{}\n", assets.notices)),
+        None => out.push_str(&format!("{meta}{}", assets.notices)),
     }
     out.push_str(content);
     out.push_str("\n<div class=\"clear\"></div></div><!-- wpbody-content -->\n<div class=\"clear\"></div></div><!-- wpbody -->\n<div class=\"clear\"></div></div><!-- wpcontent -->\n\n");
     out.push_str(&format!(
-        "<div id=\"wpfooter\" role=\"contentinfo\">\n\t\t<p id=\"footer-left\" class=\"alignleft\">\n\t\t<span id=\"footer-thankyou\">{}</span>\t</p>\n\t<p id=\"footer-upgrade\" class=\"alignright\">\n\t\t{}\t</p>\n\t<div class=\"clear\"></div>\n</div>\n",
-        rustpress_core::i18n::sprintf(&tr("Thank you for creating with <a href=\"%s\">WordPress</a>."), &["https://wordpress.org/"]),
+        "<div id=\"wpfooter\" role=\"contentinfo\">\n\t\t<p id=\"footer-left\" class=\"alignleft\">\n\t\t{}\t</p>\n\t<p id=\"footer-upgrade\" class=\"alignright\">\n\t\t{}\t</p>\n\t<div class=\"clear\"></div>\n</div>\n",
+        assets.footer_text.clone().unwrap_or_else(|| format!("<span id=\"footer-thankyou\">{}</span>", rustpress_core::i18n::sprintf(&tr("Thank you for creating with <a href=\"%s\">WordPress</a>."), &["https://wordpress.org/"]))),
         rustpress_core::i18n::sprintf(&tr("Version %s"), &[&version])
     ));
     out.push_str(&assets.pre_footer);

@@ -17,6 +17,7 @@ mod kses_post_table;
 pub mod safe_css;
 pub mod i18n;
 pub mod locale;
+pub mod native;
 pub mod options;
 pub mod php_lit;
 pub mod plugins;

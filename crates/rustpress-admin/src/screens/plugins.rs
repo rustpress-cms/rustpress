@@ -2,7 +2,7 @@
 //! records which ones are switched on in `active_plugins`, the way WordPress would.
 
 use rustpress_core::OrLog;
-use rustpress_core::formatting::{esc_attr, esc_html, esc_url, wptexturize};
+use rustpress_core::formatting::{esc_attr, esc_html, esc_url};
 
 use super::notices::notice;
 use super::{AdminResponse, Ctx, die, redirect, render};
@@ -29,37 +29,93 @@ fn auto_updates(ctx: &Ctx<'_>) -> Vec<String> {
     }
 }
 
+/// `get_option( 'recently_activated' )` (not autoloaded): plugin file => time of the deactivation.
+async fn recently_activated(ctx: &Ctx<'_>) -> Vec<(String, i64)> {
+    let raw = ctx.site().options.fetch(ctx.env.db, "recently_activated").await.ok().flatten().unwrap_or_default();
+    match rustpress_phpser::unserialize(raw.as_bytes()).ok() {
+        Some(rustpress_phpser::Value::Array(items)) => items
+            .iter()
+            .filter_map(|(k, v)| match k {
+                rustpress_phpser::Key::Str(file) => Some((String::from_utf8_lossy(file).into_owned(), v.as_i64().unwrap_or(0))),
+                rustpress_phpser::Key::Int(_) => None,
+            })
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// `update_option( 'recently_activated', $recent, false )`.
+async fn save_recently_activated(ctx: &Ctx<'_>, recent: &[(String, i64)]) {
+    let Some(writer) = ctx.env.writer else { return };
+    let value = rustpress_phpser::Value::Array(recent.iter().map(|(file, time)| (rustpress_phpser::Key::Str(file.as_bytes().to_vec()), rustpress_phpser::Value::Int(*time))).collect());
+    writer.update_option_with_autoload("recently_activated", &String::from_utf8_lossy(&rustpress_phpser::serialize(&value)), "off").await.or_log();
+}
+
+/// `plugins.php` after (de)activating: deactivated plugins go to the front of `recently_activated`, activated ones
+/// leave it.
+async fn note_recently_activated(ctx: &Ctx<'_>, deactivated: &[String], activated: &[String]) {
+    let mut recent: Vec<(String, i64)> = deactivated.iter().map(|file| (file.clone(), ctx.env.now)).collect();
+    recent.extend(recently_activated(ctx).await.into_iter().filter(|(file, _)| !deactivated.contains(file) && !activated.contains(file)));
+    save_recently_activated(ctx, &recent).await;
+}
+
 /// `serialize( array( ... ) )` of a list of strings.
 fn serialize_list(items: &[String]) -> String {
     let value = rustpress_phpser::Value::Array(items.iter().enumerate().map(|(i, s)| (rustpress_phpser::Key::Int(i as i64), rustpress_phpser::Value::Str(s.as_bytes().to_vec()))).collect());
     String::from_utf8_lossy(&rustpress_phpser::serialize(&value)).into_owned()
 }
 
+/// `is_uninstallable_plugin()`: the plugin has an `uninstall.php` or registered an uninstall hook.
+fn is_uninstallable(ctx: &Ctx<'_>, root: &std::path::Path, file: &str) -> bool {
+    let registered = ctx.site().options.value("uninstall_plugins").is_some_and(|v| v.get(file).is_some());
+    let dir = file.rsplit_once('/').map_or(".", |(dir, _)| dir);
+    registered || rustpress_core::files::is_file(&root.join("wp-content").join("plugins").join(dir).join("uninstall.php"))
+}
+
+/// What a row knows of the plugin besides its headers.
+struct RowInfo<'a> {
+    active: bool,
+    auto_update: bool,
+    status: &'a str,
+    /// The slug WordPress.org knows the plugin by (from the transient `update_plugins`).
+    api_slug: Option<&'a str>,
+    uninstallable: bool,
+}
+
 /// One row of the list.
-fn row(ctx: &Ctx<'_>, plugin: &PluginInfo, active: bool, auto_update: bool, status: &str) -> String {
+fn row(ctx: &Ctx<'_>, plugin: &PluginInfo, info: &RowInfo<'_>) -> String {
+    let (active, auto_update, status) = (info.active, info.auto_update, info.status);
     // The search of the list is part of the links (`add_query_arg()` writes an empty `s` without an equals sign).
     let s_arg = match ctx.request.request("s").map(str::trim).filter(|s| !s.is_empty()) {
         Some(search) => format!("s={}", urlenc(search)),
         None => "s".to_owned(),
     };
     let tr = |s: &str| ctx.tr(s);
-    let name = esc_html(&wptexturize(&plugin.name));
-    let slug = plugin.slug();
+    let name = esc_html(&plugin.name);
+    // `$plugin_data['slug'] ?? sanitize_title( $plugin_data['Name'] )`.
+    let slug = info.api_slug.map_or_else(|| rustpress_core::slug::sanitize_title(&plugin.name), str::to_owned);
     let state = if active { "active" } else { "inactive" };
+    let class = if info.uninstallable { format!("{state} is-uninstallable") } else { state.to_owned() };
     let file_q = urlenc(&plugin.file);
     let checkbox = format!("checkbox_{}", md5_hex(&plugin.file));
     let activate_nonce = ctx.create_nonce(&format!("activate-plugin_{}", plugin.file));
     let deactivate_nonce = ctx.create_nonce(&format!("deactivate-plugin_{}", plugin.file));
     let bulk_nonce = ctx.create_nonce("bulk-plugins");
     let updates_nonce = ctx.create_nonce("updates");
-    let mut actions = String::new();
+    let mut links: Vec<(String, String)> = Vec::new();
     if active {
-        actions.push_str(&format!("<span class='deactivate'><a href=\"plugins.php?action=deactivate&amp;plugin={file_q}&amp;plugin_status={status}&amp;paged=1&amp;{s_arg}&amp;_wpnonce={deactivate_nonce}\" id=\"deactivate-{slug}\" aria-label=\"{}\">{}</a></span>", esc_attr(&rustpress_core::i18n::sprintf(&tr("Deactivate %s"), &[&plugin.name])), tr("Deactivate")));
+        links.push(("deactivate".into(), format!("<a href=\"plugins.php?action=deactivate&amp;plugin={file_q}&amp;plugin_status={status}&amp;paged=1&amp;{s_arg}&amp;_wpnonce={deactivate_nonce}\" id=\"deactivate-{slug}\" aria-label=\"{}\">{}</a>", esc_attr(&rustpress_core::i18n::sprintf(&tr("Deactivate %s"), &[&plugin.name])), tr("Deactivate"))));
+        // `plugin_action_links_{$plugin_file}` of the plugin itself: its links come first, keyed by number.
+        let own = ctx.site().plugins.plugin_action_links(ctx.site(), &plugin.file, Vec::new());
+        links.splice(0..0, own.into_iter().enumerate().map(|(i, link)| (i.to_string(), link)));
     } else {
-        actions.push_str(&format!("<span class='activate'><a href=\"plugins.php?action=activate&amp;plugin={file_q}&amp;plugin_status={status}&amp;paged=1&amp;{s_arg}&amp;_wpnonce={activate_nonce}\" id=\"activate-{slug}\" class=\"edit\" aria-label=\"{}\">{}</a> | </span>", esc_attr(&rustpress_core::i18n::sprintf(&tr("Activate %s"), &[&plugin.name])), tr("Activate")));
-        actions.push_str(&format!("<span class='delete'><a href=\"plugins.php?action=delete-selected&amp;checked%5B0%5D={file_q}&amp;plugin_status={status}&amp;paged=1&amp;{s_arg}&amp;_wpnonce={bulk_nonce}\" id=\"delete-{slug}\" class=\"delete\" aria-label=\"{}\">{}</a></span>", esc_attr(&rustpress_core::i18n::sprintf(&tr("Delete %s"), &[&plugin.name])), tr("Delete")));
+        links.push(("activate".into(), format!("<a href=\"plugins.php?action=activate&amp;plugin={file_q}&amp;plugin_status={status}&amp;paged=1&amp;{s_arg}&amp;_wpnonce={activate_nonce}\" id=\"activate-{slug}\" class=\"edit\" aria-label=\"{}\">{}</a>", esc_attr(&rustpress_core::i18n::sprintf(&tr("Activate %s"), &[&plugin.name])), tr("Activate"))));
+        links.push(("delete".into(), format!("<a href=\"plugins.php?action=delete-selected&amp;checked%5B0%5D={file_q}&amp;plugin_status={status}&amp;paged=1&amp;{s_arg}&amp;_wpnonce={bulk_nonce}\" id=\"delete-{slug}\" class=\"delete\" aria-label=\"{}\">{}</a>", esc_attr(&rustpress_core::i18n::sprintf(&tr("Delete %s"), &[&plugin.name])), tr("Delete"))));
     }
-    let description = if plugin.description.is_empty() { "&nbsp;".to_owned() } else { wptexturize(&plugins::kses_description(&plugin.description)) };
+    // `WP_List_Table::row_actions()`.
+    let count = links.len();
+    let actions: String = links.iter().enumerate().map(|(i, (key, link))| format!("<span class='{key}'>{link}{}</span>", if i + 1 < count { " | " } else { "" })).collect();
+    let description = if plugin.description.is_empty() { "&nbsp;".to_owned() } else { plugins::kses_description(&plugin.description) };
     let mut meta = Vec::new();
     if !plugin.version.is_empty() {
         meta.push(rustpress_core::i18n::sprintf(&tr("Version %s"), &[&plugin.version]));
@@ -69,14 +125,24 @@ fn row(ctx: &Ctx<'_>, plugin: &PluginInfo, active: bool, auto_update: bool, stat
         meta.push(rustpress_core::i18n::sprintf(&tr("By %s"), &[&author]));
     }
     let site = ctx.site().settings.siteurl.trim_end_matches('/').to_owned();
-    meta.push(format!("<a href=\"{site}/wp-admin/plugin-install.php?tab=plugin-information&#038;plugin={slug}&#038;TB_iframe=true&#038;width=600&#038;height=550\" class=\"thickbox open-plugin-details-modal\" aria-label=\"{}\" data-title=\"{name}\">{}</a>", esc_attr(&rustpress_core::i18n::sprintf(&tr("More information about %s"), &[&plugin.name])), tr("View details")));
-    let auto = if auto_update {
+    // The details from WordPress.org for a plugin it knows, else the plugin's own site.
+    if let Some(api_slug) = info.api_slug.filter(|_| ctx.can("install_plugins")) {
+        meta.push(format!("<a href=\"{site}/wp-admin/plugin-install.php?tab=plugin-information&#038;plugin={api_slug}&#038;TB_iframe=true&#038;width=600&#038;height=550\" class=\"thickbox open-plugin-details-modal\" aria-label=\"{}\" data-title=\"{name}\">{}</a>", esc_attr(&rustpress_core::i18n::sprintf(&tr("More information about %s"), &[&plugin.name])), tr("View details")));
+    } else if !plugin.plugin_uri.is_empty() {
+        meta.push(format!("<a href=\"{}\" aria-label=\"{}\">{}</a>", esc_url(&plugin.plugin_uri), esc_attr(&rustpress_core::i18n::sprintf(&tr("Visit plugin site for %s"), &[&plugin.name])), tr("Visit plugin site")));
+    }
+    // `plugin_row_meta` of the active plugins.
+    let meta = ctx.site().plugins.plugin_row_meta(ctx.site(), &plugin.file, meta);
+    // A plugin WordPress.org does not know cannot be updated automatically.
+    let auto = if info.api_slug.is_none() {
+        "<span class=\"label\"></span><div class=\"notice notice-error notice-alt inline hidden\"><p></p></div>".to_owned()
+    } else if auto_update {
         format!("<a href=\"plugins.php?action=disable-auto-update&amp;plugin={file_q}&amp;paged=1&amp;plugin_status={status}&amp;_wpnonce={updates_nonce}\" class=\"toggle-auto-update aria-button-if-js\" data-wp-action=\"disable\"><span class=\"dashicons dashicons-update spin hidden\" aria-hidden=\"true\"></span><span class=\"label\">{}</span></a><div class=\"notice notice-error notice-alt inline hidden\"><p></p></div>", tr("Disable auto-updates"))
     } else {
         format!("<a href=\"plugins.php?action=enable-auto-update&amp;plugin={file_q}&amp;paged=1&amp;plugin_status={status}&amp;_wpnonce={updates_nonce}\" class=\"toggle-auto-update aria-button-if-js\" data-wp-action=\"enable\"><span class=\"dashicons dashicons-update spin hidden\" aria-hidden=\"true\"></span><span class=\"label\">{}</span></a><div class=\"notice notice-error notice-alt inline hidden\"><p></p></div>", tr("Enable auto-updates"))
     };
     format!(
-        "<tr class=\"{state}\" data-slug=\"{slug}\" data-plugin=\"{}\"><td class='check-column'><label class=\"label-covers-full-cell\" for=\"{checkbox}\"><span class=\"screen-reader-text\">{}</span></label><input type=\"checkbox\" name=\"checked[]\" value=\"{}\" id=\"{checkbox}\" /></td><th scope='row' class='plugin-title column-primary' aria-label='{}'><strong>{name}</strong><div class=\"row-actions visible\">{actions}</div><button type=\"button\" class=\"toggle-row\"><span class=\"screen-reader-text\">{}</span></button></th><td class='column-description desc'>\n\t\t\t\t\t\t<div class='plugin-description'><p>{description}</p></div>\n\t\t\t\t\t\t<div class='{state} second plugin-version-author-uri'>{}</div></td><td class='column-auto-updates'>{auto}</td></tr>",
+        "<tr class=\"{class}\" data-slug=\"{slug}\" data-plugin=\"{}\"><td class='check-column'><label class=\"label-covers-full-cell\" for=\"{checkbox}\"><span class=\"screen-reader-text\">{}</span></label><input type=\"checkbox\" name=\"checked[]\" value=\"{}\" id=\"{checkbox}\" /></td><th scope='row' class='plugin-title column-primary' aria-label='{}'><strong>{name}</strong><div class=\"row-actions visible\">{actions}</div><button type=\"button\" class=\"toggle-row\"><span class=\"screen-reader-text\">{}</span></button></th><td class='column-description desc'>\n\t\t\t\t\t\t<div class='plugin-description'><p>{description}</p></div>\n\t\t\t\t\t\t<div class='{class} second plugin-version-author-uri'>{}</div></td><td class='column-auto-updates'>{auto}</td></tr>",
         esc_attr(&plugin.file),
         rustpress_core::i18n::sprintf(&tr("Select %s"), &[&plugin.name]),
         esc_attr(&plugin.file),
@@ -89,8 +155,8 @@ fn row(ctx: &Ctx<'_>, plugin: &PluginInfo, active: bool, auto_update: bool, stat
 /// The must-use rows (no actions).
 fn mu_row(ctx: &Ctx<'_>, plugin: &PluginInfo) -> String {
     let tr = |s: &str| ctx.tr(s);
-    let name = esc_html(&wptexturize(&plugin.name));
-    let description = if plugin.description.is_empty() { "&nbsp;".to_owned() } else { wptexturize(&plugins::kses_description(&plugin.description)) };
+    let name = esc_html(&plugin.name);
+    let description = if plugin.description.is_empty() { "&nbsp;".to_owned() } else { plugins::kses_description(&plugin.description) };
     let mut meta = Vec::new();
     if !plugin.version.is_empty() {
         meta.push(rustpress_core::i18n::sprintf(&tr("Version %s"), &[&plugin.version]));
@@ -151,6 +217,11 @@ async fn actions(ctx: &Ctx<'_>, action: &str, installed: &[PluginInfo], active: 
                 active.retain(|p| p != &file);
             }
             writer.update_option("active_plugins", &serialize_list(active)).await.or_log();
+            if action == "activate" {
+                note_recently_activated(ctx, &[], std::slice::from_ref(&file)).await;
+            } else {
+                note_recently_activated(ctx, std::slice::from_ref(&file), &[]).await;
+            }
             Some(back(&format!("{}=true&", if action == "activate" { "activate" } else { "deactivate" })))
         }
         "activate-selected" | "deactivate-selected" => {
@@ -166,11 +237,16 @@ async fn actions(ctx: &Ctx<'_>, action: &str, installed: &[PluginInfo], active: 
                 return Some(back(""));
             }
             if action == "activate-selected" {
-                active.extend(selected);
+                active.extend(selected.iter().cloned());
             } else {
                 active.retain(|p| !selected.contains(p));
             }
             writer.update_option("active_plugins", &serialize_list(active)).await.or_log();
+            if action == "activate-selected" {
+                note_recently_activated(ctx, &[], &selected).await;
+            } else {
+                note_recently_activated(ctx, &selected, &[]).await;
+            }
             Some(back(&format!("{}=true&", if action == "activate-selected" { "activate-multi" } else { "deactivate-multi" })))
         }
         "enable-auto-update" | "disable-auto-update" | "enable-auto-update-selected" | "disable-auto-update-selected" => {
@@ -305,6 +381,10 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     let installed = plugins::installed(&root);
     let mut active = active_plugins(ctx);
     let mut notices = String::new();
+    // "Clear List" of the recently active plugins; the page shows right after.
+    if request.request("clear-recent-list").is_some() {
+        save_recently_activated(ctx, &[]).await;
+    }
     let action = {
         let first = request.request("action").unwrap_or_default();
         if first.is_empty() || first == "-1" { request.request("action2").unwrap_or_default().to_owned() } else { first.to_owned() }
@@ -337,7 +417,14 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     }
 
     let searching = request.request("s").is_some_and(|s| !s.trim().is_empty());
-    let status = ["all", "active", "inactive", "mustuse", "auto-update-enabled", "auto-update-disabled"].iter().find(|s| request.get("plugin_status") == Some(**s)).copied().unwrap_or("all");
+    let status = ["all", "active", "inactive", "recently_activated", "mustuse", "auto-update-enabled", "auto-update-disabled"].iter().find(|s| request.get("plugin_status") == Some(**s)).copied().unwrap_or("all");
+    // Deactivations older than a week are forgotten.
+    let stored_recent = recently_activated(ctx).await;
+    let recent: Vec<(String, i64)> = stored_recent.iter().filter(|(_, time)| time + 7 * 86_400 >= ctx.env.now).cloned().collect();
+    if recent.len() != stored_recent.len() {
+        save_recently_activated(ctx, &recent).await;
+    }
+    let is_recent = |p: &PluginInfo| recent.iter().any(|(file, _)| *file == p.file);
     let mu = plugins::must_use(&root);
     let auto = auto_updates(ctx);
     let is_active = |p: &PluginInfo| active.contains(&p.file);
@@ -345,6 +432,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         ("all", installed.len()),
         ("active", installed.iter().filter(|p| is_active(p)).count()),
         ("inactive", installed.iter().filter(|p| !is_active(p)).count()),
+        ("recently_activated", installed.iter().filter(|p| !is_active(p) && is_recent(p)).count()),
         ("mustuse", mu.len()),
         ("auto-update-enabled", installed.iter().filter(|p| auto.contains(&p.file)).count()),
         ("auto-update-disabled", installed.iter().filter(|p| !auto.contains(&p.file)).count()),
@@ -357,6 +445,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         "all" => tr("All"),
         "active" => tr("Active"),
         "inactive" => tr("Inactive"),
+        "recently_activated" => tr("Recently Active"),
         "mustuse" => tr("Must-Use"),
         "auto-update-enabled" => tr("Auto-updates Enabled"),
         _ => tr("Auto-updates Disabled"),
@@ -380,6 +469,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         .filter(|p| match status {
             "active" => is_active(p),
             "inactive" => !is_active(p),
+            "recently_activated" => !is_active(p) && is_recent(p),
             "auto-update-enabled" => auto.contains(&p.file),
             "auto-update-disabled" => !auto.contains(&p.file),
             _ => true,
@@ -394,8 +484,11 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
             rows.push_str(&mu_row(ctx, p));
         }
     } else {
+        let slugs = crate::updates::plugin_slugs(site).await;
         for p in &list {
-            rows.push_str(&row(ctx, p, is_active(p), auto.contains(&p.file), status));
+            let api_slug = slugs.iter().find(|(file, _)| *file == p.file).map(|(_, slug)| slug.as_str());
+            let info = RowInfo { active: is_active(p), auto_update: auto.contains(&p.file), status, api_slug, uninstallable: is_uninstallable(ctx, &root, &p.file) };
+            rows.push_str(&row(ctx, p, &info));
         }
     }
     if rows.is_empty() {
@@ -432,6 +525,13 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     };
     let mu_note_top = if must_use { format!("<div class=\"alignleft actions\"><p>{}</p></div>", rustpress_core::i18n::sprintf(&tr("Files in the %s directory are executed automatically."), &["<code>/wp-content/mu-plugins</code>"])) } else { String::new() };
     let mu_note_bottom = if must_use { "<div class=\"alignleft actions\"></div>".to_owned() } else { String::new() };
+    // `extra_tablenav()` of the list of recently active plugins.
+    let (mu_note_top, mu_note_bottom) = if status == "recently_activated" {
+        let clear = format!("<div class=\"alignleft actions\"><input type=\"submit\" name=\"clear-recent-list\" id=\"clear-recent-list\" class=\"button\" value=\"{}\"  /></div>", esc_attr(&tr("Clear List")));
+        (clear.clone(), clear)
+    } else {
+        (mu_note_top, mu_note_bottom)
+    };
     // Screen Options: the description and the automatic updates can be hidden, `plugins_per_page` defaults to 999.
     let hidden = super::common::hidden_columns(ctx, "plugins").await;
     let is_hidden = |column: &str| if hidden.iter().any(|h| h == column) { " hidden" } else { "" };
@@ -504,7 +604,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
             "search": if searching { files(&|p| [&p.name, &p.description, &p.author].iter().any(|f| f.to_lowercase().contains(&search))) } else { serde_json::json!([]) },
             "active": files(&|p| is_active(p)),
             "inactive": files(&|p| !is_active(p)),
-            "recently_activated": [],
+            "recently_activated": files(&|p| !is_active(p) && is_recent(p)),
             "upgrade": files(&|p| upgrades.contains(&p.file)),
             "mustuse": mu.iter().map(|p| p.file.clone()).collect::<Vec<_>>(),
             "dropins": [],

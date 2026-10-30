@@ -52,6 +52,7 @@ impl App {
     }
 
     async fn build(config: Config, background: bool) -> Result<Arc<Self>> {
+        rustpress_plugins::register();
         let db = Db::connect(&config.database_url, &config.table_prefix).await?;
         let writer = if config.allow_writes { Some(rustpress_db::Writer::connect(&config.database_url, &config.table_prefix).await?) } else { None };
         let loaded = Self::load(&config, &db).await?;

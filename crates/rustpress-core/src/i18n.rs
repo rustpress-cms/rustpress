@@ -264,6 +264,17 @@ impl I18n {
         i18n
     }
 
+    /// `_load_textdomain_just_in_time()` for a plugin: its catalog from `wp-content/languages/plugins`.
+    pub fn add_plugin_domain(&mut self, wp_root: &Path, domain: &str) {
+        if self.locale.is_empty() || self.locale == "en_US" || domain.contains(['/', '\\', '.']) {
+            return;
+        }
+        let path = wp_root.join("wp-content").join("languages").join("plugins").join(format!("{domain}-{}.mo", self.locale));
+        if let Some(catalog) = std::fs::read(path).ok().and_then(|b| Catalog::parse(&b)) {
+            self.domains.insert(domain.to_owned(), Arc::new(catalog));
+        }
+    }
+
     /// The rules of `wptexturize()` with this language's quotes and dashes, built once.
     pub fn texturize(&self) -> &crate::formatting::Texturize {
         self.texturize.get_or_init(|| {

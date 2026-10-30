@@ -13,6 +13,7 @@ members = [
     "crates/rustpress-server",
     "crates/rustpress-compat",
     "crates/rustpress-mail",
+    "crates/rustpress-plugins",
 ]
 
 # Futures that are dropped unawaited lose writes (review R1); the long argument lists, nested types and
@@ -42,6 +43,7 @@ rustpress-theme = { path = "crates/rustpress-theme" }
 rustpress-rest = { path = "crates/rustpress-rest" }
 rustpress-server = { path = "crates/rustpress-server" }
 rustpress-mail = { path = "crates/rustpress-mail" }
+rustpress-plugins = { path = "crates/rustpress-plugins" }
 
 axum = "0.8"
 base64 = "0.22"

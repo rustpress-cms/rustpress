@@ -40,7 +40,13 @@ pub async fn render_body(theme: &Theme, site: &Site, query: &QueryResult, regist
     let root = env.root_context();
     // A singular template renders inside the main loop, even when it has no query block.
     let in_loop = query.flags.is_singular() && query.posts.len() == 1;
-    env.with_state(|s| s.media.in_main_loop = in_loop);
+    env.with_state(|s| {
+        s.media.in_main_loop = in_loop;
+        // `the_post()` of the main loop.
+        if in_loop {
+            s.looped_posts.extend(query.posts.first().map(|p| p.id));
+        }
+    });
     let started = std::time::Instant::now();
     let content = env.render_markup(&markup, &root).await?;
     let blocks_done = started.elapsed();

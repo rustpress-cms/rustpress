@@ -149,6 +149,19 @@ impl Db {
         Ok(query.fetch_all(&self.pool).await?)
     }
 
+    /// `get_term_meta( $term_id, $key, true )` of every term that has the key: the first value per term.
+    pub async fn term_meta_by_key(&self, key: &str) -> Result<Vec<(u64, String)>> {
+        let sql = format!("SELECT term_id, meta_value FROM {} WHERE meta_key = ? ORDER BY meta_id", self.prefix.table("termmeta"));
+        let rows: Vec<(u64, Option<String>)> = sqlx::query_as(AssertSqlSafe(sql)).bind(key).fetch_all(&self.pool).await?;
+        let mut values: Vec<(u64, String)> = Vec::new();
+        for (term_id, value) in rows {
+            if !values.iter().any(|(id, _)| *id == term_id) {
+                values.push((term_id, value.unwrap_or_default()));
+            }
+        }
+        Ok(values)
+    }
+
     pub async fn term_by_slug(&self, taxonomy: &str, slug: &str) -> Result<Option<Term>> {
         let sql = format!(
             "SELECT {TERM_COLUMNS} FROM {} WHERE tt.taxonomy = ? AND t.slug = ?",
