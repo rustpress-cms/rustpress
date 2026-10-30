@@ -5,6 +5,7 @@ use std::sync::Arc;
 use rustpress_auth::setcookie::{CookiePaths, SetCookie};
 use rustpress_auth::{Auth, CurrentUser, Roles, Scheme};
 use rustpress_core::Site;
+use rustpress_core::native::{ActivePlugin, AdminContext, AdminPage};
 use rustpress_core::formatting::{esc_attr, esc_html};
 use rustpress_db::{Db, Writer};
 
@@ -191,6 +192,38 @@ impl Ctx<'_> {
         self.env.auth.verify_nonce(nonce, action, self.user.id, &self.token, self.env.now).is_some()
     }
 
+    /// What the administration hooks of plugins need of the signed-in user.
+    pub fn plugin_parts(&self) -> PluginParts {
+        let user = self.user.clone();
+        let (auth, id, token, now) = (self.env.auth.clone(), self.user.id, self.token.clone(), self.env.now);
+        let (verify_auth, verify_token) = (auth.clone(), token.clone());
+        let origin = request_origin(self.env, self.request);
+        let same_origin = self.request.referer.as_deref().is_some_and(|r| r == origin || r.starts_with(&format!("{origin}/")));
+        PluginParts {
+            can: Box::new(move |capability| user.can(capability)),
+            nonce: Box::new(move |action| auth.create_nonce(action, id, &token, now).unwrap_or_default()),
+            verify: Box::new(move |nonce, action| verify_auth.verify_nonce(nonce, action, id, &verify_token, now).is_some()),
+            same_origin,
+        }
+    }
+
+    /// The [`AdminContext`] of the screen `hook_suffix`.
+    pub fn plugin_context<'a>(&'a self, parts: &'a PluginParts, hook_suffix: &'a str) -> AdminContext<'a> {
+        AdminContext {
+            site: self.env.site,
+            writer: self.env.writer,
+            hook_suffix,
+            post: self.request.post,
+            request_uri: &self.request.request_uri,
+            query: &self.request.query,
+            form: &self.request.form,
+            same_origin: parts.same_origin,
+            can: parts.can.as_ref(),
+            nonce: parts.nonce.as_ref(),
+            verify_nonce: parts.verify.as_ref(),
+        }
+    }
+
     /// `wp_nonce_field( $action, $name )`.
     pub fn nonce_field_named(&self, action: &str, name: &str) -> String {
         format!(
@@ -316,6 +349,14 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse
         && !capabilities.iter().any(|capability| ctx.can(capability)) {
             return die(env, 403, "WordPress &rsaquo; Error", &ctx.tr("Sorry, you are not allowed to access this page."));
         }
+    if let Some(slug) = request.get("page").filter(|p| !p.is_empty())
+        && let Some((plugin, page)) = env.site.plugins.admin_page_of(env.site, &request.file, slug)
+    {
+        if !ctx.can(page.capability) {
+            return die(env, 403, "WordPress &rsaquo; Error", &ctx.tr("Sorry, you are not allowed to access this page."));
+        }
+        return plugin_page(&ctx, plugin, &page).await;
+    }
     let mut response = match request.file.as_str() {
         "" | "index.php" => dashboard::page(&ctx).await,
         "options-general.php" => general::page(&ctx).await,
@@ -472,13 +513,66 @@ async fn unavailable(ctx: &Ctx<'_>, file: &str) -> AdminResponse {
     response
 }
 
+/// The closures behind an [`AdminContext`].
+pub struct PluginParts {
+    can: Box<dyn Fn(&str) -> bool + Send + Sync>,
+    nonce: Box<dyn Fn(&str) -> String + Send + Sync>,
+    verify: Box<dyn Fn(&str, &str) -> bool + Send + Sync>,
+    same_origin: bool,
+}
+
+/// A page a plugin added to the menu (`admin.php?page=` or `<parent>?page=`): the plugin's output in the frame.
+async fn plugin_page(ctx: &Ctx<'_>, plugin: &dyn ActivePlugin, page: &AdminPage) -> AdminResponse {
+    let hook = page.hook_suffix();
+    let parts = ctx.plugin_parts();
+    let plugin_ctx = ctx.plugin_context(&parts, &hook);
+    let content = plugin.admin_page(page.slug, &plugin_ctx).await.unwrap_or_else(|e| {
+        tracing::error!(page = page.slug, error = %e, "plugin page failed");
+        String::new()
+    });
+    let plugin_help = ctx.site().plugins.admin_page_help(ctx.site(), page.slug);
+    let help = chrome::Help { tabs: plugin_help.tabs.into_iter().map(|t| chrome::HelpTab { id: t.id, title: t.title, content: t.content }).collect(), sidebar: plugin_help.sidebar };
+    let screen = Screen {
+        file: page.parent.to_owned(),
+        parent_file: page.parent.to_owned(),
+        submenu_file: Some(page.slug.to_owned()),
+        title: page.page_title.clone(),
+        help: Some(help),
+        hook_suffix: Some(hook.clone()),
+        // The callback prints its markup right after the header.
+        content_inline: true,
+        ..Default::default()
+    };
+    // `options-head.php` below Settings: the messages of `options.php`, and "Settings saved." for `updated`.
+    let mut assets = Assets::default();
+    if page.parent == "options-general.php" {
+        if ctx.request.get("updated").is_some() {
+            let saved = notices::SettingsError { setting: "general".into(), code: "settings_updated".into(), message: ctx.tr("Settings saved."), kind: "success".into() };
+            assets.notices = notices::render_settings_errors(&[saved], false);
+        } else {
+            assets.notices = common::settings_errors(ctx).await;
+        }
+    }
+    render(ctx, &screen, &content, &assets).await
+}
+
 /// The frame around `content` for the signed-in user.
 pub async fn render(ctx: &Ctx<'_>, screen: &Screen, content: &str, assets: &Assets) -> AdminResponse {
     let env = ctx.env;
     let updates = crate::updates::counts(env.site).await;
     let pending = env.db.count_comments_with_status("0").await.unwrap_or(0);
     let menu_context = MenuContext { block_theme: env.block_theme, pending_comments: pending, updates: (updates.total(), updates.plugins, updates.themes), site_title: env.site.settings.blogname.clone() };
-    let menu = AdminMenu::core(env.site, &ctx.user, &menu_context).prepare(&ctx.user);
+    let menu = AdminMenu::core(env.site, &ctx.user, &menu_context).with_plugin_pages(&env.site.plugins.admin_pages(env.site)).prepare(&ctx.user);
+    // `admin_enqueue_scripts` and `admin_notices` of the plugins.
+    let hook_suffix = screen.hook_suffix.clone().unwrap_or_else(|| screen.file.clone());
+    let parts = ctx.plugin_parts();
+    let plugin_ctx = ctx.plugin_context(&parts, &hook_suffix);
+    let plugin_assets = env.site.plugins.admin_assets(&plugin_ctx);
+    let notices = env.site.plugins.admin_notices(&plugin_ctx).await.unwrap_or_else(|e| {
+        tracing::error!(error = %e, "plugin notices failed");
+        String::new()
+    });
+
     let mut loader = env.loader.clone();
     {
         let auth: Arc<Auth> = Arc::new(env.auth.clone());
@@ -501,6 +595,14 @@ pub async fn render(ctx: &Ctx<'_>, screen: &Screen, content: &str, assets: &Asse
     };
     // What the command palette's scripts need on every screen: the fetch layer, the data and preferences persistence.
     let mut assets = assets.clone();
+    assets.plugin_scripts.extend(plugin_assets.scripts);
+    // `admin_notices` comes before `options-head.php`.
+    assets.notices = format!("{notices}{}", assets.notices);
+    assets.footer_text = env.site.plugins.admin_footer_text(&plugin_ctx);
+    for style in &plugin_assets.styles {
+        let href = style.ver.as_ref().map_or_else(|| style.src.clone(), |ver| rustpress_core::urls::add_query_arg(&style.src, "ver", ver));
+        assets.plugin_styles.push_str(&format!("<link rel='stylesheet' id='{}-css' href='{}' media='{}' />\n", esc_attr(&style.handle), rustpress_core::formatting::esc_url(&href), esc_attr(&style.media)));
+    }
     if !assets.inline.iter().any(|(handle, _, _)| handle == "wp-api-fetch") {
         let nonce = ctx.create_nonce("wp_rest");
         assets.inline.push((

@@ -9,6 +9,7 @@ pub mod global_styles;
 pub mod head;
 pub mod page;
 pub mod phpt;
+mod plugin_assets;
 pub mod registered_patterns;
 pub mod theme;
 pub mod theme_headers;

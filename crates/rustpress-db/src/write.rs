@@ -78,6 +78,18 @@ impl Writer {
         Ok(())
     }
 
+    /// `update_term_meta( $term_id, $key, $value )`: every row with the key is updated, one is added if there is none.
+    pub async fn update_term_meta(&self, term_id: u64, key: &str, value: &str) -> Result<()> {
+        let table = self.prefix.table("termmeta");
+        let existing: i64 = sqlx::query_scalar(AssertSqlSafe(format!("SELECT COUNT(*) FROM {table} WHERE term_id = ? AND meta_key = ?"))).bind(term_id).bind(key).fetch_one(&self.pool).await?;
+        if existing > 0 {
+            sqlx::query(AssertSqlSafe(format!("UPDATE {table} SET meta_value = ? WHERE term_id = ? AND meta_key = ?"))).bind(value).bind(term_id).bind(key).execute(&self.pool).await?;
+        } else {
+            sqlx::query(AssertSqlSafe(format!("INSERT INTO {table} (term_id, meta_key, meta_value) VALUES (?, ?, ?)"))).bind(term_id).bind(key).bind(value).execute(&self.pool).await?;
+        }
+        Ok(())
+    }
+
     /// `delete_user_meta( $user_id, $key )`.
     pub async fn delete_user_meta(&self, user_id: u64, key: &str) -> Result<()> {
         crate::primed::forget_user_meta();

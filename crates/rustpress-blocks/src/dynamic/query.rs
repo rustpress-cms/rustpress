@@ -229,6 +229,7 @@ pub(super) async fn post_template(bc: &BlockCtx<'_>) -> Result<String> {
         before
     });
     for post in &data.posts {
+        bc.env.with_state(|s| s.looped_posts.push(post.id));
         let post = Arc::new(post.clone());
         let mut ctx = Context::default();
         ctx.values.insert("postType".into(), Value::from(post.post_type.clone()));

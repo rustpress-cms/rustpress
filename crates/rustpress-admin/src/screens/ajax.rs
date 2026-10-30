@@ -154,6 +154,23 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse
         };
     };
     let Ok(user) = CurrentUser::load(env.db, env.roles, &session.user).await else { return text(500, "0") };
+    // `wp_ajax_{$action}` of the plugins, for either method.
+    {
+        let ctx = super::Ctx { env, request, user: user.clone(), token: session.token.clone() };
+        let parts = ctx.plugin_parts();
+        let plugin_ctx = ctx.plugin_context(&parts, "admin-ajax.php");
+        match env.site.plugins.admin_ajax(&action, &plugin_ctx).await {
+            Ok(Some(answer)) => {
+                let content_type = if answer.json { "application/json; charset=UTF-8" } else { "text/html; charset=UTF-8" };
+                return AdminResponse { status: answer.status, headers: headers(content_type), cookies: Vec::new(), body: answer.body, bytes: Vec::new() };
+            }
+            Ok(None) => {}
+            Err(e) => {
+                tracing::error!(action = action.as_str(), error = %e, "plugin ajax failed");
+                return text(500, "0");
+            }
+        }
+    }
     // Only the actions the core registers for the method of the request exist (`$core_actions_get`, `$core_actions_post`).
     if request.file != "async-upload.php" && !registered(request, &action) {
         return text(400, "0");

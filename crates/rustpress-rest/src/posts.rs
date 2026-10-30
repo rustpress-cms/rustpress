@@ -381,10 +381,13 @@ impl Rest<'_> {
             let format = formats.first().and_then(|t| t.slug.strip_prefix("post-format-")).unwrap_or("standard").to_owned();
             data.insert("format".into(), Value::from(format));
         }
+        // Meta registered by plugins comes before the core's `footnotes`.
+        let mut registered: Map<String, Value> = self.site.plugins.registered_post_meta(&post.post_type).iter().map(|m| (m.key.to_owned(), m.rest_value(meta_value(m.key).as_deref()))).collect();
         if !custom {
-            data.insert("meta".into(), json!({"footnotes": meta_value("footnotes").unwrap_or_default()}));
+            registered.insert("footnotes".into(), Value::from(meta_value("footnotes").unwrap_or_default()));
+            data.insert("meta".into(), Value::Object(registered));
         } else if has("custom-fields") {
-            data.insert("meta".into(), Value::Array(Vec::new()));
+            data.insert("meta".into(), if registered.is_empty() { Value::Array(Vec::new()) } else { Value::Object(registered) });
         }
         if kind == Kind::Post {
             for (base, taxonomy) in [("categories", "category"), ("tags", "post_tag")].into_iter().filter(|(base, _)| wanted(base)) {

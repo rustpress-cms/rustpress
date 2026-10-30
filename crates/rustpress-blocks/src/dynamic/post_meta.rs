@@ -50,6 +50,10 @@ pub(super) async fn post_date(bc: &BlockCtx<'_>) -> Result<String> {
         return Ok(String::new());
     }
     let site = &bc.env.site;
+    // A plugin's `get_the_date` filter returned false.
+    if site.plugins.hides_date(site, &post).await? {
+        return Ok(String::new());
+    }
     let source = if modified { &post.post_modified } else { &post.post_date };
     let Some(timestamp) = site.timezone.local_timestamp(source) else { return Ok(String::new()) };
     let datetime = bc.attr_str("datetime").map(str::to_owned).unwrap_or_else(|| site.date("c", timestamp));

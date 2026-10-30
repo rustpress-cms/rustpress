@@ -196,6 +196,8 @@ pub struct State {
     pub interactive_root: bool,
     /// `static $tab_counters` of the tab panel block: panels rendered so far per tabs ID.
     pub tab_counters: HashMap<String, u64>,
+    /// The posts `the_post` ran for, in order (the main loop of a singular page and every loop item).
+    pub looped_posts: Vec<u64>,
     /// Classic scripts to load (`comment-reply`).
     pub scripts: Vec<String>,
     /// Extra inline styles keyed by handle (e.g. per-block custom CSS).

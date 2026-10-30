@@ -28,7 +28,6 @@ start rustpress-db \
 start rustpress-wp \
   -e WORDPRESS_DB_HOST=127.0.0.1 -e WORDPRESS_DB_USER=wordpress \
   -e WORDPRESS_DB_PASSWORD=wordpress -e WORDPRESS_DB_NAME=wordpress \
-  -e WORDPRESS_CONFIG_EXTRA="define( 'AUTOMATIC_UPDATER_DISABLED', true );" \
   -v rustpress-wp:/var/www/html --entrypoint bash \
   docker.io/library/wordpress:latest \
   -c 'sed -i "s/Listen 80/Listen 127.0.0.1:8080/; s/:80>/:8080>/" /etc/apache2/ports.conf /etc/apache2/sites-available/*.conf && exec docker-entrypoint.sh apache2-foreground'
