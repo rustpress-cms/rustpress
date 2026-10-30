@@ -1,0 +1,1 @@
+<svg xmlns="http://www.w3.org/2000/svg"><defs><filter id="f" filterUnits="userSpaceOnUse"><feGaussianBlur stdDeviation="2" in="SourceGraphic"/><feBlend mode="multiply"/></filter><linearGradient id="g" gradientUnits="objectBoundingBox"><stop offset="0" stop-color="#000"/></linearGradient></defs><rect filter="url(#f)" fill="url(#g)" width="1" Width="2"/></svg>

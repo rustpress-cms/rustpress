@@ -15,6 +15,9 @@ rustpress-content.workspace = true
 rustpress-phpser.workspace = true
 serde_json.workspace = true
 futures.workspace = true
+regex.workspace = true
+flate2 = "1"
+xmlparser = "0.13"
 
 [dev-dependencies]
 tokio.workspace = true

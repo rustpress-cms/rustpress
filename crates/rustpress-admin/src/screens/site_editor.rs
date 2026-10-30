@@ -120,6 +120,15 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     assets.early_scripts = std::mem::take(&mut assets.scripts);
     assets.early_scripts.push("wp-block-styles".into());
     assets.early_scripts.push("wp-block-directory".into());
+    // `enqueue_block_editor_assets` of the plugins.
+    {
+        let parts = ctx.plugin_parts();
+        let plugin_ctx = ctx.plugin_context(&parts, "site-editor.php");
+        for script in ctx.site().plugins.block_editor_assets(&plugin_ctx).scripts {
+            assets.early_scripts.push(script.handle.clone());
+            assets.plugin_page_scripts.push(script);
+        }
+    }
     assets.inline.push(("wp-block-styles".into(), super::block_editor::block_styles_script(ctx), "after".into()));
     shared_inline(ctx, &mut assets, &preloaded, super::block_editor::EditorPage::Site).await;
     // The classic editor's TinyMCE settings are not needed by the site editor.

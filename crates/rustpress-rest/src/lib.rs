@@ -620,7 +620,61 @@ impl<'a> Rest<'a> {
             data.insert("schema".into(), self.with_rest_urls(schema));
         }
         let methods = entry.get("methods").and_then(Value::as_array).map(|m| m.iter().filter_map(Value::as_str).map(str::to_owned).collect()).unwrap_or_default();
-        Some((Value::Object(data), methods))
+        let mut data = Value::Object(data);
+        self.add_registered_meta(route, &mut data);
+        Some((data, methods))
+    }
+
+    /// The meta keys plugins registered for the post type of a route go into the `meta` of its schema and arguments
+    /// (`WP_REST_Meta_Fields::get_field_schema()`).
+    fn add_registered_meta(&self, route: &str, data: &mut Value) {
+        let Some(base) = route.strip_prefix("/wp/v2/").map(|r| r.split('/').next().unwrap_or_default()) else { return };
+        let post_type = match base {
+            "posts" => "post".to_owned(),
+            "pages" => "page".to_owned(),
+            "media" => "attachment".to_owned(),
+            other => match self.site.types.post_types.iter().find(|t| t.rest_base() == other) {
+                Some(info) => info.name.clone(),
+                None => return,
+            },
+        };
+        let fields = self.site.plugins.registered_post_meta(&post_type);
+        if fields.is_empty() {
+            return;
+        }
+        let mut properties = Map::new();
+        for field in &fields {
+            let (kind, default) = match field.kind {
+                rustpress_core::native::MetaType::Boolean => ("boolean", Value::Bool(false)),
+                rustpress_core::native::MetaType::String => ("string", Value::from("")),
+            };
+            properties.insert(field.key.to_owned(), serde_json::json!({"type": kind, "title": "", "description": "", "default": default}));
+        }
+        fn walk(value: &mut Value, properties: &Map<String, Value>) {
+            match value {
+                Value::Object(map) => {
+                    for (key, child) in map.iter_mut() {
+                        if key == "meta" && child.get("description").and_then(Value::as_str) == Some("Meta fields.") {
+                            // Registered before the core's own (`footnotes`).
+                            if let Some(slot) = child.get_mut("properties") {
+                                let mut merged = properties.clone();
+                                if let Value::Object(existing) = slot {
+                                    for (key, value) in existing.iter() {
+                                        merged.entry(key.clone()).or_insert_with(|| value.clone());
+                                    }
+                                }
+                                *slot = Value::Object(merged);
+                            }
+                        } else {
+                            walk(child, properties);
+                        }
+                    }
+                }
+                Value::Array(items) => items.iter_mut().for_each(|item| walk(item, properties)),
+                _ => {}
+            }
+        }
+        walk(data, &properties);
     }
 
     /// Puts the address of this site's API where the baked data says `@REST@`.

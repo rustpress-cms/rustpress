@@ -73,7 +73,7 @@ pub(super) async fn latest_posts(bc: &BlockCtx<'_>) -> Result<String> {
                 }
                 let size = attrs.get("featuredImageSizeSlug").and_then(Value::as_str).unwrap_or("thumbnail");
                 let image_attrs = vec![("style".to_owned(), AttrValue::Text(esc_attr(&style)))];
-                let mut image = images::get_attachment_image(bc.env, thumbnail, size, &ImageArgs { attrs: image_attrs, post_thumbnail: true, dimensions: None }).await?;
+                let mut image = images::get_attachment_image(bc.env, thumbnail, size, &ImageArgs { attrs: image_attrs, post_thumbnail: true, thumbnail_of: Some(post.id), dimensions: None }).await?;
                 if display("addLinkToFeaturedImage") {
                     image = format!("<a href=\"{link}\" aria-label=\"{}\">{image}</a>", esc_attr(&title));
                 }

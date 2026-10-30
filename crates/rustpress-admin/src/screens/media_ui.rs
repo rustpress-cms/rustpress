@@ -67,7 +67,7 @@ pub async fn enqueue(ctx: &Ctx<'_>, assets: &mut Assets, post_id: u64) {
         "defaults": {
             "file_data_name": "async-upload",
             "url": admin_path(ctx, "async-upload.php"),
-            "filters": {"max_file_size": format!("{}b", max_upload()), "mime_types": [{"extensions": baked.get("mime_extensions").cloned().unwrap_or(Json::Null)}]},
+            "filters": {"max_file_size": format!("{}b", max_upload()), "mime_types": [{"extensions": crate::media::allowed_mime_types(site, &ctx.user, false, true).iter().map(|(exts, _)| exts.replace('|', ",")).collect::<Vec<_>>().join(",")}]},
             "multipart_params": {"action": "upload-attachment", "_wpnonce": ctx.create_nonce("media-form")},
         },
         "browser": {"mobile": false, "supported": true},

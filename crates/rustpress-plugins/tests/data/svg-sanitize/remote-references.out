@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg">
+  <rect stroke="url(#local)" width="1"></rect>
+  <rect width="2"></rect>
+  <rect style="fill:url(https://evil.example/b)" width="3"></rect>
+  <rect width="4"></rect>
+</svg>

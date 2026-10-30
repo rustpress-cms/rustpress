@@ -1,0 +1,1 @@
+<?xml version="1.0" encoding="UTF-8"?> <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"><defs><g id="a"><rect width="1"></rect></g><g id="b"><use xlink:href="#a"></use><use xlink:href="#a"></use></g></defs><use xlink:href="#b"></use><use href="#b"></use></svg> 

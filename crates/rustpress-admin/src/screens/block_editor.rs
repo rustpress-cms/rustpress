@@ -307,8 +307,8 @@ pub(super) async fn editor_settings(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo)
     let get = |key: &str| baked.get(key).cloned().unwrap_or(Value::Null);
 
     let mut mimes = Map::new();
-    for (exts, mime) in crate::media::MIME_TYPES {
-        mimes.insert((*exts).to_owned(), json!(mime));
+    for (exts, mime) in crate::media::allowed_mime_types(site, &ctx.user, false, false) {
+        mimes.insert(exts, json!(mime));
     }
     settings.insert("alignWide".into(), json!(false));
     settings.insert("allowedBlockTypes".into(), json!(true));
@@ -600,6 +600,21 @@ pub async fn render_editor(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo) -> Admin
         ..Default::default()
     };
     super::media_ui::enqueue(ctx, &mut assets, post.id).await;
+    // `enqueue_block_editor_assets` of the plugins.
+    {
+        let parts = ctx.plugin_parts();
+        let hook = if is_new { "post-new.php" } else { "post.php" };
+        let plugin_ctx = ctx.plugin_context(&parts, hook);
+        for script in site.plugins.block_editor_assets(&plugin_ctx).scripts {
+            // `get_import_map()` walks the queue from its end: a last script that needs `wp-edit-post` brings the
+            // module dependencies of the editor (the router) before those of the block library.
+            if script.deps.iter().any(|d| d == "wp-edit-post") {
+                assets.route_first = true;
+            }
+            assets.scripts.push(script.handle.clone());
+            assets.plugin_page_scripts.push(script);
+        }
+    }
     // `wp_enqueue_editor()`: the defaults of `wp.editor` for the classic block (`admin_print_footer_scripts`, 45).
     let rich_editing = ctx.env.db.user_meta(ctx.user.id, "rich_editing").await.ok().flatten();
     assets.footer = super::editor::default_editor_scripts(ctx, super::editor::can_richedit(ctx, rich_editing.as_deref()));

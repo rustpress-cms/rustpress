@@ -117,6 +117,22 @@ pub fn check_filetype(filename: &str) -> Option<(String, String)> {
     MIME_TYPES.iter().find(|(exts, _)| exts.split('|').any(|e| e == extension)).map(|(_, mime)| (extension, (*mime).to_owned()))
 }
 
+/// `wp_check_filetype( $filename, $mimes )` with a list of `(extensions, MIME type)`.
+pub fn check_filetype_in(filename: &str, mimes: &[(String, String)]) -> Option<(String, String)> {
+    let extension = filename.rsplit_once('.')?.1.to_lowercase();
+    mimes.iter().find(|(exts, _)| exts.split('|').any(|e| e == extension)).map(|(_, mime)| (extension, mime.clone()))
+}
+
+/// `get_allowed_mime_types( $user )`: the core's types (without those that need `unfiltered_html` for a user
+/// without it), then the plugins' `upload_mimes`.
+pub fn allowed_mime_types(site: &rustpress_core::Site, user: &rustpress_auth::CurrentUser, rest: bool, media_form_nonce: bool) -> Vec<(String, String)> {
+    let unfiltered = user.can("unfiltered_html");
+    let core: Vec<(String, String)> = MIME_TYPES.iter().filter(|(_, mime)| unfiltered || !UNFILTERED.contains(mime)).map(|(exts, mime)| ((*exts).to_owned(), (*mime).to_owned())).collect();
+    let can = |capability: &str| user.can(capability);
+    let uploader = rustpress_core::native::Uploader { site, roles: &user.roles, can: &can, rest, media_form_nonce };
+    site.plugins.upload_mimes(&uploader, core)
+}
+
 /// The part of `sanitize_file_name()` for names with several extensions: an inner one of two to five letters (and
 /// an optional digit) that is no allowed type gets a `_`, so `x.php.jpg` is stored as `x.php_.jpg`.
 pub fn mark_inner_extensions(name: &str, allowed: impl Fn(&str) -> bool) -> String {
@@ -195,9 +211,14 @@ pub fn check_image_upload(name: &str, mime: &str, bytes: &[u8]) -> Option<(Strin
 }
 
 /// What an upload request carries.
+#[derive(Default)]
 pub struct UploadedFile {
     pub name: String,
     pub bytes: Vec<u8>,
+    /// Sent to the REST API.
+    pub rest: bool,
+    /// The request carries a valid `_wpnonce` for `media-form`.
+    pub media_form_nonce: bool,
 }
 
 /// An upload that could not be stored, with the text WordPress shows.
@@ -460,20 +481,23 @@ pub fn upload_subdir(content: &Content<'_>) -> String {
 /// Stores the file and makes the attachment: `media_handle_upload()`. Returns the attachment ID.
 pub async fn handle_upload(content: &Content<'_>, uploads: &Path, file: UploadedFile, post_parent: u64) -> Result<u64, UploadError> {
     let tr = |t: &str| content.site.tr(t);
+    let site = content.site;
+    // `wp_handle_upload_prefilter` of the plugins comes before every check.
+    let mut file = file;
+    let can = |capability: &str| content.user.can(capability);
+    let uploader = rustpress_core::native::Uploader { site, roles: &content.user.roles, can: &can, rest: file.rest, media_form_nonce: file.media_form_nonce };
+    site.plugins.upload_prefilter(&uploader, &mut file.name, &mut file.bytes).map_err(UploadError)?;
+    let mimes = allowed_mime_types(site, content.user, file.rest, file.media_form_nonce);
     if file.bytes.is_empty() {
         return Err(UploadError(rustpress_core::i18n::sprintf(&tr("File is empty. Please upload something more substantial. This error could also be caused by uploads being disabled in your php.ini or by %s being defined as smaller than %s in php.ini."), &["post_max_size", "upload_max_filesize"])));
     }
-    let unfiltered = content.user.can("unfiltered_html");
-    let allowed = |ext: &str| check_filetype(&format!("x.{ext}")).is_some_and(|(_, mime)| unfiltered || !UNFILTERED.contains(&mime.as_str()));
+    let allowed = |ext: &str| check_filetype_in(&format!("x.{ext}"), &mimes).is_some();
     let name = mark_inner_extensions(&sanitize::file_name(&file.name), allowed);
-    let Some((_ext, mime)) = check_filetype(&name) else {
-        return Err(UploadError(tr("Sorry, you are not allowed to upload this file type.")));
-    };
-    if UNFILTERED.contains(&mime.as_str()) && !unfiltered {
-        return Err(UploadError(tr("Sorry, you are not allowed to upload this file type.")));
-    }
-    let Some((name, mime)) = check_image_upload(&name, &mime, &file.bytes) else {
-        return Err(UploadError(tr("Sorry, you are not allowed to upload this file type.")));
+    let refused = || UploadError(tr("Sorry, you are not allowed to upload this file type."));
+    // A type the core refuses may still pass a plugin's `wp_check_filetype_and_ext`.
+    let (name, mime) = match check_filetype_in(&name, &mimes).and_then(|(_, mime)| check_image_upload(&name, &mime, &file.bytes)) {
+        Some(checked) => checked,
+        None => site.plugins.accept_filetype(&name, &mimes).ok_or_else(refused)?,
     };
     let subdir = upload_subdir(content);
     let dir: PathBuf = if subdir.is_empty() { uploads.to_path_buf() } else { uploads.join(&subdir) };
@@ -520,6 +544,7 @@ pub async fn handle_upload(content: &Content<'_>, uploads: &Path, file: Uploaded
             Value::Array(vec![entry("filesize", Value::Int(filesize))])
         }
     };
+    let metadata = site.plugins.attachment_metadata(site, &mime, &target, &stored_relative, metadata);
     let w = content.writer;
     w.update_post_meta(id, "_wp_attached_file", &stored_relative).await.map_err(|e| UploadError(e.to_string()))?;
     let serialized = String::from_utf8_lossy(&rustpress_phpser::serialize(&metadata)).into_owned();
