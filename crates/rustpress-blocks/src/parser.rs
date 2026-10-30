@@ -211,8 +211,9 @@ impl Parser<'_> {
     }
 }
 
+/// `[ \t\f\r\n]`: since 7.1.4 the delimiter regexp no longer takes `\s`, which also matched a vertical tab.
 fn is_space(b: u8) -> bool {
-    matches!(b, b' ' | b'\t' | b'\n' | b'\r' | 0x0c | 0x0b)
+    matches!(b, b' ' | b'\t' | b'\n' | b'\r' | 0x0c)
 }
 
 fn skip_spaces(bytes: &[u8], mut i: usize) -> usize {
@@ -235,7 +236,7 @@ fn read_name(bytes: &[u8], i: usize) -> Option<usize> {
 }
 
 /// Matches the block delimiter regexp of `WP_Block_Parser::next_token` at `start`:
-/// `<!--\s+(/)?wp:(namespace/)?name\s+({attrs}\s+)?(/)?-->`.
+/// `<!--[ \t\f\r\n]+(/)?wp:(namespace/)?name[ \t\f\r\n]+({attrs}[ \t\f\r\n]+)?(/)?-->`.
 fn parse_delimiter(doc: &str, start: usize) -> Option<Token> {
     let bytes = doc.as_bytes();
     let mut i = start + 4;
@@ -319,6 +320,12 @@ mod tests {
 
     fn names(blocks: &[Block]) -> Vec<Option<&str>> {
         blocks.iter().map(|b| b.name.as_deref()).collect()
+    }
+
+    #[test]
+    fn a_vertical_tab_is_not_delimiter_space() {
+        assert_eq!(names(&parse_blocks("<!--\x0bwp:paragraph -->x<!-- /wp:paragraph -->")), vec![None]);
+        assert_eq!(names(&parse_blocks("<!--\x0cwp:paragraph\t-->x<!--\r\n/wp:paragraph -->")), vec![Some("core/paragraph")]);
     }
 
     #[test]

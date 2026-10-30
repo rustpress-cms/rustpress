@@ -118,7 +118,7 @@ pub(super) async fn categories(bc: &BlockCtx<'_>) -> Result<String> {
             items.insert_str(i + "</select>".len(), &script);
         }
         let show_label = if flag(bc, "showLabel") { "" } else { " screen-reader-text" };
-        let label_text = bc.attr_str("label").filter(|l| !l.is_empty()).map(str::to_owned).unwrap_or(label);
+        let label_text = bc.attr_str("label").filter(|l| !l.is_empty()).map(kses_post).unwrap_or(label);
         let wrapper = bc.wrapper_attributes(&[("class", format!("wp-block-categories-dropdown wp-block-categories-taxonomy-{taxonomy}"))]);
         return Ok(format!("<div {wrapper}><label class=\"wp-block-categories__label{show_label}\" for=\"{}\">{label_text}</label>{items}</div>", esc_attr(&block_id)));
     }

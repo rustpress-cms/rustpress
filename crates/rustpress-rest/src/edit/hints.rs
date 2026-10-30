@@ -94,7 +94,8 @@ impl Rest<'_> {
             if readable && post_readable {
                 allow.push("GET");
             }
-            let editable = self.user().is_some_and(|u| u.id != 0 && (u.can("moderate_comments") || u.can_edit_comment(post.as_ref())));
+            let moderates = !comment.comment_type.eq_ignore_ascii_case("note");
+            let editable = self.user().is_some_and(|u| u.id != 0 && ((moderates && u.can("moderate_comments")) || u.can_edit_comment(post.as_ref())));
             if editable {
                 allow.extend(["POST", "PUT", "PATCH", "DELETE"]);
             }

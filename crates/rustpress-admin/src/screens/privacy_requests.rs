@@ -406,7 +406,7 @@ async fn row(ctx: &Ctx<'_>, kind: Kind, post: &Post) -> String {
         out
     };
     let toggle = format!("<button type=\"button\" class=\"toggle-row\"><span class=\"screen-reader-text\">{}</span></button>", tr("Show more details"));
-    let email_html = format!("<a href=\"{}\">{email}</a> {row_actions}", esc_url(&format!("mailto:{email}")));
+    let email_html = format!("<a href=\"{}\">{}</a> {row_actions}", esc_url(&format!("mailto:{email}")), esc_html(email));
 
     // The status.
     let timestamp = match status {
@@ -454,7 +454,7 @@ async fn row(ctx: &Ctx<'_>, kind: Kind, post: &Post) -> String {
     format!(
         "<tr id=\"request-{id}\" class=\"status-{}\"><td class=\"check-column\"><input type=\"checkbox\" name=\"request_id[]\" id=\"requester_{id}\" value=\"{id}\" /><label for=\"requester_{id}\"><span class=\"screen-reader-text\">{}</span></label><span class=\"spinner\"></span></td><th class='email column-email has-row-actions column-primary' data-colname=\"{}\" scope=\"row\" aria-label=\"{}\">{email_html}{toggle}{toggle}</th><td class='status column-status' data-colname=\"{}\">{status_html}</td><td class='created_timestamp column-created_timestamp' data-colname=\"{}\">{}</td><td class='next_steps column-next_steps' data-colname=\"{}\">{next}</td></tr>",
         esc_attr(status),
-        sprintf(&tr("Select %s"), &[email]),
+        sprintf(&tr("Select %s"), &[&esc_html(email)]),
         tr("Requester"),
         esc_attr(email),
         tr("Status"),

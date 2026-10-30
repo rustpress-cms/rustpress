@@ -19,5 +19,9 @@ if [[ $have != "$want" ]]; then
   wp core update --version="$want" --force
   wp core update-db
   wp language core update
+  # Windows reads file times through \\wsl.localhost in steps of 100 ns, which would move the ETag Apache derives from
+  # the microseconds by one. The files the update just wrote get whole microseconds.
+  podman exec rustpress-wp bash -c 'find /var/www/html -type f -newermt "-15 minutes" -print0 |
+    while IFS= read -r -d "" f; do touch -m -d "$(stat -c %y "$f" | cut -c1-26)" "$f"; done'
 fi
 echo "reference WordPress $(wp core version)"
