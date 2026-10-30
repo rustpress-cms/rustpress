@@ -36,6 +36,8 @@ fn forget_cached(table: &str) {
     match table {
         "usermeta" => crate::primed::forget_user_meta(),
         "users" => crate::primed::forget_users(),
+        "terms" | "term_taxonomy" => crate::terms::forget_taxonomies(),
+        "postmeta" => crate::primed::forget_meta(),
         _ => {}
     }
 }
@@ -202,6 +204,7 @@ impl Writer {
 
     /// `delete_post_meta( $post_id, $key )`.
     pub async fn delete_post_meta(&self, post_id: u64, key: &str) -> Result<u64> {
+        forget_cached("postmeta");
         let sql = format!("DELETE FROM {} WHERE post_id = ? AND meta_key = ?", self.prefix.table("postmeta"));
         Ok(sqlx::query(AssertSqlSafe(sql)).bind(post_id).bind(key).execute(&self.pool).await?.rows_affected())
     }
@@ -213,6 +216,12 @@ impl Writer {
         }
         if sql.contains("users") {
             crate::primed::forget_users();
+        }
+        if sql.contains("postmeta") {
+            crate::primed::forget_meta();
+        }
+        if sql.contains("term") {
+            crate::terms::forget_taxonomies();
         }
         Ok(sqlx::query(AssertSqlSafe(sql)).execute(&self.pool).await?.rows_affected())
     }

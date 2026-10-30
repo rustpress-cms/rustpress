@@ -258,9 +258,9 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUs
                 query.search_phrase = Some(phrase.clone());
             }
             // MySQL leaves posts of the same date in the order of their IDs.
-            let mut posts = env.db.posts(&query).await.unwrap_or_default();
-            posts.sort_by(|a, b| b.post_date.cmp(&a.post_date).then(a.id.cmp(&b.id)));
-            posts.truncate(50);
+            query.ties_ascending = true;
+            query.limit = Some(50);
+            let posts = env.db.posts(&query).await.unwrap_or_default();
             if posts.is_empty() {
                 return json(200, &json!({"success": false, "data": tr("No items found.")}));
             }
@@ -314,11 +314,13 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUs
                 query.search = phrase.split_whitespace().map(str::to_owned).collect();
                 query.search_phrase = Some(phrase.clone());
             }
-            let mut posts = env.db.posts(&query).await.unwrap_or_default();
-            posts.sort_by(|a, b| b.post_date.cmp(&a.post_date).then(a.id.cmp(&b.id)));
-            let posts: Vec<_> = posts.into_iter().skip(((page - 1).saturating_mul(20)) as usize).take(20).collect();
+            query.ties_ascending = true;
+            query.limit = Some(20);
+            query.offset = (page - 1).saturating_mul(20);
+            let posts = env.db.posts(&query).await.unwrap_or_default();
+            // `wp_link_query()` returns false without posts, and the handler prints it as JSON.
             if posts.is_empty() {
-                return text(200, "0");
+                return text(200, "false\n");
             }
             let mut results = Vec::new();
             for post in &posts {
@@ -327,7 +329,7 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUs
                 } else {
                     super::posts::type_info(&ctx, &post.post_type).map_or_else(|| post.post_type.clone(), |t| t.singular)
                 };
-                let title = rustpress_blocks::content::the_title_for(site, post);
+                let title = rustpress_blocks::content::the_title_in_admin(site, post);
                 results.push(json!({
                     "ID": post.id,
                     "title": esc_html(&rustpress_core::formatting::strip_tags(&title)).trim().to_owned(),

@@ -61,6 +61,16 @@ pub(crate) fn primed_meta(post_id: u64) -> Option<Vec<PostMeta>> {
     PRIMED_META.try_with(|cache| cache.borrow().get(&post_id).cloned()).ok().flatten()
 }
 
+/// Keeps the meta rows of a post read outside a list (`update_meta_cache()` at the first `get_post_meta()`).
+pub(crate) fn remember_meta(post_id: u64, rows: &[PostMeta]) {
+    let _ = PRIMED_META.try_with(|cache| cache.borrow_mut().insert(post_id, rows.to_vec()));
+}
+
+/// A write to `wp_postmeta`: meta rows are read again when asked for.
+pub(crate) fn forget_meta() {
+    let _ = PRIMED_META.try_with(|cache| cache.borrow_mut().clear());
+}
+
 pub(crate) fn primed_post(id: u64) -> Option<Option<Post>> {
     PRIMED_POSTS.try_with(|cache| cache.borrow().get(&id).cloned()).ok().flatten()
 }

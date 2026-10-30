@@ -2,6 +2,8 @@
 
 use rustpress_core::formatting::{esc_attr, esc_html, esc_url};
 use rustpress_core::urls::{add_query_arg, remove_query_arg};
+use std::collections::{HashMap, HashSet};
+
 use rustpress_db::{OrderBy, Order, Post, PostQuery};
 
 use super::notices;
@@ -260,7 +262,7 @@ async fn bulk_action(ctx: &Ctx<'_>, info: &TypeInfo) -> Option<AdminResponse> {
             Vec::new()
         } else {
             let query = PostQuery { post_types: vec![info.name.clone()], statuses: vec![status], ..Default::default() };
-            ctx.env.db.posts(&query).await.unwrap_or_default().into_iter().map(|p| p.id).collect()
+            ctx.env.db.post_parents(&query).await.unwrap_or_default().into_iter().map(|(id, _)| id).collect()
         };
         "delete".to_owned()
     } else {
@@ -335,19 +337,24 @@ async fn bulk_action(ctx: &Ctx<'_>, info: &TypeInfo) -> Option<AdminResponse> {
 }
 
 /// Flattens pages into the order of a hierarchical list: parents first, children below them.
-fn hierarchical_order(posts: Vec<Post>) -> Vec<(Post, usize)> {
-    let ids: Vec<u64> = posts.iter().map(|p| p.id).collect();
-    let mut out: Vec<(Post, usize)> = Vec::new();
-    fn walk(posts: &[Post], parent: u64, level: usize, out: &mut Vec<(Post, usize)>) {
-        for post in posts.iter().filter(|p| p.post_parent == parent) {
-            out.push((post.clone(), level));
-            walk(posts, post.id, level + 1, out);
+/// `_page_rows()`: `(ID, level)` of every page, each followed by its descendants, from `(ID, post_parent)` in list order.
+fn hierarchical_order(rows: &[(u64, u64)]) -> Vec<(u64, usize)> {
+    let ids: HashSet<u64> = rows.iter().map(|(id, _)| *id).collect();
+    let mut children: HashMap<u64, Vec<u64>> = HashMap::new();
+    for (id, parent) in rows {
+        children.entry(*parent).or_default().push(*id);
+    }
+    let mut out = Vec::with_capacity(rows.len());
+    fn walk(children: &HashMap<u64, Vec<u64>>, parent: u64, level: usize, out: &mut Vec<(u64, usize)>) {
+        for id in children.get(&parent).into_iter().flatten() {
+            out.push((*id, level));
+            walk(children, *id, level + 1, out);
         }
     }
     // Roots are the pages whose parent is not in the list.
-    for post in posts.iter().filter(|p| p.post_parent == 0 || !ids.contains(&p.post_parent)) {
-        out.push((post.clone(), 0));
-        walk(&posts, post.id, 1, &mut out);
+    for (id, _) in rows.iter().filter(|(_, parent)| *parent == 0 || !ids.contains(parent)) {
+        out.push((*id, 0));
+        walk(&children, *id, 1, &mut out);
     }
     out
 }
@@ -552,11 +559,13 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         return response;
     }
     let (posts, levels): (Vec<Post>, Vec<usize>) = if hierarchical_display {
-        let all = db.posts(&query).await.unwrap_or_default();
-        let flat = hierarchical_order(all);
+        // Like `wp_edit_posts_query()`: every match as `id=>parent`, rows only for the page shown.
+        let all = db.post_parents(&query).await.unwrap_or_default();
         let start = ((paged - 1).saturating_mul(per_page)) as usize;
-        let slice: Vec<(Post, usize)> = flat.into_iter().skip(start).take(per_page as usize).collect();
-        (slice.iter().map(|(p, _)| p.clone()).collect(), slice.iter().map(|(_, l)| *l).collect())
+        let slice: Vec<(u64, usize)> = hierarchical_order(&all).into_iter().skip(start).take(per_page as usize).collect();
+        let ids: Vec<u64> = slice.iter().map(|(id, _)| *id).collect();
+        let mut rows: HashMap<u64, Post> = db.posts_by_ids(&ids).await.unwrap_or_default().into_iter().map(|p| (p.id, p)).collect();
+        slice.into_iter().filter_map(|(id, level)| rows.remove(&id).map(|post| (post, level))).unzip()
     } else {
         query.limit = Some(per_page);
         query.offset = (paged - 1).saturating_mul(per_page);

@@ -220,8 +220,12 @@ async fn has_submenus(bc: &BlockCtx<'_>, blocks: &[Block]) -> Result<bool> {
 
 /// `get_pages()`: published pages by `menu_order, post_title`.
 async fn published_pages(bc: &BlockCtx<'_>) -> Result<Vec<Post>> {
+    if let Some(pages) = bc.env.with_state(|s| s.published_pages.clone()) {
+        return Ok(pages);
+    }
     let mut pages = bc.env.site.db.posts(&PostQuery { post_types: vec!["page".into()], ..PostQuery::default() }).await?;
     pages.sort_by_key(|a| (a.menu_order, a.post_title.to_lowercase(), a.id));
+    bc.env.with_state(|s| s.published_pages = Some(pages.clone()));
     Ok(pages)
 }
 

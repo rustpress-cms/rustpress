@@ -249,10 +249,11 @@ async fn export_media(ctx: &Ctx<'_>, email: &str, page: u64) -> (Vec<Datum>, boo
     let Some(user) = env.db.user_by_email(email).await.ok().flatten() else { return (Vec::new(), true) };
     let number = 50;
     let statuses = ["publish", "future", "draft", "pending", "private", "inherit"].map(String::from).to_vec();
-    let query = PostQuery { post_types: vec!["attachment".into()], statuses, author: Some(user.id), order_by: rustpress_db::OrderBy::Id, order: rustpress_db::Order::Asc, ..Default::default() };
-    let all = env.db.posts(&query).await.unwrap_or_default();
-    let total = all.len() as u64;
-    let posts: Vec<&Post> = all.iter().skip(((page.max(1) - 1) * number) as usize).take(number as usize).collect();
+    let mut query = PostQuery { post_types: vec!["attachment".into()], statuses, author: Some(user.id), order_by: rustpress_db::OrderBy::Id, order: rustpress_db::Order::Asc, ..Default::default() };
+    let total = env.db.count_posts(&query).await.unwrap_or_default();
+    query.limit = Some(number);
+    query.offset = (page.max(1) - 1).saturating_mul(number);
+    let posts = env.db.posts(&query).await.unwrap_or_default();
     let mut out = Vec::new();
     for post in posts {
         let Some(file) = env.db.post_meta_value(post.id, "_wp_attached_file").await.ok().flatten().filter(|f| !f.is_empty()) else { continue };

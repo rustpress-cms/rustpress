@@ -36,6 +36,11 @@ pub fn the_title_for(site: &rustpress_core::Site, post: &Post) -> String {
     title_with_prefixes(post, &site.tr("Protected: %s"), &site.tr("Private: %s"), |text| site.texturize(text))
 }
 
+/// `get_the_title()` under `is_admin()`: the filters run, but no "Protected: " / "Private: " prefix.
+pub fn the_title_in_admin(site: &rustpress_core::Site, post: &Post) -> String {
+    title_with_prefixes(post, "%s", "%s", |text| site.texturize(text))
+}
+
 fn title_with_prefixes(post: &Post, protected: &str, private: &str, texturize: impl Fn(&str) -> String) -> String {
     let mut title = post.post_title.clone();
     if !post.post_password.is_empty() {
@@ -348,9 +353,10 @@ pub async fn post_class(env: &Env<'_>, post: &Post, extra: &[&str], is_home_unpa
     classes.push(post.post_type.clone());
     classes.push(format!("type-{}", post.post_type));
     classes.push(format!("status-{}", post.post_status));
+    // One read of the post's terms serves the format and the term classes.
+    let mut terms = env.site.db.terms_for_post(post.id, None).await?;
     if post.post_type == "post" {
-        let formats = env.site.db.terms_for_post(post.id, Some("post_format")).await?;
-        match formats.first().and_then(|t| t.slug.strip_prefix("post-format-")) {
+        match terms.iter().find(|t| t.taxonomy == "post_format").and_then(|t| t.slug.strip_prefix("post-format-")) {
             Some(format) => classes.push(format!("format-{}", sanitize_html_class(format))),
             None => classes.push("format-standard".into()),
         }
@@ -367,7 +373,6 @@ pub async fn post_class(env: &Env<'_>, post: &Post, extra: &[&str], is_home_unpa
     }
     classes.push("hentry".into());
     // `get_the_terms()` per taxonomy (categories, then tags), each ordered by name.
-    let mut terms = env.site.db.terms_for_post(post.id, None).await?;
     let custom = |taxonomy: &str| env.site.types.taxonomy(taxonomy).is_some_and(|t| t.object_types.contains(&post.post_type));
     terms.retain(|t| matches!(t.taxonomy.as_str(), "category" | "post_tag" | "post_format") || custom(&t.taxonomy));
     let rank = |taxonomy: &str| match taxonomy {

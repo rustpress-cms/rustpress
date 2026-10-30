@@ -87,6 +87,8 @@ pub struct PostQuery {
     pub private_types: Vec<String>,
     /// Private posts of this author are listed, too (the viewer may read their own).
     pub private_author: Option<u64>,
+    /// Equal sort values keep the oldest ID first (lists that sort `post_date DESC, ID ASC` like MySQL leaves them).
+    pub ties_ascending: bool,
 }
 
 impl Default for PostQuery {
@@ -130,6 +132,7 @@ impl Default for PostQuery {
             offset: 0,
             private_types: Vec::new(),
             private_author: None,
+            ties_ascending: false,
         }
     }
 }
@@ -297,48 +300,62 @@ where
     qb.push(")");
 }
 
+/// The `ORDER BY` and `LIMIT` of a [`PostQuery`].
+fn push_order_and_limit(qb: &mut QueryBuilder<MySql>, query: &PostQuery) {
+    let column = match query.order_by {
+        OrderBy::Date => "p.post_date",
+        OrderBy::Modified => "p.post_modified",
+        OrderBy::Title => "p.post_title",
+        OrderBy::Id => "p.ID",
+        OrderBy::MenuOrder => "p.menu_order",
+        OrderBy::Author => "p.post_author",
+        OrderBy::Slug => "p.post_name",
+        OrderBy::Parent => "p.post_parent",
+        OrderBy::CommentCount => "p.comment_count",
+        OrderBy::MenuOrderTitle => "p.menu_order ASC, p.post_title",
+        OrderBy::Include => "",
+        OrderBy::Relevance => "",
+    };
+    let direction = if query.order == Order::Asc { "ASC" } else { "DESC" };
+    // `FIELD()` needs at least one ID; without any the order of the date is used.
+    if query.order_by == OrderBy::Include && query.ids.is_empty() {
+        qb.push(format!(" ORDER BY p.post_date {direction}, p.ID {direction}"));
+    } else if query.order_by == OrderBy::Include {
+        qb.push(" ORDER BY FIELD(p.ID");
+        for id in &query.ids {
+            qb.push(", ").push_bind(*id);
+        }
+        qb.push(")");
+    } else if query.order_by == OrderBy::Relevance {
+        // Same rows in the same order as WordPress: rank, newest first, then oldest ID.
+        qb.push(" ORDER BY ");
+        push_relevance(qb, query);
+        qb.push(", p.post_date DESC, p.ID ASC");
+    } else {
+        // `ID` as tie-breaker keeps pagination stable. WordPress shows equal dates newest
+        // ID first, except for term queries: their `GROUP BY ID` feeds the sort oldest first.
+        let tie = if query.tax_groups.is_empty() && !query.ties_ascending { direction } else { "ASC" };
+        qb.push(format!(" ORDER BY {column} {direction}, p.ID {tie}"));
+    }
+    if let Some(limit) = query.limit {
+        qb.push(" LIMIT ").push_bind(limit).push(" OFFSET ").push_bind(query.offset);
+    }
+}
+
 impl Db {
     pub async fn posts(&self, query: &PostQuery) -> Result<Vec<Post>> {
         let mut qb = QueryBuilder::<MySql>::new(format!("SELECT {POST_COLUMNS}"));
         query.push_filters(&mut qb, self);
-        let column = match query.order_by {
-            OrderBy::Date => "p.post_date",
-            OrderBy::Modified => "p.post_modified",
-            OrderBy::Title => "p.post_title",
-            OrderBy::Id => "p.ID",
-            OrderBy::MenuOrder => "p.menu_order",
-            OrderBy::Author => "p.post_author",
-            OrderBy::Slug => "p.post_name",
-            OrderBy::Parent => "p.post_parent",
-            OrderBy::CommentCount => "p.comment_count",
-            OrderBy::MenuOrderTitle => "p.menu_order ASC, p.post_title",
-            OrderBy::Include => "",
-            OrderBy::Relevance => "",
-        };
-        let direction = if query.order == Order::Asc { "ASC" } else { "DESC" };
-        // `FIELD()` needs at least one ID; without any the order of the date is used.
-        if query.order_by == OrderBy::Include && query.ids.is_empty() {
-            qb.push(format!(" ORDER BY p.post_date {direction}, p.ID {direction}"));
-        } else if query.order_by == OrderBy::Include {
-            qb.push(" ORDER BY FIELD(p.ID");
-            for id in &query.ids {
-                qb.push(", ").push_bind(*id);
-            }
-            qb.push(")");
-        } else if query.order_by == OrderBy::Relevance {
-            // Same rows in the same order as WordPress: rank, newest first, then oldest ID.
-            qb.push(" ORDER BY ");
-            push_relevance(&mut qb, query);
-            qb.push(", p.post_date DESC, p.ID ASC");
-        } else {
-            // `ID` as tie-breaker keeps pagination stable. WordPress shows equal dates newest
-            // ID first, except for term queries: their `GROUP BY ID` feeds the sort oldest first.
-            let tie = if query.tax_groups.is_empty() { direction } else { "ASC" };
-            qb.push(format!(" ORDER BY {column} {direction}, p.ID {tie}"));
-        }
-        if let Some(limit) = query.limit {
-            qb.push(" LIMIT ").push_bind(limit).push(" OFFSET ").push_bind(query.offset);
-        }
+        push_order_and_limit(&mut qb, query);
+        Ok(qb.build_query_as().fetch_all(&self.pool).await?)
+    }
+
+    /// `(ID, post_parent)` of the matching posts in the order of [`Db::posts`] (`'fields' => 'id=>parent'`), for
+    /// lists that need every match but not the rows.
+    pub async fn post_parents(&self, query: &PostQuery) -> Result<Vec<(u64, u64)>> {
+        let mut qb = QueryBuilder::<MySql>::new("SELECT p.ID, p.post_parent");
+        query.push_filters(&mut qb, self);
+        push_order_and_limit(&mut qb, query);
         Ok(qb.build_query_as().fetch_all(&self.pool).await?)
     }
 
@@ -478,7 +495,9 @@ impl Db {
             "SELECT meta_id, post_id, meta_key, meta_value FROM {} WHERE post_id = ? ORDER BY meta_id",
             self.prefix.table("postmeta")
         );
-        Ok(sqlx::query_as(AssertSqlSafe(sql)).bind(post_id).fetch_all(&self.pool).await?)
+        let rows: Vec<PostMeta> = sqlx::query_as(AssertSqlSafe(sql)).bind(post_id).fetch_all(&self.pool).await?;
+        crate::primed::remember_meta(post_id, &rows);
+        Ok(rows)
     }
 
     /// `get_metadata_by_mid( 'post', $meta_id )`.
