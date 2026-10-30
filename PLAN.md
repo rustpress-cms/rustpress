@@ -375,6 +375,15 @@ Messung danach (Release, `RUSTPRESS_RELOAD_SECS=1`, Median / Minimum aus 20 Abru
 - Geprüft: alle Workspace-Tests mit Referenz-Stack (Golden-Tests grün), `dev/list-matrix.sh` (Seitenlisten gleich; Rest: Gleichstände der Sortierung und Referenz inzwischen 7.1.4), `dev/ajax-compare.py` (15/15, neu mit `wp-link-ajax`), `dev/privacy-compare.py`.
 - Offen: Die DB-Tests in `rustpress-server/tests/http.rs` laufen im Debug-Build mit dem Standard-Stack über (Windows, 1 MiB Haupt-Thread); mit `RUST_MIN_STACK=16777216` grün. Der Test vergleicht die Summen jetzt mit der Referenz statt mit festen Zahlen. Das Referenz-WordPress aktualisiert sich selbst (jetzt 7.1.4) – Auto-Updates im Container abschalten.
 
+**Neuen WordPress-Versionen folgen (30.10.2026):**
+- Eine Quelle für die Zielversion: `WORDPRESS_VERSION` im Repo-Wurzelverzeichnis, im Code `rustpress_core::WP_VERSION` (Installer `install::fetch::VERSION`, Update-Bildschirm, Rückfallwerte in REST und Datei-Editor). Die Asset-Version in `attachment_edit.tpl` kommt jetzt aus `version.php` wie überall sonst.
+- Referenz festgenagelt: `dev/wp-reference.sh` bringt das Referenz-WordPress auf `WORDPRESS_VERSION` (auch zurück) und schaltet die automatischen Updates ab; `dev/up.sh` ruft es bei jedem Start auf. Damit ist die Referenz wieder auf 7.1.3 (sie hatte sich selbst auf 7.1.4 gehoben; die de_DE-Übersetzung blieb dabei auf dem Stand von 7.1.4).
+- Erkennen: `.github/workflows/wordpress.yml` fragt täglich `api.wordpress.org/core/version-check/1.7/` und eröffnet für jede neuere Version ein Issue „Follow WordPress X“ (Label `wordpress`) mit dem Bericht von `dev/wp-diff.sh`; der vollständige PHP-Diff hängt am Lauf.
+- Bericht: `dev/wp-diff.sh ALT NEU` lädt beide Pakete, listet geänderte PHP-Dateien mit den geänderten Funktionen und den RustPress-Dateien, die ihnen folgen (Klasse, Block `core/x`, Dateiname, Funktionsnamen), dazu JSON und Assets, und eine Checkliste.
+- Umstieg: `dev/wp-bump.sh NEU` setzt `WORDPRESS_VERSION` und die READMEs und hebt die Referenz; danach Änderungen portieren, Daten neu backen (`dev/bake-*.py`, `dev/gen-*.py`, Kses-Goldens), Tests und Compat-Läufe, PR, Release-Tag. Die Release-Notizen nennen die WordPress-Version.
+- Nächster Ausbau: Golden-Tests und `rustpress-compat` in der CI gegen eine Referenz in Service-Containern (braucht `dev/seed.sh` ohne WSL/Podman), damit ein Versions-PR seine Abweichungen selbst zeigt.
+- 7.1.4 (erster Fall): 32 PHP-Dateien, u. a. `kses.php`, `class-wp-block-parser.php`, Interactivity-API, die Blöcke categories/image/playlist/post-navigation-link/comments-pagination, Datenschutz-Tabellen, REST-Kommentare.
+
 ### Phase 4 – Wartbarkeit und Tests
 16. Duplikate zusammenführen, toten Code entfernen, lange Funktionen teilen (A4).
 17. Testsuiten (B9): DB-Schema-Tests, Rollenmatrix, feindliche Eingaben, Golden-Tests in CI.

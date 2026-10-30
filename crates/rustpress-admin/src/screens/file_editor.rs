@@ -700,8 +700,8 @@ fn doc_select(ctx: &Ctx<'_>, functions: &[String]) -> String {
 }
 
 fn documentation(ctx: &Ctx<'_>, select: &str, indent: &str, inner: &str) -> String {
-    let version = ctx.site().options.string("wp_version_reference", "7.1.3");
-    let version = if version.is_empty() { "7.1.3".to_owned() } else { version };
+    let version = ctx.site().options.string("wp_version_reference", rustpress_core::WP_VERSION);
+    let version = if version.is_empty() { rustpress_core::WP_VERSION.to_owned() } else { version };
     let outer = &indent[..indent.len() - 1];
     format!(
         "{indent}<div id=\"documentation\" class=\"hide-if-no-js\">\n{inner}<label for=\"docs-list\">{}</label>\n{inner}{select}{inner}<input disabled id=\"docs-lookup\" type=\"button\" class=\"button\" value=\"{}\" onclick=\"if ( '' !== jQuery('#docs-list').val() ) {{ window.open( 'https://api.wordpress.org/core/handbook/1.0/?function=' + escape( jQuery( '#docs-list' ).val() ) + '&amp;locale={}&amp;version={}&amp;redirect=true'); }}\" />\n{indent}</div>\n{outer}",

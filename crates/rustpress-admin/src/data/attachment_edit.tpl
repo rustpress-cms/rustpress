@@ -47,7 +47,7 @@ Edit Media</h1>
 	
 	<label for="attachment_content" class="attachment-content-description"><strong>Description</strong>
 		</label>
-	<div id="wp-attachment_content-wrap" class="wp-core-ui wp-editor-wrap html-active"><link rel='stylesheet' id='editor-buttons-css' href='{{SITE}}/wp-includes/css/editor.min.css?ver=7.1.3' media='all' />
+	<div id="wp-attachment_content-wrap" class="wp-core-ui wp-editor-wrap html-active"><link rel='stylesheet' id='editor-buttons-css' href='{{SITE}}/wp-includes/css/editor.min.css?ver={{VERSION}}' media='all' />
 <div id="wp-attachment_content-editor-container" class="wp-editor-container"><div id="qt_attachment_content_toolbar" class="quicktags-toolbar hide-if-no-js"></div><textarea class="wp-editor-area" rows="5" cols="40" name="content" id="attachment_content">{{DESCRIPTION}}</textarea></div>
 </div>
 

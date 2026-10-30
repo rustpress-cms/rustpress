@@ -1,0 +1,64 @@
+name: WordPress releases
+
+# Watches WordPress.org for a release newer than WORDPRESS_VERSION. For each new one it opens an
+# issue with the report of dev/wp-diff.sh: the changed PHP code, where RustPress follows it, and the
+# steps to move over. The full PHP diff is attached to the run as an artifact.
+on:
+  schedule:
+    - cron: "23 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check:
+    name: Check for a new release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Compare with WORDPRESS_VERSION
+        id: version
+        run: |
+          current=$(tr -d '[:space:]' < WORDPRESS_VERSION)
+          latest=$(curl -fsSL https://api.wordpress.org/core/version-check/1.7/ | jq -r '.offers[0].current')
+          [[ $latest =~ ^[0-9]+(\.[0-9]+){1,2}$ ]] || { echo "unexpected answer: $latest"; exit 1; }
+          echo "current=$current" >> "$GITHUB_OUTPUT"
+          echo "latest=$latest" >> "$GITHUB_OUTPUT"
+          newest=$(printf '%s\n%s\n' "$current" "$latest" | sort -V | tail -n1)
+          if [[ $latest != "$current" && $newest == "$latest" ]]; then
+            echo "new=true" >> "$GITHUB_OUTPUT"
+            echo "WordPress $latest is out, RustPress follows $current" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "RustPress follows the newest WordPress ($current)" >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Look for an issue
+        id: issue
+        if: steps.version.outputs.new == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TITLE: Follow WordPress ${{ steps.version.outputs.latest }}
+        run: |
+          found=$(gh issue list --state all --search "\"$TITLE\" in:title" --json title --jq "map(select(.title == env.TITLE)) | length")
+          echo "exists=$([[ $found -gt 0 ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+      - name: Report the changes
+        if: steps.version.outputs.new == 'true' && steps.issue.outputs.exists == 'false'
+        run: dev/wp-diff.sh "${{ steps.version.outputs.current }}" "${{ steps.version.outputs.latest }}" "wordpress-${{ steps.version.outputs.latest }}.md"
+      - uses: actions/upload-artifact@v7
+        if: steps.version.outputs.new == 'true' && steps.issue.outputs.exists == 'false'
+        with:
+          name: wordpress-${{ steps.version.outputs.latest }}
+          path: wordpress-${{ steps.version.outputs.latest }}.*
+      - name: Open the issue
+        if: steps.version.outputs.new == 'true' && steps.issue.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TITLE: Follow WordPress ${{ steps.version.outputs.latest }}
+          REPORT: wordpress-${{ steps.version.outputs.latest }}.md
+          RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh label create wordpress --color 21759b --description "Following a WordPress release" --force
+          # An issue body holds at most 65536 characters; the run keeps the whole report.
+          { head -c 60000 "$REPORT"; printf '\n\nFull report and PHP diff: %s\n' "$RUN"; } > body.md
+          gh issue create --title "$TITLE" --label wordpress --body-file body.md
