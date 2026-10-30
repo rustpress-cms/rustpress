@@ -50,6 +50,9 @@ pub enum Error {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
+/// The WordPress release whose PHP code RustPress follows (`WORDPRESS_VERSION` in the repository root).
+pub const WP_VERSION: &str = include_str!("../../../WORDPRESS_VERSION").trim_ascii();
+
 /// `hash_equals()`: compares two secrets in a time that does not depend on where they differ.
 pub fn hash_equals(known: &str, given: &str) -> bool {
     let (a, b) = (known.as_bytes(), given.as_bytes());
@@ -69,5 +72,14 @@ impl<T, E: std::fmt::Display> OrLog for std::result::Result<T, E> {
             let at = std::panic::Location::caller();
             tracing::error!(%error, file = at.file(), line = at.line(), "write failed");
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn wp_version_is_a_release_number() {
+        let parts: Vec<&str> = super::WP_VERSION.split('.').collect();
+        assert!((2..=3).contains(&parts.len()) && parts.iter().all(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit())), "{}", super::WP_VERSION);
     }
 }

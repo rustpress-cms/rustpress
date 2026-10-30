@@ -66,7 +66,7 @@ impl Rest<'_> {
     /// `wp_get_wp_version()`, from `wp-includes/version.php`.
     pub(crate) fn wp_version(&self) -> String {
         let text = std::fs::read_to_string(self.theme.wp_root.join("wp-includes").join("version.php")).unwrap_or_default();
-        text.lines().find_map(|line| line.trim().strip_prefix("$wp_version").and_then(|rest| rest.split('\'').nth(1)).map(str::to_owned)).unwrap_or_else(|| "7.1.3".to_owned())
+        text.lines().find_map(|line| line.trim().strip_prefix("$wp_version").and_then(|rest| rest.split('\'').nth(1)).map(str::to_owned)).unwrap_or_else(|| rustpress_core::WP_VERSION.to_owned())
     }
 
     /// `WP_REST_Pattern_Directory_Controller::get_transient_key()` for a request.

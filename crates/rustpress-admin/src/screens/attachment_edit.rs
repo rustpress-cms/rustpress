@@ -196,6 +196,7 @@ pub async fn form(ctx: &Ctx<'_>, post: &Post) -> AdminResponse {
         .replace("{{CAPTION}}", &esc_textarea(&post.post_excerpt))
         .replace("{{DESCRIPTION}}", &esc_textarea(&post.post_content))
         .replace("{{UPLOADED}}", &uploaded)
+        .replace("{{VERSION}}", &ctx.env.loader.version)
         .replace("{{UPLOADED_BY}}", &uploaded_by)
         .replace("{{UPLOADED_TO}}", &uploaded_to)
         .replace("{{URL}}", &esc_url(&url))

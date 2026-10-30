@@ -7,7 +7,7 @@ use std::io::Read;
 use std::path::Path;
 
 /// The release whose PHP code RustPress follows: the files must be of the same version.
-pub const VERSION: &str = "7.1.3";
+pub const VERSION: &str = rustpress_core::WP_VERSION;
 
 /// Downloads larger than this are refused (a release is about 30 MB).
 const MAX_PACKAGE: u64 = 200 * 1024 * 1024;
@@ -258,8 +258,8 @@ mod tests {
 
     #[test]
     fn urls() {
-        assert_eq!(package_url("en_US"), "https://downloads.wordpress.org/release/wordpress-7.1.3.zip");
-        assert_eq!(package_url("de_DE"), "https://downloads.wordpress.org/release/de_DE/wordpress-7.1.3.zip");
-        assert_eq!(package_url("../x"), "https://downloads.wordpress.org/release/x/wordpress-7.1.3.zip");
+        assert_eq!(package_url("en_US"), format!("https://downloads.wordpress.org/release/wordpress-{VERSION}.zip"));
+        assert_eq!(package_url("de_DE"), format!("https://downloads.wordpress.org/release/de_DE/wordpress-{VERSION}.zip"));
+        assert_eq!(package_url("../x"), format!("https://downloads.wordpress.org/release/x/wordpress-{VERSION}.zip"));
     }
 }

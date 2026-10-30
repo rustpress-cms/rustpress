@@ -131,6 +131,15 @@ Without the stack the golden tests skip themselves, which is what CI does.
 cargo run -p rustpress-compat -- --report compat/reports/twentytwentyfive.md
 ```
 
+### Following WordPress releases
+
+`WORDPRESS_VERSION` names the release RustPress follows; the installer downloads it, and `dev/up.sh` keeps the reference WordPress at it with automatic updates off. A daily workflow opens an issue for each newer release, with the changed PHP code, the RustPress files that follow it and the steps to move over:
+
+```sh
+dev/wp-diff.sh 7.1.3 7.1.4    # the same report locally, plus the full PHP diff
+dev/wp-bump.sh 7.1.4          # set the new version and bring the reference WordPress to it
+```
+
 ### Crates
 
 | Crate | Purpose |
