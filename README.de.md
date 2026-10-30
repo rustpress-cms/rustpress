@@ -21,6 +21,8 @@ Unterstützt werden **Block-Themes** (`theme.json` + HTML-Templates) und als Rus
 
 ## Starten
 
+Jedes [Release](https://github.com/rustpress-cms/rustpress/releases) enthält fertige Builds: statische Linux-Binaries (x86_64, aarch64, armv7, armv6, i686), auch als `.deb`, `.rpm` und `.apk`, dazu macOS (Intel und Apple Silicon), Windows (x64, x86, ARM64) und FreeBSD. Das Container-Image ist `ghcr.io/rustpress-cms/rustpress` für amd64, arm64, arm/v7, arm/v6 und 386. Aus den Quellen:
+
 ```sh
 cargo run --release -p rustpress-server
 ```

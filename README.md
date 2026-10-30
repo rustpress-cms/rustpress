@@ -65,6 +65,8 @@ Accepted differences are listed with their reason in [`compat/known.toml`](compa
 
 ## Getting started
 
+Every [release](https://github.com/rustpress-cms/rustpress/releases) carries ready-made builds: static Linux binaries (x86_64, aarch64, armv7, armv6, i686) also as `.deb`, `.rpm` and `.apk` packages, plus macOS (Intel and Apple Silicon), Windows (x64, x86, ARM64) and FreeBSD. The container image is `ghcr.io/rustpress-cms/rustpress` for amd64, arm64, arm/v7, arm/v6 and 386. From source:
+
 ```sh
 cargo run --release -p rustpress-server
 ```
@@ -95,7 +97,12 @@ Without `allow_writes` the database session is `READ ONLY` and the administratio
 
 ## Docker
 
-The `Dockerfile` builds a small Alpine image with a statically linked binary; `compose.yaml` runs it together with MariaDB.
+The `Dockerfile` builds a small Alpine image with a statically linked binary; `compose.yaml` runs it together with MariaDB. The released image can be used instead:
+
+```sh
+docker run -p 3000:3000 -v /path/to/wordpress:/var/www/html   -e RUSTPRESS_DATABASE_URL=mysql://user:pass@db:3306/wordpress ghcr.io/rustpress-cms/rustpress
+```
+
 
 ```sh
 cp .env.example .env     # set the password and address
@@ -106,7 +113,7 @@ Then open the site in the browser and follow the installer, or point `WORDPRESS_
 
 ## Shared hosting (CGI)
 
-On hosts that only offer Apache with CGI, RustPress runs as a single static binary in `cgi-bin/`. It detects CGI mode by itself (`GATEWAY_INTERFACE`), reads the database settings from `wp-config.php` and takes over the site through `.htaccess`. On an empty webspace the installer downloads WordPress 7.1.3 from wordpress.org (checksum-verified) for the theme files and translations. The binary is built by CI and attached to every [release](https://github.com/rustpress-cms/rustpress/releases).
+On hosts that only offer Apache with CGI, RustPress runs as a single static binary in `cgi-bin/`. It detects CGI mode by itself (`GATEWAY_INTERFACE`), reads the database settings from `wp-config.php` and takes over the site through `.htaccess`. On an empty webspace the installer downloads WordPress 7.1.3 from wordpress.org (checksum-verified) for the theme files and translations. The binary (`rustpress-<target>`, e.g. `rustpress-x86_64-unknown-linux-musl`) is built by CI and attached to every [release](https://github.com/rustpress-cms/rustpress/releases).
 
 ## Development
 

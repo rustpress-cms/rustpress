@@ -1,0 +1,25 @@
+# Linux packages (deb, rpm, apk) around the static musl binary; built by .github/workflows/release.yml.
+# The workflow fills in @VERSION@ and @ARCH@ (nfpm/Go names: amd64, arm64, arm7, arm6, 386) and copies
+# the binary to packaging/rustpress; paths are relative to the repository root.
+name: rustpress
+version: "@VERSION@"
+arch: "@ARCH@"
+platform: linux
+section: web
+priority: optional
+maintainer: RustPress <noreply@github.com>
+description: |
+  WordPress-compatible server for block themes, written in Rust.
+  Serves an existing WordPress database and wp-content folder without PHP.
+vendor: RustPress
+homepage: https://github.com/rustpress-cms/rustpress
+license: GPL-2.0-or-later
+contents:
+  - src: packaging/rustpress
+    dst: /usr/bin/rustpress
+    file_info:
+      mode: 0755
+  - src: LICENSE
+    dst: /usr/share/doc/rustpress/LICENSE
+  - src: README.md
+    dst: /usr/share/doc/rustpress/README.md

@@ -1,0 +1,18 @@
+# Multi-arch image from the release binaries (built by .github/workflows/release.yml).
+#
+# The static musl binaries are cross-compiled beforehand and laid out as docker-bin/<platform>/rustpress,
+# so the image build needs no Rust toolchain and no emulation. For a local build use the Dockerfile.
+
+FROM alpine:3.22
+ARG TARGETPLATFORM
+# Alpine already ships the CA bundle (for TLS connections to the database).
+COPY --chmod=0755 docker-bin/${TARGETPLATFORM}/rustpress /usr/local/bin/rustpress
+USER 10001:10001
+ENV RUSTPRESS_LISTEN=0.0.0.0:3000 \
+    RUSTPRESS_WP_ROOT=/var/www/html \
+    RUST_LOG=info
+EXPOSE 3000
+# The server shuts down gracefully on Ctrl+C (SIGINT); `docker stop` sends SIGTERM by default.
+STOPSIGNAL SIGINT
+LABEL org.opencontainers.image.licenses=GPL-2.0-or-later
+ENTRYPOINT ["/usr/local/bin/rustpress"]

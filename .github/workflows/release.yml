@@ -3,30 +3,155 @@ name: Release
 on:
   push:
     tags: ["v*"]
+  # A manual run builds everything without publishing (dry run for the packaging).
+  workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
+  IMAGE: ghcr.io/${{ github.repository }}
 
 jobs:
-  release:
-    name: Static binary for the release
-    runs-on: ubuntu-latest
+  build:
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux binaries are linked statically against musl: one file runs on every distribution,
+          # in the container image and as a CGI program on shared hosting.
+          - { target: x86_64-unknown-linux-musl, os: ubuntu-latest, pkg: amd64, docker: linux/amd64 }
+          - { target: aarch64-unknown-linux-musl, os: ubuntu-24.04-arm, pkg: arm64, docker: linux/arm64 }
+          - { target: armv7-unknown-linux-musleabihf, os: ubuntu-latest, cross: true, pkg: arm7, docker: linux/arm/v7 }
+          - { target: arm-unknown-linux-musleabihf, os: ubuntu-latest, cross: true, pkg: arm6, docker: linux/arm/v6 }
+          - { target: i686-unknown-linux-musl, os: ubuntu-latest, cross: true, pkg: "386", docker: linux/386 }
+          - { target: x86_64-unknown-freebsd, os: ubuntu-latest, cross: true }
+          - { target: x86_64-apple-darwin, os: macos-latest }
+          - { target: aarch64-apple-darwin, os: macos-latest }
+          - { target: x86_64-pc-windows-msvc, os: windows-latest }
+          - { target: i686-pc-windows-msvc, os: windows-latest }
+          # ring needs clang for this target; windows-latest has LLVM on the PATH.
+          - { target: aarch64-pc-windows-msvc, os: windows-latest }
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: x86_64-unknown-linux-musl
-      - run: sudo apt-get update && sudo apt-get install -y musl-tools
-      - run: cargo build --release --locked -p rustpress-server --target x86_64-unknown-linux-musl
-      - run: |
-          cp target/x86_64-unknown-linux-musl/release/rustpress-server rustpress-x86_64-linux-musl
-          sha256sum rustpress-x86_64-linux-musl > rustpress-x86_64-linux-musl.sha256
-      - uses: softprops/action-gh-release@v3
+          targets: ${{ matrix.target }}
+      - if: contains(matrix.target, 'linux-musl') && !matrix.cross
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - if: matrix.cross
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cross
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+      - name: Build
+        run: ${{ matrix.cross && 'cross' || 'cargo' }} build --release --locked -p rustpress-server --target ${{ matrix.target }}
+      - name: Package
+        id: package
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          [[ "$GITHUB_REF_TYPE" == tag ]] || version="0.0.0-dev"
+          exe=""; [[ "${{ matrix.target }}" == *windows* ]] && exe=".exe"
+          name="rustpress-${version}-${{ matrix.target }}"
+          mkdir -p dist "$name"
+          cp "target/${{ matrix.target }}/release/rustpress-server${exe}" "$name/rustpress${exe}"
+          cp LICENSE README.md "$name/"
+          if [[ -n "$exe" ]]; then 7z a -tzip "dist/$name.zip" "$name" >/dev/null; else tar czf "dist/$name.tar.gz" "$name"; fi
+          # The bare Linux binary is what goes into cgi-bin/ and into the container image.
+          if [[ "${{ matrix.target }}" == *linux-musl* ]]; then
+            cp "$name/rustpress" "dist/rustpress-${{ matrix.target }}"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "bin=$name/rustpress${exe}" >> "$GITHUB_OUTPUT"
+      - name: Linux packages (deb, rpm, apk)
+        if: matrix.pkg
+        env:
+          VERSION: ${{ steps.package.outputs.version }}
+          ARCH: ${{ matrix.pkg }}
+          BINARY: ${{ steps.package.outputs.bin }}
+        run: |
+          host=x86_64; [[ "$RUNNER_ARCH" == ARM64 ]] && host=arm64
+          curl -sSfL "https://github.com/goreleaser/nfpm/releases/download/v2.43.0/nfpm_2.43.0_Linux_${host}.tar.gz" \
+            | tar xz -C /tmp nfpm
+          cp "$BINARY" packaging/rustpress
+          sed -e "s/@VERSION@/$VERSION/" -e "s/@ARCH@/$ARCH/" packaging/nfpm.yaml > /tmp/nfpm.yaml
+          for fmt in deb rpm apk; do /tmp/nfpm package --config /tmp/nfpm.yaml --packager "$fmt" --target dist/; done
+      - name: Container binary
+        if: matrix.docker
+        run: |
+          mkdir -p docker-bin/${{ matrix.docker }}
+          cp ${{ steps.package.outputs.bin }} docker-bin/${{ matrix.docker }}/rustpress
+      - if: matrix.docker
+        uses: actions/upload-artifact@v7
+        with:
+          name: docker-${{ matrix.target }}
+          path: docker-bin/
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist-${{ matrix.target }}
+          path: dist/
+
+  release:
+    name: GitHub release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v5
+        with:
+          pattern: dist-*
+          path: dist
+          merge-multiple: true
+      - run: cd dist && sha256sum * > SHA256SUMS && cat SHA256SUMS
+      - if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v3
         with:
           generate_release_notes: true
-          files: |
-            rustpress-x86_64-linux-musl
-            rustpress-x86_64-linux-musl.sha256
+          files: dist/*
+
+  docker:
+    name: Container image
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v5
+        with:
+          pattern: docker-*
+          path: docker-bin
+          merge-multiple: true
+      - uses: docker/setup-buildx-action@v3
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}},enable=${{ !startsWith(github.ref, 'refs/tags/v0.') }}
+      - if: github.ref_type == 'tag'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: Dockerfile.release
+          platforms: linux/amd64,linux/arm64,linux/arm/v7,linux/arm/v6,linux/386
+          push: ${{ github.ref_type == 'tag' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
