@@ -204,6 +204,8 @@ pub struct State {
     pub nav_has_submenus: bool,
     /// Navigation names seen so far, to number duplicates (Menu 2).
     pub seen_menu_names: HashMap<String, u64>,
+    /// The published pages of the page list, read once per render (navigation and page list both ask).
+    pub(crate) published_pages: Option<Vec<rustpress_db::Post>>,
     /// Names of the blocks that went through `render_block`, in first-render order (unlike `used_blocks`,
     /// this leaves out blocks whose markup other code produces, like the button of the password form).
     pub rendered_blocks: Vec<String>,

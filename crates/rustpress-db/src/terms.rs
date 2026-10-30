@@ -11,6 +11,13 @@ tokio::task_local! {
     static PRIMED_TERMS: RefCell<HashMap<u64, Vec<Term>>>;
     /// The number of revisions of posts and the newest one (`wp_get_latest_revision_id_and_total_count()`).
     static PRIMED_REVISIONS: RefCell<HashMap<u64, (u64, u64)>>;
+    /// All terms of a taxonomy (`get_terms()` with its cache), read once per request by [`Db::terms`].
+    static PRIMED_TAXONOMIES: RefCell<HashMap<String, Vec<Term>>>;
+}
+
+/// A write to `wp_terms` or `wp_term_taxonomy`: the taxonomies are read again when asked for.
+pub(crate) fn forget_taxonomies() {
+    let _ = PRIMED_TAXONOMIES.try_with(|cache| cache.borrow_mut().clear());
 }
 
 #[derive(sqlx::FromRow)]
@@ -28,7 +35,8 @@ impl Db {
         let users = crate::primed::PRIMED_USERS.scope(RefCell::new(HashMap::new()), posts);
         let user_meta = crate::primed::PRIMED_USER_META.scope(RefCell::new(HashMap::new()), users);
         let meta = crate::primed::PRIMED_META.scope(RefCell::new(HashMap::new()), user_meta);
-        PRIMED_TERMS.scope(RefCell::new(HashMap::new()), PRIMED_REVISIONS.scope(RefCell::new(HashMap::new()), meta)).await
+        let taxonomies = PRIMED_TAXONOMIES.scope(RefCell::new(HashMap::new()), meta);
+        PRIMED_TERMS.scope(RefCell::new(HashMap::new()), PRIMED_REVISIONS.scope(RefCell::new(HashMap::new()), taxonomies)).await
     }
 
     /// How many revisions a post has and the ID of the newest (by ID), from the primed cache or one query.
@@ -162,11 +170,18 @@ impl Db {
         Ok(query.fetch_optional(&self.pool).await?)
     }
 
+    /// All terms of a taxonomy by name; inside [`Db::with_term_cache`] read once per request (term permalinks walk
+    /// their parents through it).
     pub async fn terms(&self, taxonomy: &str) -> Result<Vec<Term>> {
+        if let Ok(Some(terms)) = PRIMED_TAXONOMIES.try_with(|cache| cache.borrow().get(taxonomy).cloned()) {
+            return Ok(terms);
+        }
         let sql = format!(
             "SELECT {TERM_COLUMNS} FROM {} WHERE tt.taxonomy = ? ORDER BY t.name",
             self.term_from()
         );
-        Ok(sqlx::query_as(AssertSqlSafe(sql)).bind(taxonomy).fetch_all(&self.pool).await?)
+        let terms: Vec<Term> = sqlx::query_as(AssertSqlSafe(sql)).bind(taxonomy).fetch_all(&self.pool).await?;
+        let _ = PRIMED_TAXONOMIES.try_with(|cache| cache.borrow_mut().insert(taxonomy.to_owned(), terms.clone()));
+        Ok(terms)
     }
 }

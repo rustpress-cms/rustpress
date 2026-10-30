@@ -16,7 +16,15 @@ const DEFAULT_ROOT: &str = r"\\wsl.localhost\Debian\home\yoshi\.local\share\cont
 
 struct Reference {
     status: u16,
+    head: String,
     body: Vec<u8>,
+}
+
+impl Reference {
+    /// A header of the reference answer, by name in any case.
+    fn header(&self, name: &str) -> Option<&str> {
+        self.head.lines().filter_map(|line| line.split_once(':')).find(|(key, _)| key.trim().eq_ignore_ascii_case(name)).map(|(_, value)| value.trim())
+    }
 }
 
 fn fetch(path: &str) -> std::io::Result<Reference> {
@@ -28,7 +36,7 @@ fn fetch(path: &str) -> std::io::Result<Reference> {
     let split = raw.windows(4).position(|w| w == b"\r\n\r\n").unwrap_or(0);
     let head = String::from_utf8_lossy(&raw[..split]).into_owned();
     let status = head.split_whitespace().nth(1).and_then(|s| s.parse().ok()).unwrap_or(0);
-    Ok(Reference { status, body: raw[(split + 4).min(raw.len())..].to_vec() })
+    Ok(Reference { status, head, body: raw[(split + 4).min(raw.len())..].to_vec() })
 }
 
 async fn app() -> Option<std::sync::Arc<App>> {
@@ -209,7 +217,10 @@ async fn rest_api_is_served_like_wordpress() {
         assert_eq!(String::from_utf8_lossy(&body), String::from_utf8_lossy(&theirs.body), "{path}");
         assert_eq!(headers[header::CONTENT_TYPE], "application/json; charset=UTF-8", "{path}");
     }
+    // The totals follow the test content, so they are compared with the reference's.
+    let theirs = fetch("/wp-json/wp/v2/posts?per_page=1").unwrap();
     let (_, headers, _) = get(&app, Method::GET, "/wp-json/wp/v2/posts?per_page=1").await;
-    assert_eq!(headers["x-wp-total"], "30");
-    assert_eq!(headers["x-wp-totalpages"], "30");
+    for name in ["x-wp-total", "x-wp-totalpages"] {
+        assert_eq!(headers[name].to_str().ok(), theirs.header(name), "{name}");
+    }
 }

@@ -41,13 +41,29 @@ pub fn render_settings_errors(errors: &[SettingsError], tr_updated: bool) -> Str
     let mut out = String::new();
     for error in errors {
         let kind = if error.kind == "updated" { "success" } else { error.kind.as_str() };
-        let id = format!("setting-error-{}", error.code);
+        let kind = if matches!(kind, "error" | "success" | "warning" | "info") { format!("notice-{kind}") } else { kind.to_owned() };
         out.push_str(&format!(
-            "<div id=\"{}\" class=\"notice notice-{} settings-error is-dismissible\"><p><strong>{}</strong></p></div>\n",
-            esc_attr(&id),
-            kind,
+            "<div id='setting-error-{}' class='notice {} settings-error is-dismissible'> \n<p><strong>{}</strong></p></div> \n",
+            esc_attr(&error.code),
+            esc_attr(&kind),
             error.message
         ));
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn settings_errors_are_printed_like_wordpress() {
+        let error = |kind: &str| SettingsError { setting: "general".into(), code: "settings_updated".into(), message: "Settings saved.".into(), kind: kind.into() };
+        assert_eq!(
+            render_settings_errors(&[error("updated")], false),
+            "<div id='setting-error-settings_updated' class='notice notice-success settings-error is-dismissible'> \n<p><strong>Settings saved.</strong></p></div> \n"
+        );
+        // Types outside the four notice kinds stay as they are.
+        assert!(render_settings_errors(&[error("custom")], false).contains("class='notice custom settings-error is-dismissible'"));
+    }
 }

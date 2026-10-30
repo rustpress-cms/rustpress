@@ -167,10 +167,11 @@ fn help(ctx: &Ctx<'_>, kind: Kind) -> Help {
     }
 }
 
-/// The `request_id[]` values of a bulk action or a row link.
+/// The `request_id[]` values of a bulk action or a row link (whose `request_id[0]` PHP reads into the same array).
 fn request_ids(ctx: &Ctx<'_>) -> Vec<u64> {
     let request = ctx.request;
-    request.form.iter().chain(request.query.iter()).filter(|(k, _)| k == "request_id[]" || k == "request_id").flat_map(|(_, v)| v.split(',').filter_map(|p| p.trim().parse::<u64>().ok()).collect::<Vec<_>>()).collect()
+    let is_id = |k: &str| k == "request_id" || k.strip_prefix("request_id[").is_some_and(|rest| rest.ends_with(']'));
+    request.form.iter().chain(request.query.iter()).filter(|(k, _)| is_id(k)).flat_map(|(_, v)| v.split(',').filter_map(|p| p.trim().parse::<u64>().ok()).collect::<Vec<_>>()).collect()
 }
 
 fn content<'a>(ctx: &'a Ctx<'_>) -> Option<Content<'a>> {
