@@ -161,11 +161,30 @@ pub async fn attachment_js_with(ctx: &Ctx<'_>, post: &Post, extra_sizes: &[Strin
                 response.insert("originalImageURL".into(), json!(format!("{dir}/{original}")));
                 response.insert("originalImageName".into(), json!(original));
             }
+            // Every size the metadata has; `(int)` of what is stored there (plugins store strings and floats).
+            let int = |value: Option<&Json>| match value {
+                Some(Json::String(text)) => text.trim().parse::<f64>().map_or(0, |n| n as u64),
+                Some(Json::Number(n)) => n.as_f64().map_or(0, |n| n as u64),
+                _ => 0,
+            };
             for name in names {
-                let down = rustpress_blocks::images::image_downsize(&url, m, &name);
-                if down.url != url {
-                    sizes.insert(name, json!({"height": down.height, "width": down.width, "url": down.url, "orientation": orientation(down.width, down.height)}));
+                let Some(entry) = m.sizes().and_then(|s| s.get(&name)).and_then(Json::as_object) else { continue };
+                if entry.get("file").and_then(Json::as_str).is_none() {
+                    continue;
                 }
+                let down = rustpress_blocks::images::image_downsize(&url, m, &name);
+                // `image_constrain_size_for_editor( ..., 'edit' )`: the core sizes stay within their options.
+                let option = |key: &str| site.options.u64(key, 0);
+                let (max_width, max_height) = match name.as_str() {
+                    "thumbnail" => match (option("thumbnail_size_w"), option("thumbnail_size_h")) {
+                        (0, 0) => (128, 96),
+                        sizes => sizes,
+                    },
+                    "medium" | "medium_large" | "large" => (option(&format!("{name}_size_w")), option(&format!("{name}_size_h"))),
+                    _ => (0, 0),
+                };
+                let (width, height) = rustpress_blocks::images::constrain_dimensions(int(entry.get("width")), int(entry.get("height")), max_width, max_height);
+                sizes.insert(name, json!({"height": height, "width": width, "url": down.url, "orientation": orientation(width, height)}));
             }
             sizes.insert("full".into(), json!({"url": url, "height": h, "width": w, "orientation": orientation(w, h)}));
             response.insert("height".into(), json!(h));
@@ -200,6 +219,9 @@ pub async fn attachment_js_with(ctx: &Ctx<'_>, post: &Post, extra_sizes: &[Strin
     if !states.is_empty() {
         response.insert("mediaStates".into(), json!(states.join(", ")));
     }
+    // `wp_prepare_attachment_for_js` of the plugins.
+    let path = (!attached.is_empty()).then(|| uploads_dir(ctx.env).join(&attached)).filter(|p| p.is_file());
+    site.plugins.prepare_attachment_for_js(&post.post_mime_type, path.as_deref(), &mut response);
     Some(Json::Object(response))
 }
 
@@ -453,7 +475,7 @@ pub async fn upload_response(ctx: &Ctx<'_>, request: &AdminRequest) -> AdminResp
     let Some(writer) = env.writer else { return text(500, "0") };
     let content = Content { site: env.site, db: env.db, writer, user: &ctx.user, now: env.now };
     let post_id: u64 = request.request("post_id").and_then(|v| v.parse().ok()).unwrap_or(0);
-    let uploaded = media::UploadedFile { name: file.filename.clone(), bytes: file.bytes.clone() };
+    let uploaded = media::UploadedFile { name: file.filename.clone(), bytes: file.bytes.clone(), rest: false, media_form_nonce: ctx.verify_nonce("media-form") };
     match media::handle_upload(&content, &uploads_dir(env), uploaded, post_id).await {
         Ok(id) => match env.db.post(id).await.ok().flatten() {
             Some(post) => success(attachment_js(ctx, &post).await.unwrap_or(Json::Null)),

@@ -404,6 +404,29 @@ impl Rest<'_> {
             let terms = if format == "standard" || format.is_empty() { Vec::new() } else { vec![TermRef::Name(format!("post-format-{format}"))] };
             content.set_object_terms(post_id, &terms, "post_format", false).await.or_log();
         }
+        // Meta the plugins registered for the REST API (`WP_REST_Meta_Fields::update_value()`): `null` deletes it, a
+        // boolean is stored as `1` or an empty string.
+        if let Some(Value::Object(meta)) = args.get("meta") {
+            for field in self.site.plugins.registered_post_meta(kind.name()) {
+                let Some(value) = meta.get(field.key) else { continue };
+                let stored = match (field.kind, value) {
+                    (_, Value::Null) => None,
+                    (rustpress_core::native::MetaType::Boolean, value) => Some(match value {
+                        Value::Bool(b) => b.then_some("1").unwrap_or_default().to_owned(),
+                        Value::String(s) => if matches!(s.to_lowercase().as_str(), "" | "0" | "false") { String::new() } else { "1".to_owned() },
+                        Value::Number(n) => if n.as_f64() == Some(0.0) { String::new() } else { "1".to_owned() },
+                        _ => "1".to_owned(),
+                    }),
+                    (rustpress_core::native::MetaType::String, value) => Some(value.as_str().map_or_else(|| value.to_string(), str::to_owned)),
+                };
+                match stored {
+                    Some(stored) => writer.update_post_meta(post_id, field.key, &stored).await.or_log(),
+                    None => {
+                        writer.delete_post_meta(post_id, field.key).await.or_log();
+                    }
+                }
+            }
+        }
         writer.update_post_meta(post_id, "_edit_last", &self.user().map_or(0, |u| u.id).to_string()).await.or_log();
         Ok(())
     }

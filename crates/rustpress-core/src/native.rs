@@ -101,10 +101,56 @@ pub trait ActivePlugin: Send + Sync {
     /// `enqueue_block_editor_assets`.
     fn block_editor_assets(&self, _ctx: &AdminContext<'_>, _assets: &mut Assets) {}
 
+    /// `upload_mimes`: what `get_allowed_mime_types()` gives the uploader, `(extensions, MIME type)`.
+    fn upload_mimes(&self, _uploader: &Uploader<'_>, _mimes: &mut Vec<(String, String)>) {}
+
+    /// `wp_handle_upload_prefilter`: may change the file before it is checked and stored, or refuse it with a message.
+    fn upload_prefilter(&self, _uploader: &Uploader<'_>, _name: &mut String, _bytes: &mut Vec<u8>) -> std::result::Result<(), String> {
+        Ok(())
+    }
+
+    /// `wp_check_filetype_and_ext` after the core refused the file: `(name, MIME type)` to accept it with.
+    fn accept_filetype(&self, _name: &str, _mimes: &[(String, String)]) -> Option<(String, String)> {
+        None
+    }
+
+    /// `wp_generate_attachment_metadata` of a new upload (`path` is the stored file, `relative` its path below the
+    /// uploads directory).
+    fn attachment_metadata(&self, _site: &Site, _mime: &str, _path: &std::path::Path, _relative: &str, metadata: rustpress_phpser::Value) -> rustpress_phpser::Value {
+        metadata
+    }
+
+    /// `wp_prepare_attachment_for_js` of an attachment (`path` its file, when it exists).
+    fn prepare_attachment_for_js(&self, _mime: &str, _path: Option<&std::path::Path>, _response: &mut serde_json::Map<String, serde_json::Value>) {}
+
+    /// The whole page of an administration screen, for plugins that buffer and rewrite it (`ob_start()` on
+    /// `admin_init`).
+    fn admin_page_output(&self, _ctx: &AdminContext<'_>, html: String) -> String {
+        html
+    }
+
+    /// `post_thumbnail_html`: the featured image of `post_id` (the post of the loop); `singular` is `is_singular()`.
+    fn post_thumbnail_html<'a>(&'a self, _site: &'a Site, _post_id: u64, _singular: bool, html: String) -> BoxFuture<'a, Result<String>> {
+        Box::pin(async move { Ok(html) })
+    }
+
     /// `wp_ajax_{$action}`: the answer to `admin-ajax.php`, or `None` when the plugin has no such action.
     fn admin_ajax<'a>(&'a self, _action: &'a str, _ctx: &'a AdminContext<'a>) -> BoxFuture<'a, Result<Option<AjaxAnswer>>> {
         Box::pin(async { Ok(None) })
     }
+}
+
+/// Who uploads a file, and how.
+pub struct Uploader<'a> {
+    pub site: &'a Site,
+    /// The roles of the user.
+    pub roles: &'a [String],
+    /// `current_user_can( $capability )`.
+    pub can: &'a (dyn Fn(&str) -> bool + Send + Sync),
+    /// The upload is a request of the REST API (`REST_REQUEST`).
+    pub rest: bool,
+    /// The request carries a valid `_wpnonce` for `media-form`.
+    pub media_form_nonce: bool,
 }
 
 /// What a plugin answers to `admin-ajax.php`.
@@ -467,6 +513,53 @@ impl Plugins {
             plugin.block_editor_assets(ctx, &mut assets);
         }
         assets
+    }
+
+    /// `upload_mimes` of the plugins on top of the core's types.
+    pub fn upload_mimes(&self, uploader: &Uploader<'_>, mut mimes: Vec<(String, String)>) -> Vec<(String, String)> {
+        for plugin in self.hooks() {
+            plugin.upload_mimes(uploader, &mut mimes);
+        }
+        mimes
+    }
+
+    /// `wp_handle_upload_prefilter` of the plugins; the first refusal ends it.
+    pub fn upload_prefilter(&self, uploader: &Uploader<'_>, name: &mut String, bytes: &mut Vec<u8>) -> std::result::Result<(), String> {
+        for plugin in self.hooks() {
+            plugin.upload_prefilter(uploader, name, bytes)?;
+        }
+        Ok(())
+    }
+
+    /// A plugin's `wp_check_filetype_and_ext` for a file the core refused.
+    pub fn accept_filetype(&self, name: &str, mimes: &[(String, String)]) -> Option<(String, String)> {
+        self.hooks().find_map(|plugin| plugin.accept_filetype(name, mimes))
+    }
+
+    /// `wp_generate_attachment_metadata` of the plugins.
+    pub fn attachment_metadata(&self, site: &Site, mime: &str, path: &std::path::Path, relative: &str, metadata: rustpress_phpser::Value) -> rustpress_phpser::Value {
+        self.hooks().fold(metadata, |metadata, plugin| plugin.attachment_metadata(site, mime, path, relative, metadata))
+    }
+
+    /// `wp_prepare_attachment_for_js` of the plugins.
+    pub fn prepare_attachment_for_js(&self, mime: &str, path: Option<&std::path::Path>, response: &mut serde_json::Map<String, serde_json::Value>) {
+        for plugin in self.hooks() {
+            plugin.prepare_attachment_for_js(mime, path, response);
+        }
+    }
+
+    /// `post_thumbnail_html` of the plugins.
+    pub async fn post_thumbnail_html(&self, site: &Site, post_id: u64, singular: bool, html: String) -> Result<String> {
+        let mut html = html;
+        for plugin in self.hooks() {
+            html = plugin.post_thumbnail_html(site, post_id, singular, html).await?;
+        }
+        Ok(html)
+    }
+
+    /// The page after the plugins' output buffers.
+    pub fn admin_page_output(&self, ctx: &AdminContext<'_>, html: String) -> String {
+        self.hooks().fold(html, |html, plugin| plugin.admin_page_output(ctx, html))
     }
 
     /// What the plugins print on `admin_notices`.

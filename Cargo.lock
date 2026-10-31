@@ -1761,7 +1761,9 @@ dependencies = [
 name = "rustpress-plugins"
 version = "0.1.1"
 dependencies = [
+ "flate2",
  "futures",
+ "regex",
  "rustpress-blocks",
  "rustpress-content",
  "rustpress-core",
@@ -1769,6 +1771,7 @@ dependencies = [
  "rustpress-phpser",
  "serde_json",
  "tokio",
+ "xmlparser",
 ]
 
 [[package]]
@@ -2822,6 +2825,12 @@ name = "writeable"
 version = "0.6.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3ad82d2a33cdc9674dc7465672f271e096168fcdbe0f799d9e6db8c5892679dc"
+
+[[package]]
+name = "xmlparser"
+version = "0.13.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "66fee0b777b0f5ac1c69bb06d361268faafa61cd4682ae064a171c16c433e9e4"
 
 [[package]]
 name = "yoke"

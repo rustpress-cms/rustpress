@@ -511,7 +511,7 @@ pub async fn media_new(ctx: &Ctx<'_>) -> AdminResponse {
         let Some(writer) = ctx.env.writer else { return read_only(ctx) };
         let content = Content { site, db: ctx.env.db, writer, user: &ctx.user, now: ctx.env.now };
         if let Some(file) = request.files.iter().find(|f| f.field == "async-upload") {
-            let uploaded = crate::media::UploadedFile { name: file.filename.clone(), bytes: file.bytes.clone() };
+            let uploaded = crate::media::UploadedFile { name: file.filename.clone(), bytes: file.bytes.clone(), rest: false, media_form_nonce: true };
             if crate::media::handle_upload(&content, &super::ajax_media::uploads_dir(ctx.env), uploaded, 0).await.is_ok() {
                 return redirect(&ctx.admin_url("upload.php"));
             }

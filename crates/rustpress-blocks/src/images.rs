@@ -37,15 +37,25 @@ impl Metadata {
     }
 
     pub fn width(&self) -> u64 {
-        self.0.get("width").and_then(Value::as_u64).unwrap_or(0)
+        self.0.get("width").map_or(0, php_int)
     }
 
     pub fn height(&self) -> u64 {
-        self.0.get("height").and_then(Value::as_u64).unwrap_or(0)
+        self.0.get("height").map_or(0, php_int)
     }
 
     pub fn sizes(&self) -> Option<&serde_json::Map<String, Value>> {
         self.0.get("sizes").and_then(Value::as_object)
+    }
+}
+
+/// `(int)` of a number in attachment metadata: plugins store sizes as strings or floats too.
+pub fn php_int(value: &Value) -> u64 {
+    match value {
+        Value::Number(n) => n.as_u64().or_else(|| n.as_f64().map(|f| f.max(0.0) as u64)).unwrap_or(0),
+        Value::String(s) => s.trim().parse::<f64>().map_or(0, |f| f.max(0.0) as u64),
+        Value::Bool(b) => u64::from(*b),
+        _ => 0,
     }
 }
 
@@ -157,8 +167,8 @@ pub fn image_downsize(full_url: &str, meta: &Metadata, size: &str) -> Downsized 
             let full_name = basename(full_url);
             return Downsized {
                 url: full_url.replace(full_name, file),
-                width: entry.get("width").and_then(Value::as_u64).unwrap_or(0),
-                height: entry.get("height").and_then(Value::as_u64).unwrap_or(0),
+                width: entry.get("width").map_or(0, php_int),
+                height: entry.get("height").map_or(0, php_int),
             };
         }
     Downsized { url: full_url.to_owned(), width: meta.width(), height: meta.height() }
@@ -222,7 +232,7 @@ pub fn intermediate_size(full_url: &str, meta: &Metadata, width: u64, height: u6
     let sizes = meta.sizes()?;
     let mut candidates: Vec<(u64, &str, u64, u64)> = Vec::new();
     for data in sizes.values() {
-        let (w, h) = (data.get("width").and_then(Value::as_u64).unwrap_or(0), data.get("height").and_then(Value::as_u64).unwrap_or(0));
+        let (w, h) = (data.get("width").map_or(0, php_int), data.get("height").map_or(0, php_int));
         let Some(file) = data.get("file").and_then(Value::as_str) else { continue };
         if w == width && h == height {
             candidates = vec![(w * h, file, w, h)];
@@ -241,7 +251,7 @@ pub fn intermediate_size(full_url: &str, meta: &Metadata, width: u64, height: u6
     }
     // A request that fits into the thumbnail gets the thumbnail (WordPress compares the height with its width, too).
     let thumbnail = sizes.get("thumbnail")?;
-    let (w, h) = (thumbnail.get("width").and_then(Value::as_u64).unwrap_or(0), thumbnail.get("height").and_then(Value::as_u64).unwrap_or(0));
+    let (w, h) = (thumbnail.get("width").map_or(0, php_int), thumbnail.get("height").map_or(0, php_int));
     let file = thumbnail.get("file").and_then(Value::as_str)?;
     (width <= w && height <= w).then(|| (full_url.replace(basename(full_url), file), w, h))
 }
@@ -420,6 +430,8 @@ pub struct ImageArgs {
     pub attrs: Vec<(String, AttrValue)>,
     /// Inside `get_the_post_thumbnail()`: adds the `wp-post-image` class.
     pub post_thumbnail: bool,
+    /// The post whose featured image it is (the post of the loop): `post_thumbnail_html` runs for it.
+    pub thumbnail_of: Option<u64>,
     /// The `wp_get_attachment_image_src` filter replacing width and height.
     pub dimensions: Option<(u64, u64)>,
 }
@@ -571,7 +583,11 @@ pub async fn get_attachment_image(env: &Env<'_>, attachment_id: u64, size: &str,
     let Some(attached) = attached else { return Ok(String::new()) };
     let rows = env.site.db.post_meta(attachment_id).await?;
     let alt = rows.iter().find(|m| m.meta_key.as_deref() == Some("_wp_attachment_image_alt")).and_then(|m| m.meta_value.clone()).unwrap_or_default();
-    Ok(attachment_image(env, meta.as_ref(), &attached, size, &alt, args))
+    let html = attachment_image(env, meta.as_ref(), &attached, size, &alt, args);
+    match args.thumbnail_of.filter(|_| args.post_thumbnail) {
+        Some(owner) => env.site.plugins.post_thumbnail_html(env.site, owner, env.query.flags.is_singular(), html).await.map_err(Into::into),
+        None => Ok(html),
+    }
 }
 
 /// `get_theme_mod( 'custom_logo' )`: the `site_logo` option wins over the theme mod.
@@ -705,7 +721,7 @@ fn src_dimensions(src: &str, meta: &Metadata) -> Option<(u64, u64)> {
     }
     let name = basename(src);
     meta.sizes()?.values().find(|entry| entry.get("file").and_then(Value::as_str) == Some(name)).map(|entry| {
-        (entry.get("width").and_then(Value::as_u64).unwrap_or(0), entry.get("height").and_then(Value::as_u64).unwrap_or(0))
+        (entry.get("width").map_or(0, php_int), entry.get("height").map_or(0, php_int))
     })
 }
 

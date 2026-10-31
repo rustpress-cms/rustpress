@@ -142,14 +142,14 @@ impl Rest<'_> {
                 let Some(part) = files.iter().find(|f| f.field == "file").or(files.first()) else {
                     return Ok(Err(RestError::new("rest_upload_no_data", "No data supplied.", 400)));
                 };
-                (UploadedFile { name: part.filename.clone(), bytes: part.bytes.clone() }, fields.clone())
+                (UploadedFile { name: part.filename.clone(), bytes: part.bytes.clone(), rest: true, media_form_nonce: false }, fields.clone())
             }
             Body::Raw { bytes, disposition, .. } => {
                 let filename = disposition.split(';').find_map(|p| p.trim().strip_prefix("filename=")).map(|f| f.trim_matches('"').to_owned());
                 let Some(filename) = filename else {
                     return Ok(Err(RestError::new("rest_upload_no_content_disposition", "No Content-Disposition supplied.", 400)));
                 };
-                (UploadedFile { name: filename, bytes: bytes.clone() }, Vec::new())
+                (UploadedFile { name: filename, bytes: bytes.clone(), rest: true, media_form_nonce: false }, Vec::new())
             }
             _ => return Ok(Err(RestError::new("rest_upload_no_data", "No data supplied.", 400))),
         };

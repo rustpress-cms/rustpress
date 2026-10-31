@@ -190,7 +190,7 @@ pub(super) async fn post_featured_image(bc: &BlockCtx<'_>) -> Result<String> {
 
     let thumbnail = images::post_thumbnail_id(bc.env, post_id).await?;
     let featured = if thumbnail != 0 {
-        images::get_attachment_image(bc.env, thumbnail, &size, &ImageArgs { attrs, post_thumbnail: true, dimensions: None }).await?
+        images::get_attachment_image(bc.env, thumbnail, &size, &ImageArgs { attrs, post_thumbnail: true, thumbnail_of: Some(post_id), dimensions: None }).await?
     } else {
         String::new()
     };
@@ -266,7 +266,7 @@ async fn custom_logo(bc: &BlockCtx<'_>, width: Option<u64>) -> Result<String> {
             dimensions = Some((width, height as u64));
         }
     }
-    let image = images::get_attachment_image(env, id, "full", &ImageArgs { attrs, post_thumbnail: false, dimensions }).await?;
+    let image = images::get_attachment_image(env, id, "full", &ImageArgs { attrs, post_thumbnail: false, thumbnail_of: None, dimensions }).await?;
     if image.is_empty() {
         return Ok(String::new());
     }

@@ -6,10 +6,12 @@
 //! role); RustPress applies them in memory.
 
 mod admin;
+mod sanitizer;
+mod upload;
 
 use futures::future::BoxFuture;
 use rustpress_blocks::php_json;
-use rustpress_core::native::{ActivePlugin, AdminContext, AdminHelp, AdminPage, AjaxAnswer, Assets, MetaType, NativePlugin, RegisteredMeta};
+use rustpress_core::native::{ActivePlugin, AdminContext, AdminHelp, AdminPage, AjaxAnswer, Assets, MetaType, NativePlugin, RegisteredMeta, Uploader};
 use rustpress_core::{Result, Site};
 use rustpress_phpser::{Key, Value};
 
@@ -149,6 +151,57 @@ impl ActivePlugin for Active {
 
     fn plugin_row_meta(&self, site: &Site, file: &str, links: Vec<String>) -> Vec<String> {
         admin::row_meta(site, file, links)
+    }
+
+    /// `bodhi_svgs_block_editor()`: the checkbox for an inline featured image in the block editor.
+    fn block_editor_assets(&self, ctx: &AdminContext<'_>, assets: &mut Assets) {
+        if self.settings.advanced_mode() {
+            // The plugin's URL ends with a slash and the path starts with one.
+            let src = format!("{}/js/min/gutenberg-filters-min.js", ctx.site.site_url("wp-content/plugins/svg-support/"));
+            assets.script("bodhi-svgs-gutenberg-filters", src, &["wp-edit-post"], VERSION, true);
+        }
+    }
+
+    /// `bodhi_svgs_add_class_to_thumbnail()`: on a singular page, an inlined featured image gets the target class.
+    fn post_thumbnail_html<'a>(&'a self, site: &'a Site, post_id: u64, singular: bool, html: String) -> BoxFuture<'a, Result<String>> {
+        Box::pin(async move {
+            if !self.settings.advanced_mode() || !singular {
+                return Ok(html);
+            }
+            let rows = site.db.post_meta(post_id).await?;
+            // `in_array( 1, get_post_meta( ... ) )`: a value that equals 1 loosely.
+            let inline = rows.iter().filter(|m| m.meta_key.as_deref() == Some("inline_featured_image")).filter_map(|m| m.meta_value.as_deref()).any(|v| v.trim().parse::<f64>().is_ok_and(|n| n == 1.0));
+            if !inline {
+                return Ok(html);
+            }
+            let target = self.settings.str("css_target").filter(|c| !c.is_empty() && c != "0").unwrap_or_else(|| "style-svg".to_owned());
+            Ok(html.replace("attachment-", &format!("{target} attachment-")))
+        })
+    }
+
+    fn upload_mimes(&self, uploader: &Uploader<'_>, mimes: &mut Vec<(String, String)>) {
+        upload::upload_mimes(&self.settings, uploader, mimes);
+    }
+
+    fn upload_prefilter(&self, uploader: &Uploader<'_>, name: &mut String, bytes: &mut Vec<u8>) -> std::result::Result<(), String> {
+        upload::prefilter(uploader.site, &self.settings, uploader, name, bytes)
+    }
+
+    fn accept_filetype(&self, name: &str, mimes: &[(String, String)]) -> Option<(String, String)> {
+        upload::accept_filetype(name, mimes)
+    }
+
+    fn attachment_metadata(&self, site: &Site, mime: &str, path: &std::path::Path, relative: &str, metadata: Value) -> Value {
+        upload::metadata(site, mime, path, relative, metadata)
+    }
+
+    fn prepare_attachment_for_js(&self, mime: &str, path: Option<&std::path::Path>, response: &mut serde_json::Map<String, serde_json::Value>) {
+        upload::prepare_attachment_for_js(mime, path, response);
+    }
+
+    /// `bodhi_svgs_display_thumbs()`: the output buffer of the media library.
+    fn admin_page_output(&self, ctx: &AdminContext<'_>, html: String) -> String {
+        if ctx.hook_suffix == "upload.php" { upload::media_templates(html) } else { html }
     }
 
     fn registered_settings(&self) -> Vec<(&'static str, &'static str)> {

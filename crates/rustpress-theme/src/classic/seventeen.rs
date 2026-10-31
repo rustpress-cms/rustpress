@@ -168,7 +168,7 @@ async fn custom_logo(ctx: &Ctx<'_>) -> Result<String> {
     if alt_meta.is_empty() || alt_meta == "0" {
         attrs.push(("alt".into(), AttrValue::Text(ctx.site.settings.blogname.clone())));
     }
-    let image = images::get_attachment_image(&ctx.env, id, "full", &ImageArgs { attrs, post_thumbnail: false, dimensions: None }).await?;
+    let image = images::get_attachment_image(&ctx.env, id, "full", &ImageArgs { attrs, post_thumbnail: false, thumbnail_of: None, dimensions: None }).await?;
     let q = ctx.q;
     let current = !q.flags.is_paged && (q.flags.is_front_page || (q.flags.is_home && ctx.site.settings.page_for_posts != q.queried_object_id()));
     let aria = if current { " aria-current=\"page\"" } else { "" };
@@ -263,7 +263,7 @@ async fn header(ctx: &Ctx<'_>, classes: &[String]) -> Result<String> {
     // `twentyseventeen_should_show_featured_image()`.
     let q = ctx.q;
     if (q.flags.is_single || (q.flags.is_page && !is_frontpage(ctx))) && images::post_thumbnail_id(&ctx.env, q.queried_object_id()).await? != 0 {
-        let image = images::get_attachment_image(&ctx.env, images::post_thumbnail_id(&ctx.env, q.queried_object_id()).await?, "twentyseventeen-featured-image", &ImageArgs { post_thumbnail: true, ..ImageArgs::default() }).await?;
+        let image = images::get_attachment_image(&ctx.env, images::post_thumbnail_id(&ctx.env, q.queried_object_id()).await?, "twentyseventeen-featured-image", &ImageArgs { post_thumbnail: true, thumbnail_of: Some(q.queried_object_id()), ..ImageArgs::default() }).await?;
         out.push_str(&format!("<div class=\"single-featured-image-header\">{image}</div><!-- .single-featured-image-header -->"));
     }
     ctx.env.with_state(|s| s.media.in_header = false);
@@ -437,11 +437,11 @@ async fn content_part(ctx: &Ctx<'_>, post: &Arc<Post>) -> Result<String> {
     {
         let id = images::post_thumbnail_id(&ctx.env, post.id).await?;
         if id != 0 && is_single {
-            images::get_attachment_image(&ctx.env, id, "twentyseventeen-featured-image", &ImageArgs { post_thumbnail: true, ..ImageArgs::default() }).await?;
+            images::get_attachment_image(&ctx.env, id, "twentyseventeen-featured-image", &ImageArgs { post_thumbnail: true, thumbnail_of: Some(post.id), ..ImageArgs::default() }).await?;
         } else if id != 0 {
             // `get_the_post_thumbnail()` runs in the condition and again in `the_post_thumbnail()`:
             // both calls count as media, and the second one is printed.
-            let args = ImageArgs { post_thumbnail: true, ..ImageArgs::default() };
+            let args = ImageArgs { post_thumbnail: true, thumbnail_of: Some(post.id), ..ImageArgs::default() };
             let first = images::get_attachment_image(&ctx.env, id, "twentyseventeen-featured-image", &args).await?;
             let image = images::get_attachment_image(&ctx.env, id, "twentyseventeen-featured-image", &args).await?;
             if !first.is_empty() && !image.is_empty() {

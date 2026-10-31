@@ -36,7 +36,7 @@
 RustPress reads the existing MySQL/MariaDB database (the usual `wp_*` schema, no conversion) and the existing `wp-content/` folder, and answers requests the way WordPress would: same HTML, same feeds, same REST responses, same redirects. There is no PHP interpreter. Themes and core behaviour are ported to Rust and checked against a real WordPress, page by page and byte by byte.
 
 - **Block themes** (`theme.json` + HTML templates) run as they are. The classic theme **Twenty Seventeen** is rebuilt natively in Rust.
-- Other classic PHP themes and PHP plugins do **not** run. Important plugins are rebuilt as native modules that take over while the plugin is active (its files stay in `wp-content/plugins`): so far **WP Date Remover** 1.1.3 and **SVG Support** 2.6.1 (website and settings; SVG uploads are still to come).
+- Other classic PHP themes and PHP plugins do **not** run. Important plugins are rebuilt as native modules that take over while the plugin is active (its files stay in `wp-content/plugins`): so far **WP Date Remover** 1.1.3 and **SVG Support** 2.6.1 (website, settings and sanitized SVG uploads).
 - Theme assets, uploads, translations and `block.json` files are read from the WordPress files on disk, so a WordPress installation (or the files the installer downloads) is still needed.
 
 ## Features

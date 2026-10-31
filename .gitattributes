@@ -2,3 +2,6 @@
 
 *.xsl -text
 
+
+# The cases of the SVG sanitizer keep their bytes (one has Windows line ends on purpose).
+crates/rustpress-plugins/tests/data/svg-sanitize/** -text

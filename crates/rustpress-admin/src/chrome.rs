@@ -369,6 +369,9 @@ pub struct Assets {
     pub head_early: String,
     /// The scripts plugins enqueue on `admin_enqueue_scripts`.
     pub plugin_scripts: Vec<rustpress_core::native::Asset>,
+    /// Scripts of plugins the page enqueues itself (`enqueue_block_editor_assets`): registered with the others, but
+    /// queued with the page's own scripts (their handles are in `scripts`).
+    pub plugin_page_scripts: Vec<rustpress_core::native::Asset>,
     /// The links of the stylesheets plugins enqueue: printed with the styles that are not concatenated, before the
     /// emoji styles.
     pub plugin_styles: String,
@@ -681,6 +684,20 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
         heartbeat.insert("suspension".into(), serde_json::Value::String("disable".into()));
     }
     scripts.relocalize("heartbeat", "heartbeatSettings", &serde_json::Value::Object(heartbeat));
+    for script in assets.plugin_page_scripts.iter().chain(&assets.plugin_scripts) {
+        let deps: Vec<&str> = script.deps.iter().map(String::as_str).collect();
+        let ver = script.ver.clone().map_or(crate::deps::Ver::None, crate::deps::Ver::Value);
+        scripts.add(&script.handle, Some(&script.src), &deps, ver, script.in_footer.then_some(crate::deps::Arg::Int(1)));
+        if let Some(extra) = &script.extra {
+            scripts.append_data(&script.handle, extra);
+        }
+        for code in &script.before {
+            scripts.add_inline_script(&script.handle, code, "before");
+        }
+        for code in &script.after {
+            scripts.add_inline_script(&script.handle, code, "after");
+        }
+    }
     // A screen enqueues its scripts before `admin-header.php` adds the ones of every screen.
     for handle in ["common", "admin-bar"].into_iter().chain(assets.early_scripts.iter().map(String::as_str)).chain(assets.scripts.iter().map(String::as_str)) {
         scripts.enqueue(handle);
@@ -703,18 +720,6 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
     scripts.enqueue("wp-core-commands");
     scripts.add_inline_script("wp-core-commands", &command_palette_call(env), "after");
     for script in &assets.plugin_scripts {
-        let deps: Vec<&str> = script.deps.iter().map(String::as_str).collect();
-        let ver = script.ver.clone().map_or(crate::deps::Ver::None, crate::deps::Ver::Value);
-        scripts.add(&script.handle, Some(&script.src), &deps, ver, script.in_footer.then_some(crate::deps::Arg::Int(1)));
-        if let Some(extra) = &script.extra {
-            scripts.append_data(&script.handle, extra);
-        }
-        for code in &script.before {
-            scripts.add_inline_script(&script.handle, code, "before");
-        }
-        for code in &script.after {
-            scripts.add_inline_script(&script.handle, code, "after");
-        }
         scripts.enqueue(&script.handle);
     }
     if let Some(boot) = &assets.boot {

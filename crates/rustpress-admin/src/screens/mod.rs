@@ -699,6 +699,8 @@ pub async fn render(ctx: &Ctx<'_>, screen: &Screen, content: &str, assets: &Asse
         ));
     }
     let body = chrome::render(&chrome_env, screen, content, &assets);
+    // Output buffers plugins start on `admin_init`.
+    let body = env.site.plugins.admin_page_output(&plugin_ctx, body);
     AdminResponse { status: 200, headers: page_headers(), cookies: Vec::new(), body, bytes: Vec::new() }
 }
 

@@ -54,7 +54,7 @@ pub(super) async fn cover(bc: &BlockCtx<'_>) -> Result<String> {
                 attrs.push(("data-object-position".into(), AttrValue::Text(position.clone())));
                 attrs.push(("style".into(), AttrValue::Text(format!("object-position:{position};"))));
             }
-            images::get_attachment_image(bc.env, id, size.as_deref().unwrap_or("post-thumbnail"), &ImageArgs { attrs, post_thumbnail: true, dimensions: None }).await?
+            images::get_attachment_image(bc.env, id, size.as_deref().unwrap_or("post-thumbnail"), &ImageArgs { attrs, post_thumbnail: true, thumbnail_of: bc.context.post_id(), dimensions: None }).await?
         }
     } else {
         let url = if id == 0 { None } else { images::attachment_image_url(bc.env, id, size.as_deref().unwrap_or("full")).await?.filter(|u| !u.is_empty()) };

@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg">
+  <rect fill="url('https://evil.example/x.svg#a')" stroke="url(#local)" width="1"/>
+  <rect fill="url( &quot;//evil.example/a&quot; )" width="2"/>
+  <rect style="fill:url(https://evil.example/b)" width="3"/>
+  <rect mask="url('file:///etc/passwd')" width="4"/>
+</svg>

@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<!-- generator -->
+<?xml-stylesheet href="x.css"?>
+<svg xmlns="http://www.w3.org/2000/svg">
+  <!-- inside -->
+  <g>
+    <!-- deeper -->
+    <rect width="1"/>
+  </g>
+</svg>
+<!-- after -->
