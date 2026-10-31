@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RustPress – WordPress, without PHP</title>
+<meta name="description" content="RustPress is a drop-in replacement for WordPress written in Rust. Point it at an existing WordPress database and wp-content folder, and it serves the same pages, feeds and REST answers, without PHP.">
+<meta property="og:title" content="RustPress – WordPress, without PHP">
+<meta property="og:description" content="A drop-in replacement for WordPress written in Rust, checked byte for byte against a real WordPress.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://rustpress-cms.github.io/rustpress/">
+<link rel="canonical" href="https://rustpress-cms.github.io/rustpress/">
+<link rel="alternate" hreflang="en" href="https://rustpress-cms.github.io/rustpress/">
+<link rel="alternate" hreflang="de" href="https://rustpress-cms.github.io/rustpress/de/">
+<link rel="icon" href="logo.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="./"><svg viewBox="0 0 100 100" aria-hidden="true"><g fill="currentColor"><rect x="45.5" y="1" width="9" height="10" rx="1.5" transform="rotate(0.0 50 50)"/><rect x="45.5" y="1" width="9" height="10" rx="1.5" transform="rotate(20.0 50 50)"/><rect x="45.5" y="1" width="9" height="10" rx="1.5" transform="rotate(40.0 50 50)"/><rect x="45.5" y="1" width="9" height="10" rx="1.5" transform="rotate(60.0 50 50)"/><rect x="45.5" y="1" width="9" height="10" rx="1.5" transform="rotate(80.0 50 50)"/><rect x="45.5" y="1" width="9" height="10" rx="1.5" transform="rotate(100.0 50 50)"/><rect x="45.5" y="1" width="9" height="10" rx="1.5" transform="rotate(120.0 50 50)"/><rect x="45.5" y="1" width="9" height="10" rx="1.5" transform="rotate(140.0 50 50)"/><rect x="45.5" y="1" width="9" height="10" rx="1.5" transform="rotate(160.0 50 50)"/><rect x="45.5" y="1" width="9" height="10" rx="1.5" transform="rotate(180.0 50 50)"/><rect x="45.5" y="1" width="9" height="10" rx="1.5" transform="rotate(200.0 50 50)"/><rect x="45.5" y="1" width="9" height="10" rx="1.5" transform="rotate(220.0 50 50)"/><rect x="45.5" y="1" width="9" height="10" rx="1.5" transform="rotate(240.0 50 50)"/><rect x="45.5" y="1" width="9" height="10" rx="1.5" transform="rotate(260.0 50 50)"/><rect x="45.5" y="1" width="9" height="10" rx="1.5" transform="rotate(280.0 50 50)"/><rect x="45.5" y="1" width="9" height="10" rx="1.5" transform="rotate(300.0 50 50)"/><rect x="45.5" y="1" width="9" height="10" rx="1.5" transform="rotate(320.0 50 50)"/><rect x="45.5" y="1" width="9" height="10" rx="1.5" transform="rotate(340.0 50 50)"/><circle cx="50" cy="50" r="41"/></g><circle cx="50" cy="50" r="35" fill="var(--bg)"/><path fill="currentColor" fill-rule="evenodd" d="M34 26h19.5c9 0 15 5.2 15 13 0 5.8-3.3 10-8.6 11.8L70 74H58.5l-8.8-21.6H44.5V74H34Zm10.5 8.3v10.4h8.6c3.5 0 5.6-2 5.6-5.2s-2.1-5.2-5.6-5.2Z"/></svg>RustPress</a>
+    <nav>
+      <a class="opt" href="#how">How it works</a>
+      <a class="opt" href="#compatibility">Compatibility</a>
+      <a class="opt" href="#install">Install</a>
+      <a href="https://github.com/rustpress-cms/rustpress">GitHub</a>
+      <a href="de/" hreflang="de" lang="de">Deutsch</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+
+<div class="hero">
+  <div class="wrap">
+    <h1>WordPress, <em>without PHP.</em></h1>
+    <p class="lead">RustPress is a drop-in replacement for WordPress written in Rust. Point it at an existing WordPress database and <code>wp-content/</code> folder, and it serves the same pages, feeds and REST answers, checked byte for byte against a real WordPress.</p>
+    <div class="actions">
+      <a class="btn primary" href="#install">Get started</a>
+      <a class="btn" href="https://github.com/rustpress-cms/rustpress/releases/latest">Download</a>
+      <a class="btn" href="https://github.com/rustpress-cms/rustpress">Source on GitHub</a>
+    </div>
+<pre><code>docker run -p 3000:3000 -v /path/to/wordpress:/var/www/html \
+  -e RUSTPRESS_DATABASE_URL=mysql://user:pass@db:3306/wordpress \
+  ghcr.io/rustpress-cms/rustpress</code></pre>
+  </div>
+</div>
+
+<section id="how" class="alt">
+  <div class="wrap">
+    <h2>How it works</h2>
+    <p class="intro">No migration, no export, no new data format. RustPress works with what a WordPress site already has, and answers requests the way WordPress would.</p>
+    <div class="grid steps">
+      <div class="card">
+        <h3>Same database</h3>
+        <p>RustPress reads the usual <code>wp_*</code> tables in MySQL or MariaDB as they are. You can switch back to WordPress at any time.</p>
+      </div>
+      <div class="card">
+        <h3>Same files</h3>
+        <p>Block themes, uploads, translations and <code>block.json</code> files come from your <code>wp-content/</code> and the WordPress files on disk.</p>
+      </div>
+      <div class="card">
+        <h3>Same output</h3>
+        <p>Same HTML, same feeds, same REST responses, same redirects. Core and themes are ported to Rust; there is no PHP interpreter.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="features">
+  <div class="wrap">
+    <h2>What it does</h2>
+    <p class="intro">The website, the REST API and the administration area, as one small binary.</p>
+    <div class="grid">
+      <div class="card">
+        <h3>Website</h3>
+        <p>Pages, posts, archives, search and 404 with the site's block theme, including responsive images and galleries. Twenty Seventeen is rebuilt natively.</p>
+      </div>
+      <div class="card">
+        <h3>Feeds and SEO basics</h3>
+        <p>Permalinks of every kind, canonical redirects, RSS2 and Atom feeds, comment feeds, sitemaps and <code>robots.txt</code>.</p>
+      </div>
+      <div class="card">
+        <h3>REST API</h3>
+        <p><code>wp/v2</code> for posts, pages, media, categories, tags, users and comments, for reading and writing.</p>
+      </div>
+      <div class="card">
+        <h3>Administration</h3>
+        <p><code>wp-admin</code> with sign-in, the block editor, media, comments, users, settings, privacy tools and export.</p>
+      </div>
+      <div class="card">
+        <h3>Installer</h3>
+        <p>A WordPress-style installer that can download and verify the WordPress files by itself.</p>
+      </div>
+      <div class="card">
+        <h3>Every language</h3>
+        <p>Every language WordPress has a language pack for, including right-to-left languages. E-mail goes out over SMTP.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="compatibility" class="alt">
+  <div class="wrap">
+    <h2>Checked against a real WordPress</h2>
+    <p class="intro"><code>rustpress-compat</code> crawls a reference WordPress 7.1.4 and RustPress side by side and compares status codes, headers and bodies of every URL. A difference is either fixed or documented with its reason.</p>
+    <div class="stats">
+      <div class="stat"><b>3,666</b><span>URLs compared in the four default block themes</span></div>
+      <div class="stat"><b>0</b><span>unexpected differences</span></div>
+      <div class="stat"><b>7.1.4</b><span>the WordPress release RustPress follows</span></div>
+      <div class="stat"><b>322</b><span>URLs of a real production site, none unexpected</span></div>
+    </div>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Theme</th><th>URLs compared</th><th>identical</th><th>documented differences</th><th>unexpected</th></tr></thead>
+        <tbody>
+          <tr><td>Twenty Twenty-Five</td><td>921</td><td>900</td><td>21</td><td class="zero">0</td></tr>
+          <tr><td>Twenty Twenty-Four</td><td>916</td><td>897</td><td>19</td><td class="zero">0</td></tr>
+          <tr><td>Twenty Twenty-Three</td><td>913</td><td>897</td><td>16</td><td class="zero">0</td></tr>
+          <tr><td>Twenty Twenty-Two</td><td>916</td><td>897</td><td>19</td><td class="zero">0</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">Full reports are in <a href="https://github.com/rustpress-cms/rustpress/tree/main/compat/reports"><code>compat/reports</code></a>, the accepted differences with their reasons in <a href="https://github.com/rustpress-cms/rustpress/blob/main/compat/known.toml"><code>compat/known.toml</code></a>. New WordPress releases are tracked automatically: a daily job opens an issue with the changed PHP code and the RustPress files that follow it.</p>
+  </div>
+</section>
+
+<section id="plugins">
+  <div class="wrap">
+    <h2>Plugins as native modules</h2>
+    <p class="intro">PHP plugins do not run. Important plugins are rebuilt in Rust instead and take over while the plugin is active in WordPress, with the same settings, the same output and the same behaviour. The plugin's files simply stay in <code>wp-content/plugins</code>.</p>
+    <div class="grid">
+      <div class="card plugin">
+        <h3>WP Date Remover <span class="ver">1.1.3</span></h3>
+        <p>Hides post dates in the chosen categories, with its settings page.</p>
+        <span class="tag done">available</span>
+      </div>
+      <div class="card plugin">
+        <h3>SVG Support <span class="ver">2.6.1</span></h3>
+        <p>Sanitized SVG uploads, inline SVGs on the website and the settings page.</p>
+        <span class="tag done">available</span>
+      </div>
+      <div class="card plugin">
+        <h3>Contact Form 7</h3>
+        <p>Forms, validation and mail.</p>
+        <span class="tag next">next</span>
+      </div>
+      <div class="card plugin">
+        <h3>Yoast SEO and Redirection</h3>
+        <p>Meta tags, schema output and redirects, the website side first.</p>
+        <span class="tag next">planned</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="install" class="alt">
+  <div class="wrap">
+    <h2>Install</h2>
+    <p class="intro">Every <a href="https://github.com/rustpress-cms/rustpress/releases">release</a> carries ready-made builds. The Linux binaries are linked statically, so one file runs on every distribution.</p>
+    <ul class="platforms">
+      <li>Linux x86_64, aarch64, armv7, armv6, i686</li>
+      <li>.deb · .rpm · .apk</li>
+      <li>macOS Intel and Apple Silicon</li>
+      <li>Windows x64, x86, ARM64</li>
+      <li>FreeBSD</li>
+      <li>Container: amd64, arm64, arm/v7, arm/v6, 386</li>
+    </ul>
+    <div class="install">
+      <div>
+        <h3>Server</h3>
+<pre><code><span class="c"># rustpress.toml</span>
+database_url = "mysql://wordpress:secret@127.0.0.1:3306/wordpress"
+wp_root      = "/var/www/html"
+listen       = "127.0.0.1:3000"
+allow_writes = true   <span class="c"># sign-in, comments, wp-admin</span></code></pre>
+<pre style="margin-top:10px"><code>RUSTPRESS_CONFIG=rustpress.toml rustpress</code></pre>
+        <p>Without <code>allow_writes</code> the database session is read-only and the administration area stays closed. TLS is left to a reverse proxy.</p>
+      </div>
+      <div>
+        <h3>Docker Compose</h3>
+<pre><code>cp .env.example .env   <span class="c"># set the password and address</span>
+docker compose up -d   <span class="c"># RustPress and MariaDB</span></code></pre>
+        <p>Then open the site and follow the installer, or point <code>WORDPRESS_DIR</code> at an existing WordPress folder and import its database dump.</p>
+      </div>
+      <div>
+        <h3>Shared hosting (CGI)</h3>
+        <p style="margin-top:0">On hosts that only offer Apache with CGI, put the static binary into <code>cgi-bin/</code>. RustPress detects CGI mode by itself, reads the database settings from <code>wp-config.php</code> and takes over the site through <code>.htaccess</code>. On an empty webspace the installer downloads the WordPress files from wordpress.org, checksum-verified.</p>
+      </div>
+      <div>
+        <h3>From source</h3>
+<pre><code>git clone https://github.com/rustpress-cms/rustpress
+cd rustpress
+cargo run --release -p rustpress-server</code></pre>
+        <p>All settings can also be given as <code>RUSTPRESS_*</code> environment variables; see the <a href="https://github.com/rustpress-cms/rustpress#getting-started">README</a>.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="status">
+  <div class="wrap">
+    <div class="status">
+      <p><strong>RustPress is experimental.</strong> It is tested against WordPress 7.1.4 and runs a real site in production, but expect rough edges. Keep a backup of your database and the WordPress files before pointing it at a live site.</p>
+      <p>Classic PHP themes other than Twenty Seventeen and PHP plugins without a native module do not run.</p>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="links">
+      <a href="https://github.com/rustpress-cms/rustpress">GitHub</a>
+      <a href="https://github.com/rustpress-cms/rustpress/releases">Releases</a>
+      <a href="https://github.com/rustpress-cms/rustpress/issues">Issues</a>
+      <a href="https://github.com/rustpress-cms/rustpress/security/advisories/new">Report a security issue</a>
+      <a href="de/" hreflang="de" lang="de">Deutsch</a>
+    </div>
+    <p>RustPress is free software under the GNU General Public License, version 2 or later. It is a port of WordPress to Rust; texts, templates, data and the Twenty Seventeen port come from WordPress, © the WordPress contributors.</p>
+    <p>RustPress is an independent project and is not affiliated with or endorsed by the WordPress Foundation or Automattic. WordPress is a registered trademark of the WordPress Foundation.</p>
+  </div>
+</footer>
+
+</body>
+</html>
