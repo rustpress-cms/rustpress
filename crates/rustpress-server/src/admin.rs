@@ -61,16 +61,21 @@ fn config_path(config: &Config) -> Option<std::path::PathBuf> {
     above.is_file().then_some(above)
 }
 
-impl AdminParts {
-    pub async fn load(config: &Config, site: &Site) -> AdminParts {
-        let constants = config_path(config).and_then(|path| std::fs::read_to_string(path).ok()).map(|text| rustpress_auth::salts::parse_config_constants(&text)).unwrap_or_default();
-        let mut options = std::collections::HashMap::new();
-        for name in Salts::option_names() {
-            if let Ok(Some(value)) = site.options.fetch(&site.db, &name).await {
-                options.insert(name, value);
-            }
+/// The keys and salts of `wp-config.php` and of the options (`wp_salt()`).
+pub async fn load_salts(config: &Config, site: &Site) -> Salts {
+    let constants = config_path(config).and_then(|path| std::fs::read_to_string(path).ok()).map(|text| rustpress_auth::salts::parse_config_constants(&text)).unwrap_or_default();
+    let mut options = std::collections::HashMap::new();
+    for name in Salts::option_names() {
+        if let Ok(Some(value)) = site.options.fetch(&site.db, &name).await {
+            options.insert(name, value);
         }
-        let auth = Auth::new(Salts::new(constants, options), &site.settings.siteurl);
+    }
+    Salts::new(constants, options)
+}
+
+impl AdminParts {
+    pub async fn load(config: &Config, site: &Site, salts: Salts) -> AdminParts {
+        let auth = Auth::new(salts, &site.settings.siteurl);
         let prefix = site.db.table_prefix();
         let roles = Roles::from_option(&site.options.fetch(&site.db, &format!("{prefix}user_roles")).await.ok().flatten().unwrap_or_default());
         let includes = config.wp_root.join("wp-includes");

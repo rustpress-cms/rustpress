@@ -231,10 +231,28 @@ impl Site {
 
     /// `wptexturize()` with the quotes and dashes of the site's language.
     pub fn texturize(&self, text: &str) -> String {
+        let tags = self.shortcode_tags();
         match self.i18n.get().filter(|i| i.is_translated()) {
-            Some(i18n) => crate::formatting::wptexturize_with(text, i18n.texturize()),
-            None => crate::formatting::wptexturize(text),
+            Some(i18n) => crate::formatting::wptexturize_shortcodes(text, i18n.texturize(), &tags),
+            None => crate::formatting::wptexturize_shortcodes(text, crate::formatting::texturize_rules(), &tags),
         }
+    }
+
+    /// The registered shortcodes: the core's, then those of the active plugins.
+    pub fn shortcode_tags(&self) -> Vec<&'static str> {
+        let mut tags = crate::shortcodes::CORE_TAGS.to_vec();
+        tags.extend(self.plugins.shortcode_tags());
+        tags
+    }
+
+    /// `shortcode_unautop()` for the registered shortcodes.
+    pub fn shortcode_unautop(&self, text: &str) -> String {
+        crate::shortcodes::shortcode_unautop_with(text, &self.shortcode_tags())
+    }
+
+    /// `strip_shortcodes()` for the registered shortcodes.
+    pub fn strip_shortcodes(&self, text: &str) -> String {
+        crate::shortcodes::strip_shortcodes_with(text, &self.shortcode_tags())
     }
 
     /// The default excerpt length: `_x( '55', 'excerpt_length' )`.

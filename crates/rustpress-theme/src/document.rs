@@ -867,7 +867,7 @@ pub async fn render_document_with(theme: &Theme, site: &Site, query: &QueryResul
     let mut footer_scripts = format!("{speculation}{}{plugin_footer}{module_scripts}{}", rustpress_blocks::duotone::footer_svgs(&state.duotone), state.interactivity.data_script().unwrap_or_default());
     // MediaElement: jQuery in the head, the player scripts in the footer. The scripts plugins enqueue for the head
     // follow, after their dependencies.
-    let mut printer = crate::plugin_assets::ScriptPrinter::new(&includes_url, "3.7.1", "3.4.1");
+    let mut printer = crate::plugin_assets::ScriptPrinter::new(&includes_url, "3.7.1", "3.4.1").with_packages(&theme.wp_root, site);
     let mut head_scripts = String::new();
     if state.mediaelement {
         head_scripts.push_str(&printer.core("jquery"));

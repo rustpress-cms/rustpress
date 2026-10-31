@@ -1,0 +1,5 @@
+[acceptance a] I accept the <a href="/terms">terms</a>. [/acceptance]
+[acceptance b optional] Newsletter [/acceptance]
+[acceptance c invert default:on label_first class:acc id:acc-id tabindex:2] Do not send me mail [/acceptance]
+[acceptance d]
+[acceptance e "Value as label"]

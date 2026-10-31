@@ -1,0 +1,7 @@
+[select a "One" "Two" "Three"]
+[select* b include_blank "A" "B"]
+[select c multiple first_as_label "Pick" "X|x-value" "Y"]
+[select d size "1" "2"] [select e multiple size "1" "2"] [select f size:3 "1"]
+[select g default:2 "1" "2" "3"] [select h multiple default:1_3 "1" "2" "3"]
+[select i]
+[select j "<b>bold</b>" "a &amp; b" "&#8212;"]

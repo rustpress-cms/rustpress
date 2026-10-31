@@ -166,7 +166,10 @@ impl Rest<'_> {
 /// The `Env` used to render content outside of a page request.
 pub fn env<'a>(rest: &'a Rest<'a>) -> RestEnv<'a> {
     let env = rustpress_blocks::Env::new(rest.site, &rest.blank, rest.theme, rest.registry);
-    env.with_state(|s| *s = std::mem::take(&mut *rest.state.lock().expect("rest state lock")));
+    env.with_state(|s| {
+        *s = std::mem::take(&mut *rest.state.lock().expect("rest state lock"));
+        s.outside_loop = true;
+    });
     RestEnv { env, rest }
 }
 

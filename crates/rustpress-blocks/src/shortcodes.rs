@@ -33,7 +33,8 @@ pub fn do_shortcode<'a, 'e>(env: &'a Env<'e>, post: Option<&'a Arc<Post>>, conte
         if !content.contains('[') {
             return Ok(content.to_owned());
         }
-        let tags = shortcodes::tags_in(content, CORE_TAGS);
+        let registered = env.site.shortcode_tags();
+        let tags = shortcodes::tags_in(content, &registered);
         if tags.is_empty() {
             return Ok(content.to_owned());
         }
@@ -64,6 +65,15 @@ async fn do_shortcode_tag(env: &Env<'_>, post: Option<&Arc<Post>>, text: &str, m
         "video" => Some(crate::media_shortcodes::video(env, post.map_or(0, |p| p.id), &atts, m.content.as_deref().unwrap_or("")).unwrap_or_default()),
         // `WP_Embed` registers `[embed]` as `__return_false`; the real work happens before `wpautop()`.
         "embed" => Some(String::new()),
+        name if !CORE_TAGS.contains(&name) => {
+            let (plugins, outside_loop) = env.with_state(|s| (std::mem::take(&mut s.plugins), s.outside_loop));
+            let state = std::sync::Mutex::new(plugins);
+            let loop_post = if outside_loop { None } else { post.map(|p| p.id) };
+            let ctx = rustpress_core::native::ShortcodeContext { site: env.site, query: env.query, loop_post, state: &state };
+            let output = env.site.plugins.shortcode(name, &atts, m.content.as_deref(), &ctx).await;
+            env.with_state(|s| s.plugins = state.into_inner().unwrap_or_default());
+            output?
+        }
         _ => None,
     };
     let Some(output) = output else { return Ok(text[m.start..m.end].to_owned()) };
