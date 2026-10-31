@@ -1761,6 +1761,8 @@ dependencies = [
 name = "rustpress-plugins"
 version = "0.1.1"
 dependencies = [
+ "chrono",
+ "fancy-regex",
  "flate2",
  "futures",
  "regex",
@@ -1770,6 +1772,7 @@ dependencies = [
  "rustpress-db",
  "rustpress-phpser",
  "serde_json",
+ "sha2 0.10.9",
  "tokio",
  "xmlparser",
 ]

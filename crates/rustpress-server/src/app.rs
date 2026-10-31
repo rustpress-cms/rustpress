@@ -25,6 +25,8 @@ pub struct Loaded {
     pub registry: Registry,
     /// Sign-in and the administration area, when writing is allowed.
     pub admin: Option<crate::admin::AdminParts>,
+    /// The keys and salts for `wp_hash()`, also without the administration.
+    pub salts: rustpress_auth::salts::Salts,
     loaded_at: Instant,
 }
 
@@ -84,8 +86,9 @@ impl App {
         }
         let theme = Theme::load(&site, &config.wp_root).await?;
         let registry = Registry::new(config.wp_root.join("wp-includes").join("blocks"));
-        let admin = if config.allow_writes { Some(crate::admin::AdminParts::load(config, &site).await) } else { None };
-        Ok(Loaded { site, theme, registry, admin, loaded_at: Instant::now() })
+        let salts = crate::admin::load_salts(config, &site).await;
+        let admin = if config.allow_writes { Some(crate::admin::AdminParts::load(config, &site, salts.clone()).await) } else { None };
+        Ok(Loaded { site, theme, registry, admin, salts, loaded_at: Instant::now() })
     }
 
     /// The current snapshot; options and theme are re-read once it is older than `reload_secs`.
@@ -222,7 +225,8 @@ async fn commenter_of(app: &Arc<App>, headers: &axum::http::HeaderMap) -> rustpr
             rustpress_admin::comments_post::filter_url(&cookie("comment_author_url_")),
         )
     };
-    rustpress_blocks::commenter::Commenter::new(author, email, url, move |data| auth.as_ref().and_then(|auth| auth.salts().hash(data, "auth")).unwrap_or_default())
+    let salts = loaded.salts.clone();
+    rustpress_blocks::commenter::Commenter::new(author, email, url, move |data, scheme| salts.hash(data, scheme).unwrap_or_default())
 }
 
 async fn handle_request(axum::extract::State(app): axum::extract::State<Arc<App>>, request: Request<Body>) -> Response<Body> {

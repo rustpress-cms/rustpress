@@ -280,7 +280,8 @@ impl Texturize {
     }
 }
 
-fn texturize_rules() -> &'static Texturize {
+/// The English rules of `wptexturize()`, built once.
+pub fn texturize_rules() -> &'static Texturize {
     static RULES: OnceLock<Texturize> = OnceLock::new();
     RULES.get_or_init(|| Texturize::new(TexturizeChars::english()))
 }
@@ -380,6 +381,11 @@ pub fn wptexturize(text: &str) -> String {
 /// `wptexturize()`: curly quotes, dashes, ellipses and `x` multiplication, written with the
 /// characters of `rules` (which depend on the language).
 pub fn wptexturize_with(text: &str, rules: &Texturize) -> String {
+    wptexturize_shortcodes(text, rules, crate::shortcodes::CORE_TAGS)
+}
+
+/// `wptexturize()` that leaves the shortcodes `shortcodes` (the core's and the plugins') alone.
+pub fn wptexturize_shortcodes(text: &str, rules: &Texturize, shortcodes: &[&str]) -> String {
     if text.is_empty() {
         return String::new();
     }
@@ -388,7 +394,7 @@ pub fn wptexturize_with(text: &str, rules: &Texturize) -> String {
     let mut stack: Vec<String> = Vec::new();
     let mut shortcode_stack: Vec<String> = Vec::new();
     let mut out = String::with_capacity(text.len() + text.len() / 8);
-    let tagnames = crate::shortcodes::tags_in_closing(text, crate::shortcodes::CORE_TAGS);
+    let tagnames = crate::shortcodes::tags_in_closing(text, shortcodes);
 
     // Split into tags/comments, shortcodes and text, like the first regexp of wptexturize.
     let mut rest = text;

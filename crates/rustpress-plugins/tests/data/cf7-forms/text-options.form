@@ -1,0 +1,6 @@
+[text a] [text* b 30/80 class:one class:two id:tid placeholder "Hint"]
+[email c size:20 maxlength:50 minlength:5 tabindex:3 readonly autocomplete:off "x@example.org"]
+[url d list:dl autocomplete:on|email] [tel e minlength:9 maxlength:3]
+[text f watermark "Watch"] [text g default:1 "first" "second"] [text h default:2 "first" "second"]
+[text i id:tid] [text j id:wpcf7-x] [text k class:%41bad<> class:ok]
+[text* your-name placeholder "Jane Doe" class:name-field]
