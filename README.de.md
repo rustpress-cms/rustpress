@@ -59,6 +59,8 @@ RustPress kennt keine Sprache im Code. Texte, Monats- und Wochentagsnamen, Anfü
 
 ## Entwickeln und testen
 
+Wie am Projekt gearbeitet wird (WordPress als Orakel, Referenz-Stack, Golden-Tests, native Plugin-Module), steht für Mitwirkende und Coding-Agents in [AGENTS.md](AGENTS.md) (englisch).
+
 Die Tests vergleichen RustPress mit einem echten WordPress. Dafür gibt es einen Referenz-Stack (rootless Podman in WSL2; MariaDB auf `:3306`, WordPress 7 mit Twenty Twenty-Five auf `:8080`):
 
 ```sh
