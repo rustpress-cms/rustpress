@@ -1,6 +1,6 @@
 # RustPress
 
-[English](README.md) · **Deutsch**
+[Website](https://rustpress-cms.github.io/rustpress/de/) · [English](README.md) · **Deutsch**
 
 Ein WordPress-Ersatz in Rust: Bestehende WordPress-Seiten laufen **ohne PHP** und **ohne Konvertierung der Datenbank**. RustPress liest die vorhandene MySQL/MariaDB (`wp_*`-Schema) und das vorhandene `wp-content/` und liefert dieselben Antworten wie WordPress. Mit `allow_writes` laufen auch Anmeldung, Kommentare und die Verwaltung (`wp-admin`).
 

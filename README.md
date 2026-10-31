@@ -4,7 +4,7 @@
 
 **WordPress, without PHP.** A drop-in replacement for WordPress written in Rust: point it at an existing WordPress database and `wp-content/`, and it serves the same pages.
 
-**English** · [Deutsch](README.de.md)
+[Website](https://rustpress-cms.github.io/rustpress/) · **English** · [Deutsch](README.de.md)
 
 [![CI](https://github.com/rustpress-cms/rustpress/actions/workflows/ci.yml/badge.svg)](https://github.com/rustpress-cms/rustpress/actions/workflows/ci.yml)
 [![License: GPL v2+](https://img.shields.io/badge/license-GPL--2.0--or--later-blue.svg)](LICENSE)
