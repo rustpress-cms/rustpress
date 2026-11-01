@@ -289,17 +289,6 @@ async fn not_found(env: &Env<'_>) -> Result<String> {
     ))
 }
 
-/// The robots meta tag of the embed template: never indexed.
-fn robots(site: &Site) -> String {
-    let public = site.options.get("blog_public").is_some_and(|v| !v.is_empty() && v != "0");
-    let mut directives = vec!["noindex"];
-    directives.push(if public { "follow" } else { "nofollow" });
-    if public {
-        directives.push("max-image-preview:large");
-    }
-    format!("<meta name='robots' content='{}' />\n", directives.join(", "))
-}
-
 /// Renders the embed template for a request.
 pub async fn render(theme: &Theme, site: &Site, q: &QueryResult, registry: &Registry) -> Result<Document> {
     let wp_root = &theme.wp_root;
@@ -307,11 +296,16 @@ pub async fn render(theme: &Theme, site: &Site, q: &QueryResult, registry: &Regi
     let includes_url = site.site_url("wp-includes");
     let env = Env::new(site, q, theme, registry);
 
-    let title = document_title(site, q).await?;
+    // Plugins filter the title and the robots directives here too (`embed_head` prints `wp_robots()`).
+    let plugin_head = crate::head::plugin_head(theme, site, q, registry, false, None).await?.head;
+    let title = match plugin_head.title {
+        Some(title) => title,
+        None => document_title(site, q).await?,
+    };
     let rtl = site.is_rtl();
     let mut head = String::new();
     head.push_str(&format!("\t<title>{}</title>\n\t<meta http-equiv=\"X-UA-Compatible\" content=\"IE=edge\">\n\t", esc_html(&title)));
-    head.push_str(&robots(site));
+    head.push_str(&rustpress_core::native::robots_tag(plugin_head.robots.as_deref().unwrap_or_default()));
     if let Some(canonical) = crate::document::canonical_url(site, q, 0).await?.filter(|_| q.flags.is_singular()) {
         head.push_str(&format!("<link rel=\"canonical\" href=\"{}\" />\n", esc_url(&canonical)));
     }

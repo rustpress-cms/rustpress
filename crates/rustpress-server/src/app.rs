@@ -402,6 +402,19 @@ async fn page(app: &App, uri: &axum::http::Uri, request_headers: &axum::http::He
     // Physical PHP endpoints (wp-login.php, xmlrpc.php, ...) do not exist here; they get the
     // 404 page rather than a canonical redirect. Only `/index.php` is WordPress' own alias for `/`.
     let php_endpoint = path.ends_with(".php") && path != "/index.php";
+    // `template_redirect` of the plugins runs before `redirect_canonical()`.
+    if !php_endpoint && let Some(plugin) = loaded.site.plugins.template_redirect(&loaded.site, &result).await? {
+        let mut response = redirect(&plugin.location);
+        if let Some(status) = StatusCode::from_u16(plugin.status).ok().filter(StatusCode::is_redirection) {
+            *response.status_mut() = status;
+        }
+        singular_headers(&mut response, &result, &loaded);
+        let headers = response.headers_mut();
+        headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("text/html; charset=UTF-8"));
+        headers.insert("x-redirect-by", HeaderValue::from_static(plugin.by));
+        // The redirect exits before `rest_output_link_header()` (`template_redirect` at priority 11).
+        return Ok(response);
+    }
     let canonical = if php_endpoint { None } else { loaded.site.canonical_redirect_for_request(path, query, &result).await? };
     let canonical_done = started.elapsed();
     tracing::debug!(setup_ms = before_query.as_secs_f64() * 1000.0, query_ms = (query_done - before_query).as_secs_f64() * 1000.0, canonical_ms = (canonical_done - query_done).as_secs_f64() * 1000.0, path, "page prepared");

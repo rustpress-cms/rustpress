@@ -6,6 +6,7 @@ use std::path::Path;
 
 use rustpress_blocks::{Registry, ThemeAccess};
 use rustpress_core::formatting::{capital_p_dangit, esc_attr, esc_html, esc_url};
+use rustpress_core::native::Robot;
 use rustpress_core::{Queried, QueryResult, Site};
 use serde_json::Value;
 
@@ -443,7 +444,7 @@ fn font_faces_of(theme: &Theme, families: &[Value]) -> String {
     if css.is_empty() { String::new() } else { format!("<style class=\"wp-fonts-local\">\n{css}</style>\n") }
 }
 
-pub(crate) async fn discovery_links(site: &Site, q: &QueryResult, version: &str, cpage_override: u64) -> Result<String> {
+pub(crate) async fn discovery_links(site: &Site, q: &QueryResult, version: &str, cpage_override: u64, rel_canonical: bool) -> Result<String> {
     let mut out = format!("<link rel=\"https://api.w.org/\" href=\"{}\" />", esc_url(&site.rest_url("/")));
     if let Some(route) = crate::head::queried_rest_route(q) {
         out.push_str(&format!("<link rel=\"alternate\" title=\"JSON\" type=\"application/json\" href=\"{}\" />", esc_url(&site.rest_url(&route))));
@@ -452,7 +453,7 @@ pub(crate) async fn discovery_links(site: &Site, q: &QueryResult, version: &str,
     out.push_str(&format!("<meta name=\"generator\" content=\"WordPress {version}\" />\n"));
     if q.flags.is_singular()
         && let Queried::Post(post) = &q.queried {
-            if let Some(canonical) = canonical_url(site, q, cpage_override).await? {
+            if rel_canonical && let Some(canonical) = canonical_url(site, q, cpage_override).await? {
                 out.push_str(&format!("<link rel=\"canonical\" href=\"{}\" />
 ", esc_url(&canonical)));
             }
@@ -505,26 +506,51 @@ pub(crate) async fn oembed_links(site: &Site, q: &QueryResult) -> Result<String>
     ))
 }
 
-/// The `robots` meta tag from `wp_robots()`.
-pub(crate) fn robots_meta(site: &Site, q: &QueryResult) -> String {
-    let public = site.options.get("blog_public").is_some_and(|v| !v.is_empty() && v != "0");
-    let mut directives: Vec<&str> = Vec::new();
-    if !public {
-        directives.extend(["noindex", "nofollow"]);
-    } else {
-        if q.flags.is_search {
-            directives.extend(["noindex", "follow"]);
+/// The directives of `wp_robots()` after core's filters (`wp_robots_noindex()`, `wp_robots_noindex_search()`,
+/// `wp_robots_max_image_preview_large()`, `wp_robots_noindex_replytocom()`).
+pub(crate) fn core_robots(site: &Site, q: &QueryResult) -> Vec<(String, Robot)> {
+    fn set(robots: &mut Vec<(String, Robot)>, name: &str, value: Robot) {
+        match robots.iter_mut().find(|(n, _)| n == name) {
+            Some((_, v)) => *v = value,
+            None => robots.push((name.to_owned(), value)),
         }
-        directives.push("max-image-preview:large");
+    }
+    let public = site.options.get("blog_public").is_some_and(|v| !v.is_empty() && v != "0");
+    // `wp_robots_no_robots()`.
+    let no_robots = |robots: &mut Vec<(String, Robot)>| {
+        set(robots, "noindex", Robot::Flag(true));
+        set(robots, if public { "follow" } else { "nofollow" }, Robot::Flag(true));
+    };
+    let mut robots = Vec::new();
+    if !public {
+        no_robots(&mut robots);
+    }
+    // `wp_robots_noindex_embeds()` and `wp_robots_noindex_search()`.
+    if q.flags.is_embed {
+        no_robots(&mut robots);
+    }
+    if q.flags.is_search {
+        no_robots(&mut robots);
+    }
+    if public {
+        set(&mut robots, "max-image-preview", Robot::Value("large".into()));
         // `wp_robots_noindex_replytocom()`: reply links are not for search engines.
         // `unapproved` with `moderation-hash` is the preview of a comment that waits.
         let vars = rustpress_core::QueryVars::parse(&q.raw_query);
-        if (vars.has("replytocom") || (vars.has("unapproved") && vars.has("moderation-hash"))) && !q.flags.is_search {
-            directives.extend(["noindex", "follow"]);
+        if vars.has("replytocom") || (vars.has("unapproved") && vars.has("moderation-hash")) {
+            no_robots(&mut robots);
         }
     }
-    format!("<meta name='robots' content='{}' />
-", directives.join(", "))
+    robots
+}
+
+/// `$GLOBALS['post']` after `wp_reset_postdata()`: the queried post of a singular page, else the first post of the
+/// main query.
+pub(crate) fn global_post_id(q: &QueryResult) -> Option<u64> {
+    match &q.queried {
+        Queried::Post(p) if q.flags.is_singular() => Some(p.id),
+        _ => q.posts.first().map(|p| p.id),
+    }
 }
 
 /// The path part of an absolute URL, without a trailing slash.
@@ -649,6 +675,8 @@ pub async fn render_document_with(theme: &Theme, site: &Site, query: &QueryResul
     let rendered = render_body(theme, site, query, registry).await?;
     let body_done = started.elapsed();
     let state = &rendered.state;
+    // `wp_head` of the plugins runs after the template was rendered.
+    let crate::head::PluginHead { head: plugin_head, blocks: head_blocks } = crate::head::plugin_head(theme, site, query, registry, false, Some(state)).await?;
     let wp_root = &theme.wp_root;
     let version = wp_version(wp_root);
     let includes_url = site.site_url("wp-includes");
@@ -856,6 +884,23 @@ pub async fn render_document_with(theme: &Theme, site: &Site, query: &QueryResul
     } else if let Some((handle, file, css)) = theme_css {
         styles.push_str(&format!("<style id=\"{handle}-inline-css\">\n{}\n/*# sourceURL={}/{file} */\n</style>\n", css.trim_end(), theme.template_directory_uri()));
     }
+    // Blocks a plugin rendered in `wp_head` that the template did not use: their stylesheets were enqueued after the
+    // theme's (and after `wp_maybe_inline_styles()` ran), so they are linked.
+    let mut late: Vec<String> = Vec::new();
+    for name in head_blocks.iter().filter(|n| !state.used_blocks.contains(n)) {
+        let Some(block_type) = registry.get(name) else { continue };
+        for handle in &block_type.styles {
+            if !handles.contains(handle) && !late.contains(handle) {
+                late.push(handle.clone());
+            }
+        }
+    }
+    for handle in &late {
+        let Some(slug) = handle.strip_prefix("wp-block-") else { continue };
+        if rustpress_core::files::is_file(&registry.blocks_dir().join(slug).join("style.min.css")) {
+            styles.push_str(&format!("<link rel='stylesheet' id='{handle}-css' href='{includes_url}/blocks/{slug}/style.min.css?ver={version}' media='all' />\n"));
+        }
+    }
     let fonts = font_faces(theme);
 
     // --- scripts ---------------------------------------------------------
@@ -863,7 +908,14 @@ pub async fn render_document_with(theme: &Theme, site: &Site, query: &QueryResul
     let (importmap, preloads, module_scripts) = script_modules(wp_root, site, &modules);
     // Signed-in viewers get no speculation rules.
     let speculation = if query.viewer.is_some() { String::new() } else { speculation_rules(site, theme) };
-    let plugin_footer = site.plugins.wp_footer(site, &state.looped_posts).await?;
+    // A plugin that resets the query on `wp_head` runs `the_post` for the global post after the template.
+    let mut looped = state.looped_posts.clone();
+    if site.plugins.resets_query_in_head()
+        && let Some(id) = global_post_id(query)
+    {
+        looped.push(id);
+    }
+    let plugin_footer = site.plugins.wp_footer(site, &looped).await?;
     let mut footer_scripts = format!("{speculation}{}{plugin_footer}{module_scripts}{}", rustpress_blocks::duotone::footer_svgs(&state.duotone), state.interactivity.data_script().unwrap_or_default());
     // MediaElement: jQuery in the head, the player scripts in the footer. The scripts plugins enqueue for the head
     // follow, after their dependencies.
@@ -887,12 +939,17 @@ pub async fn render_document_with(theme: &Theme, site: &Site, query: &QueryResul
     footer_scripts.push_str(&emoji_detection_script(site, wp_root, &version));
 
     // --- head ------------------------------------------------------------
-    let mut robots = robots_meta(site, query);
+    let mut robots = rustpress_core::native::robots_tag(plugin_head.robots.as_deref().unwrap_or_default());
     // `wp_post_preview_js()`: the preview window is named after the post.
     if query.flags.is_preview && let Queried::Post(post) = &query.queried {
         robots.push_str(&format!("<script>\n\t( function() {{\n\t\tvar query = document.location.search;\n\n\t\tif ( query && query.indexOf( 'preview=true' ) !== -1 ) {{\n\t\t\twindow.name = 'wp-preview-{}';\n\t\t}}\n\n\t\tif ( window.addEventListener ) {{\n\t\t\twindow.addEventListener( 'pagehide', function() {{ window.name = ''; }} );\n\t\t}}\n\t}}());\n\t//# sourceURL=wp_post_preview_js\t\n</script>\n", post.id));
     }
-    let title = document_title(site, query).await?;
+    // Plugins hook into `wp_head` after the actions of core at the same priority.
+    robots.push_str(&plugin_head.html);
+    let title = match plugin_head.title {
+        Some(title) => title,
+        None => document_title(site, query).await?,
+    };
     let lang = site.language_tag();
     let classes = body_classes(theme, site, query).await?;
 
@@ -901,7 +958,7 @@ pub async fn render_document_with(theme: &Theme, site: &Site, query: &QueryResul
         esc_html(&title),
         crate::head::feed_links(site, query).await?,
         oembed_links(site, query).await?,
-        discovery_links(site, query, &version, state.cpage_override).await?,
+        discovery_links(site, query, &version, state.cpage_override, !plugin_head.removed.contains(&"rel_canonical")).await?,
     );
     let bar = match (&extras.toolbar, toolbar_on) {
         (Some(toolbar), true) => toolbar(&ToolbarInfo { template_slug: &rendered.template_slug, query }),

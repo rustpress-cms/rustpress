@@ -62,6 +62,34 @@ pub trait ActivePlugin: Send + Sync {
         Box::pin(async { Ok(String::new()) })
     }
 
+    /// `wp_head` at priority 1, after `wp_robots()`, with what the plugin changes around it: the `wp_robots` filter
+    /// (gets the directives of the core filters), `pre_get_document_title` and core actions it removes from `wp_head`.
+    fn wp_head<'a>(&'a self, _ctx: &'a HeadContext<'a>, _robots: &'a [(String, Robot)]) -> BoxFuture<'a, Result<Option<Head>>> {
+        Box::pin(async { Ok(None) })
+    }
+
+    /// `template_redirect`: a redirect instead of the page (before `redirect_canonical()`).
+    fn template_redirect<'a>(&'a self, _site: &'a Site, _query: &'a crate::QueryResult) -> BoxFuture<'a, Result<Option<Redirect>>> {
+        Box::pin(async { Ok(None) })
+    }
+
+    /// Whether the plugin calls `wp_reset_query()` on `wp_head`: `wp_reset_postdata()` then fires `the_post` for the
+    /// global post (the first post of the main query), before a classic theme prints its header and after a block
+    /// theme rendered its template.
+    fn resets_query_in_head(&self) -> bool {
+        false
+    }
+
+    /// The `loginout` and `register` filters: the link of `wp_loginout()` and `wp_register()`.
+    fn loginout(&self, link: String) -> String {
+        link
+    }
+
+    /// The `comment_reply_link` filter: the link of `get_comment_reply_link()`.
+    fn comment_reply_link(&self, link: String) -> String {
+        link
+    }
+
     /// `admin_menu`: the pages the plugin adds to the menu of the administration.
     fn admin_pages(&self, _site: &Site) -> Vec<AdminPage> {
         Vec::new()
@@ -276,6 +304,77 @@ pub struct Attachment {
 /// `wp_mail()`: `false` when the message could not be sent.
 pub trait Mailer: Send + Sync {
     fn send<'a>(&'a self, email: &'a Email) -> BoxFuture<'a, bool>;
+}
+
+/// A redirect of a plugin (`wp_safe_redirect( $location, $status, $x_redirect_by )`).
+#[derive(Debug, Clone)]
+pub struct Redirect {
+    pub location: String,
+    pub status: u16,
+    /// The `X-Redirect-By` header.
+    pub by: &'static str,
+}
+
+/// A directive of `wp_robots()`: `Flag(true)` prints its name, `Value` prints `name:value`, `Flag(false)` nothing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Robot {
+    Flag(bool),
+    Value(String),
+}
+
+/// `wp_robots()`: the meta tag of the directives, or nothing when none is printed.
+pub fn robots_tag(robots: &[(String, Robot)]) -> String {
+    let strings: Vec<String> = robots
+        .iter()
+        .filter_map(|(name, value)| match value {
+            Robot::Value(v) => Some(format!("{name}:{v}")),
+            Robot::Flag(true) => Some(name.clone()),
+            Robot::Flag(false) => None,
+        })
+        .collect();
+    if strings.is_empty() {
+        return String::new();
+    }
+    format!("<meta name='robots' content='{}' />\n", crate::formatting::esc_attr(&strings.join(", ")))
+}
+
+/// What the theme offers a plugin that prints into the head (functions that need the rendering environment).
+pub trait PageServices: Send + Sync {
+    /// `get_the_excerpt( $post )` outside the loop.
+    fn excerpt<'a>(&'a self, post: &'a Post) -> BoxFuture<'a, Result<String>>;
+
+    /// `ABSPATH`: where the WordPress files are (uploads under `wp-content/uploads`).
+    fn wp_root(&self) -> &std::path::Path;
+}
+
+/// What a plugin sees of the page whose head is printed.
+pub struct HeadContext<'a> {
+    pub site: &'a Site,
+    pub query: &'a crate::QueryResult,
+    pub services: &'a dyn PageServices,
+    /// `current_theme_supports( 'title-tag' )`: a classic theme that lets WordPress print the title (block themes
+    /// print it from their template, after `wp_head` at priority 1).
+    pub title_tag: bool,
+    /// `is_admin_bar_showing()`.
+    pub admin_bar: bool,
+    /// What `render_block` saw before the head (block themes render the template first): a `core/query` that does
+    /// not inherit the main query, and the last `core/query-pagination-next`/`-previous`.
+    pub custom_query_loop: bool,
+    pub pagination_next: Option<String>,
+    pub pagination_previous: Option<String>,
+}
+
+/// What a plugin changes in the head.
+#[derive(Debug, Default)]
+pub struct Head {
+    /// The directives after the `wp_robots` filter.
+    pub robots: Option<Vec<(String, Robot)>>,
+    /// `pre_get_document_title`, unescaped.
+    pub title: Option<String>,
+    /// Printed on `wp_head` at priority 1, right after the robots tag.
+    pub html: String,
+    /// Core actions removed from `wp_head`: `rel_canonical`, `_wp_render_title_tag`.
+    pub removed: Vec<&'static str>,
 }
 
 /// What the shortcode of a plugin sees of the page it is printed on.
@@ -842,6 +941,31 @@ impl Plugins {
         Ok(None)
     }
 
+    /// The first redirect a plugin asks for on `template_redirect`.
+    pub async fn template_redirect(&self, site: &Site, query: &crate::QueryResult) -> Result<Option<Redirect>> {
+        for plugin in self.hooks() {
+            if let Some(redirect) = plugin.template_redirect(site, query).await? {
+                return Ok(Some(redirect));
+            }
+        }
+        Ok(None)
+    }
+
+    /// Whether a plugin fires `the_post` for the global post on `wp_head` ([ActivePlugin::resets_query_in_head]).
+    pub fn resets_query_in_head(&self) -> bool {
+        self.hooks().any(|p| p.resets_query_in_head())
+    }
+
+    /// The link of `wp_loginout()` after the plugins' `loginout` filters.
+    pub fn loginout(&self, link: String) -> String {
+        self.hooks().fold(link, |link, plugin| plugin.loginout(link))
+    }
+
+    /// The link of `get_comment_reply_link()` after the plugins' `comment_reply_link` filters.
+    pub fn comment_reply_link(&self, link: String) -> String {
+        self.hooks().fold(link, |link, plugin| plugin.comment_reply_link(link))
+    }
+
     /// What the plugins print in `wp_footer`.
     pub async fn wp_footer(&self, site: &Site, looped: &[u64]) -> Result<String> {
         let mut out = String::new();
@@ -849,5 +973,22 @@ impl Plugins {
             out.push_str(&plugin.wp_footer(site, looped).await?);
         }
         Ok(out)
+    }
+
+    /// What the plugins change in the head; `robots` are the directives of core's `wp_robots` filters.
+    pub async fn wp_head(&self, ctx: &HeadContext<'_>, robots: Vec<(String, Robot)>) -> Result<Head> {
+        let mut head = Head { robots: Some(robots), ..Head::default() };
+        for plugin in self.hooks() {
+            let current = head.robots.take().unwrap_or_default();
+            let Some(changed) = plugin.wp_head(ctx, &current).await? else {
+                head.robots = Some(current);
+                continue;
+            };
+            head.robots = Some(changed.robots.unwrap_or(current));
+            head.title = changed.title.or(head.title);
+            head.html.push_str(&changed.html);
+            head.removed.extend(changed.removed);
+        }
+        Ok(head)
     }
 }

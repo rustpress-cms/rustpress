@@ -113,3 +113,50 @@ pub fn queried_rest_route(q: &QueryResult) -> Option<String> {
         _ => None,
     }
 }
+
+/// The functions of the rendering environment a plugin may call while it prints into the head.
+struct Services<'a>(rustpress_blocks::Env<'a>, &'a std::path::Path);
+
+impl rustpress_core::native::PageServices for Services<'_> {
+    fn excerpt<'a>(&'a self, post: &'a rustpress_db::Post) -> futures::future::BoxFuture<'a, rustpress_core::Result<String>> {
+        Box::pin(async move {
+            let post = std::sync::Arc::new(post.clone());
+            rustpress_blocks::excerpt::get_the_excerpt(&self.0, &post).await.map_err(|e| match e {
+                rustpress_blocks::Error::Core(e) => e,
+                rustpress_blocks::Error::Db(e) => rustpress_core::Error::Db(e),
+            })
+        })
+    }
+
+    fn wp_root(&self) -> &std::path::Path {
+        self.1
+    }
+}
+
+/// What the plugins changed in the head, and the blocks they rendered while doing so (in the order their styles were
+/// enqueued: a plugin that asks for an excerpt in `wp_head` renders the post's blocks before the styles are printed).
+pub struct PluginHead {
+    pub head: rustpress_core::native::Head,
+    pub blocks: Vec<String>,
+}
+
+/// What the active plugins change in the head (`wp_head` at priority 1, `wp_robots`, `pre_get_document_title`).
+pub async fn plugin_head(theme: &crate::Theme, site: &Site, q: &QueryResult, registry: &rustpress_blocks::Registry, title_tag: bool, state: Option<&rustpress_blocks::env::State>) -> Result<PluginHead> {
+    let robots = crate::document::core_robots(site, q);
+    if site.plugins.is_empty() {
+        return Ok(PluginHead { head: rustpress_core::native::Head { robots: Some(robots), ..Default::default() }, blocks: Vec::new() });
+    }
+    let services = Services(rustpress_blocks::Env::new(site, q, theme, registry), &theme.wp_root);
+    let ctx = rustpress_core::native::HeadContext {
+        site,
+        query: q,
+        services: &services,
+        title_tag,
+        admin_bar: q.viewer.as_ref().is_some_and(|v| v.show_admin_bar),
+        custom_query_loop: state.is_some_and(|s| s.custom_query_loop),
+        pagination_next: state.and_then(|s| s.pagination_next.clone()),
+        pagination_previous: state.and_then(|s| s.pagination_previous.clone()),
+    };
+    let head = site.plugins.wp_head(&ctx, robots).await?;
+    Ok(PluginHead { head, blocks: services.0.take_state().used_blocks })
+}
