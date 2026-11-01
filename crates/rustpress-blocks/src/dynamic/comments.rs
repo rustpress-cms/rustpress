@@ -596,11 +596,17 @@ pub(super) async fn post_comments_form(bc: &BlockCtx<'_>) -> Result<String> {
     let q = bc.env.query;
     let threaded = options.get("thread_comments") == Some("1");
     // `?replytocom=ID`: the form answers that comment (`comment_form_title()`, `cancel_comment_reply_link()`).
-    let reply_to = rustpress_core::QueryVars::parse(&q.raw_query).u64("replytocom").filter(|id| *id != 0);
-    let parent = match reply_to {
-        Some(id) => site.db.comment(id).await?.filter(|c| !c.comment_author.is_empty()),
-        None => None,
-    };
+    // `_get_comment_reply_id()`: only an approved comment of this post (`(int) comment_approved` is not 0).
+    let mut reply_to = None;
+    let mut parent = None;
+    if let Some(id) = rustpress_core::QueryVars::parse(&q.raw_query).u64("replytocom").filter(|id| *id != 0)
+        && let Some(comment) = site.db.comment(id).await?
+        && comment.comment_approved.trim_start().starts_with(|c: char| c.is_ascii_digit() && c != '0')
+        && comment.comment_post_id == post_id
+    {
+        reply_to = Some(id);
+        parent = Some(comment).filter(|c| !c.comment_author.is_empty());
+    }
     let cancel = if threaded {
         let style = if reply_to.is_some() { "" } else { " style=\"display:none;\"" };
         let link = esc_url(&remove_query_arg(&remove_query_arg(&remove_query_arg(&format!("{}{}", q.url_path, if q.raw_query.is_empty() { String::new() } else { format!("?{}", q.raw_query) }), "replytocom"), "unapproved"), "moderation-hash"));
