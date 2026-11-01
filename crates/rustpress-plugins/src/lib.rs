@@ -3,9 +3,10 @@
 
 pub mod contact_form_7;
 pub mod svg_support;
+pub mod wordpress_seo;
 pub mod wp_date_remover;
 
 /// Makes every module known to [`rustpress_core::native`]; call once at startup.
 pub fn register() {
-    rustpress_core::native::register(vec![&contact_form_7::ContactForm7, &svg_support::SvgSupport, &wp_date_remover::WpDateRemover]);
+    rustpress_core::native::register(vec![&contact_form_7::ContactForm7, &svg_support::SvgSupport, &wordpress_seo::WordpressSeo, &wp_date_remover::WpDateRemover]);
 }
