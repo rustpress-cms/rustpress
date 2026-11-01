@@ -163,7 +163,7 @@ RustPress is experimental. It is tested against WordPress 7.1.4 and runs a real 
 
 ## Contributing
 
-Issues and pull requests are welcome. Please run `cargo test --workspace` and `cargo clippy --workspace --all-targets` before opening a pull request. Security issues: please report them privately through [GitHub security advisories](https://github.com/rustpress-cms/rustpress/security/advisories/new) instead of a public issue.
+Issues and pull requests are welcome. [AGENTS.md](AGENTS.md) explains how the project works (WordPress as the oracle, the reference stack, golden tests, native plugin modules) for contributors and coding agents alike. Please run `cargo test --workspace` and `cargo clippy --workspace --all-targets` before opening a pull request. Security issues: please report them privately through [GitHub security advisories](https://github.com/rustpress-cms/rustpress/security/advisories/new) instead of a public issue.
 
 ## License
 
