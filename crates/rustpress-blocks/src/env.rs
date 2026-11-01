@@ -219,6 +219,11 @@ pub struct State {
     pub plugins: rustpress_core::native::PluginState,
     /// Content is rendered outside the loop (`in_the_loop()` is false, as in the REST API).
     pub outside_loop: bool,
+    /// A `core/query` block with `inherit` off was rendered.
+    pub custom_query_loop: bool,
+    /// The last rendered `core/query-pagination-next` and `core/query-pagination-previous`.
+    pub pagination_next: Option<String>,
+    pub pagination_previous: Option<String>,
 }
 
 impl State {

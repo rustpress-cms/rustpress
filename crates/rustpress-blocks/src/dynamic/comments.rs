@@ -343,7 +343,7 @@ pub(super) async fn comment_reply_link(bc: &BlockCtx<'_>) -> Result<String> {
         esc_attr(&reply_to)
     );
     let href = format!("{}#respond", esc_url(&add_query_arg(&permalink, "replytocom", &comment.comment_id.to_string())));
-    let link = format!("<a rel=\"nofollow\" class=\"comment-reply-link\" href=\"{href}\" {data} aria-label=\"{}\">{}</a>", esc_attr(&reply_to), bc.env.site.trx("Reply", "verb"));
+    let link = bc.env.site.plugins.comment_reply_link(format!("<a rel=\"nofollow\" class=\"comment-reply-link\" href=\"{href}\" {data} aria-label=\"{}\">{}</a>", esc_attr(&reply_to), bc.env.site.trx("Reply", "verb")));
     let wrapper = bc.wrapper_attributes(&[("class", align_and_link_classes(bc))]);
     Ok(format!("<div {wrapper}>{link}</div>"))
 }

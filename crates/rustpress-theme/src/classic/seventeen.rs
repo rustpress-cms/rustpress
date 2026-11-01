@@ -22,7 +22,7 @@ use super::widgets::{self, Sidebar};
 use super::Ctx;
 use crate::Result;
 use crate::document::{
-    Document, EMOJI_CSS, INLINE_LIMIT, body_classes, discovery_links, document_title, emoji_detection_script, emoji_style, oembed_links, read, robots_meta, script_modules, wp_version,
+    Document, EMOJI_CSS, INLINE_LIMIT, body_classes, discovery_links, document_title, emoji_detection_script, emoji_style, oembed_links, read, script_modules, wp_version,
 };
 use crate::global_styles::GlobalStyles;
 
@@ -525,6 +525,12 @@ async fn archive_header(ctx: &Ctx<'_>) -> Result<String> {
         _ if f.is_year || f.is_month || f.is_day => {
             let first = q.posts.first();
             let ts = first.and_then(|p| site.timezone.local_timestamp(&p.post_date)).unwrap_or(0);
+            // `get_the_date()` of the global post: empty when a plugin ran `the_post` for it in `wp_head` and hides its
+            // date from then on.
+            let hidden = match first {
+                Some(post) if site.plugins.resets_query_in_head() => site.plugins.hides_date(site, post).await?,
+                _ => false,
+            };
             let (prefix, format) = if f.is_day {
                 (site.trx("Day:", "date archive title prefix"), site.trx("F j, Y", "daily archives date format"))
             } else if f.is_month {
@@ -532,7 +538,7 @@ async fn archive_header(ctx: &Ctx<'_>) -> Result<String> {
             } else {
                 (site.trx("Year:", "date archive title prefix"), site.trx("Y", "yearly archives date format"))
             };
-            (format!("{prefix} <span>{}</span>", site.date(&format, ts)), String::new())
+            (format!("{prefix} <span>{}</span>", if hidden { String::new() } else { site.date(&format, ts) }), String::new())
         }
         _ => (site.tr("Archives"), String::new()),
     };
@@ -725,8 +731,16 @@ async fn head(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State, registry: &Re
     let mut out = String::new();
 
     out.push_str("<script>(function(html){html.className = html.className.replace(/\\bno-js\\b/,'js')})(document.documentElement);</script>\n");
-    out.push_str(&format!("<title>{}</title>\n", esc_html(&document_title(site, q).await?)));
-    out.push_str(&robots_meta(site, q));
+    let crate::head::PluginHead { head: plugin_head, blocks: early_blocks } = crate::head::plugin_head(theme, site, q, registry, true, None).await?;
+    if !plugin_head.removed.contains(&"_wp_render_title_tag") {
+        let title = match plugin_head.title {
+            Some(title) => title,
+            None => document_title(site, q).await?,
+        };
+        out.push_str(&format!("<title>{}</title>\n", esc_html(&title)));
+    }
+    out.push_str(&rustpress_core::native::robots_tag(plugin_head.robots.as_deref().unwrap_or_default()));
+    out.push_str(&plugin_head.html);
     out.push_str(&crate::head::feed_links(site, q).await?);
     out.push_str(&oembed_links(site, q).await?);
 
@@ -743,6 +757,17 @@ async fn head(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State, registry: &Re
     if common_present {
         sheets.push(Sheet { id: "wp-block-library".into(), path: common, url: String::new(), source: "/wp-includes/css/dist/block-library/common.min.css".into() });
     }
+    // Blocks a plugin rendered in `wp_head` (after `wp_maybe_inline_styles()` ran there) have ordinary enqueued
+    // stylesheets, printed as links after the theme's; the others load on demand.
+    let mut early: Vec<String> = Vec::new();
+    for name in &early_blocks {
+        let Some(block_type) = registry.get(name) else { continue };
+        for handle in &block_type.styles {
+            if !early.contains(handle) {
+                early.push(handle.clone());
+            }
+        }
+    }
     let mut handles: Vec<String> = Vec::new();
     for name in &state.used_blocks {
         let Some(block_type) = registry.get(name) else { continue };
@@ -753,6 +778,13 @@ async fn head(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State, registry: &Re
         }
     }
     handles.sort();
+    let mut queued_handles = handles.clone();
+    for handle in &early {
+        if !queued_handles.contains(handle) {
+            queued_handles.push(handle.clone());
+        }
+    }
+    handles.retain(|h| !early.contains(h));
     for handle in &handles {
         let Some(slug) = handle.strip_prefix("wp-block-") else { continue };
         let path = registry.blocks_dir().join(slug).join("style.min.css");
@@ -794,7 +826,7 @@ async fn head(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State, registry: &Re
         out.push_str(&format!("<style id=\"classic-theme-styles-inline-css\">\n{}\n/*# sourceURL=/wp-includes/css/classic-themes.min.css */\n</style>\n", css));
     }
     // Global styles of the core theme.json: presets and the layout rules of the blocks in use.
-    let mut queued = handles.clone();
+    let mut queued = queued_handles.clone();
     for name in &state.used_blocks {
         if let Some(short) = name.strip_prefix("core/") {
             let handle = format!("wp-block-{short}");
@@ -819,6 +851,12 @@ async fn head(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State, registry: &Re
     if ctx.mod_str("colorscheme").as_deref() == Some("dark") {
         out.push_str(&format!("<link rel='stylesheet' id='twentyseventeen-colors-dark-css' href='{theme_uri}/assets/css/colors-dark.css?ver=20240412' media='all' />\n"));
     }
+    for handle in &early {
+        let Some(slug) = handle.strip_prefix("wp-block-") else { continue };
+        if rustpress_core::files::is_file(&registry.blocks_dir().join(slug).join("style.min.css")) {
+            out.push_str(&format!("<link rel='stylesheet' id='{handle}-css' href='{includes_url}/blocks/{slug}/style.min.css?ver={version}' media='all' />\n"));
+        }
+    }
     // The plugins' scripts are queued first; the theme's global script needs jQuery.
     let mut printer = crate::plugin_assets::ScriptPrinter::new(&includes_url, &script_version(wp_root, "jquery-core", "3.7.1"), &script_version(wp_root, "jquery-migrate", "3.4.1")).with_packages(wp_root, site);
     out.push_str(&printer.scripts(&plugin_assets.scripts, false));
@@ -838,7 +876,7 @@ async fn head(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State, registry: &Re
         out.push_str(&format!("<script data-wp-strategy=\"defer\" defer id=\"twentyseventeen-navigation-js\" src=\"{theme_uri}/assets/js/navigation.js?ver=20210122\"></script>\n"));
     }
 
-    out.push_str(&discovery_links(site, q, &version, 0).await?);
+    out.push_str(&discovery_links(site, q, &version, 0, !plugin_head.removed.contains(&"rel_canonical")).await?);
     // `twentyseventeen_pingback_header()`.
     if let (true, Queried::Post(post)) = (q.flags.is_singular(), &q.queried)
         && post.ping_status == "open"
@@ -913,7 +951,14 @@ async fn wp_footer(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State) -> Resul
     let version = wp_version(wp_root);
     let modules: Vec<String> = state.script_modules.iter().cloned().collect();
     let (importmap, preloads, module_scripts) = script_modules(wp_root, site, &modules);
-    let plugin_footer = site.plugins.wp_footer(site, &state.looped_posts).await?;
+    // A plugin that resets the query on `wp_head` runs `the_post` for the global post before the theme's header.
+    let mut looped = state.looped_posts.clone();
+    if site.plugins.resets_query_in_head()
+        && let Some(id) = crate::document::global_post_id(ctx.q)
+    {
+        looped.insert(0, id);
+    }
+    let plugin_footer = site.plugins.wp_footer(site, &looped).await?;
     let mut out = format!("{plugin_footer}{importmap}{module_scripts}{}{preloads}", state.interactivity.data_script().unwrap_or_default());
     let plugin_assets = site.plugins.assets(site);
     let mut printer = crate::plugin_assets::ScriptPrinter::new(&site.site_url("wp-includes"), &script_version(wp_root, "jquery-core", "3.7.1"), &script_version(wp_root, "jquery-migrate", "3.4.1")).with_packages(wp_root, site);

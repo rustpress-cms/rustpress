@@ -316,7 +316,7 @@ pub(super) fn loginout(bc: &BlockCtx<'_>) -> Result<String> {
         }
         None => ("logged-out", site.tr("Log in")),
     };
-    let link = format!("<a href=\"{}\">{label}</a>", esc_url(&url));
+    let link = site.plugins.loginout(format!("<a href=\"{}\">{label}</a>", esc_url(&url)));
     let wrapper = bc.wrapper_attributes(&[("class", class.to_owned())]);
     Ok(format!("<div {wrapper}>{link}</div>"))
 }

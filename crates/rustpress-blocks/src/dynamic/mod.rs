@@ -139,13 +139,23 @@ pub fn render<'a>(bc: &'a BlockCtx<'a>) -> BoxFuture<'a, Result<String>> {
             "core/navigation" => navigation::navigation(bc).await,
             "core/page-list" => navigation::page_list(bc).await,
             "core/navigation-link" => navigation::navigation_link(bc).await,
-            "core/query" => query::query(bc),
+            "core/query" => {
+                // Yoast SEO's `query_loop_next_prev()` (on `render_block`) notes a query that does not inherit the main one.
+                if bc.attrs.get("query").and_then(|q| q.get("inherit")).is_some_and(|i| !i.as_bool().unwrap_or_else(|| i.as_u64().is_some_and(|n| n != 0) || i.as_str().is_some_and(|s| !s.is_empty() && s != "0"))) {
+                    bc.env.with_state(|s| s.custom_query_loop = true);
+                }
+                query::query(bc)
+            }
             "core/post-template" => query::post_template(bc).await,
             "core/query-title" => query::query_title(bc).await,
             "core/query-no-results" => query::query_no_results(bc).await,
             "core/query-pagination" => query::query_pagination(bc),
-            "core/query-pagination-next" => query::pagination_link(bc, true).await,
-            "core/query-pagination-previous" => query::pagination_link(bc, false).await,
+            "core/query-pagination-next" | "core/query-pagination-previous" => {
+                let next = bc.block.name.as_deref() == Some("core/query-pagination-next");
+                let html = query::pagination_link(bc, next).await?;
+                bc.env.with_state(|s| if next { s.pagination_next = Some(html.clone()) } else { s.pagination_previous = Some(html.clone()) });
+                Ok(html)
+            }
             "core/query-pagination-numbers" => query::pagination_numbers(bc).await,
             "core/search" => search::search(bc),
             "core/comments" => comments::comments(bc).await,

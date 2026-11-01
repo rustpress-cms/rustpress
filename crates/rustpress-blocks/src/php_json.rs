@@ -87,6 +87,51 @@ fn write(out: &mut String, value: &Value, flags: Flags) {
     }
 }
 
+/// `json_encode()` with the given flags and `JSON_PRETTY_PRINT`: four spaces per level, `": "` after keys.
+pub fn encode_pretty(value: &Value, flags: Flags) -> String {
+    let mut out = String::new();
+    write_pretty(&mut out, value, flags, 0);
+    out
+}
+
+fn write_pretty(out: &mut String, value: &Value, flags: Flags, depth: usize) {
+    let indent = |out: &mut String, depth: usize| out.push_str(&"    ".repeat(depth));
+    match value {
+        Value::Array(items) if !items.is_empty() => {
+            out.push_str("[\n");
+            for (i, item) in items.iter().enumerate() {
+                if i > 0 {
+                    out.push_str(",\n");
+                }
+                indent(out, depth + 1);
+                write_pretty(out, item, flags, depth + 1);
+            }
+            out.push('\n');
+            indent(out, depth);
+            out.push(']');
+        }
+        Value::Object(map) if !map.is_empty() && !(map.len() == 1 && map.contains_key(EMPTY_OBJECT_KEY)) => {
+            let is_list = map.keys().enumerate().all(|(i, k)| k.parse::<usize>().ok() == Some(i));
+            out.push_str(if is_list { "[\n" } else { "{\n" });
+            for (i, (key, item)) in map.iter().enumerate() {
+                if i > 0 {
+                    out.push_str(",\n");
+                }
+                indent(out, depth + 1);
+                if !is_list {
+                    write_string(out, key, flags);
+                    out.push_str(": ");
+                }
+                write_pretty(out, item, flags, depth + 1);
+            }
+            out.push('\n');
+            indent(out, depth);
+            out.push(if is_list { ']' } else { '}' });
+        }
+        other => write(out, other, flags),
+    }
+}
+
 fn number(n: &serde_json::Number) -> String {
     if let Some(f) = n.as_f64().filter(|_| n.is_f64()) {
         // PHP prints floats with the shortest round-trip form, integral ones as `1.0`.

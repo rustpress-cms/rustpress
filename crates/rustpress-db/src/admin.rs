@@ -45,6 +45,12 @@ impl Db {
         Ok(query.fetch_one(&self.pool).await? as u64)
     }
 
+    /// `count_user_posts( $user_id, $post_type, true )`: the published posts of the user.
+    pub async fn count_published_user_posts(&self, post_type: &str, user_id: u64) -> Result<u64> {
+        let sql = format!("SELECT COUNT(*) FROM {} WHERE post_type = ? AND post_status = 'publish' AND post_author = ?", self.prefix.table("posts"));
+        Ok(sqlx::query_scalar::<_, i64>(AssertSqlSafe(sql)).bind(post_type).bind(user_id).fetch_one(&self.pool).await? as u64)
+    }
+
     /// The months with posts of a type, newest first (`months_dropdown()`); `trash_only` restricts to trashed posts,
     /// otherwise trashed and auto-draft posts are left out.
     pub async fn post_months(&self, post_type: &str, trash_only: bool) -> Result<Vec<(i32, i32)>> {
@@ -99,6 +105,29 @@ impl Db {
         let sql = format!("SELECT meta_value FROM {} WHERE post_id = ? AND meta_key = ? ORDER BY meta_id LIMIT 1", self.prefix.table("postmeta"));
         Ok(sqlx::query_scalar::<_, Option<String>>(AssertSqlSafe(sql)).bind(post_id).bind(key).fetch_optional(&self.pool).await?.flatten())
     }
+    /// The images attached to a post as `[gallery]` without `ids` takes them (`menu_order ASC, ID ASC`).
+    pub async fn attachment_children(&self, post_id: u64) -> Result<Vec<u64>> {
+        let sql = format!("SELECT ID FROM {} WHERE post_parent = ? AND post_type = 'attachment' AND post_status = 'inherit' AND post_mime_type LIKE 'image/%' ORDER BY menu_order ASC, ID ASC", self.prefix.table("posts"));
+        Ok(sqlx::query_scalar(AssertSqlSafe(sql)).bind(post_id).fetch_all(&self.pool).await?)
+    }
+
+    /// The attachments whose `_wp_attached_file` is `path` (the collation decides about case), with the stored value.
+    pub async fn attachments_by_file(&self, path: &str) -> Result<Vec<(u64, String)>> {
+        let sql = format!("SELECT post_id, meta_value FROM {} WHERE meta_key = '_wp_attached_file' AND meta_value = ?", self.prefix.table("postmeta"));
+        let rows: Vec<(u64, Option<String>)> = sqlx::query_as(AssertSqlSafe(sql)).bind(path).fetch_all(&self.pool).await?;
+        Ok(rows.into_iter().map(|(id, v)| (id, v.unwrap_or_default())).collect())
+    }
+
+    /// Yoast SEO's `SEO_Links_Repository::find_one_by_url()`: the post a stored link points to (0 for none), `None`
+    /// without a row (or without the table).
+    pub async fn seo_link_target(&self, url: &str) -> Result<Option<u64>> {
+        let sql = format!("SELECT target_post_id FROM {} WHERE url = ? LIMIT 1", self.prefix.table("yoast_seo_links"));
+        match sqlx::query_scalar::<_, Option<u64>>(AssertSqlSafe(sql)).bind(url).fetch_optional(&self.pool).await {
+            Ok(row) => Ok(row.map(|target| target.unwrap_or(0))),
+            Err(_) => Ok(None),
+        }
+    }
+
     /// Whether another post already uses `name` within the scope `wp_unique_post_slug()` checks.
     pub async fn post_name_taken(&self, scope: SlugScope, name: &str, post_type: &str, post_id: u64, parent: u64) -> Result<bool> {
         let table = self.prefix.table("posts");

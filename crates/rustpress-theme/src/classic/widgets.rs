@@ -251,12 +251,12 @@ fn meta(s: &Services<'_>, sidebar: &Sidebar, before: &str, settings: &Value) -> 
     let pretty = site.uses_pretty_permalinks();
     let feed = if pretty { site.user_trailingslashit(&site.home_url(&format!("{}feed", site.root()))) } else { site.home_url("?feed=rss2") };
     let comments = if pretty { site.user_trailingslashit(&site.home_url(&format!("{}comments/feed", site.root()))) } else { site.home_url("?feed=comments-rss2") };
+    // `wp_loginout()` with the `loginout` filter.
+    let login = site.plugins.loginout(format!("<a href=\"{}\">{}</a>", esc_url(&site.site_url("wp-login.php")), site.tr("Log in")));
     format!(
-        "{before}{}{}\n\t\t<ul>\n\t\t\t\t\t\t<li><a href=\"{}\">{}</a></li>\n\t\t\t<li><a href=\"{}\">{}</a></li>\n\t\t\t<li><a href=\"{}\">{}</a></li>\n\n\t\t\t<li><a href=\"{}\">{}</a></li>\n\t\t</ul>\n\n\t\t</nav>{}",
+        "{before}{}{}\n\t\t<ul>\n\t\t\t\t\t\t<li>{login}</li>\n\t\t\t<li><a href=\"{}\">{}</a></li>\n\t\t\t<li><a href=\"{}\">{}</a></li>\n\n\t\t\t<li><a href=\"{}\">{}</a></li>\n\t\t</ul>\n\n\t\t</nav>{}",
         heading(sidebar, &title),
         nav_open(&title, &default_title),
-        esc_url(&site.site_url("wp-login.php")),
-        site.tr("Log in"),
         esc_url(&feed),
         site.tr("Entries feed"),
         esc_url(&comments),

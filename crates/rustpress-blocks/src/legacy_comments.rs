@@ -181,13 +181,13 @@ async fn start_element(
         let reply_to = rustpress_core::i18n::sprintf(&site.tr("Reply to %s"), &[&author]);
         let base = if site.options.get("page_comments") == Some("1") { link.replace(&format!("#comment-{}", comment.comment_id), "") } else { site.permalink(post).await? };
         let href = format!("{}#respond", esc_url(&add_query_arg(&base, "replytocom", &comment.comment_id.to_string())));
-        format!(
+        site.plugins.comment_reply_link(format!(
             "<div class=\"reply\"><a rel=\"nofollow\" class=\"comment-reply-link\" href=\"{href}\" data-commentid=\"{id}\" data-postid=\"{post_id}\" data-belowelement=\"div-comment-{id}\" data-respondelement=\"respond\" data-replyto=\"{to}\" aria-label=\"{to}\">{text}</a></div>",
             id = comment.comment_id,
             post_id = post.id,
             to = esc_attr(&reply_to),
             text = args.reply_text
-        )
+        ))
     } else {
         String::new()
     };
