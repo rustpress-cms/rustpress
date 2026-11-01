@@ -36,8 +36,26 @@ pub struct AdminParts {
     pub mailer: Option<std::sync::Arc<dyn rustpress_admin::login::Mail>>,
 }
 
-/// The SMTP mailer as the administration area uses it.
-struct SmtpMail(rustpress_mail::Mailer);
+/// The SMTP mailer as the administration area and the plugins use it.
+pub struct SmtpMail(rustpress_mail::Mailer);
+
+impl SmtpMail {
+    /// The mailer of `RUSTPRESS_SMTP_URL`, sending as the host of the site.
+    pub fn for_site(site: &Site) -> Option<Self> {
+        let host = site.settings.home.split_once("://").map_or("localhost", |(_, rest)| rest.split(['/', ':']).next().unwrap_or("localhost")).to_owned();
+        rustpress_mail::Mailer::from_env(&host).map(SmtpMail)
+    }
+}
+
+impl rustpress_core::native::Mailer for SmtpMail {
+    fn send<'a>(&'a self, email: &'a rustpress_core::native::Email) -> std::pin::Pin<Box<dyn std::future::Future<Output = bool> + Send + 'a>> {
+        Box::pin(async move {
+            let headers: Vec<&str> = email.headers.iter().map(String::as_str).collect();
+            let attachments: Vec<rustpress_mail::Attached<'_>> = email.attachments.iter().map(|a| rustpress_mail::Attached { filename: &a.filename, content_type: &a.content_type, bytes: &a.bytes }).collect();
+            self.0.send_mail(&email.to, &email.subject, &email.body, &headers, &attachments).await
+        })
+    }
+}
 
 impl rustpress_admin::login::Mail for SmtpMail {
     fn send<'a>(&'a self, to: &'a str, subject: &'a str, message: &'a str) -> std::pin::Pin<Box<dyn std::future::Future<Output = bool> + Send + 'a>> {
@@ -92,8 +110,7 @@ impl AdminParts {
         };
         let languages = installed_languages(config, site).await;
         let privacy_policy = privacy_policy(site).await;
-        let host = site.settings.home.split_once("://").map_or("localhost", |(_, rest)| rest.split(['/', ':']).next().unwrap_or("localhost")).to_owned();
-        let mailer = rustpress_mail::Mailer::from_env(&host).map(|m| std::sync::Arc::new(SmtpMail(m)) as std::sync::Arc<dyn rustpress_admin::login::Mail>);
+        let mailer = SmtpMail::for_site(site).map(|m| std::sync::Arc::new(m) as std::sync::Arc<dyn rustpress_admin::login::Mail>);
         AdminParts { auth, roles, loader, languages, privacy_policy, mailer }
     }
 }

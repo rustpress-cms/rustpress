@@ -36,7 +36,7 @@
 RustPress reads the existing MySQL/MariaDB database (the usual `wp_*` schema, no conversion) and the existing `wp-content/` folder, and answers requests the way WordPress would: same HTML, same feeds, same REST responses, same redirects. There is no PHP interpreter. Themes and core behaviour are ported to Rust and checked against a real WordPress, page by page and byte by byte.
 
 - **Block themes** (`theme.json` + HTML templates) run as they are. The classic theme **Twenty Seventeen** is rebuilt natively in Rust.
-- Other classic PHP themes and PHP plugins do **not** run. Important plugins are rebuilt as native modules that take over while the plugin is active (its files stay in `wp-content/plugins`): so far **WP Date Remover** 1.1.3 and **SVG Support** 2.6.1 (website, settings and sanitized SVG uploads); **Contact Form 7** 6.2.4.1 is in progress (the forms are printed on the website, sending them follows).
+- Other classic PHP themes and PHP plugins do **not** run. Important plugins are rebuilt as native modules that take over while the plugin is active (its files stay in `wp-content/plugins`): so far **WP Date Remover** 1.1.3 and **SVG Support** 2.6.1 (website, settings and sanitized SVG uploads); **Contact Form 7** 6.2.4.1 on the website (forms, validation, spam checks and mail; its administration follows).
 - Theme assets, uploads, translations and `block.json` files are read from the WordPress files on disk, so a WordPress installation (or the files the installer downloads) is still needed.
 
 ## Features
@@ -47,7 +47,7 @@ RustPress reads the existing MySQL/MariaDB database (the usual `wp_*` schema, no
 - Administration (`wp-admin`): sign-in, posts and pages with the block editor, media, comments, users, settings, privacy tools, export
 - A WordPress-style installer (`setup-config.php`, `install.php`) that can download and verify the WordPress files itself
 - Shared hosting as a CGI program: one statically linked binary, configured from `wp-config.php`
-- E-mail over SMTP (password reset, new users, comment notifications, privacy requests)
+- E-mail over SMTP (password reset, new users, comment notifications, privacy requests, contact forms)
 - Every language that WordPress has a language pack for, including right-to-left languages
 
 ## Compatibility
@@ -93,7 +93,7 @@ allow_writes = false             # true: sign-in, comments and wp-admin
 | `RUSTPRESS_TRUSTED_PROXIES` | reverse proxies whose `X-Forwarded-*` headers are trusted |
 | `RUSTPRESS_SMTP_URL`, `RUSTPRESS_MAIL_FROM` | outgoing mail |
 
-Without `allow_writes` the database session is `READ ONLY` and the administration area stays closed. TLS is left to a reverse proxy.
+Without `allow_writes` the database session is `READ ONLY` and the administration area stays closed; contact forms can still be sent, since they only send e-mail. TLS is left to a reverse proxy.
 
 ## Docker
 

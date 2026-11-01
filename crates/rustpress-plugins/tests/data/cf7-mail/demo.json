@@ -1,0 +1,43 @@
+{
+    "form": "<label> Your name\n    [text* your-name autocomplete:name] </label>\n\n<label> Your email\n    [email* your-email autocomplete:email] </label>\n\n<label> Subject\n    [text* your-subject] </label>\n\n<label> Your message (optional)\n    [textarea your-message] </label>\n\n[submit \"Submit\"]",
+    "mail": {
+        "subject": "[_site_title] \"[your-subject]\"",
+        "sender": "[_site_title] <admin@example.com>",
+        "body": "From: [your-name] [your-email]\nSubject: [your-subject]\n\nMessage Body:\n[your-message]\n\n-- \nThis is a notification that a contact form was submitted on your website ([_site_title] [_site_url]).",
+        "recipient": "[_site_admin_email]",
+        "additional_headers": "Reply-To: [your-email]",
+        "attachments": "",
+        "use_html": 0,
+        "exclude_blank": 0
+    },
+    "mail_2": {
+        "active": false,
+        "subject": "[_site_title] \"[your-subject]\"",
+        "sender": "[_site_title] <admin@example.com>",
+        "body": "Message Body:\n[your-message]\n\n-- \nThis email is a receipt for your contact form submission on our website ([_site_title] [_site_url]) in which your email address was used. If that was not you, please ignore this message.",
+        "recipient": "[your-email]",
+        "additional_headers": "Reply-To: [_site_admin_email]",
+        "attachments": "",
+        "use_html": 0,
+        "exclude_blank": 0
+    },
+    "additional_settings": "demo_mode: on\n",
+    "site": {
+        "blogname": "RustPress Test",
+        "blogdescription": "",
+        "home": "http://localhost:8080",
+        "admin_email": "admin@example.com"
+    },
+    "special": {
+        "_url": "http://localhost:8080/contact/?ref=golden",
+        "_date": "November 1, 2026",
+        "_time": "12:43 am"
+    },
+    "result": {
+        "status": "mail_sent",
+        "message": "Thank you for your message. It has been sent.",
+        "posted_data_hash": "HASH",
+        "demo_mode": true
+    },
+    "mails": []
+}

@@ -1,0 +1,4 @@
+[text your-name] [email your-email] [textarea msg] [text empty1]
+[acceptance terms] I agree to the <a href="/t">terms</a>. [/acceptance]
+[date d]
+[submit]

@@ -1,0 +1,4 @@
+[select menu "One|1" "Two|2"] [select multi multiple "A" "B" "C"]
+[checkbox boxes "c1|first" "c2" "c3"] [radio choice "r1" "r2"]
+[checkbox other free_text "x" "y"]
+[submit]
