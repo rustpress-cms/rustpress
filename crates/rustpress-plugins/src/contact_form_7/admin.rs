@@ -633,7 +633,7 @@ pub fn updated_message(ctx: &AdminContext<'_>) -> String {
 
 /// `check_admin_referer()` that failed: `wp_nonce_ays()`.
 fn expired(site: &Site) -> PageLoad {
-    PageLoad::Die { status: 403, title: site.tr("Something went wrong."), message: site.tr("The link you followed has expired.") }
+    PageLoad::Die { status: 403, title: site.tr("An error occurred."), message: site.tr("The link you followed has expired.") }
 }
 
 /// `wp_die( $message )` of the plugin.
