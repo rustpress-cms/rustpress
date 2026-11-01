@@ -1,0 +1,2 @@
+[date d] [date* d2 min:2026-01-01 max:2026-12-31 step:7]
+[date d3 "2026-03-04"] [date d4 placeholder "2026-05-06"] [date d5 min:not-a-date]

@@ -1,0 +1,43 @@
+<h2>Heading</h2>
+Intro text
+over two lines
+
+<div class="wrap">
+  <span>"Quotes" -- dashes...</span>
+</div>
+
+<ul>
+<li>One [text l1]
+<li>Two
+</ul>
+
+<table>
+<tr><td>Cell [text t1]</td><td>Two</td></tr>
+<tr><th>Head</th></tr>
+</table>
+
+<dl><dt>Term<dd>Definition</dl>
+
+<pre>
+  preformatted   [text p1]
+     text
+</pre>
+
+<!-- a comment -->
+<fieldset><legend>Legend</legend>
+[radio r "a" "b"]
+</fieldset>
+
+<p>Explicit<br>paragraph<br/>with breaks</p>
+<blockquote><blockquote>Nested</blockquote></blockquote>
+
+<svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="4"/>
+</svg>
+
+<math><mi>x</mi>
+
+</math>
+<select><option>Raw<option>Options</select>
+<template>
+  raw template
+</template>

@@ -138,6 +138,42 @@ pub trait ActivePlugin: Send + Sync {
     fn admin_ajax<'a>(&'a self, _action: &'a str, _ctx: &'a AdminContext<'a>) -> BoxFuture<'a, Result<Option<AjaxAnswer>>> {
         Box::pin(async { Ok(None) })
     }
+
+    /// The shortcodes the plugin registers (`add_shortcode()`).
+    fn shortcode_tags(&self) -> &'static [&'static str] {
+        &[]
+    }
+
+    /// The callback of one of [`shortcode_tags`](Self::shortcode_tags): what `[tag atts]content[/tag]` turns into.
+    fn shortcode<'a>(&'a self, _tag: &'a str, _atts: &'a crate::shortcodes::Atts, _content: Option<&'a str>, _ctx: &'a ShortcodeContext<'a>) -> BoxFuture<'a, Result<String>> {
+        Box::pin(async { Ok(String::new()) })
+    }
+}
+
+/// What the shortcode of a plugin sees of the page it is printed on.
+pub struct ShortcodeContext<'a> {
+    pub site: &'a Site,
+    pub query: &'a crate::QueryResult,
+    /// `get_the_ID()` while `in_the_loop()`.
+    pub loop_post: Option<u64>,
+    /// What the plugins keep for the rest of the request (their `static` variables).
+    pub state: &'a std::sync::Mutex<PluginState>,
+}
+
+/// Per-request state of the plugins: counters and lists by a name the plugin picks.
+#[derive(Debug, Default)]
+pub struct PluginState {
+    pub counters: std::collections::HashMap<&'static str, u64>,
+    pub lists: std::collections::HashMap<&'static str, Vec<String>>,
+}
+
+impl PluginState {
+    /// Adds one to the counter `name` and returns the new count.
+    pub fn next(&mut self, name: &'static str) -> u64 {
+        let count = self.counters.entry(name).or_insert(0);
+        *count += 1;
+        *count
+    }
 }
 
 /// Who uploads a file, and how.
@@ -371,6 +407,10 @@ pub struct Asset {
     pub before: Vec<String>,
     /// Scripts: `wp_add_inline_script( $handle, $data )` after the script.
     pub after: Vec<String>,
+    /// Registered but not enqueued (`wp_register_script()`): printed only as a dependency of another script.
+    pub registered_only: bool,
+    /// Scripts: the text domain of `wp_set_script_translations()`.
+    pub translations: Option<String>,
 }
 
 /// What the plugins enqueue on a page, in the order they enqueue it.
@@ -589,6 +629,21 @@ impl Plugins {
         for plugin in self.hooks() {
             if let Some(answer) = plugin.admin_ajax(action, ctx).await? {
                 return Ok(Some(answer));
+            }
+        }
+        Ok(None)
+    }
+
+    /// The shortcodes of the plugins, in the order they register them.
+    pub fn shortcode_tags(&self) -> Vec<&'static str> {
+        self.hooks().flat_map(|plugin| plugin.shortcode_tags().iter().copied()).collect()
+    }
+
+    /// The output of the plugin shortcode `tag`, `None` when no plugin registers it.
+    pub async fn shortcode(&self, tag: &str, atts: &crate::shortcodes::Atts, content: Option<&str>, ctx: &ShortcodeContext<'_>) -> Result<Option<String>> {
+        for plugin in self.hooks() {
+            if plugin.shortcode_tags().contains(&tag) {
+                return plugin.shortcode(tag, atts, content, ctx).await.map(Some);
             }
         }
         Ok(None)

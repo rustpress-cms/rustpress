@@ -125,7 +125,7 @@ async fn excerpt_embed(env: &Env<'_>, post: &Arc<Post>) -> Result<String> {
     let excerpt = get_the_excerpt_with(env, post, site.excerpt_length(), &more).await?;
     let mut out = convert_chars(&site.texturize(&excerpt));
     out = wpautop(&out);
-    out = rustpress_core::shortcodes::shortcode_unautop(&out);
+    out = site.shortcode_unautop(&out);
     if post.post_type == "attachment" && env.query.flags.is_attachment {
         let (meta, file) = images::load_metadata(site, post).await?;
         if let Some(file) = file {

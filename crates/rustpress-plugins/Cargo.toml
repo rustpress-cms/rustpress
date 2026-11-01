@@ -16,6 +16,9 @@ rustpress-phpser.workspace = true
 serde_json.workspace = true
 futures.workspace = true
 regex.workspace = true
+fancy-regex.workspace = true
+sha2.workspace = true
+chrono.workspace = true
 flate2 = "1"
 xmlparser = "0.13"
 

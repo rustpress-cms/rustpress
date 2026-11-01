@@ -1,0 +1,4 @@
+[[text not-a-tag]] [text 9bad] [text] [text good.name]
+[unknown tag] [text* x "unclosed]
+[text nbsp-name] [text y  "spaced"]
+Text with [brackets] and [/closing] pieces.

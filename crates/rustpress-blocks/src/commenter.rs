@@ -12,13 +12,19 @@ pub struct Commenter {
     pub author: String,
     pub email: String,
     pub url: String,
-    hash: Arc<dyn Fn(&str) -> String + Send + Sync>,
+    /// `wp_hash( $data, $scheme )`.
+    hash: Arc<dyn Fn(&str, &str) -> String + Send + Sync>,
 }
 
 impl Commenter {
-    pub fn new(author: String, email: String, url: String, hash: impl Fn(&str) -> String + Send + Sync + 'static) -> Self {
+    pub fn new(author: String, email: String, url: String, hash: impl Fn(&str, &str) -> String + Send + Sync + 'static) -> Self {
         Self { author, email, url, hash: Arc::new(hash) }
     }
+}
+
+/// `wp_hash( $data, $scheme )` with the salts of the site; empty outside a request or without the salts.
+pub fn wp_hash(data: &str, scheme: &str) -> String {
+    COMMENTER.try_with(|c| (c.hash)(data, scheme)).unwrap_or_default()
 }
 
 tokio::task_local! {
@@ -45,7 +51,7 @@ pub async fn unapproved_author_email(env: &Env<'_>, now: i64) -> Result<String> 
     let given = vars.get("moderation-hash").unwrap_or_default().to_owned();
     if id != 0 && !given.is_empty()
         && let Some(comment) = env.site.db.comment_any(id).await? {
-            let expected = COMMENTER.try_with(|c| (c.hash)(&comment.comment_date_gmt)).unwrap_or_default();
+            let expected = wp_hash(&comment.comment_date_gmt, "auth");
             if !expected.is_empty() && rustpress_core::hash_equals(&expected, &given) {
                 let sent = rustpress_core::datetime::SiteTimezone::gmt_timestamp(&comment.comment_date_gmt).unwrap_or(0);
                 if now < sent + 600 && !comment.comment_author_email.is_empty() {

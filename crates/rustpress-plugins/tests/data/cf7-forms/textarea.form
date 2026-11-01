@@ -1,0 +1,8 @@
+[textarea a]
+[textarea* b 60x8/500 class:big]
+[textarea c cols:30 rows:4 placeholder "Type here"]
+[textarea d x5]
+[textarea e "Line one
+line two & <three>"]
+[textarea f]Inside content
+with "quotes"[/textarea]

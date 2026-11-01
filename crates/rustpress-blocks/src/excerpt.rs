@@ -36,7 +36,7 @@ pub async fn get_the_excerpt_with(env: &Env<'_>, post: &Arc<Post>, length: usize
     // `wp_trim_excerpt()` calls `get_the_content( '' )`; `$more` is on for single posts, pages and feeds only.
     let on = env.query.flags.is_singular() || env.query.flags.is_feed;
     let content = crate::content::get_the_content_with(env, post, 1, on, true).await?;
-    let content = rustpress_core::shortcodes::strip_shortcodes(&content);
+    let content = env.site.strip_shortcodes(&content);
     let content = excerpt_remove_blocks(env, post, &content).await?;
     let content = excerpt_remove_footnotes(&content);
     // An attachment's content starts with its player or image (`prepend_attachment()`).

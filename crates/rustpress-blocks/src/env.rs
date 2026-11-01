@@ -215,6 +215,10 @@ pub struct State {
     pub rendered_parts: Vec<String>,
     /// What the image loading logic remembers between images.
     pub media: crate::images::MediaState,
+    /// What the native plugins remember during the request.
+    pub plugins: rustpress_core::native::PluginState,
+    /// Content is rendered outside the loop (`in_the_loop()` is false, as in the REST API).
+    pub outside_loop: bool,
 }
 
 impl State {

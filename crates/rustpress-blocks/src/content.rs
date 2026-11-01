@@ -317,15 +317,19 @@ async fn apply_the_content(env: &Env<'_>, post: &Arc<Post>, raw: &str, prefix: &
     let mut prefix_done = false;
     if !blocks {
         if late {
-            out = rustpress_core::shortcodes::shortcode_unautop(&out);
+            out = env.site.shortcode_unautop(&out);
             out = wpautop(&format!("{prefix}{out}"));
             prefix_done = true;
         } else {
             out = wpautop(&out);
-            out = rustpress_core::shortcodes::shortcode_unautop(&out);
+            out = env.site.shortcode_unautop(&out);
         }
-    } else if filter_tags {
-        env.with_state(|s| s.wpautop_late = true);
+    } else {
+        // `do_blocks()` unhooks only `wpautop`; `shortcode_unautop` stays at priority 10.
+        out = env.site.shortcode_unautop(&out);
+        if filter_tags {
+            env.with_state(|s| s.wpautop_late = true);
+        }
     }
     out = capital_p_dangit(&out, false);
     if !prefix_done {

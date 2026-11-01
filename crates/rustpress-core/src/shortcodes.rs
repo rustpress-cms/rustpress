@@ -168,10 +168,15 @@ pub fn unescape_invalid(content: &str) -> String {
 
 /// `strip_shortcodes()`: removes the shortcodes WordPress knows, keeping their content out.
 pub fn strip_shortcodes(content: &str) -> String {
+    strip_shortcodes_with(content, CORE_TAGS)
+}
+
+/// `strip_shortcodes()` with the shortcodes `registered` (the core's and the plugins').
+pub fn strip_shortcodes_with(content: &str, registered: &[&str]) -> String {
     if !content.contains('[') {
         return content.to_owned();
     }
-    let tags = tags_in(content, CORE_TAGS);
+    let tags = tags_in(content, registered);
     if tags.is_empty() {
         return content.to_owned();
     }
@@ -326,7 +331,11 @@ pub fn parse_atts(text: &str) -> Atts {
 
 /// `shortcode_unautop()`: unwraps a shortcode that `wpautop()` put in a paragraph of its own.
 pub fn shortcode_unautop(text: &str) -> String {
-    let tags = CORE_TAGS;
+    shortcode_unautop_with(text, CORE_TAGS)
+}
+
+/// `shortcode_unautop()` with the shortcodes `tags` (the core's and the plugins').
+pub fn shortcode_unautop_with(text: &str, tags: &[&str]) -> String {
     let spaces_len = |s: &str| -> usize {
         let mut n = 0;
         loop {
