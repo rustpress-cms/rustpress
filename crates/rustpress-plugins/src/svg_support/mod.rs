@@ -128,7 +128,7 @@ impl ActivePlugin for Active {
         admin::pages(site)
     }
 
-    fn admin_page_help(&self, _slug: &str, site: &Site) -> AdminHelp {
+    fn admin_page_help(&self, _slug: &str, site: &Site, _query: &[(String, String)]) -> AdminHelp {
         admin::help(site)
     }
 

@@ -43,28 +43,30 @@ pub fn pages(site: &Site) -> Vec<AdminPage> {
     ]
 }
 
-/// `wpcf7_kses_allowed_html( 'form' )`, with `form` limited to `method` as `contact-forms.php` has it: what the
-/// screens of the plugin print goes through `wp_kses()` with it.
+/// `wpcf7_kses_allowed_html( 'form' )`: the rules the screens of the plugin print their markup through `wp_kses()`
+/// with.
+pub fn form_context() -> Allowed {
+    Allowed::post()
+        .merged(&[
+            ("datalist", &[]),
+            ("fieldset", &["disabled", "name"]),
+            ("input", &["accept", "alt", "autocomplete", "capture", "checked", "disabled", "list", "max", "maxlength", "min", "minlength", "multiple", "name", "pattern", "placeholder", "readonly", "required", "size", "step", "type", "value"]),
+            ("optgroup", &["disabled", "label"]),
+            ("option", &["disabled", "label", "selected", "value"]),
+            ("output", &["for", "name"]),
+            ("select", &["autocomplete", "disabled", "multiple", "name", "required", "size"]),
+            ("textarea", &["autocomplete", "cols", "disabled", "maxlength", "minlength", "name", "placeholder", "readonly", "required", "rows", "wrap"]),
+        ])
+        .with_global(&[
+            "aria-atomic", "aria-checked", "aria-controls", "aria-current", "aria-describedby", "aria-details", "aria-disabled", "aria-expanded", "aria-hidden", "aria-invalid", "aria-label", "aria-labelledby", "aria-live", "aria-relevant", "aria-required",
+            "aria-selected", "class", "data-*", "dir", "hidden", "id", "inputmode", "lang", "popover", "role", "spellcheck", "style", "tabindex", "title", "xml:lang",
+        ])
+}
+
+/// The rules of `contact-forms.php`: `form` keeps only `method`.
 fn allowed_html() -> &'static Allowed {
     static ALLOWED: OnceLock<Allowed> = OnceLock::new();
-    ALLOWED.get_or_init(|| {
-        Allowed::post()
-            .merged(&[
-                ("datalist", &[]),
-                ("fieldset", &["disabled", "name"]),
-                ("input", &["accept", "alt", "autocomplete", "capture", "checked", "disabled", "list", "max", "maxlength", "min", "minlength", "multiple", "name", "pattern", "placeholder", "readonly", "required", "size", "step", "type", "value"]),
-                ("optgroup", &["disabled", "label"]),
-                ("option", &["disabled", "label", "selected", "value"]),
-                ("output", &["for", "name"]),
-                ("select", &["autocomplete", "disabled", "multiple", "name", "required", "size"]),
-                ("textarea", &["autocomplete", "cols", "disabled", "maxlength", "minlength", "name", "placeholder", "readonly", "required", "rows", "wrap"]),
-            ])
-            .with_global(&[
-                "aria-atomic", "aria-checked", "aria-controls", "aria-current", "aria-describedby", "aria-details", "aria-disabled", "aria-expanded", "aria-hidden", "aria-invalid", "aria-label", "aria-labelledby", "aria-live", "aria-relevant", "aria-required",
-                "aria-selected", "class", "data-*", "dir", "hidden", "id", "inputmode", "lang", "popover", "role", "spellcheck", "style", "tabindex", "title", "xml:lang",
-            ])
-            .merged(&[("form", &["method"])])
-    })
+    ALLOWED.get_or_init(|| form_context().merged(&[("form", &["method"])]))
 }
 
 /// `wpcf7_link( $url, $anchor_text, $atts )`.
@@ -76,8 +78,16 @@ fn link(url: &str, text: &str, class: Option<&str>) -> String {
     format!("<a {}>{}</a>", format_atts(&atts), esc_html(text))
 }
 
+/// `get_user_option( $name )`: the option of the site's table prefix, else the plain one.
+async fn user_option(site: &Site, user: u64, name: &str) -> Result<Option<String>> {
+    if let Some(value) = site.db.user_meta(user, &format!("{}{name}", site.db.table_prefix())).await? {
+        return Ok(Some(value));
+    }
+    Ok(site.db.user_meta(user, name).await?)
+}
+
 /// The contact forms as they are now in the database (the snapshot may be older than a change just made).
-async fn current_forms(site: &Site) -> Result<Vec<(ContactForm, rustpress_db::Post)>> {
+pub async fn current_forms(site: &Site) -> Result<Vec<(ContactForm, rustpress_db::Post)>> {
     let query = PostQuery {
         post_types: vec![super::form::POST_TYPE.into()],
         statuses: ["publish", "future", "draft", "pending", "private"].map(String::from).to_vec(),
@@ -125,7 +135,12 @@ pub async fn list_page(ctx: &AdminContext<'_>) -> Result<String> {
         orderby = "title".into();
         order = "asc".into();
     }
-    let per_page = site.db.user_meta(ctx.user, "wpcf7_contact_forms_per_page").await?.and_then(|v| v.trim().parse::<u64>().ok()).filter(|n| *n > 0).unwrap_or(20);
+    let per_page = user_option(site, ctx.user, "wpcf7_contact_forms_per_page").await?.and_then(|v| v.trim().parse::<u64>().ok()).filter(|n| *n > 0).unwrap_or(20);
+    // `get_hidden_columns()`: what the user hid in the screen options.
+    let hidden: Vec<String> = match user_option(site, ctx.user, &format!("manage{}columnshidden", ctx.hook_suffix)).await?.map(|raw| rustpress_phpser::unserialize(raw.as_bytes())) {
+        Some(Ok(rustpress_phpser::Value::Array(items))) => items.iter().filter_map(|(_, v)| v.as_str().map(str::to_owned)).collect(),
+        _ => Vec::new(),
+    };
     let paged = get("paged").trim().parse::<u64>().unwrap_or(1).max(1);
     let search = get("s");
     let mut forms: Vec<(ContactForm, rustpress_db::Post)> = current_forms(site).await?.into_iter().filter(|(_, post)| search.is_empty() || matches_search(post, &search)).collect();
@@ -147,6 +162,10 @@ pub async fn list_page(ctx: &AdminContext<'_>) -> Result<String> {
         Column::new("author", &t("Author")).sortable("author", false, Some(&t("Author")), None),
         Column::new("date", &t("Date")).sortable("date", true, Some(&t("Date")), None),
     ];
+    let columns: Vec<Column> = columns.into_iter().map(|mut c| {
+        c.hidden = hidden.contains(&c.key);
+        c
+    }).collect();
     let page_url = site.site_url("wp-admin/admin.php?page=wpcf7");
     let table = Table {
         site,
@@ -297,8 +316,25 @@ async fn row(ctx: &AdminContext<'_>, form: &ContactForm, post: &rustpress_db::Po
     Ok(out)
 }
 
+/// `wpcf7_admin_management_page()`: the editor of the form `post`, else the list.
+pub async fn management_page(ctx: &AdminContext<'_>) -> Result<String> {
+    let id = super::php_int(ctx.get("post").unwrap_or_default());
+    if id != 0
+        && let Some((form, _)) = current_forms(ctx.site).await?.into_iter().find(|(f, _)| f.id == id)
+    {
+        return Ok(super::editor::page(ctx, &super::editor::Edited { form: &form, initial: false }, &updated_message(ctx)));
+    }
+    list_page(ctx).await
+}
+
+/// `wpcf7_admin_add_new_page()`: the editor of a new form from the template.
+pub fn add_new_page(ctx: &AdminContext<'_>) -> String {
+    let form = super::install::template(ctx.site);
+    super::editor::page(ctx, &super::editor::Edited { form: &form, initial: true }, &updated_message(ctx))
+}
+
 /// `wpcf7_admin_updated_message()`: the notice after an action of the list or the editor.
-fn updated_message(ctx: &AdminContext<'_>) -> String {
+pub fn updated_message(ctx: &AdminContext<'_>) -> String {
     let t = |text: &str| tr(ctx.site, text);
     let (kind, message) = match ctx.get("message").unwrap_or_default() {
         "created" => ("success", t("Contact form created.")),
@@ -413,33 +449,71 @@ pub async fn load(ctx: &AdminContext<'_>) -> Result<Option<PageLoad>> {
 }
 
 /// `WPCF7_Help_Tabs`: the help of the list.
-pub fn help(site: &Site, slug: &str) -> AdminHelp {
+pub fn help(site: &Site, screen_type: &str) -> AdminHelp {
     let t = |text: &str| tr(site, text);
-    let sidebar = format!(
-        "<p><strong>{}</strong></p><p><a href=\"{}\">{}</a></p><p><a href=\"{}\">{}</a></p><p><a href=\"{}\">{}</a></p>",
-        t("For more information:"),
-        t("https://contactform7.com/docs/"),
-        t("Docs"),
-        t("https://contactform7.com/faq/"),
-        t("FAQ"),
-        t("https://contactform7.com/support/"),
-        t("Support")
-    );
-    let tabs = match slug {
-        "wpcf7" => vec![
-            HelpTab { id: "list_overview".into(), title: t("Overview"), content: format!("<p>{}</p>", t("On this screen, you can manage contact forms your team has created with Contact Form 7. You can embed contact forms in post content or a block theme template by inserting a Contact Form 7 block. For use in the classic editor environment, traditional shortcodes are also provided.")) },
-            HelpTab {
-                id: "list_available_actions".into(),
-                title: t("Available Actions"),
-                content: format!(
-                    "<p>{}</p><p>{}</p><p>{}</p>",
-                    t("Hovering over a row in the contact forms list will display action links that allow you to manage your contact form. You can perform the following actions:"),
-                    t("<strong>Edit</strong> - Navigates to the editing screen for that contact form. You can also reach that screen by clicking on the contact form title."),
-                    t("<strong>Duplicate</strong> - Clones that contact form. A cloned contact form inherits all content from the original, but has a different ID.")
-                ),
-            },
+    let p = |texts: &[&str]| texts.iter().map(|text| format!("<p>{}</p>", t(text))).collect::<String>();
+    let tab = |id: &str, title: &str, content: String| HelpTab { id: id.into(), title: t(title), content };
+    let tabs = match screen_type {
+        "list" => vec![
+            tab("list_overview", "Overview", p(&["On this screen, you can manage contact forms your team has created with Contact Form 7. You can embed contact forms in post content or a block theme template by inserting a Contact Form 7 block. For use in the classic editor environment, traditional shortcodes are also provided."])),
+            tab(
+                "list_available_actions",
+                "Available Actions",
+                p(&[
+                    "Hovering over a row in the contact forms list will display action links that allow you to manage your contact form. You can perform the following actions:",
+                    "<strong>Edit</strong> - Navigates to the editing screen for that contact form. You can also reach that screen by clicking on the contact form title.",
+                    "<strong>Duplicate</strong> - Clones that contact form. A cloned contact form inherits all content from the original, but has a different ID.",
+                ]),
+            ),
         ],
+        "edit" => vec![
+            tab(
+                "edit_overview",
+                "Overview",
+                p(&[
+                    "On this screen, you can edit a contact form. A contact form is comprised of the following components:",
+                    "<strong>Title</strong> is the title of a contact form. This title is only used for labeling a contact form, and can be edited.",
+                    "<strong>Form</strong> is a content of HTML form. You can use arbitrary HTML, which is allowed inside a form element. You can also use Contact Form 7&#8217;s form-tags here.",
+                    "<strong>Mail</strong> manages a mail template (headers and message body) that this contact form will send when users submit it. You can use Contact Form 7&#8217;s mail-tags here.",
+                    "<strong>Mail (2)</strong> is an additional mail template that works similar to Mail. Mail (2) is different in that it is sent only when Mail has been sent successfully.",
+                    "In <strong>Messages</strong>, you can edit various types of messages used for this contact form. These messages are relatively short messages, like a validation error message you see when you leave a required field blank.",
+                    "<strong>Additional Settings</strong> provides a place where you can customize the behavior of this contact form by adding code snippets.",
+                ]),
+            ),
+            tab(
+                "edit_form_tags",
+                "Form-tags",
+                p(&[
+                    "A form-tag is a short code enclosed in square brackets used in a form content. A form-tag generally represents an input field, and its components can be separated into four parts: type, name, options, and values. Contact Form 7 supports several types of form-tags including text fields, number fields, date fields, checkboxes, radio buttons, menus, file-uploading fields, CAPTCHAs, and quiz fields.",
+                    "While form-tags have a comparatively complex syntax, you do not need to know the syntax to add form-tags because you can use the straightforward tag generator (<strong>Generate Tag</strong> button on this screen).",
+                ]),
+            ),
+            tab(
+                "edit_mail_tags",
+                "Mail-tags",
+                p(&[
+                    "A mail-tag is also a short code enclosed in square brackets that you can use in every Mail and Mail (2) field. A mail-tag represents a user input value through an input field of a corresponding form-tag.",
+                    "There are also special mail-tags that have specific names, but do not have corresponding form-tags. They are used to represent meta information of form submissions like the submitter&#8217;s IP address or the URL of the page.",
+                ]),
+            ),
+        ],
+        "integration" => vec![tab(
+            "integration_overview",
+            "Overview",
+            p(&[
+                "On this screen, you can manage services that are available through Contact Form 7. Using API will allow you to collaborate with any services that are available.",
+                "You may need to first sign up for an account with the service that you plan to use. When you do so, you would need to authorize Contact Form 7 to access the service with your account.",
+                "Any information you provide will not be shared with service providers without your authorization.",
+            ]),
+        )],
         _ => return AdminHelp::default(),
     };
+    let sidebar = format!(
+        "<p><strong>{}</strong></p><p>{}</p><p>{}</p><p>{}</p>",
+        t("For more information:"),
+        link("https://contactform7.com/docs/", &t("Docs"), None),
+        link("https://contactform7.com/faq/", &t("FAQ"), None),
+        link("https://contactform7.com/support/", &t("Support"), None)
+    );
     AdminHelp { tabs, sidebar }
 }

@@ -123,6 +123,23 @@ fn messages(tr: &Tr<'_>) -> Value {
     array(keys.iter().map(|(k, text)| (*k, s(&tr.t(text)))).collect())
 }
 
+/// `WPCF7_ContactForm::get_template()` in a request where every module is loaded (the editor of a new form): the
+/// messages are all of `wpcf7_messages()`.
+pub fn template(site: &Site) -> super::form::ContactForm {
+    let tr = Tr(site);
+    let sender = format!("[_site_title] <{}>", from_email(site));
+    let messages = array(super::submission::DEFAULT_MESSAGES.iter().map(|(k, text)| (*k, s(&tr.t(text)))).collect());
+    super::form::ContactForm {
+        title: tr.t("Untitled"),
+        locale: site.locale(),
+        form: form(&tr),
+        mail: Some(mail(&tr, &sender)),
+        mail_2: Some(mail_2(&tr, &sender)),
+        messages: Some(messages),
+        ..super::form::ContactForm::default()
+    }
+}
+
 /// `wpcf7_array_flatten()` of the properties, as `implode( "\n", ... )` writes them into `post_content`.
 fn flatten(value: &Value, out: &mut Vec<String>) {
     match value {

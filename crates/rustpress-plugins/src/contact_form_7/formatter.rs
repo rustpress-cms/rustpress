@@ -435,6 +435,25 @@ impl HtmlFormatter {
         self.output = EMPTY_P.replace(&self.output, "").into_owned();
     }
 
+    /// `close_all_tags()`.
+    pub fn close_all_tags(&mut self) {
+        while !self.stacked.is_empty() {
+            let element = self.stacked.remove(0);
+            self.append_end_tag(&element);
+        }
+    }
+
+    /// `append_whitespace()`.
+    pub fn append_whitespace(&mut self) {
+        self.output.push(' ');
+    }
+
+    /// `append_start_tag( $name, $atts )` with the attributes given as pairs.
+    pub fn open(&mut self, name: &str, atts: &[(&str, Att)]) {
+        let atts = Atts(atts.iter().map(|(k, v)| ((*k).to_owned(), v.clone())).collect());
+        self.append_start_tag(name, Some(&atts), "");
+    }
+
     /// `append_preformatted()`: text as it is.
     pub fn append_preformatted(&mut self, content: &str) {
         self.output.push_str(content);

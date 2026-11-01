@@ -545,7 +545,20 @@ async fn plugin_page(ctx: &Ctx<'_>, plugin: &dyn ActivePlugin, page: &AdminPage)
         tracing::error!(page = page.slug, error = %e, "plugin page failed");
         String::new()
     });
-    let plugin_help = ctx.site().plugins.admin_page_help(ctx.site(), page.slug);
+    let plugin_help = ctx.site().plugins.admin_page_help(ctx.site(), page.slug, &ctx.request.query);
+    // The screen options of a plugin's list: its columns as `render_list_table_columns_preferences()` lists them.
+    let options = match plugin.admin_screen_options(page.slug, ctx.site(), &ctx.request.query) {
+        Some(options) => {
+            let hidden = common::hidden_columns(ctx, &hook).await;
+            let columns = options.columns.into_iter().filter(|(key, label)| !["_title", "cb", "comment", "media", "name", "title", "username", "blogname"].contains(&key.as_str()) && !label.is_empty()).map(|(key, label)| {
+                let is_hidden = hidden.contains(&key);
+                (key, label, is_hidden)
+            });
+            let per_page = common::items_per_page(ctx, options.per_page.0, options.per_page.1).await;
+            Some(chrome::ScreenOptions { columns: columns.collect(), per_page: Some((options.per_page.0.to_owned(), per_page)), ..Default::default() })
+        }
+        None => None,
+    };
     let help = chrome::Help { tabs: plugin_help.tabs.into_iter().map(|t| chrome::HelpTab { id: t.id, title: t.title, content: t.content }).collect(), sidebar: plugin_help.sidebar };
     let screen = Screen {
         file: file.to_owned(),
@@ -553,6 +566,7 @@ async fn plugin_page(ctx: &Ctx<'_>, plugin: &dyn ActivePlugin, page: &AdminPage)
         submenu_file: Some(page.slug.to_owned()),
         title: page.page_title.clone(),
         help: Some(help),
+        options,
         hook_suffix: Some(hook.clone()),
         // The callback prints its markup right after the header.
         content_inline: true,

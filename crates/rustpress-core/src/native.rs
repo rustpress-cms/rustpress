@@ -67,6 +67,17 @@ pub trait ActivePlugin: Send + Sync {
         Vec::new()
     }
 
+    /// The screen options of a page the plugin added (`add_screen_option()` and the columns of its list table).
+    fn admin_screen_options(&self, _slug: &str, _site: &Site, _query: &[(String, String)]) -> Option<PageScreenOptions> {
+        None
+    }
+
+    /// The per-page options of its screens the plugin lets `set_screen_options()` store
+    /// (`set_screen_option_{$option}`).
+    fn screen_option_names(&self) -> &'static [&'static str] {
+        &[]
+    }
+
     /// `load-{$page_hook}` of a page the plugin added: what happens before the page is printed (an action that
     /// redirects, or stops with an error). `None` prints the page.
     fn admin_page_load<'a>(&'a self, _slug: &'a str, _ctx: &'a AdminContext<'a>) -> BoxFuture<'a, Result<Option<PageLoad>>> {
@@ -97,7 +108,7 @@ pub trait ActivePlugin: Send + Sync {
     }
 
     /// `load-{$hook_suffix}` of one of the plugin's pages: the tabs of its contextual help.
-    fn admin_page_help(&self, _slug: &str, _site: &Site) -> AdminHelp {
+    fn admin_page_help(&self, _slug: &str, _site: &Site, _query: &[(String, String)]) -> AdminHelp {
         AdminHelp::default()
     }
 
@@ -304,6 +315,14 @@ pub struct Uploader<'a> {
     pub rest: bool,
     /// The request carries a valid `_wpnonce` for `media-form`.
     pub media_form_nonce: bool,
+}
+
+/// The screen options of a plugin's list: the columns (key and title, in order) and "Number of items per page"
+/// (the option and its default).
+#[derive(Debug, Clone, PartialEq)]
+pub struct PageScreenOptions {
+    pub columns: Vec<(String, String)>,
+    pub per_page: (&'static str, u64),
 }
 
 /// The end of a `load-{$page_hook}` callback that does not print the page.
@@ -662,6 +681,11 @@ impl Plugins {
         }
     }
 
+    /// Whether a plugin lets `set_screen_options()` store `option`.
+    pub fn stores_screen_option(&self, option: &str) -> bool {
+        self.hooks().any(|plugin| plugin.screen_option_names().contains(&option))
+    }
+
     /// The plugin that added the page `slug` below `parent`, with the page.
     pub fn admin_page_of(&self, site: &Site, parent: &str, slug: &str) -> Option<(&dyn ActivePlugin, AdminPage)> {
         self.hooks().find_map(|plugin| plugin.admin_pages(site).into_iter().find(|p| p.slug == slug && (p.parent == parent || parent == "admin.php")).map(|page| (plugin, page)))
@@ -684,8 +708,8 @@ impl Plugins {
     }
 
     /// The help tabs of the plugin page `slug`.
-    pub fn admin_page_help(&self, site: &Site, slug: &str) -> AdminHelp {
-        self.hooks().find(|plugin| plugin.admin_pages(site).iter().any(|p| p.slug == slug)).map(|plugin| plugin.admin_page_help(slug, site)).unwrap_or_default()
+    pub fn admin_page_help(&self, site: &Site, slug: &str, query: &[(String, String)]) -> AdminHelp {
+        self.hooks().find(|plugin| plugin.admin_pages(site).iter().any(|p| p.slug == slug)).map(|plugin| plugin.admin_page_help(slug, site, query)).unwrap_or_default()
     }
 
     /// `admin_footer_text` of the plugins.

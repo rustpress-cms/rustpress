@@ -4,6 +4,7 @@
 
 pub mod admin;
 pub mod controls;
+pub mod editor;
 pub mod form;
 pub mod form_tag;
 pub mod formatter;
@@ -280,7 +281,8 @@ impl ActivePlugin for Loaded {
     fn admin_page<'a>(&'a self, slug: &'a str, ctx: &'a AdminContext<'a>) -> BoxFuture<'a, Result<String>> {
         Box::pin(async move {
             match slug {
-                "wpcf7" => admin::list_page(ctx).await,
+                "wpcf7" => admin::management_page(ctx).await,
+                "wpcf7-new" => Ok(admin::add_new_page(ctx)),
                 _ => Ok(String::new()),
             }
         })
@@ -297,8 +299,32 @@ impl ActivePlugin for Loaded {
         all
     }
 
-    fn admin_page_help(&self, slug: &str, site: &Site) -> AdminHelp {
-        admin::help(site, slug)
+    /// `add_screen_option( 'per_page' )` and the columns of the list (not on the editor).
+    fn admin_screen_options(&self, slug: &str, site: &Site, query: &[(String, String)]) -> Option<rustpress_core::native::PageScreenOptions> {
+        let post = query.iter().rev().find(|(k, _)| k == "post").map(|(_, v)| v.as_str()).unwrap_or_default();
+        if slug != "wpcf7" || self.by_id(post).is_some() {
+            return None;
+        }
+        let t = |text: &str| site.trd(DOMAIN, text);
+        let columns = [("cb", "<input type=\"checkbox\" />".to_owned()), ("title", t("Title")), ("author", t("Author")), ("date", t("Date"))];
+        Some(rustpress_core::native::PageScreenOptions { columns: columns.into_iter().map(|(k, v)| (k.to_owned(), v)).collect(), per_page: ("wpcf7_contact_forms_per_page", 20) })
+    }
+
+    fn screen_option_names(&self) -> &'static [&'static str] {
+        &["wpcf7_contact_forms_per_page"]
+    }
+
+    /// `WPCF7_Help_Tabs::set_help_tabs()`: the editor's help for a form (or a new one), the list's otherwise.
+    fn admin_page_help(&self, slug: &str, site: &Site, query: &[(String, String)]) -> AdminHelp {
+        let post = query.iter().rev().find(|(k, _)| k == "post").map(|(_, v)| v.as_str()).unwrap_or_default();
+        let screen_type = match slug {
+            "wpcf7-new" => "edit",
+            "wpcf7" if self.by_id(post).is_some() => "edit",
+            "wpcf7" => "list",
+            "wpcf7-integration" => "integration",
+            _ => "",
+        };
+        admin::help(site, screen_type)
     }
 
     fn rest_index(&self) -> &'static str {

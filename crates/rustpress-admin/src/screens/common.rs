@@ -293,7 +293,7 @@ pub async fn set_screen_options(ctx: &Ctx<'_>) -> Option<AdminResponse> {
         option
     };
     const PER_PAGE: [&str; 8] = ["edit_per_page", "users_per_page", "edit_comments_per_page", "upload_per_page", "edit_tags_per_page", "plugins_per_page", "export_personal_data_requests_per_page", "remove_personal_data_requests_per_page"];
-    if !PER_PAGE.contains(&map_option) {
+    if !PER_PAGE.contains(&map_option) && !ctx.site().plugins.stores_screen_option(option) {
         return None;
     }
     // `(int) $value` between 1 and 999.
