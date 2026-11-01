@@ -104,24 +104,31 @@ pub fn shortlink(site: &Site, q: &QueryResult) -> Option<String> {
     }
 }
 
-/// `rest_get_queried_resource_route()`: the REST route of what the page shows.
-pub fn queried_rest_route(q: &QueryResult) -> Option<String> {
+/// `rest_get_queried_resource_route()`: the REST route of what the page shows. A type of a plugin needs
+/// `show_in_rest` and has its `rest_base`; without a registration its name is assumed.
+pub fn queried_rest_route(site: &Site, q: &QueryResult) -> Option<String> {
     let flags = &q.flags;
     match &q.queried {
         Queried::Post(post) if flags.is_singular() => {
             let base = match post.post_type.as_str() {
-                "page" => "pages",
-                "post" => "posts",
-                "attachment" => "media",
-                other => other,
+                "page" => "pages".to_owned(),
+                "post" => "posts".to_owned(),
+                "attachment" => "media".to_owned(),
+                other => match site.types.post_type(other) {
+                    Some(info) if info.registered => info.show_in_rest.then(|| info.rest_base().to_owned())?,
+                    _ => other.to_owned(),
+                },
             };
             Some(format!("wp/v2/{base}/{}", post.id))
         }
         Queried::Term(term) if (flags.is_category || flags.is_tag || flags.is_tax) && term.taxonomy != "post_format" => {
             let base = match term.taxonomy.as_str() {
-                "category" => "categories",
-                "post_tag" => "tags",
-                other => other,
+                "category" => "categories".to_owned(),
+                "post_tag" => "tags".to_owned(),
+                other => match site.types.taxonomy(other) {
+                    Some(info) if info.registered => info.show_in_rest.then(|| info.rest_base().to_owned())?,
+                    _ => other.to_owned(),
+                },
             };
             Some(format!("wp/v2/{base}/{}", term.term_id))
         }

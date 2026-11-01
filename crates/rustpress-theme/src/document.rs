@@ -446,7 +446,7 @@ fn font_faces_of(theme: &Theme, families: &[Value]) -> String {
 
 pub(crate) async fn discovery_links(site: &Site, q: &QueryResult, version: &str, cpage_override: u64, rel_canonical: bool) -> Result<String> {
     let mut out = format!("<link rel=\"https://api.w.org/\" href=\"{}\" />", esc_url(&site.rest_url("/")));
-    if let Some(route) = crate::head::queried_rest_route(q) {
+    if let Some(route) = crate::head::queried_rest_route(site, q) {
         out.push_str(&format!("<link rel=\"alternate\" title=\"JSON\" type=\"application/json\" href=\"{}\" />", esc_url(&site.rest_url(&route))));
     }
     out.push_str(&format!("<link rel=\"EditURI\" type=\"application/rsd+xml\" title=\"RSD\" href=\"{}\" />\n", esc_url(&site.site_url("xmlrpc.php?rsd"))));

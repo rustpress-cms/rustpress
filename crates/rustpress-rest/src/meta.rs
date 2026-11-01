@@ -96,10 +96,16 @@ impl Rest<'_> {
             taxonomies: taxonomies.iter().map(|t| (*t).to_owned()).collect(),
             rest_base: base.into(),
         };
+        // `get_object_taxonomies()` with REST routes, also the ones of plugins.
+        let of = |post_type: &str| self.taxonomies_of(post_type).into_iter().map(|t| t.name).collect::<Vec<_>>();
+        let (post, page, attachment) = (of("post"), of("page"), of("attachment"));
+        fn names(list: &[String]) -> Vec<&str> {
+            list.iter().map(String::as_str).collect()
+        }
         vec![
-            entry("post", s.trx("Posts", "post type general name"), String::new(), false, Some("dashicons-admin-post"), &["category", "post_tag"], "posts"),
-            entry("page", s.trx("Pages", "post type general name"), String::new(), true, Some("dashicons-admin-page"), &[], "pages"),
-            entry("attachment", s.trx("Media", "post type general name"), String::new(), false, Some("dashicons-admin-media"), &[], "media"),
+            entry("post", s.trx("Posts", "post type general name"), String::new(), false, Some("dashicons-admin-post"), &names(&post), "posts"),
+            entry("page", s.trx("Pages", "post type general name"), String::new(), true, Some("dashicons-admin-page"), &names(&page), "pages"),
+            entry("attachment", s.trx("Media", "post type general name"), String::new(), false, Some("dashicons-admin-media"), &names(&attachment), "media"),
             entry("nav_menu_item", s.tr("Navigation Menu Items"), String::new(), false, None, &["nav_menu"], "menu-items"),
             entry("wp_block", s.trx("Patterns", "post type general name"), String::new(), false, None, &["wp_pattern_category"], "blocks"),
             entry("wp_template", s.trx("Templates", "post type general name"), s.tr("Templates to include in your theme."), false, None, &[], "templates"),
@@ -199,9 +205,47 @@ impl Rest<'_> {
             return Ok(Vec::new());
         }
         let services = rustpress_theme::head::Services::new(self.theme, self.site, &self.blank, self.registry);
-        let ctx = rustpress_core::native::RestFieldContext { site: self.site, query: &self.blank, services: &services };
+        let (route, query_string) = self.route.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        let ctx = rustpress_core::native::RestFieldContext { site: self.site, query: &self.blank, services: &services, route: &route, method: self.method(), query_string: &query_string };
         let fields = self.site.plugins.rest_fields(object, &ctx).await?;
         Ok(fields.into_iter().filter(|(k, _)| self.field_included(k)).collect())
+    }
+
+    /// Adds the links of the plugins (`rest_prepare_{$type}`) to the `_links` of an object, before the `curies`.
+    pub(crate) async fn add_plugin_links(&self, object: rustpress_core::native::RestObject<'_>, data: &mut Map<String, Value>) -> Result<()> {
+        if self.site.plugins.is_empty() {
+            return Ok(());
+        }
+        let services = rustpress_theme::head::Services::new(self.theme, self.site, &self.blank, self.registry);
+        let (route, query_string) = self.route.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        let ctx = rustpress_core::native::RestFieldContext { site: self.site, query: &self.blank, services: &services, route: &route, method: self.method(), query_string: &query_string };
+        let links = self.site.plugins.rest_links(object, &ctx).await?;
+        if links.is_empty() {
+            return Ok(());
+        }
+        // Without `_links` in `_fields` the core adds none, but the plugins' links still arrive.
+        let key = if data.contains_key("_links") { "_links" } else { crate::PLUGIN_LINKS };
+        let Value::Object(map) = data.entry(key).or_insert_with(|| Value::Object(Map::new())) else { return Ok(()) };
+        // `get_compact_response_links()` moves the compacted `wp:` relations behind the others.
+        let curies = map.remove("curies");
+        let compacted: Vec<(String, Value)> = map.iter().filter(|(k, _)| k.starts_with("wp:")).map(|(k, v)| (k.clone(), v.clone())).collect();
+        map.retain(|k, _| !k.starts_with("wp:"));
+        for link in links {
+            let mut entry = Map::new();
+            entry.extend(link.attributes);
+            entry.insert("href".into(), Value::from(link.href));
+            match map.get_mut(&link.rel) {
+                Some(Value::Array(items)) => items.push(Value::Object(entry)),
+                _ => {
+                    map.insert(link.rel, Value::Array(vec![Value::Object(entry)]));
+                }
+            }
+        }
+        map.extend(compacted);
+        if let Some(curies) = curies {
+            map.insert("curies".into(), curies);
+        }
+        Ok(())
     }
 
     // ------------------------------------------------------------------------- taxonomies
@@ -280,9 +324,10 @@ impl Rest<'_> {
 
     // ------------------------------------------------------------------------- statuses
 
-    fn prepare_status(&self, slug: &str, context: &str) -> Value {
+    /// A public status: `publish`, or one of a plugin (which lists its posts with `?status=`).
+    fn prepare_status(&self, slug: &str, label: &str, context: &str) -> Value {
         let mut data = Map::new();
-        data.insert("name".into(), Value::from(self.site.tr("Published")));
+        data.insert("name".into(), Value::from(label));
         if context == "edit" {
             data.insert("private".into(), Value::Bool(false));
             data.insert("protected".into(), Value::Bool(false));
@@ -299,9 +344,17 @@ impl Rest<'_> {
             data.insert("date_floating".into(), Value::Bool(false));
         }
         let mut links = Links::new();
-        links.add("archives", vec![], self.rest_url("wp/v2/posts"));
+        let archives = if slug == "publish" { self.rest_url("wp/v2/posts") } else { rustpress_core::urls::add_query_arg(&self.rest_url("wp/v2/posts"), "status", slug) };
+        links.add("archives", vec![], archives);
         data.insert("_links".into(), links.finish());
         Value::Object(data)
+    }
+
+    /// `get_post_stati( [ 'internal' => false ] )` that a visitor may see: `publish` and the public ones of plugins.
+    fn public_statuses(&self) -> Vec<(String, String)> {
+        let mut all = vec![("publish".to_owned(), self.site.tr("Published"))];
+        all.extend(self.site.plugins.post_statuses(self.site).into_iter().map(|(slug, label)| (slug.to_owned(), label)));
+        all
     }
 
     pub(crate) fn statuses_collection(&self, params: &Params) -> Outcome {
@@ -309,14 +362,16 @@ impl Rest<'_> {
             return Err(RestError::new("rest_cannot_view", "Sorry, you are not allowed to manage post statuses.", 401));
         }
         let mut data = Map::new();
-        data.insert("publish".into(), self.prepare_status("publish", params.get("context").unwrap_or("view")));
+        for (slug, label) in self.public_statuses() {
+            data.insert(slug.clone(), self.prepare_status(&slug, &label, params.get("context").unwrap_or("view")));
+        }
         Ok(Resp::item(Value::Object(data)))
     }
 
     pub(crate) fn statuses_item(&self, slug: &str, params: &Params) -> Outcome {
         const OTHERS: [&str; 11] = ["future", "draft", "pending", "private", "trash", "auto-draft", "inherit", "request-pending", "request-confirmed", "request-failed", "request-completed"];
-        if slug == "publish" {
-            return Ok(Resp::item(self.prepare_status("publish", params.get("context").unwrap_or("view"))));
+        if let Some((slug, label)) = self.public_statuses().into_iter().find(|(s, _)| s == slug) {
+            return Ok(Resp::item(self.prepare_status(&slug, &label, params.get("context").unwrap_or("view"))));
         }
         Err(if OTHERS.contains(&slug) {
             RestError::new("rest_cannot_read_status", "Cannot view status.", 401)

@@ -193,7 +193,7 @@ impl Site {
                 matched_rule = Some(m.rule.pattern.clone());
                 // Only the public query variables of a permalink reach the query (`WP::parse_request()`).
                 vars = m.vars;
-                let keep: Vec<String> = vars.iter().map(|(k, _)| k.to_owned()).filter(|k| PUBLIC_QUERY_VARS.contains(&k.as_str()) || self.types.post_type(k).is_some() || self.types.taxonomy(k).is_some()).collect();
+                let keep: Vec<String> = vars.iter().map(|(k, _)| k.to_owned()).filter(|k| PUBLIC_QUERY_VARS.contains(&k.as_str()) || self.is_type_query_var(k)).collect();
                 let dropped: Vec<String> = vars.iter().map(|(k, _)| k.to_owned()).filter(|k| !keep.contains(k)).collect();
                 for key in dropped {
                     vars.remove(&key);
@@ -205,7 +205,7 @@ impl Site {
 
         // Query-string variables win over the ones from the permalink.
         for (key, value) in QueryVars::parse(query_string).iter() {
-            if PUBLIC_QUERY_VARS.contains(&key) || self.types.post_type(key).is_some() || self.types.taxonomy(key).is_some() {
+            if PUBLIC_QUERY_VARS.contains(&key) || self.is_type_query_var(key) {
                 vars.set(key, value);
             }
         }
@@ -605,7 +605,8 @@ impl Site {
     /// and only publicly queryable types may be asked for.
     fn map_type_vars(&self, vars: &mut QueryVars) {
         for t in &self.types.post_types {
-            if let Some(value) = vars.get(&t.name).map(str::to_owned) {
+            let Some(var) = t.query_var.as_deref() else { continue };
+            if let Some(value) = vars.get(var).map(str::to_owned) {
                 vars.set("post_type", t.name.clone());
                 vars.set("name", value);
             }
@@ -615,6 +616,11 @@ impl Site {
         {
             vars.remove("post_type");
         }
+    }
+
+    /// The query variables `register_post_type()` and `register_taxonomy()` add (`query_var`, the name by default).
+    fn is_type_query_var(&self, key: &str) -> bool {
+        self.types.post_types.iter().any(|t| t.query_var.as_deref() == Some(key)) || self.types.taxonomy(key).is_some()
     }
 
     /// The post types of a taxonomy archive: every searchable type with objects in the taxonomy.

@@ -30,6 +30,13 @@ pub trait NativePlugin: Send + Sync {
     fn activate<'a>(&'a self, _site: &'a Site, _writer: &'a rustpress_db::Writer, _user: u64, _now: i64) -> BoxFuture<'a, Result<()>> {
         Box::pin(async { Ok(()) })
     }
+
+    /// The `register_post_type()` and `register_taxonomy()` calls the plugin makes on `init` from data it keeps
+    /// itself (types defined in the database), in their order. Read once per snapshot, before the module loads;
+    /// they are applied before the ones found in PHP sources.
+    fn registrations<'a>(&'a self, _site: &'a Site, _wp_root: &'a std::path::Path) -> BoxFuture<'a, Result<Vec<crate::types::Registration>>> {
+        Box::pin(async { Ok(Vec::new()) })
+    }
 }
 
 /// Runs the activation of the native module of `file`, if there is one.
@@ -76,6 +83,17 @@ pub trait ActivePlugin: Send + Sync {
 
     /// `register_rest_field()`: fields the plugin adds to an object of the REST API, in order.
     fn rest_fields<'a>(&'a self, _object: RestObject<'a>, _ctx: &'a RestFieldContext<'a>) -> BoxFuture<'a, Result<Vec<(String, serde_json::Value)>>> {
+        Box::pin(async { Ok(Vec::new()) })
+    }
+
+    /// The public post statuses the plugin registers (`register_post_status()`): the slug and the translated label.
+    fn post_statuses(&self, _site: &Site) -> Vec<(&'static str, String)> {
+        Vec::new()
+    }
+
+    /// Links a plugin adds to an object of the REST API on `rest_prepare_{$type}` (`WP_REST_Response::add_link()`),
+    /// after the core's.
+    fn rest_links<'a>(&'a self, _object: RestObject<'a>, _ctx: &'a RestFieldContext<'a>) -> BoxFuture<'a, Result<Vec<RestLink>>> {
         Box::pin(async { Ok(Vec::new()) })
     }
 
@@ -417,8 +435,17 @@ pub enum RestObject<'a> {
     Post(&'a Post),
     Term(&'a rustpress_db::Term),
     User(&'a rustpress_db::User),
+    Comment(&'a rustpress_db::Comment),
     /// A post type of `wp/v2/types`.
     PostType(&'a str),
+}
+
+/// A link of a REST response: `rel`, the attributes in their order, `href`.
+#[derive(Debug, Clone)]
+pub struct RestLink {
+    pub rel: String,
+    pub attributes: Vec<(String, serde_json::Value)>,
+    pub href: String,
 }
 
 /// What a plugin sees while it adds fields to the REST API (no main query ran).
@@ -427,6 +454,11 @@ pub struct RestFieldContext<'a> {
     /// The empty query of a REST request.
     pub query: &'a crate::QueryResult,
     pub services: &'a dyn PageServices,
+    /// The route of the request (`/wp/v2/posts/1`), its method (after `_method` and `X-HTTP-Method-Override`) and
+    /// its query string.
+    pub route: &'a str,
+    pub method: &'a str,
+    pub query_string: &'a str,
 }
 
 /// A request as a plugin's own rewrite rules see it.
@@ -1205,6 +1237,19 @@ impl Plugins {
             fields.extend(plugin.rest_fields(object, ctx).await?);
         }
         Ok(fields)
+    }
+
+    /// The public post statuses of the plugins, in the order they register them.
+    pub fn post_statuses(&self, site: &Site) -> Vec<(&'static str, String)> {
+        self.hooks().flat_map(|plugin| plugin.post_statuses(site)).collect()
+    }
+
+    pub async fn rest_links(&self, object: RestObject<'_>, ctx: &RestFieldContext<'_>) -> Result<Vec<RestLink>> {
+        let mut links = Vec::new();
+        for plugin in self.hooks() {
+            links.extend(plugin.rest_links(object, ctx).await?);
+        }
+        Ok(links)
     }
 
     /// Whether a plugin renders the block.

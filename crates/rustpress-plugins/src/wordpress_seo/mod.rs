@@ -297,6 +297,7 @@ impl Loaded {
                 self.object_head(ctx, presentation::Kind::TermArchive, presentation::Object::Term(term.clone())).await?
             }
             RestObject::User(user) => self.object_head(ctx, presentation::Kind::AuthorArchive, presentation::Object::User(user.clone())).await?,
+            RestObject::Comment(_) => return Ok(Vec::new()),
             RestObject::PostType(name) => {
                 if name == "post" {
                     // `Meta_Surface::for_posts_page()`.

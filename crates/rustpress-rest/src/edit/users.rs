@@ -109,6 +109,7 @@ impl Rest<'_> {
         if context != "embed" {
             data.insert("meta".into(), if meta_object.is_empty() { Value::Array(Vec::new()) } else { Value::Object(meta_object) });
         }
+        data.extend(self.plugin_fields(rustpress_core::native::RestObject::User(user)).await?);
         let mut links = Links::new();
         let allow: Vec<Value> = self.user_allow(user.id).into_iter().map(Value::from).collect();
         let mut self_link = Map::new();
@@ -117,6 +118,7 @@ impl Rest<'_> {
         links.push_raw("self", Value::Object(self_link));
         links.add("collection", vec![], self.rest_url("wp/v2/users"));
         data.insert("_links".into(), links.finish());
+        self.add_plugin_links(rustpress_core::native::RestObject::User(user), &mut data).await?;
         Ok(Value::Object(data))
     }
 

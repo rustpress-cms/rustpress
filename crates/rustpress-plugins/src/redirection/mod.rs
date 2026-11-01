@@ -9,7 +9,7 @@
 
 mod item;
 mod options;
-mod php;
+pub(crate) mod php;
 mod regex;
 mod request;
 mod url;

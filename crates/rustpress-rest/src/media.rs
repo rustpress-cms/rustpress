@@ -62,6 +62,10 @@ impl Rest<'_> {
             classes.remove(1);
         }
         data.insert("class_list".into(), Value::from(classes));
+        // The fields of plugins come with the posts controller's part, before the attachment's own.
+        let plugin_fields = self.plugin_fields(rustpress_core::native::RestObject::Post(post)).await?;
+        let plugin_keys: Vec<String> = plugin_fields.iter().map(|(k, _)| k.clone()).collect();
+        data.extend(plugin_fields);
 
         // `description`: the content filters plus `prepend_attachment()`.
         let prefix = rustpress_blocks::content::attachment_prefix(&env, post, metadata.as_ref(), attached_file.as_deref(), &alt).await?;
@@ -87,8 +91,9 @@ impl Rest<'_> {
         }
 
         data.insert("_links".into(), self.media_links(post).await?);
+        self.add_plugin_links(rustpress_core::native::RestObject::Post(post), &mut data).await?;
         if context == "embed" {
-            data.retain(|key, _| EMBED_FIELDS.contains(&key.as_str()));
+            data.retain(|key, _| EMBED_FIELDS.contains(&key.as_str()) || plugin_keys.contains(key));
             if let Some(Value::Object(caption)) = data.get_mut("caption") {
                 caption.retain(|k, _| k == "rendered");
             }

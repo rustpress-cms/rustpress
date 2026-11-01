@@ -417,8 +417,9 @@ impl Db {
     }
 
     /// `redirect_guess_404_permalink()`: the first publicly viewable post whose
-    /// slug starts with `name` (`LIKE 'name%'`), optionally narrowed by type and date.
-    pub async fn guess_post_by_name(&self, name: &str, post_type: Option<&str>, year: Option<u32>, month: Option<u32>, day: Option<u32>) -> Result<Option<u64>> {
+    /// slug starts with `name` (`LIKE 'name%'`), optionally narrowed by type and date. Without a type, the ones in
+    /// `excluded` (not public) are left out as well.
+    pub async fn guess_post_by_name(&self, name: &str, post_type: Option<&str>, excluded: &[&str], year: Option<u32>, month: Option<u32>, day: Option<u32>) -> Result<Option<u64>> {
         let escaped: String = name.chars().flat_map(|c| if matches!(c, '\\' | '%' | '_') { vec!['\\', c] } else { vec![c] }).collect();
         let mut qb = QueryBuilder::<MySql>::new(format!("SELECT ID FROM {} WHERE post_name LIKE ", self.prefix.table("posts")));
         qb.push_bind(format!("{escaped}%"));
@@ -428,6 +429,9 @@ impl Db {
             }
             None => {
                 qb.push(" AND post_type NOT IN ('revision','nav_menu_item','customize_changeset','oembed_cache','user_request') AND post_type NOT LIKE 'wp\\_%'");
+                for t in excluded {
+                    qb.push(" AND post_type <> ").push_bind((*t).to_owned());
+                }
             }
         }
         if let Some(y) = year {
