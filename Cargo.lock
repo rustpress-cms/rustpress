@@ -1766,6 +1766,7 @@ dependencies = [
  "flate2",
  "futures",
  "regex",
+ "rustpress-admin",
  "rustpress-blocks",
  "rustpress-content",
  "rustpress-core",

@@ -418,6 +418,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         bulk_actions: vec![("delete".into(), tr("Delete"))],
         has_items: !page_rows.is_empty(),
         view_mode: super::common::list_mode(ctx).await,
+        float_pages: false,
     };
     if !ctx.can("manage_categories") {
         table.bulk_actions.clear();

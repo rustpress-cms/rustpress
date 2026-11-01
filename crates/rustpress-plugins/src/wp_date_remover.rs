@@ -105,7 +105,7 @@ impl ActivePlugin for Active {
     }
 
     fn admin_pages(&self, _site: &Site) -> Vec<AdminPage> {
-        vec![AdminPage { parent: "options-general.php", slug: "wp-date-remover", page_title: TITLE.into(), menu_title: TITLE.into(), capability: "manage_options" }]
+        vec![AdminPage { parent: "options-general.php", slug: "wp-date-remover", page_title: TITLE.into(), menu_title: TITLE.into(), capability: "manage_options", ..AdminPage::default() }]
     }
 
     fn admin_enqueue(&self, ctx: &AdminContext<'_>, assets: &mut Assets) {

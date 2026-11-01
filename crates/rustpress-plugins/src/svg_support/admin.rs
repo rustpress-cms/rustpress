@@ -25,7 +25,7 @@ fn t(site: &Site, text: &str) -> String {
 
 /// `bodhi_svgs_admin_menu()`.
 pub(super) fn pages(site: &Site) -> Vec<AdminPage> {
-    vec![AdminPage { parent: "options-general.php", slug: SLUG, page_title: t(site, "SVG Support Settings and Usage"), menu_title: t(site, "SVG Support"), capability: "manage_options" }]
+    vec![AdminPage { parent: "options-general.php", slug: SLUG, page_title: t(site, "SVG Support Settings and Usage"), menu_title: t(site, "SVG Support"), capability: "manage_options", ..AdminPage::default() }]
 }
 
 fn plugin_url(site: &Site, path: &str) -> String {

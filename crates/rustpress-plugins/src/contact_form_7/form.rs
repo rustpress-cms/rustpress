@@ -29,6 +29,8 @@ pub struct ContactForm {
     pub additional_settings: String,
     /// `_old_cf7_unit_id`, for the old shortcode `[contact-form 1 "title"]`.
     pub old_unit_id: Option<String>,
+    /// The errors the last configuration check stored (`_config_validation`); read by the administration only.
+    pub config_errors: usize,
 }
 
 impl ContactForm {
@@ -51,6 +53,7 @@ impl ContactForm {
             messages: parsed("messages"),
             additional_settings: prop("additional_settings").unwrap_or_default(),
             old_unit_id: get("_old_cf7_unit_id"),
+            config_errors: 0,
         }
     }
 

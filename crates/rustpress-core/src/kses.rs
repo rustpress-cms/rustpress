@@ -44,6 +44,26 @@ impl Allowed {
         Self { tags: crate::kses_post_table::ALLOWED_POST.iter().map(|(name, attrs)| (*name, attrs.to_vec())).collect(), post: true }
     }
 
+    /// `array_merge( $allowed, $tags )`: the elements of `tags` are added, or replace the ones of the same name.
+    pub fn merged(mut self, tags: &[(&'static str, &[&'static str])]) -> Self {
+        for (name, attrs) in tags {
+            self.tags.insert(name, attrs.to_vec());
+        }
+        self
+    }
+
+    /// Every element also keeps `attrs` (put before its own, as `array_merge( $global, $elm )` does).
+    pub fn with_global(mut self, attrs: &[&'static str]) -> Self {
+        for permitted in self.tags.values_mut() {
+            for attr in attrs {
+                if !permitted.contains(attr) {
+                    permitted.push(attr);
+                }
+            }
+        }
+        self
+    }
+
     /// Whether `name` (lower case) is an attribute the element keeps.
     fn permits(&self, element: &str, name: &str) -> bool {
         let Some(permitted) = self.attributes(element) else { return false };

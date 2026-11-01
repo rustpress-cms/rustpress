@@ -53,6 +53,15 @@ async fn save_recently_activated(ctx: &Ctx<'_>, recent: &[(String, i64)]) {
 
 /// `plugins.php` after (de)activating: deactivated plugins go to the front of `recently_activated`, activated ones
 /// leave it.
+/// `do_action( "activate_{$plugin}" )` of the native modules of the plugins just activated.
+async fn run_activation(ctx: &Ctx<'_>, writer: &rustpress_db::Writer, files: &[String]) {
+    for file in files {
+        if let Err(e) = rustpress_core::native::activate(file, ctx.site(), writer, ctx.user.id, ctx.env.now).await {
+            tracing::error!(plugin = file.as_str(), error = %e, "activating the plugin failed");
+        }
+    }
+}
+
 async fn note_recently_activated(ctx: &Ctx<'_>, deactivated: &[String], activated: &[String]) {
     let mut recent: Vec<(String, i64)> = deactivated.iter().map(|file| (file.clone(), ctx.env.now)).collect();
     recent.extend(recently_activated(ctx).await.into_iter().filter(|(file, _)| !deactivated.contains(file) && !activated.contains(file)));
@@ -211,12 +220,16 @@ async fn actions(ctx: &Ctx<'_>, action: &str, installed: &[PluginInfo], active: 
                 return Some(expired());
             }
             let Some(writer) = ctx.env.writer else { return Some(super::common::read_only(ctx)) };
-            if action == "activate" && is_installed(&file) && !active.contains(&file) {
+            let newly = action == "activate" && is_installed(&file) && !active.contains(&file);
+            if newly {
                 active.push(file.clone());
             } else if action == "deactivate" {
                 active.retain(|p| p != &file);
             }
             writer.update_option("active_plugins", &serialize_list(active)).await.or_log();
+            if newly {
+                run_activation(ctx, writer, std::slice::from_ref(&file)).await;
+            }
             if action == "activate" {
                 note_recently_activated(ctx, &[], std::slice::from_ref(&file)).await;
             } else {
@@ -243,6 +256,7 @@ async fn actions(ctx: &Ctx<'_>, action: &str, installed: &[PluginInfo], active: 
             }
             writer.update_option("active_plugins", &serialize_list(active)).await.or_log();
             if action == "activate-selected" {
+                run_activation(ctx, writer, &selected).await;
                 note_recently_activated(ctx, &[], &selected).await;
             } else {
                 note_recently_activated(ctx, &selected, &[]).await;
@@ -367,6 +381,7 @@ pub(super) async fn activate_one(ctx: &Ctx<'_>, file: &str) -> Result<(), String
         active.push(file.to_owned());
         let Some(writer) = ctx.env.writer else { return Err(ctx.tr("The site is read only.")) };
         writer.update_option("active_plugins", &serialize_list(&active)).await.map_err(|e| e.to_string())?;
+        run_activation(ctx, writer, &[file.to_owned()]).await;
     }
     Ok(())
 }

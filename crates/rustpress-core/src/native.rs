@@ -25,6 +25,19 @@ pub trait NativePlugin: Send + Sync {
     fn text_domain(&self) -> Option<&'static str> {
         None
     }
+
+    /// `activate_{$plugin}`: what the plugin sets up when `user` activates it (its options, first content).
+    fn activate<'a>(&'a self, _site: &'a Site, _writer: &'a rustpress_db::Writer, _user: u64, _now: i64) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async { Ok(()) })
+    }
+}
+
+/// Runs the activation of the native module of `file`, if there is one.
+pub async fn activate(file: &str, site: &Site, writer: &rustpress_db::Writer, user: u64, now: i64) -> Result<()> {
+    match registered().iter().find(|p| p.file() == file) {
+        Some(plugin) => plugin.activate(site, writer, user, now).await,
+        None => Ok(()),
+    }
 }
 
 /// A loaded plugin.
@@ -52,6 +65,12 @@ pub trait ActivePlugin: Send + Sync {
     /// `admin_menu`: the pages the plugin adds to the menu of the administration.
     fn admin_pages(&self, _site: &Site) -> Vec<AdminPage> {
         Vec::new()
+    }
+
+    /// `load-{$page_hook}` of a page the plugin added: what happens before the page is printed (an action that
+    /// redirects, or stops with an error). `None` prints the page.
+    fn admin_page_load<'a>(&'a self, _slug: &'a str, _ctx: &'a AdminContext<'a>) -> BoxFuture<'a, Result<Option<PageLoad>>> {
+        Box::pin(async { Ok(None) })
     }
 
     /// `admin_enqueue_scripts`: styles and scripts of the administration.
@@ -287,6 +306,15 @@ pub struct Uploader<'a> {
     pub media_form_nonce: bool,
 }
 
+/// The end of a `load-{$page_hook}` callback that does not print the page.
+#[derive(Debug, Clone, PartialEq)]
+pub enum PageLoad {
+    /// `wp_safe_redirect( $location ); exit();`
+    Redirect(String),
+    /// `wp_die( $message, $title, $status )`; the message is HTML.
+    Die { status: u16, title: String, message: String },
+}
+
 /// What a plugin answers to `admin-ajax.php`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AjaxAnswer {
@@ -381,20 +409,30 @@ pub fn form_value(form: &[(String, String)], name: &str) -> Option<rustpress_php
     result
 }
 
-/// A page a plugin adds to the menu of the administration (`add_submenu_page()` and shortcuts such as
-/// `add_options_page()`).
-#[derive(Debug, Clone, PartialEq)]
+/// A page a plugin adds to the menu of the administration: `add_menu_page()` (no parent), `add_submenu_page()` and
+/// shortcuts such as `add_options_page()`.
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct AdminPage {
-    /// The file of the parent menu (`options-general.php`).
+    /// The file of the parent menu (`options-general.php`), the slug of a plugin's own menu, or empty for an entry of
+    /// the main menu.
     pub parent: &'static str,
     /// `$menu_slug`, the `page` argument of the address.
     pub slug: &'static str,
     pub page_title: String,
     pub menu_title: String,
     pub capability: &'static str,
+    /// The icon of an entry of the main menu (`dashicons-email`).
+    pub icon: &'static str,
+    /// `$position` in the main menu; without one the entry comes last.
+    pub position: Option<u32>,
 }
 
 impl AdminPage {
+    /// An entry of the main menu (`add_menu_page()`).
+    pub fn is_top_level(&self) -> bool {
+        self.parent.is_empty()
+    }
+
     /// `get_plugin_page_hookname()`: `settings_page_<slug>` below Settings.
     pub fn hook_suffix(&self) -> String {
         let parent = match self.parent {
@@ -419,6 +457,10 @@ pub struct AdminContext<'a> {
     pub site: &'a Site,
     /// Present when writing is allowed.
     pub writer: Option<&'a rustpress_db::Writer>,
+    /// The signed-in user (`get_current_user_id()`).
+    pub user: u64,
+    /// `time()`.
+    pub now: i64,
     /// `$hook_suffix` of the screen (`settings_page_svg-support`, `plugins.php`).
     pub hook_suffix: &'a str,
     pub post: bool,
@@ -606,6 +648,18 @@ impl Plugins {
     /// The pages the plugins add to the menu of the administration, in the order they add them.
     pub fn admin_pages(&self, site: &Site) -> Vec<AdminPage> {
         self.hooks().flat_map(|plugin| plugin.admin_pages(site)).collect()
+    }
+
+    /// `get_plugin_page_hookname()`: `toplevel_page_<slug>` for an entry of the main menu, `<menu title>_page_<slug>`
+    /// below a plugin's own menu, `settings_page_<slug>` and the like below the core's menus.
+    pub fn page_hook(&self, site: &Site, page: &AdminPage) -> String {
+        if page.is_top_level() {
+            return format!("toplevel_page_{}", page.slug);
+        }
+        match self.admin_pages(site).into_iter().find(|p| p.is_top_level() && p.slug == page.parent) {
+            Some(top) => format!("{}_page_{}", crate::slug::sanitize_title(&top.menu_title), page.slug),
+            None => page.hook_suffix(),
+        }
     }
 
     /// The plugin that added the page `slug` below `parent`, with the page.

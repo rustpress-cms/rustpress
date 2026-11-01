@@ -435,6 +435,16 @@ impl HtmlFormatter {
         self.output = EMPTY_P.replace(&self.output, "").into_owned();
     }
 
+    /// `append_preformatted()`: text as it is.
+    pub fn append_preformatted(&mut self, content: &str) {
+        self.output.push_str(content);
+    }
+
+    /// `call_user_func()`: what a callback printed, on lines of its own.
+    pub fn append_printed(&mut self, printed: &str) {
+        self.output.push_str(&format!("\n{printed}\n"));
+    }
+
     /// `output()`: closes what is still open and hands out the result.
     pub fn output(&mut self) -> String {
         while !self.stacked.is_empty() {

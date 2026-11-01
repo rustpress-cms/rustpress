@@ -2,10 +2,12 @@
 //! `wpcf7_contact_form`, printed by the shortcode `[contact-form-7]` (also inside the block
 //! `contact-form-7/contact-form-selector`) and sent through the plugin's REST API.
 
+pub mod admin;
 pub mod controls;
 pub mod form;
 pub mod form_tag;
 pub mod formatter;
+pub mod install;
 pub mod mail;
 pub mod posted;
 mod rest;
@@ -13,7 +15,7 @@ pub mod submission;
 pub mod swv;
 
 use futures::future::BoxFuture;
-use rustpress_core::native::{ActivePlugin, Assets, NativePlugin, RestAnswer, RestRequest, ShortcodeContext};
+use rustpress_core::native::{ActivePlugin, AdminContext, AdminHelp, AdminPage, Assets, NativePlugin, RestAnswer, RestRequest, ShortcodeContext};
 use rustpress_core::shortcodes::Atts;
 use rustpress_core::{Result, Site};
 use rustpress_db::{Order, OrderBy, PostQuery};
@@ -39,6 +41,10 @@ impl NativePlugin for ContactForm7 {
 
     fn text_domain(&self) -> Option<&'static str> {
         Some(DOMAIN)
+    }
+
+    fn activate<'a>(&'a self, site: &'a Site, writer: &'a rustpress_db::Writer, user: u64, now: i64) -> BoxFuture<'a, Result<()>> {
+        Box::pin(install::install(site, writer, user, now))
     }
 
     fn load<'a>(&'a self, site: &'a Site) -> BoxFuture<'a, Result<Box<dyn ActivePlugin>>> {
@@ -265,6 +271,34 @@ impl ActivePlugin for Loaded {
 
     fn shortcode<'a>(&'a self, tag: &'a str, atts: &'a Atts, _content: Option<&'a str>, ctx: &'a ShortcodeContext<'a>) -> BoxFuture<'a, Result<String>> {
         Box::pin(self.shortcode_html(tag, atts, ctx))
+    }
+
+    fn admin_pages(&self, site: &Site) -> Vec<AdminPage> {
+        admin::pages(site)
+    }
+
+    fn admin_page<'a>(&'a self, slug: &'a str, ctx: &'a AdminContext<'a>) -> BoxFuture<'a, Result<String>> {
+        Box::pin(async move {
+            match slug {
+                "wpcf7" => admin::list_page(ctx).await,
+                _ => Ok(String::new()),
+            }
+        })
+    }
+
+    fn admin_page_load<'a>(&'a self, slug: &'a str, ctx: &'a AdminContext<'a>) -> BoxFuture<'a, Result<Option<rustpress_core::native::PageLoad>>> {
+        Box::pin(async move { if slug == "wpcf7" { admin::load(ctx).await } else { Ok(None) } })
+    }
+
+    /// `wpcf7_plugin_action_links()`: "Settings" leads to the dashboard of the plugin.
+    fn plugin_action_links(&self, site: &Site, links: Vec<String>) -> Vec<String> {
+        let mut all = vec![format!("<a href=\"{}\">{}</a>", rustpress_core::formatting::esc_url(&site.site_url("wp-admin/admin.php?page=wpcf7-dashboard")), rustpress_core::formatting::esc_html(&site.trd(DOMAIN, "Settings")))];
+        all.extend(links);
+        all
+    }
+
+    fn admin_page_help(&self, slug: &str, site: &Site) -> AdminHelp {
+        admin::help(site, slug)
     }
 
     fn rest_index(&self) -> &'static str {

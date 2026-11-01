@@ -212,6 +212,8 @@ impl Ctx<'_> {
         AdminContext {
             site: self.env.site,
             writer: self.env.writer,
+            user: self.user.id,
+            now: self.env.now,
             hook_suffix,
             post: self.request.post,
             request_uri: &self.request.request_uri,
@@ -523,9 +525,22 @@ pub struct PluginParts {
 
 /// A page a plugin added to the menu (`admin.php?page=` or `<parent>?page=`): the plugin's output in the frame.
 async fn plugin_page(ctx: &Ctx<'_>, plugin: &dyn ActivePlugin, page: &AdminPage) -> AdminResponse {
-    let hook = page.hook_suffix();
+    let hook = ctx.site().plugins.page_hook(ctx.site(), page);
+    // A page of a plugin's own menu is `admin.php`, its parent the slug of that menu.
+    let own_menu = page.is_top_level() || ctx.site().plugins.admin_pages(ctx.site()).iter().any(|p| p.is_top_level() && p.slug == page.parent);
+    let (file, parent_file) = match (page.is_top_level(), own_menu) {
+        (true, _) => ("admin.php", page.slug),
+        (false, true) => ("admin.php", page.parent),
+        (false, false) => (page.parent, page.parent),
+    };
     let parts = ctx.plugin_parts();
     let plugin_ctx = ctx.plugin_context(&parts, &hook);
+    match plugin.admin_page_load(page.slug, &plugin_ctx).await {
+        Ok(Some(rustpress_core::native::PageLoad::Redirect(location))) => return redirect(&location),
+        Ok(Some(rustpress_core::native::PageLoad::Die { status, title, message })) => return die(ctx.env, status, &title, &message),
+        Ok(None) => {}
+        Err(e) => tracing::error!(page = page.slug, error = %e, "loading the plugin page failed"),
+    }
     let content = plugin.admin_page(page.slug, &plugin_ctx).await.unwrap_or_else(|e| {
         tracing::error!(page = page.slug, error = %e, "plugin page failed");
         String::new()
@@ -533,8 +548,8 @@ async fn plugin_page(ctx: &Ctx<'_>, plugin: &dyn ActivePlugin, page: &AdminPage)
     let plugin_help = ctx.site().plugins.admin_page_help(ctx.site(), page.slug);
     let help = chrome::Help { tabs: plugin_help.tabs.into_iter().map(|t| chrome::HelpTab { id: t.id, title: t.title, content: t.content }).collect(), sidebar: plugin_help.sidebar };
     let screen = Screen {
-        file: page.parent.to_owned(),
-        parent_file: page.parent.to_owned(),
+        file: file.to_owned(),
+        parent_file: parent_file.to_owned(),
         submenu_file: Some(page.slug.to_owned()),
         title: page.page_title.clone(),
         help: Some(help),
