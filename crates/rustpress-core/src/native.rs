@@ -68,6 +68,58 @@ pub trait ActivePlugin: Send + Sync {
         Box::pin(async { Ok(None) })
     }
 
+    /// A request the plugin answers itself before the main query (its own rewrite rules at the top, handled on
+    /// `pre_get_posts` or `parse_request`): a sitemap, a stylesheet, a redirect, or a 404 page.
+    fn serve<'a>(&'a self, _site: &'a Site, _request: &'a ServeRequest<'a>) -> BoxFuture<'a, Result<Option<Serve>>> {
+        Box::pin(async { Ok(None) })
+    }
+
+    /// `register_rest_field()`: fields the plugin adds to an object of the REST API, in order.
+    fn rest_fields<'a>(&'a self, _object: RestObject<'a>, _ctx: &'a RestFieldContext<'a>) -> BoxFuture<'a, Result<Vec<(String, serde_json::Value)>>> {
+        Box::pin(async { Ok(Vec::new()) })
+    }
+
+    /// What the plugin changes in a feed: the `get_bloginfo_rss( 'url' )` filter and the headers it sends on
+    /// `do_feed_*`.
+    fn feed<'a>(&'a self, _ctx: &'a FeedContext<'a>) -> BoxFuture<'a, Result<Option<FeedChanges>>> {
+        Box::pin(async { Ok(None) })
+    }
+
+    /// The `the_content_feed` (`excerpt` false) and `the_excerpt_rss` filters of an item of a feed.
+    fn feed_item<'a>(&'a self, _site: &'a Site, _post: &'a Post, _excerpt: bool, text: String) -> BoxFuture<'a, Result<String>> {
+        Box::pin(async move { Ok(text) })
+    }
+
+    /// `pre_handle_404`: the feed is answered with the 404 page instead.
+    fn feed_not_found(&self, _query: &crate::QueryResult) -> bool {
+        false
+    }
+
+    /// Dynamic blocks of the plugin (`register_block_type()` with a `render_callback`).
+    fn block_names(&self) -> &'static [&'static str] {
+        &[]
+    }
+
+    /// The `render_callback` of one of [ActivePlugin::block_names].
+    fn render_block<'a>(&'a self, _name: &'a str, _attrs: &'a serde_json::Map<String, serde_json::Value>, _ctx: &'a BlockContext<'a>) -> BoxFuture<'a, Result<String>> {
+        Box::pin(async { Ok(String::new()) })
+    }
+
+    /// The `robots_txt` filter: the text of `robots.txt`.
+    fn robots_txt(&self, _site: &Site, text: String) -> String {
+        text
+    }
+
+    /// Headers the plugin sends with `robots.txt` (`template_redirect` while `is_robots()`).
+    fn robots_txt_headers(&self) -> &'static [(&'static str, &'static str)] {
+        &[]
+    }
+
+    /// The `wp_sitemaps_enabled` filter returns `false`: the plugin replaces the sitemaps of WordPress.
+    fn disables_core_sitemaps(&self) -> bool {
+        false
+    }
+
     /// `template_redirect`: a redirect instead of the page (before `redirect_canonical()`).
     fn template_redirect<'a>(&'a self, _site: &'a Site, _query: &'a crate::QueryResult) -> BoxFuture<'a, Result<Option<Redirect>>> {
         Box::pin(async { Ok(None) })
@@ -306,6 +358,81 @@ pub trait Mailer: Send + Sync {
     fn send<'a>(&'a self, email: &'a Email) -> BoxFuture<'a, bool>;
 }
 
+/// What a plugin's block sees of the page it is rendered on.
+pub struct BlockContext<'a> {
+    pub site: &'a Site,
+    pub query: &'a crate::QueryResult,
+    pub services: &'a dyn PageServices,
+    /// `get_the_ID()`: the post whose content is rendered.
+    pub post: Option<&'a Post>,
+    /// `wp_is_serving_rest_request()`.
+    pub rest: bool,
+}
+
+/// A feed a plugin may change.
+pub struct FeedContext<'a> {
+    pub site: &'a Site,
+    pub query: &'a crate::QueryResult,
+    pub services: &'a dyn PageServices,
+    /// `rss2`, `rss`, `atom` or `rdf`.
+    pub kind: &'a str,
+    /// A feed of comments.
+    pub comments: bool,
+}
+
+/// What a plugin changes in a feed.
+#[derive(Debug, Default)]
+pub struct FeedChanges {
+    /// `get_bloginfo_rss( 'url' )`.
+    pub url: Option<String>,
+    /// Headers added to the feed.
+    pub headers: Vec<(String, String)>,
+}
+
+/// An object of the REST API a plugin may add fields to.
+#[derive(Clone, Copy)]
+pub enum RestObject<'a> {
+    Post(&'a Post),
+    Term(&'a rustpress_db::Term),
+    User(&'a rustpress_db::User),
+    /// A post type of `wp/v2/types`.
+    PostType(&'a str),
+}
+
+/// What a plugin sees while it adds fields to the REST API (no main query ran).
+pub struct RestFieldContext<'a> {
+    pub site: &'a Site,
+    /// The empty query of a REST request.
+    pub query: &'a crate::QueryResult,
+    pub services: &'a dyn PageServices,
+}
+
+/// A request as a plugin's own rewrite rules see it.
+pub struct ServeRequest<'a> {
+    /// The path below the site's home, without the leading slash (`sitemap_index.xml`).
+    pub path: &'a str,
+    /// The raw query string.
+    pub query: &'a str,
+    /// `ABSPATH`.
+    pub wp_root: &'a std::path::Path,
+}
+
+/// What a plugin answers to a request it serves.
+#[derive(Debug)]
+pub enum Serve {
+    Response(PluginResponse),
+    /// The theme's 404 page (`$wp_query->set_404()`).
+    NotFound,
+}
+
+/// A complete answer of a plugin.
+#[derive(Debug, Default)]
+pub struct PluginResponse {
+    pub status: u16,
+    pub headers: Vec<(String, String)>,
+    pub body: String,
+}
+
 /// A redirect of a plugin (`wp_safe_redirect( $location, $status, $x_redirect_by )`).
 #[derive(Debug, Clone)]
 pub struct Redirect {
@@ -385,6 +512,7 @@ pub struct ShortcodeContext<'a> {
     pub loop_post: Option<u64>,
     /// What the plugins keep for the rest of the request (their `static` variables).
     pub state: &'a std::sync::Mutex<PluginState>,
+    pub services: &'a dyn PageServices,
 }
 
 /// Per-request state of the plugins: counters and lists by a name the plugin picks.
@@ -949,6 +1077,78 @@ impl Plugins {
             }
         }
         Ok(None)
+    }
+
+    /// The first plugin that answers the request itself.
+    pub async fn serve(&self, site: &Site, request: &ServeRequest<'_>) -> Result<Option<Serve>> {
+        for plugin in self.hooks() {
+            if let Some(answer) = plugin.serve(site, request).await? {
+                return Ok(Some(answer));
+            }
+        }
+        Ok(None)
+    }
+
+    /// The fields the plugins add to an object of the REST API.
+    pub async fn rest_fields(&self, object: RestObject<'_>, ctx: &RestFieldContext<'_>) -> Result<Vec<(String, serde_json::Value)>> {
+        let mut fields = Vec::new();
+        for plugin in self.hooks() {
+            fields.extend(plugin.rest_fields(object, ctx).await?);
+        }
+        Ok(fields)
+    }
+
+    /// Whether a plugin renders the block.
+    pub fn renders_block(&self, name: &str) -> bool {
+        self.hooks().any(|p| p.block_names().contains(&name))
+    }
+
+    /// The output of a plugin's block.
+    pub async fn render_block(&self, name: &str, attrs: &serde_json::Map<String, serde_json::Value>, ctx: &BlockContext<'_>) -> Result<String> {
+        match self.hooks().find(|p| p.block_names().contains(&name)) {
+            Some(plugin) => plugin.render_block(name, attrs, ctx).await,
+            None => Ok(String::new()),
+        }
+    }
+
+    /// What the plugins change in a feed (the last URL wins, headers add up).
+    pub async fn feed(&self, ctx: &FeedContext<'_>) -> Result<FeedChanges> {
+        let mut all = FeedChanges::default();
+        for plugin in self.hooks() {
+            if let Some(changes) = plugin.feed(ctx).await? {
+                all.url = changes.url.or(all.url);
+                all.headers.extend(changes.headers);
+            }
+        }
+        Ok(all)
+    }
+
+    /// An item of a feed after the plugins' filters.
+    pub async fn feed_item(&self, site: &Site, post: &Post, excerpt: bool, mut text: String) -> Result<String> {
+        for plugin in self.hooks() {
+            text = plugin.feed_item(site, post, excerpt, text).await?;
+        }
+        Ok(text)
+    }
+
+    /// Whether a plugin turns the feed into a 404 page.
+    pub fn feed_not_found(&self, query: &crate::QueryResult) -> bool {
+        self.hooks().any(|p| p.feed_not_found(query))
+    }
+
+    /// `robots.txt` after the plugins' `robots_txt` filters.
+    pub fn robots_txt(&self, site: &Site, text: String) -> String {
+        self.hooks().fold(text, |text, plugin| plugin.robots_txt(site, text))
+    }
+
+    /// The headers the plugins add to `robots.txt`.
+    pub fn robots_txt_headers(&self) -> Vec<(&'static str, &'static str)> {
+        self.hooks().flat_map(|p| p.robots_txt_headers().iter().copied()).collect()
+    }
+
+    /// Whether a plugin turns the sitemaps of WordPress off.
+    pub fn disables_core_sitemaps(&self) -> bool {
+        self.hooks().any(|p| p.disables_core_sitemaps())
     }
 
     /// Whether a plugin fires `the_post` for the global post on `wp_head` ([ActivePlugin::resets_query_in_head]).

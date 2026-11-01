@@ -396,7 +396,24 @@ async fn page(app: &App, uri: &axum::http::Uri, request_headers: &axum::http::He
         None => None,
     };
     let before_query = started.elapsed();
+    // Plugins answer requests of their own rewrite rules before the main query runs.
+    let home_path = loaded.site.settings.home_path();
+    let relative = path.strip_prefix(home_path.as_str()).unwrap_or(path).trim_start_matches('/');
+    let served = if path.ends_with(".php") && path != "/index.php" { None } else { loaded.site.plugins.serve(&loaded.site, &rustpress_core::native::ServeRequest { path: relative, query, wp_root: &loaded.theme.wp_root }).await? };
+    if let Some(rustpress_core::native::Serve::Response(answer)) = served {
+        let mut response = Response::new(Body::from(answer.body));
+        *response.status_mut() = StatusCode::from_u16(answer.status).unwrap_or(StatusCode::OK);
+        for (name, value) in &answer.headers {
+            if let (Ok(name), Ok(value)) = (header::HeaderName::from_bytes(name.as_bytes()), HeaderValue::from_str(value)) {
+                response.headers_mut().append(name, value);
+            }
+        }
+        return Ok(response);
+    }
     let mut result = loaded.site.query_as(path, query, viewer.as_ref()).await?;
+    if matches!(served, Some(rustpress_core::native::Serve::NotFound)) {
+        result = result.into_404();
+    }
     let query_done = started.elapsed();
     result.http_host = request_headers.get(header::HOST).and_then(|v| v.to_str().ok()).map(str::to_owned);
     // Physical PHP endpoints (wp-login.php, xmlrpc.php, ...) do not exist here; they get the
@@ -444,6 +461,14 @@ async fn page(app: &App, uri: &axum::http::Uri, request_headers: &axum::http::He
         }
         return Ok(response);
     }
+    // `pre_handle_404` of a plugin: an empty feed of an archive becomes the 404 page.
+    let result = if result.flags.is_feed && loaded.site.plugins.feed_not_found(&result) {
+        let mut not_found = result.into_404();
+        not_found.flags.is_feed = false;
+        not_found
+    } else {
+        result
+    };
     if result.flags.is_feed {
         let request_uri = uri.path_and_query().map_or(path, |p| p.as_str());
         let feed = rustpress_db::Db::with_term_cache(async {
@@ -456,11 +481,15 @@ async fn page(app: &App, uri: &axum::http::Uri, request_headers: &axum::http::He
         };
         let mut response = feed_response(&feed, request_headers);
         singular_headers(&mut response, &result, &loaded);
-        return Ok(with_api_link(response, &loaded));
+        return Ok(with_api_link(response, &loaded, &result));
     }
     let mut result = result;
     if result.flags.is_robots {
-        return Ok(with_api_link(typed(StatusCode::OK, "text/plain; charset=utf-8", loaded.site.robots_txt()), &loaded));
+        let mut response = typed(StatusCode::OK, "text/plain; charset=utf-8", loaded.site.robots_txt());
+        for (name, value) in loaded.site.plugins.robots_txt_headers() {
+            response.headers_mut().insert(name, HeaderValue::from_static(value));
+        }
+        return Ok(with_api_link(response, &loaded, &result));
     }
     if result.flags.is_favicon {
         let icon = match site_icon_url(&loaded.site, 32).await {
@@ -470,7 +499,7 @@ async fn page(app: &App, uri: &axum::http::Uri, request_headers: &axum::http::He
         let mut response = redirect(&icon);
         *response.status_mut() = StatusCode::FOUND;
         response.headers_mut().insert(header::CONTENT_TYPE, HeaderValue::from_static("text/html; charset=UTF-8"));
-        return Ok(with_api_link(response, &loaded));
+        return Ok(with_api_link(response, &loaded, &result));
     }
     if result.flags.is_sitemap {
         match loaded.site.sitemap(&result).await? {
@@ -488,7 +517,7 @@ async fn page(app: &App, uri: &axum::http::Uri, request_headers: &axum::http::He
         *response.status_mut() = StatusCode::FOUND;
         response.headers_mut().insert(header::CONTENT_TYPE, HeaderValue::from_static("text/html; charset=UTF-8"));
         singular_headers(&mut response, &result, &loaded);
-        return Ok(with_api_link(response, &loaded));
+        return Ok(with_api_link(response, &loaded, &result));
     }
     // The terms of the posts of the main query are read once (`update_object_term_cache()`).
     let document = rustpress_db::Db::with_term_cache(async {
@@ -507,7 +536,7 @@ async fn page(app: &App, uri: &axum::http::Uri, request_headers: &axum::http::He
         response.headers_mut().insert("x-wp-embed", HeaderValue::from_static("true"));
     }
     singular_headers(&mut response, &result, &loaded);
-    Ok(with_api_link(response, &loaded))
+    Ok(with_api_link(response, &loaded, &result))
 }
 
 /// `WP::send_headers()` for single posts: pingback discovery and no caching of protected posts.
@@ -527,13 +556,25 @@ fn singular_headers(response: &mut Response<Body>, result: &rustpress_core::Quer
 }
 
 /// `rest_output_link_header()`: front-end responses point to the REST API root.
-fn with_api_link(mut response: Response<Body>, loaded: &Loaded) -> Response<Body> {
+fn with_api_link(mut response: Response<Body>, loaded: &Loaded, result: &rustpress_core::QueryResult) -> Response<Body> {
     if response.status() == StatusCode::NOT_MODIFIED {
         return response;
     }
-    let link = Rest::new(&loaded.site, &loaded.theme, &loaded.registry).root_link();
-    if let Ok(value) = HeaderValue::from_str(&link) {
-        response.headers_mut().insert(header::LINK, value);
+    let site = &loaded.site;
+    // `rest_output_link_header()` and `wp_shortlink_header()` run on `template_redirect`, before the links of the
+    // feed or the plugins.
+    let mut links = vec![Rest::new(site, &loaded.theme, &loaded.registry).root_link()];
+    if let Some(route) = rustpress_theme::head::queried_rest_route(result) {
+        links.push(format!("<{}>; rel=\"alternate\"; title=\"JSON\"; type=\"application/json\"", rustpress_core::formatting::esc_url_raw(&site.rest_url(&route))));
+    }
+    if let Some(shortlink) = rustpress_theme::head::shortlink(site, result) {
+        links.push(format!("<{shortlink}>; rel=shortlink"));
+    }
+    let others: Vec<HeaderValue> = response.headers().get_all(header::LINK).iter().cloned().collect();
+    let headers = response.headers_mut();
+    headers.remove(header::LINK);
+    for link in links.iter().filter_map(|l| HeaderValue::from_str(l).ok()).chain(others) {
+        headers.append(header::LINK, link);
     }
     response
 }
@@ -753,6 +794,11 @@ fn feed_response(feed: &Feed, request: &axum::http::HeaderMap) -> Response<Body>
     }
     if feed.nocache {
         no_cache(headers);
+    }
+    for (name, value) in &feed.headers {
+        if let (Ok(name), Ok(value)) = (header::HeaderName::from_bytes(name.as_bytes()), HeaderValue::from_str(value)) {
+            headers.append(name, value);
+        }
     }
     response
 }

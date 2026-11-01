@@ -452,15 +452,15 @@ pub(crate) async fn discovery_links(site: &Site, q: &QueryResult, version: &str,
     out.push_str(&format!("<link rel=\"EditURI\" type=\"application/rsd+xml\" title=\"RSD\" href=\"{}\" />\n", esc_url(&site.site_url("xmlrpc.php?rsd"))));
     out.push_str(&format!("<meta name=\"generator\" content=\"WordPress {version}\" />\n"));
     if q.flags.is_singular()
-        && let Queried::Post(post) = &q.queried {
+        && let Queried::Post(_) = &q.queried {
             if rel_canonical && let Some(canonical) = canonical_url(site, q, cpage_override).await? {
                 out.push_str(&format!("<link rel=\"canonical\" href=\"{}\" />
 ", esc_url(&canonical)));
             }
-            let settings = &site.settings;
-            let shortlink = if post.post_type == "page" && settings.show_on_front == rustpress_core::settings::ShowOnFront::Page && settings.page_on_front == post.id { site.home_url("/") } else { site.home_url(&format!("?p={}", post.id)) };
-            out.push_str(&format!("<link rel='shortlink' href='{}' />
+            if let Some(shortlink) = crate::head::shortlink(site, q) {
+                out.push_str(&format!("<link rel='shortlink' href='{}' />
 ", esc_url(&shortlink)));
+            }
         }
     Ok(out)
 }

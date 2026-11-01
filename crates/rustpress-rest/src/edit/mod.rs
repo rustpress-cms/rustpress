@@ -285,8 +285,8 @@ impl Rest<'_> {
             ["wp", "v2", "users", id] if get && self.access.is_some() && id.parse::<u64>().is_ok() => self.users_get(id, &args).await.map(Some),
             ["wp", "v2", "plugins", ..] => self.plugins_route(&segments, &method, &args).await.map(Some),
             ["wp", "v2", "settings"] => self.settings(&method, &args).await.map(Some),
-            ["wp", "v2", "types"] if get && self.access.is_some() => Ok(Some(self.types_list_edit(&args))),
-            ["wp", "v2", "types", name] if get && self.access.is_some() => Ok(Some(self.type_get_edit(name, &args))),
+            ["wp", "v2", "types"] if get && self.access.is_some() => Ok(Some(self.types_list_edit(&args).await?)),
+            ["wp", "v2", "types", name] if get && self.access.is_some() => Ok(Some(self.type_get_edit(name, &args).await?)),
             ["wp", "v2", "taxonomies"] if get && self.access.is_some() => Ok(Some(self.taxonomies_list_edit(&args))),
             ["wp", "v2", "taxonomies", name] if get && self.access.is_some() => Ok(Some(self.taxonomy_get_edit(name, &args))),
             ["wp", "v2", base @ ("posts" | "pages")] | ["wp", "v2", base @ ("posts" | "pages"), _] if !get || edit_read || params.get("status").is_some() || self.access.is_some() => {

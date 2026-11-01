@@ -137,7 +137,7 @@ impl Rest<'_> {
         all
     }
 
-    pub(crate) fn prepare_type(&self, entry: &TypeEntry, context: &str) -> Value {
+    pub(crate) async fn prepare_type(&self, entry: &TypeEntry, context: &str) -> Result<Value> {
         let mut data = Map::new();
         data.insert("description".into(), Value::from(entry.description.clone()));
         data.insert("hierarchical".into(), Value::Bool(entry.hierarchical));
@@ -150,42 +150,58 @@ impl Rest<'_> {
         data.insert("rest_namespace".into(), Value::from(NAMESPACE));
         data.insert("template".into(), Value::Array(Vec::new()));
         data.insert("template_lock".into(), Value::Bool(false));
+        let plugin_fields = self.plugin_fields(rustpress_core::native::RestObject::PostType(&entry.name)).await?;
+        let plugin_keys: Vec<String> = plugin_fields.iter().map(|(k, _)| k.clone()).collect();
+        data.extend(plugin_fields);
         let mut links = Links::new();
         links.add("collection", vec![], self.rest_url("wp/v2/types"));
         links.add("wp:items", vec![], self.rest_url(&format!("wp/v2/{}", entry.rest_base)));
         data.insert("_links".into(), links.finish());
         if context == "embed" {
-            embed_only(&mut data, &["name", "slug", "icon", "rest_base", "rest_namespace", "template", "template_lock", "_links"]);
+            let mut keep: Vec<&str> = vec!["name", "slug", "icon", "rest_base", "rest_namespace", "template", "template_lock", "_links"];
+            keep.extend(plugin_keys.iter().map(String::as_str));
+            embed_only(&mut data, &keep);
         }
-        Value::Object(data)
+        Ok(Value::Object(data))
     }
 
-    pub(crate) fn types_collection(&self, params: &Params) -> Outcome {
+    pub(crate) async fn types_collection(&self, params: &Params) -> Result<Outcome> {
         if params.get("context") == Some("edit") {
-            return Err(RestError::new("rest_cannot_view", "Sorry, you are not allowed to edit posts in this post type.", 401));
+            return Ok(Err(RestError::new("rest_cannot_view", "Sorry, you are not allowed to edit posts in this post type.", 401)));
         }
         let context = params.get("context").unwrap_or("view");
         let mut data = Map::new();
         for entry in self.type_entries() {
-            data.insert(entry.name.clone(), self.prepare_type(&entry, context));
+            data.insert(entry.name.clone(), self.prepare_type(&entry, context).await?);
         }
-        Ok(Resp::item(Value::Object(data)))
+        Ok(Ok(Resp::item(Value::Object(data))))
     }
 
-    pub(crate) fn types_item(&self, name: &str, params: &Params) -> Outcome {
+    pub(crate) async fn types_item(&self, name: &str, params: &Params) -> Result<Outcome> {
         let entry = self.type_entries().into_iter().find(|e| e.name == name);
         let Some(entry) = entry else {
             let exists = HIDDEN_POST_TYPES.contains(&name) || self.site.types.post_type(name).is_some() || self.site.types.hidden_post_types.iter().any(|t| t == name);
-            return Err(if exists {
+            return Ok(Err(if exists {
                 RestError::new("rest_cannot_read_type", "Cannot view post type.", 401).after_permission_check()
             } else {
                 RestError::new("rest_type_invalid", "Invalid post type.", 404).after_permission_check()
-            });
+            }));
         };
         if params.get("context") == Some("edit") {
-            return Err(RestError::new("rest_forbidden_context", "Sorry, you are not allowed to edit posts in this post type.", 401).after_permission_check());
+            return Ok(Err(RestError::new("rest_forbidden_context", "Sorry, you are not allowed to edit posts in this post type.", 401).after_permission_check()));
         }
-        Ok(Resp::item(self.prepare_type(&entry, params.get("context").unwrap_or("view"))))
+        Ok(Ok(Resp::item(self.prepare_type(&entry, params.get("context").unwrap_or("view")).await?)))
+    }
+
+    /// The fields the plugins add to an object (`register_rest_field()`), placed after the core's.
+    pub(crate) async fn plugin_fields(&self, object: rustpress_core::native::RestObject<'_>) -> Result<Vec<(String, Value)>> {
+        if self.site.plugins.is_empty() {
+            return Ok(Vec::new());
+        }
+        let services = rustpress_theme::head::Services::new(self.theme, self.site, &self.blank, self.registry);
+        let ctx = rustpress_core::native::RestFieldContext { site: self.site, query: &self.blank, services: &services };
+        let fields = self.site.plugins.rest_fields(object, &ctx).await?;
+        Ok(fields.into_iter().filter(|(k, _)| self.field_included(k)).collect())
     }
 
     // ------------------------------------------------------------------------- taxonomies

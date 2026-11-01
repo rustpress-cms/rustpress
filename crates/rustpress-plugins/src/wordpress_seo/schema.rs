@@ -199,7 +199,14 @@ pub async fn context<'p>(page: &Page<'_>, p: &'p Presentation) -> Result<Context
     };
     // generate_main_image_id()
     let q = page.query;
-    let main_image_id = if q.flags.is_singular() {
+    let rest = page.target.is_some();
+    // `get_main_image_id_for_rest_request()` / `get_main_image_url_for_rest_request()`: only posts have one.
+    let main_image_id = if rest {
+        match p.post().filter(|_| p.kind == Kind::PostType) {
+            Some(post) => singular_post_image(page, post.id, false).await?,
+            None => None,
+        }
+    } else if q.flags.is_singular() {
         match p.post() {
             Some(post) => singular_post_image(page, post.id, post.post_type == "attachment").await?,
             None => None,
@@ -215,7 +222,7 @@ pub async fn context<'p>(page: &Page<'_>, p: &'p Presentation) -> Result<Context
     // generate_main_image_url()
     let main_image_url = match main_image_id {
         Some(id) => Some(images::attachment_image_url(page, id).await?),
-        None if q.flags.is_singular() => p.post().and_then(|post| images::first_content_image(&post.post_content)),
+        None if q.flags.is_singular() || (rest && p.kind == Kind::PostType) => p.post().and_then(|post| images::first_content_image(&post.post_content)),
         None => None,
     };
     Ok(Context { p, title, description, canonical: p.canonical.clone(), permalink, site_url, represents: site_represents(page).await?, page_type, article_type, main_image_id, main_image_url })
@@ -311,7 +318,7 @@ pub async fn breadcrumbs(page: &Page<'_>, p: &Presentation) -> Result<Vec<Crumb>
     let o = page.options;
     let model = &p.model;
     let home_text = o.string("breadcrumbs-home");
-    let home_kinds = matches!(p.kind, Kind::HomePage | Kind::StaticHomePage);
+    let home_kinds = matches!(page.current_kind(), Kind::HomePage | Kind::StaticHomePage);
     let settings = &page.site.settings;
     let static_front = settings.show_on_front == rustpress_core::settings::ShowOnFront::Page;
     let mut statics: Vec<Crumb> = Vec::new();
@@ -638,7 +645,7 @@ fn validate_type(mut piece: Value) -> Value {
 
 /// `remove_empty_breadcrumb()`.
 fn remove_empty_breadcrumb(page: &Page<'_>, ctx: &Context<'_>, mut graph: Vec<Value>) -> Vec<Value> {
-    if matches!(ctx.p.kind, Kind::StaticHomePage | Kind::HomePage) {
+    if matches!(page.current_kind(), Kind::StaticHomePage | Kind::HomePage) {
         return graph;
     }
     let index = graph.iter().position(|piece| piece.get("@type").and_then(Value::as_str) == Some("BreadcrumbList") && piece.get("itemListElement").and_then(Value::as_array).is_some_and(|l| l.len() == 1));
@@ -760,7 +767,7 @@ async fn breadcrumb_piece(page: &Page<'_>, ctx: &Context<'_>) -> Result<Option<V
     let p = ctx.p;
     let mut crumbs = breadcrumbs(page, p).await?;
     let paged = page.query.flags.is_paged || p.model.number_of_pages.is_some_and(|n| n > 1);
-    if paged && p.kind != Kind::StaticPostsPage && crumbs.len() > 1 {
+    if paged && page.current_kind() != Kind::StaticPostsPage && crumbs.len() > 1 {
         crumbs.pop();
     }
     // A crumb without a URL key (the page number) is broken: no breadcrumb at all.
@@ -770,7 +777,7 @@ async fn breadcrumb_piece(page: &Page<'_>, ctx: &Context<'_>) -> Result<Option<V
     if let Some(last) = crumbs.last_mut() {
         last.url = None;
     }
-    if p.kind == Kind::StaticHomePage && crumbs.len() > 1 {
+    if page.current_kind() == Kind::StaticHomePage && crumbs.len() > 1 {
         let home = crumbs[0].text.clone();
         let mut last = crumbs.pop().unwrap_or_default();
         last.text = home;

@@ -180,6 +180,7 @@ static WPSEO: std::sync::LazyLock<Vec<(&'static str, Value)>> = std::sync::LazyL
     vec![
         ("enable_enhanced_slack_sharing", Value::Bool(true)),
         ("enable_schema", Value::Bool(true)),
+        ("enable_headless_rest_endpoints", Value::Bool(true)),
         ("enable_xml_sitemap", Value::Bool(true)),
         ("dynamic_permalinks", Value::Bool(false)),
         ("baiduverify", s("")),

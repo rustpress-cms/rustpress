@@ -413,13 +413,17 @@ impl Rest<'_> {
             data.insert("class_list".into(), Value::from(classes));
         }
 
+        // Fields of plugins (`register_rest_field()`) follow the core's; they have no schema, so every context shows them.
+        let plugin_fields = self.plugin_fields(rustpress_core::native::RestObject::Post(post)).await?;
+        let plugin_keys: Vec<String> = plugin_fields.iter().map(|(k, _)| k.clone()).collect();
+        data.extend(plugin_fields);
         if wanted("_links") || wanted("_embedded") {
             data.insert("_links".into(), self.post_links(post, kind, featured).await?);
         }
         if context == "embed" {
             // `WP_Navigation_Fallback::update_wp_navigation_post_schema()` exposes more of a menu.
             let menu = post.post_type == "wp_navigation";
-            data.retain(|key, _| EMBED_FIELDS.contains(&key.as_str()) || (menu && matches!(key.as_str(), "status" | "content")));
+            data.retain(|key, _| EMBED_FIELDS.contains(&key.as_str()) || plugin_keys.contains(key) || (menu && matches!(key.as_str(), "status" | "content")));
             for key in ["title", "excerpt"] {
                 if let Some(Value::Object(inner)) = data.get_mut(key) {
                     inner.retain(|k, _| k == "rendered" || k == "protected");

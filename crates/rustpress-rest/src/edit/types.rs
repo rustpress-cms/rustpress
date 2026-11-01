@@ -167,7 +167,7 @@ impl Rest<'_> {
         Value::Object(data)
     }
 
-    pub(crate) fn types_list_edit(&self, args: &Args) -> Outcome {
+    pub(crate) async fn types_list_edit(&self, args: &Args) -> crate::Result<Outcome> {
         let context = args.str("context").unwrap_or_else(|| "view".to_owned());
         let mut data = Map::new();
         for entry in self.type_entries() {
@@ -177,31 +177,31 @@ impl Rest<'_> {
                 }
                 data.insert(entry.name.clone(), self.prepare_type_edit(&entry));
             } else {
-                data.insert(entry.name.clone(), self.prepare_type(&entry, &context));
+                data.insert(entry.name.clone(), self.prepare_type(&entry, &context).await?);
             }
         }
         if context == "edit" && data.is_empty() {
-            return Err(self.forbidden("rest_cannot_view", "Sorry, you are not allowed to edit posts in this post type."));
+            return Ok(Err(self.forbidden("rest_cannot_view", "Sorry, you are not allowed to edit posts in this post type.")));
         }
-        Ok(Resp::item(Value::Object(data)))
+        Ok(Ok(Resp::item(Value::Object(data))))
     }
 
     fn can_create_or_edit_type(&self, name: &str) -> bool {
         self.can_create(name) || self.can(if name == "page" { "edit_pages" } else { "edit_posts" })
     }
 
-    pub(crate) fn type_get_edit(&self, name: &str, args: &Args) -> Outcome {
+    pub(crate) async fn type_get_edit(&self, name: &str, args: &Args) -> crate::Result<Outcome> {
         let context = args.str("context").unwrap_or_else(|| "view".to_owned());
         let Some(entry) = self.type_entries().into_iter().find(|e| e.name == name) else {
-            return Err(RestError::new("rest_type_invalid", "Invalid post type.", 404).after_permission_check());
+            return Ok(Err(RestError::new("rest_type_invalid", "Invalid post type.", 404).after_permission_check()));
         };
         if context == "edit" {
             if !self.can_create_or_edit_type(name) {
-                return Err(self.forbidden("rest_forbidden_context", "Sorry, you are not allowed to edit posts in this post type."));
+                return Ok(Err(self.forbidden("rest_forbidden_context", "Sorry, you are not allowed to edit posts in this post type.")));
             }
-            return Ok(Resp::item(self.prepare_type_edit(&entry)));
+            return Ok(Ok(Resp::item(self.prepare_type_edit(&entry))));
         }
-        Ok(Resp::item(self.prepare_type(&entry, &context)))
+        Ok(Ok(Resp::item(self.prepare_type(&entry, &context).await?)))
     }
 
     /// `get_taxonomy_labels()`: the defaults of WordPress for a taxonomy that gave only its name.

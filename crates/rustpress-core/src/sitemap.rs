@@ -39,7 +39,7 @@ struct Entry {
 impl Site {
     /// `WP_Sitemaps::sitemaps_enabled()`.
     fn sitemaps_enabled(&self) -> bool {
-        self.options.get("blog_public").is_some_and(|v| v != "0" && !v.is_empty())
+        self.options.get("blog_public").is_some_and(|v| v != "0" && !v.is_empty()) && !self.plugins.disables_core_sitemaps()
     }
 
     /// `WP_Sitemaps_Provider::get_sitemap_url()`.
@@ -255,7 +255,7 @@ impl Site {
         if self.sitemaps_enabled() {
             output.push_str(&format!("\nSitemap: {}\n", esc_url(&self.home_url("/wp-sitemap.xml"))));
         }
-        output
+        self.plugins.robots_txt(self, output)
     }
 }
 
