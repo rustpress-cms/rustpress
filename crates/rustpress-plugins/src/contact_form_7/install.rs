@@ -225,6 +225,48 @@ pub async fn store_new(site: &Site, writer: &Writer, user: u64, now: i64, title:
     Ok(id)
 }
 
+/// `WPCF7_ContactForm::save()` of a stored form: `wp_update_post()` of the title and the content, the meta rows of the
+/// properties and the locale; a hash only when the form has none yet.
+#[allow(clippy::too_many_arguments)]
+pub async fn update(site: &Site, writer: &Writer, user: u64, now: i64, id: u64, title: &str, locale: &str, properties: &[(&str, Value)]) -> Result<()> {
+    let mut flat = Vec::new();
+    for (_, value) in properties {
+        flatten(value, &mut flat);
+    }
+    let content = flat.join("\n").trim().to_owned();
+    let local = site.timezone.format("Y-m-d H:i:s", now);
+    let gmt = rustpress_core::datetime::SiteTimezone::utc().format("Y-m-d H:i:s", now);
+    writer
+        .update_rows(
+            "posts",
+            "ID",
+            id,
+            &[
+                ("post_title", Val::Str(title.to_owned())),
+                ("post_content", Val::Str(content)),
+                ("post_status", Val::Str("publish".to_owned())),
+                ("post_modified", Val::Str(local)),
+                ("post_modified_gmt", Val::Str(gmt)),
+            ],
+        )
+        .await?;
+    for (name, value) in properties {
+        let stored = match value {
+            Value::Str(bytes) => normalize_newline(&String::from_utf8_lossy(bytes)),
+            other => String::from_utf8_lossy(&rustpress_phpser::serialize(&normalize_newlines(other))).into_owned(),
+        };
+        writer.update_post_meta(id, &format!("_{name}"), &stored).await?;
+    }
+    if !locale.is_empty() {
+        writer.update_post_meta(id, "_locale", locale).await?;
+    }
+    if site.db.post_meta(id).await?.iter().all(|m| m.meta_key.as_deref() != Some("_hash")) {
+        let hash = super::formatter::sha256_hex(&format!("{user}|{id}|{now}|{}", site.home_url("").trim_end_matches('/')));
+        writer.add_post_meta(id, "_hash", &hash).await?;
+    }
+    Ok(())
+}
+
 /// `wpcf7_normalize_newline()`.
 fn normalize_newline(text: &str) -> String {
     text.replace("\r\n", "\n").replace('\r', "\n")

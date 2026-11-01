@@ -389,13 +389,140 @@ fn mail_lacks_recipient(items: &[(rustpress_phpser::Key, rustpress_phpser::Value
     !items.iter().any(|(k, _)| matches!(k, rustpress_phpser::Key::Str(name) if name == b"recipient"))
 }
 
-/// `wpcf7_load_contact_form_admin()`: the actions `copy` and `delete` of the list.
+/// `wpcf7_is_valid_locale()`.
+fn is_valid_locale(locale: &str) -> bool {
+    static LOCALE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| regex::Regex::new(r"^[a-z]{2,3}(?:_[a-zA-Z_]{2,})?$").unwrap());
+    LOCALE.is_match(locale)
+}
+
+/// `$_POST[ $name ]` of the editor, cleaned like `wpcf7_superglobal_post()`.
+fn posted(ctx: &AdminContext<'_>, name: &str) -> Option<super::posted::Posted> {
+    let post = super::posted::PostData::from_fields(ctx.form);
+    post.get(name).map(super::posted::clean)
+}
+
+fn posted_string(value: Option<&super::posted::Posted>, key: &str) -> Option<String> {
+    match value? {
+        super::posted::Posted::Map(items) => items.iter().find(|(k, _)| k == key).and_then(|(_, v)| match v {
+            super::posted::Posted::Str(s) => Some(s.clone()),
+            super::posted::Posted::Map(_) => None,
+        }),
+        super::posted::Posted::Str(_) => None,
+    }
+}
+
+/// `wpcf7_sanitize_mail()`.
+fn sanitize_mail(input: Option<&super::posted::Posted>) -> Vec<(&'static str, rustpress_phpser::Value)> {
+    use rustpress_phpser::Value;
+    let text = |key: &str| posted_string(input, key).unwrap_or_default();
+    let flag = |key: &str| posted_string(input, key).is_some_and(|v| !v.is_empty() && v != "0");
+    let trim = |s: String| super::formatter::php_trim(&s).to_owned();
+    let s = |v: String| Value::Str(v.into_bytes());
+    let headers: Vec<String> = text("additional_headers").replace("\r\n", "\n").split('\n').map(|h| super::formatter::php_trim(h).to_owned()).filter(|h| !h.is_empty()).collect();
+    vec![
+        ("active", Value::Bool(flag("active"))),
+        ("subject", s(trim(text("subject")))),
+        ("sender", s(trim(text("sender")))),
+        ("recipient", s(trim(text("recipient")))),
+        ("body", s(trim(text("body")))),
+        ("additional_headers", s(headers.join("\n"))),
+        ("attachments", s(trim(text("attachments")))),
+        ("use_html", Value::Bool(flag("use_html"))),
+        ("exclude_blank", Value::Bool(flag("exclude_blank"))),
+    ]
+}
+
+fn php_array(items: Vec<(&'static str, rustpress_phpser::Value)>) -> rustpress_phpser::Value {
+    rustpress_phpser::Value::Array(items.into_iter().map(|(k, v)| (rustpress_phpser::Key::Str(k.as_bytes().to_vec()), v)).collect())
+}
+
+/// `wpcf7_save_contact_form()` of the editor's POST and `save()`: the ID of the form, `None` when there is none.
+async fn save_form(ctx: &AdminContext<'_>, id: i64) -> Result<Option<(u64, bool)>> {
+    use rustpress_phpser::Value;
+    let site = ctx.site;
+    let Some(writer) = ctx.writer else { return Ok(None) };
+    let existing = if id == -1 { None } else { current_forms(site).await?.into_iter().find(|(f, _)| f.id as i64 == id).map(|(f, _)| f) };
+    if id != -1 && existing.is_none() {
+        return Ok(None);
+    }
+    let mut form = existing.clone().unwrap_or_else(|| super::install::template(site));
+    let mut properties = upgraded_properties(site, &form);
+    if id == -1 {
+        properties = vec![
+            ("form", Value::Str(form.form.clone().into_bytes())),
+            ("mail", form.mail.clone().unwrap_or(Value::Array(Vec::new()))),
+            ("mail_2", form.mail_2.clone().unwrap_or(Value::Array(Vec::new()))),
+            ("messages", form.messages.clone().unwrap_or(Value::Array(Vec::new()))),
+            ("additional_settings", Value::Str(Vec::new())),
+        ];
+    }
+    let string = |name: &str| match posted(ctx, name) {
+        Some(super::posted::Posted::Str(s)) => Some(s),
+        _ => None,
+    };
+    // `set_title()`: no tags, no line breaks; an empty title is "Untitled".
+    if let Some(title) = string("post_title") {
+        static BREAKS: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| regex::Regex::new(r"[\r\n\t ]+").unwrap());
+        let title = BREAKS.replace_all(&rustpress_core::formatting::wp_strip_all_tags(&title), " ").into_owned();
+        let title = super::formatter::strip_whitespaces(&title, super::formatter::Side::Both).to_owned();
+        form.title = if title.is_empty() { tr(site, "Untitled") } else { title };
+    }
+    if let Some(locale) = string("wpcf7-locale") {
+        let locale = super::formatter::php_trim(&locale).to_owned();
+        form.locale = if is_valid_locale(&locale) { locale } else { "en_US".to_owned() };
+    }
+    let set = |properties: &mut Vec<(&'static str, Value)>, name: &'static str, value: Value| {
+        if let Some(slot) = properties.iter_mut().find(|(k, _)| *k == name) {
+            slot.1 = value;
+        }
+    };
+    set(&mut properties, "form", Value::Str(super::formatter::php_trim(&string("wpcf7-form").unwrap_or_default()).as_bytes().to_vec()));
+    let mut mail = sanitize_mail(posted(ctx, "wpcf7-mail").as_ref());
+    mail[0].1 = Value::Bool(true);
+    set(&mut properties, "mail", php_array(mail));
+    set(&mut properties, "mail_2", php_array(sanitize_mail(posted(ctx, "wpcf7-mail-2").as_ref())));
+    // `wpcf7_sanitize_messages()`: the messages of `wpcf7_messages()` that were sent.
+    let sent = posted(ctx, "wpcf7-messages");
+    let messages: Vec<(&'static str, Value)> = super::submission::DEFAULT_MESSAGES.iter().filter_map(|(key, _)| posted_string(sent.as_ref(), key).map(|v| (*key, Value::Str(super::formatter::php_trim(&v).as_bytes().to_vec())))).collect();
+    set(&mut properties, "messages", php_array(messages));
+    set(&mut properties, "additional_settings", Value::Str(super::formatter::php_trim(&string("wpcf7-additional-settings").unwrap_or_default()).as_bytes().to_vec()));
+    let saved = match existing {
+        None => super::install::store_new(site, writer, ctx.user, ctx.now, &form.title, &form.locale, &properties).await?,
+        Some(old) => {
+            super::install::update(site, writer, ctx.user, ctx.now, old.id, &form.title, &form.locale, &properties).await?;
+            old.id
+        }
+    };
+    Ok(Some((saved, id == -1)))
+}
+
+/// `wpcf7_load_contact_form_admin()`: the actions `save`, `copy` and `delete`.
 pub async fn load(ctx: &AdminContext<'_>) -> Result<Option<PageLoad>> {
     let site = ctx.site;
     let action = ctx.get("action").filter(|a| !a.is_empty() && *a != "-1").or_else(|| ctx.post_field("action").filter(|a| !a.is_empty() && *a != "-1")).or_else(|| ctx.get("action2").filter(|a| *a != "-1")).unwrap_or_default();
     let list_url = site.site_url("wp-admin/admin.php?page=wpcf7");
     let field = |name: &str| ctx.post_field(name).or_else(|| ctx.get(name)).unwrap_or_default().to_owned();
     match action {
+        "save" => {
+            let id_text = ctx.post_field("post_ID").unwrap_or("-1").to_owned();
+            if !(ctx.verify_nonce)(&field("_wpnonce"), &format!("wpcf7-save-contact-form_{id_text}")) {
+                return Ok(Some(expired(site)));
+            }
+            if !(ctx.can)(READ_WRITE) {
+                return Ok(Some(die(site, "You are not allowed to edit this item.")));
+            }
+            let id: i64 = id_text.trim().parse().unwrap_or(0);
+            let saved = save_form(ctx, id).await?;
+            // `wpcf7_canonicalize_name()` of the open tab.
+            static NAME: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| regex::Regex::new(r"(?i)[^0-9a-z]+").unwrap());
+            let tab = NAME.replace_all(&super::posted::PostData::from_fields(ctx.form).string("active-tab"), "-").into_owned();
+            let (post, message) = match saved {
+                None => (0, "failed"),
+                Some((id, true)) => (id, "created"),
+                Some((id, false)) => (id, "saved"),
+            };
+            Ok(Some(PageLoad::Redirect(format!("{list_url}&post={post}&active-tab={}&message={message}", super::urlencode(&tab)))))
+        }
         "copy" => {
             let id = super::php_int(&ctx.post_field("post_ID").map_or_else(|| field("post"), str::to_owned));
             if !(ctx.verify_nonce)(&field("_wpnonce"), &format!("wpcf7-copy-contact-form_{id}")) {
