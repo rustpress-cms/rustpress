@@ -4,7 +4,7 @@
 
 Ein WordPress-Ersatz in Rust: Bestehende WordPress-Seiten laufen **ohne PHP** und **ohne Konvertierung der Datenbank**. RustPress liest die vorhandene MySQL/MariaDB (`wp_*`-Schema) und das vorhandene `wp-content/` und liefert dieselben Antworten wie WordPress. Mit `allow_writes` laufen auch Anmeldung, Kommentare und die Verwaltung (`wp-admin`).
 
-Unterstützt werden **Block-Themes** (`theme.json` + HTML-Templates) und als Rust-Nachbau das klassische Theme **Twenty Seventeen**. Andere klassische PHP-Themes und PHP-Plugins laufen bewusst nicht; wichtige Plugins werden als native Module nachgebaut, die übernehmen, solange das Plugin aktiv ist (seine Dateien bleiben in `wp-content/plugins`): bisher **WP Date Remover** 1.1.3 und **SVG Support** 2.6.1 (Webseite, Einstellungen und bereinigte SVG-Uploads); **Contact Form 7** 6.2.4.1 ist in Arbeit (die Formulare erscheinen auf der Webseite, das Absenden folgt). Der aktuelle Stand und die Planung stehen in [PLAN.md](PLAN.md).
+Unterstützt werden **Block-Themes** (`theme.json` + HTML-Templates) und als Rust-Nachbau das klassische Theme **Twenty Seventeen**. Andere klassische PHP-Themes und PHP-Plugins laufen bewusst nicht; wichtige Plugins werden als native Module nachgebaut, die übernehmen, solange das Plugin aktiv ist (seine Dateien bleiben in `wp-content/plugins`): bisher **WP Date Remover** 1.1.3 und **SVG Support** 2.6.1 (Webseite, Einstellungen und bereinigte SVG-Uploads); **Contact Form 7** 6.2.4.1 auf der Webseite (Formulare, Prüfung, Spam-Schutz und E-Mail; die Verwaltung folgt). Der aktuelle Stand und die Planung stehen in [PLAN.md](PLAN.md).
 
 ## Was funktioniert
 
@@ -15,7 +15,7 @@ Unterstützt werden **Block-Themes** (`theme.json` + HTML-Templates) und als Rus
 - Verwaltung (`wp-admin`): Anmeldung, Beiträge und Seiten mit dem Block-Editor, Medien, Kommentare, Benutzer, Einstellungen, Datenschutz, Export
 - Installer wie WordPress (`setup-config.php`, `install.php`), lädt auf Wunsch die WordPress-Dateien herunter
 - Shared Hosting als CGI-Programm (statisch gelinktes Binary, Konfiguration aus `wp-config.php`)
-- E-Mail per SMTP (`RUSTPRESS_SMTP_URL`)
+- E-Mail per SMTP (`RUSTPRESS_SMTP_URL`), auch für Kontaktformulare
 - Statische Dateien aus `wp-content/` und `wp-includes/`
 - Alle Sprachen, für die WordPress ein Sprachpaket hat (siehe [Sprachen](#sprachen))
 
@@ -37,7 +37,7 @@ listen       = "127.0.0.1:3000"
 reload_secs  = 60                # Optionen und Theme werden so oft neu gelesen
 ```
 
-`RUSTPRESS_DATABASE_URL`, `RUSTPRESS_TABLE_PREFIX`, `RUSTPRESS_WP_ROOT`, `RUSTPRESS_LISTEN`, `RUSTPRESS_RELOAD_SECS` überschreiben die Datei. Ohne `allow_writes = true` (`RUSTPRESS_ALLOW_WRITES=1`) läuft die Datenbankverbindung in einer `READ ONLY`-Session, und Anmeldung und Verwaltung bleiben geschlossen. TLS übernimmt ein vorgeschalteter Proxy.
+`RUSTPRESS_DATABASE_URL`, `RUSTPRESS_TABLE_PREFIX`, `RUSTPRESS_WP_ROOT`, `RUSTPRESS_LISTEN`, `RUSTPRESS_RELOAD_SECS` überschreiben die Datei. Ohne `allow_writes = true` (`RUSTPRESS_ALLOW_WRITES=1`) läuft die Datenbankverbindung in einer `READ ONLY`-Session, und Anmeldung und Verwaltung bleiben geschlossen; Kontaktformulare lassen sich trotzdem absenden, sie verschicken nur E-Mails. TLS übernimmt ein vorgeschalteter Proxy.
 
 ## Mit Docker betreiben
 

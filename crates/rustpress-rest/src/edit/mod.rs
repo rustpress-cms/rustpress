@@ -99,6 +99,10 @@ pub struct Request {
     pub remote_addr: Option<String>,
     /// The `User-Agent` header.
     pub user_agent: Option<String>,
+    /// The `Content-Type` header.
+    pub content_type: Option<String>,
+    /// The `Referer` header.
+    pub referer: Option<String>,
 }
 
 /// The parameters of a request: the query string and the body in one map (the body wins).
@@ -260,7 +264,7 @@ impl Rest<'_> {
         let args = Args::new(params, body);
         let get = method == "GET";
         // The index of a namespace.
-        if get && crate::namespaces().iter().any(|ns| *ns == segments.join("/")) {
+        if get && self.namespaces().iter().any(|ns| *ns == segments.join("/")) {
             return Ok(Some(Ok(crate::Resp::item(self.namespace_index(&segments.join("/"))))));
         }
         if let ["wp", "v2", "font-families" | "font-collections", ..] = segments.as_slice() {

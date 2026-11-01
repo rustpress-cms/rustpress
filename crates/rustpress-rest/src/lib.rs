@@ -109,16 +109,24 @@ pub struct Rest<'a> {
     pub(crate) remote_patterns: std::sync::OnceLock<Vec<rustpress_theme::registered_patterns::PatternEntry>>,
     /// The request comes from a screen of the administration (`is_admin()`): the preloads of the editors.
     pub(crate) admin: bool,
+    /// `wp_mail()` for the endpoints of plugins that send e-mail.
+    pub(crate) mailer: Option<std::sync::Arc<dyn rustpress_core::native::Mailer>>,
 }
 
 impl<'a> Rest<'a> {
     pub fn new(site: &'a Site, theme: &'a Theme, registry: &'a Registry) -> Self {
-        Self { site, theme, registry, blank: QueryResult::blank(), state: Default::default(), access: None, request: None, patterns: Default::default(), host: String::new(), remote_patterns: Default::default(), admin: false }
+        Self { site, theme, registry, blank: QueryResult::blank(), state: Default::default(), access: None, request: None, patterns: Default::default(), host: String::new(), remote_patterns: Default::default(), admin: false, mailer: None }
     }
 
     /// The host of the request: client-side media processing is on for `localhost` and for HTTPS.
     pub fn with_host(mut self, host: &str) -> Self {
         self.host = host.to_owned();
+        self
+    }
+
+    /// How plugins send e-mail.
+    pub fn with_mailer(mut self, mailer: Option<std::sync::Arc<dyn rustpress_core::native::Mailer>>) -> Self {
+        self.mailer = mailer;
         self
     }
 
@@ -146,7 +154,7 @@ impl<'a> Rest<'a> {
             blank.raw_query = if query.is_empty() { format!("rest_route={route}") } else { format!("rest_route={route}&{query}") };
         }
         blank.http_host = Some(self.host.clone()).filter(|h| !h.is_empty());
-        let scoped = Rest { site: self.site, theme: self.theme, registry: self.registry, blank, state: Default::default(), access: None, request: None, patterns: Default::default(), host: self.host.clone(), remote_patterns: Default::default(), admin: self.admin };
+        let scoped = Rest { site: self.site, theme: self.theme, registry: self.registry, blank, state: Default::default(), access: None, request: None, patterns: Default::default(), host: self.host.clone(), remote_patterns: Default::default(), admin: self.admin, mailer: self.mailer.clone() };
         // The terms of the posts of a list are read once for the request (`update_object_term_cache()`).
         rustpress_db::Db::with_term_cache(scoped.handle_request(route, query)).await
     }
@@ -171,7 +179,7 @@ impl<'a> Rest<'a> {
             let viewer = rustpress_core::Viewer::new(user.id, move |capability| user.can(capability));
             blank.viewer = Some(viewer.with_identity(&login, &name, &email, false, move |action| nonce.as_ref().map(|n| n(action)).unwrap_or_default()));
         }
-        let scoped = Rest { site: self.site, theme: self.theme, registry: self.registry, blank, state: Default::default(), access, request: Some(request), patterns: Default::default(), host: self.host.clone(), remote_patterns: Default::default(), admin: self.admin };
+        let scoped = Rest { site: self.site, theme: self.theme, registry: self.registry, blank, state: Default::default(), access, request: Some(request), patterns: Default::default(), host: self.host.clone(), remote_patterns: Default::default(), admin: self.admin, mailer: self.mailer.clone() };
         // The terms of the posts of a list are read once for the request (`update_object_term_cache()`).
         rustpress_db::Db::with_term_cache(scoped.handle_request(route, query)).await
     }
@@ -183,7 +191,9 @@ impl<'a> Rest<'a> {
             let local = self.theme.registered_patterns();
             let _ = self.remote_patterns.set(self.remote_pattern_entries(&local).await);
         }
-        let outcome = match &self.request {
+        let outcome = match self.plugin_route(route).await? {
+            Some(outcome) => outcome,
+            None => match &self.request {
             Some(_) => match self.dispatch_edit(route, &params).await? {
                 Some(outcome) => outcome,
                 // A write that no handler takes is no read: WordPress has no route for it.
@@ -191,6 +201,7 @@ impl<'a> Rest<'a> {
                 None => self.dispatch(route, &params).await?,
             },
             None => self.dispatch(route, &params).await?,
+            },
         };
         let mut headers = vec![
             ("X-Robots-Tag".to_owned(), "noindex".to_owned()),
@@ -321,7 +332,7 @@ impl<'a> Rest<'a> {
         }
         match segments.as_slice() {
             [""] => Ok(Ok(Resp::item(self.index(params)))),
-            _ if namespaces().iter().any(|ns| *ns == segments.join("/")) => Ok(Ok(Resp::item(self.namespace_index(&segments.join("/"))))),
+            _ if self.namespaces().iter().any(|ns| *ns == segments.join("/")) => Ok(Ok(Resp::item(self.namespace_index(&segments.join("/"))))),
             ["wp", "v2", "posts"] => self.posts_collection(posts::Kind::Post, params).await,
             ["wp", "v2", "posts", id] => self.posts_item(posts::Kind::Post, id, params).await,
             ["wp", "v2", "pages"] => self.posts_collection(posts::Kind::Page, params).await,
@@ -510,7 +521,7 @@ impl<'a> Rest<'a> {
         out.insert("page_for_posts".into(), Value::from(s.page_for_posts));
         out.insert("page_on_front".into(), Value::from(s.page_on_front));
         out.insert("show_on_front".into(), Value::from(if s.show_on_front == rustpress_core::ShowOnFront::Page { "page" } else { "posts" }));
-        out.insert("namespaces".into(), Value::from(namespaces()));
+        out.insert("namespaces".into(), Value::from(self.namespaces()));
         // `wp_is_application_passwords_available()`: over HTTPS, or on a local site.
         let available = s.siteurl.starts_with("https") || self.site.environment_type() == "local";
         out.insert(
@@ -578,7 +589,7 @@ impl<'a> Rest<'a> {
     /// The routes of the reference, optionally of one namespace, with the links of this site.
     fn routes_of(&self, namespace: Option<&str>) -> Map<String, Value> {
         let mut routes = Map::new();
-        for (route, entry) in golden_routes() {
+        for (route, mut entry) in self.route_table() {
             // The routes for client-side media processing exist on `localhost` and over HTTPS only.
             if !self.client_side_media() && route.starts_with("/wp/v2/media/") && (route.ends_with("/sideload") || route.ends_with("/finalize")) {
                 continue;
@@ -586,7 +597,10 @@ impl<'a> Rest<'a> {
             if namespace.is_some_and(|ns| entry.get("namespace").and_then(Value::as_str) != Some(ns)) {
                 continue;
             }
-            let mut entry = entry.clone();
+            // The schema of a plugin's route is described only by `OPTIONS` (the `help` context).
+            if let Some(object) = entry.as_object_mut() {
+                object.shift_remove("schema");
+            }
             if let Some(links) = entry.pointer_mut("/_links/self").and_then(Value::as_array_mut) {
                 for link in links {
                     if let Some(href) = link.get("href").and_then(Value::as_str).and_then(|h| h.strip_prefix("@REST@")).map(str::to_owned) {
@@ -594,7 +608,7 @@ impl<'a> Rest<'a> {
                     }
                 }
             }
-            routes.insert(route.clone(), entry);
+            routes.insert(route, entry);
         }
         routes
     }
@@ -602,7 +616,12 @@ impl<'a> Rest<'a> {
     /// `rest_handle_options_request()`: the description of the route a path matches (`get_data_for_route()` in the
     /// `help` context, with the schema), and the methods of its endpoints.
     pub(crate) fn route_help(&self, path: &str) -> Option<(Value, Vec<String>)> {
-        let (route, entry) = route_patterns().iter().find(|(_, pattern)| pattern.is_match(path)).and_then(|(route, _)| golden_routes().get(route).map(|e| (route, e)))?;
+        let Some((route, entry)) = route_patterns().iter().find(|(_, pattern)| pattern.is_match(path)).and_then(|(route, _)| golden_routes().get(route).map(|e| (route, e))) else {
+            // A route of a plugin, without a schema.
+            let (_, entry) = self.plugin_route_of(path)?;
+            let methods = entry.get("methods").and_then(Value::as_array).map(|m| m.iter().filter_map(Value::as_str).map(str::to_owned).collect()).unwrap_or_default();
+            return Some((self.with_rest_urls(entry), methods));
+        };
         let schemas = route_schemas();
         let schema = schemas.get("routes").and_then(|r| r.get(route)).and_then(Value::as_u64).and_then(|i| schemas.get("schemas")?.get(i as usize)).cloned();
         let mut data = Map::new();
@@ -718,17 +737,101 @@ fn route_schemas() -> &'static Value {
     SCHEMAS.get_or_init(|| serde_json::from_str(include_str!("route_schemas.json")).expect("the route schemas are valid JSON"))
 }
 
-/// The namespaces in the order of the index.
-pub(crate) fn namespaces() -> Vec<String> {
-    let mut out: Vec<String> = Vec::new();
-    for entry in golden_routes().values() {
-        if let Some(ns) = entry.get("namespace").and_then(Value::as_str).filter(|ns| !ns.is_empty())
-            && !out.iter().any(|seen| seen == ns)
-        {
-            out.push(ns.to_owned());
+impl Rest<'_> {
+    /// The routes of the active plugins (`rest_api_init` at priority 10, before the core's at 99).
+    fn plugin_routes(&self) -> Vec<(String, Value)> {
+        let mut out = Vec::new();
+        for index in self.site.plugins.rest_index() {
+            // The plugin's tests make sure its table is a JSON object.
+            if let Ok(routes) = serde_json::from_str::<Map<String, Value>>(index) {
+                out.extend(routes);
+            }
         }
+        out
     }
-    out
+
+    /// Every route of the index in its order: the plugins' come after `oembed/1.0`, before `wp/v2`.
+    fn route_table(&self) -> Vec<(String, Value)> {
+        let mut plugins = Some(self.plugin_routes());
+        let mut out = Vec::new();
+        for (route, entry) in golden_routes() {
+            if entry.get("namespace").and_then(Value::as_str) == Some("wp/v2")
+                && let Some(plugins) = plugins.take()
+            {
+                out.extend(plugins);
+            }
+            out.push((route.clone(), entry.clone()));
+        }
+        out.extend(plugins.unwrap_or_default());
+        out
+    }
+
+    /// The namespaces in the order of the index.
+    pub(crate) fn namespaces(&self) -> Vec<String> {
+        let mut out: Vec<String> = Vec::new();
+        for (_, entry) in self.route_table() {
+            if let Some(ns) = entry.get("namespace").and_then(Value::as_str).filter(|ns| !ns.is_empty())
+                && !out.iter().any(|seen| seen == ns)
+            {
+                out.push(ns.to_owned());
+            }
+        }
+        out
+    }
+
+    /// `path` (after `/wp-json`) is a route of an active plugin.
+    pub fn is_plugin_route(&self, path: &str) -> bool {
+        !self.site.plugins.is_empty() && self.plugin_route_of(path.trim_end_matches('/')).is_some()
+    }
+
+    /// The route of a plugin that `path` matches, with its description.
+    fn plugin_route_of(&self, path: &str) -> Option<(String, Value)> {
+        self.plugin_routes().into_iter().find(|(route, _)| regex::Regex::new(&format!("(?i)^{route}$")).is_ok_and(|re| re.is_match(path)))
+    }
+
+    /// A request that an endpoint of a plugin takes (`register_rest_route()`).
+    async fn plugin_route(&self, route: &str) -> Result<Option<Outcome>> {
+        if self.site.plugins.is_empty() {
+            return Ok(None);
+        }
+        let route = if route.len() > 1 { route.trim_end_matches('/') } else { route };
+        let no_fields = Vec::new();
+        let (fields, files) = match self.request.as_ref().map(|r| &r.body) {
+            Some(edit::Body::Multipart { fields, files }) => {
+                (fields, files.iter().map(|f| rustpress_core::native::RestFile { field: f.field.clone(), filename: f.filename.clone(), content_type: f.content_type.clone(), bytes: f.bytes.clone() }).collect())
+            }
+            Some(edit::Body::Form(pairs)) => (pairs, Vec::new()),
+            _ => (&no_fields, Vec::new()),
+        };
+        let request = self.request.as_ref();
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs() as i64);
+        let plugin_request = rustpress_core::native::RestRequest {
+            site: self.site,
+            method: self.method(),
+            route,
+            path: &self.blank.url_path,
+            query: &self.blank.raw_query,
+            fields,
+            files: &files,
+            content_type: request.and_then(|r| r.content_type.as_deref()).unwrap_or_default(),
+            remote_addr: request.and_then(|r| r.remote_addr.as_deref()),
+            user_agent: request.and_then(|r| r.user_agent.as_deref()),
+            referer: request.and_then(|r| r.referer.as_deref()),
+            user: self.blank.viewer.as_ref(),
+            now,
+            mailer: self.mailer.as_deref(),
+        };
+        let Some(answer) = self.site.plugins.rest(&plugin_request).await? else { return Ok(None) };
+        // `rest_send_allow_header()`: the methods of the route, once the permission check passed.
+        let allow = match self.plugin_route_of(route).filter(|_| answer.permitted) {
+            Some((_, entry)) => entry.get("methods").and_then(Value::as_array).map(|m| m.iter().filter_map(Value::as_str).collect::<Vec<_>>().join(", ")).unwrap_or_default(),
+            None => String::new(),
+        };
+        let mut resp = Resp::item(answer.data);
+        resp.status = Some(answer.status);
+        resp.allow = Some(allow);
+        Ok(Some(Ok(resp)))
+    }
 }
 
 /// `rest_parse_embed_param()`: `None` without `_embed`; `Some(None)` embeds every relation (also for `0`, `1`,

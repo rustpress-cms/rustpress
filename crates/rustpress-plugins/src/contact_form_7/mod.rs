@@ -6,9 +6,14 @@ pub mod controls;
 pub mod form;
 pub mod form_tag;
 pub mod formatter;
+pub mod mail;
+pub mod posted;
+mod rest;
+pub mod submission;
+pub mod swv;
 
 use futures::future::BoxFuture;
-use rustpress_core::native::{ActivePlugin, Assets, NativePlugin, ShortcodeContext};
+use rustpress_core::native::{ActivePlugin, Assets, NativePlugin, RestAnswer, RestRequest, ShortcodeContext};
 use rustpress_core::shortcodes::Atts;
 use rustpress_core::{Result, Site};
 use rustpress_db::{Order, OrderBy, PostQuery};
@@ -261,6 +266,14 @@ impl ActivePlugin for Loaded {
     fn shortcode<'a>(&'a self, tag: &'a str, atts: &'a Atts, _content: Option<&'a str>, ctx: &'a ShortcodeContext<'a>) -> BoxFuture<'a, Result<String>> {
         Box::pin(self.shortcode_html(tag, atts, ctx))
     }
+
+    fn rest_index(&self) -> &'static str {
+        include_str!("rest_index.json")
+    }
+
+    fn rest<'a>(&'a self, request: &'a RestRequest<'a>) -> BoxFuture<'a, Result<Option<RestAnswer>>> {
+        Box::pin(self.rest_answer(request))
+    }
 }
 
 /// A string as `wp_json_encode()` writes it (slashes escaped).
@@ -342,6 +355,118 @@ mod tests {
             }
         }
         assert!(cases > 0, "no golden cases");
+        assert!(failures.is_empty(), "{} of {cases} differ:\n{}", failures.len(), failures.join("\n"));
+    }
+
+    #[test]
+    fn rest_index_is_an_object_of_routes() {
+        let routes: serde_json::Map<String, serde_json::Value> = serde_json::from_str(include_str!("rest_index.json")).expect("a JSON object");
+        assert!(routes.keys().all(|r| r.starts_with("/contact-form-7/v1")));
+        assert!(routes.values().all(|e| e["namespace"] == "contact-form-7/v1"));
+    }
+
+    /// A template of the golden data as the property stores it.
+    fn php_value(json: &serde_json::Value) -> rustpress_phpser::Value {
+        use rustpress_phpser::{Key, Value};
+        match json {
+            serde_json::Value::Object(map) => Value::Array(map.iter().map(|(k, v)| (Key::Str(k.as_bytes().to_vec()), php_value(v))).collect()),
+            serde_json::Value::String(s) => Value::Str(s.as_bytes().to_vec()),
+            serde_json::Value::Bool(b) => Value::Bool(*b),
+            serde_json::Value::Number(n) => Value::Int(n.as_i64().unwrap_or(0)),
+            _ => Value::Null,
+        }
+    }
+
+    /// The submissions `dev/cf7-mail-golden.sh` had the plugin make: the result and the arguments of `wp_mail()`.
+    #[test]
+    fn golden_mails() {
+        use super::mail::{Lang, Special};
+        use super::submission::{self, Env, Request};
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("cf7-mail");
+        let (mut cases, mut compared) = (0, 0);
+        let mut failures = Vec::new();
+        for entry in std::fs::read_dir(&dir).expect("golden directory") {
+            let path = entry.expect("entry").path();
+            let Some(name) = path.file_name().and_then(|n| n.to_str()).and_then(|n| n.strip_suffix(".post")).map(str::to_owned) else { continue };
+            let golden: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(dir.join(format!("{name}.json"))).expect("golden")).expect("json");
+            let mut fields: Vec<(String, String)> = std::fs::read_to_string(&path)
+                .expect("post")
+                .trim()
+                .split('&')
+                .filter(|p| !p.is_empty())
+                .map(|p| {
+                    let (k, v) = p.split_once('=').unwrap_or((p, ""));
+                    (decode(k), decode(v))
+                })
+                .collect();
+            fields.push(("_wpcf7_unit_tag".into(), "wpcf7-f0-o1".into()));
+            let text = |key: &str| golden[key].as_str().unwrap_or_default().to_owned();
+            let form = ContactForm {
+                locale: "en_US".into(),
+                title: "Golden".into(),
+                form: text("form"),
+                mail: Some(php_value(&golden["mail"])),
+                mail_2: Some(php_value(&golden["mail_2"])),
+                additional_settings: text("additional_settings"),
+                ..ContactForm::default()
+            };
+            let site = &golden["site"];
+            let special = Special {
+                submission: true,
+                remote_ip: "192.0.2.1".into(),
+                user_agent: "Golden/1.0".into(),
+                url: golden["special"]["_url"].as_str().unwrap_or_default().into(),
+                date: golden["special"]["_date"].as_str().unwrap_or_default().into(),
+                time: golden["special"]["_time"].as_str().unwrap_or_default().into(),
+                form_title: "Golden".into(),
+                site_title: site["blogname"].as_str().unwrap_or_default().into(),
+                site_description: site["blogdescription"].as_str().unwrap_or_default().into(),
+                site_url: site["home"].as_str().unwrap_or_default().into(),
+                admin_email: site["admin_email"].as_str().unwrap_or_default().into(),
+                ..Special::default()
+            };
+            let tr = |s: &str| s.to_owned();
+            let trx = |s: &str, _: &str| s.to_owned();
+            let lang = Lang { tr: &tr, trx: &trx, list_separator: ", ".into() };
+            let format_date = |value: &str, format: &str| {
+                let date = chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d").ok()?;
+                let timestamp = date.and_hms_opt(0, 0, 0)?.and_utc().timestamp();
+                Some(rustpress_core::datetime::SiteTimezone::utc().format(format, timestamp))
+            };
+            let hash = |_: &str, _: &str| "HASH".to_owned();
+            let tags = super::form_tag::scan(&form.form);
+            let env = Env { form: &form, tags: &tags, special: &special, lang: &lang, format_date: &format_date, hash: &hash, today: chrono::NaiveDate::from_ymd_opt(2026, 11, 1).unwrap(), user: None, disallowed_keys: "" };
+            let request = Request { fields: &fields, files: &[], remote_ip: "192.0.2.1".into(), user_agent: "Golden/1.0".into(), unit_tag: "wpcf7-f0-o1".into(), now: 0 };
+            let mut sub = submission::prepare(&env, &request);
+            let mut mails = Vec::new();
+            if sub.is("init") {
+                if !form.is_true("demo_mode") && !form.is_true("skip_mail") {
+                    mails = submission::mails(&env, &sub);
+                }
+                submission::conclude(&env, &mut sub, true);
+            }
+            let mut result = sub.result(0);
+            result.remove("contact_form_id");
+            if sub.is("validation_failed") {
+                let invalid: serde_json::Map<String, serde_json::Value> = sub.invalid.iter().map(|i| (i.field.clone(), serde_json::json!({"reason": i.reason, "idref": i.idref}))).collect();
+                result.insert("invalid_fields".into(), serde_json::Value::Object(invalid));
+            }
+            if form.is_true("demo_mode") {
+                result.insert("demo_mode".into(), serde_json::Value::Bool(true));
+            }
+            let expected_result = &golden["result"];
+            if serde_json::Value::Object(result.clone()) != *expected_result {
+                failures.push(format!("{name}: result\n  expected {expected_result}\n  actual   {}", serde_json::Value::Object(result)));
+            }
+            let actual_mails: Vec<serde_json::Value> = mails.iter().map(|m| serde_json::json!({"to": m.to, "subject": m.subject, "message": m.body, "headers": m.headers, "attachments": [], "embeds": []})).collect();
+            let expected_mails = golden["mails"].as_array().cloned().unwrap_or_default();
+            compared += expected_mails.len();
+            if actual_mails != expected_mails {
+                failures.push(format!("{name}: mails\n  expected {}\n  actual   {}", serde_json::Value::Array(expected_mails), serde_json::Value::Array(actual_mails)));
+            }
+            cases += 1;
+        }
+        assert!(cases > 0 && compared > 0, "no golden cases");
         assert!(failures.is_empty(), "{} of {cases} differ:\n{}", failures.len(), failures.join("\n"));
     }
 }

@@ -27,6 +27,8 @@ pub struct Loaded {
     pub admin: Option<crate::admin::AdminParts>,
     /// The keys and salts for `wp_hash()`, also without the administration.
     pub salts: rustpress_auth::salts::Salts,
+    /// `wp_mail()` for the plugins (contact forms), also on a read-only site.
+    pub mail: Option<Arc<dyn rustpress_core::native::Mailer>>,
     loaded_at: Instant,
 }
 
@@ -88,7 +90,8 @@ impl App {
         let registry = Registry::new(config.wp_root.join("wp-includes").join("blocks"));
         let salts = crate::admin::load_salts(config, &site).await;
         let admin = if config.allow_writes { Some(crate::admin::AdminParts::load(config, &site, salts.clone()).await) } else { None };
-        Ok(Loaded { site, theme, registry, admin, salts, loaded_at: Instant::now() })
+        let mail = crate::admin::SmtpMail::for_site(&site).map(|m| Arc::new(m) as Arc<dyn rustpress_core::native::Mailer>);
+        Ok(Loaded { site, theme, registry, admin, salts, mail, loaded_at: Instant::now() })
     }
 
     /// The current snapshot; options and theme are re-read once it is older than `reload_secs`.
@@ -345,6 +348,8 @@ async fn admin_route(app: &Arc<App>, request: Request<Body>) -> std::result::Res
 /// The body a signed-in user may send (an upload) and the body a visitor may send (a form).
 const UPLOAD_BODY_LIMIT: usize = 256 * 1024 * 1024;
 const VISITOR_BODY_LIMIT: usize = 64 * 1024;
+/// What a visitor may send to a plugin's route: a contact form with its files (Contact Form 7 attaches up to 25 MB).
+const FORM_BODY_LIMIT: usize = 32 * 1024 * 1024;
 
 /// `index.php` for `wp-admin/`, the file name for `wp-admin/<file>.php`; `None` for anything else
 /// (static files, `load-styles.php`, sub-directories).
@@ -547,13 +552,14 @@ fn redirect(location: &str) -> Response<Body> {
 /// REST requests of signed-in users and every request with a body: the authenticated layer of the REST API.
 #[allow(clippy::result_large_err)]
 async fn rest_edit_route(app: &Arc<App>, request: Request<Body>) -> std::result::Result<Response<Body>, Request<Body>> {
-    if app.writer.is_none() {
-        return Err(request);
-    }
     let loaded = app.current().await;
     let path = request.uri().path().to_owned();
     let query = request.uri().query().unwrap_or("").to_owned();
     let Some((route, rest_query)) = rest_route(&loaded.site.settings.home_path(), &path, &query) else { return Err(request) };
+    // A read-only site still takes what visitors send to the routes of plugins (a contact form).
+    if app.writer.is_none() && (matches!(*request.method(), Method::GET | Method::HEAD) || !Rest::new(&loaded.site, &loaded.theme, &loaded.registry).is_plugin_route(&route)) {
+        return Err(request);
+    }
     let (parts, body) = request.into_parts();
     let mut method = parts.method.as_str().to_owned();
     if let Some(over) = parts.headers.get("x-http-method-override").and_then(|v| v.to_str().ok()) {
@@ -567,7 +573,14 @@ async fn rest_edit_route(app: &Arc<App>, request: Request<Body>) -> std::result:
     // The credentials in the headers decide how much may be sent; the nonce of a form body is checked after.
     let known = matches!(crate::admin::rest_auth(&loaded, &parts.headers, &rest_query, None).await, crate::admin::RestAuth::User(..) | crate::admin::RestAuth::AppPassword(..))
         || crate::admin::frontend_user(&loaded, &parts.headers).await.is_some();
-    let bytes = match axum::body::to_bytes(body, if known { UPLOAD_BODY_LIMIT } else { VISITOR_BODY_LIMIT }).await {
+    let limit = if known {
+        UPLOAD_BODY_LIMIT
+    } else if Rest::new(&loaded.site, &loaded.theme, &loaded.registry).is_plugin_route(&route) {
+        FORM_BODY_LIMIT
+    } else {
+        VISITOR_BODY_LIMIT
+    };
+    let bytes = match axum::body::to_bytes(body, limit).await {
         Ok(bytes) => bytes,
         Err(_) => return Ok(text(StatusCode::PAYLOAD_TOO_LARGE, "Payload Too Large\n")),
     };
@@ -583,7 +596,7 @@ async fn rest_edit_route(app: &Arc<App>, request: Request<Body>) -> std::result:
         rustpress_rest::edit::Body::Form(crate::admin::pairs_of_public(&String::from_utf8_lossy(&bytes)))
     } else {
         let disposition = parts.headers.get("content-disposition").and_then(|v| v.to_str().ok()).unwrap_or_default().to_owned();
-        rustpress_rest::edit::Body::Raw { bytes: bytes.to_vec(), content_type, disposition }
+        rustpress_rest::edit::Body::Raw { bytes: bytes.to_vec(), content_type: content_type.clone(), disposition }
     };
     let form_nonce = match &rest_body {
         rustpress_rest::edit::Body::Form(pairs) => pairs.iter().find(|(k, _)| k == "_wpnonce").map(|(_, v)| v.clone()),
@@ -635,7 +648,10 @@ async fn rest_edit_route(app: &Arc<App>, request: Request<Body>) -> std::result:
     let remote_addr = crate::client::Client::of(&app.config, &parts, &loaded.site.settings.siteurl).ip;
     let user_agent = parts.headers.get(header::USER_AGENT).and_then(|v| v.to_str().ok()).map(str::to_owned);
     let rest = Rest::new(&loaded.site, &loaded.theme, &loaded.registry).with_host(parts.headers.get(header::HOST).and_then(|v| v.to_str().ok()).unwrap_or_default());
-    let reply = rest.handle_as(&route, &rest_query, access, rustpress_rest::edit::Request { method, body: rest_body, basic: crate::admin::basic_credentials(&parts.headers), remote_addr, user_agent }).await;
+    let referer = parts.headers.get(header::REFERER).and_then(|v| v.to_str().ok()).map(str::to_owned);
+    let rest = rest.with_mailer(loaded.mail.clone());
+    let request = rustpress_rest::edit::Request { method, body: rest_body, basic: crate::admin::basic_credentials(&parts.headers), remote_addr, user_agent, content_type: Some(content_type).filter(|c| !c.is_empty()), referer };
+    let reply = rest.handle_as(&route, &rest_query, access, request).await;
     let response = match reply {
         Ok(reply) => rest_response(reply),
         Err(e) => {

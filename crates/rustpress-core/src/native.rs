@@ -148,6 +148,104 @@ pub trait ActivePlugin: Send + Sync {
     fn shortcode<'a>(&'a self, _tag: &'a str, _atts: &'a crate::shortcodes::Atts, _content: Option<&'a str>, _ctx: &'a ShortcodeContext<'a>) -> BoxFuture<'a, Result<String>> {
         Box::pin(async { Ok(String::new()) })
     }
+
+    /// The routes of the plugin's REST API as `GET /wp-json/` lists them (`register_rest_route()` on
+    /// `rest_api_init`): a JSON object of route and description, `@REST@` standing for the address of the API. A
+    /// `schema` of a description is only sent to `OPTIONS`.
+    fn rest_index(&self) -> &'static str {
+        ""
+    }
+
+    /// A request to the plugin's REST API: the answer, or `None` when no endpoint of the plugin takes it.
+    fn rest<'a>(&'a self, _request: &'a RestRequest<'a>) -> BoxFuture<'a, Result<Option<RestAnswer>>> {
+        Box::pin(async { Ok(None) })
+    }
+}
+
+/// A request to the REST API of a plugin.
+pub struct RestRequest<'a> {
+    pub site: &'a Site,
+    pub method: &'a str,
+    /// The route after `/wp-json` (`/contact-form-7/v1/contact-forms/5/feedback`).
+    pub route: &'a str,
+    /// The path and the query string of the request as they were sent (`/wp-json/...`, or `/` with
+    /// `rest_route=...` for plain permalinks).
+    pub path: &'a str,
+    pub query: &'a str,
+    /// The fields of a form body, as they were sent (`boxes[]` keeps its brackets).
+    pub fields: &'a [(String, String)],
+    pub files: &'a [RestFile],
+    /// The `Content-Type` header.
+    pub content_type: &'a str,
+    /// `$_SERVER['REMOTE_ADDR']`, `HTTP_USER_AGENT` and `HTTP_REFERER`.
+    pub remote_addr: Option<&'a str>,
+    pub user_agent: Option<&'a str>,
+    pub referer: Option<&'a str>,
+    /// The signed-in user.
+    pub user: Option<&'a crate::Viewer>,
+    /// `time()`.
+    pub now: i64,
+    /// `wp_mail()`, when the site can send e-mail.
+    pub mailer: Option<&'a dyn Mailer>,
+}
+
+/// A file of a multipart body.
+#[derive(Debug, Clone)]
+pub struct RestFile {
+    pub field: String,
+    pub filename: String,
+    pub content_type: String,
+    pub bytes: Vec<u8>,
+}
+
+/// What a plugin's endpoint answers: `rest_ensure_response( $data )`, or a `WP_Error` as its JSON with the status.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RestAnswer {
+    pub status: u16,
+    pub data: serde_json::Value,
+    /// The request passed the `permission_callback`: the response names the methods of the route (`Allow`).
+    pub permitted: bool,
+}
+
+impl RestAnswer {
+    pub fn ok(data: serde_json::Value) -> Self {
+        Self { status: 200, data, permitted: true }
+    }
+
+    /// `new WP_Error( $code, $message, array( 'status' => $status ) )` of the callback.
+    pub fn error(code: &str, message: &str, status: u16) -> Self {
+        Self { status, data: serde_json::json!({"code": code, "message": message, "data": {"status": status}}), permitted: true }
+    }
+
+    /// The error of a `permission_callback`.
+    pub fn forbidden(code: &str, message: &str, status: u16) -> Self {
+        Self { permitted: false, ..Self::error(code, message, status) }
+    }
+}
+
+/// The arguments of `wp_mail( $to, $subject, $message, $headers, $attachments )`.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Email {
+    /// One address or several, separated by commas.
+    pub to: String,
+    pub subject: String,
+    pub body: String,
+    /// `Name: value` lines (`From`, `Content-Type`, `Reply-To`, `Cc`, `Bcc`, others are passed on).
+    pub headers: Vec<String>,
+    pub attachments: Vec<Attachment>,
+}
+
+/// A file attached to an [Email].
+#[derive(Debug, Clone, PartialEq)]
+pub struct Attachment {
+    pub filename: String,
+    pub content_type: String,
+    pub bytes: Vec<u8>,
+}
+
+/// `wp_mail()`: `false` when the message could not be sent.
+pub trait Mailer: Send + Sync {
+    fn send<'a>(&'a self, email: &'a Email) -> BoxFuture<'a, bool>;
 }
 
 /// What the shortcode of a plugin sees of the page it is printed on.
@@ -644,6 +742,21 @@ impl Plugins {
         for plugin in self.hooks() {
             if plugin.shortcode_tags().contains(&tag) {
                 return plugin.shortcode(tag, atts, content, ctx).await.map(Some);
+            }
+        }
+        Ok(None)
+    }
+
+    /// The routes of the plugins' REST APIs (see [`ActivePlugin::rest_index`]), in the order they register them.
+    pub fn rest_index(&self) -> Vec<&'static str> {
+        self.hooks().map(|plugin| plugin.rest_index()).filter(|index| !index.is_empty()).collect()
+    }
+
+    /// The answer of the plugin whose endpoint takes `request`.
+    pub async fn rest(&self, request: &RestRequest<'_>) -> Result<Option<RestAnswer>> {
+        for plugin in self.hooks() {
+            if let Some(answer) = plugin.rest(request).await? {
+                return Ok(Some(answer));
             }
         }
         Ok(None)

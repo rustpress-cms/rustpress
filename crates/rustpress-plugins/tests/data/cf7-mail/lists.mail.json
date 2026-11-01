@@ -1,0 +1,1 @@
+{"subject": "[menu] [_raw_menu]", "body": "menu: [menu]\nraw: [_raw_menu]\nmulti: [multi]\nboxes: [boxes]\nchoice: [choice]\nother: [other]\nnone: [missing]\nescaped: [[menu]]", "recipient": "admin@example.org", "additional_headers": "Reply-To: x@example.org"}

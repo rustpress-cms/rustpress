@@ -1,0 +1,56 @@
+{
+    "form": "[text your-name] [email your-email] [textarea msg] [text empty1]\n[acceptance terms] I agree to the <a href=\"/t\">terms</a>. [/acceptance]\n[date d]\n[submit]\n",
+    "mail": {
+        "subject": "Note from [your-name]",
+        "sender": "[your-name] <wordpress@localhost>",
+        "body": "<p>From: [your-name] <[your-email]></p>\nEmpty: [empty1]\nMessage:\n[msg]\n\nTerms: [terms]\nDate: [_format_d \"D, j M Y\"]\nSite: [_site_title] [_site_domain]\nTitle: [_contact_form_title]",
+        "recipient": "admin@example.org",
+        "additional_headers": "",
+        "attachments": "",
+        "use_html": true,
+        "exclude_blank": true
+    },
+    "mail_2": {
+        "active": false,
+        "subject": "[_site_title] \"[your-subject]\"",
+        "sender": "[_site_title] <admin@example.com>",
+        "body": "Message Body:\n[your-message]\n\n-- \nThis email is a receipt for your contact form submission on our website ([_site_title] [_site_url]) in which your email address was used. If that was not you, please ignore this message.",
+        "recipient": "[your-email]",
+        "additional_headers": "Reply-To: [_site_admin_email]",
+        "attachments": "",
+        "use_html": 0,
+        "exclude_blank": 0
+    },
+    "additional_settings": "",
+    "site": {
+        "blogname": "RustPress Test",
+        "blogdescription": "",
+        "home": "http://localhost:8080",
+        "admin_email": "admin@example.com"
+    },
+    "special": {
+        "_url": "http://localhost:8080/contact/?ref=golden",
+        "_date": "November 1, 2026",
+        "_time": "12:43 am"
+    },
+    "result": {
+        "status": "mail_sent",
+        "message": "Thank you for your message. It has been sent.",
+        "posted_data_hash": "HASH"
+    },
+    "mails": [
+        {
+            "to": "admin@example.org",
+            "subject": "Note from Jane & \"Joe\"",
+            "message": "<!doctype html>\n<html xmlns=\"http://www.w3.org/1999/xhtml\" dir=\"ltr\" lang=\"en-US\">\n<head>\n<title>Note from Jane &amp; &quot;Joe&quot;</title>\n</head>\n<body>\n<p>From: Jane &amp; &quot;Joe&quot; &lt;jane@example.org&gt;\n</p>\n<p>Message:<br />\nFirst line\n</p>\n<p>Second &lt;script&gt;x&lt;/script&gt; &#8212; it&#039;s\n</p>\n<p>Terms: Consented: I agree to the <a href=\"/t\">terms</a>.<br />\nDate: Mon, 1 Jun 2026<br />\nSite: RustPress Test localhost<br />\nTitle: Golden\n</p></body>\n</html>",
+            "headers": [
+                "From: Jane & \"Joe\" <wordpress@localhost>",
+                "Content-Type: text/html",
+                "X-WPCF7-Content-Type: text/html",
+                ""
+            ],
+            "attachments": [],
+            "embeds": []
+        }
+    ]
+}

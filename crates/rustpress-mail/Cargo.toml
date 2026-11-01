@@ -1,6 +1,6 @@
 [package]
 name = "rustpress-mail"
-description = "wp_mail(): plain text e-mail over SMTP"
+description = "wp_mail(): e-mail over SMTP"
 edition.workspace = true
 version.workspace = true
 license.workspace = true

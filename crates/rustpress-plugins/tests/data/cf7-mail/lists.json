@@ -1,0 +1,55 @@
+{
+    "form": "[select menu \"One|1\" \"Two|2\"] [select multi multiple \"A\" \"B\" \"C\"]\n[checkbox boxes \"c1|first\" \"c2\" \"c3\"] [radio choice \"r1\" \"r2\"]\n[checkbox other free_text \"x\" \"y\"]\n[submit]\n",
+    "mail": {
+        "subject": "[menu] [_raw_menu]",
+        "sender": "[_site_title] <admin@example.com>",
+        "body": "menu: [menu]\nraw: [_raw_menu]\nmulti: [multi]\nboxes: [boxes]\nchoice: [choice]\nother: [other]\nnone: [missing]\nescaped: [[menu]]",
+        "recipient": "admin@example.org",
+        "additional_headers": "Reply-To: x@example.org",
+        "attachments": "",
+        "use_html": 0,
+        "exclude_blank": 0
+    },
+    "mail_2": {
+        "active": false,
+        "subject": "[_site_title] \"[your-subject]\"",
+        "sender": "[_site_title] <admin@example.com>",
+        "body": "Message Body:\n[your-message]\n\n-- \nThis email is a receipt for your contact form submission on our website ([_site_title] [_site_url]) in which your email address was used. If that was not you, please ignore this message.",
+        "recipient": "[your-email]",
+        "additional_headers": "Reply-To: [_site_admin_email]",
+        "attachments": "",
+        "use_html": 0,
+        "exclude_blank": 0
+    },
+    "additional_settings": "",
+    "site": {
+        "blogname": "RustPress Test",
+        "blogdescription": "",
+        "home": "http://localhost:8080",
+        "admin_email": "admin@example.com"
+    },
+    "special": {
+        "_url": "http://localhost:8080/contact/?ref=golden",
+        "_date": "November 1, 2026",
+        "_time": "12:43 am"
+    },
+    "result": {
+        "status": "mail_sent",
+        "message": "Thank you for your message. It has been sent.",
+        "posted_data_hash": "HASH"
+    },
+    "mails": [
+        {
+            "to": "admin@example.org",
+            "subject": "2 Two",
+            "message": "menu: 2\nraw: Two\nmulti: A, C\nboxes: first, c3\nchoice: r2\nother: y more text\nnone: [missing]\nescaped: [menu]",
+            "headers": [
+                "From: RustPress Test <admin@example.com>",
+                "X-WPCF7-Content-Type: text/plain",
+                "Reply-To: x@example.org"
+            ],
+            "attachments": [],
+            "embeds": []
+        }
+    ]
+}
