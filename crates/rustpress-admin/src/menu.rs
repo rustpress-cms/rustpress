@@ -19,6 +19,8 @@ pub struct MenuItem {
     pub id: String,
     /// `$item[6]`: `dashicons-…`, `none`, or an image address.
     pub icon: String,
+    /// The address of a plugin's page (`admin.php?page=<slug>`); other entries link their slug.
+    pub href: Option<String>,
 }
 
 /// An entry of a submenu: `$submenu[ $parent ][ $position ]`.
@@ -52,7 +54,7 @@ pub struct MenuContext {
 }
 
 fn item(position: u32, title: &str, capability: &str, slug: &str, classes: &str, id: &str, icon: &str) -> MenuItem {
-    MenuItem { position, title: title.to_owned(), capability: capability.to_owned(), slug: slug.to_owned(), classes: classes.to_owned(), id: id.to_owned(), icon: icon.to_owned() }
+    MenuItem { position, title: title.to_owned(), capability: capability.to_owned(), slug: slug.to_owned(), classes: classes.to_owned(), id: id.to_owned(), icon: icon.to_owned(), href: None }
 }
 
 fn sub(position: u32, title: &str, capability: &str, slug: &str) -> SubItem {
@@ -209,9 +211,26 @@ impl AdminMenu {
 
     /// `add_submenu_page()` of the plugins (`admin_menu`): each page goes after the entries its parent has.
     pub fn with_plugin_pages(mut self, pages: &[rustpress_core::native::AdminPage]) -> Self {
-        for page in pages {
+        // `add_menu_page()`: the entries of the main menu come first, at their position or last.
+        for page in pages.iter().filter(|p| p.is_top_level()) {
+            let position = page.position.unwrap_or_else(|| self.items.iter().map(|m| m.position + 1).max().unwrap_or(0));
+            let hook = format!("toplevel_page_{}", page.slug);
+            let (icon, icon_class) = if page.icon.is_empty() { ("dashicons-admin-generic", "menu-icon-generic ") } else { (page.icon, "") };
+            self.items.push(MenuItem {
+                position,
+                title: page.menu_title.clone(),
+                capability: page.capability.to_owned(),
+                slug: page.slug.to_owned(),
+                classes: format!("menu-top {icon_class}{hook}"),
+                id: hook,
+                icon: icon.to_owned(),
+                href: Some(format!("admin.php?page={}", page.slug)),
+            });
+        }
+        let plugin_menus: Vec<&str> = pages.iter().filter(|p| p.is_top_level()).map(|p| p.slug).collect();
+        for page in pages.iter().filter(|p| !p.is_top_level()) {
             let position = self.submenu.iter().find(|(p, _)| p == page.parent).and_then(|(_, list)| list.iter().map(|s| s.position + 1).max()).unwrap_or(0);
-            let href = format!("{}?page={}", page.parent, page.slug);
+            let href = if plugin_menus.contains(&page.parent) { format!("admin.php?page={}", page.slug) } else { format!("{}?page={}", page.parent, page.slug) };
             self.add_sub(page.parent, SubItem { position, title: page.menu_title.clone(), capability: page.capability.to_owned(), slug: page.slug.to_owned(), classes: String::new(), href: Some(href) });
         }
         self
@@ -367,9 +386,11 @@ impl AdminMenu {
             if separator {
                 out.push_str("<div class=\"separator\"></div>");
             } else if !subs.is_empty() {
-                out.push_str(&format!("\n\t<a href='{}'{class} {aria}><div class='wp-menu-image{img_class}'{img_style} aria-hidden='true'>{img}</div><div class='wp-menu-name'>{title}</div></a>", subs[0].slug));
+                // The link to a plugin's page (`admin.php?page=`) comes without the line break of the others.
+                let indent = if subs[0].href.is_some() { "" } else { "\n\t" };
+                out.push_str(&format!("{indent}<a href='{}'{class} {aria}><div class='wp-menu-image{img_class}'{img_style} aria-hidden='true'>{img}</div><div class='wp-menu-name'>{title}</div></a>", subs[0].href.as_deref().unwrap_or(&subs[0].slug)));
             } else if !item.slug.is_empty() {
-                out.push_str(&format!("\n\t<a href='{}'{class} {aria}><div class='wp-menu-image{img_class}'{img_style} aria-hidden='true'>{img}</div><div class='wp-menu-name'>{}</div></a>", item.slug, item.title));
+                out.push_str(&format!("\n\t<a href='{}'{class} {aria}><div class='wp-menu-image{img_class}'{img_style} aria-hidden='true'>{img}</div><div class='wp-menu-name'>{}</div></a>", item.href.as_deref().unwrap_or(&item.slug), item.title));
             }
             if !subs.is_empty() {
                 out.push_str("\n\t<ul class='wp-submenu wp-submenu-wrap'>");

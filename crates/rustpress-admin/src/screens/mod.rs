@@ -212,6 +212,8 @@ impl Ctx<'_> {
         AdminContext {
             site: self.env.site,
             writer: self.env.writer,
+            user: self.user.id,
+            now: self.env.now,
             hook_suffix,
             post: self.request.post,
             request_uri: &self.request.request_uri,
@@ -523,21 +525,66 @@ pub struct PluginParts {
 
 /// A page a plugin added to the menu (`admin.php?page=` or `<parent>?page=`): the plugin's output in the frame.
 async fn plugin_page(ctx: &Ctx<'_>, plugin: &dyn ActivePlugin, page: &AdminPage) -> AdminResponse {
-    let hook = page.hook_suffix();
+    let hook = ctx.site().plugins.page_hook(ctx.site(), page);
+    // A page of a plugin's own menu is `admin.php`, its parent the slug of that menu.
+    let own_menu = page.is_top_level() || ctx.site().plugins.admin_pages(ctx.site()).iter().any(|p| p.is_top_level() && p.slug == page.parent);
+    let (file, parent_file) = match (page.is_top_level(), own_menu) {
+        (true, _) => ("admin.php", page.slug),
+        (false, true) => ("admin.php", page.parent),
+        (false, false) => (page.parent, page.parent),
+    };
     let parts = ctx.plugin_parts();
     let plugin_ctx = ctx.plugin_context(&parts, &hook);
+    match plugin.admin_page_load(page.slug, &plugin_ctx).await {
+        Ok(Some(rustpress_core::native::PageLoad::Redirect(location))) => return redirect(&location),
+        Ok(Some(rustpress_core::native::PageLoad::Die { status, title, message })) => return die(ctx.env, status, &title, &message),
+        Ok(None) => {}
+        Err(e) => tracing::error!(page = page.slug, error = %e, "loading the plugin page failed"),
+    }
     let content = plugin.admin_page(page.slug, &plugin_ctx).await.unwrap_or_else(|e| {
         tracing::error!(page = page.slug, error = %e, "plugin page failed");
         String::new()
     });
-    let plugin_help = ctx.site().plugins.admin_page_help(ctx.site(), page.slug);
+    let plugin_help = ctx.site().plugins.admin_page_help(ctx.site(), page.slug, &ctx.request.query);
+    // The screen options of a plugin's list: its columns as `render_list_table_columns_preferences()` lists them.
+    let options = match plugin.admin_screen_options(page.slug, ctx.site(), &ctx.request.query) {
+        Some(options) => {
+            let hidden = common::hidden_columns(ctx, &hook).await;
+            let columns = options.columns.into_iter().filter(|(key, label)| !["_title", "cb", "comment", "media", "name", "title", "username", "blogname"].contains(&key.as_str()) && !label.is_empty()).map(|(key, label)| {
+                let is_hidden = hidden.contains(&key);
+                (key, label, is_hidden)
+            });
+            let columns: Vec<(String, String, bool)> = columns.collect();
+            let per_page = match options.per_page {
+                Some((option, default)) => Some((option.to_owned(), common::items_per_page(ctx, option, default).await)),
+                None => None,
+            };
+            // `meta_box_prefs()` of a plugin's dashboard: the boxes the user hid.
+            let meta_boxes = if options.meta_boxes.is_empty() {
+                None
+            } else {
+                let hidden: Vec<String> = common::user_option(ctx, &format!("metaboxhidden_{hook}"))
+                    .await
+                    .and_then(|raw| rustpress_phpser::unserialize(raw.as_bytes()).ok())
+                    .and_then(|v| v.as_array().map(|items| items.iter().filter_map(|(_, v)| v.as_str().map(str::to_owned)).collect()))
+                    .unwrap_or_default();
+                Some(options.meta_boxes.into_iter().map(|(id, title)| {
+                    let is_hidden = hidden.contains(&id);
+                    (id, title, is_hidden)
+                }).collect())
+            };
+            Some(chrome::ScreenOptions { columns, per_page, meta_boxes, ..Default::default() })
+        }
+        None => None,
+    };
     let help = chrome::Help { tabs: plugin_help.tabs.into_iter().map(|t| chrome::HelpTab { id: t.id, title: t.title, content: t.content }).collect(), sidebar: plugin_help.sidebar };
     let screen = Screen {
-        file: page.parent.to_owned(),
-        parent_file: page.parent.to_owned(),
+        file: file.to_owned(),
+        parent_file: parent_file.to_owned(),
         submenu_file: Some(page.slug.to_owned()),
         title: page.page_title.clone(),
         help: Some(help),
+        options,
         hook_suffix: Some(hook.clone()),
         // The callback prints its markup right after the header.
         content_inline: true,

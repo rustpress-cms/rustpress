@@ -54,6 +54,9 @@ pub struct Table<'a> {
     pub has_items: bool,
     /// `table-view-{mode}` of the table (`get_user_setting( 'posts_list_mode', 'list' )`).
     pub view_mode: String,
+    /// The page count is the float of `ceil()` (a plugin's own `set_pagination_args()`): `$total_pages === $current`
+    /// never holds, so the links to the next and the last page stay.
+    pub float_pages: bool,
 }
 
 /// `submit_button( $text, $type, $name, false, array( 'id' => $id ) )`.
@@ -191,7 +194,7 @@ impl Table<'_> {
         ));
         let current_url = &self.current_url;
         let mut links: Vec<String> = Vec::new();
-        let (first_disabled, last_disabled) = (current == 1, current == total_pages);
+        let (first_disabled, last_disabled) = (current == 1, current == total_pages && !self.float_pages);
         let link = |class: &str, href: String, text: String, glyph: &str| {
             format!("<a class='{class} button' href='{}'><span class='screen-reader-text'>{text}</span><span aria-hidden='true'>{glyph}</span></a>", esc_url(&href))
         };
@@ -292,7 +295,9 @@ impl Table<'_> {
             out.push('\n');
             ""
         };
-        out.push_str(&format!("{indent}<h2 class='screen-reader-text'>{list_heading}</h2><table class=\"wp-list-table widefat fixed striped table-view-{} {}\">
+        // `render_screen_reader_content( 'heading_list' )` prints nothing when the screen has no such heading.
+        let heading = if list_heading.is_empty() { String::new() } else { format!("<h2 class='screen-reader-text'>{list_heading}</h2>") };
+        out.push_str(&format!("{indent}{heading}<table class=\"wp-list-table widefat fixed striped table-view-{} {}\">
 ", self.view_mode, self.plural));
         let caption_html = if caption.is_empty() { String::new() } else { format!("<caption class=\"screen-reader-text\">{caption}</caption>") };
         out.push_str(&format!("		{caption_html}	<thead>

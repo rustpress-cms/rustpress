@@ -99,7 +99,7 @@ pub fn filter_message(text: &str, tags: &Tags<'_>) -> String {
 }
 
 /// `wpcf7_messages()`: the messages of the plugin and its modules with their default texts.
-const DEFAULT_MESSAGES: &[(&str, &str)] = &[
+pub const DEFAULT_MESSAGES: &[(&str, &str)] = &[
     ("mail_sent_ok", "Thank you for your message. It has been sent."),
     ("mail_sent_ng", "There was an error trying to send your message. Please try again later."),
     ("validation_error", "One or more fields have an error. Please check and try again."),

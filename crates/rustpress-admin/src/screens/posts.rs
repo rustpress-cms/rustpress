@@ -617,6 +617,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         bulk_actions,
         has_items: !posts.is_empty(),
         view_mode: mode.clone(),
+        float_pages: false,
     };
 
     // Rows
