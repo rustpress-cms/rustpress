@@ -88,6 +88,22 @@ pub async fn feed_links(site: &Site, q: &QueryResult) -> Result<String> {
     Ok(out)
 }
 
+/// `wp_get_shortlink( 0, 'query' )`: `?p=` for a single post of a public type, the home page for the front page.
+pub fn shortlink(site: &Site, q: &QueryResult) -> Option<String> {
+    let Queried::Post(post) = &q.queried else { return None };
+    if !q.flags.is_singular() || post.id == 0 {
+        return None;
+    }
+    let settings = &site.settings;
+    if post.post_type == "page" && settings.show_on_front == rustpress_core::settings::ShowOnFront::Page && settings.page_on_front == post.id {
+        Some(site.home_url("/"))
+    } else if site.types.public_post_types().contains(&post.post_type.as_str()) {
+        Some(site.home_url(&format!("?p={}", post.id)))
+    } else {
+        None
+    }
+}
+
 /// `rest_get_queried_resource_route()`: the REST route of what the page shows.
 pub fn queried_rest_route(q: &QueryResult) -> Option<String> {
     let flags = &q.flags;
@@ -114,8 +130,14 @@ pub fn queried_rest_route(q: &QueryResult) -> Option<String> {
     }
 }
 
-/// The functions of the rendering environment a plugin may call while it prints into the head.
-struct Services<'a>(rustpress_blocks::Env<'a>, &'a std::path::Path);
+/// The functions of the rendering environment a plugin may call (`PageServices`).
+pub struct Services<'a>(rustpress_blocks::Env<'a>, &'a std::path::Path);
+
+impl<'a> Services<'a> {
+    pub fn new(theme: &'a crate::Theme, site: &'a Site, q: &'a QueryResult, registry: &'a rustpress_blocks::Registry) -> Self {
+        Self(rustpress_blocks::Env::new(site, q, theme, registry), &theme.wp_root)
+    }
+}
 
 impl rustpress_core::native::PageServices for Services<'_> {
     fn excerpt<'a>(&'a self, post: &'a rustpress_db::Post) -> futures::future::BoxFuture<'a, rustpress_core::Result<String>> {
@@ -146,7 +168,7 @@ pub async fn plugin_head(theme: &crate::Theme, site: &Site, q: &QueryResult, reg
     if site.plugins.is_empty() {
         return Ok(PluginHead { head: rustpress_core::native::Head { robots: Some(robots), ..Default::default() }, blocks: Vec::new() });
     }
-    let services = Services(rustpress_blocks::Env::new(site, q, theme, registry), &theme.wp_root);
+    let services = Services::new(theme, site, q, registry);
     let ctx = rustpress_core::native::HeadContext {
         site,
         query: q,

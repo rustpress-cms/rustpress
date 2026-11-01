@@ -113,6 +113,7 @@ impl Rest<'_> {
         if context != "embed" {
             data.insert("meta".into(), Value::Array(Vec::new()));
         }
+        data.extend(self.plugin_fields(rustpress_core::native::RestObject::User(user)).await?);
         let mut links = Links::new();
         links.self_link(self.rest_url(&format!("wp/v2/users/{}", user.id)));
         links.add("collection", vec![], self.rest_url("wp/v2/users"));

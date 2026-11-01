@@ -99,6 +99,8 @@ pub struct ImageData {
     pub mime: String,
     pub filesize: Option<u64>,
     pub path: Option<std::path::PathBuf>,
+    /// The data of an attachment (`get_data()`), not only a URL.
+    pub attachment: bool,
 }
 
 /// `WPSEO_Image_Utils::get_image( $id, $size )`.
@@ -115,6 +117,7 @@ async fn get_image(page: &Page<'_>, a: &Attachment, size: &str) -> Option<ImageD
             mime: meta.0.get("type").and_then(Value::as_str).unwrap_or_default().to_owned(),
             filesize: meta.0.get("filesize").map(php_int),
             path: a.path(page),
+            attachment: true,
         });
     }
     if image.is_none()
@@ -131,6 +134,7 @@ async fn get_image(page: &Page<'_>, a: &Attachment, size: &str) -> Option<ImageD
             mime: String::new(),
             filesize: entry.get("filesize").map(php_int),
             path: a.path(page).and_then(|p| p.parent().map(|d| d.join(file))),
+            attachment: true,
         });
     }
     if image.is_none()
@@ -145,6 +149,7 @@ async fn get_image(page: &Page<'_>, a: &Attachment, size: &str) -> Option<ImageD
     if image.mime.is_empty() {
         image.mime = a.post.post_mime_type.clone();
     }
+    image.attachment = true;
     Some(image)
 }
 

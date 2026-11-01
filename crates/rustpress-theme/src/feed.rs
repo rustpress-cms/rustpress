@@ -33,6 +33,8 @@ pub struct Feed {
     pub nocache: bool,
     /// The query is a 404 (`WP::handle_404()`): the feed is sent with that status.
     pub not_found: bool,
+    /// Headers plugins add (`do_feed_*`).
+    pub headers: Vec<(String, String)>,
 }
 
 impl Feed {
@@ -104,6 +106,8 @@ struct Ctx<'a> {
     kind: Kind,
     version: String,
     wp_root: std::path::PathBuf,
+    /// `get_bloginfo_rss( 'url' )`.
+    url: String,
 }
 
 impl Ctx<'_> {
@@ -138,7 +142,7 @@ let name = match self.kind {
         let mut list = String::new();
         for name in names {
             match self.kind {
-                Kind::Atom => list.push_str(&format!("<category scheme=\"{}\" term=\"{}\" />", esc_attr(&bloginfo_rss(self.site.settings.home.trim_end_matches('/'))), esc_attr(&name))),
+                Kind::Atom => list.push_str(&format!("<category scheme=\"{}\" term=\"{}\" />", esc_attr(&self.url), esc_attr(&name))),
                 Kind::Rdf => list.push_str(&format!("\t\t<dc:subject><![CDATA[{}]]></dc:subject>\n", html_entity_decode(&name))),
                 _ => list.push_str(&format!("\t\t<category><![CDATA[{}]]></category>\n", html_entity_decode(&name))),
             }
@@ -149,7 +153,7 @@ let name = match self.kind {
     /// `get_the_excerpt()` and the `the_excerpt_rss` filters.
     async fn excerpt(&self, post: &Arc<Post>) -> Result<String> {
         let text = rustpress_blocks::excerpt::get_the_excerpt(&self.env, post).await?;
-        Ok(convert_chars(&ent2ncr(&text)))
+        Ok(self.site.plugins.feed_item(self.site, post, true, convert_chars(&ent2ncr(&text))).await?)
     }
     /// `get_the_content_feed()`.
     async fn content(&self, post: &Arc<Post>) -> Result<String> {
@@ -157,7 +161,8 @@ let name = match self.kind {
         let content = the_content(&self.env, post, &raw).await?.replace("]]>", "]]&gt;");
         // `the_content_feed`: `wp_staticize_emoji()`.
         let formatting = rustpress_core::files::read(&self.wp_root.join("wp-includes").join("formatting.php")).unwrap_or_default();
-        Ok(rustpress_core::text::staticize_emoji(&content, &formatting))
+        let content = rustpress_core::text::staticize_emoji(&content, &formatting);
+        Ok(self.site.plugins.feed_item(self.site, post, false, content).await?)
     }
 
     fn enclosures(&self, meta: &[rustpress_db::PostMeta], post: &Post) -> String {
@@ -242,15 +247,33 @@ pub async fn render_feed(theme: &Theme, site: &Site, q: &QueryResult, registry: 
         return Ok(None);
     }
 
-    let ctx = Ctx { site, env: Env::new(site, q, theme, registry), kind, version: wp_version(&theme.wp_root), wp_root: theme.wp_root.clone() };
-    // The feed templates run their `while ( have_posts() )` loop on the main query.
-    ctx.env.with_state(|s| s.media.in_main_loop = true);
     let self_url = format!("{}{}", site.settings.home.trim_end_matches('/').split("://").next().map_or(String::new(), |s| format!("{s}://")) + site.settings.home.trim_end_matches('/').split("://").nth(1).unwrap_or("").split('/').next().unwrap_or(""), request_uri);
     let self_url = esc_url(&self_url);
-    let home = bloginfo_rss(site.settings.home.trim_end_matches('/'));
+    // Plugins change `get_bloginfo_rss( 'url' )` and add headers on `do_feed_*`.
+    let changes = if site.plugins.is_empty() {
+        rustpress_core::native::FeedChanges::default()
+    } else {
+        let services = crate::head::Services::new(theme, site, q, registry);
+        let kind_name = match kind {
+            Kind::Rss2 => "rss2",
+            Kind::Rss092 => "rss",
+            Kind::Rdf => "rdf",
+            Kind::Atom => "atom",
+        };
+        site.plugins.feed(&rustpress_core::native::FeedContext { site, query: q, services: &services, kind: kind_name, comments: comment_feed }).await?
+    };
+    let home = bloginfo_rss(changes.url.as_deref().unwrap_or(site.settings.home.trim_end_matches('/')));
+    let ctx = Ctx { site, env: Env::new(site, q, theme, registry), kind, version: wp_version(&theme.wp_root), wp_root: theme.wp_root.clone(), url: home.clone() };
+    // The feed templates run their `while ( have_posts() )` loop on the main query.
+    ctx.env.with_state(|s| s.media.in_main_loop = true);
     let description = bloginfo_rss(&site.settings.blogdescription);
     let lang = ctx.lang();
-    let title = document_title(site, q).await?;
+    // `wp_title_rss()` is `wp_get_document_title()`: plugins filter it with `pre_get_document_title`.
+    let plugin_title = if site.plugins.is_empty() { None } else { crate::head::plugin_head(theme, site, q, registry, false, None).await?.head.title.filter(|t| !t.is_empty()) };
+    let title = match plugin_title {
+        Some(title) => esc_html(&title),
+        None => document_title(site, q).await?,
+    };
 
     let comments: Vec<Comment> = if comment_feed {
         let post_id = if singular { q.posts.first().map(|p| p.id) } else { None };
@@ -285,7 +308,7 @@ pub async fn render_feed(theme: &Theme, site: &Site, q: &QueryResult, registry: 
 
     let (content_type, last_modified, etag, protected) = send_headers(site, q, kind, comment_feed).await?;
     let not_found = q.flags.is_404;
-    Ok(Some(Feed { content_type: content_type.to_owned(), body, modified_at: last_modified.clone(), last_modified: (!protected).then_some(last_modified), etag, nocache: protected || not_found, not_found }))
+    Ok(Some(Feed { content_type: content_type.to_owned(), body, modified_at: last_modified.clone(), last_modified: (!protected).then_some(last_modified), etag, nocache: protected || not_found, not_found, headers: changes.headers }))
 }
 
 /// The headers `WP::send_headers()` sets for a feed: content type, last modified, ETag and whether the
@@ -326,7 +349,7 @@ pub async fn redirect_headers(site: &Site, q: &QueryResult) -> Result<Option<Fee
         || feed_var.contains("comments-")
         || (!q.vars.get("withoutcomments").is_some_and(|v| !v.is_empty() && v != "0") && q.flags.is_singular());
     let (content_type, last_modified, etag, nocache) = send_headers(site, q, kind, comment_feed).await?;
-    Ok(Some(Feed { content_type: content_type.to_owned(), body: String::new(), modified_at: last_modified.clone(), last_modified: (!nocache).then_some(last_modified), etag, nocache, not_found: false }))
+    Ok(Some(Feed { content_type: content_type.to_owned(), body: String::new(), modified_at: last_modified.clone(), last_modified: (!nocache).then_some(last_modified), etag, nocache, not_found: false, headers: Vec::new() }))
 }
 
 /// `feed-rss.php`.

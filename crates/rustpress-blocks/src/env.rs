@@ -312,6 +312,25 @@ impl<'a> Env<'a> {
     }
 }
 
+/// What a plugin may ask of the rendering environment.
+impl rustpress_core::native::PageServices for Env<'_> {
+    fn excerpt<'a>(&'a self, post: &'a rustpress_db::Post) -> futures::future::BoxFuture<'a, rustpress_core::Result<String>> {
+        Box::pin(async move {
+            let post = std::sync::Arc::new(post.clone());
+            crate::excerpt::get_the_excerpt(self, &post).await.map_err(|e| match e {
+                crate::Error::Core(e) => e,
+                crate::Error::Db(e) => rustpress_core::Error::Db(e),
+            })
+        })
+    }
+
+    fn wp_root(&self) -> &std::path::Path {
+        // The blocks live in `wp-includes/blocks`.
+        let blocks = self.registry.blocks_dir();
+        blocks.parent().and_then(std::path::Path::parent).unwrap_or(blocks)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -343,3 +362,4 @@ mod tests {
         assert_eq!(state.unique_prefixed_id("modal-"), "modal-1");
     }
 }
+

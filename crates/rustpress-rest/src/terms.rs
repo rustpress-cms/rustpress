@@ -191,6 +191,9 @@ impl Rest<'_> {
             data.insert("parent".into(), Value::from(term.parent));
         }
         data.insert("meta".into(), Value::Array(Vec::new()));
+        let plugin_fields = self.plugin_fields(rustpress_core::native::RestObject::Term(term)).await?;
+        let plugin_keys: Vec<String> = plugin_fields.iter().map(|(k, _)| k.clone()).collect();
+        data.extend(plugin_fields);
 
         let mut links = Links::new();
         links.self_link(self.rest_url(&format!("wp/v2/{base}/{}", term.term_id)));
@@ -207,7 +210,7 @@ impl Rest<'_> {
         data.insert("_links".into(), links.finish());
 
         if context == "embed" {
-            data.retain(|k, _| matches!(k.as_str(), "id" | "link" | "name" | "slug" | "taxonomy" | "_links"));
+            data.retain(|k, _| matches!(k.as_str(), "id" | "link" | "name" | "slug" | "taxonomy" | "_links") || plugin_keys.contains(k));
         }
         Ok(Value::Object(data))
     }

@@ -152,7 +152,8 @@ impl<'a> Env<'a> {
 
             // Inner blocks.
             let mut content = String::new();
-            if !skips_inner_blocks(name) || !dynamic::is_dynamic(name) {
+            let dynamic = dynamic::is_dynamic(name) || self.site.plugins.renders_block(name);
+            if !skips_inner_blocks(name) || !dynamic {
                 let mut index = 0;
                 for chunk in &block.inner_content {
                     match chunk {
@@ -179,7 +180,7 @@ impl<'a> Env<'a> {
                 }
             }
 
-            if dynamic::is_dynamic(name) {
+            if dynamic {
                 let bc = BlockCtx {
                     env: self,
                     block,

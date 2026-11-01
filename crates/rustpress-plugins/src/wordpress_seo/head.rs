@@ -37,7 +37,7 @@ pub async fn title(page: &Page<'_>, p: &Presentation) -> Result<String> {
 }
 
 /// `stripslashes()`.
-fn stripslashes(text: &str) -> String {
+pub fn stripslashes(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     let mut chars = text.chars();
     while let Some(c) = chars.next() {
@@ -54,92 +54,156 @@ fn stripslashes(text: &str) -> String {
     out
 }
 
-/// What `call_wpseo_head()` prints.
-pub async fn present(page: &Page<'_>, p: &Presentation, title_tag: bool) -> Result<String> {
+/// What one presenter shows: its HTML and, for the REST API's `yoast_head_json`, its key and value (`get()`).
+struct Entry {
+    html: String,
+    json: Option<(String, serde_json::Value)>,
+}
+
+/// A presenter of a tag: the HTML of `present()`, the value of `get()` under the escaped key.
+fn tag_entry(format: Format, key: &str, value: &str, class: &str) -> Entry {
+    let json = (!value.is_empty() && value != "0").then(|| (key.replace([':', ' ', '-'], "_"), serde_json::Value::String(value.to_owned())));
+    Entry { html: tag(format, key, value, class), json }
+}
+
+fn html_entry(html: String) -> Entry {
+    Entry { html, json: None }
+}
+
+/// Where the presenters print: into `wp_head` of a page, or into the REST API (`Meta::get_head()`), where the title
+/// and robots presenters stay and no admin bar shows.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Target {
+    Page { title_tag: bool },
+    Rest,
+}
+
+/// The presenters of `Front_End_Integration::get_presenters()` for the page type, in their order.
+async fn entries(page: &Page<'_>, p: &Presentation, target: Target) -> Result<Vec<Entry>> {
     let o = page.options;
-    let class = if page.admin_bar { " class=\"yoast-seo-meta-tag\"" } else { "" };
+    let rest = target == Target::Rest;
+    let class = if page.admin_bar && !rest { " class=\"yoast-seo-meta-tag\"" } else { "" };
     let source = p.source();
     let kind = p.kind;
     let opengraph = o.is_true("opengraph");
     let singular = matches!(kind, Kind::PostType | Kind::StaticHomePage);
     let noindex = p.robots.iter().any(|(_, v)| v == "noindex");
-    let mut out: Vec<String> = Vec::new();
-    out.push(format!("<!-- This site is optimized with the Yoast SEO plugin v{} - https://yoast.com/product/yoast-seo-wordpress/ -->", super::VERSION));
-    // The title presenter only prints for a theme with `title-tag` support (or with `forcerewritetitle`).
+    let mut out: Vec<Entry> = Vec::new();
+    out.push(html_entry(format!("<!-- This site is optimized with the Yoast SEO plugin v{} - https://yoast.com/product/yoast-seo-wordpress/ -->", super::VERSION)));
+    // The title presenter prints for a theme with `title-tag` support (or with `forcerewritetitle`) and in the REST API.
+    let title_tag = match target {
+        Target::Page { title_tag } => title_tag,
+        Target::Rest => true,
+    };
     if title_tag || o.truthy("forcerewritetitle") {
         let title = title(page, p).await?;
-        if !title.is_empty() {
-            out.push(format!("<title>{}</title>", esc_html(&title)));
-        }
+        let json = (!title.is_empty()).then(|| ("title".to_owned(), serde_json::Value::String(title.clone())));
+        out.push(Entry { html: if title.is_empty() { String::new() } else { format!("<title>{}</title>", esc_html(&title)) }, json });
     }
     let description = replace_vars::replace(page, &p.meta_description, source).await?;
-    out.push(tag(Format::Name, "description", php_trim(&wp_strip_all_tags(&stripslashes(&description))), class));
+    out.push(tag_entry(Format::Name, "description", php_trim(&wp_strip_all_tags(&stripslashes(&description))), class));
+    // `wp_robots()` prints the robots on a page; the REST API keeps the presenter.
+    if rest {
+        let content: Vec<&str> = p.robots.iter().map(|(_, v)| v.as_str()).collect();
+        let html = if content.is_empty() { String::new() } else { format!("<meta name=\"robots\" content=\"{}\" />", esc_attr(&content.join(", "))) };
+        let json = (!p.robots.is_empty()).then(|| ("robots".to_owned(), serde_json::Value::Object(p.robots.iter().map(|(k, v)| (k.clone(), serde_json::Value::String(v.clone()))).collect())));
+        out.push(Entry { html, json });
+    }
     if kind == Kind::ErrorPage {
         if opengraph {
-            out.push(tag(Format::Property, "og:locale", &locale(page), class));
+            out.push(tag_entry(Format::Property, "og:locale", &locale(page), class));
             let og_title = replace_vars::replace(page, &p.og_title, source).await?;
-            out.push(tag(Format::Property, "og:title", &wp_strip_all_tags(php_trim(&og_title)), class));
-            out.push(tag(Format::Property, "og:site_name", php_trim(&p.og_site_name), class));
+            out.push(tag_entry(Format::Property, "og:title", &wp_strip_all_tags(php_trim(&og_title)), class));
+            out.push(tag_entry(Format::Property, "og:site_name", php_trim(&p.og_site_name), class));
         }
     } else {
-        if !noindex {
-            out.push(tag(Format::Link, "canonical", &super::urldecode(php_trim(&p.canonical)), class));
-            out.push(tag(Format::Link, "prev", php_trim(&adjacent_rel_url(page, p, &p.rel_prev, page.pagination_previous.as_deref())), class));
-            out.push(tag(Format::Link, "next", php_trim(&adjacent_rel_url(page, p, &p.rel_next, page.pagination_next.as_deref())), class));
+        let empty = String::new();
+        let (canonical, prev, next) = if noindex {
+            (empty.clone(), empty.clone(), empty)
+        } else {
+            let adjacent = |link: &str, html: Option<&str>| if rest { link.to_owned() } else { adjacent_rel_url(page, p, link, html) };
+            (super::urldecode(php_trim(&p.canonical)), php_trim(&adjacent(&p.rel_prev, page.pagination_previous.as_deref())).to_owned(), php_trim(&adjacent(&p.rel_next, page.pagination_next.as_deref())).to_owned())
+        };
+        out.push(tag_entry(Format::Link, "canonical", &canonical, class));
+        // `Meta::get_presenters()` leaves the adjacent links of date archives out of the REST API.
+        if !(rest && kind == Kind::DateArchive) {
+            out.push(tag_entry(Format::Link, "prev", &prev, class));
+            out.push(tag_entry(Format::Link, "next", &next, class));
         }
         if opengraph {
-            out.push(tag(Format::Property, "og:locale", &locale(page), class));
-            out.push(tag(Format::Property, "og:type", p.og_type, class));
+            out.push(tag_entry(Format::Property, "og:locale", &locale(page), class));
+            out.push(tag_entry(Format::Property, "og:type", p.og_type, class));
             let og_title = replace_vars::replace(page, &p.og_title, source).await?;
-            out.push(tag(Format::Property, "og:title", &wp_strip_all_tags(php_trim(&og_title)), class));
+            out.push(tag_entry(Format::Property, "og:title", &wp_strip_all_tags(php_trim(&og_title)), class));
             let og_description = replace_vars::replace(page, &p.og_description, source).await?;
-            out.push(tag(Format::Property, "og:description", php_trim(&wp_strip_all_tags(&stripslashes(&og_description))), class));
-            out.push(tag(Format::Property, "og:url", &super::urldecode(&p.og_url), class));
-            out.push(tag(Format::Property, "og:site_name", php_trim(&p.og_site_name), class));
+            out.push(tag_entry(Format::Property, "og:description", php_trim(&wp_strip_all_tags(&stripslashes(&og_description))), class));
+            out.push(tag_entry(Format::Property, "og:url", &super::urldecode(&p.og_url), class));
+            out.push(tag_entry(Format::Property, "og:site_name", php_trim(&p.og_site_name), class));
             if singular {
-                out.push(tag(Format::Property, "article:publisher", php_trim(&p.article_publisher), class));
-                out.push(tag(Format::Property, "article:author", php_trim(&p.article_author), class));
-                out.push(tag(Format::Property, "article:published_time", &p.article_published_time, class));
-                out.push(tag(Format::Property, "article:modified_time", &p.article_modified_time, class));
+                out.push(tag_entry(Format::Property, "article:publisher", php_trim(&p.article_publisher), class));
+                out.push(tag_entry(Format::Property, "article:author", php_trim(&p.article_author), class));
+                out.push(tag_entry(Format::Property, "article:published_time", &p.article_published_time, class));
+                out.push(tag_entry(Format::Property, "article:modified_time", &p.article_modified_time, class));
             }
-            out.push(og_images(page, p, class));
+            out.push(og_images(page, p, class, rest));
             if singular {
                 out.push(meta_author(page, p, class));
             }
         }
         if o.is_true("twitter") {
-            out.push(tag(Format::Name, "twitter:card", "summary_large_image", class));
+            out.push(tag_entry(Format::Name, "twitter:card", "summary_large_image", class));
             let twitter_title = replace_vars::replace(page, &p.twitter_title, source).await?;
-            out.push(tag(Format::Name, "twitter:title", php_trim(&twitter_title), class));
+            out.push(tag_entry(Format::Name, "twitter:title", php_trim(&twitter_title), class));
             let twitter_description = replace_vars::replace(page, &p.twitter_description, source).await?;
-            out.push(tag(Format::Name, "twitter:description", &twitter_description, class));
-            out.push(tag(Format::NameUrl, "twitter:image", &p.twitter_image, class));
+            out.push(tag_entry(Format::Name, "twitter:description", &twitter_description, class));
+            out.push(tag_entry(Format::NameUrl, "twitter:image", &p.twitter_image, class));
             if singular {
-                out.push(tag(Format::Name, "twitter:creator", &p.twitter_creator, class));
+                out.push(tag_entry(Format::Name, "twitter:creator", &p.twitter_creator, class));
             }
-            out.push(tag(Format::Name, "twitter:site", &twitter_site(&p.twitter_site), class));
+            out.push(tag_entry(Format::Name, "twitter:site", &twitter_site(&p.twitter_site), class));
         }
         if o.is_true("enable_enhanced_slack_sharing") && kind == Kind::PostType {
             out.push(slack(page, p, class).await?);
         }
     }
     if o.get("enable_schema").is_none_or(|v| !matches!(v, rustpress_phpser::Value::Bool(false))) {
-        out.push(schema_tag(page, p).await?);
+        out.push(schema_entry(page, p).await?);
     }
     if matches!(kind, Kind::HomePage | Kind::StaticHomePage) {
         for (key, name) in [("ahrefsverify", "ahrefs-site-verification"), ("baiduverify", "baidu-site-verification"), ("msverify", "msvalidate.01"), ("googleverify", "google-site-verification"), ("pinterestverify", "p:domain_verify"), ("yandexverify", "yandex-verification")] {
-            out.push(tag(Format::Name, name, &o.string(key), class));
+            out.push(tag_entry(Format::Name, name, &o.string(key), class));
         }
     }
-    out.push("<!-- / Yoast SEO plugin. -->".to_owned());
+    out.push(html_entry("<!-- / Yoast SEO plugin. -->".to_owned()));
+    Ok(out)
+}
+
+/// What `call_wpseo_head()` prints.
+pub async fn present(page: &Page<'_>, p: &Presentation, title_tag: bool) -> Result<String> {
     let mut html = String::from("\n");
-    for line in out.into_iter().filter(|l| !l.is_empty()) {
+    for entry in entries(page, p, Target::Page { title_tag }).await?.into_iter().filter(|e| !e.html.is_empty()) {
         html.push('\t');
-        html.push_str(&line);
+        html.push_str(&entry.html);
         html.push('\n');
     }
     html.push_str("\n\n");
     Ok(html)
+}
+
+/// `Meta::get_head()`: `yoast_head` and `yoast_head_json` of the REST API.
+pub async fn rest_head(page: &Page<'_>, p: &Presentation) -> Result<(String, serde_json::Value)> {
+    let mut html = String::new();
+    let mut json = serde_json::Map::new();
+    for entry in entries(page, p, Target::Rest).await? {
+        if !entry.html.is_empty() {
+            html.push_str(&entry.html);
+            html.push('\n');
+        }
+        if let Some((key, value)) = entry.json {
+            json.insert(key, value);
+        }
+    }
+    Ok((php_trim(&html).to_owned(), serde_json::Value::Object(json)))
 }
 
 /// `Front_End_Integration::adjacent_rel_url()` (the `wpseo_adjacent_rel_url` filter, added when a query block that
@@ -172,11 +236,12 @@ fn twitter_site(value: &str) -> String {
     }
 }
 
-/// `Open_Graph\Image_Presenter::present()`.
-fn og_images(page: &Page<'_>, p: &Presentation, class: &str) -> String {
+/// `Open_Graph\Image_Presenter`.
+fn og_images(page: &Page<'_>, p: &Presentation, class: &str, rest: bool) -> Entry {
     let mut out = String::new();
+    let mut list: Vec<serde_json::Value> = Vec::new();
     for image in &p.og_images {
-        let url = if page.query.flags.is_attachment { page.site.home_url(page.query.url_path.trim_matches('/')) } else { image.url.trim().to_owned() };
+        let url = if page.query.flags.is_attachment && !rest { page.site.home_url(page.query.url_path.trim_matches('/')) } else { image.url.trim().to_owned() };
         if !out.is_empty() {
             out.push_str("\n\t");
         }
@@ -190,21 +255,36 @@ fn og_images(page: &Page<'_>, p: &Presentation, class: &str) -> String {
         if !image.mime.trim().is_empty() {
             out.push_str(&format!("\n\t<meta property=\"og:image:type\" content=\"{}\"{class} />", esc_attr(image.mime.trim())));
         }
+        // `get()`: the keys in the order of the image's array (an attachment's data starts with its size).
+        let size = |n: u64| if n > 0 { serde_json::Value::from(n) } else { serde_json::Value::String(String::new()) };
+        let mut item = serde_json::Map::new();
+        if image.attachment {
+            item.insert("width".into(), size(image.width));
+            item.insert("height".into(), size(image.height));
+            item.insert("url".into(), image.url.trim().into());
+            item.insert("type".into(), image.mime.trim().into());
+        } else {
+            item.insert("url".into(), image.url.trim().into());
+            item.insert("type".into(), image.mime.trim().into());
+            item.insert("width".into(), size(image.width));
+            item.insert("height".into(), size(image.height));
+        }
+        list.push(serde_json::Value::Object(item));
     }
-    out
+    Entry { html: out, json: (!list.is_empty()).then(|| ("og_image".to_owned(), serde_json::Value::Array(list))) }
 }
 
 /// `Meta_Author_Presenter`.
-fn meta_author(page: &Page<'_>, p: &Presentation, class: &str) -> String {
+fn meta_author(page: &Page<'_>, p: &Presentation, class: &str) -> Entry {
     if p.model.object_sub_type != "post" {
-        return String::new();
+        return html_entry(String::new());
     }
-    let Some(user) = p.post().and_then(|post| page.users.get(&post.post_author)) else { return String::new() };
-    tag(Format::Name, "author", php_trim(&schema::smart_strip_tags(&user.display_name)), class)
+    let Some(user) = p.post().and_then(|post| page.users.get(&post.post_author)) else { return html_entry(String::new()) };
+    tag_entry(Format::Name, "author", php_trim(&schema::smart_strip_tags(&user.display_name)), class)
 }
 
 /// `Slack\Enhanced_Data_Presenter`.
-async fn slack(page: &Page<'_>, p: &Presentation, class: &str) -> Result<String> {
+async fn slack(page: &Page<'_>, p: &Presentation, class: &str) -> Result<Entry> {
     let mut data: Vec<(String, String)> = Vec::new();
     if p.model.object_sub_type == "post"
         && let Some(post) = p.post()
@@ -221,17 +301,19 @@ async fn slack(page: &Page<'_>, p: &Presentation, class: &str) -> Result<String>
         tags.push_str(&format!("\t<meta name=\"twitter:label{}\" content=\"{}\"{class} />\n", i + 1, esc_attr(label)));
         tags.push_str(&format!("\t<meta name=\"twitter:data{}\" content=\"{}\"{class} />\n", i + 1, esc_attr(value)));
     }
-    Ok(php_trim(&tags).to_owned())
+    let json = (!data.is_empty()).then(|| ("twitter_misc".to_owned(), serde_json::Value::Object(data.into_iter().map(|(k, v)| (k, serde_json::Value::String(v))).collect())));
+    Ok(Entry { html: php_trim(&tags).to_owned(), json })
 }
 
-/// `Schema_Presenter::present()`.
-async fn schema_tag(page: &Page<'_>, p: &Presentation) -> Result<String> {
+/// `Schema_Presenter`.
+async fn schema_entry(page: &Page<'_>, p: &Presentation) -> Result<Entry> {
     let mut ctx = schema::context(page, p).await?;
     let graph = schema::graph(page, &mut ctx).await?;
     let flags = rustpress_blocks::php_json::Flags { unescaped_slashes: false, unescaped_unicode: true };
     // `WPSEO_Utils::is_development_mode()`: a site address without a dot is a development site.
     let json = if page.site.site_url("").contains('.') { rustpress_blocks::php_json::encode_with(&graph, flags) } else { rustpress_blocks::php_json::encode_pretty(&graph, flags) };
-    Ok(format!("<script type=\"application/ld+json\" class=\"yoast-schema-graph\">{}</script>", json.replace('\n', "\n\t")))
+    let html = format!("<script type=\"application/ld+json\" class=\"yoast-schema-graph\">{}</script>", json.replace('\n', "\n\t"));
+    Ok(Entry { html, json: Some(("schema".to_owned(), graph)) })
 }
 
 /// `Open_Graph_Locale_Generator::generate()`.

@@ -102,8 +102,19 @@ fn meta_or_default(raw: Option<String>, key: &str) -> String {
 }
 
 impl Page<'_> {
-    /// `Current_Page_Helper::get_page_type()`.
+    /// The page type of the presentation: the one of the object asked for (REST API), else of the current page.
     pub fn kind(&self) -> Kind {
+        match &self.target {
+            Some((kind, _)) => *kind,
+            None => self.current_kind(),
+        }
+    }
+
+    /// `Current_Page_Helper::get_page_type()`: always `Fallback` in the REST API, where no main query ran.
+    pub fn current_kind(&self) -> Kind {
+        if self.target.is_some() {
+            return Kind::Fallback;
+        }
         let q = self.query;
         let f = &q.flags;
         let settings = &self.site.settings;
@@ -291,6 +302,9 @@ impl Page<'_> {
 
 /// Builds the indexable of the current page (`Indexable_Repository::for_current_page()`).
 pub async fn model(page: &Page<'_>) -> Result<(Model, Object)> {
+    if let Some((kind, object)) = &page.target {
+        return target_model(page, *kind, object).await;
+    }
     let q = page.query;
     let settings = &page.site.settings;
     let static_front = settings.show_on_front == rustpress_core::settings::ShowOnFront::Page;
@@ -345,6 +359,26 @@ pub async fn model(page: &Page<'_>) -> Result<(Model, Object)> {
         return Ok((system_model(page, "404"), Object::None));
     }
     Ok((Model { object_type: "unknown", post_status: "unindexed".into(), ..Model::default() }, Object::None))
+}
+
+/// The indexable of an object the REST API asks for (`Meta_Surface::for_*()`); `unknown` when the plugin builds
+/// none.
+async fn target_model(page: &Page<'_>, kind: Kind, object: &Object) -> Result<(Model, Object)> {
+    let unknown = || Model { object_type: "unknown", post_status: "unindexed".into(), ..Model::default() };
+    Ok(match (kind, object) {
+        (Kind::HomePage, _) => (home_model(page).await?, Object::None),
+        (_, Object::Post(post)) => (post_model(page, post).await?, object.clone()),
+        (_, Object::Term(term)) => (term_model(page, term).await?, object.clone()),
+        (_, Object::User(user)) => {
+            if page.options.truthy("disable-author") || (page.options.is_true("noindex-author-noposts-wpseo") && page.site.db.count_published_user_posts("post", user.id).await? == 0) {
+                (unknown(), Object::None)
+            } else {
+                (author_model(page, user).await?, object.clone())
+            }
+        }
+        (_, Object::PostType(post_type)) => (post_type_archive_model(page, post_type), object.clone()),
+        _ => (unknown(), Object::None),
+    })
 }
 
 /// `Indexable_Post_Builder::build()`.

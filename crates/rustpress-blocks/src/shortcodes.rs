@@ -69,7 +69,7 @@ async fn do_shortcode_tag(env: &Env<'_>, post: Option<&Arc<Post>>, text: &str, m
             let (plugins, outside_loop) = env.with_state(|s| (std::mem::take(&mut s.plugins), s.outside_loop));
             let state = std::sync::Mutex::new(plugins);
             let loop_post = if outside_loop { None } else { post.map(|p| p.id) };
-            let ctx = rustpress_core::native::ShortcodeContext { site: env.site, query: env.query, loop_post, state: &state };
+            let ctx = rustpress_core::native::ShortcodeContext { site: env.site, query: env.query, loop_post, state: &state, services: env };
             let output = env.site.plugins.shortcode(name, &atts, m.content.as_deref(), &ctx).await;
             env.with_state(|s| s.plugins = state.into_inner().unwrap_or_default());
             output?

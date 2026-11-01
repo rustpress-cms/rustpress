@@ -21,6 +21,7 @@ mod options;
 mod posts;
 mod primed;
 mod probe;
+mod seo;
 mod terms;
 mod users;
 mod write;
