@@ -252,10 +252,14 @@ async fn handle_request(axum::extract::State(app): axum::extract::State<Arc<App>
     }
     let uri = request.uri().clone();
     let headers = request.headers().clone();
+    let method = request.method().clone();
+    let (parts, body) = request.into_parts();
+    let client = crate::client::Client::of(&app.config, &parts, &app.current().await.site.settings.siteurl);
+    let request = Request::from_parts(parts, body);
     if let Some(response) = app.statics.serve(request).await {
         return response;
     }
-    match page(&app, &uri, &headers).await {
+    match page(&app, &uri, &headers, &method, &client).await {
         Ok(response) => response,
         Err(e) => {
             tracing::error!(error = %e, path = uri.path(), "request failed");
@@ -362,7 +366,7 @@ fn admin_file_of(path: &str) -> Option<String> {
     valid.then(|| rest.to_owned())
 }
 
-async fn page(app: &App, uri: &axum::http::Uri, request_headers: &axum::http::HeaderMap) -> Result<Response<Body>> {
+async fn page(app: &App, uri: &axum::http::Uri, request_headers: &axum::http::HeaderMap, method: &Method, client: &crate::client::Client) -> Result<Response<Body>> {
     let (path, query) = (uri.path(), uri.query().unwrap_or(""));
     let started = std::time::Instant::now();
     let loaded = app.current().await;
@@ -396,24 +400,57 @@ async fn page(app: &App, uri: &axum::http::Uri, request_headers: &axum::http::He
         None => None,
     };
     let before_query = started.elapsed();
+    // `init` of the plugins: they may answer the request, change it, or keep `redirect_canonical()` from it.
+    let header_list: Vec<(String, String)> = request_headers.iter().map(|(name, value)| (name.as_str().to_owned(), String::from_utf8_lossy(value.as_bytes()).into_owned())).collect();
+    let plugin_request = rustpress_core::native::PluginRequest {
+        method: method.as_str(),
+        uri: uri.path_and_query().map_or(path, |p| p.as_str()),
+        headers: &header_list,
+        remote_addr: client.ip.as_deref().unwrap_or_default(),
+        https: client.https,
+        viewer: viewer.as_ref(),
+        writer: app.writer.as_ref(),
+        state: Default::default(),
+    };
+    let init = loaded.site.plugins.init(&loaded.site, &plugin_request).await?;
+    let rewritten = match &init {
+        Some(rustpress_core::native::Init::Response(answer)) => return Ok(plugin_response(answer)),
+        Some(rustpress_core::native::Init::Rewrite(target)) => {
+            let (p, q) = target.split_once('?').unwrap_or((target, ""));
+            Some((p.to_owned(), q.to_owned(), target.clone()))
+        }
+        _ => None,
+    };
+    let (path, query) = match &rewritten {
+        Some((p, q, _)) => (p.as_str(), q.as_str()),
+        None => (path, query),
+    };
+    let request_uri = match &rewritten {
+        Some((_, _, target)) => target.as_str(),
+        None => uri.path_and_query().map_or(path, |p| p.as_str()),
+    };
+    // `send_headers`: what the plugins add to the page and to the redirects of `template_redirect`.
+    let sent_headers = loaded.site.plugins.send_headers(&loaded.site, &plugin_request);
     // Plugins answer requests of their own rewrite rules before the main query runs.
     let home_path = loaded.site.settings.home_path();
     let relative = path.strip_prefix(home_path.as_str()).unwrap_or(path).trim_start_matches('/');
     let served = if path.ends_with(".php") && path != "/index.php" { None } else { loaded.site.plugins.serve(&loaded.site, &rustpress_core::native::ServeRequest { path: relative, query, wp_root: &loaded.theme.wp_root }).await? };
     if let Some(rustpress_core::native::Serve::Response(answer)) = served {
-        let mut response = Response::new(Body::from(answer.body));
-        *response.status_mut() = StatusCode::from_u16(answer.status).unwrap_or(StatusCode::OK);
-        for (name, value) in &answer.headers {
-            if let (Ok(name), Ok(value)) = (header::HeaderName::from_bytes(name.as_bytes()), HeaderValue::from_str(value)) {
-                response.headers_mut().append(name, value);
-            }
-        }
-        return Ok(response);
+        return Ok(plugin_response(&answer));
     }
     let mut result = loaded.site.query_as(path, query, viewer.as_ref()).await?;
     if matches!(served, Some(rustpress_core::native::Serve::NotFound)) {
         result = result.into_404();
     }
+    // An error of a plugin's rule on `init`: the 404 template with its status.
+    let error = match &init {
+        Some(rustpress_core::native::Init::Error { status, by }) => {
+            result = result.into_404();
+            result.flags.is_feed = false;
+            Some((*status, *by))
+        }
+        _ => None,
+    };
     let query_done = started.elapsed();
     result.http_host = request_headers.get(header::HOST).and_then(|v| v.to_str().ok()).map(str::to_owned);
     // Physical PHP endpoints (wp-login.php, xmlrpc.php, ...) do not exist here; they get the
@@ -421,18 +458,10 @@ async fn page(app: &App, uri: &axum::http::Uri, request_headers: &axum::http::He
     let php_endpoint = path.ends_with(".php") && path != "/index.php";
     // `template_redirect` of the plugins runs before `redirect_canonical()`.
     if !php_endpoint && let Some(plugin) = loaded.site.plugins.template_redirect(&loaded.site, &result).await? {
-        let mut response = redirect(&plugin.location);
-        if let Some(status) = StatusCode::from_u16(plugin.status).ok().filter(StatusCode::is_redirection) {
-            *response.status_mut() = status;
-        }
-        singular_headers(&mut response, &result, &loaded);
-        let headers = response.headers_mut();
-        headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("text/html; charset=UTF-8"));
-        headers.insert("x-redirect-by", HeaderValue::from_static(plugin.by));
-        // The redirect exits before `rest_output_link_header()` (`template_redirect` at priority 11).
-        return Ok(response);
+        return plugin_redirect(&loaded, &plugin_request, &sent_headers, &result, &plugin).await;
     }
-    let canonical = if php_endpoint { None } else { loaded.site.canonical_redirect_for_request(path, query, &result).await? };
+    // A rule of a plugin that took the request on `init` turns `redirect_canonical()` off.
+    let canonical = if php_endpoint || init.is_some() { None } else { loaded.site.canonical_redirect_for_request(path, query, &result).await? };
     let canonical_done = started.elapsed();
     tracing::debug!(setup_ms = before_query.as_secs_f64() * 1000.0, query_ms = (query_done - before_query).as_secs_f64() * 1000.0, canonical_ms = (canonical_done - query_done).as_secs_f64() * 1000.0, path, "page prepared");
     if let Some(target) = canonical {
@@ -445,6 +474,15 @@ async fn page(app: &App, uri: &axum::http::Uri, request_headers: &axum::http::He
         if result.flags.is_404 && !result.parse_error_404 {
             no_cache(response.headers_mut());
         }
+        // `redirect_canonical()` passes the absolute address on.
+        let home = loaded.site.home_url("");
+        let origin = home.split_once("://").map_or(home.clone(), |(scheme, rest)| format!("{scheme}://{}", rest.split('/').next().unwrap_or_default()));
+        let absolute = if target.starts_with('/') { format!("{origin}{target}") } else { target.clone() };
+        let redirected = rustpress_core::native::Redirected { location: &absolute, status: 301, by: "WordPress" };
+        let plugin_headers = loaded.site.plugins.wp_redirect(&loaded.site, &plugin_request, &redirected).await?;
+        set_headers(&mut response, sent_headers.iter().chain(&plugin_headers));
+        // `wp_redirect( $redirect_url, 301 )` in `redirect_canonical()`.
+        response.headers_mut().insert("x-redirect-by", HeaderValue::from_static("WordPress"));
         if !result.flags.is_feed {
             response.headers_mut().insert(header::CONTENT_TYPE, HeaderValue::from_static("text/html; charset=UTF-8"));
         } else if let Some(feed) = rustpress_theme::feed::redirect_headers(&loaded.site, &result).await? {
@@ -469,8 +507,11 @@ async fn page(app: &App, uri: &axum::http::Uri, request_headers: &axum::http::He
     } else {
         result
     };
+    // `template_redirect` after `redirect_canonical()` on a 404 page.
+    if result.flags.is_404 && !php_endpoint && init.is_none() && let Some(plugin) = loaded.site.plugins.not_found(&loaded.site, &result, &plugin_request).await? {
+        return plugin_redirect(&loaded, &plugin_request, &sent_headers, &result, &plugin).await;
+    }
     if result.flags.is_feed {
-        let request_uri = uri.path_and_query().map_or(path, |p| p.as_str());
         let feed = rustpress_db::Db::with_term_cache(async {
             loaded.site.db.prime_loop(&result.posts).await?;
             render_feed(&loaded.theme, &loaded.site, &result, &loaded.registry, request_uri).await
@@ -481,6 +522,7 @@ async fn page(app: &App, uri: &axum::http::Uri, request_headers: &axum::http::He
         };
         let mut response = feed_response(&feed, request_headers);
         singular_headers(&mut response, &result, &loaded);
+        set_headers(&mut response, &sent_headers);
         return Ok(with_api_link(response, &loaded, &result));
     }
     let mut result = result;
@@ -489,6 +531,7 @@ async fn page(app: &App, uri: &axum::http::Uri, request_headers: &axum::http::He
         for (name, value) in loaded.site.plugins.robots_txt_headers() {
             response.headers_mut().insert(name, HeaderValue::from_static(value));
         }
+        set_headers(&mut response, &sent_headers);
         return Ok(with_api_link(response, &loaded, &result));
     }
     if result.flags.is_favicon {
@@ -499,6 +542,9 @@ async fn page(app: &App, uri: &axum::http::Uri, request_headers: &axum::http::He
         let mut response = redirect(&icon);
         *response.status_mut() = StatusCode::FOUND;
         response.headers_mut().insert(header::CONTENT_TYPE, HeaderValue::from_static("text/html; charset=UTF-8"));
+        let redirected = rustpress_core::native::Redirected { location: &icon, status: 302, by: "WordPress" };
+        let plugin_headers = loaded.site.plugins.wp_redirect(&loaded.site, &plugin_request, &redirected).await?;
+        set_headers(&mut response, sent_headers.iter().chain(&plugin_headers));
         return Ok(with_api_link(response, &loaded, &result));
     }
     if result.flags.is_sitemap {
@@ -517,6 +563,9 @@ async fn page(app: &App, uri: &axum::http::Uri, request_headers: &axum::http::He
         *response.status_mut() = StatusCode::FOUND;
         response.headers_mut().insert(header::CONTENT_TYPE, HeaderValue::from_static("text/html; charset=UTF-8"));
         singular_headers(&mut response, &result, &loaded);
+        let redirected = rustpress_core::native::Redirected { location: &permalink, status: 302, by: "WordPress" };
+        let plugin_headers = loaded.site.plugins.wp_redirect(&loaded.site, &plugin_request, &redirected).await?;
+        set_headers(&mut response, sent_headers.iter().chain(&plugin_headers));
         return Ok(with_api_link(response, &loaded, &result));
     }
     // The terms of the posts of the main query are read once (`update_object_term_cache()`).
@@ -536,6 +585,13 @@ async fn page(app: &App, uri: &axum::http::Uri, request_headers: &axum::http::He
         response.headers_mut().insert("x-wp-embed", HeaderValue::from_static("true"));
     }
     singular_headers(&mut response, &result, &loaded);
+    set_headers(&mut response, &sent_headers);
+    // `status_header()`, `nocache_headers()` and `X-Redirect-By` of the rule on `wp`.
+    if let Some((status, by)) = error {
+        *response.status_mut() = StatusCode::from_u16(status).unwrap_or(StatusCode::NOT_FOUND);
+        no_cache(response.headers_mut());
+        response.headers_mut().insert("x-redirect-by", HeaderValue::from_static(by));
+    }
     Ok(with_api_link(response, &loaded, &result))
 }
 
@@ -592,6 +648,44 @@ fn typed(status: StatusCode, content_type: &str, body: String) -> Response<Body>
         response.headers_mut().insert(header::CONTENT_TYPE, value);
     }
     response
+}
+
+/// A complete answer of a plugin.
+fn plugin_response(answer: &rustpress_core::native::PluginResponse) -> Response<Body> {
+    let mut response = Response::new(Body::from(answer.body.clone()));
+    *response.status_mut() = StatusCode::from_u16(answer.status).unwrap_or(StatusCode::OK);
+    for (name, value) in &answer.headers {
+        if let (Ok(name), Ok(value)) = (header::HeaderName::from_bytes(name.as_bytes()), HeaderValue::from_str(value)) {
+            response.headers_mut().append(name, value);
+        }
+    }
+    response
+}
+
+/// Headers sent with `header()`: each replaces one of the same name.
+fn set_headers<'a>(response: &mut Response<Body>, headers: impl IntoIterator<Item = &'a (String, String)>) {
+    for (name, value) in headers {
+        if let (Ok(name), Ok(value)) = (header::HeaderName::from_bytes(name.as_bytes()), HeaderValue::from_str(value)) {
+            response.headers_mut().insert(name, value);
+        }
+    }
+}
+
+/// A redirect a plugin asks for on `template_redirect`, with what `send_headers` and `wp_redirect` add. It exits
+/// before `rest_output_link_header()` (`template_redirect` at priority 11).
+async fn plugin_redirect(loaded: &Loaded, request: &rustpress_core::native::PluginRequest<'_>, sent: &[(String, String)], result: &rustpress_core::QueryResult, plugin: &rustpress_core::native::Redirect) -> Result<Response<Body>> {
+    let mut response = redirect(&plugin.location);
+    if let Some(status) = StatusCode::from_u16(plugin.status).ok().filter(StatusCode::is_redirection) {
+        *response.status_mut() = status;
+    }
+    singular_headers(&mut response, result, loaded);
+    let redirected = rustpress_core::native::Redirected { location: &plugin.location, status: plugin.status, by: plugin.by };
+    let plugin_headers = loaded.site.plugins.wp_redirect(&loaded.site, request, &redirected).await?;
+    set_headers(&mut response, sent.iter().chain(&plugin_headers));
+    let headers = response.headers_mut();
+    headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("text/html; charset=UTF-8"));
+    headers.insert("x-redirect-by", HeaderValue::from_static(plugin.by));
+    Ok(response)
 }
 
 fn redirect(location: &str) -> Response<Body> {

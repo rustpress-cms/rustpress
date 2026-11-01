@@ -21,6 +21,7 @@ mod options;
 mod posts;
 mod primed;
 mod probe;
+mod redirection;
 mod seo;
 mod terms;
 mod users;
@@ -40,6 +41,7 @@ pub use info::ServerInfo;
 pub use models::{AuthUser, Comment, Post, PostMeta, Term, User};
 pub use posts::{Order, OrderBy, PostQuery};
 pub use probe::{Probe, probe};
+pub use redirection::RedirectionItem;
 pub use write::{Val, Writer};
 
 #[derive(Debug, thiserror::Error)]

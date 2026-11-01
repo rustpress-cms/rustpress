@@ -125,6 +125,28 @@ pub trait ActivePlugin: Send + Sync {
         Box::pin(async { Ok(None) })
     }
 
+    /// `init` on the website, before WordPress parses the request: the plugin may answer it, change it, or keep
+    /// `redirect_canonical()` from redirecting it.
+    fn init<'a>(&'a self, _site: &'a Site, _request: &'a PluginRequest<'a>) -> BoxFuture<'a, Result<Option<Init>>> {
+        Box::pin(async { Ok(None) })
+    }
+
+    /// `send_headers`: headers of every page (and of the redirects `template_redirect` sends).
+    fn send_headers(&self, _site: &Site, _request: &PluginRequest<'_>) -> Vec<(String, String)> {
+        Vec::new()
+    }
+
+    /// The `wp_redirect` and `x_redirect_by` filters: headers a redirect sends before `X-Redirect-By` and
+    /// `Location` (`header()` replaces one of the same name).
+    fn wp_redirect<'a>(&'a self, _site: &'a Site, _request: &'a PluginRequest<'a>, _redirect: &'a Redirected<'a>) -> BoxFuture<'a, Result<Vec<(String, String)>>> {
+        Box::pin(async { Ok(Vec::new()) })
+    }
+
+    /// `template_redirect` after `redirect_canonical()` on a 404 page.
+    fn not_found<'a>(&'a self, _site: &'a Site, _query: &'a crate::QueryResult, _request: &'a PluginRequest<'a>) -> BoxFuture<'a, Result<Option<Redirect>>> {
+        Box::pin(async { Ok(None) })
+    }
+
     /// Whether the plugin calls `wp_reset_query()` on `wp_head`: `wp_reset_postdata()` then fires `the_post` for the
     /// global post (the first post of the main query), before a classic theme prints its header and after a block
     /// theme rendered its template.
@@ -442,6 +464,58 @@ pub struct Redirect {
     pub by: &'static str,
 }
 
+/// The request as `$_SERVER` describes it, for the hooks that run besides the main query.
+pub struct PluginRequest<'a> {
+    pub method: &'a str,
+    /// `$_SERVER['REQUEST_URI']` as the client sent it.
+    pub uri: &'a str,
+    /// The request headers with lower-case names.
+    pub headers: &'a [(String, String)],
+    /// `$_SERVER['REMOTE_ADDR']`.
+    pub remote_addr: &'a str,
+    /// `is_ssl()`.
+    pub https: bool,
+    /// The signed-in user.
+    pub viewer: Option<&'a crate::Viewer>,
+    pub writer: Option<&'a rustpress_db::Writer>,
+    /// What the plugins remember between the hooks of the request.
+    pub state: std::sync::Mutex<PluginState>,
+}
+
+impl PluginRequest<'_> {
+    /// The first header of the name (lower case).
+    pub fn header(&self, name: &str) -> Option<&str> {
+        self.headers.iter().find(|(n, _)| n == name).map(|(_, v)| v.as_str())
+    }
+
+    /// `$_SERVER['HTTP_HOST']`.
+    pub fn host(&self) -> &str {
+        self.header("host").unwrap_or_default()
+    }
+}
+
+/// What a plugin does with a request on `init`.
+#[derive(Debug)]
+pub enum Init {
+    /// `wp_redirect()` and `die()`: the answer as the plugin sends it.
+    Response(PluginResponse),
+    /// The request goes on with another `REQUEST_URI` (and its `$_GET`).
+    Rewrite(String),
+    /// The 404 template with this status (`status_header()`, `nocache_headers()` and `X-Redirect-By` on `wp`).
+    Error { status: u16, by: &'static str },
+    /// A rule took the request without changing it.
+    Matched,
+}
+
+/// A redirect WordPress or a plugin sends with `wp_redirect()`.
+#[derive(Debug)]
+pub struct Redirected<'a> {
+    pub location: &'a str,
+    pub status: u16,
+    /// The `$x_redirect_by` argument.
+    pub by: &'a str,
+}
+
 /// A directive of `wp_robots()`: `Flag(true)` prints its name, `Value` prints `name:value`, `Flag(false)` nothing.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Robot {
@@ -520,6 +594,7 @@ pub struct ShortcodeContext<'a> {
 pub struct PluginState {
     pub counters: std::collections::HashMap<&'static str, u64>,
     pub lists: std::collections::HashMap<&'static str, Vec<String>>,
+    pub flags: std::collections::HashSet<&'static str>,
 }
 
 impl PluginState {
@@ -1073,6 +1148,40 @@ impl Plugins {
     pub async fn template_redirect(&self, site: &Site, query: &crate::QueryResult) -> Result<Option<Redirect>> {
         for plugin in self.hooks() {
             if let Some(redirect) = plugin.template_redirect(site, query).await? {
+                return Ok(Some(redirect));
+            }
+        }
+        Ok(None)
+    }
+
+    /// What the plugins do on `init` (the first one that acts wins).
+    pub async fn init(&self, site: &Site, request: &PluginRequest<'_>) -> Result<Option<Init>> {
+        for plugin in self.hooks() {
+            if let Some(init) = plugin.init(site, request).await? {
+                return Ok(Some(init));
+            }
+        }
+        Ok(None)
+    }
+
+    /// The headers the plugins send on `send_headers`.
+    pub fn send_headers(&self, site: &Site, request: &PluginRequest<'_>) -> Vec<(String, String)> {
+        self.hooks().flat_map(|plugin| plugin.send_headers(site, request)).collect()
+    }
+
+    /// The headers the plugins add to a redirect.
+    pub async fn wp_redirect(&self, site: &Site, request: &PluginRequest<'_>, redirect: &Redirected<'_>) -> Result<Vec<(String, String)>> {
+        let mut headers = Vec::new();
+        for plugin in self.hooks() {
+            headers.extend(plugin.wp_redirect(site, request, redirect).await?);
+        }
+        Ok(headers)
+    }
+
+    /// The first redirect a plugin asks for on a 404 page after `redirect_canonical()`.
+    pub async fn not_found(&self, site: &Site, query: &crate::QueryResult, request: &PluginRequest<'_>) -> Result<Option<Redirect>> {
+        for plugin in self.hooks() {
+            if let Some(redirect) = plugin.not_found(site, query, request).await? {
                 return Ok(Some(redirect));
             }
         }
