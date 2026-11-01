@@ -283,6 +283,8 @@ impl ActivePlugin for Loaded {
             match slug {
                 "wpcf7" => admin::management_page(ctx).await,
                 "wpcf7-new" => Ok(admin::add_new_page(ctx)),
+                "wpcf7-dashboard" => admin::dashboard_page(ctx).await,
+                "wpcf7-integration" => admin::integration_page(ctx).await,
                 _ => Ok(String::new()),
             }
         })
@@ -302,12 +304,15 @@ impl ActivePlugin for Loaded {
     /// `add_screen_option( 'per_page' )` and the columns of the list (not on the editor).
     fn admin_screen_options(&self, slug: &str, site: &Site, query: &[(String, String)]) -> Option<rustpress_core::native::PageScreenOptions> {
         let post = query.iter().rev().find(|(k, _)| k == "post").map(|(_, v)| v.as_str()).unwrap_or_default();
+        if slug == "wpcf7-dashboard" {
+            return Some(rustpress_core::native::PageScreenOptions { columns: Vec::new(), per_page: None, meta_boxes: admin::dashboard_boxes(site) });
+        }
         if slug != "wpcf7" || self.by_id(post).is_some() {
             return None;
         }
         let t = |text: &str| site.trd(DOMAIN, text);
         let columns = [("cb", "<input type=\"checkbox\" />".to_owned()), ("title", t("Title")), ("author", t("Author")), ("date", t("Date"))];
-        Some(rustpress_core::native::PageScreenOptions { columns: columns.into_iter().map(|(k, v)| (k.to_owned(), v)).collect(), per_page: ("wpcf7_contact_forms_per_page", 20) })
+        Some(rustpress_core::native::PageScreenOptions { columns: columns.into_iter().map(|(k, v)| (k.to_owned(), v)).collect(), per_page: Some(("wpcf7_contact_forms_per_page", 20)), meta_boxes: Vec::new() })
     }
 
     fn screen_option_names(&self) -> &'static [&'static str] {

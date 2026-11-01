@@ -317,12 +317,14 @@ pub struct Uploader<'a> {
     pub media_form_nonce: bool,
 }
 
-/// The screen options of a plugin's list: the columns (key and title, in order) and "Number of items per page"
-/// (the option and its default).
+/// The screen options of a plugin's page: the columns of its list (key and title, in order), "Number of items per
+/// page" (the option and its default) and the boxes of a dashboard.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PageScreenOptions {
     pub columns: Vec<(String, String)>,
-    pub per_page: (&'static str, u64),
+    pub per_page: Option<(&'static str, u64)>,
+    /// The boxes of a dashboard (id and title), for "Screen elements".
+    pub meta_boxes: Vec<(String, String)>,
 }
 
 /// The end of a `load-{$page_hook}` callback that does not print the page.

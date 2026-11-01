@@ -333,6 +333,291 @@ pub fn add_new_page(ctx: &AdminContext<'_>) -> String {
     super::editor::page(ctx, &super::editor::Edited { form: &form, initial: true }, &updated_message(ctx))
 }
 
+/// `wpcf7_dashboard_widgets()`: id, title and column.
+fn dashboard_widgets(site: &Site) -> Vec<(&'static str, String, &'static str)> {
+    let t = |text: &str| tr(site, text);
+    vec![
+        ("wpcf7_dashboard_right_now", t("At a Glance"), "normal"),
+        ("wpcf7_dashboard_news", t("News"), "normal"),
+        ("wpcf7_get_support", t("Get Support"), "side"),
+        ("wpcf7_spam_protection", t("Spam Protection"), "side"),
+        ("wpcf7_save_messages", t("Save Messages"), "side"),
+    ]
+}
+
+/// The boxes of the dashboard for the screen options (`meta_box_prefs()`).
+pub fn dashboard_boxes(site: &Site) -> Vec<(String, String)> {
+    dashboard_widgets(site).into_iter().map(|(id, title, _)| (id.to_owned(), title)).collect()
+}
+
+/// `wpcf7_dashboard_right_now()`.
+async fn right_now(site: &Site) -> Result<String> {
+    let t = |text: &str| tr(site, text);
+    let count = current_forms(site).await?.len() as i64;
+    let mut f = HtmlFormatter::new(false);
+    f.open("ul", &[]);
+    f.open("li", &[("class", Att::str("page-count"))]);
+    f.open("a", &[("href", Att::str(site.site_url("wp-admin/admin.php?page=wpcf7")))]);
+    let text = site.i18n().ngettext(DOMAIN, "%s Contact form", "%s Contact forms", count);
+    f.append_preformatted(&esc_html(&text.replacen("%s", &site.number_i18n(count as u64), 1)));
+    f.end_tag("ul");
+    f.open("p", &[]);
+    f.append_preformatted(&esc_html(&t("Contact Form 7 version %s is running.").replacen("%s", super::VERSION, 1)));
+    // `get_plugin_updates()`: the update WordPress found for the plugin.
+    let updates = site.options.fetch(&site.db, "_site_transient_update_plugins").await?.unwrap_or_default();
+    if let Ok(transient) = rustpress_phpser::unserialize(updates.as_bytes())
+        && let Some(rustpress_phpser::Value::Object { props, .. }) = Some(transient)
+        && props.iter().any(|(k, v)| matches!(k, rustpress_phpser::Key::Str(name) if name == b"response") && v.get("contact-form-7/wp-contact-form-7.php").is_some())
+    {
+        f.append_whitespace();
+        f.open("a", &[("href", Att::str(site.site_url("wp-admin/update-core.php")))]);
+        f.append_preformatted(&esc_html(&t("&raquo; New version available")));
+    }
+    Ok(kses(&f.output()))
+}
+
+/// `wpcf7_dashboard_news()`: the cached feed (`wp_dashboard_cached_rss_widget()`), else the placeholder its script
+/// replaces.
+async fn news(site: &Site) -> Result<String> {
+    let key = format!("dash_v2_{:x}", md5::compute(format!("wpcf7_dashboard_cf7com_news_{}", site.locale())));
+    let cached = site.options.fetch(&site.db, &format!("_transient_{key}")).await?;
+    let fresh = match site.options.fetch(&site.db, &format!("_transient_timeout_{key}")).await?.and_then(|t| t.trim().parse::<i64>().ok()) {
+        Some(timeout) => timeout >= std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs() as i64),
+        None => true,
+    };
+    let inner = match cached.filter(|_| fresh) {
+        Some(feed) => feed,
+        None => format!(
+            "<p class=\"widget-loading hide-if-no-js\">{}</p><div class=\"notice notice-error inline hide-if-js\"><p>{}</p></div>",
+            site.tr("Loading&hellip;"),
+            site.tr("This widget requires JavaScript.")
+        ),
+    };
+    Ok(format!("<div class=\"cf7com-news hide-if-no-js\">{inner}</div>"))
+}
+
+/// The paragraphs of the boxes Get Support, Spam Protection and Save Messages.
+fn text_box(site: &Site, id: &str) -> String {
+    let t = |text: &str| tr(site, text);
+    let mut f = HtmlFormatter::new(false);
+    match id {
+        "wpcf7_get_support" => {
+            f.open("p", &[]);
+            f.append_preformatted(&t("Do you need help? These support channels are available:"));
+            f.open("ul", &[]);
+            f.open("li", &[("class", Att::str("public"))]);
+            f.open("a", &[("href", Att::str("https://wordpress.org/support/plugin/contact-form-7/"))]);
+            f.append_preformatted(&t("Public support forum on WordPress.org"));
+            f.open("li", &[("class", Att::str("private"))]);
+            f.open("a", &[("href", Att::str("https://contactform7.com/custom-development/"))]);
+            f.append_preformatted(&t("Private support by Codeable experts"));
+            f.end_tag("ul");
+            f.open("p", &[]);
+            f.append_preformatted(&t("Or, consult the <a href=\"%1$s\">docs</a> and <a href=\"%2$s\">FAQ</a>.").replacen("%1$s", "https://contactform7.com/docs/", 1).replacen("%2$s", "https://contactform7.com/faq/", 1));
+        }
+        "wpcf7_spam_protection" => {
+            f.open("p", &[]);
+            f.append_preformatted(&t("Spammers target everything. Your contact forms are not an exception."));
+            f.open("p", &[]);
+            f.append_preformatted(
+                &t("To provide effective protection, Contact Form 7 recommends using <a href=\"%1$s\"><strong>Turnstile</strong></a> (good at blocking bots) and <a href=\"%2$s\"><strong>Akismet</strong></a> (good at blocking human spammers) together.")
+                    .replacen("%1$s", "https://contactform7.com/turnstile-integration/", 1)
+                    .replacen("%2$s", "https://contactform7.com/spam-filtering-with-akismet/", 1),
+            );
+            f.open("p", &[]);
+            f.append_preformatted(&t("You can also block submissions that contain specific keywords or come from specific IP addresses (<a href=\"%s\"><strong>Disallowed list</strong></a>).").replacen("%s", "https://contactform7.com/comment-blacklist/", 1));
+        }
+        _ => {
+            f.open("p", &[]);
+            f.append_preformatted(
+                &t("Contact Form 7 itself doesn&#8217;t have a feature to store submitted messages; therefore, there is always a risk of losing important messages. Contact Form 7 recommends installing a separate plugin called <a href=\"%s\"><strong>Flamingo</strong></a>, which is dedicated to storing messages in the database.")
+                    .replacen("%s", "https://contactform7.com/save-submitted-messages-with-flamingo/", 1),
+            );
+            f.open("p", &[]);
+            f.append_preformatted(
+                &t("If you use contact forms for customer relationship management, consider activating the <a href=\"%s\"><strong>Brevo</strong></a> integration. With the integration, Contact Form 7 can safely connect to the leading CRM platform in Europe, while protecting user privacy.")
+                    .replacen("%s", "https://contactform7.com/sendinblue-integration/", 1),
+            );
+        }
+    }
+    kses(&f.output())
+}
+
+/// `print()` of a formatter made with the default options.
+fn kses(html: &str) -> String {
+    static ALLOWED: OnceLock<Allowed> = OnceLock::new();
+    rustpress_core::kses::kses(html, ALLOWED.get_or_init(form_context))
+}
+
+/// `wpcf7_admin_dashboard_page()` (`admin/dashboard.php`).
+pub async fn dashboard_page(ctx: &AdminContext<'_>) -> Result<String> {
+    let site = ctx.site;
+    let mut widgets = Vec::new();
+    for (id, title, column) in dashboard_widgets(site) {
+        let body = match id {
+            "wpcf7_dashboard_right_now" => right_now(site).await?,
+            "wpcf7_dashboard_news" => news(site).await?,
+            other => text_box(site, other),
+        };
+        widgets.push(rustpress_admin::screens::dashboard::PluginWidget { id: id.to_owned(), title, column, body });
+    }
+    let dashboard = rustpress_admin::screens::dashboard::plugin_dashboard(site, ctx.user, ctx.hook_suffix, &widgets, ctx.nonce).await;
+    let mut f = HtmlFormatter::new(false);
+    f.open("div", &[("class", Att::str("wrap"))]);
+    f.open("h1", &[]);
+    f.append_preformatted(&esc_html(&tr(site, "Contact Form 7 Dashboard")));
+    f.end_tag("h1");
+    f.append_printed("");
+    f.open("div", &[("id", Att::str("dashboard-widgets-wrap"))]);
+    f.append_printed(&dashboard);
+    Ok(kses(&f.output()))
+}
+
+/// A service of the integration page: name, title, categories, the link of its infobox, its description, the title
+/// of its documentation link and the address of that page.
+struct Service {
+    name: &'static str,
+    title: &'static str,
+    category: &'static str,
+    link: Option<(&'static str, &'static str)>,
+    description: &'static str,
+    doc: (&'static str, &'static str),
+    setup: bool,
+}
+
+/// The services in the order the modules register them (`WPCF7_Integration::add_service()`).
+const SERVICES: &[Service] = &[
+    Service {
+        name: "sendinblue",
+        title: "Brevo",
+        category: "Email marketing",
+        link: Some(("https://get.brevo.com/wpcf7-integration", "brevo.com")),
+        description: "Store and organize your contacts while protecting user privacy on Brevo, the leading CRM & email marketing platform in Europe. Brevo offers unlimited contacts and advanced marketing features.",
+        doc: ("https://contactform7.com/sendinblue-integration/", "Brevo integration"),
+        setup: true,
+    },
+    Service {
+        name: "akismet",
+        title: "Akismet",
+        category: "Spam protection",
+        link: Some(("https://akismet.com/", "akismet.com")),
+        description: "CAPTCHAs are designed to distinguish spambots from humans, and are therefore helpless against human spammers. In contrast to CAPTCHAs, Akismet checks form submissions against the global database of spam; this means Akismet is a comprehensive solution against spam. This is why we consider Akismet to be the centerpiece of the spam prevention strategy.",
+        doc: ("https://contactform7.com/spam-filtering-with-akismet/", "Spam filtering with Akismet"),
+        setup: false,
+    },
+    Service {
+        name: "turnstile",
+        title: "Turnstile",
+        category: "Spam protection",
+        link: Some(("https://www.cloudflare.com/application-services/products/turnstile/", "cloudflare.com")),
+        description: "Turnstile is Cloudflare&#8217;s smart CAPTCHA alternative, which confirms web visitors are real and blocks unwanted bots without slowing down web experiences for real users.",
+        doc: ("https://contactform7.com/turnstile-integration/", "Cloudflare Turnstile integration"),
+        setup: true,
+    },
+    Service {
+        name: "recaptcha",
+        title: "reCAPTCHA",
+        category: "Spam protection",
+        link: Some(("https://www.google.com/recaptcha/intro/index.html", "google.com/recaptcha")),
+        description: "reCAPTCHA protects you against spam and other types of automated abuse. With Contact Form 7&#8217;s reCAPTCHA integration module, you can block abusive form submissions by spam bots.",
+        doc: ("https://contactform7.com/recaptcha/", "reCAPTCHA (v3)"),
+        setup: true,
+    },
+    Service {
+        name: "stripe",
+        title: "Stripe",
+        category: "Payments",
+        link: Some(("https://stripe.com/", "stripe.com")),
+        description: "Stripe is a simple and powerful way to accept payments online. Stripe has no setup fees, no monthly fees, and no hidden costs. Millions of businesses rely on Stripe&#8217;s software tools to accept payments securely and expand globally.",
+        doc: ("https://contactform7.com/stripe-integration/", "Stripe integration"),
+        setup: true,
+    },
+];
+
+/// `is_active()` of a service from what the option `wpcf7` stores for it.
+fn service_active(option: &rustpress_phpser::Value, name: &str) -> bool {
+    let stored = option.get(name);
+    match name {
+        "sendinblue" => stored.and_then(|v| v.get("api_key")).is_some_and(super::mail::php_truthy),
+        "stripe" => stored.and_then(|v| v.get("api_keys")).is_some_and(super::mail::php_truthy),
+        // `sitekey => secret`: the first pair.
+        "turnstile" | "recaptcha" => stored.and_then(|v| v.as_array()).and_then(|pairs| pairs.first()).is_some_and(|(k, secret)| !matches!(k, rustpress_phpser::Key::Str(s) if s.is_empty()) && super::mail::php_truthy(secret)),
+        _ => false,
+    }
+}
+
+/// `admin/integration.php` with `list_services()`: the cards of the services (or of the one asked for). Setting up a
+/// service is not offered: RustPress does not talk to these services.
+pub async fn integration_page(ctx: &AdminContext<'_>) -> Result<String> {
+    let site = ctx.site;
+    let t = |text: &str| tr(site, text);
+    let option = site.options.fetch(&site.db, "wpcf7").await?.and_then(|raw| rustpress_phpser::unserialize(raw.as_bytes()).ok()).unwrap_or(rustpress_phpser::Value::Array(Vec::new()));
+    let requested = ctx.get("service").unwrap_or_default();
+    let mut cards = String::new();
+    let constant_contact = ("constant_contact", "Constant Contact");
+    let wanted = |name: &str| requested.is_empty() || !SERVICES.iter().any(|s| s.name == requested) && requested != constant_contact.0 || requested == name;
+    for service in SERVICES.iter().filter(|s| wanted(s.name)) {
+        let active = service_active(&option, service.name);
+        let mut f = HtmlFormatter::new(false);
+        f.open("p", &[]);
+        f.append_preformatted(&esc_html(&t(service.description)));
+        f.end_tag("p");
+        f.open("p", &[]);
+        f.open("strong", &[]);
+        f.append_preformatted(&link(service.doc.0, &t(service.doc.1), None));
+        f.end_tag("p");
+        if active {
+            f.open("p", &[("class", Att::str("dashicons-before dashicons-yes"))]);
+            f.append_preformatted(&esc_html(&t("%s is active on this site.").replacen("%s", service.title, 1)));
+            f.end_tag("p");
+        }
+        let https = site.settings.siteurl.starts_with("https://");
+        if service.name == "stripe" && !https {
+            f.open("p", &[("class", Att::str("dashicons-before dashicons-warning"))]);
+            f.append_preformatted(&esc_html(&t("Stripe is not available on this site. It requires an HTTPS-enabled site.")));
+            f.end_tag("p");
+        } else if service.setup {
+            f.open("p", &[]);
+            f.open("a", &[("href", Att::str(esc_url(&site.site_url(&format!("wp-admin/admin.php?page=wpcf7-integration&service={}&action=setup", service.name))))), ("class", Att::str("button"))]);
+            f.append_preformatted(&esc_html(&t("Setup integration")));
+            f.end_tag("p");
+        }
+        let link_html = service.link.map(|(url, text)| link(url, text, None)).unwrap_or_default();
+        cards.push_str(&format!(
+            "<div class=\"card{}\" id=\"{}\">\n<h2 class=\"title\">{}</h2>\n<div class=\"infobox\">\n{}<br />\n{link_html}</div>\n<br class=\"clear\" />\n\n<div class=\"inside\">\n{}</div>\n</div>\n",
+            if active { " active" } else { "" },
+            esc_attr(service.name),
+            esc_html(&t(service.title)),
+            esc_html(&t(service.category)),
+            kses(&f.output())
+        ));
+    }
+    if wanted(constant_contact.0) {
+        let mut f = HtmlFormatter::new(false);
+        f.open("p", &[]);
+        f.append_preformatted(&link("https://contactform7.com/2024/02/02/we-end-the-constant-contact-integration/", &t("The Constant Contact integration has been removed."), None));
+        f.end_tag("p");
+        cards.push_str(&format!(
+            "<div class=\"card\" id=\"{}\">\n<h2 class=\"title\">{}</h2>\n<div class=\"infobox\">\n{}<br />\n</div>\n<br class=\"clear\" />\n\n<div class=\"inside\">\n{}</div>\n</div>\n",
+            constant_contact.0,
+            esc_html(&t(constant_contact.1)),
+            esc_html(&t("Email marketing")),
+            kses(&f.output())
+        ));
+    }
+    let mut f = HtmlFormatter::new(false);
+    f.open("div", &[("class", Att::str("wrap")), ("id", Att::str("wpcf7-integration"))]);
+    f.open("h1", &[]);
+    f.append_preformatted(&esc_html(&t("Integration with External API")));
+    f.end_tag("h1");
+    f.open("p", &[]);
+    f.append_preformatted(&t("You can expand the possibilities of your contact forms by integrating them with external services. For details, see <a href=\"%s\">Integration with external APIs</a>.").replacen("%s", "https://contactform7.com/integration-with-external-apis/", 1));
+    f.end_tag("p");
+    f.append_printed(&cards);
+    static ALLOWED: OnceLock<Allowed> = OnceLock::new();
+    Ok(rustpress_core::kses::kses(&f.output(), ALLOWED.get_or_init(|| form_context().merged(&[("form", &["action", "method"])]))))
+}
+
 /// `wpcf7_admin_updated_message()`: the notice after an action of the list or the editor.
 pub fn updated_message(ctx: &AdminContext<'_>) -> String {
     let t = |text: &str| tr(ctx.site, text);

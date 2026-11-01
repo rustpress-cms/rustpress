@@ -554,8 +554,26 @@ async fn plugin_page(ctx: &Ctx<'_>, plugin: &dyn ActivePlugin, page: &AdminPage)
                 let is_hidden = hidden.contains(&key);
                 (key, label, is_hidden)
             });
-            let per_page = common::items_per_page(ctx, options.per_page.0, options.per_page.1).await;
-            Some(chrome::ScreenOptions { columns: columns.collect(), per_page: Some((options.per_page.0.to_owned(), per_page)), ..Default::default() })
+            let columns: Vec<(String, String, bool)> = columns.collect();
+            let per_page = match options.per_page {
+                Some((option, default)) => Some((option.to_owned(), common::items_per_page(ctx, option, default).await)),
+                None => None,
+            };
+            // `meta_box_prefs()` of a plugin's dashboard: the boxes the user hid.
+            let meta_boxes = if options.meta_boxes.is_empty() {
+                None
+            } else {
+                let hidden: Vec<String> = common::user_option(ctx, &format!("metaboxhidden_{hook}"))
+                    .await
+                    .and_then(|raw| rustpress_phpser::unserialize(raw.as_bytes()).ok())
+                    .and_then(|v| v.as_array().map(|items| items.iter().filter_map(|(_, v)| v.as_str().map(str::to_owned)).collect()))
+                    .unwrap_or_default();
+                Some(options.meta_boxes.into_iter().map(|(id, title)| {
+                    let is_hidden = hidden.contains(&id);
+                    (id, title, is_hidden)
+                }).collect())
+            };
+            Some(chrome::ScreenOptions { columns, per_page, meta_boxes, ..Default::default() })
         }
         None => None,
     };

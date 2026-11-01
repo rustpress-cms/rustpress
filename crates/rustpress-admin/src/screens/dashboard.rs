@@ -50,8 +50,11 @@ struct Widget {
 
 /// `do_meta_boxes()`: the box around a widget.
 fn postbox(ctx: &Ctx<'_>, widget: &Widget, closed: bool, hidden: bool, body: &str) -> String {
-    let tr = |s: &str| ctx.tr(s);
-    let id = widget.id;
+    postbox_with(&|s: &str| ctx.tr(s), widget.id, widget, closed, hidden, body)
+}
+
+/// [postbox] with the translations of `tr` and the ID `id`.
+fn postbox_with(tr: &dyn Fn(&str) -> String, id: &str, widget: &Widget, closed: bool, hidden: bool, body: &str) -> String {
     // `'postbox ' . postbox_classes() . $hidden_class`
     let classes = format!("postbox {}{}", if closed { "closed" } else { "" }, if hidden { " hide-if-js" } else { "" });
     let tooltip = |class: &str, label: &str, extra: &str, indicator: &str, bubble: &str| {
@@ -614,9 +617,52 @@ fn help(ctx: &Ctx<'_>) -> Help {
     }
 }
 
+/// A widget of a plugin's dashboard (`wp_add_dashboard_widget()` on its own screen) and what its callback prints.
+pub struct PluginWidget {
+    pub id: String,
+    pub title: String,
+    /// `normal`, `side`, `column3` or `column4`.
+    pub column: &'static str,
+    pub body: String,
+}
+
+/// `wp_dashboard()` on the screen `screen_id` of a plugin: the four columns with the boxes in the user's order,
+/// closed and hidden as the user left them, and the nonces of the boxes.
+pub async fn plugin_dashboard(site: &rustpress_core::Site, user: u64, screen_id: &str, widgets: &[PluginWidget], nonce: &(dyn Fn(&str) -> String + Send + Sync)) -> String {
+    let tr = |s: &str| site.tr(s);
+    let (closed, hidden, order) = box_state_of(&site.db, user, screen_id).await;
+    let mut columns = String::new();
+    for (index, column) in ["normal", "side", "column3", "column4"].iter().enumerate() {
+        let mut ids: Vec<&PluginWidget> = widgets.iter().filter(|w| w.column == *column).collect();
+        if let Some(saved) = order.get(*column) {
+            let mut sorted: Vec<&PluginWidget> = saved.iter().filter_map(|id| widgets.iter().find(|w| &w.id == id)).collect();
+            ids.retain(|w| !sorted.iter().any(|s| s.id == w.id) && !order.iter().any(|(c, list)| c != column && list.contains(&w.id)));
+            sorted.extend(ids);
+            ids = sorted;
+        } else {
+            ids.retain(|w| !order.iter().any(|(c, list)| c != column && list.contains(&w.id)));
+        }
+        let mut boxes = String::new();
+        for widget in ids {
+            let w = Widget { id: "", title: widget.title.clone(), aria: rustpress_core::formatting::wp_strip_all_tags(&widget.title), column };
+            boxes.push_str(&postbox_with(&tr, &widget.id, &w, closed.contains(&widget.id), hidden.contains(&widget.id), &widget.body));
+        }
+        columns.push_str(&format!("\t<div id=\"postbox-container-{}\" class=\"postbox-container\">\n\t<div id=\"{column}-sortables\" class=\"meta-box-sortables\">{boxes}</div>\t</div>\n", index + 1));
+    }
+    format!(
+        "<div id=\"dashboard-widgets\" class=\"metabox-holder\">\n{columns}</div>\n\n\t<input type=\"hidden\" id=\"closedpostboxesnonce\" name=\"closedpostboxesnonce\" value=\"{}\" /><input type=\"hidden\" id=\"meta-box-order-nonce\" name=\"meta-box-order-nonce\" value=\"{}\" />",
+        nonce("closedpostboxes"),
+        nonce("meta-box-order")
+    )
+}
+
 /// The meta of a screen: closed and hidden boxes and their order.
 async fn box_state(ctx: &Ctx<'_>) -> (Vec<String>, Vec<String>, HashMap<String, Vec<String>>) {
-    let db = ctx.env.db;
+    box_state_of(ctx.env.db, ctx.user.id, "dashboard").await
+}
+
+/// [box_state] of any screen.
+async fn box_state_of(db: &rustpress_db::Db, user: u64, screen_id: &str) -> (Vec<String>, Vec<String>, HashMap<String, Vec<String>>) {
     let list = |raw: Option<String>| -> Vec<String> {
         raw.and_then(|r| rustpress_phpser::unserialize(r.as_bytes()).ok())
             .map(|value| match rustpress_core::options::php_to_json(&value) {
@@ -625,10 +671,10 @@ async fn box_state(ctx: &Ctx<'_>) -> (Vec<String>, Vec<String>, HashMap<String, 
             })
             .unwrap_or_default()
     };
-    let closed = list(db.user_meta(ctx.user.id, "closedpostboxes_dashboard").await.ok().flatten());
-    let hidden = list(db.user_meta(ctx.user.id, "metaboxhidden_dashboard").await.ok().flatten());
+    let closed = list(db.user_meta(user, &format!("closedpostboxes_{screen_id}")).await.ok().flatten());
+    let hidden = list(db.user_meta(user, &format!("metaboxhidden_{screen_id}")).await.ok().flatten());
     let mut order = HashMap::new();
-    if let Some(raw) = db.user_meta(ctx.user.id, "meta-box-order_dashboard").await.ok().flatten()
+    if let Some(raw) = db.user_meta(user, &format!("meta-box-order_{screen_id}")).await.ok().flatten()
         && let Ok(value) = rustpress_phpser::unserialize(raw.as_bytes())
         && let serde_json::Value::Object(map) = rustpress_core::options::php_to_json(&value)
     {
