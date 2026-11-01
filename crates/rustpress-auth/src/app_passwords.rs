@@ -5,7 +5,7 @@ use rand::Rng;
 use rustpress_db::{Db, Writer};
 use rustpress_phpser::{Key, Value};
 
-use crate::password::{check_password, hash_password};
+use crate::password::{check_password, fast_hash};
 
 /// The user meta that holds the passwords.
 pub const META_KEY: &str = "_application_passwords";
@@ -16,7 +16,7 @@ pub struct AppPassword {
     pub uuid: String,
     pub app_id: String,
     pub name: String,
-    /// `wp_hash_password()` of the password without its spaces.
+    /// `wp_fast_hash()` of the password without its spaces (`wp_hash_password()` before WordPress 6.8).
     pub password: String,
     pub created: i64,
     pub last_used: Option<i64>,
@@ -131,7 +131,7 @@ pub async fn authenticate(db: &Db, login: &str, password: &str) -> Result<(u64, 
     list(db, user.id)
         .await
         .into_iter()
-        .find(|item| check_password(&plain, &item.password))
+        .find(|item| matches_hash(&plain, &item.password))
         .map(|item| (user.id, item.uuid))
         .ok_or(Some(("incorrect_password", "The provided password is an invalid application password.")))
 }
@@ -149,7 +149,13 @@ pub async fn record_usage(db: &Db, writer: &Writer, user_id: u64, uuid: &str, ip
     let _ = save(writer, user_id, &passwords).await;
 }
 
-/// Hashes a fresh password for storing.
+/// `WP_Application_Passwords::hash_password()`: hashes a fresh password for storing.
 pub fn hash(password: &str) -> String {
-    hash_password(password)
+    fast_hash(password)
+}
+
+/// `WP_Application_Passwords::check_password()`: `wp_fast_hash()`, or `wp_check_password()` for the passwords made
+/// before WordPress 6.8.
+fn matches_hash(password: &str, hash: &str) -> bool {
+    if hash.starts_with("$generic$") { crate::password::verify_fast_hash(password, hash) } else { check_password(password, hash) }
 }

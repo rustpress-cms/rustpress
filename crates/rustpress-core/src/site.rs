@@ -42,13 +42,21 @@ impl Site {
         let mut site = Self::load(db).await?;
         let plugins = site.active_plugins();
         let plain = site.rewrite.is_empty();
-        if plain || !site.types.post_types.is_empty() || !site.types.taxonomies.is_empty() {
+        let mut registrations = Vec::new();
+        for plugin in crate::native::registered().iter().filter(|p| plugins.iter().any(|f| f == p.file())) {
+            match plugin.registrations(&site, wp_root).await {
+                Ok(found) => registrations.extend(found),
+                Err(e) => tracing::error!(plugin = plugin.file(), error = %e, "native plugin registrations failed"),
+            }
+        }
+        if plain || !registrations.is_empty() || !site.types.post_types.is_empty() || !site.types.taxonomies.is_empty() {
             let themes = wp_root.join("wp-content").join("themes");
             let mut dirs = vec![themes.join(&site.settings.stylesheet)];
             if site.settings.template != site.settings.stylesheet {
                 dirs.push(themes.join(&site.settings.template));
             }
-            let registrations = crate::types::scan_registrations(wp_root, &plugins, &dirs);
+            registrations.extend(crate::types::scan_registrations(wp_root, &plugins, &dirs));
+            site.types.infer_query_vars(&site.rewrite, &registrations);
             site.types.apply(&registrations, plain);
         }
         site.plugins = crate::native::Plugins::load(&site, &plugins).await;

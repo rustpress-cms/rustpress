@@ -387,6 +387,10 @@ impl Rest<'_> {
             registered.insert("footnotes".into(), Value::from(meta_value("footnotes").unwrap_or_default()));
             data.insert("meta".into(), Value::Object(registered));
         } else if has("custom-fields") {
+            // `register_block_core_footnotes_post_meta()`: for the types with the editor and revisions.
+            if has("editor") && has("revisions") {
+                registered.insert("footnotes".into(), Value::from(meta_value("footnotes").unwrap_or_default()));
+            }
             data.insert("meta".into(), if registered.is_empty() { Value::Array(Vec::new()) } else { Value::Object(registered) });
         }
         if kind == Kind::Post {
@@ -396,8 +400,8 @@ impl Rest<'_> {
                 data.insert(base.into(), Value::from(terms.iter().map(|t| t.term_id).collect::<Vec<_>>()));
             }
         }
-        if let Kind::Custom(info) = kind {
-            for tax in self.taxonomies_of(&info.name).into_iter().filter(|tax| wanted(&tax.base)) {
+        if let Some(post_type) = custom_taxonomy_owner(kind) {
+            for tax in self.taxonomies_of(post_type).into_iter().filter(|tax| !matches!(tax.name.as_str(), "category" | "post_tag") && wanted(&tax.base)) {
                 let mut terms = self.site.db.terms_for_post(post.id, Some(&tax.name)).await?;
                 terms.sort_by_key(|t| (t.name.to_lowercase(), t.term_id));
                 data.insert(tax.base.clone(), Value::from(terms.iter().map(|t| t.term_id).collect::<Vec<_>>()));
@@ -420,6 +424,7 @@ impl Rest<'_> {
         if wanted("_links") || wanted("_embedded") {
             data.insert("_links".into(), self.post_links(post, kind, featured).await?);
         }
+        self.add_plugin_links(rustpress_core::native::RestObject::Post(post), &mut data).await?;
         if context == "embed" {
             // `WP_Navigation_Fallback::update_wp_navigation_post_schema()` exposes more of a menu.
             let menu = post.post_type == "wp_navigation";
@@ -490,8 +495,9 @@ impl Rest<'_> {
                     rustpress_core::urls::add_query_arg(&self.rest_url(route), "post", &post.id.to_string()),
                 );
             }
-        } else if let Kind::Custom(info) = kind {
-            for tax in self.taxonomies_of(&info.name) {
+        }
+        if let Some(post_type) = custom_taxonomy_owner(kind) {
+            for tax in self.taxonomies_of(post_type).into_iter().filter(|tax| !matches!(tax.name.as_str(), "category" | "post_tag")) {
                 links.add(
                     "wp:term",
                     vec![("taxonomy", Value::from(tax.name.clone())), ("embeddable", Value::Bool(true))],
@@ -500,5 +506,16 @@ impl Rest<'_> {
             }
         }
         Ok(links.finish())
+    }
+}
+
+/// The post type whose taxonomies of plugins a post shows (`get_object_taxonomies()`); attachments have their own
+/// controller.
+fn custom_taxonomy_owner<'k>(kind: Kind<'k>) -> Option<&'k str> {
+    match kind {
+        Kind::Post => Some("post"),
+        Kind::Page => Some("page"),
+        Kind::Custom(info) => Some(&info.name),
+        _ => None,
     }
 }

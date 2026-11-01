@@ -208,6 +208,7 @@ impl Rest<'_> {
             }
         }
         data.insert("_links".into(), links.finish());
+        self.add_plugin_links(rustpress_core::native::RestObject::Term(term), &mut data).await?;
 
         if context == "embed" {
             data.retain(|k, _| matches!(k.as_str(), "id" | "link" | "name" | "slug" | "taxonomy" | "_links") || plugin_keys.contains(k));

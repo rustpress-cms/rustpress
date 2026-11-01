@@ -301,6 +301,9 @@ impl Rest<'_> {
         }
         let note_status = self.site.db.comment_meta_value(comment.comment_id, "_wp_note_status").await?;
         data.insert("meta".into(), json!({"_wp_note_status": note_status}));
+        let plugin_fields = self.plugin_fields(rustpress_core::native::RestObject::Comment(comment)).await?;
+        let plugin_keys: Vec<String> = plugin_fields.iter().map(|(k, _)| k.clone()).collect();
+        data.extend(plugin_fields);
 
         let mut links = Links::new();
         links.self_link(self.rest_url(&format!("wp/v2/comments/{}", comment.comment_id)));
@@ -328,7 +331,7 @@ impl Rest<'_> {
         data.insert("_links".into(), links.finish());
 
         match context {
-            "embed" => data.retain(|k, _| EMBED_FIELDS.contains(&k.as_str())),
+            "embed" => data.retain(|k, _| EMBED_FIELDS.contains(&k.as_str()) || plugin_keys.contains(k)),
             "edit" => {}
             _ => data.retain(|k, _| !EDIT_FIELDS.contains(&k.as_str())),
         }

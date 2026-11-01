@@ -8,6 +8,7 @@
 //! Date columns are returned as the strings MySQL stores (`2026-10-24 14:07:01`),
 //! because WordPress allows `0000-00-00 00:00:00`, which date types cannot hold.
 
+mod acf;
 mod admin;
 mod admin_comments;
 mod admin_media;
@@ -30,6 +31,7 @@ mod write;
 use sqlx::Executor;
 use sqlx::mysql::{MySqlPool, MySqlPoolOptions};
 
+pub use acf::{AcfPost, MetaKind};
 pub use admin::SlugScope;
 pub use admin_comments::{CommentCounts, CommentListQuery};
 pub use admin_media::AttachmentQuery;

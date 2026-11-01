@@ -118,6 +118,7 @@ impl Rest<'_> {
         links.self_link(self.rest_url(&format!("wp/v2/users/{}", user.id)));
         links.add("collection", vec![], self.rest_url("wp/v2/users"));
         data.insert("_links".into(), links.finish());
+        self.add_plugin_links(rustpress_core::native::RestObject::User(user), &mut data).await?;
         Ok(Value::Object(data))
     }
 }

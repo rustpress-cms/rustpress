@@ -90,6 +90,9 @@ impl Resp {
 
 pub(crate) type Outcome = std::result::Result<Resp, RestError>;
 
+/// Where an object keeps the links of plugins while `_fields` leaves out `_links`.
+pub(crate) const PLUGIN_LINKS: &str = "_rustpress_plugin_links";
+
 pub struct Rest<'a> {
     pub(crate) site: &'a Site,
     pub(crate) theme: &'a Theme,
@@ -111,11 +114,14 @@ pub struct Rest<'a> {
     pub(crate) admin: bool,
     /// `wp_mail()` for the endpoints of plugins that send e-mail.
     pub(crate) mailer: Option<std::sync::Arc<dyn rustpress_core::native::Mailer>>,
+    /// The route of the request (`/wp/v2/posts`) and its query string, for the fields of plugins; an embedded
+    /// request has its own while it runs (`rest_pre_dispatch` fires for it).
+    pub(crate) route: std::sync::Mutex<(String, String)>,
 }
 
 impl<'a> Rest<'a> {
     pub fn new(site: &'a Site, theme: &'a Theme, registry: &'a Registry) -> Self {
-        Self { site, theme, registry, blank: QueryResult::blank(), state: Default::default(), access: None, request: None, patterns: Default::default(), host: String::new(), remote_patterns: Default::default(), admin: false, mailer: None }
+        Self { site, theme, registry, blank: QueryResult::blank(), state: Default::default(), access: None, request: None, patterns: Default::default(), host: String::new(), remote_patterns: Default::default(), admin: false, mailer: None, route: Default::default() }
     }
 
     /// The host of the request: client-side media processing is on for `localhost` and for HTTPS.
@@ -154,7 +160,7 @@ impl<'a> Rest<'a> {
             blank.raw_query = if query.is_empty() { format!("rest_route={route}") } else { format!("rest_route={route}&{query}") };
         }
         blank.http_host = Some(self.host.clone()).filter(|h| !h.is_empty());
-        let scoped = Rest { site: self.site, theme: self.theme, registry: self.registry, blank, state: Default::default(), access: None, request: None, patterns: Default::default(), host: self.host.clone(), remote_patterns: Default::default(), admin: self.admin, mailer: self.mailer.clone() };
+        let scoped = Rest { site: self.site, theme: self.theme, registry: self.registry, blank, state: Default::default(), access: None, request: None, patterns: Default::default(), host: self.host.clone(), remote_patterns: Default::default(), admin: self.admin, mailer: self.mailer.clone(), route: std::sync::Mutex::new((route.to_owned(), query.to_owned())) };
         // The terms of the posts of a list are read once for the request (`update_object_term_cache()`).
         rustpress_db::Db::with_term_cache(scoped.handle_request(route, query)).await
     }
@@ -179,7 +185,7 @@ impl<'a> Rest<'a> {
             let viewer = rustpress_core::Viewer::new(user.id, move |capability| user.can(capability));
             blank.viewer = Some(viewer.with_identity(&login, &name, &email, false, move |action| nonce.as_ref().map(|n| n(action)).unwrap_or_default()));
         }
-        let scoped = Rest { site: self.site, theme: self.theme, registry: self.registry, blank, state: Default::default(), access, request: Some(request), patterns: Default::default(), host: self.host.clone(), remote_patterns: Default::default(), admin: self.admin, mailer: self.mailer.clone() };
+        let scoped = Rest { site: self.site, theme: self.theme, registry: self.registry, blank, state: Default::default(), access, request: Some(request), patterns: Default::default(), host: self.host.clone(), remote_patterns: Default::default(), admin: self.admin, mailer: self.mailer.clone(), route: std::sync::Mutex::new((route.to_owned(), query.to_owned())) };
         // The terms of the posts of a list are read once for the request (`update_object_term_cache()`).
         rustpress_db::Db::with_term_cache(scoped.handle_request(route, query)).await
     }
@@ -286,9 +292,24 @@ impl<'a> Rest<'a> {
                 // The links are no field: `rest_filter_response_fields()` runs before `response_to_data()` adds them.
                 // The index decides itself which ones it has.
                 let index_links = if route.trim_end_matches('/').is_empty() { data.as_object_mut().and_then(|o| o.remove("_links")) } else { None };
+                // Links plugins add on `rest_prepare_{$type}` arrive although `_links` was not asked for.
+                let take = |item: &mut Value| item.as_object_mut().and_then(|o| o.remove(PLUGIN_LINKS));
+                let plugin_links: Vec<Option<Value>> = match &mut data {
+                    Value::Array(items) => items.iter_mut().map(take).collect(),
+                    item => vec![take(item)],
+                };
                 fields::filter(&mut data, &list);
                 if let (Some(links), Some(object)) = (index_links, data.as_object_mut()) {
                     object.insert("_links".into(), links);
+                }
+                let put = |item: &mut Value, links: Option<Value>| {
+                    if let (Some(links), Some(object)) = (links, item.as_object_mut()) {
+                        object.insert("_links".into(), links);
+                    }
+                };
+                match &mut data {
+                    Value::Array(items) => items.iter_mut().zip(plugin_links).for_each(|(item, links)| put(item, links)),
+                    item => put(item, plugin_links.into_iter().next().flatten()),
                 }
             }
         }
@@ -438,12 +459,19 @@ impl<'a> Rest<'a> {
         if params.get("per_page").is_none_or(|p| p.is_empty() || p == "0") {
             params.set("per_page", "100");
         }
+        let outer = std::mem::replace(&mut *self.route.lock().unwrap_or_else(|e| e.into_inner()), (route.clone(), query.clone()));
+        let outcome = self.dispatch_embedded(&route, &params).await;
+        *self.route.lock().unwrap_or_else(|e| e.into_inner()) = outer;
+        outcome
+    }
+
+    async fn dispatch_embedded(&self, route: &str, params: &Params) -> Result<Outcome> {
         // What a visitor may not see is read as the signed-in user (the author of a comment, for instance).
-        let outcome = self.dispatch(&route, &params).await?;
+        let outcome = self.dispatch(route, params).await?;
         if outcome.is_err()
             && self.access.is_some()
             && matches!(self.method(), "GET" | "HEAD")
-            && let Some(outcome) = Box::pin(self.dispatch_edit(&route, &params)).await?
+            && let Some(outcome) = Box::pin(self.dispatch_edit(route, params)).await?
         {
             return Ok(outcome);
         }

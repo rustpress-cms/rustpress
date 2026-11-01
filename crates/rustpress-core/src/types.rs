@@ -116,6 +116,8 @@ pub struct TaxonomyInfo {
     pub public: bool,
     pub queryable: bool,
     pub description: String,
+    /// Whether a registration was found; without one `show_in_rest` is not known.
+    pub registered: bool,
 }
 
 impl TaxonomyInfo {
@@ -146,6 +148,31 @@ pub struct Types {
     rewrite_taxonomies: Vec<TaxonomyInfo>,
 }
 
+/// A post type from its rules: the single pages (`{var}=$matches[1]`) and the archive (`post_type={name}`).
+fn detect_post_type(rules: &RewriteRules, name: &str, var: &str) -> Option<PostTypeInfo> {
+    let single_only = format!("{var}=$matches[1]");
+    let single_paged = format!("{var}=$matches[1]&page=$matches[2]");
+    let archive = format!("post_type={name}");
+    let mut single: Option<&str> = None;
+    let mut archive_slug = None;
+    for (pattern, query) in rules.patterns() {
+        let q = query_of(query);
+        if single.is_none() && (q == single_only || q == single_paged) {
+            single = Some(pattern);
+        } else if archive_slug.is_none() && q == archive && pattern.ends_with("/?$") {
+            archive_slug = Some(pattern.trim_end_matches("/?$").to_owned());
+        }
+    }
+    if single.is_none() && archive_slug.is_none() {
+        return None;
+    }
+    let (slug, hierarchical) = match single {
+        Some(pattern) => (literal_prefix(pattern).to_owned(), pattern.contains("(.+?)")),
+        None => (archive_slug.clone().unwrap_or_default(), false),
+    };
+    Some(PostTypeInfo::new(name, slug, archive_slug, hierarchical))
+}
+
 /// The text of a rewrite pattern before its first group, without the trailing slash.
 fn literal_prefix(pattern: &str) -> &str {
     pattern.split('(').next().unwrap_or("").trim_end_matches('/')
@@ -164,28 +191,10 @@ impl Types {
             if BUILT_IN_POST_TYPES.contains(&name.as_str()) || is_internal_post_type(name) {
                 continue;
             }
-            let single_only = format!("{name}=$matches[1]");
-            let single_paged = format!("{name}=$matches[1]&page=$matches[2]");
-            let archive = format!("post_type={name}");
-            let mut single: Option<&str> = None;
-            let mut archive_slug = None;
-            for (pattern, query) in rules.patterns() {
-                let q = query_of(query);
-                if single.is_none() && (q == single_only || q == single_paged) {
-                    single = Some(pattern);
-                } else if archive_slug.is_none() && q == archive && pattern.ends_with("/?$") {
-                    archive_slug = Some(pattern.trim_end_matches("/?$").to_owned());
-                }
+            match detect_post_type(rules, name, name) {
+                Some(info) => types.post_types.push(info),
+                None => types.hidden_post_types.push(name.clone()),
             }
-            if single.is_none() && archive_slug.is_none() {
-                types.hidden_post_types.push(name.clone());
-                continue;
-            }
-            let (slug, hierarchical) = match single {
-                Some(pattern) => (literal_prefix(pattern).to_owned(), pattern.contains("(.+?)")),
-                None => (archive_slug.clone().unwrap_or_default(), false),
-            };
-            types.post_types.push(PostTypeInfo::new(name, slug, archive_slug, hierarchical));
         }
         for name in used_taxonomies {
             if BUILT_IN_TAXONOMIES.contains(&name.as_str()) {
@@ -207,10 +216,26 @@ impl Types {
                     public: true,
                     queryable: true,
                     description: String::new(),
+                    registered: false,
                 });
             }
         }
         types
+    }
+
+    /// The used post types whose rules name another query variable (`'query_var' => 'event'`): only the
+    /// registration tells which variable to look for.
+    pub fn infer_query_vars(&mut self, rules: &RewriteRules, registrations: &[Registration]) {
+        for reg in registrations.iter().filter(|r| !r.taxonomy) {
+            if !self.hidden_post_types.contains(&reg.name) {
+                continue;
+            }
+            let Some(var) = query_var(&reg.args, &reg.name).filter(|v| *v != reg.name) else { continue };
+            if let Some(info) = detect_post_type(rules, &reg.name, &var) {
+                self.hidden_post_types.retain(|h| h != &reg.name);
+                self.post_types.push(info);
+            }
+        }
     }
 
     /// Adds what the `register_*()` calls say about the inferred types.
@@ -244,6 +269,7 @@ impl Types {
                             public: true,
                             queryable: true,
                             description: String::new(),
+                            registered: false,
                         });
                     }
                 } else if !self.post_types.iter().any(|t| t.name == reg.name) && !BUILT_IN_POST_TYPES.contains(&reg.name.as_str()) && !is_internal_post_type(&reg.name) {
@@ -269,6 +295,7 @@ impl Types {
             let rest_base = text("rest_base");
             if reg.taxonomy {
                 if let Some(t) = self.taxonomies.iter_mut().find(|t| t.name == reg.name) {
+                    t.registered = true;
                     t.label = label;
                     t.description = text("description").unwrap_or_default();
                     t.singular = singular;
@@ -278,11 +305,14 @@ impl Types {
                     t.query_var = query_var(args, &reg.name);
                     t.hierarchical = flag("hierarchical", t.hierarchical);
                     t.queryable = flag("publicly_queryable", t.public);
-                    for object_type in &reg.object_types {
-                        if !t.object_types.contains(object_type) {
-                            t.object_types.push(object_type.clone());
+                    // The registration's object types in their order, then the ones only the terms show.
+                    let mut object_types = reg.object_types.clone();
+                    for object_type in &t.object_types {
+                        if !object_types.contains(object_type) {
+                            object_types.push(object_type.clone());
                         }
                     }
+                    t.object_types = object_types;
                 }
             } else if let Some(t) = self.post_types.iter_mut().find(|t| t.name == reg.name) {
                 t.registered = true;
@@ -304,6 +334,11 @@ impl Types {
                 t.queryable = flag("publicly_queryable", public);
             }
         }
+        // `get_post_types()` and `get_taxonomies()` list the types in the order they were registered; the ones no
+        // registration names follow.
+        let position = |name: &str, taxonomy: bool| registrations.iter().position(|r| r.taxonomy == taxonomy && r.name == name).unwrap_or(usize::MAX);
+        self.post_types.sort_by_key(|t| position(&t.name, false));
+        self.taxonomies.sort_by_key(|t| position(&t.name, true));
         self.rewrite_post_types = self.post_types.clone();
         self.rewrite_taxonomies = self.taxonomies.clone();
         // Types that cannot be requested on the frontend have no pages, whatever their rules say.

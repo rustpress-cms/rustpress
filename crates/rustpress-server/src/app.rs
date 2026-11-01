@@ -620,7 +620,7 @@ fn with_api_link(mut response: Response<Body>, loaded: &Loaded, result: &rustpre
     // `rest_output_link_header()` and `wp_shortlink_header()` run on `template_redirect`, before the links of the
     // feed or the plugins.
     let mut links = vec![Rest::new(site, &loaded.theme, &loaded.registry).root_link()];
-    if let Some(route) = rustpress_theme::head::queried_rest_route(result) {
+    if let Some(route) = rustpress_theme::head::queried_rest_route(site, result) {
         links.push(format!("<{}>; rel=\"alternate\"; title=\"JSON\"; type=\"application/json\"", rustpress_core::formatting::esc_url_raw(&site.rest_url(&route))));
     }
     if let Some(shortlink) = rustpress_theme::head::shortlink(site, result) {

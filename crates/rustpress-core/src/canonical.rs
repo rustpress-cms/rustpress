@@ -256,7 +256,10 @@ impl Site {
             return Ok(None);
         }
         let num = |key: &str| q.vars.u64(key).filter(|v| *v != 0).map(|v| v as u32);
-        let Some(id) = self.db.guess_post_by_name(name, post_type, num("year"), num("monthnum"), num("day")).await? else { return Ok(None) };
+        // `get_post_types( [ 'public' => true ] )` that are viewable.
+        let mut excluded: Vec<&str> = self.types.hidden_post_types.iter().map(String::as_str).collect();
+        excluded.extend(self.types.post_types.iter().filter(|t| !t.public).map(|t| t.name.as_str()));
+        let Some(id) = self.db.guess_post_by_name(name, post_type, &excluded, num("year"), num("monthnum"), num("day")).await? else { return Ok(None) };
         let Some((url, _)) = self.post_url(id).await? else { return Ok(None) };
         let page = q.vars.u64("page").unwrap_or(0);
         if page > 1 && q.vars.get("feed").is_none_or(str::is_empty) {

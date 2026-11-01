@@ -209,6 +209,8 @@ impl Rest<'_> {
         let mut links = self.post_links(post, kind, featured).await?;
         self.add_action_links(&mut links, post, kind, context == "edit");
         map.insert("_links".into(), links);
+        map.remove(crate::PLUGIN_LINKS);
+        self.add_plugin_links(rustpress_core::native::RestObject::Post(post), map).await?;
         Ok(data)
     }
 
@@ -222,7 +224,8 @@ impl Rest<'_> {
         let wanted = sanitize_title_save(&post.post_title, &self.site.locale());
         let wanted = if wanted.is_empty() { post.id.to_string() } else { wanted };
         let generated = content.unique_post_slug(&wanted, post.id, &post.post_status, &post.post_type, post.post_parent).await.unwrap_or(wanted);
-        let placeholder = if post.post_type == "page" { "%pagename%" } else { "%postname%" };
+        // `get_sample_permalink()` turns the token of a custom post type into `%pagename%` as well.
+        let placeholder = if post.post_type == "post" { "%postname%" } else { "%pagename%" };
         let mut sample = post.clone();
         sample.post_name = placeholder.to_owned();
         if matches!(sample.post_status.as_str(), "draft" | "pending" | "auto-draft" | "future") {
@@ -660,10 +663,21 @@ impl Rest<'_> {
         data.insert("title".into(), if context == "edit" { json!({"raw": revision.post_title, "rendered": self.site.texturize(&revision.post_title)}) } else { json!({"rendered": self.site.texturize(&revision.post_title)}) });
         data.insert("content".into(), if context == "edit" { json!({"raw": revision.post_content, "rendered": content_rendered}) } else { json!({"rendered": content_rendered}) });
         data.insert("excerpt".into(), if context == "edit" { json!({"raw": revision.post_excerpt, "rendered": rendered(&revision.post_excerpt)}) } else { json!({"rendered": rendered(&revision.post_excerpt)}) });
-        if !matches!(kind, Kind::Custom(_)) {
-            let footnotes = self.site.db.post_meta_value(revision.id, "footnotes").await.ok().flatten().unwrap_or_default();
-            data.insert("meta".into(), json!({"footnotes": footnotes}));
+        // Meta registered with `revisions_enabled` (the plugins' first, then `footnotes`).
+        let footnotes_registered = !matches!(kind, Kind::Custom(_)) || (self.supports(kind, "editor") && self.supports(kind, "revisions") && self.supports(kind, "custom-fields"));
+        let mut meta = Map::new();
+        for registered in self.site.plugins.registered_post_meta(kind.name()) {
+            let stored = self.site.db.post_meta_value(revision.id, registered.key).await.ok().flatten();
+            meta.insert(registered.key.to_owned(), registered.rest_value(stored.as_deref()));
         }
+        if footnotes_registered {
+            let footnotes = self.site.db.post_meta_value(revision.id, "footnotes").await.ok().flatten().unwrap_or_default();
+            meta.insert("footnotes".into(), json!(footnotes));
+        }
+        if !meta.is_empty() {
+            data.insert("meta".into(), Value::Object(meta));
+        }
+        data.extend(self.plugin_fields(rustpress_core::native::RestObject::Post(revision)).await?);
         let mut links = crate::util::Links::new();
         links.add("parent", vec![], self.rest_url(&format!("wp/v2/{}/{}", kind.base(), parent.id)));
         if revision.post_name.contains("autosave") {
