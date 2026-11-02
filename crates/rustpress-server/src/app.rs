@@ -439,10 +439,9 @@ async fn page(app: &App, uri: &axum::http::Uri, request_headers: &axum::http::He
         return Ok(plugin_response(&answer));
     }
     let mut result = loaded.site.query_as(path, query, viewer.as_ref()).await?;
-    if viewer.is_none()
-        && let Some(parts) = loaded.admin.as_ref()
-    {
-        let auth = parts.auth.clone();
+    if viewer.is_none() {
+        // A read-only site knows its salts as well.
+        let auth = rustpress_auth::Auth::new(loaded.salts.clone(), &loaded.site.settings.siteurl);
         result.guest_nonce = Some(rustpress_core::query::GuestNonce(std::sync::Arc::new(move |action: &str| auth.create_nonce(action, 0, "", crate::admin::now()).unwrap_or_default())));
     }
     if matches!(served, Some(rustpress_core::native::Serve::NotFound)) {

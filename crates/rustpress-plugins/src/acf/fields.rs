@@ -34,9 +34,6 @@ pub struct Rule {
 
 #[derive(Debug, Clone)]
 pub struct FieldGroup {
-    pub id: u64,
-    pub key: String,
-    pub title: String,
     /// The stored settings (`label_placement`, `instruction_placement`, ...).
     pub settings: Value,
     pub active: bool,
@@ -224,9 +221,6 @@ pub async fn load(db: &Db) -> Result<Vec<FieldGroup>> {
                 _ => Vec::new(),
             };
             FieldGroup {
-                id: post.id,
-                key: post.name.clone(),
-                title: post.title.clone(),
                 active: matches!(post.status.as_str(), "publish" | "auto-draft"),
                 show_in_rest: truthy(settings.get("show_in_rest")),
                 location,

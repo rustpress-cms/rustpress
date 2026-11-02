@@ -36,12 +36,12 @@ pub struct Ctx<'a> {
 
 impl Ctx<'_> {
     /// `__( $text, 'acf' )`.
-    fn tr(&self, text: &str) -> String {
+    fn acf(&self, text: &str) -> String {
         self.site.trd("acf", text)
     }
 
     /// `_x( $text, $context, 'acf' )`.
-    fn trx(&self, text: &str, context: &str) -> String {
+    fn acfx(&self, text: &str, context: &str) -> String {
         self.site.i18n().pgettext("acf", context, text)
     }
 }
@@ -397,7 +397,7 @@ impl RenderField {
         };
         let mut f = Self::raw(items, field.sub_fields.clone());
         if f.kind() == "checkbox" && !isset(f.get("custom_choice_button_text")) {
-            f.set("custom_choice_button_text", string(&ctx.tr("Add new choice")));
+            f.set("custom_choice_button_text", string(&ctx.acf("Add new choice")));
         }
         f.set("prefix", string("acf"));
         f.load_field();
@@ -819,10 +819,10 @@ fn render_true_false(ctx: &Ctx<'_>, mut field: RenderField) -> String {
     }
     if field.truthy("ui") {
         if matches!(field.get("ui_on_text"), Some(Value::Str(s)) if s.is_empty()) {
-            field.set("ui_on_text", string(&ctx.tr("Yes")));
+            field.set("ui_on_text", string(&ctx.acf("Yes")));
         }
         if matches!(field.get("ui_off_text"), Some(Value::Str(s)) if s.is_empty()) {
-            field.set("ui_off_text", string(&ctx.tr("No")));
+            field.set("ui_off_text", string(&ctx.acf("No")));
         }
         input.append("class", " acf-switch-input");
         switch.push_str(&format!("<div class=\"acf-switch{}\">", if active { " -on" } else { "" }));
@@ -841,7 +841,7 @@ fn render_select(ctx: &Ctx<'_>, mut field: RenderField, name: &str) -> String {
     let mut value = get_array(field.get("value"));
     let mut choices = get_array(field.get("choices"));
     if !field.truthy("placeholder") {
-        field.set("placeholder", string(&ctx.trx("Select", "verb")));
+        field.set("placeholder", string(&ctx.acfx("Select", "verb")));
     }
     if value.is_empty() {
         value = vec![(Key::Int(0), string(""))];
@@ -996,7 +996,7 @@ fn render_checkbox(ctx: &Ctx<'_>, mut field: RenderField) -> String {
     if !choices.is_empty() {
         li.push_str(&walk_checkboxes(&choices, &field, &selected, &disabled, &mut seen, &mut all_checked));
         if field.truthy("toggle") {
-            let mut atts = Attrs::new(&[("type", string("checkbox")), ("class", string("acf-checkbox-toggle")), ("label", string(&ctx.tr("Toggle All")))]);
+            let mut atts = Attrs::new(&[("type", string("checkbox")), ("class", string("acf-checkbox-toggle")), ("label", string(&ctx.acf("Toggle All")))]);
             if let Some(Value::Str(label)) = field.get("toggle") {
                 atts.set("label", Value::Str(label.clone()));
             }
@@ -1341,13 +1341,13 @@ fn render_link(ctx: &Ctx<'_>, field: RenderField) -> String {
         esc_url(&get("url")),
         esc_attr(&get("target")),
         esc_html(&get("title")),
-        esc_html(&ctx.tr("Select Link")),
+        esc_html(&ctx.acf("Select Link")),
         esc_html(&get("title")),
         esc_url(&get("url")),
         esc_html(&get("url")),
-        esc_attr(&ctx.tr("Opens in a new window/tab")),
-        esc_attr(&ctx.tr("Edit")),
-        esc_attr(&ctx.tr("Remove")),
+        esc_attr(&ctx.acf("Opens in a new window/tab")),
+        esc_attr(&ctx.acf("Edit")),
+        esc_attr(&ctx.acf("Remove")),
     )
 }
 
@@ -1360,7 +1360,7 @@ fn render_oembed(ctx: &Ctx<'_>, field: RenderField) -> String {
         atts.append("class", " has-value");
     }
     let hidden = hidden_input(&Attrs::new(&[("class", string("input-value")), ("name", field.get("name").cloned().unwrap_or(Value::Null)), ("value", value.clone())]));
-    let search = text_input(Attrs::new(&[("class", string("input-search")), ("value", value.clone()), ("placeholder", string(&ctx.tr("Enter URL"))), ("autocomplete", string("off"))]));
+    let search = text_input(Attrs::new(&[("class", string("input-search")), ("value", value.clone()), ("placeholder", string(&ctx.acf("Enter URL"))), ("autocomplete", string("off"))]));
     let embed = if truthy(Some(&value)) {
         let url = text(Some(&value));
         format!("<a href=\"{}\">{}</a>", esc_url(&url), esc_html(&url))
@@ -1398,11 +1398,11 @@ fn render_google_map(ctx: &Ctx<'_>, mut field: RenderField) -> String {
     format!(
         "<div {}>\n\n\t\t\t{hidden}\n\t<div class=\"title\">\n\n\t\t<input class=\"search\" type=\"text\" placeholder=\"{}\" value=\"{}\" />\n\n\t\t<div class=\"acf-actions -hover\">\n\t\t\t<button type=\"button\" data-name=\"search\" class=\"acf-icon -search grey\" aria-label=\"{}\"></button>\n\t\t\t<button type=\"button\" data-name=\"clear\" class=\"acf-icon -cancel grey\" aria-label=\"{}\"></button>\n\t\t\t<button type=\"button\" data-name=\"locate\" class=\"acf-icon -location grey\" aria-label=\"{}\"></button>\n\t\t</div>\n\n\t\t<i class=\"acf-loading\"></i>\n\n\t</div>\n\n\t<div class=\"canvas\" style=\"{}\"></div>\n\n</div>\n\t\t\t",
         esc_attrs(&attrs),
-        esc_attr(&ctx.tr("Search for address...")),
+        esc_attr(&ctx.acf("Search for address...")),
         esc_attr(&search),
-        esc_attr(&ctx.tr("Search")),
-        esc_attr(&ctx.tr("Clear location")),
-        esc_attr(&ctx.tr("Find current location")),
+        esc_attr(&ctx.acf("Search")),
+        esc_attr(&ctx.acf("Clear location")),
+        esc_attr(&ctx.acf("Find current location")),
         esc_attr(&format!("height: {}px", field.str("height"))),
     )
 }
@@ -1578,7 +1578,7 @@ async fn render_image(ctx: &Ctx<'_>, field: RenderField) -> Result<String> {
     let size_h = h.map_or_else(|| "100%".to_owned(), |h| format!("{h}px"));
     img.set("style", string(&format!("max-height: {size_h};")));
     let hidden = hidden_input(&Attrs::new(&[("name", field.get("name").cloned().unwrap_or(Value::Null)), ("value", value)]));
-    let edit = if uploader == "basic" { String::new() } else { format!("\t\t\t<a class=\"acf-icon -pencil dark\" data-name=\"edit\" href=\"#\" title=\"{}\" aria-label=\"{}\"></a>\n\t\t\t", esc_attr(&ctx.tr("Edit")), esc_attr(&ctx.tr("Edit image"))) };
+    let edit = if uploader == "basic" { String::new() } else { format!("\t\t\t<a class=\"acf-icon -pencil dark\" data-name=\"edit\" href=\"#\" title=\"{}\" aria-label=\"{}\"></a>\n\t\t\t", esc_attr(&ctx.acf("Edit")), esc_attr(&ctx.acf("Edit image"))) };
     let empty = if uploader == "basic" {
         let mut args = Attrs::new(&[("name", field.get("name").cloned().unwrap_or(Value::Null)), ("id", field.get("id").cloned().unwrap_or(Value::Null)), ("key", field.get("key").cloned().unwrap_or(Value::Null))]);
         if field.truthy("mime_types") {
@@ -1590,16 +1590,16 @@ async fn render_image(ctx: &Ctx<'_>, field: RenderField) -> Result<String> {
         }
         format!("\t\t\t\t{}\t\t\t<label class=\"acf-basic-uploader\">\n\t\t\t\t{}\t\t\t</label>\n\t\t", basic_error(&field), file_input(ctx, &args))
     } else {
-        format!("\t\t\t<p>{} <a data-name=\"add\" class=\"acf-button button\" href=\"#\">{}</a></p>\n\t\t", esc_html(&ctx.tr("No image selected")), esc_html(&ctx.tr("Add Image")))
+        format!("\t\t\t<p>{} <a data-name=\"add\" class=\"acf-button button\" href=\"#\">{}</a></p>\n\t\t", esc_html(&ctx.acf("No image selected")), esc_html(&ctx.acf("Add Image")))
     };
     Ok(format!(
         "<div {}>\n\t\t\t{hidden}\t<div class=\"show-if-value image-wrap\" style=\"max-width: {}\" tabindex=\"0\" role=\"button\" aria-label=\"{}\">\n\t\t<img {} />\n\t\t<div class=\"acf-actions -hover\">\n\t\t\t{edit}\t\t\t<a class=\"acf-icon -cancel dark\" data-name=\"remove\" href=\"#\" title=\"{}\" aria-label=\"{}\"></a>\n\t\t</div>\n\t</div>\n\t<div class=\"hide-if-value\">\n\t\t\t{empty}\t</div>\n</div>\n\t\t\t",
         esc_attrs(&div),
         esc_attr(&size_w),
-        esc_attr(&ctx.tr("Selected image. Press tab to access image options.")),
+        esc_attr(&ctx.acf("Selected image. Press tab to access image options.")),
         esc_attrs(&img),
-        esc_attr(&ctx.tr("Remove")),
-        esc_attr(&ctx.tr("Remove image")),
+        esc_attr(&ctx.acf("Remove")),
+        esc_attr(&ctx.acf("Remove image")),
     ))
 }
 
@@ -1632,7 +1632,7 @@ async fn render_file(ctx: &Ctx<'_>, field: RenderField) -> Result<String> {
         }
     }
     let hidden = hidden_input(&Attrs::new(&[("name", field.get("name").cloned().unwrap_or(Value::Null)), ("value", raw.clone()), ("data-name", string("id"))]));
-    let edit = if uploader == "basic" { String::new() } else { format!("\t\t\t<a class=\"acf-icon -pencil dark\" data-name=\"edit\" href=\"#\" title=\"{}\" aria-label=\"{}\"></a>\n\t\t\t", esc_attr(&ctx.tr("Edit")), esc_attr(&ctx.tr("Edit file"))) };
+    let edit = if uploader == "basic" { String::new() } else { format!("\t\t\t<a class=\"acf-icon -pencil dark\" data-name=\"edit\" href=\"#\" title=\"{}\" aria-label=\"{}\"></a>\n\t\t\t", esc_attr(&ctx.acf("Edit")), esc_attr(&ctx.acf("Edit file"))) };
     let empty = if uploader == "basic" {
         let mut args = Attrs::new(&[("name", field.get("name").cloned().unwrap_or(Value::Null)), ("id", field.get("id").cloned().unwrap_or(Value::Null)), ("key", field.get("key").cloned().unwrap_or(Value::Null))]);
         if field.truthy("mime_types") {
@@ -1640,21 +1640,21 @@ async fn render_file(ctx: &Ctx<'_>, field: RenderField) -> Result<String> {
         }
         format!("\t\t\t\n\t\t\t\t{}\t\t\t\n\t\t\t<label class=\"acf-basic-uploader\">\n\t\t\t\t{}\t\t\t</label>\n\t\t\t\n\t\t", basic_error(&field), file_input(ctx, &args))
     } else {
-        format!("\t\t\t\n\t\t\t<p>{} <a data-name=\"add\" class=\"acf-button button\" href=\"#\">{}</a></p>\n\t\t\t\n\t\t", esc_html(&ctx.tr("No file selected")), esc_html(&ctx.tr("Add File")))
+        format!("\t\t\t\n\t\t\t<p>{} <a data-name=\"add\" class=\"acf-button button\" href=\"#\">{}</a></p>\n\t\t\t\n\t\t", esc_html(&ctx.acf("No file selected")), esc_html(&ctx.acf("Add File")))
     };
     Ok(format!(
         "<div {}>\n\t\t\t{hidden}\t<div class=\"show-if-value file-wrap\" tabindex=\"0\" role=\"button\" aria-label=\"{}\">\n\t\t<div class=\"file-icon\">\n\t\t\t<img data-name=\"icon\" src=\"{}\" alt=\"\"/>\n\t\t</div>\n\t\t<div class=\"file-info\">\n\t\t\t<p>\n\t\t\t\t<strong data-name=\"title\">{}</strong>\n\t\t\t</p>\n\t\t\t<p>\n\t\t\t\t<strong>{}:</strong>\n\t\t\t\t<a data-name=\"filename\" href=\"{}\" target=\"_blank\">{}</a>\n\t\t\t</p>\n\t\t\t<p>\n\t\t\t\t<strong>{}:</strong>\n\t\t\t\t<span data-name=\"filesize\">{}</span>\n\t\t\t</p>\n\t\t</div>\n\t\t<div class=\"acf-actions -hover\">\n\t\t\t{edit}\t\t\t<a class=\"acf-icon -cancel dark\" data-name=\"remove\" href=\"#\" title=\"{}\" aria-label=\"{}\"></a>\n\t\t</div>\n\t</div>\n\t<div class=\"hide-if-value\">\n\t\t\t{empty}\t\t\n\t</div>\n</div>\n\t\t\t",
         esc_attrs(&div),
-        esc_attr(&ctx.tr("Selected file. Press tab to access file options.")),
+        esc_attr(&ctx.acf("Selected file. Press tab to access file options.")),
         esc_url(&icon),
         esc_html(&title),
-        esc_html(&ctx.tr("File name")),
+        esc_html(&ctx.acf("File name")),
         esc_url(&url),
         esc_html(&filename),
-        esc_html(&ctx.tr("File size")),
+        esc_html(&ctx.acf("File size")),
         esc_html(&filesize),
-        esc_attr(&ctx.tr("Remove")),
-        esc_attr(&ctx.tr("Remove file")),
+        esc_attr(&ctx.acf("Remove")),
+        esc_attr(&ctx.acf("Remove file")),
     ))
 }
 
@@ -1671,7 +1671,7 @@ fn post_types_of(site: &Site, field: &RenderField) -> Vec<String> {
 async fn post_title(ctx: &Ctx<'_>, post: &rustpress_db::Post) -> Result<String> {
     let mut title = if ctx.admin { rustpress_blocks::content::the_title_in_admin(ctx.site, post) } else { rustpress_blocks::content::the_title_for(ctx.site, post) };
     if title.is_empty() {
-        title = ctx.tr("(no title)");
+        title = ctx.acf("(no title)");
     }
     let status = post_status(ctx.site, post).await?;
     if status != "publish" {
@@ -1802,7 +1802,7 @@ fn taxonomy_labels(site: &Site, name: &str) -> Option<(String, String, bool)> {
 async fn term_title(ctx: &Ctx<'_>, term: &rustpress_db::Term, hierarchical: bool) -> Result<String> {
     let mut title = term.name.clone();
     if title.is_empty() {
-        title = ctx.tr("(no title)");
+        title = ctx.acf("(no title)");
     }
     if hierarchical {
         let mut parent = term.parent;
@@ -1953,7 +1953,7 @@ async fn render_taxonomy(ctx: &Ctx<'_>, mut field: RenderField) -> Result<String
             }
             let terms = ctx.site.db.terms(&taxonomy).await?;
             let list = if terms.is_empty() {
-                rustpress_core::i18n::sprintf(&ctx.trx("No %s", "No Terms"), &[&label])
+                rustpress_core::i18n::sprintf(&ctx.acfx("No %s", "No Terms"), &[&label])
             } else {
                 let selected: Vec<Value> = value.iter().map(|(_, v)| v.clone()).collect();
                 TermWalker { kind: field_type.clone(), name: field.get("name").cloned().unwrap_or(Value::Null), selected: &selected }.walk(&terms)
@@ -1971,7 +1971,8 @@ fn post_type_singular(site: &Site, name: &str) -> String {
     match name {
         "post" => site.trx("Post", "post type singular name"),
         "page" => site.trx("Page", "post type singular name"),
-        "attachment" => site.trx("Media", "post type singular name"),
+        // No `singular_name`: `_get_custom_object_labels()` copies the name.
+        "attachment" => site.trx("Media", "post type general name"),
         other => match site.types.post_type(other).or_else(|| site.types.rewrite_post_types().iter().find(|t| t.name == other)) {
             Some(t) => t.singular_label(),
             None => site.types.registered_post_types.iter().find(|r| r.name == other).and_then(|r| r.singular.clone().or_else(|| r.label.clone())).unwrap_or_else(|| other.to_owned()),
@@ -2035,7 +2036,7 @@ fn term_children(parent: u64, terms: &[rustpress_db::Term], seen: &mut Vec<u64>)
 async fn term_filter_choices(ctx: &Ctx<'_>, field: &RenderField, post_types: &[String]) -> Result<Vec<(Key, Value)>> {
     let site = ctx.site;
     let mut groups: Vec<(Key, Value)> = Vec::new();
-    let mut push = |groups: &mut Vec<(Key, Value)>, label: &str, id: String, text: String| {
+    let push = |groups: &mut Vec<(Key, Value)>, label: &str, id: String, text: String| {
         let k = key(label);
         match groups.iter_mut().find(|(gk, _)| key_eq(gk, &k)) {
             Some((_, Value::Array(items))) => super::php::set(items, &id, string(&text)),
@@ -2084,7 +2085,7 @@ async fn render_relationship(ctx: &Ctx<'_>, field: RenderField) -> Result<String
     let has = |name: &str| in_array(&string(name), &filters);
     let mut post_type_choices: Vec<(Key, Value)> = Vec::new();
     if has("post_type") {
-        post_type_choices.push((key(""), string(&ctx.tr("Select post type"))));
+        post_type_choices.push((key(""), string(&ctx.acf("Select post type"))));
         let types = if post_types.is_empty() { super::format::all_post_types(site) } else { post_types.clone() };
         for (name, label) in disambiguate(types.iter().map(|t| (t.clone(), post_type_singular(site, t))).collect()) {
             super::php::set(&mut post_type_choices, &name, string(&label));
@@ -2092,7 +2093,7 @@ async fn render_relationship(ctx: &Ctx<'_>, field: RenderField) -> Result<String
     }
     let mut taxonomy_choices: Vec<(Key, Value)> = Vec::new();
     if has("taxonomy") {
-        taxonomy_choices.push((key(""), string(&ctx.tr("Select taxonomy"))));
+        taxonomy_choices.push((key(""), string(&ctx.acf("Select taxonomy"))));
         for (k, v) in term_filter_choices(ctx, &field, &post_types).await? {
             if !taxonomy_choices.iter().any(|(existing, _)| key_eq(existing, &k)) {
                 taxonomy_choices.push((k, v));
@@ -2115,7 +2116,7 @@ async fn render_relationship(ctx: &Ctx<'_>, field: RenderField) -> Result<String
     if !filters.is_empty() {
         out.push_str(&format!("\t<div class=\"filters -f{}\">\n\t\t\t\t", filters.len()));
         if has("search") {
-            out.push_str(&format!("\t\t<div class=\"filter -search\">\n\t\t\t\t\t{}\t\t</div>\n\t\t\t\t\t", text_input(Attrs::new(&[("placeholder", string(&ctx.tr("Search..."))), ("data-filter", string("s"))]))));
+            out.push_str(&format!("\t\t<div class=\"filter -search\">\n\t\t\t\t\t{}\t\t</div>\n\t\t\t\t\t", text_input(Attrs::new(&[("placeholder", string(&ctx.acf("Search..."))), ("data-filter", string("s"))]))));
         }
         if has("post_type") {
             out.push_str(&format!("\t\t<div class=\"filter -post_type\">\n\t\t\t\t\t{}\t\t</div>\n\t\t\t\t\t", select_input(Attrs::new(&[("choices", Value::Array(post_type_choices)), ("data-filter", string("post_type"))]))));
@@ -2146,18 +2147,18 @@ async fn render_relationship(ctx: &Ctx<'_>, field: RenderField) -> Result<String
 
 /// `acf_field_icon_picker::get_tabs()`.
 fn icon_tabs(ctx: &Ctx<'_>) -> Vec<(&'static str, String)> {
-    let mut tabs = vec![("dashicons", esc_html(&ctx.tr("Dashicons")))];
+    let mut tabs = vec![("dashicons", esc_html(&ctx.acf("Dashicons")))];
     if (ctx.can)("upload_files") {
-        tabs.push(("media_library", esc_html(&ctx.tr("Media Library"))));
+        tabs.push(("media_library", esc_html(&ctx.acf("Media Library"))));
     }
-    tabs.push(("url", esc_html(&ctx.tr("URL"))));
+    tabs.push(("url", esc_html(&ctx.acf("URL"))));
     tabs
 }
 
 /// `acf_field_icon_picker::render_icon_list_tab()` of the Dashicons.
 fn icon_list_tab(ctx: &Ctx<'_>, tab: &str) -> String {
-    let search = text_input(Attrs::new(&[("class", string("acf-icon-list-search-input")), ("placeholder", string(&esc_html(&ctx.tr("Search icons...")))), ("type", string("search"))]));
-    let no_results = rustpress_core::i18n::sprintf(&esc_html(&ctx.tr("No search results for '%s'")), &["<span class=\"acf-invalid-icon-list-search-term\"></span>"]);
+    let search = text_input(Attrs::new(&[("class", string("acf-icon-list-search-input")), ("placeholder", string(&esc_html(&ctx.acf("Search icons...")))), ("type", string("search"))]));
+    let no_results = rustpress_core::i18n::sprintf(&esc_html(&ctx.acf("No search results for '%s'")), &["<span class=\"acf-invalid-icon-list-search-term\"></span>"]);
     format!(
         "\t\t\t<div class=\"acf-icon-list-search-wrap\">\n\t\t\t\t{search}\t\t\t</div>\n\t\t\t<div\n\t\t\t\tclass=\"acf-icon-list\"\n\t\t\t\trole=\"radiogroup\"\n\t\t\t\tdata-parent-tab=\"{}\"\n\t\t\t\t\t\t\t></div>\n\t\t\t<div class=\"acf-icon-list-empty\">\n\t\t\t\t<img src=\"{}\" />\n\t\t\t\t<p class=\"acf-no-results-text\">\n\t\t\t\t\t{no_results}\t\t\t\t</p>\n\t\t\t</div>\n\t\t\t",
         esc_attr(tab),
@@ -2208,14 +2209,14 @@ async fn render_icon_picker(ctx: &Ctx<'_>, field: RenderField) -> Result<String>
                 out.push_str(&format!(
                     "\t\t\t\t\t\t<div class=\"acf-icon-picker-tab\" data-category=\"{}\">\n\t\t\t\t\t\t\t<div class=\"acf-icon-picker-media-library\">\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<button\n\t\t\t\t\t\t\t\t\taria-label=\"{}\"\n\t\t\t\t\t\t\t\t\tclass=\"acf-icon-picker-media-library-preview\"\n\t\t\t\t\t\t\t\t\tstyle=\"{}\"\n\t\t\t\t\t\t\t\t>\n\t\t\t\t\t\t\t\t\t<div class=\"acf-icon-picker-media-library-preview-img\" style=\"{}\">\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<img src=\"{}\" alt=\"{}\" />\n\t\t\t\t\t\t\t\t\t</div>\n\t\t\t\t\t\t\t\t\t<div class=\"acf-icon-picker-media-library-preview-dashicon\" style=\"{}\">\n\t\t\t\t\t\t\t\t\t\t<div class=\"dashicons {}\">\n\t\t\t\t\t\t\t\t\t\t</div>\n\t\t\t\t\t\t\t\t\t</div>\n\t\t\t\t\t\t\t\t</button>\n\t\t\t\t\t\t\t\t<button class=\"acf-icon-picker-media-library-button\">\n\t\t\t\t\t\t\t\t\t<div class=\"acf-icon-picker-media-library-button-icon dashicons dashicons-admin-media\"></div>\n\t\t\t\t\t\t\t\t\t<span>{}</span>\n\t\t\t\t\t\t\t\t</button>\n\t\t\t\t\t\t\t</div>\n\t\t\t\t\t\t</div>\n\t\t\t\t\t\t",
                     esc_attr(name),
-                    esc_attr(&ctx.tr("Click to change the icon in the Media Library")),
+                    esc_attr(&ctx.acf("Click to change the icon in the Media Library")),
                     esc_attr(if shows { "" } else { "display: none;" }),
                     esc_attr(if kind != "media_library" { "display: none;" } else { "" }),
                     esc_url(&img),
-                    esc_attr(&ctx.tr("The currently selected image preview")),
+                    esc_attr(&ctx.acf("The currently selected image preview")),
                     esc_attr(if kind != "dashicons" { "display: none;" } else { "" }),
                     esc_attr(&text(Some(&icon))),
-                    esc_html(&ctx.tr("Browse Media Library")),
+                    esc_html(&ctx.acf("Browse Media Library")),
                 ));
             }
             _ => {
@@ -2223,7 +2224,7 @@ async fn render_icon_picker(ctx: &Ctx<'_>, field: RenderField) -> Result<String>
                 out.push_str(&format!(
                     "<div class=\"acf-icon-picker-url\">{}\t\t\t\t\t\t<p class=\"description\">{}</p>\n\t\t\t\t\t\t</div>",
                     text_input(Attrs::new(&[("class", string("acf-icon_url")), ("value", url)])),
-                    esc_html(&ctx.tr("The URL to the icon you'd like to use, or svg as Data URI"))
+                    esc_html(&ctx.acf("The URL to the icon you'd like to use, or svg as Data URI"))
                 ));
             }
         }
@@ -2285,13 +2286,13 @@ fn render_wysiwyg(ctx: &Ctx<'_>, mut field: RenderField) -> String {
     let tab_buttons = if ctx.rich_edit && show_tabs {
         format!(
             "\t\t\t\t\t<div class=\"wp-editor-tabs\">\n\t\t\t\t\t\t<button id=\"{eid}-tmce\" class=\"wp-switch-editor switch-tmce\" data-wp-editor-id=\"{eid}\" type=\"button\">{}</button>\n\t\t\t\t\t\t<button id=\"{eid}-html\" class=\"wp-switch-editor switch-html\" data-wp-editor-id=\"{eid}\" type=\"button\">{}</button>\n\t\t\t\t\t</div>\n\t\t\t\t",
-            esc_html(&ctx.tr("Visual")),
-            esc_html(&ctx.trx("Text", "Name for the Text editor tab (formerly HTML)"))
+            esc_html(&ctx.acf("Visual")),
+            esc_html(&ctx.acfx("Text", "Name for the Text editor tab (formerly HTML)"))
         )
     } else {
         String::new()
     };
-    let delay = if field.truthy("delay") { format!("\t\t\t\t\t<div class=\"acf-editor-toolbar\">{}</div>\n\t\t\t\t", esc_html(&ctx.tr("Click to initialize TinyMCE"))) } else { String::new() };
+    let delay = if field.truthy("delay") { format!("\t\t\t\t\t<div class=\"acf-editor-toolbar\">{}</div>\n\t\t\t\t", esc_html(&ctx.acf("Click to initialize TinyMCE"))) } else { String::new() };
     format!(
         "\t\t<div {}>\n\t\t\t<div id=\"wp-{eid}-editor-tools\" class=\"wp-editor-tools hide-if-no-js\">\n\t\t\t\t{media}\t\t\t\t\t{tab_buttons}\t\t\t</div>\n\t\t\t<div id=\"wp-{eid}-editor-container\" class=\"wp-editor-container\">\n\t\t\t\t\t{delay}\t\t\t\t\t{textarea}\t\t\t</div>\n\t\t</div>\n\t\t\t",
         esc_attrs(&wrap)
