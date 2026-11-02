@@ -194,6 +194,22 @@ pub trait ActivePlugin: Send + Sync {
         Box::pin(async move { Ok(html) })
     }
 
+    /// `add_meta_boxes_comment`: what the plugin prints in the second column of `comment.php?action=editcomment`,
+    /// before the meta boxes.
+    fn comment_meta_boxes<'a>(&'a self, _ctx: &'a AdminContext<'a>, _comment: &'a rustpress_db::Comment) -> BoxFuture<'a, Result<String>> {
+        Box::pin(async { Ok(String::new()) })
+    }
+
+    /// `admin_footer`: printed after `#wpfooter`, before the media templates.
+    fn admin_footer<'a>(&'a self, _ctx: &'a AdminContext<'a>) -> BoxFuture<'a, Result<String>> {
+        Box::pin(async { Ok(String::new()) })
+    }
+
+    /// `admin_print_footer_scripts` after the scripts of the footer and the emoji script (priority 20).
+    fn admin_print_footer_scripts<'a>(&'a self, _ctx: &'a AdminContext<'a>) -> BoxFuture<'a, Result<String>> {
+        Box::pin(async { Ok(String::new()) })
+    }
+
     /// The `admin_body_class` filter: classes (each with a leading space) the plugin adds to the `<body>` of every
     /// screen.
     fn admin_body_class(&self, _ctx: &AdminContext<'_>, classes: String) -> String {
@@ -914,6 +930,10 @@ pub struct AdminContext<'a> {
     pub verify_nonce: &'a (dyn Fn(&str, &str) -> bool + Send + Sync),
     /// `$_SERVER['HTTP_USER_AGENT']`.
     pub user_agent: Option<&'a str>,
+    /// `$wp_version` of the WordPress files.
+    pub wp_version: &'a str,
+    /// `ABSPATH`: where the WordPress files are.
+    pub wp_root: &'a std::path::Path,
 }
 
 impl AdminContext<'_> {
@@ -1442,6 +1462,33 @@ impl Plugins {
             }
         }
         Ok(None)
+    }
+
+    /// `add_meta_boxes_comment` of the plugins.
+    pub async fn comment_meta_boxes(&self, ctx: &AdminContext<'_>, comment: &rustpress_db::Comment) -> Result<String> {
+        let mut out = String::new();
+        for plugin in self.hooks() {
+            out.push_str(&plugin.comment_meta_boxes(ctx, comment).await?);
+        }
+        Ok(out)
+    }
+
+    /// `admin_footer` of the plugins.
+    pub async fn admin_footer(&self, ctx: &AdminContext<'_>) -> Result<String> {
+        let mut out = String::new();
+        for plugin in self.hooks() {
+            out.push_str(&plugin.admin_footer(ctx).await?);
+        }
+        Ok(out)
+    }
+
+    /// `admin_print_footer_scripts` of the plugins.
+    pub async fn admin_print_footer_scripts(&self, ctx: &AdminContext<'_>) -> Result<String> {
+        let mut out = String::new();
+        for plugin in self.hooks() {
+            out.push_str(&plugin.admin_print_footer_scripts(ctx).await?);
+        }
+        Ok(out)
     }
 
     /// `apply_filters( 'admin_body_class', '' )` of the plugins.

@@ -377,6 +377,14 @@ pub struct Assets {
     pub plugin_styles: String,
     /// `apply_filters( 'admin_body_class', '' )` of the plugins: they come before the classes of the screen.
     pub plugin_body_classes: String,
+    /// What the plugins print on `admin_footer`: after `#wpfooter`, before the media templates.
+    pub plugin_footer: String,
+    /// What the plugins print on `admin_print_footer_scripts` (priority 20): after the emoji script.
+    pub plugin_footer_scripts: String,
+    /// The stylesheets of plugins enqueued after priority 10 of `admin_enqueue_scripts`: after the emoji styles.
+    pub plugin_late_styles: String,
+    /// Stylesheets WordPress registers that plugins enqueue (`wp-color-picker`): after those of the screen.
+    pub plugin_core_styles: Vec<String>,
     /// What the plugins print on `admin_notices`, the end of `admin-header.php`.
     pub notices: String,
     /// What a plugin's `admin_footer_text` prints instead of the thanks for using WordPress.
@@ -637,6 +645,10 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
     for handle in &assets.styles {
         styles.enqueue(handle);
     }
+    // Stylesheets of WordPress a plugin enqueues on `admin_enqueue_scripts`.
+    for handle in &assets.plugin_core_styles {
+        styles.enqueue(handle);
+    }
     let admin_styles = styles.print_admin_styles(true);
     let colors = format!("<link rel='stylesheet' id='colors-css' href='{}/wp-admin/css/colors/modern/colors.min.css?ver={version}' media='all' />\n", env.loader.site_url);
 
@@ -688,6 +700,9 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
     }
     scripts.relocalize("heartbeat", "heartbeatSettings", &serde_json::Value::Object(heartbeat));
     for script in assets.plugin_page_scripts.iter().chain(&assets.plugin_scripts) {
+        if script.src.is_empty() {
+            continue;
+        }
         let deps: Vec<&str> = script.deps.iter().map(String::as_str).collect();
         let ver = script.ver.clone().map_or(crate::deps::Ver::None, crate::deps::Ver::Value);
         scripts.add(&script.handle, Some(&script.src), &deps, ver, script.in_footer.then_some(crate::deps::Arg::Int(1)));
@@ -714,6 +729,11 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
     for (handle, code, position) in &assets.inline {
         scripts.add_inline_script(handle, code, position);
     }
+    // `wp_localize_jquery_ui_datepicker()` on `admin_enqueue_scripts` (priority 1000), once the date picker itself
+    // is enqueued.
+    if assets.scripts.iter().any(|h| h == "jquery-ui-datepicker") || assets.plugin_scripts.iter().any(|s| s.handle == "jquery-ui-datepicker" && s.src.is_empty()) {
+        scripts.add_inline_script("jquery-ui-datepicker", &rustpress_theme::script_loader::localize::jquery_ui_datepicker(site), "after");
+    }
     let always: &[&str] = if assets.no_auth_check { &["svg-painter"] } else { &["svg-painter", "heartbeat", "wp-auth-check"] };
     for handle in always {
         scripts.enqueue(handle);
@@ -722,7 +742,7 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
     scripts.enqueue("wp-commands");
     scripts.enqueue("wp-core-commands");
     scripts.add_inline_script("wp-core-commands", &command_palette_call(env), "after");
-    for script in &assets.plugin_scripts {
+    for script in assets.plugin_scripts.iter().filter(|s| !s.registered_only) {
         scripts.enqueue(&script.handle);
     }
     if let Some(boot) = &assets.boot {
@@ -805,9 +825,15 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
     ));
     out.push_str(&admin_styles);
     out.push_str(&colors);
-    match env.head_styles.split_once("<style id=\"wp-emoji-styles-inline-css\">") {
-        Some((before, after)) if !assets.plugin_styles.is_empty() => out.push_str(&format!("{before}{}<style id=\"wp-emoji-styles-inline-css\">{after}", assets.plugin_styles)),
-        _ => out.push_str(&env.head_styles),
+    let head_styles = match env.head_styles.split_once("<style id=\"wp-emoji-styles-inline-css\">") {
+        Some((before, after)) if !assets.plugin_styles.is_empty() => format!("{before}{}<style id=\"wp-emoji-styles-inline-css\">{after}", assets.plugin_styles),
+        _ => env.head_styles.clone(),
+    };
+    // The stylesheets of a later priority follow the emoji styles.
+    let emoji_end = head_styles.find("<style id=\"wp-emoji-styles-inline-css\">").and_then(|at| head_styles[at..].find("</style>\n").map(|end| at + end + "</style>\n".len()));
+    match emoji_end {
+        Some(end) if !assets.plugin_late_styles.is_empty() => out.push_str(&format!("{}{}{}", &head_styles[..end], assets.plugin_late_styles, &head_styles[end..])),
+        _ => out.push_str(&head_styles),
     }
     out.push_str(&assets.head_early);
     out.push_str(&head_scripts);
@@ -877,6 +903,7 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
         assets.footer_text.clone().unwrap_or_else(|| format!("<span id=\"footer-thankyou\">{}</span>", rustpress_core::i18n::sprintf(&tr("Thank you for creating with <a href=\"%s\">WordPress</a>."), &["https://wordpress.org/"]))),
         rustpress_core::i18n::sprintf(&tr("Version %s"), &[&version])
     ));
+    out.push_str(&assets.plugin_footer);
     out.push_str(&assets.pre_footer);
     if !assets.no_auth_check {
         // `wp_auth_check_html()`: the sign-in form is loaded in the dialog only from the domain of the request.
@@ -901,6 +928,7 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
     out.push_str(&footer_scripts);
     out.push_str(&assets.footer_early);
     out.push_str(&emoji_scripts(env, assets.no_emoji));
+    out.push_str(&assets.plugin_footer_scripts);
     if a11y {
         out.push_str(&format!(
             "<div style=\"position:absolute;margin:-1px;padding:0;height:1px;width:1px;overflow:hidden;clip-path:inset(50%);border:0;word-wrap:normal !important;\"><p id=\"a11y-speak-intro-text\" class=\"a11y-speak-intro-text\" hidden>{}</p><div id=\"a11y-speak-assertive\" class=\"a11y-speak-region\" aria-live=\"assertive\" aria-relevant=\"additions text\" aria-atomic=\"true\"></div><div id=\"a11y-speak-polite\" class=\"a11y-speak-region\" aria-live=\"polite\" aria-relevant=\"additions text\" aria-atomic=\"true\"></div></div>",

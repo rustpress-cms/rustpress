@@ -908,6 +908,16 @@ pub async fn comment_php(ctx: &Ctx<'_>) -> AdminResponse {
             if let Some(parent) = field("comment_parent").and_then(|p| p.parse::<u64>().ok()) {
                 writer.update_rows("comments", "comment_ID", id, &[("comment_parent", rustpress_db::Val::Int(parent as i64))]).await.or_log();
             }
+            // `edit_comment`: the plugins save what the form sent along.
+            if !ctx.site().plugins.is_empty() {
+                let parts = ctx.plugin_parts();
+                let saved = rustpress_core::native::CommentSaved { site: ctx.site(), writer, comment_id: id, post_id: comment.comment_post_id, form: &request.form, can: parts.can.as_ref(), verify_nonce: parts.verify.as_ref() };
+                match ctx.site().plugins.comment_post(&saved).await {
+                    Ok(Some(failed)) => return die(ctx.env, failed.status, &failed.title, &failed.message),
+                    Ok(None) => {}
+                    Err(e) => tracing::error!(error = %e, "a plugin failed on edit_comment"),
+                }
+            }
             redirect(&ctx.admin_url(&format!("edit-comments.php?p={}#comment-{id}", comment.comment_post_id)))
         }
         "approvecomment" | "unapprovecomment" | "spamcomment" | "unspamcomment" | "trashcomment" | "untrashcomment" | "deletecomment" => {
@@ -1094,7 +1104,13 @@ async fn edit_form(ctx: &Ctx<'_>, comment: &Comment) -> AdminResponse {
         trash = tr("Move to Trash"),
         update = tr("Update")
     ));
-    h.push_str(&format!("<div id=\"postbox-container-2\" class=\"postbox-container\">\n<div id=\"normal-sortables\" class=\"meta-box-sortables\"></div></div>\n\n<input type=\"hidden\" name=\"c\" value=\"{id}\" />\n<input type=\"hidden\" name=\"p\" value=\"{}\" />\n<input name=\"referredby\" type=\"hidden\" id=\"referredby\" value=\"\" />\n<input type=\"hidden\" name=\"_wp_original_http_referer\" value=\"\" /><input type=\"hidden\" name=\"noredir\" value=\"1\" />\n\n</div><!-- /post-body -->\n</div>\n</div>\n</form>\n\n<script>\ntry{{document.post.name.focus();}}catch(e){{}}\n</script>\n\t", comment.comment_post_id));
+    let parts = ctx.plugin_parts();
+    let plugin_ctx = ctx.plugin_context(&parts, "comment.php");
+    let boxes = site.plugins.comment_meta_boxes(&plugin_ctx, comment).await.unwrap_or_else(|e| {
+        tracing::error!(error = %e, "plugin comment meta boxes failed");
+        String::new()
+    });
+    h.push_str(&format!("<div id=\"postbox-container-2\" class=\"postbox-container\">\n{boxes}<div id=\"normal-sortables\" class=\"meta-box-sortables\"></div></div>\n\n<input type=\"hidden\" name=\"c\" value=\"{id}\" />\n<input type=\"hidden\" name=\"p\" value=\"{}\" />\n<input name=\"referredby\" type=\"hidden\" id=\"referredby\" value=\"\" />\n<input type=\"hidden\" name=\"_wp_original_http_referer\" value=\"\" /><input type=\"hidden\" name=\"noredir\" value=\"1\" />\n\n</div><!-- /post-body -->\n</div>\n</div>\n</form>\n\n<script>\ntry{{document.post.name.focus();}}catch(e){{}}\n</script>\n\t", comment.comment_post_id));
     // The form wraps everything from the nonce on.
     let h = format!("<form name=\"post\" action=\"comment.php\" method=\"post\" id=\"post\">\n{h}");
     let screen = Screen { file: "comment.php".into(), parent_file: "edit-comments.php".into(), submenu_file: Some("edit-comments.php".into()), title: tr("Edit Comment"), help: Some(edit_help(ctx)), content_inline: true, ..Default::default() };

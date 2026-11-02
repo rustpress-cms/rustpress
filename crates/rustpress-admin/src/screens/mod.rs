@@ -224,6 +224,8 @@ impl Ctx<'_> {
             nonce: parts.nonce.as_ref(),
             verify_nonce: parts.verify.as_ref(),
             user_agent: self.request.user_agent.as_deref(),
+            wp_version: &self.env.loader.version,
+            wp_root: self.env.loader.includes.parent().unwrap_or(&self.env.loader.includes),
         }
     }
 
@@ -648,10 +650,38 @@ pub async fn render(ctx: &Ctx<'_>, screen: &Screen, content: &str, assets: &Asse
     assets.notices = format!("{notices}{}", assets.notices);
     assets.footer_text = env.site.plugins.admin_footer_text(&plugin_ctx);
     assets.plugin_body_classes = env.site.plugins.admin_body_class(&plugin_ctx);
-    for style in &plugin_assets.styles {
+    // The stylesheets of the plugins: one WordPress registers joins the styles of the screen; a plugin's own comes after
+    // its dependencies among the plugins' stylesheets, those of priority 10 before the emoji styles, later ones after.
+    let mut printed: Vec<String> = Vec::new();
+    fn plugin_style(style: &rustpress_core::native::Asset, all: &[rustpress_core::native::Asset], printed: &mut Vec<String>, out: &mut String) {
+        if printed.contains(&style.handle) {
+            return;
+        }
+        printed.push(style.handle.clone());
+        for dep in &style.deps {
+            if let Some(found) = all.iter().find(|s| s.handle == *dep && !s.src.is_empty()) {
+                plugin_style(found, all, printed, out);
+            }
+        }
         let href = style.ver.as_ref().map_or_else(|| style.src.clone(), |ver| rustpress_core::urls::add_query_arg(&style.src, "ver", ver));
-        assets.plugin_styles.push_str(&format!("<link rel='stylesheet' id='{}-css' href='{}' media='{}' />\n", esc_attr(&style.handle), rustpress_core::formatting::esc_url(&href), esc_attr(&style.media)));
+        out.push_str(&format!("<link rel='stylesheet' id='{}-css' href='{}' media='{}' />\n", esc_attr(&style.handle), rustpress_core::formatting::esc_url(&href), esc_attr(&style.media)));
     }
+    for style in plugin_assets.styles.iter().filter(|s| !s.registered_only) {
+        if style.src.is_empty() {
+            assets.plugin_core_styles.push(style.handle.clone());
+            continue;
+        }
+        let target = if style.priority > 10 { &mut assets.plugin_late_styles } else { &mut assets.plugin_styles };
+        plugin_style(style, &plugin_assets.styles, &mut printed, target);
+    }
+    assets.plugin_footer = env.site.plugins.admin_footer(&plugin_ctx).await.unwrap_or_else(|e| {
+        tracing::error!(error = %e, "plugin admin_footer failed");
+        String::new()
+    });
+    assets.plugin_footer_scripts = env.site.plugins.admin_print_footer_scripts(&plugin_ctx).await.unwrap_or_else(|e| {
+        tracing::error!(error = %e, "plugin admin_print_footer_scripts failed");
+        String::new()
+    });
     if !assets.inline.iter().any(|(handle, _, _)| handle == "wp-api-fetch") {
         let nonce = ctx.create_nonce("wp_rest");
         assets.inline.push((
