@@ -17,7 +17,7 @@ use crate::{Outcome, Resp, Rest, Result};
 
 const ALL_STATUSES: [&str; 5] = ["publish", "future", "draft", "pending", "private"];
 
-fn allow_for(can_edit: bool, can_delete: bool) -> String {
+pub(super) fn allow_for(can_edit: bool, can_delete: bool) -> String {
     let mut methods = vec!["GET"];
     if can_edit {
         methods.extend(["POST", "PUT", "PATCH"]);
@@ -87,7 +87,7 @@ impl Rest<'_> {
             Ok(r) => r,
             Err(e) => return Ok(Err(e)),
         };
-        resp.allow = Some(allow_for(self.can_create(kind.name()), false).replace("GET", "GET, POST").replace("GET, POST, POST", "GET, POST"));
+        resp.allow = Some(if self.can_create(kind.name()) { "GET, POST" } else { "GET" }.to_owned());
         Ok(Ok(resp))
     }
 
@@ -117,6 +117,7 @@ impl Rest<'_> {
         let mut resp = Resp::item(Value::Array(items));
         resp.total = Some(total);
         resp.total_pages = Some(max_pages);
+        resp.link = crate::util::link_header(self, &format!("wp/v2/{}", kind.base()), params, &crate::util::LinkParams { arrays: crate::posts::POST_ARRAYS, booleans: &["sticky"] }, page, max_pages);
         Ok(Ok(resp))
     }
 

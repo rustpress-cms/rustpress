@@ -31,7 +31,7 @@ mod write;
 use sqlx::Executor;
 use sqlx::mysql::{MySqlPool, MySqlPoolOptions};
 
-pub use acf::{AcfPost, MetaKind};
+pub use acf::{AcfPost, AcfWpPost, MetaKind};
 pub use admin::SlugScope;
 pub use admin_comments::{CommentCounts, CommentListQuery};
 pub use admin_media::AttachmentQuery;

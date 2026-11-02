@@ -578,6 +578,19 @@ pub trait PageServices: Send + Sync {
 
     /// `ABSPATH`: where the WordPress files are (uploads under `wp-content/uploads`).
     fn wp_root(&self) -> &std::path::Path;
+
+    /// The `the_content` filters without `do_blocks()` as a plugin hooks them to its own filter (ACF's
+    /// `acf_the_content`): `[embed]`, `wptexturize`, `wpautop`, `shortcode_unautop`, `wp_filter_content_tags` (with
+    /// the filter's name as context), then `capital_P_dangit`, `do_shortcode` and `convert_smilies`. `post` is
+    /// `global $post`.
+    fn content_filters<'a>(&'a self, _post: Option<&'a Post>, text: &'a str, _context: &'a str) -> BoxFuture<'a, Result<String>> {
+        Box::pin(async move { Ok(text.to_owned()) })
+    }
+
+    /// `get_avatar( $id_or_email, $size )`.
+    fn avatar(&self, _email: &str, _size: u64) -> String {
+        String::new()
+    }
 }
 
 /// What a plugin sees of the page whose head is printed.
@@ -616,6 +629,12 @@ pub struct ShortcodeContext<'a> {
     pub query: &'a crate::QueryResult,
     /// `get_the_ID()` while `in_the_loop()`.
     pub loop_post: Option<u64>,
+    /// `global $post` (`get_the_ID()`), also outside the loop.
+    pub global_post: Option<u64>,
+    /// `doing_filter( 'the_content' )`.
+    pub in_the_content: bool,
+    /// `wp_is_block_theme()`.
+    pub block_theme: bool,
     /// What the plugins keep for the rest of the request (their `static` variables).
     pub state: &'a std::sync::Mutex<PluginState>,
     pub services: &'a dyn PageServices,

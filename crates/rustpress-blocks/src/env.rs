@@ -15,6 +15,10 @@ use crate::registry::Registry;
 pub trait ThemeAccess: Send + Sync {
     /// Merged `settings` of core, theme and user (`wp_get_global_settings()`).
     fn global_settings(&self) -> &Value;
+    /// `wp_is_block_theme()`.
+    fn is_block_theme(&self) -> bool {
+        true
+    }
     /// Merged `styles` (`wp_get_global_styles()`).
     fn global_styles(&self) -> &Value;
     /// Block markup of a template part (`header`, `footer`, ...), if it exists.
@@ -328,6 +332,20 @@ impl rustpress_core::native::PageServices for Env<'_> {
         // The blocks live in `wp-includes/blocks`.
         let blocks = self.registry.blocks_dir();
         blocks.parent().and_then(std::path::Path::parent).unwrap_or(blocks)
+    }
+
+    fn content_filters<'a>(&'a self, post: Option<&'a rustpress_db::Post>, text: &'a str, context: &'a str) -> futures::future::BoxFuture<'a, rustpress_core::Result<String>> {
+        Box::pin(async move {
+            let post = post.map(|p| std::sync::Arc::new(p.clone()));
+            crate::content::content_filters(self, post.as_ref(), text, context).await.map_err(|e| match e {
+                crate::Error::Core(e) => e,
+                crate::Error::Db(e) => rustpress_core::Error::Db(e),
+            })
+        })
+    }
+
+    fn avatar(&self, email: &str, size: u64) -> String {
+        crate::content::get_avatar(self, email, size, "", "", "")
     }
 }
 

@@ -160,6 +160,14 @@ impl rustpress_core::native::PageServices for Services<'_> {
     fn wp_root(&self) -> &std::path::Path {
         self.1
     }
+
+    fn content_filters<'a>(&'a self, post: Option<&'a rustpress_db::Post>, text: &'a str, context: &'a str) -> futures::future::BoxFuture<'a, rustpress_core::Result<String>> {
+        rustpress_core::native::PageServices::content_filters(&self.0, post, text, context)
+    }
+
+    fn avatar(&self, email: &str, size: u64) -> String {
+        rustpress_core::native::PageServices::avatar(&self.0, email, size)
+    }
 }
 
 /// What the plugins changed in the head, and the blocks they rendered while doing so (in the order their styles were

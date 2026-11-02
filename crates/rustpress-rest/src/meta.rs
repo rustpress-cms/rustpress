@@ -223,8 +223,9 @@ impl Rest<'_> {
         if links.is_empty() {
             return Ok(());
         }
-        // Without `_links` in `_fields` the core adds none, but the plugins' links still arrive.
-        let key = if data.contains_key("_links") { "_links" } else { crate::PLUGIN_LINKS };
+        // Without `_links` in `_fields` the core adds none (or `_fields` removes them later, as for the objects of the
+        // edit context), but the plugins' links still arrive.
+        let key = if data.contains_key("_links") && self.field_included("_links") { "_links" } else { crate::PLUGIN_LINKS };
         let Value::Object(map) = data.entry(key).or_insert_with(|| Value::Object(Map::new())) else { return Ok(()) };
         // `get_compact_response_links()` moves the compacted `wp:` relations behind the others.
         let curies = map.remove("curies");

@@ -80,15 +80,25 @@ impl Rest<'_> {
         data.insert("media_details".into(), self.media_details(post, metadata.as_ref(), attached_file.as_deref()));
         data.insert("post".into(), if post.post_parent == 0 { Value::Null } else { Value::from(post.post_parent) });
         data.insert("source_url".into(), Value::from(source_url));
-        if let Some(file) = attached_file.as_deref() {
-            // `wp_get_original_image_path()`: images that were scaled down report the original file.
-            let original = metadata.as_ref().and_then(|m| m.0.get("original_image")).and_then(Value::as_str).filter(|_| images::is_image(post));
-            data.insert("filename".into(), Value::from(original.unwrap_or_else(|| file.rsplit('/').next().unwrap_or(file))));
-        }
-        let filesize = metadata.as_ref().and_then(|m| m.0.get("filesize").cloned());
-        if let Some(size) = filesize {
-            data.insert("filesize".into(), size);
-        }
+        // `get_attachment_filename()`: images that were scaled down report the original file (`wp_get_original_image_path()`).
+        let original = metadata.as_ref().and_then(|m| m.0.get("original_image")).and_then(Value::as_str).filter(|_| images::is_image(post));
+        let filename = attached_file.as_deref().map(|file| original.unwrap_or_else(|| file.rsplit('/').next().unwrap_or(file)).to_owned());
+        data.insert("filename".into(), filename.map_or(Value::Null, Value::from));
+        // `get_attachment_filesize()`: the size in the metadata, else the size of the file, else null.
+        let stored = metadata.as_ref().and_then(|m| m.0.get("filesize")).and_then(|v| v.as_u64().or_else(|| v.as_str().and_then(|s| s.trim().parse().ok()))).filter(|size| *size > 0);
+        let filesize = match (stored, attached_file.as_deref()) {
+            (Some(size), _) => Some(size),
+            (None, Some(file)) => {
+                let path = match (original, file.rsplit_once('/')) {
+                    (Some(name), Some((dir, _))) => format!("{dir}/{name}"),
+                    (Some(name), None) => name.to_owned(),
+                    (None, _) => file.to_owned(),
+                };
+                std::fs::metadata(self.theme.wp_root.join("wp-content/uploads").join(path)).ok().map(|m| m.len())
+            }
+            (None, None) => None,
+        };
+        data.insert("filesize".into(), filesize.map_or(Value::Null, Value::from));
 
         data.insert("_links".into(), self.media_links(post).await?);
         self.add_plugin_links(rustpress_core::native::RestObject::Post(post), &mut data).await?;
@@ -103,7 +113,8 @@ impl Rest<'_> {
 
     /// `media_details`: the stored metadata with `source_url`s and the `full` size.
     fn media_details(&self, post: &Post, metadata: Option<&Metadata>, attached_file: Option<&str>) -> Value {
-        let Some(metadata) = metadata else { return Value::Array(Vec::new()) };
+        // `empty( wp_get_attachment_metadata() )`: an empty object.
+        let Some(metadata) = metadata.filter(|m| !rustpress_blocks::style_engine::is_empty(&m.0)) else { return rustpress_blocks::php_json::empty_object() };
         let mut details = metadata.0.as_object().cloned().unwrap_or_default();
         if let Some(Value::Object(sizes)) = details.get_mut("sizes") {
             let directory = attached_file.and_then(|f| f.rsplit_once('/')).map(|(d, _)| format!("{d}/")).unwrap_or_default();

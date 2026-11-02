@@ -1,14 +1,20 @@
 //! Advanced Custom Fields 6.8.10 (`advanced-custom-fields/acf.php`) on the website: the post types and taxonomies
-//! defined in ACF, and the `acf` field of the REST API (`ACF_Rest_Api`) with the values of the field groups that
-//! show in REST, in the `light` format, and their links (`ACF_Rest_Embed_Links`).
+//! defined in ACF, the `acf` field of the REST API (`ACF_Rest_Api`) with the values of the field groups that show
+//! in REST, in the `light` format or formatted (`?acf_format=standard`), their links (`ACF_Rest_Embed_Links`), and
+//! the `[acf]` shortcode.
 //!
 //! Differs from the plugin: field groups, post types and taxonomies come from the database only (no local JSON
-//! from `acf-json` and no `acf_add_local_field_group()` in PHP); `?acf_format=standard` returns the `light`
-//! format; the `post_template` rule knows the templates of pages only; the PHP filters of ACF do not run.
+//! from `acf-json` and no `acf_add_local_field_group()` in PHP); the `post_template` rule knows the templates of
+//! pages only; the PHP filters of ACF do not run; oEmbed fields are links (no network); a user field that returns
+//! objects returns the array; `$content_width` of a classic theme does not limit image sizes; block bindings
+//! (`acf/field`) wait for block bindings in the core.
 
 mod fields;
+mod format;
 mod internal;
 mod php;
+mod rest_format;
+mod shortcode;
 mod value;
 
 use futures::future::BoxFuture;
@@ -47,12 +53,14 @@ impl NativePlugin for Acf {
     }
 
     fn load<'a>(&'a self, site: &'a Site) -> BoxFuture<'a, Result<Box<dyn ActivePlugin>>> {
-        Box::pin(async move { Ok(Box::new(Loaded { groups: fields::load(&site.db).await? }) as Box<dyn ActivePlugin>) })
+        Box::pin(async move { Ok(Box::new(Loaded { groups: fields::load(&site.db).await?, shortcode: shortcode::enabled(&site.options) }) as Box<dyn ActivePlugin>) })
     }
 }
 
 pub struct Loaded {
     groups: Vec<FieldGroup>,
+    /// `acf_get_setting( 'enable_shortcode' )`.
+    shortcode: bool,
 }
 
 /// What `ACF_Rest_Request::parse_request()` learns from the route.
@@ -191,6 +199,14 @@ impl ActivePlugin for Loaded {
         vec![("acf-disabled", label)]
     }
 
+    fn shortcode_tags(&self) -> &'static [&'static str] {
+        &["acf"]
+    }
+
+    fn shortcode<'a>(&'a self, _tag: &'a str, atts: &'a rustpress_core::shortcodes::Atts, _content: Option<&'a str>, ctx: &'a rustpress_core::native::ShortcodeContext<'a>) -> BoxFuture<'a, Result<String>> {
+        Box::pin(shortcode::render(&self.groups, self.shortcode, atts, ctx))
+    }
+
     /// `ACF_Revisions::register_meta()`.
     fn registered_post_meta(&self) -> Vec<RegisteredMeta> {
         vec![RegisteredMeta { key: "_acf_changed", post_type: None, kind: MetaType::Boolean }]
@@ -200,11 +216,24 @@ impl ActivePlugin for Loaded {
         Box::pin(async move {
             let Some(request) = parse_request(ctx.site, ctx.route) else { return Ok(Vec::new()) };
             let Some(target) = self.target(object, &request, ctx).await? else { return Ok(Vec::new()) };
-            // `ACF_Rest_Api::load_fields()`.
+            // `ACF_Rest_Api::load_fields()`: `$request->get_param( 'acf_format' )`, else the `light` default.
+            let standard = acf_format(ctx.query_string).as_deref() == Some("standard");
+            let global_post = match object {
+                RestObject::Post(post) => Some(post),
+                _ => None,
+            };
+            let formatter = format::Formatter { site: ctx.site, services: ctx.services, global_post };
+            let sanitizer = rest_format::Sanitizer { site: ctx.site, viewer: ctx.query.viewer.as_ref() };
             let mut values: Vec<(Key, Value)> = Vec::new();
             for field in self.rest_fields(&target, ctx).await? {
                 let raw = value::get_value(&ctx.site.db, target.object, field, &field.name).await?;
-                php::set(&mut values, &field.name, value::format_for_rest(raw, field));
+                let formatted = if standard {
+                    let formatted = formatter.format(field, raw.clone(), false).await?;
+                    sanitizer.apply(formatted, &raw, field).await?
+                } else {
+                    value::format_for_rest(raw, field)
+                };
+                php::set(&mut values, &field.name, formatted);
             }
             Ok(vec![("acf".to_owned(), rustpress_core::options::php_to_json(&Value::Array(values)))])
         })
@@ -236,6 +265,16 @@ impl ActivePlugin for Loaded {
     }
 }
 
+/// The last `acf_format` of a query string, decoded like PHP does (`$_GET`).
+fn acf_format(query_string: &str) -> Option<String> {
+    query_string
+        .split('&')
+        .map(|pair| pair.split_once('=').unwrap_or((pair, "")))
+        .filter(|(name, _)| rustpress_core::rewrite::urldecode(name.as_bytes()) == b"acf_format")
+        .map(|(_, value)| String::from_utf8_lossy(&rustpress_core::rewrite::urldecode(value.as_bytes())).into_owned())
+        .next_back()
+}
+
 /// The ids of a value: `(array) $value`.
 fn ids(value: &Value) -> Vec<String> {
     match value {
@@ -258,7 +297,7 @@ async fn field_links(ctx: &RestFieldContext<'_>, field: &Field, value: &Value) -
                 // `get_post_type( $object_id )`: a number, or a string PHP casts to one.
                 let Ok(post_id) = id.trim().parse::<u64>() else { continue };
                 let Some(post) = site.db.post(post_id).await? else { continue };
-                let Some((_, rest_base)) = post_types(site).into_iter().find(|(n, _)| *n == post.post_type).or_else(|| site.types.is_post_type(&post.post_type).then(|| (post.post_type.clone(), post.post_type.clone()))) else {
+                let Some((_, rest_base)) = post_types(site).into_iter().find(|(n, _)| *n == post.post_type).or_else(|| (site.types.is_post_type(&post.post_type) || site.types.hidden_post_types.contains(&post.post_type)).then(|| (post.post_type.clone(), post.post_type.clone()))) else {
                     continue;
                 };
                 let rel = if post.post_type == "attachment" { "acf:attachment" } else { "acf:post" };

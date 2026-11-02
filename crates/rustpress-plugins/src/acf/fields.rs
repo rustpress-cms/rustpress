@@ -41,15 +41,41 @@ pub struct FieldGroup {
     pub fields: Vec<Field>,
 }
 
-/// The defaults of a field type that loading a value depends on (`acf_field::$defaults`): whether it has a
-/// `default_value`, and that value.
-fn type_default_value(kind: &str) -> Option<Value> {
-    match kind {
-        "text" | "textarea" | "number" | "range" | "email" | "url" | "wysiwyg" | "select" | "checkbox" | "radio" | "button_group" | "color_picker" => Some(string("")),
-        "true_false" => Some(Value::Int(0)),
-        "icon_picker" => Some(Value::Array(vec![(super::php::key("type"), Value::Null), (super::php::key("value"), Value::Null)])),
-        _ => None,
+/// The defaults of a field type that loading and formatting a value depend on (`acf_field::$defaults`).
+fn type_defaults(kind: &str) -> Vec<(&'static str, Value)> {
+    let empty = || Value::Array(Vec::new());
+    let mut out: Vec<(&'static str, Value)> = Vec::new();
+    if matches!(kind, "text" | "textarea" | "number" | "range" | "email" | "url" | "wysiwyg" | "select" | "checkbox" | "radio" | "button_group" | "color_picker") {
+        out.push(("default_value", string("")));
     }
+    match kind {
+        "true_false" => out.push(("default_value", Value::Int(0))),
+        "icon_picker" => {
+            out.push(("default_value", Value::Array(vec![(super::php::key("type"), Value::Null), (super::php::key("value"), Value::Null)])));
+            out.push(("return_format", string("string")));
+        }
+        "select" => out.extend([("multiple", Value::Int(0)), ("return_format", string("value"))]),
+        "checkbox" | "radio" | "button_group" => out.push(("return_format", string("value"))),
+        "image" | "file" | "link" => out.push(("return_format", string("array"))),
+        "color_picker" => out.push(("return_format", string("string"))),
+        "date_picker" => out.push(("return_format", string("d/m/Y"))),
+        "date_time_picker" => out.push(("return_format", string("d/m/Y g:i a"))),
+        "time_picker" => out.push(("return_format", string("g:i a"))),
+        "textarea" => out.push(("new_lines", string(""))),
+        "oembed" => out.extend([("width", string("")), ("height", string(""))]),
+        "page_link" => out.extend([("post_type", empty()), ("multiple", Value::Int(0))]),
+        "post_object" => out.extend([("post_type", empty()), ("multiple", Value::Int(0)), ("return_format", string("object"))]),
+        "relationship" => out.extend([("post_type", empty()), ("return_format", string("object"))]),
+        "taxonomy" => out.extend([("taxonomy", string("category")), ("field_type", string("checkbox")), ("multiple", Value::Int(0)), ("return_format", string("id"))]),
+        "user" => out.extend([("multiple", Value::Int(0)), ("return_format", string("array"))]),
+        _ => {}
+    }
+    out
+}
+
+/// Whether a field type supports block bindings and the shortcode (`acf_field_type_supports( $type, 'bindings' )`).
+pub fn supports_bindings(kind: &str) -> bool {
+    !matches!(kind, "accordion" | "group" | "message" | "tab")
 }
 
 /// The field types of ACF (free) and whether they show in the REST API (`acf_field::$show_in_rest`).
@@ -78,13 +104,11 @@ fn field_from(post: &AcfPost, all: &[AcfPost]) -> Field {
     super::php::set(&mut items, "type", string(&kind));
     // `isset()`: a stored null takes the default as well.
     let unset = |items: &Vec<(rustpress_phpser::Key, Value)>, name: &str| !items.iter().any(|(k, v)| super::php::key_eq(k, &super::php::key(name)) && !matches!(v, Value::Null));
-    if let Some(default) = type_default_value(&kind)
-        && unset(&items, "default_value")
-    {
-        super::php::set(&mut items, "default_value", default);
-    }
-    if matches!(kind.as_str(), "select" | "post_object" | "page_link" | "taxonomy" | "user") && unset(&items, "multiple") {
-        super::php::set(&mut items, "multiple", Value::Int(0));
+    // `acf_field::validate_field()`: the defaults of the type for the keys that are not set.
+    for (name, default) in type_defaults(&kind) {
+        if unset(&items, name) {
+            super::php::set(&mut items, name, default);
+        }
     }
     // `acf_field_group::load_field()`: the sub fields of a group.
     let sub_fields = if kind == "group" { children(post.id, all) } else { Vec::new() };

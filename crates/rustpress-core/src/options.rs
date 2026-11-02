@@ -83,6 +83,8 @@ pub fn php_to_json(value: &rustpress_phpser::Value) -> Value2 {
         Php::Null | Php::Reference(_) | Php::ObjectRef(_) => Value2::Null,
         Php::Bool(b) => Value2::Bool(*b),
         Php::Int(i) => Value2::from(*i),
+        // `json_encode()` without `JSON_PRESERVE_ZERO_FRACTION` writes `1.0` as `1`.
+        Php::Float(f) if f.fract() == 0.0 && f.abs() < 1e15 => Value2::from(*f as i64),
         Php::Float(f) => serde_json::Number::from_f64(*f).map_or(Value2::Null, Value2::Number),
         Php::Str(s) => Value2::String(String::from_utf8_lossy(s).into_owned()),
         Php::Array(items) | Php::Object { props: items, .. } => {

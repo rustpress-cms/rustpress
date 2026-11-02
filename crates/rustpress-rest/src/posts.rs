@@ -62,7 +62,7 @@ impl<'a> Kind<'a> {
 }
 
 /// Parameters WordPress turns into arrays before building pagination links.
-const POST_ARRAYS: &[&str] = &["author", "author_exclude", "exclude", "include", "parent", "parent_exclude", "slug", "status", "categories", "categories_exclude", "tags", "tags_exclude"];
+pub(crate) const POST_ARRAYS: &[&str] = &["author", "author_exclude", "exclude", "include", "parent", "parent_exclude", "slug", "status", "categories", "categories_exclude", "tags", "tags_exclude"];
 
 /// The members of an item in the `embed` context.
 const EMBED_FIELDS: &[&str] = &["id", "date", "slug", "type", "link", "title", "excerpt", "author", "featured_media", "_links"];
@@ -261,18 +261,20 @@ impl Rest<'_> {
             return Ok(Err(RestError::new("rest_forbidden_context", "Sorry, you are not allowed to edit this post.", 401)));
         }
         let post = self.site.db.post(id).await?;
-        let Some(post) = post.filter(|p| p.post_type == kind.name() && p.post_status == kind.public_status()) else {
+        let Some(post) = post.filter(|p| p.post_type == kind.name()) else {
             return Ok(Err(RestError::new("rest_post_invalid_id", "Invalid post ID.", 404)));
         };
         if let Some(given) = params.get("password").filter(|p| !p.is_empty())
             && !rustpress_core::hash_equals(&post.post_password, given) {
                 return Ok(Err(RestError::new("rest_post_incorrect_password", "Incorrect post password.", 403)));
             }
-        if kind == Kind::Attachment && post.post_parent != 0 {
-            let parent = self.site.db.post(post.post_parent).await?;
-            if parent.is_none_or(|p| p.post_status != "publish") {
-                return Ok(Err(RestError::new("rest_post_invalid_id", "Invalid post ID.", 404)));
-            }
+        // `check_read_permission()`: published, or an attachment of a published post (or of none).
+        let mut readable = post.post_status == kind.public_status();
+        if readable && kind == Kind::Attachment && post.post_parent != 0 && post.post_parent != post.id {
+            readable = self.site.db.post(post.post_parent).await?.is_none_or(|p| p.post_status == "publish");
+        }
+        if !readable {
+            return Ok(Err(RestError::new("rest_forbidden", "Sorry, you are not allowed to do that.", 401)));
         }
         let context = params.get("context").unwrap_or("view");
         let data = if kind == Kind::Attachment { self.prepare_media(&post, context).await? } else { self.prepare_post(&post, kind, context, params).await? };
