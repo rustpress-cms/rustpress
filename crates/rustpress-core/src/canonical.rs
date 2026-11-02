@@ -226,7 +226,7 @@ impl Site {
     }
 
     /// `is_post_publicly_viewable()`.
-    async fn publicly_viewable(&self, post: &Post) -> Result<bool> {
+    pub async fn publicly_viewable(&self, post: &Post) -> Result<bool> {
         if !self.is_post_type_viewable(&post.post_type) {
             return Ok(false);
         }

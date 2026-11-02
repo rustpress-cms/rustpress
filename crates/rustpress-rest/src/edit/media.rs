@@ -125,7 +125,10 @@ impl Rest<'_> {
         if !self.check_read_permission(&post).await {
             return Ok(Err(self.forbidden("rest_forbidden", "Sorry, you are not allowed to do that.")));
         }
-        Ok(Ok(Resp::item(self.prepare_media_edit(&post, &context).await?)))
+        let mut resp = Resp::item(self.prepare_media_edit(&post, &context).await?);
+        resp.allow = Some(super::posts::allow_for(self.can_edit_post(&post), self.can_delete_post(&post)));
+        resp.alternate = Some(self.site.permalink(&post).await?);
+        Ok(Ok(resp))
     }
 
     async fn media_create(&self, args: &Args) -> Result<Outcome> {

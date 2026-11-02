@@ -340,6 +340,21 @@ async fn apply_the_content(env: &Env<'_>, post: &Arc<Post>, raw: &str, prefix: &
     Ok(smilies(env.site, &out))
 }
 
+/// The `the_content` filters without `do_blocks()` as a plugin hooks them to a filter of its own (ACF's
+/// `acf_the_content`), in the order of their priorities: `[embed]` (8; `autoembed()` changes nothing without a
+/// network), `wptexturize`, `wpautop`, `shortcode_unautop` and `wp_filter_content_tags` (10), `capital_P_dangit` and
+/// `do_shortcode` (11), `convert_smilies` (20).
+pub async fn content_filters(env: &Env<'_>, post: Option<&Arc<Post>>, text: &str, context: &str) -> Result<String> {
+    let mut out = crate::shortcodes::run_embed_shortcodes(text);
+    out = env.site.texturize(&out);
+    out = wpautop(&out);
+    out = env.site.shortcode_unautop(&out);
+    out = images::filter_content_tags(env, &out, context).await?;
+    out = capital_p_dangit(&out, false);
+    out = crate::shortcodes::do_shortcode(env, post, &out).await?;
+    Ok(smilies(env.site, &out))
+}
+
 /// `convert_smilies()` when the `use_smilies` option is on.
 pub fn smilies(site: &rustpress_core::Site, text: &str) -> String {
     if site.options.get("use_smilies") == Some("1") { rustpress_core::text::convert_smilies(text, &site.site_url("wp-includes")) } else { text.to_owned() }

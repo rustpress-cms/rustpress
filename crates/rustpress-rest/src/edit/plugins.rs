@@ -23,9 +23,14 @@ impl Rest<'_> {
     }
 
     fn prepare_plugin(&self, info: &PluginInfo, active: bool) -> Value {
+        // `_get_plugin_data_markup_translate()`: the addresses through `esc_url()`; the marked-up description is
+        // texturized and names its author.
         let description = kses_description(&info.description);
-        let author = if info.author_uri.is_empty() { info.author.clone() } else { format!("<a href=\"{}\">{}</a>", info.author_uri, info.author) };
-        let rendered = if info.author.is_empty() { description.clone() } else { format!("{description} <cite>By {author}.</cite>") };
+        let plugin_uri = rustpress_core::formatting::esc_url(&info.plugin_uri);
+        let author_uri = rustpress_core::formatting::esc_url(&info.author_uri);
+        let author = if author_uri.is_empty() || info.author.is_empty() { info.author.clone() } else { format!("<a href=\"{author_uri}\">{}</a>", info.author) };
+        let texturized = self.site.texturize(&description);
+        let rendered = if info.author.is_empty() { texturized } else { format!("{texturized} <cite>{}</cite>", self.site.tr("By %s.").replace("%s", &author)) };
         let mut links = Links::new();
         let allow = if self.can("activate_plugins") { vec!["GET", "POST", "PUT", "PATCH", "DELETE"] } else { vec!["GET"] };
         links.push_raw("self", json!({"href": self.rest_url(&format!("wp/v2/plugins/{}", plugin_id(info))), "targetHints": {"allow": allow}}));
@@ -33,9 +38,9 @@ impl Rest<'_> {
             "plugin": plugin_id(info),
             "status": if active { "active" } else { "inactive" },
             "name": info.name,
-            "plugin_uri": info.plugin_uri,
+            "plugin_uri": plugin_uri,
             "author": info.author,
-            "author_uri": info.author_uri,
+            "author_uri": author_uri,
             "description": {"raw": description, "rendered": rendered},
             "version": info.version,
             "network_only": info.network,

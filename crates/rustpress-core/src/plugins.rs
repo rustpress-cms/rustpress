@@ -123,6 +123,14 @@ fn read_plugin(path: &Path, file: String) -> Option<PluginInfo> {
     if name.is_empty() {
         return None;
     }
+    // `get_plugin_data()`: without a text domain the plugin's folder is one.
+    let mut text_domain = file_header(&head, "Text Domain");
+    if text_domain.is_empty()
+        && let Some((slug, _)) = file.split_once('/')
+        && !file[slug.len() + 1..].contains('/')
+    {
+        text_domain = slug.to_owned();
+    }
     Some(PluginInfo {
         file,
         name,
@@ -131,7 +139,7 @@ fn read_plugin(path: &Path, file: String) -> Option<PluginInfo> {
         author: file_header(&head, "Author"),
         author_uri: file_header(&head, "Author URI"),
         version: file_header(&head, "Version"),
-        text_domain: file_header(&head, "Text Domain"),
+        text_domain,
         requires_wp: file_header(&head, "Requires at least"),
         requires_php: file_header(&head, "Requires PHP"),
         network: file_header(&head, "Network").eq_ignore_ascii_case("true"),

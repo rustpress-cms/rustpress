@@ -335,6 +335,10 @@ impl Theme {
 }
 
 impl ThemeAccess for Theme {
+    fn is_block_theme(&self) -> bool {
+        !crate::classic::is_ported(self)
+    }
+
     fn image_size(&self, name: &str) -> Option<(u64, u64)> {
         crate::classic::image_size(&self.template, name)
     }

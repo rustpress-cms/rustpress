@@ -21,6 +21,16 @@ pub struct AcfPost {
     pub content: String,
 }
 
+/// A post as `get_post()` loads it (`WP_Post`): the row of the posts table with every column.
+#[derive(Debug, Clone, Default, sqlx::FromRow)]
+pub struct AcfWpPost {
+    #[sqlx(flatten)]
+    pub post: crate::Post,
+    pub to_ping: String,
+    pub pinged: String,
+    pub post_content_filtered: String,
+}
+
 /// The meta tables ACF stores values in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MetaKind {
@@ -74,6 +84,41 @@ impl Db {
         let sql = format!("SELECT meta_value FROM {} WHERE {column} = ? AND meta_key = ? ORDER BY {id} ASC LIMIT 1", self.prefix.table(table));
         let value: Option<Option<String>> = sqlx::query_scalar(AssertSqlSafe(sql)).bind(object_id).bind(key).fetch_optional(&self.pool).await?;
         Ok(value.map(Option::unwrap_or_default))
+    }
+}
+
+impl Db {
+    /// `get_posts( [ 'post__in' => $ids, 'post_type' => $types, 'post_status' => 'any', 'posts_per_page' => -1 ] )`
+    /// as `acf_get_posts()` runs it: every status that is not excluded from search (`trash`, `auto-draft`), in the
+    /// order of `$ids`.
+    pub async fn acf_get_posts(&self, ids: &[u64], post_types: &[String]) -> Result<Vec<AcfWpPost>> {
+        if ids.is_empty() || post_types.is_empty() {
+            return Ok(Vec::new());
+        }
+        let sql = format!(
+            "SELECT {}, to_ping, pinged, post_content_filtered FROM {} WHERE ID IN ({}) AND post_type IN ({}) AND post_status NOT IN ('trash', 'auto-draft')",
+            crate::models::POST_COLUMNS,
+            self.prefix.table("posts"),
+            vec!["?"; ids.len()].join(","),
+            vec!["?"; post_types.len()].join(",")
+        );
+        let mut query = sqlx::query_as::<_, AcfWpPost>(AssertSqlSafe(sql));
+        for id in ids {
+            query = query.bind(*id);
+        }
+        for post_type in post_types {
+            query = query.bind(post_type);
+        }
+        let mut posts = query.fetch_all(&self.pool).await?;
+        posts.sort_by_key(|p| ids.iter().position(|id| *id == p.post.id));
+        Ok(posts)
+    }
+
+    /// `term_group` of a term (`WP_Term`), which [`crate::Term`] leaves out.
+    pub async fn acf_term_group(&self, term_id: u64) -> Result<i64> {
+        let sql = format!("SELECT term_group FROM {} WHERE term_id = ?", self.prefix.table("terms"));
+        let group: Option<i64> = sqlx::query_scalar(AssertSqlSafe(sql)).bind(term_id).fetch_optional(&self.pool).await?;
+        Ok(group.unwrap_or(0))
     }
 }
 
