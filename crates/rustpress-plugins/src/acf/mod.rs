@@ -1,7 +1,8 @@
 //! Advanced Custom Fields 6.8.10 (`advanced-custom-fields/acf.php`) on the website: the post types and taxonomies
 //! defined in ACF, the `acf` field of the REST API (`ACF_Rest_Api`) with the values of the field groups that show
 //! in REST, in the `light` format or formatted (`?acf_format=standard`), their links (`ACF_Rest_Embed_Links`), and
-//! the `[acf]` shortcode, and the fields of the comment form with their scripts (`acf_form_comment`).
+//! the `[acf]` shortcode, and the fields of the comment form with their scripts, saved with the comment (`acf_form_comment`), and the
+//! Ajax validation of forms (`acf/validate_save_post`).
 //!
 //! Differs from the plugin: field groups, post types and taxonomies come from the database only (no local JSON
 //! from `acf-json` and no `acf_add_local_field_group()` in PHP); the `post_template` rule knows the templates of
@@ -18,6 +19,7 @@ mod internal;
 mod php;
 mod render;
 mod rest_format;
+mod save;
 mod shortcode;
 mod value;
 
@@ -201,6 +203,18 @@ impl ActivePlugin for Loaded {
     fn post_statuses(&self, site: &Site) -> Vec<(&'static str, String)> {
         let label = site.i18n().pgettext("acf", "post status", "Inactive");
         vec![("acf-disabled", label)]
+    }
+
+    fn admin_ajax<'a>(&'a self, action: &'a str, ctx: &'a rustpress_core::native::AdminContext<'a>) -> BoxFuture<'a, Result<Option<rustpress_core::native::AjaxAnswer>>> {
+        Box::pin(async move { Ok((action == "acf/validate_save_post").then(|| save::ajax_validate(&self.groups, ctx))) })
+    }
+
+    fn admin_ajax_nopriv<'a>(&'a self, action: &'a str, ctx: &'a rustpress_core::native::AdminContext<'a>) -> BoxFuture<'a, Result<Option<rustpress_core::native::AjaxAnswer>>> {
+        Box::pin(async move { Ok((action == "acf/validate_save_post").then(|| save::ajax_validate(&self.groups, ctx))) })
+    }
+
+    fn comment_post<'a>(&'a self, ctx: &'a rustpress_core::native::CommentSaved<'a>) -> BoxFuture<'a, Result<Option<rustpress_core::native::Die>>> {
+        Box::pin(save::save_comment(&self.groups, ctx))
     }
 
     fn comment_form_field_comment<'a>(&'a self, ctx: &'a rustpress_core::native::CommentFormContext<'a>, html: String) -> BoxFuture<'a, Result<String>> {

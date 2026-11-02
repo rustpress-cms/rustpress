@@ -50,14 +50,15 @@ pub struct CommentReply {
     pub body: String,
 }
 
-/// One entry of a `WP_Error` with its status.
+/// One entry of a `WP_Error` with its status, or the `wp_die()` of a plugin (with its own title).
 struct Failure {
     message: String,
     status: u16,
+    title: Option<String>,
 }
 
 fn failure(message: String, status: u16) -> Failure {
-    Failure { message, status }
+    Failure { message, status, title: None }
 }
 
 fn nocache() -> Vec<(String, String)> {
@@ -177,11 +178,11 @@ impl CommentEnv<'_> {
             ip: request.remote_addr.clone().unwrap_or_default().chars().filter(|c| c.is_ascii_hexdigit() || matches!(c, ':' | '.' | ',' | ' ')).collect(),
             agent: request.user_agent.clone().unwrap_or_default().chars().take(254).collect(),
         };
-        self.new_comment(new, strict, user).await
+        self.new_comment(new, strict, user, &request.form).await
     }
 
     /// `wp_new_comment()`: the comment is checked, filtered and saved; the notifications follow.
-    async fn new_comment(&self, mut c: NewComment, strict: bool, user: Option<&CurrentUser>) -> Result<(rustpress_db::Comment, bool), Failure> {
+    async fn new_comment(&self, mut c: NewComment, strict: bool, user: Option<&CurrentUser>, form: &[(String, String)]) -> Result<(rustpress_db::Comment, bool), Failure> {
         let tr = |s: &str| self.tr(s);
         // A reply goes to a parent that is approved or waits.
         if c.parent != 0 {
@@ -236,8 +237,20 @@ impl CommentEnv<'_> {
             let content = crate::content::Content { site: self.site, db: self.db, writer, user: &system, now: self.now };
             content.update_comment_count(c.post_id).await.or_log();
         }
-        // `comment_post`: the moderators and the author of the post are told.
+        // `comment_post`: the moderators and the author of the post are told, then the plugins save what the form
+        // sent along.
         self.notify(id, user).await;
+        if !self.site.plugins.is_empty() {
+            let can = |capability: &str| user.is_some_and(|u| u.can(capability));
+            let (uid, token) = self.user.as_ref().map_or((0, String::new()), |(u, t)| (u.id, t.clone()));
+            let verify = |nonce: &str, action: &str| self.auth.verify_nonce(nonce, action, uid, &token, self.now).is_some();
+            let ctx = rustpress_core::native::CommentSaved { site: self.site, writer, comment_id: id, post_id: c.post_id, form, can: &can, verify_nonce: &verify };
+            match self.site.plugins.comment_post(&ctx).await {
+                Ok(Some(die)) => return Err(Failure { message: die.message, status: die.status, title: Some(die.title) }),
+                Ok(None) => {}
+                Err(e) => tracing::error!(error = %e, "a plugin failed on comment_post"),
+            }
+        }
         match self.db.comment_any(id).await.ok().flatten() {
             Some(comment) => Ok((comment, true)),
             None => Err(failure(tr("<strong>Error:</strong> The comment could not be saved. Please try again later."), 500)),
@@ -293,6 +306,11 @@ impl CommentEnv<'_> {
 pub async fn handle(env: &CommentEnv<'_>, request: &CommentRequest) -> CommentReply {
     match env.submit(request).await {
         Ok((comment, _)) => env.done(request, &comment).await,
+        Err(Failure { message, status, title: Some(title) }) => {
+            let mut headers = nocache();
+            headers.push(("Content-Type".into(), "text/html; charset=UTF-8".into()));
+            CommentReply { status, headers, cookies: Vec::new(), body: crate::die::page(env.site, &title, &message) }
+        }
         Err(failure) if failure.status != 0 => env.die(failure.status, &format!("<p>{}</p>", failure.message)),
         // Errors without a status end the script without a word.
         Err(_) => CommentReply { status: 200, headers: nocache(), cookies: Vec::new(), body: String::new() },

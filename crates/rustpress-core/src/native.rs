@@ -182,6 +182,12 @@ pub trait ActivePlugin: Send + Sync {
         link
     }
 
+    /// `comment_post` (a visitor's comment was saved) and `edit_comment` (the administration saved one): the plugin
+    /// saves what the form sent along. A `wp_die()` stops the request.
+    fn comment_post<'a>(&'a self, _ctx: &'a CommentSaved<'a>) -> BoxFuture<'a, Result<Option<Die>>> {
+        Box::pin(async { Ok(None) })
+    }
+
     /// The `comment_form_field_comment` filter of `comment_form()`: the HTML of the comment field, after which a
     /// plugin may add its own fields.
     fn comment_form_field_comment<'a>(&'a self, _ctx: &'a CommentFormContext<'a>, html: String) -> BoxFuture<'a, Result<String>> {
@@ -292,6 +298,11 @@ pub trait ActivePlugin: Send + Sync {
 
     /// `wp_ajax_{$action}`: the answer to `admin-ajax.php`, or `None` when the plugin has no such action.
     fn admin_ajax<'a>(&'a self, _action: &'a str, _ctx: &'a AdminContext<'a>) -> BoxFuture<'a, Result<Option<AjaxAnswer>>> {
+        Box::pin(async { Ok(None) })
+    }
+
+    /// `wp_ajax_nopriv_{$action}`: an Ajax request of a visitor who is not signed in (`user` is 0).
+    fn admin_ajax_nopriv<'a>(&'a self, _action: &'a str, _ctx: &'a AdminContext<'a>) -> BoxFuture<'a, Result<Option<AjaxAnswer>>> {
         Box::pin(async { Ok(None) })
     }
 
@@ -657,6 +668,30 @@ pub struct PluginState {
     pub assets: Assets,
     /// Printed on `wp_print_footer_scripts` after the scripts of the footer.
     pub footer_scripts: Vec<String>,
+}
+
+/// A comment that was just saved, with the form that sent it.
+pub struct CommentSaved<'a> {
+    pub site: &'a Site,
+    pub writer: &'a rustpress_db::Writer,
+    pub comment_id: u64,
+    /// The post of the comment.
+    pub post_id: u64,
+    /// The fields of the form (`$_POST`), as sent.
+    pub form: &'a [(String, String)],
+    /// `current_user_can( $capability )` of who sent it.
+    pub can: &'a (dyn Fn(&str) -> bool + Send + Sync),
+    /// `wp_verify_nonce( $nonce, $action )` for who sent it.
+    pub verify_nonce: &'a (dyn Fn(&str, &str) -> bool + Send + Sync),
+}
+
+/// A `wp_die( $message, $title )` page of a plugin (status 500 by default).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Die {
+    pub title: String,
+    /// The message, HTML.
+    pub message: String,
+    pub status: u16,
 }
 
 /// What a plugin sees of the comment form it filters.
@@ -1207,6 +1242,16 @@ impl Plugins {
         Ok(None)
     }
 
+    /// The first plugin that answers `wp_ajax_nopriv_{$action}`.
+    pub async fn admin_ajax_nopriv(&self, action: &str, ctx: &AdminContext<'_>) -> Result<Option<AjaxAnswer>> {
+        for plugin in self.hooks() {
+            if let Some(answer) = plugin.admin_ajax_nopriv(action, ctx).await? {
+                return Ok(Some(answer));
+            }
+        }
+        Ok(None)
+    }
+
     /// The shortcodes of the plugins, in the order they register them.
     pub fn shortcode_tags(&self) -> Vec<&'static str> {
         self.hooks().flat_map(|plugin| plugin.shortcode_tags().iter().copied()).collect()
@@ -1379,6 +1424,16 @@ impl Plugins {
     /// The link of `get_comment_reply_link()` after the plugins' `comment_reply_link` filters.
     pub fn comment_reply_link(&self, link: String) -> String {
         self.hooks().fold(link, |link, plugin| plugin.comment_reply_link(link))
+    }
+
+    /// `comment_post` / `edit_comment` of the plugins; the first `wp_die()` ends it.
+    pub async fn comment_post(&self, ctx: &CommentSaved<'_>) -> Result<Option<Die>> {
+        for plugin in self.hooks() {
+            if let Some(die) = plugin.comment_post(ctx).await? {
+                return Ok(Some(die));
+            }
+        }
+        Ok(None)
     }
 
     /// The comment field of `comment_form()` after the plugins' `comment_form_field_comment` filters.
