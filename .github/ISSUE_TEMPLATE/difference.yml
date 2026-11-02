@@ -1,0 +1,49 @@
+name: Differs from WordPress
+description: A page, feed, REST answer, redirect or admin screen that RustPress answers differently from WordPress.
+labels: ["difference"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        RustPress aims to answer byte for byte like the WordPress release in `WORDPRESS_VERSION`. Every difference that is not listed in `compat/known.toml` is a bug.
+  - type: input
+    id: url
+    attributes:
+      label: URL path
+      placeholder: /2026/10/hello-world/
+    validations:
+      required: true
+  - type: textarea
+    id: difference
+    attributes:
+      label: What differs
+      description: What WordPress sends and what RustPress sends. A diff of the two responses helps most.
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: RustPress and WordPress versions
+      placeholder: RustPress 0.1.1, WordPress 7.1.4
+    validations:
+      required: true
+  - type: input
+    id: theme
+    attributes:
+      label: Theme
+    validations:
+      required: true
+  - type: textarea
+    id: check
+    attributes:
+      label: Output of `rustpress check`
+      render: text
+  - type: dropdown
+    id: mode
+    attributes:
+      label: How RustPress runs
+      options:
+        - Server (binary or package)
+        - Docker
+        - CGI on shared hosting
+        - From source

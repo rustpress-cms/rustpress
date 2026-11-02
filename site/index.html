@@ -4,9 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>RustPress – WordPress, without PHP</title>
-<meta name="description" content="RustPress is a drop-in replacement for WordPress written in Rust. Point it at an existing WordPress database and wp-content folder, and it serves the same pages, feeds and REST answers, without PHP.">
+<meta name="description" content="RustPress is a replacement for WordPress written in Rust. Point it at the database and wp-content folder of an existing block-theme site, and it serves the same pages, feeds and REST answers, without PHP.">
 <meta property="og:title" content="RustPress – WordPress, without PHP">
-<meta property="og:description" content="A drop-in replacement for WordPress written in Rust, checked byte for byte against a real WordPress.">
+<meta property="og:description" content="A replacement for WordPress written in Rust, checked byte for byte against a real WordPress.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://rustpress-cms.github.io/rustpress/">
 <link rel="canonical" href="https://rustpress-cms.github.io/rustpress/">
@@ -23,6 +23,7 @@
     <nav>
       <a class="opt" href="#how">How it works</a>
       <a class="opt" href="#compatibility">Compatibility</a>
+      <a class="opt" href="#check">Will it run?</a>
       <a class="opt" href="#install">Install</a>
       <a href="https://github.com/rustpress-cms/rustpress">GitHub</a>
       <a href="de/" hreflang="de" lang="de">Deutsch</a>
@@ -35,7 +36,7 @@
 <div class="hero">
   <div class="wrap">
     <h1>WordPress, <em>without PHP.</em></h1>
-    <p class="lead">RustPress is a drop-in replacement for WordPress written in Rust. Point it at an existing WordPress database and <code>wp-content/</code> folder, and it serves the same pages, feeds and REST answers, checked byte for byte against a real WordPress.</p>
+    <p class="lead">RustPress is a replacement for WordPress written in Rust. Point it at the database and <code>wp-content/</code> folder of an existing site with a block theme, and it serves the same pages, feeds and REST answers, checked byte for byte against a real WordPress.</p>
     <div class="actions">
       <a class="btn primary" href="#install">Get started</a>
       <a class="btn" href="https://github.com/rustpress-cms/rustpress/releases/latest">Download</a>
@@ -160,6 +161,31 @@
         <h3>Advanced Custom Fields <span class="ver">6.8.10</span></h3>
         <p>Post types and taxonomies defined in ACF, field groups and their values in the REST API, raw or formatted, the <code>[acf]</code> shortcode and the fields of the comment form, saved with the comment. The edit screens and block bindings follow.</p>
         <span class="tag done">REST API</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="check">
+  <div class="wrap">
+    <h2>Will it run my site?</h2>
+    <p class="intro">Ask RustPress before it takes over: <code>rustpress check</code> reads the active theme and plugins with the site's configuration, says which of them run, and changes nothing.</p>
+<pre><code>$ rustpress check
+[ok  ] Theme twentytwentyfive: block theme, runs as it is
+[ok  ] Plugin wordpress-seo/wp-seo.php 28.8: native module
+[no  ] Plugin elementor/elementor.php 3.30.0: PHP plugin without a native module; RustPress ignores it</code></pre>
+    <div class="grid steps" style="margin-top:20px">
+      <div class="card">
+        <h3>Runs</h3>
+        <p>Block themes, Twenty Seventeen, the six plugins above, page caches and WP Mail SMTP (not needed), every site language.</p>
+      </div>
+      <div class="card">
+        <h3>Not yet</h3>
+        <p>Other classic PHP themes, page builders such as Elementor or Divi, WooCommerce, any other PHP plugin, Multisite, the Customizer.</p>
+      </div>
+      <div class="card">
+        <h3>Missing a plugin?</h3>
+        <p>Open a <a href="https://github.com/rustpress-cms/rustpress/issues/new?template=port-request.yml">port request</a>, or port it yourself with the <a href="https://github.com/rustpress-cms/rustpress/blob/main/docs/porting-a-plugin.md">step-by-step guide</a>.</p>
       </div>
     </div>
   </div>
