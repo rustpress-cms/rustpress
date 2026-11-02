@@ -908,6 +908,16 @@ pub async fn comment_php(ctx: &Ctx<'_>) -> AdminResponse {
             if let Some(parent) = field("comment_parent").and_then(|p| p.parse::<u64>().ok()) {
                 writer.update_rows("comments", "comment_ID", id, &[("comment_parent", rustpress_db::Val::Int(parent as i64))]).await.or_log();
             }
+            // `edit_comment`: the plugins save what the form sent along.
+            if !ctx.site().plugins.is_empty() {
+                let parts = ctx.plugin_parts();
+                let saved = rustpress_core::native::CommentSaved { site: ctx.site(), writer, comment_id: id, post_id: comment.comment_post_id, form: &request.form, can: parts.can.as_ref(), verify_nonce: parts.verify.as_ref() };
+                match ctx.site().plugins.comment_post(&saved).await {
+                    Ok(Some(failed)) => return die(ctx.env, failed.status, &failed.title, &failed.message),
+                    Ok(None) => {}
+                    Err(e) => tracing::error!(error = %e, "a plugin failed on edit_comment"),
+                }
+            }
             redirect(&ctx.admin_url(&format!("edit-comments.php?p={}#comment-{id}", comment.comment_post_id)))
         }
         "approvecomment" | "unapprovecomment" | "spamcomment" | "unspamcomment" | "trashcomment" | "untrashcomment" | "deletecomment" => {
@@ -1094,9 +1104,48 @@ async fn edit_form(ctx: &Ctx<'_>, comment: &Comment) -> AdminResponse {
         trash = tr("Move to Trash"),
         update = tr("Update")
     ));
-    h.push_str(&format!("<div id=\"postbox-container-2\" class=\"postbox-container\">\n<div id=\"normal-sortables\" class=\"meta-box-sortables\"></div></div>\n\n<input type=\"hidden\" name=\"c\" value=\"{id}\" />\n<input type=\"hidden\" name=\"p\" value=\"{}\" />\n<input name=\"referredby\" type=\"hidden\" id=\"referredby\" value=\"\" />\n<input type=\"hidden\" name=\"_wp_original_http_referer\" value=\"\" /><input type=\"hidden\" name=\"noredir\" value=\"1\" />\n\n</div><!-- /post-body -->\n</div>\n</div>\n</form>\n\n<script>\ntry{{document.post.name.focus();}}catch(e){{}}\n</script>\n\t", comment.comment_post_id));
+    let parts = ctx.plugin_parts();
+    let plugin_ctx = ctx.plugin_context(&parts, "comment.php");
+    let meta_boxes = site.plugins.comment_meta_boxes(&plugin_ctx, comment).await.unwrap_or_else(|e| {
+        tracing::error!(error = %e, "plugin comment meta boxes failed");
+        rustpress_core::native::MetaBoxes::default()
+    });
+    let boxes = &meta_boxes.html;
+    h.push_str(&format!("<div id=\"postbox-container-2\" class=\"postbox-container\">\n{boxes}<div id=\"normal-sortables\" class=\"meta-box-sortables\"></div></div>\n\n<input type=\"hidden\" name=\"c\" value=\"{id}\" />\n<input type=\"hidden\" name=\"p\" value=\"{}\" />\n<input name=\"referredby\" type=\"hidden\" id=\"referredby\" value=\"\" />\n<input type=\"hidden\" name=\"_wp_original_http_referer\" value=\"\" /><input type=\"hidden\" name=\"noredir\" value=\"1\" />\n\n</div><!-- /post-body -->\n</div>\n</div>\n</form>\n\n<script>\ntry{{document.post.name.focus();}}catch(e){{}}\n</script>\n\t", comment.comment_post_id));
     // The form wraps everything from the nonce on.
     let h = format!("<form name=\"post\" action=\"comment.php\" method=\"post\" id=\"post\">\n{h}");
     let screen = Screen { file: "comment.php".into(), parent_file: "edit-comments.php".into(), submenu_file: Some("edit-comments.php".into()), title: tr("Edit Comment"), help: Some(edit_help(ctx)), content_inline: true, ..Default::default() };
-    render(ctx, &screen, &h, &Assets { scripts: vec!["comment".into()], late_scripts: vec!["quicktags".into(), "wplink".into(), "jquery-ui-autocomplete".into()], footer: super::editor::quicktags_editor_js(ctx, &[("content", "strong,em,link,block,del,ins,img,ul,ol,li,code,close")]), ..Default::default() }).await
+    let mut assets = Assets { scripts: vec!["comment".into()], late_scripts: vec!["quicktags".into(), "wplink".into(), "jquery-ui-autocomplete".into()], footer: super::editor::quicktags_editor_js(ctx, &[("content", "strong,em,link,block,del,ins,img,ul,ol,li,code,close")]), ..Default::default() };
+    // What the plugins' boxes ask for: the media library while the page is printed, an editor in the footer.
+    if meta_boxes.media && ctx.can("upload_files") {
+        let mut media = Assets::default();
+        super::media_ui::enqueue(ctx, &mut media, 0).await;
+        assets.post_header_scripts.splice(0..0, media.scripts);
+        assets.post_header_styles.extend(media.styles);
+        assets.localize.extend(media.localize);
+        assets.raw_data.extend(media.raw_data);
+        assets.inline.extend(media.inline);
+        assets.pre_footer.push_str(&media.pre_footer);
+    }
+    if let Some(hidden) = &meta_boxes.hidden_editor {
+        let (html, entry) = super::editor::default_editor(ctx, &hidden.id, "", false);
+        assets.footer_first = format!("{}{html}{}", hidden.before, hidden.after);
+        let content = super::editor::EditorEntry { id: "content".into(), quicktags: "strong,em,link,block,del,ins,img,ul,ol,li,code,close".into(), tinymce: None };
+        let rich = entry.tinymce.is_some();
+        assets.footer = super::editor::editors_js(ctx, &[content, entry]);
+        // `_WP_Editors::enqueue_scripts()` when the footer is printed: the editor (with TinyMCE), Quicktags and the
+        // link dialog, and for the media button thickbox and the media upload.
+        if rich {
+            assets.post_header_scripts.push("editor".into());
+            // `wp_default_packages_inline_scripts()`: the classic block keeps the old editor object.
+            assets.inline.push(("editor".into(), "window.wp.oldEditor = window.wp.editor;".into(), "after".into()));
+        }
+        assets.late_scripts.retain(|h| !matches!(h.as_str(), "quicktags" | "wplink" | "jquery-ui-autocomplete"));
+        assets.post_header_scripts.extend(["quicktags".into(), "wplink".into(), "jquery-ui-autocomplete".into()]);
+        if ctx.can("upload_files") {
+            assets.post_header_scripts.extend(["thickbox".into(), "media-upload".into(), "wp-embed".into()]);
+            assets.post_header_styles.push("thickbox".into());
+        }
+    }
+    render(ctx, &screen, &h, &assets).await
 }

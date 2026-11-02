@@ -170,6 +170,8 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse
                 nonce: &nonce,
                 verify_nonce: &verify,
                 user_agent: request.user_agent.as_deref(),
+                wp_version: &env.loader.version,
+                wp_root: env.loader.includes.parent().unwrap_or(&env.loader.includes),
             };
             match env.site.plugins.admin_ajax_nopriv(&action, &ctx).await {
                 Ok(Some(answer)) => {

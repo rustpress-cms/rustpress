@@ -13,6 +13,7 @@
 
 mod admin;
 mod dashicons;
+mod edit_comment;
 mod fields;
 mod form;
 mod format;
@@ -212,6 +213,19 @@ impl ActivePlugin for Loaded {
 
     fn admin_enqueue(&self, ctx: &rustpress_core::native::AdminContext<'_>, assets: &mut rustpress_core::native::Assets) {
         admin::admin_enqueue(ctx.site, assets);
+        edit_comment::admin_enqueue(ctx, assets);
+    }
+
+    fn comment_meta_boxes<'a>(&'a self, ctx: &'a rustpress_core::native::AdminContext<'a>, comment: &'a rustpress_db::Comment) -> BoxFuture<'a, Result<rustpress_core::native::MetaBoxes>> {
+        Box::pin(edit_comment::meta_boxes(&self.groups, ctx, comment))
+    }
+
+    fn admin_footer<'a>(&'a self, ctx: &'a rustpress_core::native::AdminContext<'a>) -> BoxFuture<'a, Result<String>> {
+        Box::pin(async move { Ok(edit_comment::admin_footer(ctx)) })
+    }
+
+    fn admin_print_footer_scripts<'a>(&'a self, ctx: &'a rustpress_core::native::AdminContext<'a>) -> BoxFuture<'a, Result<String>> {
+        Box::pin(edit_comment::footer_scripts(&self.groups, ctx))
     }
 
     fn admin_body_class(&self, ctx: &rustpress_core::native::AdminContext<'_>, classes: String) -> String {

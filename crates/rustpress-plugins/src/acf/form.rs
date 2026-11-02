@@ -79,7 +79,7 @@ fn localized_texts(site: &Site) -> Option<String> {
 
 /// The scripts and styles of `acf_enqueue_scripts()` on the website: `ACF_Assets::register_scripts()`, then what
 /// `enqueue_scripts()` and the field types enqueue, in that order.
-fn enqueue(site: &Site, wp_version: &str, assets: &mut Assets) {
+pub(super) fn enqueue(site: &Site, wp_version: &str, assets: &mut Assets, admin: bool) {
     let ver = super::VERSION;
     let mut scripts = Assets::default();
     let acf = scripts.script("acf", acf_url(site, "assets/build/js/acf.min.js"), &["jquery"], ver, false);
@@ -98,10 +98,16 @@ fn enqueue(site: &Site, wp_version: &str, assets: &mut Assets) {
     scripts.script("acf-timepicker", acf_url(site, "assets/inc/timepicker/jquery-ui-timepicker-addon.min.js"), &["jquery-ui-datepicker"], "1.6.1", false);
     scripts.style("acf-timepicker", acf_url(site, "assets/inc/timepicker/jquery-ui-timepicker-addon.min.css"), &[], "1.6.1", "all");
     // `acf_field_color_picker`: outside the administration it registers Iris and the color picker itself.
-    scripts.script("iris", site.site_url("wp-admin/js/iris.min.js"), &["jquery-ui-draggable", "jquery-ui-slider", "jquery-touch-punch"], "1.0.7", false).registered_only = true;
+    if !admin {
+        scripts.script("iris", site.site_url("wp-admin/js/iris.min.js"), &["jquery-ui-draggable", "jquery-ui-slider", "jquery-touch-punch"], "1.0.7", false).registered_only = true;
+    }
     scripts.script("acf-color-picker-alpha", acf_url(site, "assets/inc/color-picker-alpha/wp-color-picker-alpha.js"), &["jquery", "wp-color-picker"], "3.0.0", false);
     scripts.core_style("wp-color-picker");
-    scripts.script("wp-color-picker", site.site_url("wp-admin/js/color-picker.min.js"), &["iris"], wp_version, false);
+    if admin {
+        scripts.core_script("wp-color-picker", false);
+    } else {
+        scripts.script("wp-color-picker", site.site_url("wp-admin/js/color-picker.min.js"), &["iris"], wp_version, false);
+    }
     for mut asset in scripts.styles {
         asset.priority = 20;
         assets.styles.push(asset);
@@ -134,15 +140,15 @@ fn acf_locale(site: &Site) -> String {
 
 /// The form data of `acf_form_data()` that the footer reads back.
 pub struct FormData {
-    pub screen: &'static str,
+    /// `null` without form data.
+    pub screen: Json,
     pub post_id: Json,
-    pub validation: bool,
+    pub validation: Json,
 }
 
 /// `ACF_Assets::print_footer_scripts()`: `acf.data` with what the field types localized, and `acf.doAction(
 /// 'prepare' )`.
-fn footer(ctx: &CommentFormContext<'_>, form: &FormData, wp_version: &str) -> String {
-    let site = ctx.site;
+pub(super) fn footer(site: &Site, form: &FormData, wp_version: &str, nonce: &str, user_agent: Option<&str>, can: &(dyn Fn(&str) -> bool + Send + Sync), uploader: bool) -> String {
     let locale = site.locale_data();
     let mut data = Map::new();
     let select2 = [
@@ -208,20 +214,29 @@ fn footer(ctx: &CommentFormContext<'_>, form: &FormData, wp_version: &str) -> St
     );
     data.insert("iconPickeri10n".into(), Json::Object(super::dashicons::DASHICONS.iter().map(|(name, label)| ((*name).to_owned(), Json::String(esc_tr(site, label)))).collect()));
     data.insert("mimeTypeIcon".into(), Json::String(site.site_url("wp-includes/images/media/default.png")));
-    let can = |capability: &str| ctx.query.viewer.as_ref().is_some_and(|v| v.can(capability));
-    let mimes = rustpress_content::media::allowed_mime_types_for(site, &[], &can, false, false);
+    let mimes = rustpress_content::media::allowed_mime_types_for(site, &[], can, false, false);
     data.insert("mimeTypes".into(), Json::Object(mimes.into_iter().map(|(k, v)| (k, Json::String(v))).collect()));
+    // `acf_field_wysiwyg::acf_enqueue_uploader()` on `acf/enqueue_uploader`: the toolbars of the editors.
+    if uploader {
+        data.insert(
+            "toolbars".into(),
+            json!({
+                "full": {"1": "formatselect,bold,italic,bullist,numlist,blockquote,alignleft,aligncenter,alignright,link,wp_more,spellchecker,fullscreen,wp_adv", "2": "strikethrough,hr,forecolor,pastetext,removeformat,charmap,outdent,indent,undo,redo,wp_help", "3": "", "4": ""},
+                "basic": {"1": "bold,italic,underline,blockquote,strikethrough,bullist,numlist,alignleft,aligncenter,alignright,undo,redo,link,fullscreen"},
+            }),
+        );
+    }
     data.insert("admin_url".into(), Json::String(format!("{}/", site.site_url("wp-admin"))));
     data.insert("ajaxurl".into(), Json::String(site.site_url("wp-admin/admin-ajax.php")));
-    data.insert("nonce".into(), Json::String(ctx.query.create_nonce("acf_nonce")));
+    data.insert("nonce".into(), Json::String(nonce.to_owned()));
     data.insert("acf_version".into(), Json::String(super::VERSION.to_owned()));
     data.insert("wp_version".into(), Json::String(wp_version.to_owned()));
-    data.insert("browser".into(), Json::String(browser(ctx.query.user_agent.as_deref()).to_owned()));
+    data.insert("browser".into(), Json::String(browser(user_agent).to_owned()));
     data.insert("locale".into(), Json::String(acf_locale(site)));
     data.insert("rtl".into(), Json::Bool(site.is_rtl()));
-    data.insert("screen".into(), Json::String(form.screen.to_owned()));
+    data.insert("screen".into(), form.screen.clone());
     data.insert("post_id".into(), form.post_id.clone());
-    data.insert("validation".into(), Json::Bool(form.validation));
+    data.insert("validation".into(), form.validation.clone());
     data.insert("editor".into(), Json::String("classic".into()));
     data.insert("is_pro".into(), Json::Bool(false));
     data.insert("debug".into(), Json::Bool(false));
@@ -256,17 +271,18 @@ pub async fn comment_form_field_comment(groups: &[FieldGroup], ctx: &CommentForm
         return Ok(html);
     }
     let wp_version = wp_version(ctx.services.wp_root());
-    let form = FormData { screen: "comment", post_id: Json::Bool(false), validation: true };
+    let form = FormData { screen: Json::String("comment".into()), post_id: Json::Bool(false), validation: Json::Bool(true) };
     let first = {
         let mut state = ctx.state.lock().expect("plugin state");
         let first = state.flags.insert("acf_enqueue_scripts");
         if first {
-            enqueue(site, &wp_version, &mut state.assets);
+            enqueue(site, &wp_version, &mut state.assets, false);
         }
         first
     };
     if first {
-        let footer = footer(ctx, &form, &wp_version);
+        let can = |capability: &str| ctx.query.viewer.as_ref().is_some_and(|v| v.can(capability));
+        let footer = footer(site, &form, &wp_version, &ctx.query.create_nonce("acf_nonce"), ctx.query.user_agent.as_deref(), &can, false);
         ctx.state.lock().expect("plugin state").footer_scripts.push(footer);
     }
     let nonce = |action: &str| ctx.query.create_nonce(action);
@@ -297,7 +313,7 @@ pub async fn comment_form_field_comment(groups: &[FieldGroup], ctx: &CommentForm
 }
 
 /// The browser part of `user_can_richedit()`.
-fn rich_edit_browser(agent: &str) -> bool {
+pub(super) fn rich_edit_browser(agent: &str) -> bool {
     let mobile = ["Mobile", "Android", "Silk/", "Kindle", "BlackBerry", "Opera Mini", "Opera Mobi"].iter().any(|m| agent.contains(m));
     let ie = agent.contains("MSIE") || agent.contains("Trident/");
     let safari = agent.contains("Safari") && !agent.contains("Chrome") && !agent.contains("Chromium");
