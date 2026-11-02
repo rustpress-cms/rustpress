@@ -5,8 +5,8 @@ use rustpress_core::canonical::rawurlencode;
 use rustpress_core::formatting::esc_url_raw;
 use serde_json::Value;
 
-use crate::deps::{Arg, Dependencies, Extra, Kind, Ver};
-use crate::tags::{Attr, inline_script_tag, script_tag};
+use super::deps::{Arg, Dependencies, Extra, Kind, Ver};
+use super::tags::{Attr, inline_script_tag, script_tag};
 
 /// `load_script_textdomain()`: the JSON of a script's translations, if the language has any.
 pub type TranslationLoader = Box<dyn Fn(&str, &str, &str) -> Option<String> + Send + Sync>;
@@ -172,6 +172,20 @@ impl Scripts {
     pub fn print_footer_scripts(&mut self, concatenate: bool) -> String {
         self.do_concat = concatenate;
         self.do_items(1);
+        self.print_scripts();
+        self.reset();
+        std::mem::take(&mut self.out)
+    }
+
+    /// One registered script on its own, printed the way `do_item()` prints it in the head whatever its group (the
+    /// website prints a core script where the plugin script that needs it is printed). The caller prints the
+    /// dependencies first.
+    pub fn print_one(&mut self, handle: &str) -> String {
+        self.deps.groups.insert(handle.to_owned(), 0);
+        self.do_concat = false;
+        if !self.deps.done.iter().any(|h| h == handle) && self.do_item(handle, 0) {
+            self.deps.done.push(handle.to_owned());
+        }
         self.print_scripts();
         self.reset();
         std::mem::take(&mut self.out)

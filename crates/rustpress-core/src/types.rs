@@ -146,6 +146,19 @@ pub struct Types {
     /// changed permalink structure are built from them. Empty until [Types::apply] ran.
     rewrite_post_types: Vec<PostTypeInfo>,
     rewrite_taxonomies: Vec<TaxonomyInfo>,
+    /// The post types the `register_post_type()` calls name, in their order, with their labels (also those without
+    /// pages of their own).
+    pub registered_post_types: Vec<RegisteredLabels>,
+}
+
+/// The name and labels of a registered type.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RegisteredLabels {
+    pub name: String,
+    /// `labels->name` (or `label`).
+    pub label: Option<String>,
+    /// `labels->singular_name`.
+    pub singular: Option<String>,
 }
 
 /// A post type from its rules: the single pages (`{var}=$matches[1]`) and the archive (`post_type={name}`).
@@ -293,6 +306,9 @@ impl Types {
             let singular = labels.and_then(|l| l.get("singular_name")).and_then(Lit::as_str).map(str::to_owned);
             let show_in_rest = args.get("show_in_rest").and_then(Lit::truthy).unwrap_or(false);
             let rest_base = text("rest_base");
+            if !reg.taxonomy && !self.registered_post_types.iter().any(|r| r.name == reg.name) {
+                self.registered_post_types.push(RegisteredLabels { name: reg.name.clone(), label: label.clone(), singular: singular.clone() });
+            }
             if reg.taxonomy {
                 if let Some(t) = self.taxonomies.iter_mut().find(|t| t.name == reg.name) {
                     t.registered = true;

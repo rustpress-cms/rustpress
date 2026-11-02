@@ -7,3 +7,6 @@
 crates/rustpress-plugins/tests/data/svg-sanitize/** -text
 # The forms of Contact Form 7 as well (one mixes in Windows line ends).
 crates/rustpress-plugins/tests/data/cf7-forms/** -text
+
+# The goldens of the ACF field inputs keep their bytes (tabs and newlines of the PHP templates).
+crates/rustpress-plugins/tests/data/acf-render/** -text

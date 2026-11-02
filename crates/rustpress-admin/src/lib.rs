@@ -2,7 +2,6 @@
 //! and the screens of `wp-admin`.
 
 pub mod adminbar;
-pub mod deps;
 pub mod chrome;
 pub mod cron;
 pub mod die;
@@ -17,14 +16,11 @@ pub mod menu;
 pub mod multipart;
 pub mod plugins;
 pub mod privacy_text;
-pub mod registry;
 pub mod screens;
-pub mod scripts;
-pub mod styles;
-pub mod tags;
 pub mod themes;
 pub mod updates;
 
 pub use rustpress_content::{content, media, sanitize};
+pub use rustpress_theme::script_loader::{deps, registry, scripts, styles, tags};
 pub use scripts::Scripts;
 pub use styles::Styles;

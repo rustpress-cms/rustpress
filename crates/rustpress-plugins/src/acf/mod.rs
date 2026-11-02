@@ -1,18 +1,22 @@
 //! Advanced Custom Fields 6.8.10 (`advanced-custom-fields/acf.php`) on the website: the post types and taxonomies
 //! defined in ACF, the `acf` field of the REST API (`ACF_Rest_Api`) with the values of the field groups that show
 //! in REST, in the `light` format or formatted (`?acf_format=standard`), their links (`ACF_Rest_Embed_Links`), and
-//! the `[acf]` shortcode.
+//! the `[acf]` shortcode, and the fields of the comment form with their scripts (`acf_form_comment`).
 //!
 //! Differs from the plugin: field groups, post types and taxonomies come from the database only (no local JSON
 //! from `acf-json` and no `acf_add_local_field_group()` in PHP); the `post_template` rule knows the templates of
 //! pages only; the PHP filters of ACF do not run; oEmbed fields are links (no network); a user field that returns
 //! objects returns the array; `$content_width` of a classic theme does not limit image sizes; block bindings
-//! (`acf/field`) wait for block bindings in the core.
+//! (`acf/field`) wait for block bindings in the core; the comment form of classic themes has no fields, and the
+//! media scripts of `acf_enqueue_uploader()` (a hidden `wp_editor()`, `wp_enqueue_media()`) are not printed.
 
+mod dashicons;
 mod fields;
+mod form;
 mod format;
 mod internal;
 mod php;
+mod render;
 mod rest_format;
 mod shortcode;
 mod value;
@@ -197,6 +201,10 @@ impl ActivePlugin for Loaded {
     fn post_statuses(&self, site: &Site) -> Vec<(&'static str, String)> {
         let label = site.i18n().pgettext("acf", "post status", "Inactive");
         vec![("acf-disabled", label)]
+    }
+
+    fn comment_form_field_comment<'a>(&'a self, ctx: &'a rustpress_core::native::CommentFormContext<'a>, html: String) -> BoxFuture<'a, Result<String>> {
+        Box::pin(form::comment_form_field_comment(&self.groups, ctx, html))
     }
 
     fn shortcode_tags(&self) -> &'static [&'static str] {

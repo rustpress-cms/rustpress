@@ -11,6 +11,7 @@ pub mod page;
 pub mod phpt;
 mod plugin_assets;
 pub mod registered_patterns;
+pub mod script_loader;
 pub mod theme;
 pub mod theme_headers;
 pub mod theme_json;

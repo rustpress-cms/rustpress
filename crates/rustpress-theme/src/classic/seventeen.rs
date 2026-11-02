@@ -842,7 +842,7 @@ async fn head(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State, registry: &Re
     let fonts_on = tx(ctx, "on", "Libre Franklin font: on or off") != "off";
     out.push('\n');
     let plugin_assets = site.plugins.assets(site);
-    out.push_str(&crate::plugin_assets::style_links(&plugin_assets.styles));
+    out.push_str(&crate::plugin_assets::StylePrinter::new(wp_root, site).links(&plugin_assets.styles));
     if fonts_on {
         out.push_str(&format!("<link rel='stylesheet' id='twentyseventeen-fonts-css' href='{theme_uri}/assets/fonts/font-libre-franklin.css?ver=20230328' media='all' />\n"));
     }

@@ -34,6 +34,8 @@ pub struct Rule {
 
 #[derive(Debug, Clone)]
 pub struct FieldGroup {
+    /// The stored settings (`label_placement`, `instruction_placement`, ...).
+    pub settings: Value,
     pub active: bool,
     pub show_in_rest: bool,
     /// Groups of rules: a group matches when all its rules do, the field group when one group does.
@@ -41,36 +43,93 @@ pub struct FieldGroup {
     pub fields: Vec<Field>,
 }
 
-/// The defaults of a field type that loading and formatting a value depend on (`acf_field::$defaults`).
-fn type_defaults(kind: &str) -> Vec<(&'static str, Value)> {
+/// The defaults of a field type (`acf_field::$defaults`), which `acf_field::validate_field()` adds for the keys a field
+/// does not set. `custom_choice_button_text` of checkboxes is translated, so the renderer adds it.
+pub(super) fn type_defaults(kind: &str) -> Vec<(&'static str, Value)> {
     let empty = || Value::Array(Vec::new());
-    let mut out: Vec<(&'static str, Value)> = Vec::new();
-    if matches!(kind, "text" | "textarea" | "number" | "range" | "email" | "url" | "wysiwyg" | "select" | "checkbox" | "radio" | "button_group" | "color_picker") {
-        out.push(("default_value", string("")));
-    }
+    let s = string;
+    let i = Value::Int;
     match kind {
-        "true_false" => out.push(("default_value", Value::Int(0))),
-        "icon_picker" => {
-            out.push(("default_value", Value::Array(vec![(super::php::key("type"), Value::Null), (super::php::key("value"), Value::Null)])));
-            out.push(("return_format", string("string")));
-        }
-        "select" => out.extend([("multiple", Value::Int(0)), ("return_format", string("value"))]),
-        "checkbox" | "radio" | "button_group" => out.push(("return_format", string("value"))),
-        "image" | "file" | "link" => out.push(("return_format", string("array"))),
-        "color_picker" => out.push(("return_format", string("string"))),
-        "date_picker" => out.push(("return_format", string("d/m/Y"))),
-        "date_time_picker" => out.push(("return_format", string("d/m/Y g:i a"))),
-        "time_picker" => out.push(("return_format", string("g:i a"))),
-        "textarea" => out.push(("new_lines", string(""))),
-        "oembed" => out.extend([("width", string("")), ("height", string(""))]),
-        "page_link" => out.extend([("post_type", empty()), ("multiple", Value::Int(0))]),
-        "post_object" => out.extend([("post_type", empty()), ("multiple", Value::Int(0)), ("return_format", string("object"))]),
-        "relationship" => out.extend([("post_type", empty()), ("return_format", string("object"))]),
-        "taxonomy" => out.extend([("taxonomy", string("category")), ("field_type", string("checkbox")), ("multiple", Value::Int(0)), ("return_format", string("id"))]),
-        "user" => out.extend([("multiple", Value::Int(0)), ("return_format", string("array"))]),
-        _ => {}
+        "accordion" => vec![("open", i(0)), ("multi_expand", i(0)), ("endpoint", i(0))],
+        "button_group" => vec![("choices", empty()), ("default_value", s("")), ("allow_null", i(0)), ("return_format", s("value")), ("layout", s("horizontal"))],
+        "checkbox" => vec![("layout", s("vertical")), ("choices", empty()), ("default_value", s("")), ("allow_custom", i(0)), ("save_custom", i(0)), ("toggle", i(0)), ("return_format", s("value"))],
+        "color_picker" => vec![("default_value", s("")), ("enable_opacity", Value::Bool(false)), ("custom_palette_source", s("")), ("palette_colors", s("")), ("show_color_wheel", Value::Bool(true)), ("return_format", s("string"))],
+        "date_picker" => vec![("display_format", s("d/m/Y")), ("return_format", s("d/m/Y")), ("first_day", i(1)), ("default_to_current_date", i(0))],
+        "date_time_picker" => vec![("display_format", s("d/m/Y g:i a")), ("return_format", s("d/m/Y g:i a")), ("first_day", i(1)), ("default_to_current_date", i(0))],
+        "email" => vec![("default_value", s("")), ("placeholder", s("")), ("prepend", s("")), ("append", s(""))],
+        "file" => vec![("return_format", s("array")), ("library", s("all")), ("min_size", i(0)), ("max_size", i(0)), ("mime_types", s(""))],
+        "google_map" => vec![("height", s("")), ("center_lat", s("")), ("center_lng", s("")), ("zoom", s(""))],
+        "group" => vec![("sub_fields", empty()), ("layout", s("block"))],
+        "icon_picker" => vec![
+            ("library", s("all")),
+            ("tabs", Value::Array(vec![(rustpress_phpser::Key::Int(0), s("dashicons")), (rustpress_phpser::Key::Int(1), s("url")), (rustpress_phpser::Key::Int(2), s("media_library"))])),
+            ("return_format", s("string")),
+            ("default_value", Value::Array(vec![(super::php::key("type"), Value::Null), (super::php::key("value"), Value::Null)])),
+        ],
+        "image" => vec![
+            ("return_format", s("array")),
+            ("preview_size", s("medium")),
+            ("library", s("all")),
+            ("min_width", i(0)),
+            ("min_height", i(0)),
+            ("min_size", i(0)),
+            ("max_width", i(0)),
+            ("max_height", i(0)),
+            ("max_size", i(0)),
+            ("mime_types", s("")),
+        ],
+        "link" => vec![("return_format", s("array"))],
+        "message" => vec![("message", s("")), ("esc_html", i(0)), ("new_lines", s("wpautop"))],
+        "number" => vec![("default_value", s("")), ("min", s("")), ("max", s("")), ("step", s("")), ("placeholder", s("")), ("prepend", s("")), ("append", s(""))],
+        "oembed" => vec![("width", s("")), ("height", s(""))],
+        "page_link" => vec![("post_type", empty()), ("taxonomy", empty()), ("allow_null", i(0)), ("multiple", i(0)), ("allow_archives", i(1))],
+        "password" => vec![("placeholder", s("")), ("prepend", s("")), ("append", s(""))],
+        "post_object" => vec![("post_type", empty()), ("taxonomy", empty()), ("allow_null", i(0)), ("multiple", i(0)), ("return_format", s("object")), ("ui", i(1)), ("bidirectional_target", empty())],
+        "radio" => vec![("layout", s("vertical")), ("choices", empty()), ("default_value", s("")), ("other_choice", i(0)), ("save_other_choice", i(0)), ("allow_null", i(0)), ("return_format", s("value"))],
+        "range" => vec![("default_value", s("")), ("min", s("")), ("max", s("")), ("step", s("")), ("prepend", s("")), ("append", s(""))],
+        "relationship" => vec![
+            ("post_type", empty()),
+            ("taxonomy", empty()),
+            ("min", i(0)),
+            ("max", i(0)),
+            ("filters", Value::Array(vec![(rustpress_phpser::Key::Int(0), s("search")), (rustpress_phpser::Key::Int(1), s("post_type")), (rustpress_phpser::Key::Int(2), s("taxonomy"))])),
+            ("elements", empty()),
+            ("return_format", s("object")),
+            ("bidirectional_target", empty()),
+        ],
+        "select" => vec![
+            ("multiple", i(0)),
+            ("allow_null", i(0)),
+            ("choices", empty()),
+            ("default_value", s("")),
+            ("ui", i(0)),
+            ("ajax", i(0)),
+            ("placeholder", s("")),
+            ("return_format", s("value")),
+            ("create_options", i(0)),
+            ("save_options", i(0)),
+        ],
+        "tab" => vec![("placement", s("top")), ("endpoint", i(0)), ("selected", i(0))],
+        "taxonomy" => vec![
+            ("taxonomy", s("category")),
+            ("field_type", s("checkbox")),
+            ("multiple", i(0)),
+            ("allow_null", i(0)),
+            ("return_format", s("id")),
+            ("add_term", i(1)),
+            ("load_terms", i(0)),
+            ("save_terms", i(0)),
+            ("bidirectional_target", empty()),
+        ],
+        "text" => vec![("default_value", s("")), ("maxlength", s("")), ("placeholder", s("")), ("prepend", s("")), ("append", s(""))],
+        "textarea" => vec![("default_value", s("")), ("new_lines", s("")), ("maxlength", s("")), ("placeholder", s("")), ("rows", s(""))],
+        "time_picker" => vec![("display_format", s("g:i a")), ("return_format", s("g:i a"))],
+        "true_false" => vec![("default_value", i(0)), ("message", s("")), ("ui", i(0)), ("ui_on_text", s("")), ("ui_off_text", s(""))],
+        "url" => vec![("default_value", s("")), ("placeholder", s(""))],
+        "user" => vec![("role", s("")), ("multiple", i(0)), ("allow_null", i(0)), ("return_format", s("array")), ("bidirectional_target", empty())],
+        "wysiwyg" => vec![("tabs", s("all")), ("toolbar", s("full")), ("media_upload", i(1)), ("default_value", s("")), ("delay", i(0))],
+        _ => Vec::new(),
     }
-    out
 }
 
 /// Whether a field type supports block bindings and the shortcode (`acf_field_type_supports( $type, 'bindings' )`).
@@ -115,6 +174,23 @@ fn field_from(post: &AcfPost, all: &[AcfPost]) -> Field {
     Field { key: post.name.clone(), name: post.excerpt.clone(), kind, settings: Value::Array(items), sub_fields }
 }
 
+/// A field from its settings (a local field, the golden tests): the type's defaults for the keys it does not set.
+#[cfg(test)]
+pub fn from_settings(settings: Value, sub_fields: Vec<Field>) -> Field {
+    let mut items = match settings {
+        Value::Array(items) => items,
+        _ => Vec::new(),
+    };
+    let get = |items: &Vec<(rustpress_phpser::Key, Value)>, name: &str| items.iter().find(|(k, _)| super::php::key_eq(k, &super::php::key(name))).map(|(_, v)| strval(Some(v)));
+    let kind = get(&items, "type").unwrap_or_else(|| "text".to_owned());
+    for (name, default) in type_defaults(&kind) {
+        if !items.iter().any(|(k, v)| super::php::key_eq(k, &super::php::key(name)) && !matches!(v, Value::Null)) {
+            super::php::set(&mut items, name, default);
+        }
+    }
+    Field { key: get(&items, "key").unwrap_or_default(), name: get(&items, "name").unwrap_or_default(), kind, settings: Value::Array(items), sub_fields }
+}
+
 /// `acf_get_fields()` of a parent (a field group or a group field).
 fn children(parent: u64, all: &[AcfPost]) -> Vec<Field> {
     all.iter().filter(|p| p.parent == parent).map(|p| field_from(p, all)).collect()
@@ -149,6 +225,7 @@ pub async fn load(db: &Db) -> Result<Vec<FieldGroup>> {
                 show_in_rest: truthy(settings.get("show_in_rest")),
                 location,
                 fields: children(post.id, &fields),
+                settings,
             }
         })
         .collect())
@@ -173,6 +250,14 @@ pub struct MatchContext<'a> {
 }
 
 impl FieldGroup {
+    /// A setting of the group with the default of `acf_validate_field_group()`.
+    pub fn setting(&self, name: &str, default: &str) -> String {
+        match self.settings.get(name) {
+            Some(v) if !matches!(v, Value::Null) => strval(Some(v)),
+            _ => default.to_owned(),
+        }
+    }
+
     /// `acf_get_field_group_visibility()`.
     pub async fn visible(&self, screen: &Screen<'_>, ctx: &MatchContext<'_>) -> Result<bool> {
         if !self.active {
