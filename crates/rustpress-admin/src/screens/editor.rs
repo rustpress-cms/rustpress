@@ -292,6 +292,36 @@ pub fn link_dialog(ctx: &Ctx<'_>) -> String {
 /// browser can, Quicktags, the media button when the user may upload, 20 rows): the markup and its entry for
 /// `editor_js()`. `buttons_css`: the first editor of the page links the stylesheet of the buttons.
 pub fn default_editor(ctx: &Ctx<'_>, id: &str, content: &str, buttons_css: bool) -> (String, EditorEntry) {
+    default_editor_for(ctx, id, content, buttons_css, None)
+}
+
+/// What the global `$post` changes about an editor: the classes of `editor_settings()` and `wpautop` (`!has_blocks()`).
+#[derive(Debug, Clone, Default)]
+pub struct EditorPost {
+    /// ` post-type-… post-status-… post-format-… page-template-…`.
+    pub classes: String,
+    pub has_blocks: bool,
+}
+
+impl EditorPost {
+    pub async fn of(ctx: &Ctx<'_>, post: &rustpress_db::Post) -> Self {
+        use rustpress_core::formatting::sanitize_html_class;
+        let db = ctx.env.db;
+        let mut classes = format!(" post-type-{} post-status-{}", sanitize_html_class(&post.post_type), sanitize_html_class(&post.post_status));
+        if ctx.site().post_type_supports(&post.post_type, "post-formats") {
+            let format = db.terms_for_post(post.id, Some("post_format")).await.unwrap_or_default().first().and_then(|t| t.slug.strip_prefix("post-format-").map(str::to_owned));
+            classes.push_str(&format!(" post-format-{}", sanitize_html_class(format.as_deref().unwrap_or("standard"))));
+        }
+        // `get_page_template_slug()`.
+        let template = db.post_meta_value(post.id, "_wp_page_template").await.ok().flatten().filter(|t| !t.is_empty() && t != "default").unwrap_or_else(|| "default".to_owned());
+        let template = template.rsplit('/').next().unwrap_or_default().trim_end_matches(".php").replace('.', "-");
+        classes.push_str(&format!(" page-template-{}", sanitize_html_class(&template)));
+        Self { classes, has_blocks: post.post_content.contains("<!-- wp:") }
+    }
+}
+
+/// [`default_editor`] on a page with a global `$post`.
+pub fn default_editor_for(ctx: &Ctx<'_>, id: &str, content: &str, buttons_css: bool, post: Option<&EditorPost>) -> (String, EditorEntry) {
     let site = ctx.site();
     let rich = can_richedit(ctx, Some("true"));
     let default = if rich { user_setting(ctx, "editor").filter(|e| e == "html" || e == "tinymce").unwrap_or_else(|| "tinymce".to_owned()) } else { "html".to_owned() };
@@ -325,7 +355,7 @@ pub fn default_editor(ctx: &Ctx<'_>, id: &str, content: &str, buttons_css: bool)
         "<div id=\"wp-{id}-editor-container\" class=\"wp-editor-container\"><div id=\"qt_{id}_toolbar\" class=\"quicktags-toolbar hide-if-no-js\"></div><textarea class=\"wp-editor-area\" rows=\"20\"{} cols=\"40\" name=\"{id}\" id=\"{id}\">{escaped}</textarea></div>\n</div>\n\n",
         if rich { " autocomplete=\"off\"" } else { "" }
     ));
-    let mce = rich.then(|| default_mce_init(ctx, id));
+    let mce = rich.then(|| default_mce_init(ctx, id, post));
     (out, EditorEntry { id: id.to_owned(), quicktags: "strong,em,link,block,del,ins,img,ul,ol,li,code,more,close".to_owned(), tinymce: mce })
 }
 
@@ -339,13 +369,14 @@ pub struct EditorEntry {
 
 /// The TinyMCE settings of an editor with the default settings (not the post's: no distraction-free mode, no
 /// auto-resizing, a resizable box, `wpautop`).
-fn default_mce_init(ctx: &Ctx<'_>, id: &str) -> String {
+fn default_mce_init(ctx: &Ctx<'_>, id: &str, post: Option<&EditorPost>) -> String {
     let site = ctx.site();
     let site_url = &ctx.env.loader.site_url;
     let version = &ctx.env.loader.version;
     let mut css = vec![format!("{site_url}/wp-includes/css/dashicons.min.css?ver={version}"), format!("{site_url}/wp-includes/js/tinymce/skins/wordpress/wp-content.css?ver={version}")];
     css.extend(editor_styles(ctx));
-    let body_class = format!("{id} locale-{}", rustpress_core::formatting::sanitize_html_class(&site.locale().replace('_', "-").to_lowercase()));
+    let body_class = format!("{id}{} locale-{}", post.map_or("", |p| p.classes.as_str()), rustpress_core::formatting::sanitize_html_class(&site.locale().replace('_', "-").to_lowercase()));
+    let wpautop = if post.is_some_and(|p| p.has_blocks) { "wpautop:false,indent:true" } else { "wpautop:true,indent:false" };
     let lang = site.locale().split('_').next().unwrap_or("en").to_owned();
     let init = MCE_INIT
         .replace("{SITE}", site_url)
@@ -356,7 +387,7 @@ fn default_mce_init(ctx: &Ctx<'_>, id: &str) -> String {
         .replace("{LANG_ATTR}", &site.language_tag())
         .replace("resize:false", "resize:\"vertical\"")
         .replace("selector:\"#content\"", &format!("selector:\"#{id}\""))
-        .replace("wpautop:false,indent:true", "wpautop:true,indent:false")
+        .replace("wpautop:false,indent:true", wpautop)
         .replace("spellchecker,wp_adv,dfw\"", "spellchecker,fullscreen,wp_adv\"")
         .replace(",wp_autoresize_on:true,add_unload_trigger:false", "");
     init.trim().strip_prefix("{'content':").and_then(|r| r.strip_suffix('}')).unwrap_or(&init).to_owned()
@@ -365,6 +396,12 @@ fn default_mce_init(ctx: &Ctx<'_>, id: &str) -> String {
 /// `_WP_Editors::editor_js()` for the editors of a page in the order they were printed: their settings, TinyMCE's
 /// scripts when one of them uses it, the start of the editors and the link dialog.
 pub fn editors_js(ctx: &Ctx<'_>, editors: &[EditorEntry]) -> String {
+    editors_js_with(ctx, editors, true)
+}
+
+/// [`editors_js`]; without `scripts` TinyMCE's scripts and the link dialog are on the page already
+/// (`print_default_editor_scripts()` printed them).
+pub fn editors_js_with(ctx: &Ctx<'_>, editors: &[EditorEntry], scripts: bool) -> String {
     let site = ctx.site();
     let site_url = &ctx.env.loader.site_url;
     let rich = editors.iter().any(|e| e.tinymce.is_some());
@@ -378,11 +415,13 @@ pub fn editors_js(ctx: &Ctx<'_>, editors: &[EditorEntry]) -> String {
     let mut out = format!(
         "\n\t\t<script>\n\t\ttinyMCEPreInit = {{\n\t\t\tbaseURL: \"{site_url}/wp-includes/js/tinymce\",\n\t\t\tsuffix: \".min\",\n\t\t\t\t\t\tmceInit: {{{mce}}},\n\t\t\tqtInit: {{{qt}}},\n\t\t\tref: {{plugins:\"{plugins}\",theme:\"modern\",language:\"{lang}\"}},\n\t\t\tload_ext: function(url,lang){{var sl=tinymce.ScriptLoader;sl.markDone(url+'/langs/'+lang+'.js');sl.markDone(url+'/langs/'+lang+'_dlg.js');}}\n\t\t}};\n\t\t</script>\n\t\t"
     );
-    if rich {
+    if rich && scripts {
         out.push_str(&tinymce_scripts(ctx));
     }
     out.push_str(INIT);
     out.push_str("\t\t");
-    out.push_str(&link_dialog(ctx));
+    if scripts {
+        out.push_str(&link_dialog(ctx));
+    }
     out
 }

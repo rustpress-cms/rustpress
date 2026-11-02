@@ -71,7 +71,7 @@ impl Rest<'_> {
         let prefix = rustpress_blocks::content::attachment_prefix(&env, post, metadata.as_ref(), attached_file.as_deref(), &alt).await?;
         let description = the_content_prefixed(&env, &shared, &post.post_content, &prefix).await?;
         data.insert("description".into(), json!({"rendered": description}));
-        let raw_caption = rustpress_blocks::excerpt::get_the_excerpt(&env, &shared).await?;
+        let raw_caption = self.excerpt(&env, &shared).await?;
         let caption = wpautop(&convert_chars(&self.site.texturize(&raw_caption)));
         data.insert("caption".into(), json!({"rendered": caption}));
         data.insert("alt_text".into(), Value::from(alt));

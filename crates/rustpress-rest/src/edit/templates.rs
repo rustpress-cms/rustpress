@@ -581,6 +581,7 @@ impl Rest<'_> {
         data.insert("date".into(), date(&tpl.date));
         data.insert("author_text".into(), json!(self.author_text(tpl).await));
         data.insert("original_source".into(), json!(self.original_source(tpl)));
+        data.extend(self.plugin_fields(rustpress_core::native::RestObject::Template(kind.post_type())).await.unwrap_or_default());
 
         let mut links = Links::new();
         let self_href = self.rest_url(&format!("wp/v2/{}/{}", kind.rest_base(), tpl.id));

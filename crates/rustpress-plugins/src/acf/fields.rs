@@ -252,7 +252,37 @@ pub enum Screen<'a> {
 /// The request around a match: the database, the site and the signed-in user.
 pub struct MatchContext<'a> {
     pub site: &'a rustpress_core::Site,
-    pub viewer: Option<&'a rustpress_core::Viewer>,
+    pub user: MatchUser<'a>,
+    /// `is_admin()`.
+    pub admin: bool,
+}
+
+/// `wp_get_current_user()` of a match.
+#[derive(Clone, Copy)]
+pub enum MatchUser<'a> {
+    Visitor,
+    Viewer(&'a rustpress_core::Viewer),
+    /// A user of the administration, by `current_user_can()`.
+    Admin(&'a (dyn Fn(&str) -> bool + Send + Sync)),
+}
+
+impl<'a> MatchUser<'a> {
+    pub fn of(viewer: Option<&'a rustpress_core::Viewer>) -> Self {
+        viewer.map_or(MatchUser::Visitor, MatchUser::Viewer)
+    }
+
+    fn logged_in(&self) -> bool {
+        !matches!(self, MatchUser::Visitor)
+    }
+
+    /// `user_can()`: roles count as capabilities.
+    fn can(&self, capability: &str) -> bool {
+        match self {
+            MatchUser::Visitor => false,
+            MatchUser::Viewer(viewer) => viewer.can(capability),
+            MatchUser::Admin(can) => can(capability),
+        }
+    }
 }
 
 impl FieldGroup {
@@ -397,16 +427,15 @@ async fn match_rule(rule: &Rule, screen: &Screen<'_>, ctx: &MatchContext<'_>) ->
         },
         "current_user" => {
             let result = match rule_value.as_str() {
-                "logged_in" => ctx.viewer.is_some(),
-                "viewing_front" => true,
+                "logged_in" => ctx.user.logged_in(),
+                "viewing_front" => !ctx.admin,
+                "viewing_back" => ctx.admin,
                 _ => false,
             };
             reverse(result, rule)
         }
-        "current_user_role" => match ctx.viewer {
-            None => false,
-            Some(viewer) => reverse(if rule_value == "super_admin" { false } else { !rule_value.is_empty() && viewer.can(&rule_value) }, rule),
-        },
+        // `is_super_admin()` of a single site is `delete_users`; a visitor has no roles.
+        "current_user_role" => reverse(if rule_value == "super_admin" { ctx.user.can("delete_users") } else { !rule_value.is_empty() && ctx.user.can(&rule_value) }, rule),
         "user_form" => matches!(screen, Screen::User { .. }),
         "user_role" => match screen {
             Screen::User { user_id } => {

@@ -5,7 +5,7 @@
 //! Differs from the plugin: options that change a field when a value comes in (`save_custom`, `save_options`,
 //! `save_other_choice`) and files sent by the basic uploader (`ACF_Media::save_files()`) are not handled.
 
-use rustpress_core::native::{CommentSaved, Die};
+use rustpress_core::native::{CommentSaved, Die, PostSaved};
 use rustpress_core::{Result, Site};
 use rustpress_db::{MetaKind, Writer};
 use rustpress_phpser::{Key, Value};
@@ -294,7 +294,7 @@ pub async fn save_comment(groups: &[FieldGroup], ctx: &CommentSaved<'_>) -> Resu
     let Value::Array(items) = acf else { return Ok(None) };
     // The fields of the groups shown for the comment's post type.
     let post_type = site.db.post(ctx.post_id).await?.map(|p| p.post_type).unwrap_or_default();
-    let matcher = MatchContext { site, viewer: None };
+    let matcher = MatchContext { site, user: super::fields::MatchUser::Visitor, admin: false };
     let mut allowed: Vec<&Field> = Vec::new();
     for group in groups {
         if group.visible(&Screen::Comment { post_type: post_type.clone() }, &matcher).await? {
@@ -377,6 +377,134 @@ pub fn ajax_validate(groups: &[FieldGroup], ctx: &rustpress_core::native::AdminC
         serde_json::json!({"valid": 0, "errors": list})
     };
     rustpress_core::native::AjaxAnswer::json(200, encode(data))
+}
+
+/// `ACF_Form_Post::allow_save_post()`: not ACF's own posts or revisions, and only the post the form is about.
+fn allow_save_post(post: &rustpress_db::Post, form: &[(String, String)]) -> bool {
+    let field = |name: &str| form.iter().rev().find(|(k, _)| k == name).map(|(_, v)| v.as_str());
+    let mut allow = !matches!(post.post_type.as_str(), "auto-draft" | "revision" | "acf-field" | "acf-field-group");
+    let form_post_id = super::php::intval(field("post_ID").map(string).as_ref());
+    if form_post_id != 0 && form_post_id != post.id as i64 {
+        allow = false;
+    }
+    if post.post_type == "revision" && field("wp-preview") == Some("dopreview") && form_post_id == post.post_parent as i64 {
+        allow = true;
+    }
+    allow
+}
+
+/// What `ACF_Form_Post::save_post()` hands to `acf_save_post()`: `None` when it returns before (not allowed, no valid
+/// nonce, a published post that fails `acf_validate_save_post()`, nothing sent), else the values of known fields as
+/// they are stored. During the block editor's meta box request `ACF_Form_Gutenberg` drops the validation errors.
+fn post_values<'g>(groups: &'g [FieldGroup], ctx: &PostSaved<'_>) -> Option<Vec<(&'g Field, Value)>> {
+    let form = ctx.ctx.form;
+    if !allow_save_post(ctx.post, form) {
+        return None;
+    }
+    let nonce = form.iter().rev().find(|(k, _)| k == "_acf_nonce").map(|(_, v)| v.as_str()).unwrap_or_default();
+    if nonce.is_empty() || nonce == "0" || !(ctx.ctx.verify_nonce)(nonce, "post") {
+        return None;
+    }
+    let acf = rustpress_core::native::form_value(form, "acf");
+    let items = match &acf {
+        Some(Value::Array(items)) => items.clone(),
+        _ => Vec::new(),
+    };
+    if ctx.post.post_status == "publish" && ctx.ctx.get("meta-box-loader").is_none() {
+        let mut errors = Vec::new();
+        for (k, v) in &items {
+            let key = key_text(k);
+            if let Some(field) = field_by_key(groups, &key) {
+                validate_value(ctx.ctx.site, v, field, truthy(field.get("required")), &format!("acf[{key}]"), &mut errors);
+            }
+        }
+        if !errors.is_empty() {
+            return None;
+        }
+    }
+    if !acf.as_ref().is_some_and(|v| truthy(Some(v))) {
+        return None;
+    }
+    let unfiltered = (ctx.ctx.can)("unfiltered_html");
+    Some(
+        items
+            .into_iter()
+            .filter_map(|(k, v)| {
+                let field = field_by_key(groups, &key_text(&k))?;
+                Some((field, if unfiltered { v } else { kses_deep(v) }))
+            })
+            .collect(),
+    )
+}
+
+/// `ACF_Form_Post::save_post()` on `save_post`: `acf_save_post( $post_id )` with `acf_update_values()`.
+///
+/// Differs from the plugin: `acf_get_field()` also finds a field by its name or ID; only keys are looked up.
+pub async fn save_post(groups: &[FieldGroup], ctx: &PostSaved<'_>) -> Result<()> {
+    let Some(values) = post_values(groups, ctx) else { return Ok(()) };
+    for (field, value) in values {
+        update_value(ctx.writer, (MetaKind::Post, ctx.post.id), value, field, &field.name).await?;
+    }
+    Ok(())
+}
+
+/// `ACF_Revisions::check_acf_fields_have_changed()` (`wp_save_post_revision_post_has_changed`, priority 9): during the
+/// block editor's meta box request the fields go to the latest revision; a classic form with changed fields makes a
+/// revision.
+pub async fn revision_post_has_changed(groups: &[FieldGroup], ctx: &PostSaved<'_>, latest_revision: u64, changed: bool) -> Result<bool> {
+    if ctx.ctx.get("meta-box-loader").is_some_and(|v| truthy(Some(&string(v)))) {
+        maybe_save_revision(groups, ctx, latest_revision).await?;
+        return Ok(changed);
+    }
+    if ctx.ctx.post_field("_acf_changed").is_some_and(|v| truthy(Some(&string(v)))) {
+        return Ok(true);
+    }
+    Ok(changed)
+}
+
+/// `ACF_Revisions::maybe_save_revision()` (`_wp_put_post_revision`).
+pub async fn maybe_save_revision(groups: &[FieldGroup], ctx: &PostSaved<'_>, revision_id: u64) -> Result<()> {
+    let db = &ctx.ctx.site.db;
+    // `did_action( 'acf/save_post' )`.
+    if post_values(groups, ctx).is_none() {
+        ctx.writer.delete_metadata(MetaKind::Post, ctx.post.id, "_acf_changed").await?;
+        ctx.writer.delete_metadata(MetaKind::Post, revision_id, "_acf_changed").await?;
+        return Ok(());
+    }
+    if ctx.ctx.post_field("_acf_changed").is_some_and(|v| truthy(Some(&string(v))))
+        && let Some(revision) = db.post(revision_id).await?
+        && revision.post_name.contains(&format!("{}-autosave", revision.post_parent))
+    {
+        return Ok(());
+    }
+    // `acf_save_post_revision()`: `acf_copy_metadata()` to the newest revision.
+    let query = rustpress_db::PostQuery { post_types: vec!["revision".into()], statuses: vec!["inherit".into()], parent: Some(ctx.post.id), order_by: rustpress_db::OrderBy::Date, order: rustpress_db::Order::Desc, ..Default::default() };
+    let mut revisions = db.posts(&query).await?;
+    revisions.sort_by(|a, b| b.post_date.cmp(&a.post_date).then(b.id.cmp(&a.id)));
+    let Some(latest) = revisions.first() else { return Ok(()) };
+    // `ACF_Meta_Location::get_meta()`: the values that have a reference, each followed by it.
+    let mut all: Vec<(String, String)> = Vec::new();
+    for row in db.post_meta(ctx.post.id).await? {
+        let key = row.meta_key.unwrap_or_default();
+        if !all.iter().any(|(k, _)| *k == key) {
+            all.push((key, row.meta_value.unwrap_or_default()));
+        }
+    }
+    let mut meta: Vec<(String, String)> = Vec::new();
+    let mut put = |k: &str, v: &str| match meta.iter_mut().find(|(key, _)| key == k) {
+        Some(slot) => slot.1 = v.to_owned(),
+        None => meta.push((k.to_owned(), v.to_owned())),
+    };
+    for (k, v) in &all {
+        if let Some((_, reference)) = all.iter().find(|(r, _)| *r == format!("_{k}")) {
+            put(k, v);
+            put(&format!("_{k}"), reference);
+        }
+    }
+    for (k, v) in meta {
+        ctx.writer.update_metadata(MetaKind::Post, latest.id, &k, &v).await?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]

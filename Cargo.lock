@@ -1616,6 +1616,7 @@ version = "0.1.1"
 dependencies = [
  "chrono",
  "chrono-tz",
+ "futures",
  "image",
  "md5",
  "rand 0.9.5",
@@ -1700,6 +1701,7 @@ name = "rustpress-content"
 version = "0.1.1"
 dependencies = [
  "chrono",
+ "futures",
  "image",
  "rand 0.9.5",
  "regex",

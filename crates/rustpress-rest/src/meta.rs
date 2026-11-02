@@ -206,7 +206,9 @@ impl Rest<'_> {
         }
         let services = rustpress_theme::head::Services::new(self.theme, self.site, &self.blank, self.registry);
         let (route, query_string) = self.route.lock().unwrap_or_else(|e| e.into_inner()).clone();
-        let ctx = rustpress_core::native::RestFieldContext { site: self.site, query: &self.blank, services: &services, route: &route, method: self.method(), query_string: &query_string };
+        let earlier = self.earlier_routes.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        let included = |field: &str| self.field_included(field);
+        let ctx = rustpress_core::native::RestFieldContext { site: self.site, query: &self.blank, services: &services, route: &route, method: self.method(), query_string: &query_string, earlier_routes: &earlier, field_included: &included };
         let fields = self.site.plugins.rest_fields(object, &ctx).await?;
         Ok(fields.into_iter().filter(|(k, _)| self.field_included(k)).collect())
     }
@@ -218,7 +220,9 @@ impl Rest<'_> {
         }
         let services = rustpress_theme::head::Services::new(self.theme, self.site, &self.blank, self.registry);
         let (route, query_string) = self.route.lock().unwrap_or_else(|e| e.into_inner()).clone();
-        let ctx = rustpress_core::native::RestFieldContext { site: self.site, query: &self.blank, services: &services, route: &route, method: self.method(), query_string: &query_string };
+        let earlier = self.earlier_routes.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        let included = |field: &str| self.field_included(field);
+        let ctx = rustpress_core::native::RestFieldContext { site: self.site, query: &self.blank, services: &services, route: &route, method: self.method(), query_string: &query_string, earlier_routes: &earlier, field_included: &included };
         let links = self.site.plugins.rest_links(object, &ctx).await?;
         if links.is_empty() {
             return Ok(());
