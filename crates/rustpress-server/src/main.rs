@@ -10,6 +10,10 @@ fn main() {
         builder.worker_threads(2);
     }
     let runtime = builder.enable_all().thread_stack_size(16 * 1024 * 1024).build().expect("tokio runtime");
+    if !cgi && std::env::args().nth(1).as_deref() == Some("check") {
+        let code = runtime.block_on(run_check());
+        std::process::exit(code);
+    }
     let task = if cgi { runtime.spawn(run_cgi()) } else { runtime.spawn(run_server()) };
     runtime.block_on(async { task.await.expect("server task") });
 }
@@ -46,6 +50,28 @@ async fn run_cgi() {
         eprintln!("rustpress: {message}");
         rustpress_server::cgi::write_failure(&message);
         std::process::exit(1);
+    }
+}
+
+/// `rustpress check`: whether RustPress can serve the configured site (exit code 0), or what is missing (2).
+async fn run_check() -> i32 {
+    let config = match Config::load() {
+        Ok(config) => config,
+        Err(e) => {
+            eprintln!("rustpress: {e}");
+            return 1;
+        }
+    };
+    match rustpress_server::check::check(&config).await {
+        Ok(items) => {
+            let (text, runs) = rustpress_server::check::render(&items);
+            print!("{text}");
+            if runs { 0 } else { 2 }
+        }
+        Err(e) => {
+            eprintln!("rustpress: {e}");
+            1
+        }
     }
 }
 
