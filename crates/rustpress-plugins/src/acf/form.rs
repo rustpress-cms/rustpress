@@ -113,7 +113,7 @@ fn enqueue(site: &Site, wp_version: &str, assets: &mut Assets) {
 }
 
 /// `acf_get_browser()`.
-fn browser(user_agent: Option<&str>) -> &'static str {
+pub(super) fn browser(user_agent: Option<&str>) -> &'static str {
     let Some(agent) = user_agent else { return "" };
     [("Firefox", "firefox"), ("Trident", "msie"), ("MSIE", "msie"), ("Edge", "edge"), ("Chrome", "chrome"), ("Safari", "safari")].iter().find(|(k, _)| agent.contains(k)).map_or("", |(_, v)| v)
 }

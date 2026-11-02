@@ -22,6 +22,19 @@ pub struct BarContext {
     pub command_palette: bool,
 }
 
+/// The custom post types of the "New" menu (`show_in_admin_bar`) with `labels->name_admin_bar`, in the order of their
+/// registrations; then the ones only the rewrite rules know.
+fn new_content_types(site: &Site) -> Vec<(String, String)> {
+    let registered = site.types.admin_post_types();
+    let mut out: Vec<(String, String)> = registered.iter().filter(|t| t.show_in_admin_bar).map(|t| (t.name.clone(), t.label("name_admin_bar").unwrap_or_else(|| t.name.clone()))).collect();
+    for custom in &site.types.post_types {
+        if !registered.iter().any(|r| r.name == custom.name) && (custom.public || custom.queryable) {
+            out.push((custom.name.clone(), custom.singular_label()));
+        }
+    }
+    out
+}
+
 fn item(id: &str, class: &str, inner: &str) -> String {
     let class = if class.is_empty() { String::new() } else { format!(" class=\"{class}\"") };
     format!("<li role='group' id='wp-admin-bar-{id}'{class}>{inner}</li>")
@@ -136,10 +149,9 @@ pub fn render_admin(site: &Site, user: &CurrentUser, ctx: &BarContext) -> String
     if user.can("edit_pages") {
         add_new("page", admin("post-new.php?post_type=page"), &site.trx("Page", "post type singular name"));
     }
-    for custom in &site.types.post_types {
-        if (custom.public || custom.queryable) && user.can("edit_posts") {
-            let label = custom.singular_label();
-            add_new(&custom.name, admin(&format!("post-new.php?post_type={}", custom.name)), &label);
+    for (name, label) in new_content_types(site) {
+        if user.can("edit_posts") {
+            add_new(&name, admin(&format!("post-new.php?post_type={name}")), &label);
         }
     }
     if user.can("create_users") || user.can("promote_users") {
@@ -287,10 +299,9 @@ pub fn render_front(site: &Site, user: &CurrentUser, ctx: &FrontContext) -> Stri
     if user.can("edit_pages") {
         add_new("page", admin("post-new.php?post_type=page"), &site.trx("Page", "post type singular name"));
     }
-    for custom in &site.types.post_types {
-        if (custom.public || custom.queryable) && user.can("edit_posts") {
-            let label = custom.singular_label();
-            add_new(&custom.name, admin(&format!("post-new.php?post_type={}", custom.name)), &label);
+    for (name, label) in new_content_types(site) {
+        if user.can("edit_posts") {
+            add_new(&name, admin(&format!("post-new.php?post_type={name}")), &label);
         }
     }
     if user.can("create_users") || user.can("promote_users") {

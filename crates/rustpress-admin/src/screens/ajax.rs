@@ -169,6 +169,7 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse
                 can: &can,
                 nonce: &nonce,
                 verify_nonce: &verify,
+                user_agent: request.user_agent.as_deref(),
             };
             match env.site.plugins.admin_ajax_nopriv(&action, &ctx).await {
                 Ok(Some(answer)) => {
