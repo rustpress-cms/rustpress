@@ -17,6 +17,7 @@ rustpress-blocks.workspace = true
 rustpress-theme.workspace = true
 rustpress-rest.workspace = true
 rustpress-content.workspace = true
+futures.workspace = true
 regex.workspace = true
 chrono.workspace = true
 chrono-tz.workspace = true

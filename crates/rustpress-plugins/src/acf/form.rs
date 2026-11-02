@@ -139,18 +139,47 @@ fn acf_locale(site: &Site) -> String {
 }
 
 /// The form data of `acf_form_data()` that the footer reads back.
+#[derive(Default)]
 pub struct FormData {
     /// `null` without form data.
     pub screen: Json,
     pub post_id: Json,
     pub validation: Json,
+    /// What `acf_localize_data()` got before the scripts were enqueued (`postboxes` of the post screen).
+    pub postboxes: Option<Json>,
+    /// `acf_is_block_editor()`.
+    pub block_editor: bool,
+}
+
+/// When `acf_enqueue_uploader()` ran, which decides where its `toolbars` are in `acf.data`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Uploader {
+    No,
+    /// With `acf_enqueue_scripts()` (`'uploader' => true`).
+    Enqueue,
+    /// While a field was rendered.
+    Render,
+}
+
+/// The toolbars `acf_field_wysiwyg::acf_enqueue_uploader()` localizes on `acf/enqueue_uploader`.
+fn toolbars() -> Json {
+    json!({
+        "full": {"1": "formatselect,bold,italic,bullist,numlist,blockquote,alignleft,aligncenter,alignright,link,wp_more,spellchecker,fullscreen,wp_adv", "2": "strikethrough,hr,forecolor,pastetext,removeformat,charmap,outdent,indent,undo,redo,wp_help", "3": "", "4": ""},
+        "basic": {"1": "bold,italic,underline,blockquote,strikethrough,bullist,numlist,alignleft,aligncenter,alignright,undo,redo,link,fullscreen"},
+    })
 }
 
 /// `ACF_Assets::print_footer_scripts()`: `acf.data` with what the field types localized, and `acf.doAction(
 /// 'prepare' )`.
-pub(super) fn footer(site: &Site, form: &FormData, wp_version: &str, nonce: &str, user_agent: Option<&str>, can: &(dyn Fn(&str) -> bool + Send + Sync), uploader: bool) -> String {
+pub(super) fn footer(site: &Site, form: &FormData, wp_version: &str, nonce: &str, user_agent: Option<&str>, can: &(dyn Fn(&str) -> bool + Send + Sync), uploader: Uploader) -> String {
     let locale = site.locale_data();
     let mut data = Map::new();
+    if let Some(postboxes) = &form.postboxes {
+        data.insert("postboxes".into(), postboxes.clone());
+    }
+    if uploader == Uploader::Enqueue {
+        data.insert("toolbars".into(), toolbars());
+    }
     let select2 = [
         ("matches_1", "One result is available, press enter to select it."),
         ("matches_n", "%d results are available, use up and down arrow keys to navigate."),
@@ -217,14 +246,8 @@ pub(super) fn footer(site: &Site, form: &FormData, wp_version: &str, nonce: &str
     let mimes = rustpress_content::media::allowed_mime_types_for(site, &[], can, false, false);
     data.insert("mimeTypes".into(), Json::Object(mimes.into_iter().map(|(k, v)| (k, Json::String(v))).collect()));
     // `acf_field_wysiwyg::acf_enqueue_uploader()` on `acf/enqueue_uploader`: the toolbars of the editors.
-    if uploader {
-        data.insert(
-            "toolbars".into(),
-            json!({
-                "full": {"1": "formatselect,bold,italic,bullist,numlist,blockquote,alignleft,aligncenter,alignright,link,wp_more,spellchecker,fullscreen,wp_adv", "2": "strikethrough,hr,forecolor,pastetext,removeformat,charmap,outdent,indent,undo,redo,wp_help", "3": "", "4": ""},
-                "basic": {"1": "bold,italic,underline,blockquote,strikethrough,bullist,numlist,alignleft,aligncenter,alignright,undo,redo,link,fullscreen"},
-            }),
-        );
+    if uploader == Uploader::Render {
+        data.insert("toolbars".into(), toolbars());
     }
     data.insert("admin_url".into(), Json::String(format!("{}/", site.site_url("wp-admin"))));
     data.insert("ajaxurl".into(), Json::String(site.site_url("wp-admin/admin-ajax.php")));
@@ -237,7 +260,7 @@ pub(super) fn footer(site: &Site, form: &FormData, wp_version: &str, nonce: &str
     data.insert("screen".into(), form.screen.clone());
     data.insert("post_id".into(), form.post_id.clone());
     data.insert("validation".into(), form.validation.clone());
-    data.insert("editor".into(), Json::String("classic".into()));
+    data.insert("editor".into(), Json::String(if form.block_editor { "block" } else { "classic" }.into()));
     data.insert("is_pro".into(), Json::Bool(false));
     data.insert("debug".into(), Json::Bool(false));
     data.insert("StrictMode".into(), Json::Bool(false));
@@ -259,7 +282,7 @@ pub fn form_data(screen: &str, post_id: Value, nonce: &str) -> String {
 /// `acf_form_comment::comment_form_field_comment()`.
 pub async fn comment_form_field_comment(groups: &[FieldGroup], ctx: &CommentFormContext<'_>, html: String) -> Result<String> {
     let site = ctx.site;
-    let matcher = MatchContext { site, viewer: ctx.query.viewer.as_ref() };
+    let matcher = MatchContext { site, user: super::fields::MatchUser::of(ctx.query.viewer.as_ref()), admin: false };
     let screen = Screen::Comment { post_type: ctx.post.post_type.clone() };
     let mut visible = Vec::new();
     for group in groups {
@@ -271,7 +294,7 @@ pub async fn comment_form_field_comment(groups: &[FieldGroup], ctx: &CommentForm
         return Ok(html);
     }
     let wp_version = wp_version(ctx.services.wp_root());
-    let form = FormData { screen: Json::String("comment".into()), post_id: Json::Bool(false), validation: Json::Bool(true) };
+    let form = FormData { screen: Json::String("comment".into()), post_id: Json::Bool(false), validation: Json::Bool(true), ..Default::default() };
     let first = {
         let mut state = ctx.state.lock().expect("plugin state");
         let first = state.flags.insert("acf_enqueue_scripts");
@@ -282,7 +305,7 @@ pub async fn comment_form_field_comment(groups: &[FieldGroup], ctx: &CommentForm
     };
     if first {
         let can = |capability: &str| ctx.query.viewer.as_ref().is_some_and(|v| v.can(capability));
-        let footer = footer(site, &form, &wp_version, &ctx.query.create_nonce("acf_nonce"), ctx.query.user_agent.as_deref(), &can, false);
+        let footer = footer(site, &form, &wp_version, &ctx.query.create_nonce("acf_nonce"), ctx.query.user_agent.as_deref(), &can, Uploader::No);
         ctx.state.lock().expect("plugin state").footer_scripts.push(footer);
     }
     let nonce = |action: &str| ctx.query.create_nonce(action);

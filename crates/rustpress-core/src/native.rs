@@ -200,6 +200,40 @@ pub trait ActivePlugin: Send + Sync {
         Box::pin(async { Ok(MetaBoxes::default()) })
     }
 
+    /// `add_meta_boxes` of `post.php`/`post-new.php` ([`AdminContext::edited_post`] is the post): the plugin's boxes,
+    /// the boxes of WordPress it removes, and what it prints on the actions of the form.
+    fn post_meta_boxes<'a>(&'a self, _ctx: &'a AdminContext<'a>, _post: &'a rustpress_db::Post) -> BoxFuture<'a, Result<PostMetaBoxes>> {
+        Box::pin(async { Ok(PostMetaBoxes::default()) })
+    }
+
+    /// `save_post` of a post the administration saved (`edit_post()`), before its revision is made.
+    fn save_post<'a>(&'a self, _ctx: &'a PostSaved<'a>) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async { Ok(()) })
+    }
+
+    /// The `wp_save_post_revision_post_has_changed` filter while `edit_post()` saves: whether the post differs from
+    /// its latest revision.
+    fn revision_post_has_changed<'a>(&'a self, _ctx: &'a PostSaved<'a>, _latest_revision: u64, changed: bool) -> BoxFuture<'a, Result<bool>> {
+        Box::pin(async move { Ok(changed) })
+    }
+
+    /// `_wp_put_post_revision` while `edit_post()` saves: a revision of the post was made.
+    fn put_post_revision<'a>(&'a self, _ctx: &'a PostSaved<'a>, _revision_id: u64) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async { Ok(()) })
+    }
+
+    /// The plugin registers scripts on `init`, so `wp_scripts()` is built before `wp-admin/includes/admin.php` adds
+    /// its filters: `heartbeatSettings` misses what `wp_heartbeat_set_suspension()` adds.
+    fn registers_scripts_on_init(&self) -> bool {
+        false
+    }
+
+    /// `register_block_bindings_source()`: `(name, label, uses_context)` of the plugin's sources, as the editors list
+    /// them before those of WordPress.
+    fn block_bindings_sources(&self, _site: &Site) -> Vec<(String, String, Option<Vec<String>>)> {
+        Vec::new()
+    }
+
     /// `admin_footer`: printed after `#wpfooter`, before the media templates.
     fn admin_footer<'a>(&'a self, _ctx: &'a AdminContext<'a>) -> BoxFuture<'a, Result<String>> {
         Box::pin(async { Ok(String::new()) })
@@ -477,6 +511,8 @@ pub enum RestObject<'a> {
     Comment(&'a rustpress_db::Comment),
     /// A post type of `wp/v2/types`.
     PostType(&'a str),
+    /// A block template or template part of `wp/v2/templates` (`WP_Block_Template`, no post ID), by post type.
+    Template(&'a str),
 }
 
 /// A link of a REST response: `rel`, the attributes in their order, `href`.
@@ -498,6 +534,11 @@ pub struct RestFieldContext<'a> {
     pub route: &'a str,
     pub method: &'a str,
     pub query_string: &'a str,
+    /// The routes dispatched before in the same PHP process (the editors' preloads, embedded requests): what plugins
+    /// registered on their `rest_pre_dispatch` stays registered.
+    pub earlier_routes: &'a [String],
+    /// `rest_is_field_included()` for the request's `_fields`.
+    pub field_included: &'a (dyn Fn(&str) -> bool + Send + Sync),
 }
 
 /// A request as a plugin's own rewrite rules see it.
@@ -716,6 +757,50 @@ pub struct MetaBoxes {
     /// An editor with the default settings printed on `admin_footer` (priority 1) between the two parts (ACF's
     /// hidden `wp_editor( '', 'acf_content' )`).
     pub hidden_editor: Option<HiddenEditor>,
+}
+
+/// A box of a plugin: `add_meta_box( $id, $title, $callback, $screen, $context, $priority )` with what the callback
+/// prints.
+#[derive(Debug, Clone)]
+pub struct PluginMetaBox {
+    pub id: String,
+    /// The title, HTML.
+    pub title: String,
+    /// `side`, `normal`, `advanced` or a context of the plugin (ACF's `acf_after_title`).
+    pub context: String,
+    /// `high`, `core`, `default` or `low`.
+    pub priority: String,
+    pub html: String,
+}
+
+/// A piece of what a plugin prints on an action of the edit form.
+#[derive(Debug, Clone)]
+pub enum FormPart {
+    Html(String),
+    /// `do_meta_boxes( $screen, $context, $post )`.
+    MetaBoxes(String),
+}
+
+/// What a plugin adds to the edit screen of a post.
+#[derive(Debug, Clone, Default)]
+pub struct PostMetaBoxes {
+    pub boxes: Vec<PluginMetaBox>,
+    /// `remove_meta_box()`: the boxes of WordPress the plugin takes away.
+    pub removed: Vec<String>,
+    /// `edit_form_after_title` (the classic editor).
+    pub after_title: Vec<FormPart>,
+    /// `block_editor_meta_box_hidden_fields` (the block editor).
+    pub hidden_fields: Vec<FormPart>,
+    /// An editor printed on `admin_footer` (priority 1), as for [`MetaBoxes::hidden_editor`].
+    pub hidden_editor: Option<HiddenEditor>,
+}
+
+/// A post `edit_post()` saved, with the request that sent it.
+pub struct PostSaved<'a> {
+    pub ctx: &'a AdminContext<'a>,
+    pub writer: &'a rustpress_db::Writer,
+    /// The post as it was stored.
+    pub post: &'a rustpress_db::Post,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -952,6 +1037,10 @@ pub struct AdminContext<'a> {
     pub wp_version: &'a str,
     /// `ABSPATH`: where the WordPress files are.
     pub wp_root: &'a std::path::Path,
+    /// The global `$post` of `post.php`/`post-new.php`.
+    pub edited_post: Option<&'a rustpress_db::Post>,
+    /// `WP_Screen::is_block_editor()`.
+    pub block_editor: bool,
 }
 
 impl AdminContext<'_> {
@@ -1492,6 +1581,54 @@ impl Plugins {
             out.hidden_editor = out.hidden_editor.or(boxes.hidden_editor);
         }
         Ok(out)
+    }
+
+    /// `add_meta_boxes` of the plugins on the edit screen of `post`.
+    pub async fn post_meta_boxes(&self, ctx: &AdminContext<'_>, post: &rustpress_db::Post) -> Result<PostMetaBoxes> {
+        let mut out = PostMetaBoxes::default();
+        for plugin in self.hooks() {
+            let boxes = plugin.post_meta_boxes(ctx, post).await?;
+            out.boxes.extend(boxes.boxes);
+            out.removed.extend(boxes.removed);
+            out.after_title.extend(boxes.after_title);
+            out.hidden_fields.extend(boxes.hidden_fields);
+            out.hidden_editor = out.hidden_editor.or(boxes.hidden_editor);
+        }
+        Ok(out)
+    }
+
+    /// `save_post` of the plugins.
+    pub async fn save_post(&self, ctx: &PostSaved<'_>) -> Result<()> {
+        for plugin in self.hooks() {
+            plugin.save_post(ctx).await?;
+        }
+        Ok(())
+    }
+
+    /// `wp_save_post_revision_post_has_changed` of the plugins.
+    pub async fn revision_post_has_changed(&self, ctx: &PostSaved<'_>, latest_revision: u64, mut changed: bool) -> Result<bool> {
+        for plugin in self.hooks() {
+            changed = plugin.revision_post_has_changed(ctx, latest_revision, changed).await?;
+        }
+        Ok(changed)
+    }
+
+    /// `_wp_put_post_revision` of the plugins.
+    pub async fn put_post_revision(&self, ctx: &PostSaved<'_>, revision_id: u64) -> Result<()> {
+        for plugin in self.hooks() {
+            plugin.put_post_revision(ctx, revision_id).await?;
+        }
+        Ok(())
+    }
+
+    /// Whether a plugin registers scripts on `init`.
+    pub fn registers_scripts_on_init(&self) -> bool {
+        self.hooks().any(|p| p.registers_scripts_on_init())
+    }
+
+    /// The block bindings sources of the plugins.
+    pub fn block_bindings_sources(&self, site: &Site) -> Vec<(String, String, Option<Vec<String>>)> {
+        self.hooks().flat_map(|p| p.block_bindings_sources(site)).collect()
     }
 
     /// `admin_footer` of the plugins.

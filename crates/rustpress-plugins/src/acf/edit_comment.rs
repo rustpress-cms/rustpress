@@ -36,7 +36,7 @@ async fn requested_comment(ctx: &AdminContext<'_>) -> Result<Option<Comment>> {
 async fn groups_for<'g>(groups: &'g [FieldGroup], ctx: &AdminContext<'_>, comment: &Comment) -> Result<Vec<&'g FieldGroup>> {
     let post_type = ctx.site.db.post(comment.comment_post_id).await?.map(|p| p.post_type).unwrap_or_default();
     let screen = Screen::Comment { post_type };
-    let matcher = MatchContext { site: ctx.site, viewer: None };
+    let matcher = MatchContext { site: ctx.site, user: super::fields::MatchUser::Admin(ctx.can), admin: true };
     let mut out = Vec::new();
     for group in groups {
         if group.visible(&screen, &matcher).await? {
@@ -118,20 +118,20 @@ pub async fn footer_scripts(groups: &[FieldGroup], ctx: &AdminContext<'_>) -> Re
     if !is_comment_screen(ctx) {
         return Ok(String::new());
     }
-    let mut form = FormData { screen: Json::Null, post_id: Json::Null, validation: Json::Null };
+    let mut form = FormData::default();
     let mut uploader = false;
     if ctx.get("action") == Some("editcomment")
         && let Some(comment) = requested_comment(ctx).await?
         && !groups_for(groups, ctx, &comment).await?.is_empty()
     {
-        form = FormData { screen: Json::String("comment".into()), post_id: Json::String(format!("comment_{}", comment.comment_id)), validation: Json::Bool(true) };
+        form = FormData { screen: Json::String("comment".into()), post_id: Json::String(format!("comment_{}", comment.comment_id)), validation: Json::Bool(true), ..Default::default() };
         uploader = wants_uploader(&groups_for(groups, ctx, &comment).await?, (ctx.can)("upload_files"));
     }
-    Ok(super::form::footer(ctx.site, &form, ctx.wp_version, &(ctx.nonce)("acf_nonce"), ctx.user_agent, ctx.can, uploader))
+    Ok(super::form::footer(ctx.site, &form, ctx.wp_version, &(ctx.nonce)("acf_nonce"), ctx.user_agent, ctx.can, if uploader { super::form::Uploader::Render } else { super::form::Uploader::No }))
 }
 
 /// What the renderer asks of the page: nothing in the administration but the WordPress files.
-struct AdminServices(std::path::PathBuf);
+pub(super) struct AdminServices(pub std::path::PathBuf);
 
 impl rustpress_core::native::PageServices for AdminServices {
     fn excerpt<'a>(&'a self, _post: &'a rustpress_db::Post) -> futures::future::BoxFuture<'a, Result<String>> {

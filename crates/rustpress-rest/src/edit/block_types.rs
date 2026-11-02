@@ -237,6 +237,11 @@ impl Rest<'_> {
         self.site.i18n().pgettext("default", context, text)
     }
 
+    /// The variations of `core/navigation-link` and `core/post-terms`, which follow the registered types.
+    pub fn type_variations(&self) -> [(&'static str, Vec<Value>); 2] {
+        [("core/navigation-link", self.navigation_link_variations()), ("core/post-terms", self.post_terms_variations())]
+    }
+
     /// `block_core_navigation_link_build_variations()`.
     fn navigation_link_variations(&self) -> Vec<Value> {
         let variation = |name: &str, kind: &str, singular: &str| json!({"name": name, "title": rustpress_core::i18n::sprintf(&self.site.tr("%s link"), &[singular]), "description": " ", "attributes": {"type": name, "kind": kind}});
@@ -252,9 +257,21 @@ impl Rest<'_> {
         if self.theme.adds_theme_support("post-formats") {
             built_ins.push(json!({"name": "post_format", "title": self.site.tr("Post Format Link"), "description": self.site.tr("A link to a post format"), "attributes": {"type": "post_format", "kind": "taxonomy"}}));
         }
+        // `get_post_types( [ 'show_in_nav_menus' => true ] )`: the registrations in their order, then the types only
+        // the rules know.
         let types = &self.site.types;
-        built_ins.extend(types.post_types.iter().filter(|t| t.public && !matches!(t.name.as_str(), "post" | "page" | "attachment")).map(|t| variation(&t.name, "post-type", &t.singular_label())));
-        built_ins.extend(types.taxonomies.iter().filter(|t| t.public && !matches!(t.name.as_str(), "category" | "post_tag" | "post_format")).map(|t| variation(&t.name, "taxonomy", &t.singular_label())));
+        let registered = types.registered_types(false);
+        for t in registered.iter().filter(|t| t.show_in_nav_menus) {
+            let singular = t.singular.clone().unwrap_or_else(|| self.site.trx(if t.hierarchical { "Page" } else { "Post" }, "post type singular name"));
+            built_ins.push(variation(&t.name, "post-type", &singular));
+        }
+        built_ins.extend(types.post_types.iter().filter(|t| t.public && !matches!(t.name.as_str(), "post" | "page" | "attachment") && !registered.iter().any(|r| r.name == t.name)).map(|t| variation(&t.name, "post-type", &t.singular_label())));
+        let registered = types.registered_types(true);
+        for t in registered.iter().filter(|t| t.show_in_nav_menus) {
+            let singular = t.singular.clone().unwrap_or_else(|| self.site.trx(if t.hierarchical { "Category" } else { "Tag" }, "taxonomy singular name"));
+            built_ins.push(variation(&t.name, "taxonomy", &singular));
+        }
+        built_ins.extend(types.taxonomies.iter().filter(|t| t.public && !matches!(t.name.as_str(), "category" | "post_tag" | "post_format") && !registered.iter().any(|r| r.name == t.name)).map(|t| variation(&t.name, "taxonomy", &t.singular_label())));
         built_ins
     }
 
@@ -268,7 +285,12 @@ impl Rest<'_> {
             v
         };
         let mut out = vec![variation("category", self.site.taxonomy_label("category")), variation("post_tag", self.site.taxonomy_label("post_tag"))];
-        out.extend(self.site.types.taxonomies.iter().filter(|t| t.queryable && t.show_in_rest && !matches!(t.name.as_str(), "category" | "post_tag" | "post_format")).map(|t| variation(&t.name, t.plural_label())));
+        // `get_taxonomies( [ 'publicly_queryable' => true, 'show_in_rest' => true ] )`: the registrations first.
+        let registered = self.site.types.registered_types(true);
+        for t in registered.iter().filter(|t| t.publicly_queryable && t.show_in_rest) {
+            out.push(variation(&t.name, t.label.clone().unwrap_or_else(|| self.site.trx(if t.hierarchical { "Categories" } else { "Tags" }, "taxonomy general name"))));
+        }
+        out.extend(self.site.types.taxonomies.iter().filter(|t| t.queryable && t.show_in_rest && !matches!(t.name.as_str(), "category" | "post_tag" | "post_format") && !registered.iter().any(|r| r.name == t.name)).map(|t| variation(&t.name, t.plural_label())));
         out
     }
 

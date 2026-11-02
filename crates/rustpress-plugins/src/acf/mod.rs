@@ -14,6 +14,7 @@
 mod admin;
 mod dashicons;
 mod edit_comment;
+mod edit_post;
 mod fields;
 mod form;
 mod format;
@@ -72,7 +73,7 @@ pub struct Loaded {
 }
 
 /// What `ACF_Rest_Request::parse_request()` learns from the route.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 struct Request {
     /// `post`, `term`, `user` or `comment`.
     object_type: &'static str,
@@ -125,6 +126,22 @@ fn parse_request(site: &Site, route: &str) -> Option<Request> {
         }
     }
     None
+}
+
+/// `register_rest_field( $base, 'acf' )` happened for the object's type: on the current request or an earlier one of
+/// the same process (`ACF_Rest_Api::initialize()` on every `rest_pre_dispatch`). The terms controller names
+/// `post_tag` `tag`, so that field never shows; revisions are left out.
+fn registered_for(ctx: &RestFieldContext<'_>, object: RestObject<'_>, current: Option<&Request>) -> bool {
+    let base = match object {
+        RestObject::Post(post) if post.post_type != "revision" => post.post_type.clone(),
+        RestObject::Template(post_type) => post_type.to_owned(),
+        RestObject::Term(term) if term.taxonomy != "post_tag" => term.taxonomy.clone(),
+        RestObject::User(_) => "user".to_owned(),
+        RestObject::Comment(_) => "comment".to_owned(),
+        _ => return false,
+    };
+    let base_of = |r: &Request| r.child.clone().unwrap_or_else(|| r.sub_type.clone());
+    current.is_some_and(|r| base_of(r) == base) || ctx.earlier_routes.iter().filter_map(|route| parse_request(ctx.site, route)).any(|r| base_of(&r) == base)
 }
 
 /// `get_post_types( [ 'show_in_rest' => true ] )` with their REST bases (`acf_get_object_type_rest_base()`).
@@ -189,7 +206,7 @@ impl Loaded {
 
     /// `ACF_Rest_Api::get_field_groups_by_id()` and `get_fields()`: the fields of the visible groups that show in REST.
     async fn rest_fields<'a>(&'a self, target: &Target<'_>, ctx: &RestFieldContext<'_>) -> Result<Vec<&'a Field>> {
-        let matcher = MatchContext { site: ctx.site, viewer: ctx.query.viewer.as_ref() };
+        let matcher = MatchContext { site: ctx.site, user: fields::MatchUser::of(ctx.query.viewer.as_ref()), admin: false };
         let mut out = Vec::new();
         for group in self.groups.iter().filter(|g| g.show_in_rest) {
             if group.visible(&target.screen, &matcher).await? {
@@ -214,6 +231,33 @@ impl ActivePlugin for Loaded {
     fn admin_enqueue(&self, ctx: &rustpress_core::native::AdminContext<'_>, assets: &mut rustpress_core::native::Assets) {
         admin::admin_enqueue(ctx.site, assets);
         edit_comment::admin_enqueue(ctx, assets);
+        edit_post::admin_enqueue(ctx, assets);
+    }
+
+    fn post_meta_boxes<'a>(&'a self, ctx: &'a rustpress_core::native::AdminContext<'a>, post: &'a rustpress_db::Post) -> BoxFuture<'a, Result<rustpress_core::native::PostMetaBoxes>> {
+        Box::pin(edit_post::meta_boxes(&self.groups, ctx, post))
+    }
+
+    fn save_post<'a>(&'a self, ctx: &'a rustpress_core::native::PostSaved<'a>) -> BoxFuture<'a, Result<()>> {
+        Box::pin(save::save_post(&self.groups, ctx))
+    }
+
+    fn revision_post_has_changed<'a>(&'a self, ctx: &'a rustpress_core::native::PostSaved<'a>, latest_revision: u64, changed: bool) -> BoxFuture<'a, Result<bool>> {
+        Box::pin(save::revision_post_has_changed(&self.groups, ctx, latest_revision, changed))
+    }
+
+    fn put_post_revision<'a>(&'a self, ctx: &'a rustpress_core::native::PostSaved<'a>, revision_id: u64) -> BoxFuture<'a, Result<()>> {
+        Box::pin(save::maybe_save_revision(&self.groups, ctx, revision_id))
+    }
+
+    /// `ACF_Assets::register_scripts()` runs on `init`.
+    fn registers_scripts_on_init(&self) -> bool {
+        true
+    }
+
+    /// `ACF\Blocks\Bindings::register_binding_sources()`.
+    fn block_bindings_sources(&self, site: &Site) -> Vec<(String, String, Option<Vec<String>>)> {
+        vec![("acf/field".into(), site.i18n().pgettext("acf", "The core ACF block binding source name for fields on the current page", "Custom Fields"), None)]
     }
 
     fn comment_meta_boxes<'a>(&'a self, ctx: &'a rustpress_core::native::AdminContext<'a>, comment: &'a rustpress_db::Comment) -> BoxFuture<'a, Result<rustpress_core::native::MetaBoxes>> {
@@ -225,7 +269,12 @@ impl ActivePlugin for Loaded {
     }
 
     fn admin_print_footer_scripts<'a>(&'a self, ctx: &'a rustpress_core::native::AdminContext<'a>) -> BoxFuture<'a, Result<String>> {
-        Box::pin(edit_comment::footer_scripts(&self.groups, ctx))
+        Box::pin(async move {
+            match edit_post::footer_scripts(&self.groups, ctx).await? {
+                Some(footer) => Ok(footer),
+                None => edit_comment::footer_scripts(&self.groups, ctx).await,
+            }
+        })
     }
 
     fn admin_body_class(&self, ctx: &rustpress_core::native::AdminContext<'_>, classes: String) -> String {
@@ -263,8 +312,16 @@ impl ActivePlugin for Loaded {
 
     fn rest_fields<'a>(&'a self, object: RestObject<'a>, ctx: &'a RestFieldContext<'a>) -> BoxFuture<'a, Result<Vec<(String, serde_json::Value)>>> {
         Box::pin(async move {
-            let Some(request) = parse_request(ctx.site, ctx.route) else { return Ok(Vec::new()) };
-            let Some(target) = self.target(object, &request, ctx).await? else { return Ok(Vec::new()) };
+            let request = parse_request(ctx.site, ctx.route);
+            let target = match &request {
+                Some(request) => self.target(object, request, ctx).await?,
+                None => None,
+            };
+            let (Some(_), Some(target)) = (&request, target) else {
+                // The field is registered for the object's type, but the request names no object of it:
+                // `load_fields()` finds no ID or no object type.
+                return Ok(if registered_for(ctx, object, request.as_ref()) { vec![("acf".to_owned(), serde_json::Value::Array(Vec::new()))] } else { Vec::new() });
+            };
             // `ACF_Rest_Api::load_fields()`: `$request->get_param( 'acf_format' )`, else the `light` default.
             let standard = acf_format(ctx.query_string).as_deref() == Some("standard");
             let global_post = match object {
@@ -291,6 +348,10 @@ impl ActivePlugin for Loaded {
     fn rest_links<'a>(&'a self, object: RestObject<'a>, ctx: &'a RestFieldContext<'a>) -> BoxFuture<'a, Result<Vec<RestLink>>> {
         Box::pin(async move {
             let Some(request) = parse_request(ctx.site, ctx.route) else { return Ok(Vec::new()) };
+            // The links are gathered while `load_fields()` runs, which it does not when `_fields` leaves `acf` out.
+            if !(ctx.field_included)("acf") {
+                return Ok(Vec::new());
+            }
             // `ACF_Rest_Embed_Links::hook_link_handlers()`: posts, terms and users; comments keep theirs.
             if matches!(object, RestObject::Comment(_)) {
                 return Ok(Vec::new());

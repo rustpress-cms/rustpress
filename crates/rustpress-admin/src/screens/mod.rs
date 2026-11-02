@@ -226,6 +226,8 @@ impl Ctx<'_> {
             user_agent: self.request.user_agent.as_deref(),
             wp_version: &self.env.loader.version,
             wp_root: self.env.loader.includes.parent().unwrap_or(&self.env.loader.includes),
+            edited_post: None,
+            block_editor: false,
         }
     }
 
@@ -606,6 +608,19 @@ async fn plugin_page(ctx: &Ctx<'_>, plugin: &dyn ActivePlugin, page: &AdminPage)
     render(ctx, &screen, &content, &assets).await
 }
 
+/// `media_buttons()` counts its calls in a static variable: only the first button of a page has the `id`, wherever
+/// the editors and fields that print one sit.
+fn first_media_button_id(body: String) -> String {
+    const ID: &str = " id=\"insert-media-button\" class=\"button insert-media add_media\"";
+    let Some(first) = body.find(ID) else { return body };
+    let split = first + ID.len();
+    let (head, tail) = body.split_at(split);
+    if !tail.contains(ID) {
+        return body;
+    }
+    format!("{head}{}", tail.replace(ID, " class=\"button insert-media add_media\""))
+}
+
 /// The frame around `content` for the signed-in user.
 pub async fn render(ctx: &Ctx<'_>, screen: &Screen, content: &str, assets: &Assets) -> AdminResponse {
     let env = ctx.env;
@@ -616,7 +631,9 @@ pub async fn render(ctx: &Ctx<'_>, screen: &Screen, content: &str, assets: &Asse
     // `admin_enqueue_scripts` and `admin_notices` of the plugins.
     let hook_suffix = screen.hook_suffix.clone().unwrap_or_else(|| screen.file.clone());
     let parts = ctx.plugin_parts();
-    let plugin_ctx = ctx.plugin_context(&parts, &hook_suffix);
+    let mut plugin_ctx = ctx.plugin_context(&parts, &hook_suffix);
+    plugin_ctx.edited_post = screen.edited_post.as_ref();
+    plugin_ctx.block_editor = screen.block_editor;
     let plugin_assets = env.site.plugins.admin_assets(&plugin_ctx);
     let notices = env.site.plugins.admin_notices(&plugin_ctx).await.unwrap_or_else(|e| {
         tracing::error!(error = %e, "plugin notices failed");
@@ -777,7 +794,7 @@ pub async fn render(ctx: &Ctx<'_>, screen: &Screen, content: &str, assets: &Asse
             "after".into(),
         ));
     }
-    let body = chrome::render(&chrome_env, screen, content, &assets);
+    let body = first_media_button_id(chrome::render(&chrome_env, screen, content, &assets));
     // Output buffers plugins start on `admin_init`.
     let body = env.site.plugins.admin_page_output(&plugin_ctx, body);
     AdminResponse { status: 200, headers: page_headers(), cookies: Vec::new(), body, bytes: Vec::new() }

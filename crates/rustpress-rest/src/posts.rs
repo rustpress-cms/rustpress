@@ -1,7 +1,6 @@
 //! `wp/v2/posts` and `wp/v2/pages` (`WP_REST_Posts_Controller`).
 
 use rustpress_blocks::content::{post_class, the_content, the_title_for};
-use rustpress_blocks::excerpt::get_the_excerpt;
 use rustpress_core::formatting::{convert_chars, wpautop};
 use rustpress_core::types::PostTypeInfo;
 use rustpress_db::{OrderBy, Order, Post, PostQuery};
@@ -351,7 +350,7 @@ impl Rest<'_> {
             } else {
                 // The password check passed (`check_password_required()`): the excerpt is made like for any post.
                 let open = if protected { Arc::new(Post { post_password: String::new(), ..post.clone() }) } else { shared.clone() };
-                let raw = get_the_excerpt(&env, &open).await?;
+                let raw = self.excerpt(&env, &open).await?;
                 wpautop(&convert_chars(&self.site.texturize(&raw)))
             };
             data.insert("excerpt".into(), json!({"rendered": excerpt, "protected": protected}));

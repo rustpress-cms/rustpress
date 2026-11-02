@@ -1226,12 +1226,13 @@ fn comments_bubble(ctx: &Ctx<'_>, post: &Post, pending: u64) -> String {
     out
 }
 
-/// The excerpt of a row in the excerpt view: `esc_html( get_the_excerpt() )`, in a span for a protected post.
+/// The excerpt of a row in the excerpt view: `esc_html( get_the_excerpt() )` (101 words in the administration), in a
+/// span for a protected post.
 async fn list_excerpt(ctx: &Ctx<'_>, post: &Post) -> String {
     let query = rustpress_core::QueryResult::blank();
     let env = rustpress_blocks::Env::new(ctx.site(), &query, ctx.env.theme, ctx.env.registry);
     let shared = std::sync::Arc::new(post.clone());
-    let excerpt = rustpress_blocks::excerpt::get_the_excerpt(&env, &shared).await.unwrap_or_default();
+    let excerpt = rustpress_blocks::excerpt::get_the_excerpt_of_length(&env, &shared, 101).await.unwrap_or_default();
     if rustpress_blocks::content::post_password_required(post) {
         format!("<span class=\"protected-post-excerpt\">{}</span>", esc_html(&excerpt))
     } else {

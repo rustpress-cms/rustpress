@@ -808,6 +808,20 @@ async fn form(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, is_new: bool) -> Admi
     let screen_id = info.name.clone();
     let columns = super::common::layout_columns(ctx, &screen_id, 2).await;
     h.push_str(&format!("\n<div id=\"poststuff\">\n<div id=\"post-body\" class=\"metabox-holder columns-{}\">\n<div id=\"post-body-content\">\n\n", if columns == 1 { 1 } else { 2 }));
+    // The boxes of the screen: WordPress's, then those of the plugins' `add_meta_boxes`, without the ones they removed.
+    let mut boxes = register_meta_boxes(ctx, post, info, is_new, sticky).await;
+    let plugin_boxes = {
+        let parts = ctx.plugin_parts();
+        let mut plugin_ctx = ctx.plugin_context(&parts, if is_new { "post-new.php" } else { "post.php" });
+        plugin_ctx.edited_post = Some(post);
+        site.plugins.post_meta_boxes(&plugin_ctx, post).await.unwrap_or_else(|e| {
+            tracing::error!(error = %e, "plugin post meta boxes failed");
+            rustpress_core::native::PostMetaBoxes::default()
+        })
+    };
+    boxes.retain(|b| !plugin_boxes.removed.contains(&b.id));
+    boxes.extend(plugin_boxes.boxes.iter().cloned().map(super::meta_boxes::MetaBox::from_plugin));
+    let state = super::meta_boxes::BoxState::load(ctx, &screen_id, &info.name).await;
     if supports("title") {
         h.push_str(&format!(
             "<div id=\"titlediv\">\n<div id=\"titlewrap\">\n\t\t<label class=\"screen-reader-text\" id=\"title-prompt-text\" for=\"title\">{}</label>\n\t<input type=\"text\" name=\"post_title\" size=\"30\" value=\"{}\" id=\"title\" spellcheck=\"true\" autocomplete=\"off\" />\n",
@@ -840,6 +854,23 @@ async fn form(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, is_new: bool) -> Admi
             h.push_str("\t</div>\n\t\t\t");
         }
         h.push_str(&format!("</div>\n\t<input type=\"hidden\" id=\"samplepermalinknonce\" name=\"samplepermalinknonce\" value=\"{}\" /></div><!-- /titlediv -->\n", ctx.create_nonce("samplepermalink")));
+    }
+    // `edit_form_after_title`: after the indentation of the `<?php` that follows the title.
+    let after_title: String = plugin_boxes
+        .after_title
+        .iter()
+        .map(|part| match part {
+            rustpress_core::native::FormPart::Html(html) => html.clone(),
+            rustpress_core::native::FormPart::MetaBoxes(context) => super::meta_boxes::do_meta_boxes(ctx, &boxes, context, &state),
+        })
+        .collect();
+    let mut editor_indented = true;
+    if !after_title.is_empty() {
+        if h.ends_with("<!-- /titlediv -->\n") {
+            h.push('\t');
+            editor_indented = false;
+        }
+        h.push_str(&after_title);
     }
     let expand_setting = super::common::user_setting(ctx, "editor_expand").await.is_none_or(|v| v == "on");
     let mut editor_preinit = String::new();
@@ -886,7 +917,7 @@ async fn form(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, is_new: bool) -> Admi
                 1,
             );
         }
-        h.push_str(&editor.html);
+        h.push_str(if editor_indented { &editor.html } else { editor.html.strip_prefix('\t').unwrap_or(&editor.html) });
         editor_scripts = editor.scripts.clone();
         editor_footer = editor.init.clone();
         editor_preinit = editor.preinit.clone();
@@ -911,8 +942,6 @@ async fn form(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, is_new: bool) -> Admi
         ));
     }
     h.push_str("\t</div><!-- /post-body-content -->\n\n<div id=\"postbox-container-1\" class=\"postbox-container\">\n");
-    let boxes = register_meta_boxes(ctx, post, info, is_new, sticky).await;
-    let state = super::meta_boxes::BoxState::load(ctx, &screen_id, &info.name).await;
     h.push_str(&super::meta_boxes::do_meta_boxes(ctx, &boxes, "side", &state));
     h.push_str("</div>\n<div id=\"postbox-container-2\" class=\"postbox-container\">\n");
     h.push_str(&super::meta_boxes::do_meta_boxes(ctx, &boxes, "normal", &state));
@@ -924,6 +953,17 @@ async fn form(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, is_new: bool) -> Admi
     h.push('\n');
     if post_title.is_empty() {
         h.push_str("<script>\ntry{document.post.title.focus();}catch(e){}\n</script>\n");
+    }
+    // A plugin's editor on `admin_footer` (priority 1) joins the settings of the page's editors, after the reply form's.
+    let mut footer_first = String::new();
+    if let Some(hidden) = &plugin_boxes.hidden_editor {
+        let editor_post = super::editor::EditorPost::of(ctx, post).await;
+        let (html, entry) = super::editor::default_editor_for(ctx, &hidden.id, "", false, Some(&editor_post));
+        footer_first = format!("{}{html}{}", hidden.before, hidden.after);
+        if let Some(mce) = &entry.tinymce {
+            editor_preinit = editor_preinit.replacen("}},\n\t\t\tqtInit:", &format!("}},'{}':{mce}}},\n\t\t\tqtInit:", entry.id), 1);
+        }
+        editor_preinit = editor_preinit.replacen("}},\n\t\t\tref:", &format!("}},'{}':{{id:\"{}\",buttons:\"{}\"}}}},\n\t\t\tref:", entry.id, entry.id, entry.quicktags), 1);
     }
     // `_WP_Editors::editor_js()` prints the settings in the footer, before the scripts that start the editors.
     let editor_footer = format!("{editor_preinit}{editor_footer}");
@@ -946,7 +986,7 @@ async fn form(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, is_new: bool) -> Admi
         editor_expand: supports("editor").then(|| !super::common::wp_is_mobile(ctx)).filter(|shown| *shown).map(|_| expand_setting),
         ..Default::default()
     };
-    let screen = Screen { file: file.into(), parent_file, submenu_file: Some(submenu_file), post_type: info.name.clone(), title: window_title, help: Some(help), view_item, options: Some(options), ..Default::default() };
+    let screen = Screen { file: file.into(), parent_file, submenu_file: Some(submenu_file), post_type: info.name.clone(), title: window_title, help: Some(help), view_item, options: Some(options), edited_post: Some(post.clone()), ..Default::default() };
     // The order of the enqueues: post.php/post-new.php (autosave, the comment scripts), edit-form-advanced.php (post,
     // editor-expand, thickbox and the media library for featured images), then what `_WP_Editors::enqueue_scripts()`
     // adds when the footer is printed.
@@ -980,9 +1020,12 @@ async fn form(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, is_new: bool) -> Admi
     if media_buttons {
         footer_time.extend(["thickbox".into(), "media-upload".into(), "wp-embed".into()]);
     }
+    // `array_keys( $shortcode_tags )`: WordPress's, then the plugins'.
+    let mut word_count_shortcodes: Vec<String> = ["wp_caption", "caption", "gallery", "playlist", "audio", "video", "embed"].iter().map(|s| (*s).to_owned()).collect();
+    word_count_shortcodes.extend(site.plugins.shortcode_tags().into_iter().map(str::to_owned));
     let localize = vec![
         ("autosave".to_owned(), "autosaveL10n".to_owned(), serde_json::json!({"autosaveInterval": "60", "blog_id": "1"})),
-        ("word-count".to_owned(), "wordCountL10n".to_owned(), serde_json::json!({"type": "words", "shortcodes": ["wp_caption", "caption", "gallery", "playlist", "audio", "video", "embed"]})),
+        ("word-count".to_owned(), "wordCountL10n".to_owned(), serde_json::json!({"type": "words", "shortcodes": word_count_shortcodes})),
     ];
     let mut assets = Assets {
         early_scripts: early,
@@ -1019,6 +1062,7 @@ async fn form(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, is_new: bool) -> Admi
         assets.inline.extend(media.inline);
         assets.pre_footer.push_str(&media.pre_footer);
     }
+    assets.footer_first = footer_first;
     let comment_tables = usize::from(boxes.iter().any(|b| b.id == "commentsdiv")) + usize::from(supports("comments"));
     assets.pre_footer.push_str(&super::meta_boxes::edit_footer_notices(ctx, &screen_id, comment_tables));
     render(ctx, &screen, &h, &assets).await
@@ -1181,6 +1225,33 @@ pub async fn post_php(ctx: &Ctx<'_>) -> AdminResponse {
     }
 }
 
+/// The plugins' part in `wp_insert_post()` while `edit_post()` saves.
+struct PluginInsertHooks<'a> {
+    ctx: &'a rustpress_core::native::AdminContext<'a>,
+    writer: &'a rustpress_db::Writer,
+}
+
+impl PluginInsertHooks<'_> {
+    async fn with_post<T>(&self, post_id: u64, default: T, f: impl AsyncFnOnce(&rustpress_core::native::PostSaved<'_>) -> rustpress_core::Result<T>) -> rustpress_core::Result<T> {
+        let Some(post) = self.ctx.site.db.post(post_id).await? else { return Ok(default) };
+        f(&rustpress_core::native::PostSaved { ctx: self.ctx, writer: self.writer, post: &post }).await
+    }
+}
+
+impl rustpress_content::content::InsertHooks for PluginInsertHooks<'_> {
+    fn save_post(&self, post_id: u64) -> futures::future::BoxFuture<'_, rustpress_core::Result<()>> {
+        Box::pin(self.with_post(post_id, (), async |saved| self.ctx.site.plugins.save_post(saved).await))
+    }
+
+    fn revision_post_has_changed(&self, post_id: u64, latest_revision: u64, changed: bool) -> futures::future::BoxFuture<'_, rustpress_core::Result<bool>> {
+        Box::pin(self.with_post(post_id, changed, async move |saved| self.ctx.site.plugins.revision_post_has_changed(saved, latest_revision, changed).await))
+    }
+
+    fn put_post_revision(&self, post_id: u64, revision_id: u64) -> futures::future::BoxFuture<'_, rustpress_core::Result<()>> {
+        Box::pin(self.with_post(post_id, (), async move |saved| self.ctx.site.plugins.put_post_revision(saved, revision_id).await))
+    }
+}
+
 /// `edit_post()` and `redirect_post()`.
 async fn edit_post(ctx: &Ctx<'_>, post_id: u64) -> AdminResponse {
     let request = ctx.request;
@@ -1288,7 +1359,17 @@ async fn edit_post(ctx: &Ctx<'_>, post_id: u64) -> AdminResponse {
     };
     let tags: Option<Vec<String>> = field("tax_input[post_tag]").map(|raw| raw.split(',').map(|t| t.trim().to_owned()).filter(|t| !t.is_empty()).collect());
     let parent = field("parent_id").map(|p| p.parse::<u64>().unwrap_or(0));
-    let author = field("post_author_override").and_then(|a| a.parse::<u64>().ok()).filter(|_| ctx.can("edit_others_posts"));
+    // `_wp_translate_postdata()`: the override, else the form's author, else the current user (the block editor's
+    // meta box form has no author); another author needs `edit_others_posts`.
+    let intval = |v: &str| v.trim_start().chars().take_while(char::is_ascii_digit).collect::<String>().parse::<u64>().unwrap_or(0);
+    let given = |name: &str| field(name).filter(|v| !v.is_empty() && *v != "0");
+    let author_id = given("post_author_override").or_else(|| given("post_author")).map_or(ctx.user.id, intval);
+    if author_id != ctx.user.id && !ctx.can(if page { "edit_others_pages" } else { "edit_others_posts" }) {
+        return die(ctx.env, 500, "WordPress &rsaquo; Error", &format!("<p>{}</p>", if page { tr("Sorry, you are not allowed to edit pages as this user.") } else { tr("Sorry, you are not allowed to edit posts as this user.") }));
+    }
+    let author = Some(author_id);
+    // `wp_insert_post()`: a template the theme does not have for the type becomes `default`.
+    let page_template = field("page_template").filter(|t| !t.is_empty()).map(|t| if t == "default" || super::inline_edit::page_templates(ctx, &info).iter().any(|(name, _)| name == t) { t.to_owned() } else { "default".to_owned() });
     let data = PostData {
         id: Some(post_id),
         post_author: author,
@@ -1307,13 +1388,23 @@ async fn edit_post(ctx: &Ctx<'_>, post_id: u64) -> AdminResponse {
         post_category: categories,
         tags_input: tags,
         edit_date,
+        page_template,
         ..Default::default()
     };
-    if let Err(e) = content.insert_post(&data).await {
+    if let Some(writer) = ctx.env.writer {
+        writer.update_post_meta(post_id, "_edit_last", &ctx.user.id.to_string()).await.or_log();
+    }
+    let parts = ctx.plugin_parts();
+    let mut plugin_ctx = ctx.plugin_context(&parts, "post.php");
+    plugin_ctx.edited_post = Some(&post);
+    let saved = match ctx.env.writer {
+        Some(writer) => content.insert_post_with(&data, &PluginInsertHooks { ctx: &plugin_ctx, writer }).await,
+        None => content.insert_post(&data).await,
+    };
+    if let Err(e) = saved {
         return die(ctx.env, 200, "WordPress &rsaquo; Error", &format!("<p>{}</p>", esc_html(&e.to_string())));
     }
     if let Some(writer) = ctx.env.writer {
-        writer.update_post_meta(post_id, "_edit_last", &ctx.user.id.to_string()).await.or_log();
         writer.update_post_meta(post_id, "_edit_lock", &format!("{}:{}", ctx.env.now, ctx.user.id)).await.or_log();
         // Sticky posts
         if info.name == "post" && ctx.can("edit_others_posts") && can_publish {

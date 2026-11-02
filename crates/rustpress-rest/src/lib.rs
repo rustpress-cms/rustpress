@@ -117,11 +117,13 @@ pub struct Rest<'a> {
     /// The route of the request (`/wp/v2/posts`) and its query string, for the fields of plugins; an embedded
     /// request has its own while it runs (`rest_pre_dispatch` fires for it).
     pub(crate) route: std::sync::Mutex<(String, String)>,
+    /// The routes dispatched before this one in the same process, embedded ones included.
+    pub(crate) earlier_routes: std::sync::Mutex<Vec<String>>,
 }
 
 impl<'a> Rest<'a> {
     pub fn new(site: &'a Site, theme: &'a Theme, registry: &'a Registry) -> Self {
-        Self { site, theme, registry, blank: QueryResult::blank(), state: Default::default(), access: None, request: None, patterns: Default::default(), host: String::new(), remote_patterns: Default::default(), admin: false, mailer: None, route: Default::default() }
+        Self { site, theme, registry, blank: QueryResult::blank(), state: Default::default(), access: None, request: None, patterns: Default::default(), host: String::new(), remote_patterns: Default::default(), admin: false, mailer: None, route: Default::default(), earlier_routes: Default::default() }
     }
 
     /// The host of the request: client-side media processing is on for `localhost` and for HTTPS.
@@ -139,6 +141,17 @@ impl<'a> Rest<'a> {
     /// A request of a screen of the administration (`is_admin()` is true).
     pub fn in_admin(mut self) -> Self {
         self.admin = true;
+        self
+    }
+
+    /// `get_the_excerpt()`; in the administration `block_core_post_excerpt_excerpt_length()` makes `excerpt_length` 101.
+    pub(crate) async fn excerpt(&self, env: &rustpress_blocks::env::Env<'_>, post: &std::sync::Arc<rustpress_db::Post>) -> rustpress_blocks::Result<String> {
+        if self.admin { rustpress_blocks::excerpt::get_the_excerpt_of_length(env, post, 101).await } else { rustpress_blocks::excerpt::get_the_excerpt(env, post).await }
+    }
+
+    /// The routes the same PHP process dispatched before (the preloads of an editor page).
+    pub fn after_routes(self, routes: Vec<String>) -> Self {
+        *self.earlier_routes.lock().unwrap_or_else(|e| e.into_inner()) = routes;
         self
     }
 
@@ -160,7 +173,7 @@ impl<'a> Rest<'a> {
             blank.raw_query = if query.is_empty() { format!("rest_route={route}") } else { format!("rest_route={route}&{query}") };
         }
         blank.http_host = Some(self.host.clone()).filter(|h| !h.is_empty());
-        let scoped = Rest { site: self.site, theme: self.theme, registry: self.registry, blank, state: Default::default(), access: None, request: None, patterns: Default::default(), host: self.host.clone(), remote_patterns: Default::default(), admin: self.admin, mailer: self.mailer.clone(), route: std::sync::Mutex::new((route.to_owned(), query.to_owned())) };
+        let scoped = Rest { site: self.site, theme: self.theme, registry: self.registry, blank, state: Default::default(), access: None, request: None, patterns: Default::default(), host: self.host.clone(), remote_patterns: Default::default(), admin: self.admin, mailer: self.mailer.clone(), route: std::sync::Mutex::new((route.to_owned(), query.to_owned())), earlier_routes: std::sync::Mutex::new(self.earlier_routes.lock().unwrap_or_else(|e| e.into_inner()).clone()) };
         // The terms of the posts of a list are read once for the request (`update_object_term_cache()`).
         rustpress_db::Db::with_term_cache(scoped.handle_request(route, query)).await
     }
@@ -185,7 +198,7 @@ impl<'a> Rest<'a> {
             let viewer = rustpress_core::Viewer::new(user.id, move |capability| user.can(capability));
             blank.viewer = Some(viewer.with_identity(&login, &name, &email, false, move |action| nonce.as_ref().map(|n| n(action)).unwrap_or_default()));
         }
-        let scoped = Rest { site: self.site, theme: self.theme, registry: self.registry, blank, state: Default::default(), access, request: Some(request), patterns: Default::default(), host: self.host.clone(), remote_patterns: Default::default(), admin: self.admin, mailer: self.mailer.clone(), route: std::sync::Mutex::new((route.to_owned(), query.to_owned())) };
+        let scoped = Rest { site: self.site, theme: self.theme, registry: self.registry, blank, state: Default::default(), access, request: Some(request), patterns: Default::default(), host: self.host.clone(), remote_patterns: Default::default(), admin: self.admin, mailer: self.mailer.clone(), route: std::sync::Mutex::new((route.to_owned(), query.to_owned())), earlier_routes: std::sync::Mutex::new(self.earlier_routes.lock().unwrap_or_else(|e| e.into_inner()).clone()) };
         // The terms of the posts of a list are read once for the request (`update_object_term_cache()`).
         rustpress_db::Db::with_term_cache(scoped.handle_request(route, query)).await
     }
@@ -460,6 +473,7 @@ impl<'a> Rest<'a> {
             params.set("per_page", "100");
         }
         let outer = std::mem::replace(&mut *self.route.lock().unwrap_or_else(|e| e.into_inner()), (route.clone(), query.clone()));
+        self.earlier_routes.lock().unwrap_or_else(|e| e.into_inner()).push(outer.0.clone());
         let outcome = self.dispatch_embedded(&route, &params).await;
         *self.route.lock().unwrap_or_else(|e| e.into_inner()) = outer;
         outcome
@@ -636,9 +650,46 @@ impl<'a> Rest<'a> {
                     }
                 }
             }
+            self.add_plugin_statuses(&mut entry);
             routes.insert(route, entry);
         }
         routes
+    }
+
+    /// The post statuses plugins register go into the status enums of the baked routes: `get_post_stati( [
+    /// 'internal' => false ] )` after `private`, `get_post_stati()` before `any`.
+    fn add_plugin_statuses(&self, value: &mut Value) {
+        const PUBLIC: [&str; 5] = ["publish", "future", "draft", "pending", "private"];
+        const ALL: [&str; 13] = ["publish", "future", "draft", "pending", "private", "trash", "auto-draft", "inherit", "request-pending", "request-confirmed", "request-failed", "request-completed", "any"];
+        let statuses: Vec<Value> = self.site.plugins.post_statuses(self.site).into_iter().map(|(slug, _)| Value::from(slug)).collect();
+        if statuses.is_empty() {
+            return;
+        }
+        fn walk(value: &mut Value, statuses: &[Value]) {
+            match value {
+                Value::Object(map) => {
+                    for (key, child) in map.iter_mut() {
+                        if key == "enum"
+                            && let Value::Array(items) = child
+                        {
+                            let names: Vec<&str> = items.iter().filter_map(Value::as_str).collect();
+                            if names == PUBLIC {
+                                items.extend(statuses.iter().cloned());
+                            } else if names == ALL {
+                                let any = items.pop();
+                                items.extend(statuses.iter().cloned());
+                                items.extend(any);
+                            }
+                        } else {
+                            walk(child, statuses);
+                        }
+                    }
+                }
+                Value::Array(items) => items.iter_mut().for_each(|item| walk(item, statuses)),
+                _ => {}
+            }
+        }
+        walk(value, &statuses);
     }
 
     /// `rest_handle_options_request()`: the description of the route a path matches (`get_data_for_route()` in the
@@ -669,6 +720,7 @@ impl<'a> Rest<'a> {
         let methods = entry.get("methods").and_then(Value::as_array).map(|m| m.iter().filter_map(Value::as_str).map(str::to_owned).collect()).unwrap_or_default();
         let mut data = Value::Object(data);
         self.add_registered_meta(route, &mut data);
+        self.add_plugin_statuses(&mut data);
         Some((data, methods))
     }
 
@@ -680,6 +732,7 @@ impl<'a> Rest<'a> {
             "posts" => "post".to_owned(),
             "pages" => "page".to_owned(),
             "media" => "attachment".to_owned(),
+            "blocks" => "wp_block".to_owned(),
             other => match self.site.types.post_types.iter().find(|t| t.rest_base() == other) {
                 Some(info) => info.name.clone(),
                 None => return,

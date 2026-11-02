@@ -295,13 +295,14 @@ impl Rest<'_> {
         if self.can("edit_css") || self.can("edit_theme_options") {
             links.add("wp:action-edit-css", vec![], self.rest_url(&format!("wp/v2/global-styles/{id}")));
         }
-        let body = json!({
-            "id": id,
-            "title": {"raw": if post.post_title.is_empty() { "Custom Styles".to_owned() } else { post.post_title.clone() }, "rendered": if post.post_title.is_empty() { "Custom Styles".to_owned() } else { post.post_title.clone() }},
-            "settings": stored.get("settings").cloned().filter(|v| !is_empty_config(v)).unwrap_or_else(rustpress_blocks::php_json::empty_object),
-            "styles": stored.get("styles").cloned().filter(|v| !is_empty_config(v)).unwrap_or_else(rustpress_blocks::php_json::empty_object),
-            "_links": links.finish(),
-        });
+        let mut body = Map::new();
+        body.insert("id".into(), json!(id));
+        body.insert("title".into(), json!({"raw": if post.post_title.is_empty() { "Custom Styles".to_owned() } else { post.post_title.clone() }, "rendered": if post.post_title.is_empty() { "Custom Styles".to_owned() } else { post.post_title.clone() }}));
+        body.insert("settings".into(), stored.get("settings").cloned().filter(|v| !is_empty_config(v)).unwrap_or_else(rustpress_blocks::php_json::empty_object));
+        body.insert("styles".into(), stored.get("styles").cloned().filter(|v| !is_empty_config(v)).unwrap_or_else(rustpress_blocks::php_json::empty_object));
+        body.extend(self.plugin_fields(rustpress_core::native::RestObject::Post(&post)).await?);
+        body.insert("_links".into(), links.finish());
+        let body = Value::Object(body);
         let mut resp = Resp::item(body);
         resp.allow = Some("GET, POST, PUT, PATCH".to_owned());
         Ok(Ok(resp))
