@@ -270,14 +270,18 @@ pub async fn comment_form_field_comment(groups: &[FieldGroup], ctx: &CommentForm
         ctx.state.lock().expect("plugin state").footer_scripts.push(footer);
     }
     let nonce = |action: &str| ctx.query.create_nonce(action);
+    let can = |capability: &str| ctx.query.viewer.as_ref().is_some_and(|v| v.can(capability));
+    // `user_can_richedit()` for a visitor: the browser decides.
+    let rich_edit = rich_edit_browser(ctx.query.user_agent.as_deref().unwrap_or_default());
     // `_acf_settings_uploader()`: the media library only for who may upload files.
     let uploader = if ctx.query.viewer.as_ref().is_some_and(|v| v.can("upload_files")) { "wp" } else { "basic" };
-    let render = Ctx { site, nonce: &nonce, services: ctx.services, admin: false, uploader, wants_uploader: Default::default() };
+    let render = Ctx { site, nonce: &nonce, services: ctx.services, admin: false, uploader, wants_uploader: Default::default(), can: &can, rich_edit, default_editor: if rich_edit { "tinymce" } else { "html" }, wysiwyg_height: 300 };
     let mut out = html;
     out.push_str(&form_data("comment", Value::Bool(false), &nonce("comment")));
     out.push_str("<div class=\"acf-comment-fields acf-fields -clear\">");
-    // `acf_get_value( false, $field )`: the global post (`get_the_ID()`).
-    let object = Object { kind: MetaKind::Post, id: ctx.post.id };
+    // `acf_get_value( false, $field )`: `acf_decode_post_id( false )` names no object, so the fields show their
+    // defaults (after the types' `load_value()`).
+    let object = Object { kind: MetaKind::Post, id: 0 };
     for group in visible {
         let instruction = group.setting("instruction_placement", "label");
         for field in &group.fields {
@@ -290,6 +294,17 @@ pub async fn comment_form_field_comment(groups: &[FieldGroup], ctx: &CommentForm
     }
     out.push_str("</div>");
     Ok(out)
+}
+
+/// The browser part of `user_can_richedit()`.
+fn rich_edit_browser(agent: &str) -> bool {
+    let mobile = ["Mobile", "Android", "Silk/", "Kindle", "BlackBerry", "Opera Mini", "Opera Mobi"].iter().any(|m| agent.contains(m));
+    let ie = agent.contains("MSIE") || agent.contains("Trident/");
+    let safari = agent.contains("Safari") && !agent.contains("Chrome") && !agent.contains("Chromium");
+    if safari {
+        return !mobile || agent.split("AppleWebKit/").nth(1).and_then(|r| r.split('.').next()).and_then(|v| v.parse::<u32>().ok()).is_some_and(|v| v >= 534);
+    }
+    !ie && (agent.contains("Gecko") || agent.contains("Chrome") || agent.contains("Edg/") || (agent.contains("Opera") && !mobile))
 }
 
 /// `$wp_version` of the WordPress files.

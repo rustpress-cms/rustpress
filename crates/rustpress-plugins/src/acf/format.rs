@@ -222,14 +222,13 @@ fn term_object(term: &rustpress_db::Term, group: i64) -> Value {
 /// `acf_get_post_types()`: every registered post type except ACF's own and the built-in ones that are not public.
 pub fn all_post_types(site: &Site) -> Vec<String> {
     let mut out: Vec<String> = ["post", "page", "attachment"].iter().map(|s| (*s).to_owned()).collect();
-    for info in site.types.rewrite_post_types().iter().chain(site.types.post_types.iter()) {
-        if !out.contains(&info.name) && !info.name.starts_with("acf-") {
-            out.push(info.name.clone());
-        }
-    }
-    for name in &site.types.hidden_post_types {
-        if !out.contains(name) && !name.starts_with("acf-") && !rustpress_core::types::is_internal_post_type(name) {
-            out.push(name.clone());
+    let known = |name: &str| site.types.rewrite_post_types().iter().chain(site.types.post_types.iter()).any(|t| t.name == name) || site.types.hidden_post_types.iter().any(|h| h == name);
+    // In the order of registration, then the ones no registration names.
+    let registered = site.types.registered_post_types.iter().map(|r| r.name.as_str()).filter(|name| known(name));
+    let rest = site.types.rewrite_post_types().iter().chain(site.types.post_types.iter()).map(|t| t.name.as_str()).chain(site.types.hidden_post_types.iter().map(String::as_str));
+    for name in registered.chain(rest) {
+        if !out.iter().any(|o| o == name) && !name.starts_with("acf-") && !rustpress_core::types::is_internal_post_type(name) {
+            out.push(name.to_owned());
         }
     }
     out

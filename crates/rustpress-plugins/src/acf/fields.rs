@@ -48,7 +48,7 @@ pub struct FieldGroup {
 
 /// The defaults of a field type (`acf_field::$defaults`), which `acf_field::validate_field()` adds for the keys a field
 /// does not set. `custom_choice_button_text` of checkboxes is translated, so the renderer adds it.
-fn type_defaults(kind: &str) -> Vec<(&'static str, Value)> {
+pub(super) fn type_defaults(kind: &str) -> Vec<(&'static str, Value)> {
     let empty = || Value::Array(Vec::new());
     let s = string;
     let i = Value::Int;

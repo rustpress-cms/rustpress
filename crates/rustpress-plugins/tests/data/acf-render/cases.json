@@ -60,5 +60,13 @@
   {"name": "post-object-empty", "field": {"key": "field_po1", "label": "Related", "name": "related", "type": "post_object", "post_type": ["post"]}, "value": null},
   {"name": "post-object-multiple", "field": {"key": "field_po2", "label": "Many", "name": "many", "type": "post_object", "multiple": 1, "allow_null": 1}, "value": []},
   {"name": "page-link-archive", "field": {"key": "field_pl1", "label": "Target", "name": "target", "type": "page_link"}, "value": "http://localhost:8080/category/x/"},
-  {"name": "user-empty", "field": {"key": "field_us1", "label": "Owner", "name": "owner", "type": "user", "allow_null": 1}, "value": null}
+  {"name": "user-empty", "field": {"key": "field_us1", "label": "Owner", "name": "owner", "type": "user", "allow_null": 1}, "value": null},
+  {"name": "icon-picker-empty", "field": {"key": "field_ip1", "label": "Icon", "name": "icon", "type": "icon_picker"}, "value": {"type": null, "value": null}},
+  {"name": "icon-picker-url", "field": {"key": "field_ip2", "label": "Icon2", "name": "icon2", "type": "icon_picker", "tabs": ["url"]}, "value": {"type": "url", "value": "https://example.com/a.svg"}},
+  {"name": "icon-picker-dashicon", "field": {"key": "field_ip3", "label": "Icon3", "name": "icon3", "type": "icon_picker", "tabs": ["dashicons", "url"]}, "value": {"type": "dashicons", "value": "dashicons-yes"}},
+  {"name": "taxonomy-select-empty", "field": {"key": "field_tx1", "label": "Cats", "name": "cats", "type": "taxonomy", "field_type": "select", "allow_null": 1}, "value": null},
+  {"name": "taxonomy-multi-empty", "field": {"key": "field_tx2", "label": "Tags", "name": "tagsx", "type": "taxonomy", "taxonomy": "post_tag", "field_type": "multi_select", "add_term": 0}, "value": []},
+  {"name": "taxonomy-missing", "field": {"key": "field_tx3", "label": "None", "name": "nonex", "type": "taxonomy", "taxonomy": "no_such_tax"}, "value": null},
+  {"name": "relationship-search", "field": {"key": "field_rl1", "label": "Rel", "name": "rel", "type": "relationship", "filters": ["search"], "min": "1", "max": "3"}, "value": null},
+  {"name": "relationship-nofilters", "field": {"key": "field_rl2", "label": "Rel2", "name": "rel2", "type": "relationship", "filters": []}, "value": ""}
 ]

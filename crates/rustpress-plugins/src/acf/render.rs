@@ -24,6 +24,14 @@ pub struct Ctx<'a> {
     pub uploader: &'a str,
     /// A field asked for the media scripts (`acf_enqueue_uploader()`).
     pub wants_uploader: std::sync::atomic::AtomicBool,
+    /// `current_user_can( $capability )`.
+    pub can: &'a (dyn Fn(&str) -> bool + Send + Sync),
+    /// `user_can_richedit()`.
+    pub rich_edit: bool,
+    /// `wp_default_editor()`: `tinymce` or `html`.
+    pub default_editor: &'a str,
+    /// `acf_get_user_setting( 'wysiwyg_height', 300 )`.
+    pub wysiwyg_height: i64,
 }
 
 impl Ctx<'_> {
@@ -383,10 +391,22 @@ impl RenderField {
     /// `acf_get_field()`: the stored field after `acf_validate_field()` (the generic defaults, the wrapper, `_name`),
     /// with the input prefix `acf` and the type's `load_field()`.
     pub fn load(field: &Field, ctx: &Ctx<'_>) -> Self {
-        let mut items = match &field.settings {
+        let items = match &field.settings {
             Value::Array(items) => items.clone(),
             _ => Vec::new(),
         };
+        let mut f = Self::raw(items, field.sub_fields.clone());
+        if f.kind() == "checkbox" && !isset(f.get("custom_choice_button_text")) {
+            f.set("custom_choice_button_text", string(&ctx.tr("Add new choice")));
+        }
+        f.set("prefix", string("acf"));
+        f.load_field();
+        f
+    }
+
+    /// `acf_validate_field()` of a field array (one that does not come from `acf_get_field()`): the generic defaults,
+    /// those of the type, the wrapper and `_name`.
+    pub fn raw(mut items: Vec<(Key, Value)>, sub_fields: Vec<Field>) -> Self {
         let generic: [(&str, Value); 16] = [
             ("ID", Value::Int(0)),
             ("key", string("")),
@@ -412,17 +432,23 @@ impl RenderField {
                 None => out.push((k, v)),
             }
         }
-        let mut f = Self { items: out, sub_fields: field.sub_fields.clone() };
+        let mut f = Self { items: out, sub_fields };
+        for (name, default) in super::fields::type_defaults(&f.kind()) {
+            if !isset(f.get(name)) {
+                f.set(name, default);
+            }
+        }
         let wrapper = super::php::parse_args(f.get("wrapper").unwrap_or(&Value::Null), Value::Array(vec![(key("width"), string("")), (key("class"), string("")), (key("id"), string(""))]));
         f.set("wrapper", wrapper);
         let name = f.get("name").cloned().unwrap_or(Value::Null);
         f.set("_name", name);
         f.set("_valid", Value::Int(1));
-        if f.kind() == "checkbox" && !isset(f.get("custom_choice_button_text")) {
-            f.set("custom_choice_button_text", string(&ctx.tr("Add new choice")));
-        }
-        f.set("prefix", string("acf"));
-        // The types' `load_field()`.
+        f
+    }
+
+    /// The types' `load_field()` (`acf/load_field`).
+    fn load_field(&mut self) {
+        let f = self;
         match f.kind().as_str() {
             "accordion" => {
                 f.set("name", string(""));
@@ -450,7 +476,6 @@ impl RenderField {
             }
             _ => {}
         }
-        f
     }
 
     /// `acf_prepare_field()`: the input name from the key and prefix, the id from the name.
@@ -638,6 +663,10 @@ async fn render_field(ctx: &Ctx<'_>, mut field: RenderField) -> Result<String> {
         "post_object" => render_post_object(ctx, field).await?,
         "page_link" => render_page_link(ctx, field).await?,
         "user" => render_user(ctx, field).await?,
+        "taxonomy" => render_taxonomy(ctx, field).await?,
+        "relationship" => render_relationship(ctx, field).await?,
+        "icon_picker" => render_icon_picker(ctx, field).await?,
+        "wysiwyg" => render_wysiwyg(ctx, field),
         _ => String::new(),
     })
 }
@@ -1749,6 +1778,526 @@ async fn render_user(ctx: &Ctx<'_>, mut field: RenderField) -> Result<String> {
     Ok(render_select(ctx, field, "select"))
 }
 
+/// `get_taxonomy( $name )`: whether the taxonomy exists, and its plural name and "Add" label.
+fn taxonomy_labels(site: &Site, name: &str) -> Option<(String, String, bool)> {
+    let core = matches!(name, "category" | "post_tag" | "post_format" | "nav_menu" | "link_category" | "wp_pattern_category");
+    let info = site.types.taxonomy(name);
+    if !core && info.is_none() {
+        return None;
+    }
+    let hierarchical = match name {
+        "category" | "wp_pattern_category" => true,
+        "post_tag" | "post_format" | "nav_menu" | "link_category" => false,
+        _ => info.is_some_and(|t| t.hierarchical),
+    };
+    let add = match name {
+        "post_tag" => site.tr("Add Tag"),
+        "category" => site.tr("Add Category"),
+        _ => site.tr(if hierarchical { "Add Category" } else { "Add Tag" }),
+    };
+    Some((site.taxonomy_label(name), add, hierarchical))
+}
+
+/// `acf_get_term_title()`: the name (or `(no title)`) after a dash per ancestor.
+async fn term_title(ctx: &Ctx<'_>, term: &rustpress_db::Term, hierarchical: bool) -> Result<String> {
+    let mut title = term.name.clone();
+    if title.is_empty() {
+        title = ctx.tr("(no title)");
+    }
+    if hierarchical {
+        let mut parent = term.parent;
+        let mut seen = vec![term.term_id];
+        let mut prefix = String::new();
+        while parent != 0 && !seen.contains(&parent) {
+            seen.push(parent);
+            let Some(p) = ctx.site.db.term_by_id(Some(&term.taxonomy), parent).await? else { break };
+            prefix.push_str("- ");
+            parent = p.parent;
+        }
+        title = format!("{prefix}{title}");
+    }
+    Ok(title)
+}
+
+/// `ACF_Taxonomy_Field_Walker` walked like `Walker::walk( $terms, 0 )`.
+struct TermWalker<'a> {
+    kind: String,
+    name: Value,
+    selected: &'a [Value],
+}
+
+impl TermWalker<'_> {
+    fn start_el(&self, out: &mut String, term: &rustpress_db::Term) {
+        let id = Value::Int(term.term_id as i64);
+        let is_selected = in_array(&id, self.selected);
+        let mut attrs = Attrs::new(&[("type", string(&self.kind)), ("name", self.name.clone()), ("value", id)]);
+        if is_selected {
+            attrs.set("checked", Value::Bool(true));
+        }
+        out.push_str(&format!(
+            "\n<li data-id=\"{}\"><label{}><input {}/> <span>{}</span></label>",
+            term.term_id,
+            if is_selected { " class=\"selected\"" } else { "" },
+            esc_attrs(&attrs),
+            esc_html_acf(&string(&term.name))
+        ));
+    }
+
+    fn display(&self, out: &mut String, term: &rustpress_db::Term, children: &mut std::collections::HashMap<u64, Vec<rustpress_db::Term>>, max_depth: usize, depth: usize) {
+        self.start_el(out, term);
+        if (max_depth == 0 || max_depth > depth + 1)
+            && let Some(kids) = children.remove(&term.term_id)
+        {
+            let indent = "\t".repeat(depth);
+            out.push_str(&format!("{indent}<ul class='children acf-bl'>\n"));
+            for child in &kids {
+                self.display(out, child, children, max_depth, depth + 1);
+            }
+            out.push_str(&format!("{indent}</ul>\n"));
+        }
+        out.push_str("</li>\n");
+    }
+
+    fn walk(&self, terms: &[rustpress_db::Term]) -> String {
+        let mut out = String::new();
+        if terms.is_empty() {
+            return out;
+        }
+        let mut top: Vec<rustpress_db::Term> = terms.iter().filter(|t| t.parent == 0).cloned().collect();
+        let mut children: std::collections::HashMap<u64, Vec<rustpress_db::Term>> = std::collections::HashMap::new();
+        let mut order: Vec<u64> = Vec::new();
+        let root_parent = if top.is_empty() { Some(terms[0].parent) } else { None };
+        if let Some(root) = root_parent {
+            top = terms.iter().filter(|t| t.parent == root).cloned().collect();
+        }
+        for t in terms {
+            let is_top = match root_parent {
+                Some(root) => t.parent == root,
+                None => t.parent == 0,
+            };
+            if !is_top {
+                if !children.contains_key(&t.parent) {
+                    order.push(t.parent);
+                }
+                children.entry(t.parent).or_default().push(t.clone());
+            }
+        }
+        for t in &top {
+            self.display(&mut out, t, &mut children, 0, 0);
+        }
+        // Orphans whose parents are not in the list.
+        for parent in order {
+            if let Some(orphans) = children.remove(&parent) {
+                let mut none = std::collections::HashMap::new();
+                for t in &orphans {
+                    self.display(&mut out, t, &mut none, 1, 0);
+                }
+            }
+        }
+        out
+    }
+}
+
+/// `acf_field_taxonomy::render_field()`: a select of the chosen terms (`select`, `multi_select`), or every term of the
+/// taxonomy as a checkbox or radio list (`wp_list_categories()` with ACF's walker).
+async fn render_taxonomy(ctx: &Ctx<'_>, mut field: RenderField) -> Result<String> {
+    let value = get_array(field.get("value"));
+    field.set("value", Value::Array(value.clone()));
+    let nonce = (ctx.nonce)(&format!("acf_field_taxonomy_{}", field.str("key")));
+    let div = Attrs::new(&[
+        ("class", string("acf-taxonomy-field")),
+        ("data-save", field.get("save_terms").cloned().unwrap_or(Value::Null)),
+        ("data-ftype", field.get("field_type").cloned().unwrap_or(Value::Null)),
+        ("data-taxonomy", field.get("taxonomy").cloned().unwrap_or(Value::Null)),
+        ("data-allow_null", field.get("allow_null").cloned().unwrap_or(Value::Null)),
+        ("data-nonce", string(&nonce)),
+    ]);
+    let taxonomy = field.str("taxonomy");
+    let Some((label, add_label, hierarchical)) = taxonomy_labels(ctx.site, &taxonomy) else { return Ok(String::new()) };
+    let mut out = format!("<div {}>\n\t\t\t", esc_attrs(&div));
+    if field.truthy("add_term") && (ctx.can)("manage_categories") {
+        out.push_str(&format!("\t<div class=\"acf-actions -hover\">\n\t\t<a href=\"#\" class=\"acf-icon -plus acf-js-tooltip small\" data-name=\"add\" title=\"{}\"></a>\n\t</div>\n\t\t\t\t", esc_attr(&add_label)));
+    }
+    let field_type = field.str("field_type");
+    match field_type.as_str() {
+        "select" | "multi_select" => {
+            field.set("multiple", Value::Int(i64::from(field_type == "multi_select")));
+            let mut choices: Vec<(Key, Value)> = Vec::new();
+            if !value.is_empty() {
+                for (_, v) in &value {
+                    let id = super::php::intval(Some(v));
+                    if id <= 0 {
+                        continue;
+                    }
+                    if let Some(term) = ctx.site.db.term_by_id(Some(&taxonomy), id as u64).await? {
+                        let title = term_title(ctx, &term, hierarchical).await?;
+                        super::php::set(&mut choices, &term.term_id.to_string(), string(&title));
+                    }
+                }
+            }
+            field.set("type", string("select"));
+            field.set("ui", Value::Int(1));
+            field.set("ajax", Value::Int(1));
+            field.set("nonce", string(&nonce));
+            field.set("choices", Value::Array(choices));
+            out.push_str(&render_select(ctx, field, "select"));
+        }
+        "radio" | "checkbox" => {
+            out.push_str(&hidden_input(&Attrs::new(&[("type", string("hidden")), ("name", field.get("name").cloned().unwrap_or(Value::Null))])));
+            if field_type == "checkbox" {
+                field.append("name", "[]");
+            }
+            let mut ul = Attrs::new(&[("class", string("acf-checkbox-list acf-bl")), ("role", string(if field_type == "radio" { "radiogroup" } else { "group" }))]);
+            if field.truthy("id") {
+                ul.set("aria-labelledby", string(&format!("{}-label", field.str("id"))));
+            }
+            let terms = ctx.site.db.terms(&taxonomy).await?;
+            let list = if terms.is_empty() {
+                rustpress_core::i18n::sprintf(&ctx.trx("No %s", "No Terms"), &[&label])
+            } else {
+                let selected: Vec<Value> = value.iter().map(|(_, v)| v.clone()).collect();
+                TermWalker { kind: field_type.clone(), name: field.get("name").cloned().unwrap_or(Value::Null), selected: &selected }.walk(&terms)
+            };
+            out.push_str(&format!("<div class=\"categorychecklist-holder\">\n\t<ul {}>\n\t\t\t{list}\t</ul>\n</div>\n\t\t\t", esc_attrs(&ul)));
+        }
+        _ => {}
+    }
+    out.push_str("</div>\n\t\t\t");
+    Ok(out)
+}
+
+/// `acf_get_post_type_label()`: the singular name, the name itself for a type that does not exist.
+fn post_type_singular(site: &Site, name: &str) -> String {
+    match name {
+        "post" => site.trx("Post", "post type singular name"),
+        "page" => site.trx("Page", "post type singular name"),
+        "attachment" => site.trx("Media", "post type singular name"),
+        other => match site.types.post_type(other).or_else(|| site.types.rewrite_post_types().iter().find(|t| t.name == other)) {
+            Some(t) => t.singular_label(),
+            None => site.types.registered_post_types.iter().find(|r| r.name == other).and_then(|r| r.singular.clone().or_else(|| r.label.clone())).unwrap_or_else(|| other.to_owned()),
+        },
+    }
+}
+
+/// Labels that more than one entry shares get the entry's name added (`acf_get_pretty_post_types()`,
+/// `acf_get_taxonomy_labels()`).
+fn disambiguate(items: Vec<(String, String)>) -> Vec<(String, String)> {
+    let count = |label: &str| items.iter().filter(|(_, l)| l == label).count();
+    items.iter().map(|(name, label)| (name.clone(), if count(label) > 1 { format!("{label} ({name})") } else { label.clone() })).collect()
+}
+
+/// `acf_get_taxonomies()`: the public ones of WordPress and every registered one; with post types, the taxonomies
+/// of those types (`acf_get_taxonomies_for_post_type()`).
+fn acf_taxonomies(site: &Site, post_types: Option<&[String]>) -> Vec<String> {
+    let registered: Vec<&rustpress_core::types::TaxonomyInfo> = site.types.rewrite_taxonomies().iter().chain(site.types.taxonomies.iter()).collect();
+    if let Some(types) = post_types {
+        let mut out: Vec<String> = Vec::new();
+        for post_type in types {
+            let core: &[&str] = if post_type == "post" { &["category", "post_tag", "post_format"] } else { &[] };
+            for name in core.iter().map(|s| (*s).to_owned()).chain(registered.iter().filter(|t| t.object_types.iter().any(|o| o == post_type)).map(|t| t.name.clone())) {
+                if !out.contains(&name) {
+                    out.push(name);
+                }
+            }
+        }
+        return out;
+    }
+    let mut out: Vec<String> = ["category", "post_tag", "post_format"].iter().map(|s| (*s).to_owned()).collect();
+    for t in registered {
+        if !out.contains(&t.name) && !matches!(t.name.as_str(), "nav_menu" | "link_category" | "wp_theme" | "wp_template_part_area" | "wp_pattern_category") {
+            out.push(t.name.clone());
+        }
+    }
+    out
+}
+
+/// `acf_get_taxonomy_labels()` of a list of taxonomies.
+fn taxonomy_singulars(site: &Site, taxonomies: &[String]) -> Vec<(String, String)> {
+    disambiguate(taxonomies.iter().map(|t| (t.clone(), site.taxonomy_singular_label(t))).collect())
+}
+
+/// `_get_term_children( 0, $terms )`: the terms below `parent` depth first, in the order of the list.
+fn term_children(parent: u64, terms: &[rustpress_db::Term], seen: &mut Vec<u64>) -> Vec<rustpress_db::Term> {
+    let mut out = Vec::new();
+    for term in terms {
+        if term.term_id == parent || term.parent != parent || seen.contains(&term.term_id) {
+            continue;
+        }
+        seen.push(term.term_id);
+        out.push(term.clone());
+        out.extend(term_children(term.term_id, terms, seen));
+    }
+    out
+}
+
+/// The choices of the taxonomy filter: `{taxonomy}:{slug}` by the taxonomy's label (`acf_get_choices_from_terms()`
+/// and `acf_get_grouped_terms()`).
+async fn term_filter_choices(ctx: &Ctx<'_>, field: &RenderField, post_types: &[String]) -> Result<Vec<(Key, Value)>> {
+    let site = ctx.site;
+    let mut groups: Vec<(Key, Value)> = Vec::new();
+    let mut push = |groups: &mut Vec<(Key, Value)>, label: &str, id: String, text: String| {
+        let k = key(label);
+        match groups.iter_mut().find(|(gk, _)| key_eq(gk, &k)) {
+            Some((_, Value::Array(items))) => super::php::set(items, &id, string(&text)),
+            _ => groups.push((k, Value::Array(vec![(key(&id), string(&text))]))),
+        }
+    };
+    let hierarchical = |name: &str| taxonomy_labels(site, name).is_some_and(|(_, _, h)| h);
+    let chosen = get_array(field.get("taxonomy"));
+    if !chosen.is_empty() {
+        let labels = taxonomy_singulars(site, &acf_taxonomies(site, None));
+        for (_, v) in chosen {
+            let encoded = text(Some(&v));
+            let Some((taxonomy, slug)) = encoded.split_once(':') else { continue };
+            let Some(term) = site.db.term_by_slug(taxonomy, slug).await? else { continue };
+            let label = labels.iter().find(|(t, _)| *t == term.taxonomy).map(|(_, l)| l.clone()).unwrap_or_default();
+            let title = term_title(ctx, &term, hierarchical(&term.taxonomy)).await?;
+            push(&mut groups, &label, format!("{}:{}", term.taxonomy, term.slug), title);
+        }
+        return Ok(groups);
+    }
+    let taxonomies = if post_types.is_empty() { acf_taxonomies(site, None) } else { acf_taxonomies(site, Some(post_types)) };
+    for (taxonomy, label) in taxonomy_singulars(site, &taxonomies) {
+        let mut terms = site.db.terms(&taxonomy).await?;
+        if terms.is_empty() {
+            continue;
+        }
+        if hierarchical(&taxonomy) {
+            let ordered = term_children(0, &terms, &mut Vec::new());
+            if ordered.len() == terms.len() {
+                terms = ordered;
+            }
+        }
+        for term in &terms {
+            let title = term_title(ctx, term, hierarchical(&taxonomy)).await?;
+            push(&mut groups, &label, format!("{}:{}", term.taxonomy, term.slug), title);
+        }
+    }
+    Ok(groups)
+}
+
+/// `acf_field_relationship::render_field()`. The featured image of the `elements` setting is left out.
+async fn render_relationship(ctx: &Ctx<'_>, field: RenderField) -> Result<String> {
+    let site = ctx.site;
+    let post_types: Vec<String> = get_array(field.get("post_type")).iter().map(|(_, v)| text(Some(v))).collect();
+    let filters: Vec<Value> = get_array(field.get("filters")).into_iter().map(|(_, v)| v).collect();
+    let has = |name: &str| in_array(&string(name), &filters);
+    let mut post_type_choices: Vec<(Key, Value)> = Vec::new();
+    if has("post_type") {
+        post_type_choices.push((key(""), string(&ctx.tr("Select post type"))));
+        let types = if post_types.is_empty() { super::format::all_post_types(site) } else { post_types.clone() };
+        for (name, label) in disambiguate(types.iter().map(|t| (t.clone(), post_type_singular(site, t))).collect()) {
+            super::php::set(&mut post_type_choices, &name, string(&label));
+        }
+    }
+    let mut taxonomy_choices: Vec<(Key, Value)> = Vec::new();
+    if has("taxonomy") {
+        taxonomy_choices.push((key(""), string(&ctx.tr("Select taxonomy"))));
+        for (k, v) in term_filter_choices(ctx, &field, &post_types).await? {
+            if !taxonomy_choices.iter().any(|(existing, _)| key_eq(existing, &k)) {
+                taxonomy_choices.push((k, v));
+            }
+        }
+    }
+    let atts = Attrs::new(&[
+        ("id", field.get("id").cloned().unwrap_or(Value::Null)),
+        ("class", string(&format!("acf-relationship {}", field.str("class")))),
+        ("data-min", field.get("min").cloned().unwrap_or(Value::Null)),
+        ("data-max", field.get("max").cloned().unwrap_or(Value::Null)),
+        ("data-s", string("")),
+        ("data-paged", Value::Int(1)),
+        ("data-post_type", string("")),
+        ("data-taxonomy", string("")),
+        ("data-nonce", string(&(ctx.nonce)(&format!("acf_field_relationship_{}", field.str("key"))))),
+    ]);
+    let hidden = hidden_input(&Attrs::new(&[("name", field.get("name").cloned().unwrap_or(Value::Null)), ("value", string(""))]));
+    let mut out = format!("<div {}>\n\t\n\t\t\t{hidden}\t\n\t\t\t", esc_attrs(&atts));
+    if !filters.is_empty() {
+        out.push_str(&format!("\t<div class=\"filters -f{}\">\n\t\t\t\t", filters.len()));
+        if has("search") {
+            out.push_str(&format!("\t\t<div class=\"filter -search\">\n\t\t\t\t\t{}\t\t</div>\n\t\t\t\t\t", text_input(Attrs::new(&[("placeholder", string(&ctx.tr("Search..."))), ("data-filter", string("s"))]))));
+        }
+        if has("post_type") {
+            out.push_str(&format!("\t\t<div class=\"filter -post_type\">\n\t\t\t\t\t{}\t\t</div>\n\t\t\t\t\t", select_input(Attrs::new(&[("choices", Value::Array(post_type_choices)), ("data-filter", string("post_type"))]))));
+        }
+        if has("taxonomy") {
+            out.push_str(&format!("\t\t<div class=\"filter -taxonomy\">\n\t\t\t\t\t{}\t\t</div>\n\t\t\t\t", select_input(Attrs::new(&[("choices", Value::Array(taxonomy_choices)), ("data-filter", string("taxonomy"))]))));
+        }
+        out.push_str("\t\t\n\t</div>\n\t\t\t");
+    }
+    out.push_str("\t\n\t<div class=\"selection\">\n\t\t<div class=\"choices\">\n\t\t\t<ul class=\"acf-bl list choices-list\"></ul>\n\t\t</div>\n\t\t<div class=\"values\">\n\t\t\t<ul class=\"acf-bl list values-list\">\n\t\t\t\t");
+    if field.truthy("value") {
+        let ids: Vec<u64> = get_array(field.get("value")).iter().map(|(_, v)| super::php::intval(Some(v)).max(0) as u64).collect();
+        let types = if post_types.is_empty() { super::format::all_post_types(site) } else { post_types.clone() };
+        for post in site.db.acf_get_posts(&ids, &types).await? {
+            let title = esc_html(&post_title(ctx, &post.post).await?);
+            out.push_str(&format!(
+                "\t\t\t\t\t<li>\n\t\t\t\t\t\t{}\t\t\t\t\t\t<span tabindex=\"0\" data-id=\"{}\" class=\"acf-rel-item acf-rel-item-remove\">\n\t\t\t\t\t\t\t\t{}\t\t\t\t\t\t\t<a href=\"#\" class=\"acf-icon -minus small dark\" data-name=\"remove_item\"></a>\n\t\t\t\t\t\t</span>\n\t\t\t\t\t</li>\n\t\t\t\t\t\t",
+                hidden_input(&Attrs::new(&[("name", string(&format!("{}[]", field.str("name")))), ("value", Value::Int(post.post.id as i64))])),
+                post.post.id,
+                kses(&title)
+            ));
+        }
+        out.push_str("\t\t\t\t");
+    }
+    out.push_str("\t\t\t</ul>\n\t\t</div>\n\t</div>\n</div>\n\t\t\t");
+    Ok(out)
+}
+
+/// `acf_field_icon_picker::get_tabs()`.
+fn icon_tabs(ctx: &Ctx<'_>) -> Vec<(&'static str, String)> {
+    let mut tabs = vec![("dashicons", esc_html(&ctx.tr("Dashicons")))];
+    if (ctx.can)("upload_files") {
+        tabs.push(("media_library", esc_html(&ctx.tr("Media Library"))));
+    }
+    tabs.push(("url", esc_html(&ctx.tr("URL"))));
+    tabs
+}
+
+/// `acf_field_icon_picker::render_icon_list_tab()` of the Dashicons.
+fn icon_list_tab(ctx: &Ctx<'_>, tab: &str) -> String {
+    let search = text_input(Attrs::new(&[("class", string("acf-icon-list-search-input")), ("placeholder", string(&esc_html(&ctx.tr("Search icons...")))), ("type", string("search"))]));
+    let no_results = rustpress_core::i18n::sprintf(&esc_html(&ctx.tr("No search results for '%s'")), &["<span class=\"acf-invalid-icon-list-search-term\"></span>"]);
+    format!(
+        "\t\t\t<div class=\"acf-icon-list-search-wrap\">\n\t\t\t\t{search}\t\t\t</div>\n\t\t\t<div\n\t\t\t\tclass=\"acf-icon-list\"\n\t\t\t\trole=\"radiogroup\"\n\t\t\t\tdata-parent-tab=\"{}\"\n\t\t\t\t\t\t\t></div>\n\t\t\t<div class=\"acf-icon-list-empty\">\n\t\t\t\t<img src=\"{}\" />\n\t\t\t\t<p class=\"acf-no-results-text\">\n\t\t\t\t\t{no_results}\t\t\t\t</p>\n\t\t\t</div>\n\t\t\t",
+        esc_attr(tab),
+        esc_url(&ctx.site.site_url("wp-content/plugins/advanced-custom-fields/assets/images/face-sad.svg")),
+    )
+}
+
+/// `acf_field_icon_picker::render_field()`.
+async fn render_icon_picker(ctx: &Ctx<'_>, field: RenderField) -> Result<String> {
+    if ctx.uploader == "wp" {
+        ctx.wants_uploader.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+    let value = field.get("value").cloned().unwrap_or(Value::Null);
+    let part = |name: &str| value.get(name).cloned().unwrap_or(Value::Null);
+    let (kind, icon) = (text(Some(&part("type"))), part("value"));
+    let div = Attrs::new(&[("id", field.get("id").cloned().unwrap_or(Value::Null)), ("class", string(&format!("{} acf-icon-picker", field.str("class"))))]);
+    let mut out = format!("<div {}>", esc_attrs(&div));
+    out.push_str(&hidden_input(&Attrs::new(&[("name", string(&format!("{}[type]", field.str("name")))), ("value", part("type")), ("data-hidden-type", string("type"))])));
+    out.push_str(&hidden_input(&Attrs::new(&[("name", string(&format!("{}[value]", field.str("name")))), ("value", icon.clone()), ("data-hidden-type", string("value"))])));
+    let wanted: Vec<String> = match field.get("tabs") {
+        Some(Value::Array(items)) => items.iter().filter_map(|(_, v)| match v {
+            Value::Str(s) => Some(String::from_utf8_lossy(s).into_owned()),
+            _ => None,
+        }).collect(),
+        _ => Vec::new(),
+    };
+    let shown: Vec<(&str, String)> = icon_tabs(ctx).into_iter().filter(|(name, _)| wanted.iter().any(|w| w == name)).collect();
+    for (name, label) in &shown {
+        if shown.len() > 1 {
+            let tab = RenderField::raw(
+                vec![
+                    (key("type"), string("tab")),
+                    (key("label"), string(label)),
+                    (key("key"), string("acf_icon_picker_tabs")),
+                    (key("selected"), Value::Bool(*name == kind)),
+                    (key("unique_tab_key"), string(name)),
+                ],
+                Vec::new(),
+            );
+            out.push_str(&render_field_wrap(ctx, tab, "div", "label").await?);
+        }
+        out.push_str(&format!("<div class=\"acf-icon-picker-tabs acf-icon-picker-{}-tabs\" data-tab=\"{}\">", esc_attr(&name.replace('_', "-")), esc_attr(name)));
+        match *name {
+            "dashicons" => out.push_str(&icon_list_tab(ctx, name)),
+            "media_library" => {
+                let shows = matches!(kind.as_str(), "media_library" | "dashicons") && truthy(Some(&icon));
+                let img = if is_numeric(&icon) { attachment_image_src(ctx.site, super::php::intval(Some(&icon)), "thumbnail").await?.unwrap_or_default() } else { String::new() };
+                out.push_str(&format!(
+                    "\t\t\t\t\t\t<div class=\"acf-icon-picker-tab\" data-category=\"{}\">\n\t\t\t\t\t\t\t<div class=\"acf-icon-picker-media-library\">\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<button\n\t\t\t\t\t\t\t\t\taria-label=\"{}\"\n\t\t\t\t\t\t\t\t\tclass=\"acf-icon-picker-media-library-preview\"\n\t\t\t\t\t\t\t\t\tstyle=\"{}\"\n\t\t\t\t\t\t\t\t>\n\t\t\t\t\t\t\t\t\t<div class=\"acf-icon-picker-media-library-preview-img\" style=\"{}\">\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<img src=\"{}\" alt=\"{}\" />\n\t\t\t\t\t\t\t\t\t</div>\n\t\t\t\t\t\t\t\t\t<div class=\"acf-icon-picker-media-library-preview-dashicon\" style=\"{}\">\n\t\t\t\t\t\t\t\t\t\t<div class=\"dashicons {}\">\n\t\t\t\t\t\t\t\t\t\t</div>\n\t\t\t\t\t\t\t\t\t</div>\n\t\t\t\t\t\t\t\t</button>\n\t\t\t\t\t\t\t\t<button class=\"acf-icon-picker-media-library-button\">\n\t\t\t\t\t\t\t\t\t<div class=\"acf-icon-picker-media-library-button-icon dashicons dashicons-admin-media\"></div>\n\t\t\t\t\t\t\t\t\t<span>{}</span>\n\t\t\t\t\t\t\t\t</button>\n\t\t\t\t\t\t\t</div>\n\t\t\t\t\t\t</div>\n\t\t\t\t\t\t",
+                    esc_attr(name),
+                    esc_attr(&ctx.tr("Click to change the icon in the Media Library")),
+                    esc_attr(if shows { "" } else { "display: none;" }),
+                    esc_attr(if kind != "media_library" { "display: none;" } else { "" }),
+                    esc_url(&img),
+                    esc_attr(&ctx.tr("The currently selected image preview")),
+                    esc_attr(if kind != "dashicons" { "display: none;" } else { "" }),
+                    esc_attr(&text(Some(&icon))),
+                    esc_html(&ctx.tr("Browse Media Library")),
+                ));
+            }
+            _ => {
+                let url = if kind == "url" { icon.clone() } else { string("") };
+                out.push_str(&format!(
+                    "<div class=\"acf-icon-picker-url\">{}\t\t\t\t\t\t<p class=\"description\">{}</p>\n\t\t\t\t\t\t</div>",
+                    text_input(Attrs::new(&[("class", string("acf-icon_url")), ("value", url)])),
+                    esc_html(&ctx.tr("The URL to the icon you'd like to use, or svg as Data URI"))
+                ));
+            }
+        }
+        out.push_str("</div>");
+    }
+    out.push_str("</div>");
+    Ok(out)
+}
+
+/// `uniqid( $prefix )`: the time in seconds and microseconds as hex.
+fn uniqid(prefix: &str) -> String {
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
+    format!("{prefix}{:08x}{:05x}", now.as_secs(), now.subsec_micros())
+}
+
+/// `acf_field_wysiwyg::render_field()`. The editor's id comes from `uniqid()`, so it differs from request to request.
+fn render_wysiwyg(ctx: &Ctx<'_>, mut field: RenderField) -> String {
+    ctx.wants_uploader.store(true, std::sync::atomic::Ordering::Relaxed);
+    let id = uniqid("acf-editor-");
+    let mut default_editor = "html";
+    let mut show_tabs = true;
+    let tabs = field.str("tabs");
+    if !ctx.rich_edit {
+        show_tabs = false;
+    } else if tabs == "visual" {
+        default_editor = "tinymce";
+        show_tabs = false;
+    } else if tabs == "text" {
+        show_tabs = false;
+    } else if ctx.default_editor == "tinymce" {
+        default_editor = "tinymce";
+    }
+    if !(ctx.can)("upload_files") {
+        field.set("media_upload", Value::Int(0));
+    }
+    let switch_class = if default_editor == "html" { "html-active" } else { "tmce-active" };
+    // `format_for_editor()` on `acf_the_editor_content`.
+    let value = match field.get("value") {
+        Some(Value::Str(s)) => String::from_utf8_lossy(s).into_owned(),
+        _ => String::new(),
+    };
+    let value = if value.is_empty() { value } else { value.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;") };
+    let mut wrap = Attrs::new(&[("id", string(&format!("wp-{id}-wrap"))), ("class", string(&format!("acf-editor-wrap wp-core-ui wp-editor-wrap {switch_class}"))), ("data-toolbar", field.get("toolbar").cloned().unwrap_or(Value::Null))]);
+    if field.truthy("delay") {
+        wrap.append("class", " delay");
+    }
+    let height = ctx.wysiwyg_height.max(300);
+    let textarea = textarea_input(Attrs::new(&[("id", string(&id)), ("class", string("wp-editor-area")), ("name", field.get("name").cloned().unwrap_or(Value::Null)), ("style", string(&format!("height:{height}px;"))), ("value", string("%s"))]));
+    let textarea = textarea.replacen("%s", &value, 1);
+    let eid = esc_attr(&id);
+    let media = if field.truthy("media_upload") {
+        format!(
+            "\t\t\t\t<div id=\"wp-{eid}-media-buttons\" class=\"wp-media-buttons\">\n\t\t\t\t\t<button type=\"button\" id=\"insert-media-button\" class=\"button insert-media add_media\" data-editor=\"{eid}\" aria-haspopup=\"dialog\" aria-controls=\"wp-media-modal\"><span class=\"wp-media-buttons-icon\" aria-hidden=\"true\"></span> {}</button>\t\t\t\t</div>\n\t\t\t\t",
+            ctx.site.tr("Add Media")
+        )
+    } else {
+        String::new()
+    };
+    let tab_buttons = if ctx.rich_edit && show_tabs {
+        format!(
+            "\t\t\t\t\t<div class=\"wp-editor-tabs\">\n\t\t\t\t\t\t<button id=\"{eid}-tmce\" class=\"wp-switch-editor switch-tmce\" data-wp-editor-id=\"{eid}\" type=\"button\">{}</button>\n\t\t\t\t\t\t<button id=\"{eid}-html\" class=\"wp-switch-editor switch-html\" data-wp-editor-id=\"{eid}\" type=\"button\">{}</button>\n\t\t\t\t\t</div>\n\t\t\t\t",
+            esc_html(&ctx.tr("Visual")),
+            esc_html(&ctx.trx("Text", "Name for the Text editor tab (formerly HTML)"))
+        )
+    } else {
+        String::new()
+    };
+    let delay = if field.truthy("delay") { format!("\t\t\t\t\t<div class=\"acf-editor-toolbar\">{}</div>\n\t\t\t\t", esc_html(&ctx.tr("Click to initialize TinyMCE"))) } else { String::new() };
+    format!(
+        "\t\t<div {}>\n\t\t\t<div id=\"wp-{eid}-editor-tools\" class=\"wp-editor-tools hide-if-no-js\">\n\t\t\t\t{media}\t\t\t\t\t{tab_buttons}\t\t\t</div>\n\t\t\t<div id=\"wp-{eid}-editor-container\" class=\"wp-editor-container\">\n\t\t\t\t\t{delay}\t\t\t\t\t{textarea}\t\t\t</div>\n\t\t</div>\n\t\t\t",
+        esc_attrs(&wrap)
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1817,7 +2366,7 @@ mod tests {
         let site = Site::from_parts(rustpress_db::Db::connect_lazy("mysql://nobody@127.0.0.1:1/none", "wp_").expect("lazy pool"), options);
         let nonce = |_: &str| "NONCE".to_owned();
         let services = TestServices(std::path::PathBuf::from("."));
-        let ctx = Ctx { site: &site, nonce: &nonce, services: &services, admin: false, uploader: "basic", wants_uploader: Default::default() };
+        let ctx = Ctx { site: &site, nonce: &nonce, services: &services, admin: false, uploader: "basic", wants_uploader: Default::default(), can: &|_| false, rich_edit: false, default_editor: "html", wysiwyg_height: 300 };
         let mut failures = Vec::new();
         let list = cases.as_array().expect("a list");
         for case in list {
