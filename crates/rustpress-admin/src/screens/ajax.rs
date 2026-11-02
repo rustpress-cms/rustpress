@@ -146,6 +146,42 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse
         None => None,
     };
     let Some(session) = session else {
+        // `wp_ajax_nopriv_{$action}` of the plugins.
+        if !env.site.plugins.is_empty() {
+            let (auth, now) = (env.auth.clone(), env.now);
+            let verify_auth = auth.clone();
+            let can = |_: &str| false;
+            let nonce = move |action: &str| auth.create_nonce(action, 0, "", now).unwrap_or_default();
+            let verify = move |nonce: &str, action: &str| verify_auth.verify_nonce(nonce, action, 0, "", now).is_some();
+            let origin = super::request_origin(env, request);
+            let same_origin = request.referer.as_deref().is_some_and(|r| r == origin || r.starts_with(&format!("{origin}/")));
+            let ctx = rustpress_core::native::AdminContext {
+                site: env.site,
+                writer: env.writer,
+                user: 0,
+                now: env.now,
+                hook_suffix: "admin-ajax.php",
+                post: request.post,
+                request_uri: &request.request_uri,
+                query: &request.query,
+                form: &request.form,
+                same_origin,
+                can: &can,
+                nonce: &nonce,
+                verify_nonce: &verify,
+            };
+            match env.site.plugins.admin_ajax_nopriv(&action, &ctx).await {
+                Ok(Some(answer)) => {
+                    let content_type = if answer.json { "application/json; charset=UTF-8" } else { "text/html; charset=UTF-8" };
+                    return AdminResponse { status: answer.status, headers: headers(content_type), cookies: Vec::new(), body: answer.body, bytes: Vec::new() };
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    tracing::error!(action = action.as_str(), error = %e, "plugin ajax failed");
+                    return text(500, "0");
+                }
+            }
+        }
         // `wp_ajax_nopriv_heartbeat` and `wp_ajax_nopriv_generate_password` are the actions for visitors.
         return match action.as_str() {
             "heartbeat" if registered(request, &action) => json(200, &json!({"nonces_expired": true})),

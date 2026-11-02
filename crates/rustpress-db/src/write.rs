@@ -192,6 +192,32 @@ impl Writer {
         Ok(query.execute(&self.pool).await?.rows_affected())
     }
 
+    // ------------------------------------------------------------------ any meta
+
+    /// `update_metadata( $type, $id, $key, $value )` of an already serialized value: nothing happens when the one
+    /// row there holds the value already, every row with the key is updated when there are rows, one is added when
+    /// there are none.
+    pub async fn update_metadata(&self, kind: crate::MetaKind, object_id: u64, key: &str, value: &str) -> Result<()> {
+        let (table, column) = meta_table(kind);
+        forget_cached(table);
+        let full = self.prefix.table(table);
+        let existing: Vec<String> = sqlx::query_scalar(AssertSqlSafe(format!("SELECT meta_value FROM {full} WHERE {column} = ? AND meta_key = ?"))).bind(object_id).bind(key).fetch_all(&self.pool).await?;
+        if existing.is_empty() {
+            self.insert_row(table, &[(column, Val::Int(object_id as i64)), ("meta_key", Val::Str(key.to_owned())), ("meta_value", Val::Str(value.to_owned()))]).await?;
+        } else if !(existing.len() == 1 && existing[0] == value) {
+            sqlx::query(AssertSqlSafe(format!("UPDATE {full} SET meta_value = ? WHERE {column} = ? AND meta_key = ?"))).bind(value).bind(object_id).bind(key).execute(&self.pool).await?;
+        }
+        Ok(())
+    }
+
+    /// `delete_metadata( $type, $id, $key )`.
+    pub async fn delete_metadata(&self, kind: crate::MetaKind, object_id: u64, key: &str) -> Result<u64> {
+        let (table, column) = meta_table(kind);
+        forget_cached(table);
+        let sql = format!("DELETE FROM {} WHERE {column} = ? AND meta_key = ?", self.prefix.table(table));
+        Ok(sqlx::query(AssertSqlSafe(sql)).bind(object_id).bind(key).execute(&self.pool).await?.rows_affected())
+    }
+
     // ------------------------------------------------------------------ post meta
 
     /// `add_post_meta( $post_id, $key, $value )` (non-unique).
@@ -258,5 +284,15 @@ impl Writer {
     /// The table name with its prefix, for statements built by the caller.
     pub fn table(&self, name: &str) -> String {
         self.prefix.table(name)
+    }
+}
+
+/// The table and object column of a meta type.
+fn meta_table(kind: crate::MetaKind) -> (&'static str, &'static str) {
+    match kind {
+        crate::MetaKind::Post => ("postmeta", "post_id"),
+        crate::MetaKind::Term => ("termmeta", "term_id"),
+        crate::MetaKind::User => ("usermeta", "user_id"),
+        crate::MetaKind::Comment => ("commentmeta", "comment_id"),
     }
 }
