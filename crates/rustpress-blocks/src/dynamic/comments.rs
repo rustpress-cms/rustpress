@@ -571,6 +571,16 @@ pub(super) async fn post_comments_form(bc: &BlockCtx<'_>) -> Result<String> {
     let comment_field = format!(
         "<p class=\"comment-form-comment\"><label for=\"comment\">{comment_label}{required_indicator}</label> <textarea id=\"comment\" name=\"comment\" cols=\"45\" rows=\"8\" maxlength=\"65525\"{required_attr}></textarea></p>"
     );
+    let comment_field = if site.plugins.is_empty() {
+        comment_field
+    } else {
+        let plugins = bc.env.with_state(|s| std::mem::take(&mut s.plugins));
+        let state = std::sync::Mutex::new(plugins);
+        let ctx = rustpress_core::native::CommentFormContext { site, query: bc.env.query, post: &post, state: &state, services: bc.env };
+        let filtered = site.plugins.comment_form_field_comment(&ctx, comment_field).await;
+        bc.env.with_state(|s| s.plugins = state.into_inner().unwrap_or_default());
+        filtered?
+    };
     let mut notes = format!("<p class=\"comment-notes\"><span id=\"email-notes\">{}</span>{required_text}</p>", site.tr("Your email address will not be published."));
     // A signed-in viewer is named instead of asked, and has no fields to fill in.
     let viewer = bc.env.query.viewer.as_ref();

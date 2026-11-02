@@ -3,8 +3,8 @@
 use rustpress_core::canonical::rawurlencode;
 use rustpress_core::formatting::{esc_attr, esc_url};
 
-use crate::deps::{Arg, Dependencies, Extra, Kind, Ver};
-use crate::tags::inline_style_tag;
+use super::deps::{Arg, Dependencies, Extra, Kind, Ver};
+use super::tags::inline_style_tag;
 
 pub struct Styles {
     pub deps: Dependencies,
@@ -74,6 +74,17 @@ impl Styles {
     pub fn print_admin_styles(&mut self, concatenate: bool) -> String {
         self.do_concat = concatenate;
         self.do_items();
+        self.print_styles();
+        self.reset();
+        std::mem::take(&mut self.out)
+    }
+
+    /// One registered stylesheet on its own (`do_item()`); the caller prints its dependencies first.
+    pub fn print_one(&mut self, handle: &str) -> String {
+        self.do_concat = false;
+        if !self.deps.done.iter().any(|h| h == handle) && self.do_item(handle) {
+            self.deps.done.push(handle.to_owned());
+        }
         self.print_styles();
         self.reset();
         std::mem::take(&mut self.out)

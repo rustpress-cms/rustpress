@@ -9,10 +9,13 @@
 //! objects returns the array; `$content_width` of a classic theme does not limit image sizes; block bindings
 //! (`acf/field`) wait for block bindings in the core.
 
+mod dashicons;
 mod fields;
+mod form;
 mod format;
 mod internal;
 mod php;
+mod render;
 mod rest_format;
 mod shortcode;
 mod value;
@@ -197,6 +200,10 @@ impl ActivePlugin for Loaded {
     fn post_statuses(&self, site: &Site) -> Vec<(&'static str, String)> {
         let label = site.i18n().pgettext("acf", "post status", "Inactive");
         vec![("acf-disabled", label)]
+    }
+
+    fn comment_form_field_comment<'a>(&'a self, ctx: &'a rustpress_core::native::CommentFormContext<'a>, html: String) -> BoxFuture<'a, Result<String>> {
+        Box::pin(form::comment_form_field_comment(&self.groups, ctx, html))
     }
 
     fn shortcode_tags(&self) -> &'static [&'static str] {

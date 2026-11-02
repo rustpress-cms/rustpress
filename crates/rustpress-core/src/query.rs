@@ -102,6 +102,31 @@ pub struct QueryResult {
     pub viewer: Option<Viewer>,
     /// `$_SERVER['HTTP_HOST']`: the host the client asked for (only for links back to the request).
     pub http_host: Option<String>,
+    /// `$_SERVER['HTTP_USER_AGENT']`.
+    pub user_agent: Option<String>,
+    /// `wp_create_nonce()` of a visitor who is not signed in (user 0, no session), when the site knows its salts.
+    pub guest_nonce: Option<GuestNonce>,
+}
+
+/// `wp_create_nonce( $action )` for user 0 without a session token.
+#[derive(Clone)]
+pub struct GuestNonce(pub std::sync::Arc<dyn Fn(&str) -> String + Send + Sync>);
+
+impl std::fmt::Debug for GuestNonce {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("GuestNonce")
+    }
+}
+
+impl QueryResult {
+    /// `wp_create_nonce( $action )` for whoever looks at the page; empty when the salts are unknown.
+    pub fn create_nonce(&self, action: &str) -> String {
+        match (&self.viewer, &self.guest_nonce) {
+            (Some(viewer), _) => viewer.create_nonce(action),
+            (None, Some(nonce)) => (nonce.0)(action),
+            (None, None) => String::new(),
+        }
+    }
 }
 
 impl QueryResult {
@@ -120,6 +145,8 @@ impl QueryResult {
             raw_query: String::new(),
             parse_error_404: false,
             viewer: None,
+            guest_nonce: None,
+            user_agent: None,
             http_host: None,
         }
     }

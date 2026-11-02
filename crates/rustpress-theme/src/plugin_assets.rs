@@ -1,8 +1,15 @@
 //! Printing what plugins enqueue on `wp_enqueue_scripts` (`WP_Styles`/`WP_Scripts` for the handles of
 //! [`rustpress_core::native::Assets`]): stylesheets as links, scripts after the core scripts they depend on.
 
+use std::path::{Path, PathBuf};
+
+use rustpress_core::Site;
 use rustpress_core::formatting::{esc_attr, esc_url};
 use rustpress_core::native::Asset;
+
+use crate::script_loader::registry::{LoaderEnv, default_scripts, default_styles};
+use crate::script_loader::scripts::Scripts;
+use crate::script_loader::styles::Styles;
 
 /// The `src` with its `ver` (`add_query_arg( 'ver', $ver, $src )`).
 fn src(asset: &Asset) -> String {
@@ -12,9 +19,84 @@ fn src(asset: &Asset) -> String {
     }
 }
 
-/// `WP_Styles::do_item()` for each stylesheet.
-pub fn style_links(styles: &[Asset]) -> String {
-    styles.iter().map(|style| format!("<link rel='stylesheet' id='{}-css' href='{}' media='{}' />\n", esc_attr(&style.handle), esc_url(&src(style)), esc_attr(&style.media))).collect()
+/// `LoaderEnv` of the website: the registry of the WordPress files in `wp_root` for this site.
+fn loader_env(site: &Site, wp_root: &Path) -> LoaderEnv {
+    LoaderEnv {
+        includes: wp_root.join("wp-includes"),
+        site_url: site.site_url(""),
+        content_url: site.site_url("wp-content"),
+        version: crate::document::wp_version(wp_root),
+        rtl: site.is_rtl(),
+        separate_block_assets: true,
+        compressed_tinymce: false,
+        nonce: None,
+    }
+}
+
+/// `WP_Styles` for the plugin stylesheets of one page: every handle once, its dependencies before it. A dependency
+/// that is no plugin stylesheet is one WordPress registers (`dashicons`); it is printed from the registry.
+pub struct StylePrinter<'s> {
+    site: Option<(&'s Site, PathBuf)>,
+    registry: Option<Styles>,
+    printed: Vec<String>,
+}
+
+impl<'s> StylePrinter<'s> {
+    pub fn new(wp_root: &Path, site: &'s Site) -> Self {
+        Self { site: Some((site, wp_root.to_owned())), registry: None, printed: Vec::new() }
+    }
+
+    /// Handles the page printed already (the toolbar's `dashicons` and `admin-bar`).
+    pub fn with_printed(mut self, handles: &[&str]) -> Self {
+        self.printed.extend(handles.iter().map(|h| (*h).to_owned()));
+        self
+    }
+
+    /// The stylesheets of `styles` in queue order, each after its dependencies (`WP_Styles::do_item()`).
+    pub fn links(&mut self, styles: &[Asset]) -> String {
+        let mut out = String::new();
+        for style in styles.iter().filter(|s| !s.registered_only) {
+            out.push_str(&self.style(styles, style));
+        }
+        out
+    }
+
+    fn style(&mut self, styles: &[Asset], style: &Asset) -> String {
+        if style.src.is_empty() {
+            return self.core(&style.handle);
+        }
+        let mut out = String::new();
+        for dep in &style.deps {
+            match styles.iter().find(|s| s.handle == *dep) {
+                Some(plugin_dep) => out.push_str(&self.style(styles, plugin_dep)),
+                None => out.push_str(&self.core(dep)),
+            }
+        }
+        if self.printed.contains(&style.handle) {
+            return out;
+        }
+        self.printed.push(style.handle.clone());
+        out.push_str(&format!("<link rel='stylesheet' id='{}-css' href='{}' media='{}' />\n", esc_attr(&style.handle), esc_url(&src(style)), esc_attr(&style.media)));
+        out
+    }
+
+    /// A stylesheet WordPress registers, after its dependencies.
+    fn core(&mut self, handle: &str) -> String {
+        if self.printed.iter().any(|h| h == handle) {
+            return String::new();
+        }
+        self.printed.push(handle.to_owned());
+        if self.registry.is_none() {
+            let Some((site, root)) = &self.site else { return String::new() };
+            self.registry = Some(default_styles(&loader_env(site, root)));
+        }
+        let Some(deps) = self.registry.as_ref().and_then(|r| r.deps.get(handle)).map(|d| d.deps.clone()) else { return String::new() };
+        let mut out: String = deps.iter().map(|d| self.core(d)).collect();
+        if let Some(registry) = self.registry.as_mut() {
+            out.push_str(&registry.print_one(handle));
+        }
+        out
+    }
 }
 
 /// The `version` of a package in `wp-includes/assets/script-loader-packages.php` (`hooks`, `i18n`).
@@ -26,8 +108,9 @@ pub fn package_version(wp_root: &std::path::Path, package: &str) -> Option<Strin
     Some(version[..version.find('\'')?].to_owned())
 }
 
-/// `WP_Scripts` for one page: every handle is printed once, its dependencies before it.
-pub struct ScriptPrinter {
+/// `WP_Scripts` for one page: every handle is printed once, its dependencies before it. Core scripts other than
+/// jQuery and the i18n packages come from the registry of the WordPress files, built when a plugin needs one.
+pub struct ScriptPrinter<'s> {
     includes_url: String,
     jquery: String,
     migrate: String,
@@ -39,17 +122,20 @@ pub struct ScriptPrinter {
     /// For `load_script_textdomain()`: `wp-content/languages`, the URL of the plugins and the locale.
     languages: Option<(std::path::PathBuf, String, String)>,
     printed: Vec<String>,
+    site: Option<(&'s Site, PathBuf)>,
+    registry: Option<Scripts>,
 }
 
-impl ScriptPrinter {
+impl<'s> ScriptPrinter<'s> {
     /// `jquery`/`migrate`: the versions of `jquery-core` and `jquery-migrate`.
     pub fn new(includes_url: &str, jquery: &str, migrate: &str) -> Self {
-        Self { includes_url: includes_url.to_owned(), jquery: jquery.to_owned(), migrate: migrate.to_owned(), hooks: String::new(), i18n: String::new(), text_direction: "ltr".to_owned(), languages: None, printed: Vec::new() }
+        Self { includes_url: includes_url.to_owned(), jquery: jquery.to_owned(), migrate: migrate.to_owned(), hooks: String::new(), i18n: String::new(), text_direction: "ltr".to_owned(), languages: None, printed: Vec::new(), site: None, registry: None }
     }
 
     /// Knows the packages `wp-hooks` and `wp-i18n` of the WordPress files in `wp_root`, and the translations of
     /// the plugin scripts for the site's language.
-    pub fn with_packages(mut self, wp_root: &std::path::Path, site: &rustpress_core::Site) -> Self {
+    pub fn with_packages(mut self, wp_root: &std::path::Path, site: &'s Site) -> Self {
+        self.site = Some((site, wp_root.to_owned()));
         self.hooks = package_version(wp_root, "hooks").unwrap_or_default();
         self.i18n = package_version(wp_root, "i18n").unwrap_or_default();
         self.text_direction = if site.is_rtl() { "rtl" } else { "ltr" }.to_owned();
@@ -92,8 +178,25 @@ impl ScriptPrinter {
                     self.text_direction
                 )
             }
-            _ => String::new(),
+            _ => self.registered(handle),
         }
+    }
+
+    /// A script of the registry (`jquery-ui-core`, `wp-a11y`), after its dependencies.
+    fn registered(&mut self, handle: &str) -> String {
+        if self.registry.is_none() {
+            let Some((site, root)) = &self.site else { return String::new() };
+            let mut registry = default_scripts(&loader_env(site, root));
+            // `wp_localize_jquery_ui_datepicker()` on `wp_enqueue_scripts`, once the date picker is enqueued.
+            registry.add_inline_script("jquery-ui-datepicker", &crate::script_loader::localize::jquery_ui_datepicker(site), "after");
+            self.registry = Some(registry);
+        }
+        let Some(deps) = self.registry.as_ref().and_then(|r| r.deps.get(handle)).map(|d| d.deps.clone()) else { return String::new() };
+        let mut out: String = deps.iter().map(|d| self.core(d)).collect();
+        if let Some(registry) = self.registry.as_mut() {
+            out.push_str(&registry.print_one(handle));
+        }
+        out
     }
 
     /// The plugin scripts of one place (head or footer) in queue order, each after its dependencies.
@@ -107,6 +210,9 @@ impl ScriptPrinter {
 
     /// One plugin script after its dependencies, which are core scripts or other plugin scripts.
     fn script(&mut self, scripts: &[Asset], script: &Asset) -> String {
+        if script.src.is_empty() {
+            return self.core(&script.handle);
+        }
         let mut out = String::new();
         for dep in &script.deps {
             match scripts.iter().find(|s| s.handle == *dep) {

@@ -64,7 +64,7 @@ fn esc_html(text: &str) -> String {
 }
 
 /// `nl2br()`: `<br />` before every line break (`\r\n`, `\n\r`, `\n`, `\r`).
-fn nl2br(text: &str) -> String {
+pub(super) fn nl2br(text: &str) -> String {
     let bytes = text.as_bytes();
     let mut out = String::with_capacity(text.len() + 16);
     let mut i = 0;
@@ -111,7 +111,7 @@ fn strtotime(value: &str) -> Option<i64> {
 }
 
 /// `acf_format_date()`: `date_i18n()` of the stored date.
-fn format_date(site: &Site, value: Value, format: &str) -> Value {
+pub(super) fn format_date(site: &Site, value: Value, format: &str) -> Value {
     let text = match &value {
         Value::Str(s) if !s.is_empty() && s.as_slice() != b"0" => String::from_utf8_lossy(s).into_owned(),
         Value::Int(i) if *i != 0 => i.to_string(),
@@ -274,7 +274,7 @@ fn size_limit(site: &Site, size: &str, width: u64, height: u64) -> (u64, u64) {
 
 /// `wp_get_attachment_image_src( $id, $size )` of an image: the generated file of the size, or the full image, both
 /// constrained to the size.
-fn image_src(site: &Site, meta: Option<&rustpress_blocks::images::Metadata>, full_url: &str, size: &str) -> (String, u64, u64) {
+pub(super) fn image_src(site: &Site, meta: Option<&rustpress_blocks::images::Metadata>, full_url: &str, size: &str) -> (String, u64, u64) {
     let (url, width, height) = match meta {
         Some(meta) => {
             let entry = meta.sizes().and_then(|s| s.get(size)).filter(|e| e.get("file").and_then(serde_json::Value::as_str).is_some_and(|f| !f.is_empty()));
@@ -294,7 +294,7 @@ fn image_src(site: &Site, meta: Option<&rustpress_blocks::images::Metadata>, ful
 }
 
 /// `wp_get_attachment_url()`: the uploads URL of the attached file, the GUID without one.
-async fn attachment_url(site: &Site, post: &Post) -> Result<(Option<rustpress_blocks::images::Metadata>, Option<String>, String)> {
+pub(super) async fn attachment_url(site: &Site, post: &Post) -> Result<(Option<rustpress_blocks::images::Metadata>, Option<String>, String)> {
     let (meta, attached) = rustpress_blocks::images::load_metadata(site, post).await?;
     let url = match attached.as_deref().filter(|f| !f.is_empty()) {
         Some(file) => rustpress_blocks::images::attachment_url(site, file),

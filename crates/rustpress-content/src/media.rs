@@ -108,8 +108,8 @@ pub const MIME_TYPES: &[(&str, &str)] = &[
     ("pages", "application/vnd.apple.pages"),
 ];
 
-/// Types only users with `unfiltered_html` may upload.
-const UNFILTERED: [&str; 4] = ["text/html", "application/javascript", "text/css", "application/java"];
+/// The extensions only users with `unfiltered_html` may upload (`get_allowed_mime_types()`).
+const UNFILTERED: [&str; 2] = ["htm|html", "js"];
 
 /// `wp_check_filetype()`: `(extension, MIME type)`.
 pub fn check_filetype(filename: &str) -> Option<(String, String)> {
@@ -126,10 +126,16 @@ pub fn check_filetype_in(filename: &str, mimes: &[(String, String)]) -> Option<(
 /// `get_allowed_mime_types( $user )`: the core's types (without those that need `unfiltered_html` for a user
 /// without it), then the plugins' `upload_mimes`.
 pub fn allowed_mime_types(site: &rustpress_core::Site, user: &rustpress_auth::CurrentUser, rest: bool, media_form_nonce: bool) -> Vec<(String, String)> {
-    let unfiltered = user.can("unfiltered_html");
-    let core: Vec<(String, String)> = MIME_TYPES.iter().filter(|(_, mime)| unfiltered || !UNFILTERED.contains(mime)).map(|(exts, mime)| ((*exts).to_owned(), (*mime).to_owned())).collect();
     let can = |capability: &str| user.can(capability);
-    let uploader = rustpress_core::native::Uploader { site, roles: &user.roles, can: &can, rest, media_form_nonce };
+    allowed_mime_types_for(site, &user.roles, &can, rest, media_form_nonce)
+}
+
+/// `get_allowed_mime_types()` for a user given by roles and `current_user_can()` (a visitor of the website has
+/// neither).
+pub fn allowed_mime_types_for(site: &rustpress_core::Site, roles: &[String], can: &(dyn Fn(&str) -> bool + Send + Sync), rest: bool, media_form_nonce: bool) -> Vec<(String, String)> {
+    let unfiltered = can("unfiltered_html");
+    let core: Vec<(String, String)> = MIME_TYPES.iter().filter(|(exts, _)| unfiltered || !UNFILTERED.contains(exts)).map(|(exts, mime)| ((*exts).to_owned(), (*mime).to_owned())).collect();
+    let uploader = rustpress_core::native::Uploader { site, roles, can, rest, media_form_nonce };
     site.plugins.upload_mimes(&uploader, core)
 }
 

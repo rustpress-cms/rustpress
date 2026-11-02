@@ -439,6 +439,12 @@ async fn page(app: &App, uri: &axum::http::Uri, request_headers: &axum::http::He
         return Ok(plugin_response(&answer));
     }
     let mut result = loaded.site.query_as(path, query, viewer.as_ref()).await?;
+    if viewer.is_none()
+        && let Some(parts) = loaded.admin.as_ref()
+    {
+        let auth = parts.auth.clone();
+        result.guest_nonce = Some(rustpress_core::query::GuestNonce(std::sync::Arc::new(move |action: &str| auth.create_nonce(action, 0, "", crate::admin::now()).unwrap_or_default())));
+    }
     if matches!(served, Some(rustpress_core::native::Serve::NotFound)) {
         result = result.into_404();
     }
@@ -453,6 +459,7 @@ async fn page(app: &App, uri: &axum::http::Uri, request_headers: &axum::http::He
     };
     let query_done = started.elapsed();
     result.http_host = request_headers.get(header::HOST).and_then(|v| v.to_str().ok()).map(str::to_owned);
+    result.user_agent = request_headers.get(header::USER_AGENT).and_then(|v| v.to_str().ok()).map(str::to_owned);
     // Physical PHP endpoints (wp-login.php, xmlrpc.php, ...) do not exist here; they get the
     // 404 page rather than a canonical redirect. Only `/index.php` is WordPress' own alias for `/`.
     let php_endpoint = path.ends_with(".php") && path != "/index.php";

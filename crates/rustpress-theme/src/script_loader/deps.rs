@@ -331,8 +331,7 @@ impl Dependencies {
 
 /// The lower-case hex md5 of a string.
 pub fn md5_hex(text: &str) -> String {
-    // A small md5: the admin crate has no md5 dependency of its own.
-    rustpress_auth::salts::md5_hex(text)
+    format!("{:x}", md5::compute(text.as_bytes()))
 }
 
 #[cfg(test)]

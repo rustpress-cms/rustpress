@@ -182,6 +182,12 @@ pub trait ActivePlugin: Send + Sync {
         link
     }
 
+    /// The `comment_form_field_comment` filter of `comment_form()`: the HTML of the comment field, after which a
+    /// plugin may add its own fields.
+    fn comment_form_field_comment<'a>(&'a self, _ctx: &'a CommentFormContext<'a>, html: String) -> BoxFuture<'a, Result<String>> {
+        Box::pin(async move { Ok(html) })
+    }
+
     /// `admin_menu`: the pages the plugin adds to the menu of the administration.
     fn admin_pages(&self, _site: &Site) -> Vec<AdminPage> {
         Vec::new()
@@ -646,6 +652,21 @@ pub struct PluginState {
     pub counters: std::collections::HashMap<&'static str, u64>,
     pub lists: std::collections::HashMap<&'static str, Vec<String>>,
     pub flags: std::collections::HashSet<&'static str>,
+    /// What the plugins enqueue while the page is rendered (on `wp_enqueue_scripts` at the asset's priority, which
+    /// a block theme runs after rendering the template).
+    pub assets: Assets,
+    /// Printed on `wp_print_footer_scripts` after the scripts of the footer.
+    pub footer_scripts: Vec<String>,
+}
+
+/// What a plugin sees of the comment form it filters.
+pub struct CommentFormContext<'a> {
+    pub site: &'a Site,
+    pub query: &'a crate::QueryResult,
+    /// `global $post`: the post the form is for.
+    pub post: &'a Post,
+    pub state: &'a std::sync::Mutex<PluginState>,
+    pub services: &'a dyn PageServices,
 }
 
 impl PluginState {
@@ -901,7 +922,8 @@ impl RegisteredMeta {
     }
 }
 
-/// A stylesheet or script a plugin enqueues (`wp_enqueue_style()`, `wp_enqueue_script()`).
+/// A stylesheet or script a plugin enqueues (`wp_enqueue_style()`, `wp_enqueue_script()`). Without a `src` it is
+/// one WordPress registers itself.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Asset {
     pub handle: String,
@@ -939,6 +961,17 @@ impl Assets {
     pub fn style(&mut self, handle: &str, src: String, deps: &[&str], ver: &str, media: &str) -> &mut Asset {
         self.styles.push(Asset { handle: handle.to_owned(), src, deps: deps.iter().map(|d| (*d).to_owned()).collect(), ver: Some(ver.to_owned()), media: media.to_owned(), priority: 10, ..Asset::default() });
         self.styles.last_mut().expect("just pushed")
+    }
+
+    /// `wp_enqueue_style( $handle )` of a stylesheet WordPress registers (`wp-color-picker`).
+    pub fn core_style(&mut self, handle: &str) {
+        self.styles.push(Asset { handle: handle.to_owned(), priority: 10, ..Asset::default() });
+    }
+
+    /// `wp_enqueue_script( $handle )` of a script WordPress registers. `in_footer` is where it ends up: its own
+    /// group, or the head when a script of the head depends on it.
+    pub fn core_script(&mut self, handle: &str, in_footer: bool) {
+        self.scripts.push(Asset { handle: handle.to_owned(), in_footer, priority: 10, ..Asset::default() });
     }
 
     /// `wp_enqueue_script( $handle, $src, $deps, $ver, $in_footer )`.
@@ -995,9 +1028,18 @@ impl Plugins {
 
     /// The assets of `wp_enqueue_scripts`, in the order the callbacks run (by priority, then by plugin).
     pub fn assets(&self, site: &Site) -> Assets {
+        self.assets_with(site, None)
+    }
+
+    /// The assets of `wp_enqueue_scripts` with what the plugins enqueued while the page was rendered.
+    pub fn assets_with(&self, site: &Site, state: Option<&PluginState>) -> Assets {
         let mut assets = Assets::default();
         for plugin in self.hooks() {
             plugin.enqueue(site, &mut assets);
+        }
+        if let Some(state) = state {
+            assets.styles.extend(state.assets.styles.iter().cloned());
+            assets.scripts.extend(state.assets.scripts.iter().cloned());
         }
         assets.styles.sort_by_key(|a| a.priority);
         assets.scripts.sort_by_key(|a| a.priority);
@@ -1337,6 +1379,14 @@ impl Plugins {
     /// The link of `get_comment_reply_link()` after the plugins' `comment_reply_link` filters.
     pub fn comment_reply_link(&self, link: String) -> String {
         self.hooks().fold(link, |link, plugin| plugin.comment_reply_link(link))
+    }
+
+    /// The comment field of `comment_form()` after the plugins' `comment_form_field_comment` filters.
+    pub async fn comment_form_field_comment(&self, ctx: &CommentFormContext<'_>, mut html: String) -> Result<String> {
+        for plugin in self.hooks() {
+            html = plugin.comment_form_field_comment(ctx, html).await?;
+        }
+        Ok(html)
     }
 
     /// What the plugins print in `wp_footer`.

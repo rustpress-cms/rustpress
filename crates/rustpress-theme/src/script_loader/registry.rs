@@ -9,9 +9,9 @@ use regex::Regex;
 use rustpress_core::php_lit::{Hooks, Lit, Parser, Vars};
 use serde_json::Value;
 
-use crate::deps::{Arg, Extra, Ver};
-use crate::scripts::Scripts;
-use crate::styles::Styles;
+use super::deps::{Arg, Extra, Ver};
+use super::scripts::Scripts;
+use super::styles::Styles;
 
 /// `wp_create_nonce()` for the current user.
 pub type NonceFn = std::sync::Arc<dyn Fn(&str) -> String + Send + Sync>;
@@ -333,7 +333,7 @@ fn marking(env: &LoaderEnv) -> LoaderEnv {
 }
 
 /// Replaces the marks of [`marking`] with the user's nonces (or nothing, without a user).
-fn with_nonces(deps: &mut crate::deps::Dependencies, env: &LoaderEnv) {
+fn with_nonces(deps: &mut super::deps::Dependencies, env: &LoaderEnv) {
     let nonce = env.nonce.clone();
     deps.map_extra_text(&|text: &str| {
         // A localization carries the mark JSON-encoded.
@@ -367,7 +367,7 @@ fn with_nonces(deps: &mut crate::deps::Dependencies, env: &LoaderEnv) {
 /// Every script WordPress registers on its own: `wp_default_scripts()`, the vendor scripts and the
 /// packages of `script-loader-packages.php`. Built once per configuration and copied.
 pub fn default_scripts(env: &LoaderEnv) -> Scripts {
-    static CACHE: std::sync::OnceLock<std::sync::Mutex<HashMap<RegistryKey, crate::deps::Dependencies>>> = std::sync::OnceLock::new();
+    static CACHE: std::sync::OnceLock<std::sync::Mutex<HashMap<RegistryKey, super::deps::Dependencies>>> = std::sync::OnceLock::new();
     let cache = CACHE.get_or_init(Default::default);
     let key = registry_key(env);
     let cached = cache.lock().expect("registry cache").get(&key).cloned();
@@ -482,7 +482,7 @@ fn register_packages(scripts: &mut Scripts, env: &LoaderEnv) {
 
 /// Every stylesheet WordPress registers on its own (`wp_default_styles()`), built once per configuration.
 pub fn default_styles(env: &LoaderEnv) -> Styles {
-    static CACHE: std::sync::OnceLock<std::sync::Mutex<HashMap<RegistryKey, crate::deps::Dependencies>>> = std::sync::OnceLock::new();
+    static CACHE: std::sync::OnceLock<std::sync::Mutex<HashMap<RegistryKey, super::deps::Dependencies>>> = std::sync::OnceLock::new();
     let cache = CACHE.get_or_init(Default::default);
     let key = registry_key(env);
     let cached = cache.lock().expect("registry cache").get(&key).cloned();

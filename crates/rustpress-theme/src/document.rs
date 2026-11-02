@@ -873,9 +873,13 @@ pub async fn render_document_with(theme: &Theme, site: &Site, query: &QueryResul
     } else if let Some(css) = read(&skip_link_file) {
         styles.push_str(&format!("<style id=\"wp-block-template-skip-link-inline-css\">\n{}\n/*# sourceURL=/wp-includes/css/wp-block-template-skip-link.min.css */\n</style>\n", css.trim_end()));
     }
-    // Plugins enqueue on `wp_enqueue_scripts` before the theme does: their stylesheets come before the theme's.
-    let plugin_assets = site.plugins.assets(site);
-    styles.push_str(&crate::plugin_assets::style_links(&plugin_assets.styles));
+    // Plugins enqueue on `wp_enqueue_scripts` before the theme does: their stylesheets of priority 10 come before the
+    // theme's, later ones after it.
+    let plugin_assets = site.plugins.assets_with(site, Some(&state.plugins));
+    let printed: &[&str] = if toolbar_on { &["dashicons", "admin-bar"] } else { &[] };
+    let mut style_printer = crate::plugin_assets::StylePrinter::new(wp_root, site).with_printed(printed);
+    let (early_styles, late_styles): (Vec<_>, Vec<_>) = plugin_assets.styles.iter().cloned().partition(|a| a.priority <= 10);
+    styles.push_str(&style_printer.links(&early_styles));
     // The theme's style.css is only printed when its functions.php enqueues it.
     let theme_css = theme.theme_style_handle().and_then(|handle| ["style.min.css", "style.css"].iter().find_map(|f| read(&theme.template_dir().join(f)).map(|c| (handle, *f, c))));
     if !theme_style_inline && let Some(handle) = theme.theme_style_handle() && theme_style_file.is_some() {
@@ -884,6 +888,7 @@ pub async fn render_document_with(theme: &Theme, site: &Site, query: &QueryResul
     } else if let Some((handle, file, css)) = theme_css {
         styles.push_str(&format!("<style id=\"{handle}-inline-css\">\n{}\n/*# sourceURL={}/{file} */\n</style>\n", css.trim_end(), theme.template_directory_uri()));
     }
+    styles.push_str(&style_printer.links(&late_styles));
     // Blocks a plugin rendered in `wp_head` that the template did not use: their stylesheets were enqueued after the
     // theme's (and after `wp_maybe_inline_styles()` ran), so they are linked.
     let mut late: Vec<String> = Vec::new();
@@ -937,6 +942,8 @@ pub async fn render_document_with(theme: &Theme, site: &Site, query: &QueryResul
     }
     footer_scripts.push_str(&printer.scripts(&plugin_assets.scripts, true));
     footer_scripts.push_str(&emoji_detection_script(site, wp_root, &version));
+    // `wp_print_footer_scripts` after `_wp_footer_scripts()`.
+    footer_scripts.push_str(&state.plugins.footer_scripts.concat());
 
     // --- head ------------------------------------------------------------
     let mut robots = rustpress_core::native::robots_tag(plugin_head.robots.as_deref().unwrap_or_default());
