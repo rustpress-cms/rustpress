@@ -75,7 +75,10 @@ pub async fn enqueue(ctx: &Ctx<'_>, assets: &mut Assets, post_id: u64) {
     });
     let encoded = rustpress_blocks::php_json::encode_with(&plupload, rustpress_blocks::php_json::Flags { unescaped_slashes: true, unescaped_unicode: false }).replace('<', "\\u003C").replace('>', "\\u003E");
     assets.raw_data.push(("wp-plupload".into(), format!("var _wpPluploadSettings = {encoded};")));
-    assets.localize.push(("mce-view".into(), "mceViewL10n".into(), json!({"shortcodes": ["wp_caption", "caption", "gallery", "playlist", "audio", "video", "embed"]})));
+    // `array_keys( $shortcode_tags )`: those of WordPress, then the plugins' in the order they register them.
+    let mut shortcodes: Vec<String> = ["wp_caption", "caption", "gallery", "playlist", "audio", "video", "embed"].iter().map(|s| (*s).to_owned()).collect();
+    shortcodes.extend(ctx.site().plugins.shortcode_tags().into_iter().map(str::to_owned));
+    assets.localize.push(("mce-view".into(), "mceViewL10n".into(), json!({"shortcodes": shortcodes})));
 
     // The settings of the views.
     let db = ctx.env.db;

@@ -11,6 +11,7 @@
 //! (`acf/field`) wait for block bindings in the core; the comment form of classic themes has no fields, and the
 //! media scripts of `acf_enqueue_uploader()` (a hidden `wp_editor()`, `wp_enqueue_media()`) are not printed.
 
+mod admin;
 mod dashicons;
 mod fields;
 mod form;
@@ -203,6 +204,18 @@ impl ActivePlugin for Loaded {
     fn post_statuses(&self, site: &Site) -> Vec<(&'static str, String)> {
         let label = site.i18n().pgettext("acf", "post status", "Inactive");
         vec![("acf-disabled", label)]
+    }
+
+    fn admin_pages(&self, site: &Site) -> Vec<rustpress_core::native::AdminPage> {
+        admin::admin_pages(site)
+    }
+
+    fn admin_enqueue(&self, ctx: &rustpress_core::native::AdminContext<'_>, assets: &mut rustpress_core::native::Assets) {
+        admin::admin_enqueue(ctx.site, assets);
+    }
+
+    fn admin_body_class(&self, ctx: &rustpress_core::native::AdminContext<'_>, classes: String) -> String {
+        admin::admin_body_class(ctx, classes)
     }
 
     fn admin_ajax<'a>(&'a self, action: &'a str, ctx: &'a rustpress_core::native::AdminContext<'a>) -> BoxFuture<'a, Result<Option<rustpress_core::native::AjaxAnswer>>> {

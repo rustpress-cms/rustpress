@@ -149,6 +149,139 @@ pub struct Types {
     /// The post types the `register_post_type()` calls name, in their order, with their labels (also those without
     /// pages of their own).
     pub registered_post_types: Vec<RegisteredLabels>,
+    /// Every `register_post_type()`/`register_taxonomy()` with literal arguments, in their order; a type registered
+    /// again keeps its place and takes the later arguments.
+    pub registrations: Vec<Registration>,
+}
+
+/// What the administration needs of a post type a plugin or the theme registered (`WP_Post_Type`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AdminPostType {
+    pub name: String,
+    pub hierarchical: bool,
+    /// `show_ui`.
+    pub show_ui: bool,
+    /// `show_in_menu === true`: a menu of its own (a string puts it below another menu).
+    pub own_menu: bool,
+    /// `show_in_admin_bar`.
+    pub show_in_admin_bar: bool,
+    /// `menu_position` when it is an integer.
+    pub menu_position: Option<i64>,
+    pub menu_icon: Option<String>,
+    /// The labels the registration gives (`labels` and `label`).
+    pub labels: Vec<(String, String)>,
+}
+
+impl AdminPostType {
+    /// A label as `_get_custom_object_labels()` completes them; `None` when the type's default applies.
+    pub fn label(&self, key: &str) -> Option<String> {
+        let given = |k: &str| self.labels.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone());
+        let name = given("name").filter(|n| !n.is_empty()).or_else(|| given("label").filter(|l| !l.is_empty()));
+        match key {
+            "name" => name,
+            "singular_name" => given("singular_name").or(name),
+            "name_admin_bar" => given("name_admin_bar").or_else(|| given("singular_name").or(name.clone())).or_else(|| Some(self.name.clone())),
+            "menu_name" => given("menu_name").or(name),
+            "all_items" => given("all_items").or_else(|| given("menu_name").or(name)),
+            other => given(other),
+        }
+    }
+}
+
+/// What the administration needs of a taxonomy a plugin or the theme registered (`WP_Taxonomy`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AdminTaxonomy {
+    pub name: String,
+    pub object_types: Vec<String>,
+    pub show_ui: bool,
+    pub show_in_menu: bool,
+    pub labels: Vec<(String, String)>,
+}
+
+impl AdminTaxonomy {
+    /// `labels->menu_name`: the given one, else the name; `None` when the default (Tags/Categories) applies.
+    pub fn menu_name(&self) -> Option<String> {
+        let given = |k: &str| self.labels.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone());
+        let name = given("name").filter(|n| !n.is_empty()).or_else(|| given("label").filter(|l| !l.is_empty()));
+        given("menu_name").or(name)
+    }
+}
+
+/// The labels of an argument list: `labels[...]` and `label`.
+fn labels_of(args: &Lit) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    if let Some(Lit::Array(items)) = args.get("labels") {
+        for (key, value) in items {
+            if let (Some(Lit::Str(k)), Some(v)) = (key, value.as_str()) {
+                out.push((k.clone(), v.to_owned()));
+            }
+        }
+    }
+    if let Some(label) = args.get("label").and_then(Lit::as_str) {
+        out.push(("label".to_owned(), label.to_owned()));
+    }
+    out
+}
+
+impl Types {
+    /// `get_post_types( [ '_builtin' => false ], 'objects' )` of the registrations, in their order.
+    pub fn admin_post_types(&self) -> Vec<AdminPostType> {
+        let flag = |args: &Lit, key: &str, default: bool| match args.get(key) {
+            None | Some(Lit::Null) => default,
+            Some(value) => value.truthy().unwrap_or(true),
+        };
+        self.registrations
+            .iter()
+            .filter(|r| !r.taxonomy && !BUILT_IN_POST_TYPES.contains(&r.name.as_str()) && !is_internal_post_type(&r.name))
+            .map(|r| {
+                let args = &r.args;
+                let public = flag(args, "public", false);
+                let show_ui = flag(args, "show_ui", public);
+                let (own_menu, in_menu) = match args.get("show_in_menu") {
+                    None | Some(Lit::Null) => (show_ui, show_ui),
+                    Some(Lit::Str(parent)) => (false, !parent.is_empty()),
+                    Some(value) => {
+                        let on = value.truthy().unwrap_or(true);
+                        (on, on)
+                    }
+                };
+                let show_in_admin_bar = match args.get("show_in_admin_bar") {
+                    None | Some(Lit::Null) => in_menu,
+                    Some(value) => value.truthy().unwrap_or(true),
+                };
+                AdminPostType {
+                    name: r.name.clone(),
+                    hierarchical: flag(args, "hierarchical", false),
+                    show_ui,
+                    own_menu: show_ui && own_menu,
+                    show_in_admin_bar,
+                    menu_position: match args.get("menu_position") {
+                        Some(Lit::Int(i)) => Some(*i),
+                        _ => None,
+                    },
+                    menu_icon: args.get("menu_icon").and_then(Lit::as_str).map(str::to_owned),
+                    labels: labels_of(args),
+                }
+            })
+            .collect()
+    }
+
+    /// `get_taxonomies( [ '_builtin' => false ], 'objects' )` of the registrations, in their order.
+    pub fn admin_taxonomies(&self) -> Vec<AdminTaxonomy> {
+        let flag = |args: &Lit, key: &str, default: bool| match args.get(key) {
+            None | Some(Lit::Null) => default,
+            Some(value) => value.truthy().unwrap_or(true),
+        };
+        self.registrations
+            .iter()
+            .filter(|r| r.taxonomy && !BUILT_IN_TAXONOMIES.contains(&r.name.as_str()))
+            .map(|r| {
+                let public = flag(&r.args, "public", true);
+                let show_ui = flag(&r.args, "show_ui", public);
+                AdminTaxonomy { name: r.name.clone(), object_types: r.object_types.clone(), show_ui, show_in_menu: flag(&r.args, "show_in_menu", show_ui), labels: labels_of(&r.args) }
+            })
+            .collect()
+    }
 }
 
 /// The name and labels of a registered type.
@@ -306,6 +439,10 @@ impl Types {
             let singular = labels.and_then(|l| l.get("singular_name")).and_then(Lit::as_str).map(str::to_owned);
             let show_in_rest = args.get("show_in_rest").and_then(Lit::truthy).unwrap_or(false);
             let rest_base = text("rest_base");
+            match self.registrations.iter_mut().find(|r| r.taxonomy == reg.taxonomy && r.name == reg.name) {
+                Some(existing) => *existing = reg.clone(),
+                None => self.registrations.push(reg.clone()),
+            }
             if !reg.taxonomy && !self.registered_post_types.iter().any(|r| r.name == reg.name) {
                 self.registered_post_types.push(RegisteredLabels { name: reg.name.clone(), label: label.clone(), singular: singular.clone() });
             }

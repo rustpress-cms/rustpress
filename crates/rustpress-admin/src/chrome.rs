@@ -375,6 +375,8 @@ pub struct Assets {
     /// The links of the stylesheets plugins enqueue: printed with the styles that are not concatenated, before the
     /// emoji styles.
     pub plugin_styles: String,
+    /// `apply_filters( 'admin_body_class', '' )` of the plugins: they come before the classes of the screen.
+    pub plugin_body_classes: String,
     /// What the plugins print on `admin_notices`, the end of `admin-header.php`.
     pub notices: String,
     /// What a plugin's `admin_footer_text` prints instead of the thanks for using WordPress.
@@ -483,7 +485,8 @@ fn root_text(label: &str) -> String {
             }
         }
     }
-    out.trim().to_owned()
+    // `get_modifiable_text()` decodes the character references.
+    rustpress_core::formatting::html_entity_decode(out.trim()).trim().to_owned()
 }
 
 /// `wp.coreCommands.initializeCommandPalette( {...} )` with the entries of the menu.
@@ -503,7 +506,7 @@ fn command_palette_call(env: &ChromeEnv<'_>) -> String {
                 if sub_label.is_empty() {
                     continue;
                 }
-                let url = sub.href.as_ref().map_or_else(|| url_of(&sub.slug), |href| site.site_url(&format!("wp-admin/{href}")));
+                let url = if sub.slug.contains(".php") { sub.slug.clone() } else { sub.page_url.as_ref().or(sub.href.as_ref()).map_or_else(|| url_of(&sub.slug), |href| site.site_url(&format!("wp-admin/{href}"))) };
                 commands.push(serde_json::json!({"label": rustpress_core::i18n::sprintf(&site.tr("%1$s > %2$s"), &[&label, &sub_label]), "url": url, "name": format!("{}-{}", item.slug, sub.slug)}));
             }
         }
@@ -743,6 +746,7 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
     if screen.fullscreen {
         classes.push("is-fullscreen-mode".to_owned());
     }
+    classes.extend(assets.plugin_body_classes.split_whitespace().map(str::to_owned));
     classes.extend(screen.early_classes.iter().cloned());
     classes.push(screen.hook_suffix.clone().unwrap_or_else(|| format!("{}-php", page)));
     classes.push("auto-fold".to_owned());

@@ -223,6 +223,7 @@ impl Ctx<'_> {
             can: parts.can.as_ref(),
             nonce: parts.nonce.as_ref(),
             verify_nonce: parts.verify.as_ref(),
+            user_agent: self.request.user_agent.as_deref(),
         }
     }
 
@@ -646,6 +647,7 @@ pub async fn render(ctx: &Ctx<'_>, screen: &Screen, content: &str, assets: &Asse
     // `admin_notices` comes before `options-head.php`.
     assets.notices = format!("{notices}{}", assets.notices);
     assets.footer_text = env.site.plugins.admin_footer_text(&plugin_ctx);
+    assets.plugin_body_classes = env.site.plugins.admin_body_class(&plugin_ctx);
     for style in &plugin_assets.styles {
         let href = style.ver.as_ref().map_or_else(|| style.src.clone(), |ver| rustpress_core::urls::add_query_arg(&style.src, "ver", ver));
         assets.plugin_styles.push_str(&format!("<link rel='stylesheet' id='{}-css' href='{}' media='{}' />\n", esc_attr(&style.handle), rustpress_core::formatting::esc_url(&href), esc_attr(&style.media)));

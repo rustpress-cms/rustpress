@@ -33,6 +33,9 @@ pub struct SubItem {
     pub classes: String,
     /// The address of a plugin's page (`options-general.php?page=<slug>`); other entries link their slug.
     pub href: Option<String>,
+    /// `menu_page_url()` of a plugin's page: `admin.php?page=<slug>` below a plugin's own menu, the parent with the
+    /// page otherwise (unescaped).
+    pub page_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -58,7 +61,7 @@ fn item(position: u32, title: &str, capability: &str, slug: &str, classes: &str,
 }
 
 fn sub(position: u32, title: &str, capability: &str, slug: &str) -> SubItem {
-    SubItem { position, title: title.to_owned(), capability: capability.to_owned(), slug: slug.to_owned(), classes: String::new(), href: None }
+    SubItem { position, title: title.to_owned(), capability: capability.to_owned(), slug: slug.to_owned(), classes: String::new(), href: None, page_url: None }
 }
 
 impl AdminMenu {
@@ -100,32 +103,68 @@ impl AdminMenu {
 
         // Posts, pages and the custom post types, in that order.
         let mut last_object_menu = 25u32;
-        type TypeEntry = (String, String, String, Vec<(String, String)>, bool);
+        // (name, menu name, all items, add new, icon, taxonomies, hierarchical, menu position)
+        type TypeEntry = (String, String, String, String, String, Vec<(String, String)>, bool, Option<i64>);
+        let registered = site.types.admin_post_types();
+        let registered_taxonomies = site.types.admin_taxonomies();
+        // `get_taxonomies()`: the taxonomies of a type that have a screen and a menu entry.
+        let taxonomies_of = |post_type: &str| -> Vec<(String, String)> {
+            let mut out: Vec<(String, String)> = Vec::new();
+            if post_type == "post" {
+                out.push(("category".into(), site.taxonomy_label("category")));
+                out.push(("post_tag".into(), site.taxonomy_label("post_tag")));
+            }
+            for t in &registered_taxonomies {
+                if t.show_ui && t.show_in_menu && t.object_types.iter().any(|o| o == post_type) && !out.iter().any(|(n, _)| *n == t.name) {
+                    out.push((t.name.clone(), t.menu_name().unwrap_or_else(|| site.taxonomy_label(&t.name))));
+                }
+            }
+            // Taxonomies only the rewrite rules know.
+            for t in &site.types.taxonomies {
+                if !registered_taxonomies.iter().any(|r| r.name == t.name) && t.object_types.iter().any(|o| o == post_type) && !out.iter().any(|(n, _)| *n == t.name) {
+                    out.push((t.name.clone(), site.taxonomy_label(&t.name)));
+                }
+            }
+            out
+        };
+        let pick = |hierarchical: bool, post: &str, page: &str| tr(if hierarchical { page } else { post });
         let mut types: Vec<TypeEntry> = Vec::new();
-        types.push(("post".into(), site.post_type_label("post"), "dashicons-admin-post".into(), vec![("category".into(), site.taxonomy_label("category")), ("post_tag".into(), site.taxonomy_label("post_tag"))], false));
-        types.push(("page".into(), site.post_type_label("page"), "dashicons-admin-page".into(), Vec::new(), true));
+        types.push(("post".into(), site.post_type_label("post"), tr("All Posts"), tr("Add Post"), "dashicons-admin-post".into(), taxonomies_of("post"), false, Some(5)));
+        types.push(("page".into(), site.post_type_label("page"), tr("All Pages"), tr("Add Page"), "dashicons-admin-page".into(), taxonomies_of("page"), true, Some(20)));
+        for custom in registered.iter().filter(|t| t.own_menu) {
+            // `menu_icon`: an empty or Dashicons icon or an SVG as it is, a URL escaped.
+            let icon = match custom.menu_icon.as_deref() {
+                Some(icon) if icon == "none" || icon == "div" || icon.starts_with("data:image/svg+xml;base64,") || icon.starts_with("dashicons-") => icon.to_owned(),
+                Some(icon) => rustpress_core::formatting::esc_url(icon),
+                None => "dashicons-admin-post".to_owned(),
+            };
+            let menu_name = custom.label("menu_name").unwrap_or_else(|| site.post_type_label(&custom.name));
+            let all_items = custom.label("all_items").unwrap_or_else(|| pick(custom.hierarchical, "All Posts", "All Pages"));
+            let add_new = custom.label("add_new_item").unwrap_or_else(|| pick(custom.hierarchical, "Add Post", "Add Page"));
+            types.push((custom.name.clone(), menu_name, all_items, add_new, icon, taxonomies_of(&custom.name), custom.hierarchical, custom.menu_position));
+        }
+        // Types only the rewrite rules know of.
         for custom in &site.types.post_types {
-            if !custom.public && !custom.queryable {
+            if registered.iter().any(|r| r.name == custom.name) || (!custom.public && !custom.queryable) {
                 continue;
             }
             let icon = custom.menu_icon.clone().unwrap_or_else(|| "dashicons-admin-post".to_owned());
-            let taxonomies = site.types.taxonomies.iter().filter(|t| t.object_types.contains(&custom.name)).map(|t| (t.name.clone(), site.taxonomy_label(&t.name))).collect();
-            types.push((custom.name.clone(), site.post_type_label(&custom.name), icon, taxonomies, custom.hierarchical));
+            let label = site.post_type_label(&custom.name);
+            let add_new = pick(custom.hierarchical, "Add Post", "Add Page");
+            types.push((custom.name.clone(), label.clone(), label, add_new, icon, taxonomies_of(&custom.name), custom.hierarchical, None));
         }
-        for (name, label, icon, taxonomies, hierarchical) in types {
-            let position = loop {
-                last_object_menu += 1;
-                if !menu.items.iter().any(|m| m.position == last_object_menu) && ![59, 60, 65, 70, 75, 80, 85, 99].contains(&last_object_menu) {
-                    break last_object_menu;
+        for (name, label, all_items, add_new, icon, taxonomies, _hierarchical, menu_position) in types {
+            let mut position = match menu_position {
+                Some(p) if p >= 0 => p as u32,
+                _ => {
+                    last_object_menu += 1;
+                    last_object_menu
                 }
             };
-            let (position, for_id) = if name == "post" {
-                (5, "post".to_owned())
-            } else if name == "page" {
-                (20, "page".to_owned())
-            } else {
-                (position, rustpress_core::formatting::sanitize_html_class(&name))
-            };
+            while menu.items.iter().any(|m| m.position == position) || [59, 60, 65, 70, 75, 80, 85, 99].contains(&position) {
+                position += 1;
+            }
+            let for_id = rustpress_core::formatting::sanitize_html_class(&name);
             let (file, new_file, tags_file) = if name == "post" {
                 ("edit.php".to_owned(), "post-new.php".to_owned(), "edit-tags.php?taxonomy=%s".to_owned())
             } else {
@@ -137,11 +176,6 @@ impl AdminMenu {
             }
             let id = if name == "post" || name == "page" { format!("menu-{for_id}s") } else { format!("menu-posts-{for_id}") };
             menu.items.push(item(position, &esc_attr(&label), "edit_posts", &file, &classes, &id, &icon));
-            let (all_items, add_new) = match name.as_str() {
-                "post" => (tr("All Posts"), tr("Add Post")),
-                "page" => (tr("All Pages"), tr("Add Page")),
-                _ => (label.clone(), if hierarchical { tr("Add Page") } else { tr("Add Post") }),
-            };
             menu.add_sub(&file, sub(5, &all_items, "edit_posts", &file));
             menu.add_sub(&file, sub(10, &add_new, "edit_posts", &new_file));
             for (index, (taxonomy, label)) in taxonomies.iter().enumerate() {
@@ -214,7 +248,9 @@ impl AdminMenu {
         // `add_menu_page()`: the entries of the main menu come first, at their position or last.
         for page in pages.iter().filter(|p| p.is_top_level()) {
             let position = page.position.unwrap_or_else(|| self.items.iter().map(|m| m.position + 1).max().unwrap_or(0));
-            let hook = format!("toplevel_page_{}", page.slug);
+            // A menu without a callback whose slug is a screen (`edit.php?post_type=...`) links to that screen.
+            let file = page.slug.contains(".php");
+            let hook = format!("toplevel_page_{}", page.slug.replace(".php", ""));
             let (icon, icon_class) = if page.icon.is_empty() { ("dashicons-admin-generic", "menu-icon-generic ") } else { (page.icon, "") };
             self.items.push(MenuItem {
                 position,
@@ -224,14 +260,30 @@ impl AdminMenu {
                 classes: format!("menu-top {icon_class}{hook}"),
                 id: hook,
                 icon: icon.to_owned(),
-                href: Some(format!("admin.php?page={}", page.slug)),
+                href: (!file).then(|| format!("admin.php?page={}", page.slug)),
             });
         }
-        let plugin_menus: Vec<&str> = pages.iter().filter(|p| p.is_top_level()).map(|p| p.slug).collect();
+        let plugin_menus: Vec<&str> = pages.iter().filter(|p| p.is_top_level() && !p.slug.contains(".php")).map(|p| p.slug).collect();
+        // `$_parent_pages`: every menu of `add_menu_page()`.
+        let parent_pages: Vec<&str> = pages.iter().filter(|p| p.is_top_level()).map(|p| p.slug).collect();
         for page in pages.iter().filter(|p| !p.is_top_level()) {
             let position = self.submenu.iter().find(|(p, _)| p == page.parent).and_then(|(_, list)| list.iter().map(|s| s.position + 1).max()).unwrap_or(0);
-            let href = if plugin_menus.contains(&page.parent) { format!("admin.php?page={}", page.slug) } else { format!("{}?page={}", page.parent, page.slug) };
-            self.add_sub(page.parent, SubItem { position, title: page.menu_title.clone(), capability: page.capability.to_owned(), slug: page.slug.to_owned(), classes: String::new(), href: Some(href) });
+            let href = if page.slug.contains(".php") {
+                // A submenu entry that is a screen of its own.
+                None
+            } else if plugin_menus.contains(&page.parent) {
+                Some(format!("admin.php?page={}", page.slug))
+            } else if page.parent.contains('?') {
+                Some(format!("{}&#038;page={}", page.parent, page.slug))
+            } else {
+                Some(format!("{}?page={}", page.parent, page.slug))
+            };
+            let page_url = if parent_pages.contains(&page.parent) {
+                format!("admin.php?page={}", page.slug)
+            } else {
+                rustpress_core::urls::add_query_arg(page.parent, "page", page.slug)
+            };
+            self.add_sub(page.parent, SubItem { position, title: page.menu_title.clone(), capability: page.capability.to_owned(), slug: page.slug.to_owned(), classes: String::new(), href, page_url: Some(page_url) });
         }
         self
     }

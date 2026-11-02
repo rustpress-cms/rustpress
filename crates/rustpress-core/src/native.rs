@@ -194,6 +194,12 @@ pub trait ActivePlugin: Send + Sync {
         Box::pin(async move { Ok(html) })
     }
 
+    /// The `admin_body_class` filter: classes (each with a leading space) the plugin adds to the `<body>` of every
+    /// screen.
+    fn admin_body_class(&self, _ctx: &AdminContext<'_>, classes: String) -> String {
+        classes
+    }
+
     /// `admin_menu`: the pages the plugin adds to the menu of the administration.
     fn admin_pages(&self, _site: &Site) -> Vec<AdminPage> {
         Vec::new()
@@ -906,6 +912,8 @@ pub struct AdminContext<'a> {
     pub nonce: &'a (dyn Fn(&str) -> String + Send + Sync),
     /// `wp_verify_nonce( $nonce, $action )`.
     pub verify_nonce: &'a (dyn Fn(&str, &str) -> bool + Send + Sync),
+    /// `$_SERVER['HTTP_USER_AGENT']`.
+    pub user_agent: Option<&'a str>,
 }
 
 impl AdminContext<'_> {
@@ -1434,6 +1442,11 @@ impl Plugins {
             }
         }
         Ok(None)
+    }
+
+    /// `apply_filters( 'admin_body_class', '' )` of the plugins.
+    pub fn admin_body_class(&self, ctx: &AdminContext<'_>) -> String {
+        self.hooks().fold(String::new(), |classes, plugin| plugin.admin_body_class(ctx, classes))
     }
 
     /// The comment field of `comment_form()` after the plugins' `comment_form_field_comment` filters.
