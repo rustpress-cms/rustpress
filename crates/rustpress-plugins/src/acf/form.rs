@@ -148,7 +148,7 @@ pub struct FormData {
 
 /// `ACF_Assets::print_footer_scripts()`: `acf.data` with what the field types localized, and `acf.doAction(
 /// 'prepare' )`.
-pub(super) fn footer(site: &Site, form: &FormData, wp_version: &str, nonce: &str, user_agent: Option<&str>, can: &(dyn Fn(&str) -> bool + Send + Sync)) -> String {
+pub(super) fn footer(site: &Site, form: &FormData, wp_version: &str, nonce: &str, user_agent: Option<&str>, can: &(dyn Fn(&str) -> bool + Send + Sync), uploader: bool) -> String {
     let locale = site.locale_data();
     let mut data = Map::new();
     let select2 = [
@@ -216,6 +216,16 @@ pub(super) fn footer(site: &Site, form: &FormData, wp_version: &str, nonce: &str
     data.insert("mimeTypeIcon".into(), Json::String(site.site_url("wp-includes/images/media/default.png")));
     let mimes = rustpress_content::media::allowed_mime_types_for(site, &[], can, false, false);
     data.insert("mimeTypes".into(), Json::Object(mimes.into_iter().map(|(k, v)| (k, Json::String(v))).collect()));
+    // `acf_field_wysiwyg::acf_enqueue_uploader()` on `acf/enqueue_uploader`: the toolbars of the editors.
+    if uploader {
+        data.insert(
+            "toolbars".into(),
+            json!({
+                "full": {"1": "formatselect,bold,italic,bullist,numlist,blockquote,alignleft,aligncenter,alignright,link,wp_more,spellchecker,fullscreen,wp_adv", "2": "strikethrough,hr,forecolor,pastetext,removeformat,charmap,outdent,indent,undo,redo,wp_help", "3": "", "4": ""},
+                "basic": {"1": "bold,italic,underline,blockquote,strikethrough,bullist,numlist,alignleft,aligncenter,alignright,undo,redo,link,fullscreen"},
+            }),
+        );
+    }
     data.insert("admin_url".into(), Json::String(format!("{}/", site.site_url("wp-admin"))));
     data.insert("ajaxurl".into(), Json::String(site.site_url("wp-admin/admin-ajax.php")));
     data.insert("nonce".into(), Json::String(nonce.to_owned()));
@@ -272,7 +282,7 @@ pub async fn comment_form_field_comment(groups: &[FieldGroup], ctx: &CommentForm
     };
     if first {
         let can = |capability: &str| ctx.query.viewer.as_ref().is_some_and(|v| v.can(capability));
-        let footer = footer(site, &form, &wp_version, &ctx.query.create_nonce("acf_nonce"), ctx.query.user_agent.as_deref(), &can);
+        let footer = footer(site, &form, &wp_version, &ctx.query.create_nonce("acf_nonce"), ctx.query.user_agent.as_deref(), &can, false);
         ctx.state.lock().expect("plugin state").footer_scripts.push(footer);
     }
     let nonce = |action: &str| ctx.query.create_nonce(action);

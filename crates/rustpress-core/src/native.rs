@@ -196,8 +196,8 @@ pub trait ActivePlugin: Send + Sync {
 
     /// `add_meta_boxes_comment`: what the plugin prints in the second column of `comment.php?action=editcomment`,
     /// before the meta boxes.
-    fn comment_meta_boxes<'a>(&'a self, _ctx: &'a AdminContext<'a>, _comment: &'a rustpress_db::Comment) -> BoxFuture<'a, Result<String>> {
-        Box::pin(async { Ok(String::new()) })
+    fn comment_meta_boxes<'a>(&'a self, _ctx: &'a AdminContext<'a>, _comment: &'a rustpress_db::Comment) -> BoxFuture<'a, Result<MetaBoxes>> {
+        Box::pin(async { Ok(MetaBoxes::default()) })
     }
 
     /// `admin_footer`: printed after `#wpfooter`, before the media templates.
@@ -705,6 +705,24 @@ pub struct CommentSaved<'a> {
     pub can: &'a (dyn Fn(&str) -> bool + Send + Sync),
     /// `wp_verify_nonce( $nonce, $action )` for who sent it.
     pub verify_nonce: &'a (dyn Fn(&str, &str) -> bool + Send + Sync),
+}
+
+/// What a plugin prints into an edit screen, and what it asks of the screen for it.
+#[derive(Debug, Clone, Default)]
+pub struct MetaBoxes {
+    pub html: String,
+    /// `wp_enqueue_media()` while the page is printed: the media library comes with the footer.
+    pub media: bool,
+    /// An editor with the default settings printed on `admin_footer` (priority 1) between the two parts (ACF's
+    /// hidden `wp_editor( '', 'acf_content' )`).
+    pub hidden_editor: Option<HiddenEditor>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct HiddenEditor {
+    pub id: String,
+    pub before: String,
+    pub after: String,
 }
 
 /// A `wp_die( $message, $title )` page of a plugin (status 500 by default).
@@ -1465,10 +1483,13 @@ impl Plugins {
     }
 
     /// `add_meta_boxes_comment` of the plugins.
-    pub async fn comment_meta_boxes(&self, ctx: &AdminContext<'_>, comment: &rustpress_db::Comment) -> Result<String> {
-        let mut out = String::new();
+    pub async fn comment_meta_boxes(&self, ctx: &AdminContext<'_>, comment: &rustpress_db::Comment) -> Result<MetaBoxes> {
+        let mut out = MetaBoxes::default();
         for plugin in self.hooks() {
-            out.push_str(&plugin.comment_meta_boxes(ctx, comment).await?);
+            let boxes = plugin.comment_meta_boxes(ctx, comment).await?;
+            out.html.push_str(&boxes.html);
+            out.media |= boxes.media;
+            out.hidden_editor = out.hidden_editor.or(boxes.hidden_editor);
         }
         Ok(out)
     }

@@ -3,7 +3,7 @@
 //! `add_meta_boxes_comment`), the spinner of `admin_footer()` and `acf.data` in the footer. Saving goes through
 //! `edit_comment`, like the website's `comment_post` ([`super::save`]).
 
-use rustpress_core::native::{AdminContext, Assets};
+use rustpress_core::native::{AdminContext, Assets, HiddenEditor, MetaBoxes};
 use rustpress_core::Result;
 use rustpress_db::{Comment, MetaKind};
 use rustpress_phpser::Value;
@@ -47,10 +47,10 @@ async fn groups_for<'g>(groups: &'g [FieldGroup], ctx: &AdminContext<'_>, commen
 }
 
 /// `acf_form_comment::edit_comment()`.
-pub async fn meta_boxes(groups: &[FieldGroup], ctx: &AdminContext<'_>, comment: &Comment) -> Result<String> {
+pub async fn meta_boxes(groups: &[FieldGroup], ctx: &AdminContext<'_>, comment: &Comment) -> Result<MetaBoxes> {
     let visible = groups_for(groups, ctx, comment).await?;
     if visible.is_empty() {
-        return Ok(String::new());
+        return Ok(MetaBoxes::default());
     }
     let post_id = format!("comment_{}", comment.comment_id);
     let uploader = if (ctx.can)("upload_files") { "wp" } else { "basic" };
@@ -59,7 +59,7 @@ pub async fn meta_boxes(groups: &[FieldGroup], ctx: &AdminContext<'_>, comment: 
     let render = Ctx { site: ctx.site, nonce: ctx.nonce, services: &services, admin: true, uploader, wants_uploader: Default::default(), can: ctx.can, rich_edit, default_editor: if rich_edit { "tinymce" } else { "html" }, wysiwyg_height: 300 };
     let mut out = form_data("comment", super::php::string(&post_id), &(ctx.nonce)("comment"));
     let object = Object { kind: MetaKind::Comment, id: comment.comment_id };
-    for group in visible {
+    for group in visible.iter().copied() {
         let mut fields = String::new();
         for field in &group.fields {
             let mut f = RenderField::load(field, &render);
@@ -82,7 +82,27 @@ pub async fn meta_boxes(groups: &[FieldGroup], ctx: &AdminContext<'_>, comment: 
             super::render::esc_html_acf(&super::php::string(&rustpress_core::formatting::esc_html(&group.title)))
         ));
     }
-    Ok(out)
+    Ok(uploader_boxes(out, ctx, &visible))
+}
+
+/// The fields that call `acf_enqueue_uploader()` while they are rendered: images, files and icons with the media
+/// library, links and WYSIWYG editors always (sub fields of groups included).
+fn wants_uploader(groups: &[&FieldGroup], media_library: bool) -> bool {
+    fn walk(fields: &[super::fields::Field], media_library: bool) -> bool {
+        fields.iter().any(|f| matches!(f.kind.as_str(), "link" | "wysiwyg") || (media_library && matches!(f.kind.as_str(), "image" | "file" | "icon_picker")) || walk(&f.sub_fields, media_library))
+    }
+    groups.iter().any(|g| walk(&g.fields, media_library))
+}
+
+/// `ACF_Assets::enqueue_uploader()`: `wp_enqueue_media()` for who may upload, and the hidden editor of
+/// `print_uploader_scripts()` on `admin_footer`.
+fn uploader_boxes(html: String, ctx: &AdminContext<'_>, groups: &[&FieldGroup]) -> MetaBoxes {
+    let can_upload = (ctx.can)("upload_files");
+    if !wants_uploader(groups, can_upload) {
+        return MetaBoxes { html, ..MetaBoxes::default() };
+    }
+    let hidden = HiddenEditor { id: "acf_content".into(), before: "\t\t<div id=\"acf-hidden-wp-editor\" style=\"display: none;\">\n\t\t\t".into(), after: "\t\t</div>\n\t\t\t".into() };
+    MetaBoxes { html, media: can_upload, hidden_editor: Some(hidden) }
 }
 
 /// `acf_form_comment::admin_footer()`.
@@ -99,13 +119,15 @@ pub async fn footer_scripts(groups: &[FieldGroup], ctx: &AdminContext<'_>) -> Re
         return Ok(String::new());
     }
     let mut form = FormData { screen: Json::Null, post_id: Json::Null, validation: Json::Null };
+    let mut uploader = false;
     if ctx.get("action") == Some("editcomment")
         && let Some(comment) = requested_comment(ctx).await?
         && !groups_for(groups, ctx, &comment).await?.is_empty()
     {
         form = FormData { screen: Json::String("comment".into()), post_id: Json::String(format!("comment_{}", comment.comment_id)), validation: Json::Bool(true) };
+        uploader = wants_uploader(&groups_for(groups, ctx, &comment).await?, (ctx.can)("upload_files"));
     }
-    Ok(super::form::footer(ctx.site, &form, ctx.wp_version, &(ctx.nonce)("acf_nonce"), ctx.user_agent, ctx.can))
+    Ok(super::form::footer(ctx.site, &form, ctx.wp_version, &(ctx.nonce)("acf_nonce"), ctx.user_agent, ctx.can, uploader))
 }
 
 /// What the renderer asks of the page: nothing in the administration but the WordPress files.

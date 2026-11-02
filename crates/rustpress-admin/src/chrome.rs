@@ -377,6 +377,8 @@ pub struct Assets {
     pub plugin_styles: String,
     /// `apply_filters( 'admin_body_class', '' )` of the plugins: they come before the classes of the screen.
     pub plugin_body_classes: String,
+    /// Printed on `admin_footer` at priority 1, before the plugins' other output there.
+    pub footer_first: String,
     /// What the plugins print on `admin_footer`: after `#wpfooter`, before the media templates.
     pub plugin_footer: String,
     /// What the plugins print on `admin_print_footer_scripts` (priority 20): after the emoji script.
@@ -903,6 +905,7 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
         assets.footer_text.clone().unwrap_or_else(|| format!("<span id=\"footer-thankyou\">{}</span>", rustpress_core::i18n::sprintf(&tr("Thank you for creating with <a href=\"%s\">WordPress</a>."), &["https://wordpress.org/"]))),
         rustpress_core::i18n::sprintf(&tr("Version %s"), &[&version])
     ));
+    out.push_str(&assets.footer_first);
     out.push_str(&assets.plugin_footer);
     out.push_str(&assets.pre_footer);
     if !assets.no_auth_check {

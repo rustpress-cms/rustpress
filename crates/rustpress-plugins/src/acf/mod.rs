@@ -216,7 +216,7 @@ impl ActivePlugin for Loaded {
         edit_comment::admin_enqueue(ctx, assets);
     }
 
-    fn comment_meta_boxes<'a>(&'a self, ctx: &'a rustpress_core::native::AdminContext<'a>, comment: &'a rustpress_db::Comment) -> BoxFuture<'a, Result<String>> {
+    fn comment_meta_boxes<'a>(&'a self, ctx: &'a rustpress_core::native::AdminContext<'a>, comment: &'a rustpress_db::Comment) -> BoxFuture<'a, Result<rustpress_core::native::MetaBoxes>> {
         Box::pin(edit_comment::meta_boxes(&self.groups, ctx, comment))
     }
 

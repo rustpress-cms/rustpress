@@ -287,3 +287,102 @@ pub fn link_dialog(ctx: &Ctx<'_>) -> String {
         esc_attr(&tr("Add Link"))
     )
 }
+
+/// `_WP_Editors::editor()` of an editor with the default settings of `wp_editor( $content, $id )` (TinyMCE when the
+/// browser can, Quicktags, the media button when the user may upload, 20 rows): the markup and its entry for
+/// `editor_js()`. `buttons_css`: the first editor of the page links the stylesheet of the buttons.
+pub fn default_editor(ctx: &Ctx<'_>, id: &str, content: &str, buttons_css: bool) -> (String, EditorEntry) {
+    let site = ctx.site();
+    let rich = can_richedit(ctx, Some("true"));
+    let default = if rich { user_setting(ctx, "editor").filter(|e| e == "html" || e == "tinymce").unwrap_or_else(|| "tinymce".to_owned()) } else { "html".to_owned() };
+    let tmce_active = rich && default == "tinymce";
+    let site_url = &ctx.env.loader.site_url;
+    let mut out = format!("<div id=\"wp-{id}-wrap\" class=\"wp-core-ui wp-editor-wrap {}\">", if tmce_active { "tmce-active" } else { "html-active" });
+    if buttons_css {
+        out.push_str(&format!("<link rel='stylesheet' id='editor-buttons-css' href='{site_url}/wp-includes/css/editor.min.css?ver={}' media='all' />\n", ctx.env.loader.version));
+    }
+    out.push_str(&format!("<div id=\"wp-{id}-editor-tools\" class=\"wp-editor-tools hide-if-no-js\">"));
+    if ctx.can("upload_files") {
+        out.push_str(&format!(
+            "<div id=\"wp-{id}-media-buttons\" class=\"wp-media-buttons\"><button type=\"button\" id=\"insert-media-button\" class=\"button insert-media add_media\" data-editor=\"{}\" aria-haspopup=\"dialog\" aria-controls=\"wp-media-modal\"><span class=\"wp-media-buttons-icon\" aria-hidden=\"true\"></span> {}</button></div>\n",
+            esc_attr(id),
+            ctx.tr("Add Media")
+        ));
+    }
+    if rich {
+        out.push_str(&format!(
+            "<div class=\"wp-editor-tabs\"><button type=\"button\" id=\"{id}-tmce\"{} class=\"wp-switch-editor switch-tmce\" data-wp-editor-id=\"{id}\">{}</button>\n<button type=\"button\" id=\"{id}-html\"{} class=\"wp-switch-editor switch-html\" data-wp-editor-id=\"{id}\">{}</button>\n</div>\n",
+            if tmce_active { " aria-pressed=\"true\"" } else { "" },
+            site.trx("Visual", "Name for the Visual editor tab"),
+            if tmce_active { "" } else { " aria-pressed=\"true\"" },
+            site.trx("Code", "Name for the Code editor tab (formerly Text)")
+        ));
+    }
+    out.push_str("</div>\n");
+    // `format_for_editor()` for TinyMCE, `esc_textarea()` for the code editor.
+    let escaped = if tmce_active { content.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;") } else { super::post_edit::esc_textarea_pub(content) };
+    out.push_str(&format!(
+        "<div id=\"wp-{id}-editor-container\" class=\"wp-editor-container\"><div id=\"qt_{id}_toolbar\" class=\"quicktags-toolbar hide-if-no-js\"></div><textarea class=\"wp-editor-area\" rows=\"20\"{} cols=\"40\" name=\"{id}\" id=\"{id}\">{escaped}</textarea></div>\n</div>\n\n",
+        if rich { " autocomplete=\"off\"" } else { "" }
+    ));
+    let mce = rich.then(|| default_mce_init(ctx, id));
+    (out, EditorEntry { id: id.to_owned(), quicktags: "strong,em,link,block,del,ins,img,ul,ol,li,code,more,close".to_owned(), tinymce: mce })
+}
+
+/// An editor of the page for `editor_js()`: its Quicktags buttons and, with TinyMCE, its settings.
+#[derive(Debug, Clone)]
+pub struct EditorEntry {
+    pub id: String,
+    pub quicktags: String,
+    pub tinymce: Option<String>,
+}
+
+/// The TinyMCE settings of an editor with the default settings (not the post's: no distraction-free mode, no
+/// auto-resizing, a resizable box, `wpautop`).
+fn default_mce_init(ctx: &Ctx<'_>, id: &str) -> String {
+    let site = ctx.site();
+    let site_url = &ctx.env.loader.site_url;
+    let version = &ctx.env.loader.version;
+    let mut css = vec![format!("{site_url}/wp-includes/css/dashicons.min.css?ver={version}"), format!("{site_url}/wp-includes/js/tinymce/skins/wordpress/wp-content.css?ver={version}")];
+    css.extend(editor_styles(ctx));
+    let body_class = format!("{id} locale-{}", rustpress_core::formatting::sanitize_html_class(&site.locale().replace('_', "-").to_lowercase()));
+    let lang = site.locale().split('_').next().unwrap_or("en").to_owned();
+    let init = MCE_INIT
+        .replace("{SITE}", site_url)
+        .replace("{TINYMCE_VERSION}", &tinymce_version(ctx))
+        .replace("{CONTENT_CSS}", &css.join(","))
+        .replace("{BODY_CLASS}", &body_class)
+        .replace("{LANG}", &lang)
+        .replace("{LANG_ATTR}", &site.language_tag())
+        .replace("resize:false", "resize:\"vertical\"")
+        .replace("selector:\"#content\"", &format!("selector:\"#{id}\""))
+        .replace("wpautop:false,indent:true", "wpautop:true,indent:false")
+        .replace("spellchecker,wp_adv,dfw\"", "spellchecker,fullscreen,wp_adv\"")
+        .replace(",wp_autoresize_on:true,add_unload_trigger:false", "");
+    init.trim().strip_prefix("{'content':").and_then(|r| r.strip_suffix('}')).unwrap_or(&init).to_owned()
+}
+
+/// `_WP_Editors::editor_js()` for the editors of a page in the order they were printed: their settings, TinyMCE's
+/// scripts when one of them uses it, the start of the editors and the link dialog.
+pub fn editors_js(ctx: &Ctx<'_>, editors: &[EditorEntry]) -> String {
+    let site = ctx.site();
+    let site_url = &ctx.env.loader.site_url;
+    let rich = editors.iter().any(|e| e.tinymce.is_some());
+    let mce = editors.iter().filter_map(|e| e.tinymce.as_ref().map(|init| format!("'{}':{init}", e.id))).collect::<Vec<_>>().join(",");
+    let qt = editors.iter().map(|e| format!("'{}':{{id:\"{}\",buttons:\"{}\"}}", e.id, e.id, e.quicktags)).collect::<Vec<_>>().join(",");
+    let (plugins, lang) = if rich {
+        ("charmap,colorpicker,hr,lists,media,paste,tabfocus,textcolor,fullscreen,wordpress,wpautoresize,wpeditimage,wpemoji,wpgallery,wplink,wpdialogs,wptextpattern,wpview".to_owned(), site.locale().split('_').next().unwrap_or("en").to_owned())
+    } else {
+        (String::new(), String::new())
+    };
+    let mut out = format!(
+        "\n\t\t<script>\n\t\ttinyMCEPreInit = {{\n\t\t\tbaseURL: \"{site_url}/wp-includes/js/tinymce\",\n\t\t\tsuffix: \".min\",\n\t\t\t\t\t\tmceInit: {{{mce}}},\n\t\t\tqtInit: {{{qt}}},\n\t\t\tref: {{plugins:\"{plugins}\",theme:\"modern\",language:\"{lang}\"}},\n\t\t\tload_ext: function(url,lang){{var sl=tinymce.ScriptLoader;sl.markDone(url+'/langs/'+lang+'.js');sl.markDone(url+'/langs/'+lang+'_dlg.js');}}\n\t\t}};\n\t\t</script>\n\t\t"
+    );
+    if rich {
+        out.push_str(&tinymce_scripts(ctx));
+    }
+    out.push_str(INIT);
+    out.push_str("\t\t");
+    out.push_str(&link_dialog(ctx));
+    out
+}
