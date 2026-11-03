@@ -514,7 +514,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     screen.options = Some(screen_options);
     screen.taxonomy = Some(info.name.clone());
     let mut assets = Assets { scripts: vec!["admin-tags".into(), "inline-edit-tax".into()], ..Default::default() };
-    super::meta_boxes::plugin_box_assets(ctx, &fields, &mut assets, Vec::new(), true).await;
+    super::meta_boxes::plugin_box_assets(ctx, &fields, &mut assets, Vec::new(), true, None).await;
     render(ctx, &screen, &h, &assets).await
 }
 
@@ -681,7 +681,7 @@ pub async fn edit_page(ctx: &Ctx<'_>) -> AdminResponse {
     screen.taxonomy = Some(info.name.clone());
     screen.edited_term = Some(term);
     let mut assets = Assets { early_scripts: vec!["admin-tags".into()], ..Default::default() };
-    super::meta_boxes::plugin_box_assets(ctx, &fields, &mut assets, Vec::new(), true).await;
+    super::meta_boxes::plugin_box_assets(ctx, &fields, &mut assets, Vec::new(), true, None).await;
     // The empty help of the screen ends without a line break.
     render(ctx, &screen, &format!("\n{h}"), &assets).await
 }

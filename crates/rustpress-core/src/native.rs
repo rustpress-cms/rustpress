@@ -206,6 +206,39 @@ pub trait ActivePlugin: Send + Sync {
         Box::pin(async { Ok(MetaBoxes::default()) })
     }
 
+    /// The `attachment_fields_to_edit` filter of `get_compat_media_markup()`: the fields the plugin adds to the edit form of
+    /// an attachment (`in_modal` in the media modal, else on `post.php`).
+    fn attachment_fields_to_edit<'a>(&'a self, _ctx: &'a AdminContext<'a>, _attachment: &'a Post, _in_modal: bool) -> BoxFuture<'a, Result<Vec<AttachmentField>>> {
+        Box::pin(async { Ok(Vec::new()) })
+    }
+
+    /// The `attachment_fields_to_save` filter of `edit_post()` and `wp_ajax_save_attachment_compat()`; a `wp_die()` of
+    /// the plugin ends the request.
+    fn attachment_fields_to_save<'a>(&'a self, _ctx: &'a AttachmentSaved<'a>) -> BoxFuture<'a, Result<Option<Die>>> {
+        Box::pin(async { Ok(None) })
+    }
+
+    /// What a plugin's `acf_enqueue_uploader()`-like call asks of a screen without boxes (`upload.php`, the attachment's
+    /// `post.php`): the media library and an editor on `admin_footer`, whose `before` holds what the plugin prints there
+    /// first.
+    fn screen_uploader<'a>(&'a self, _ctx: &'a AdminContext<'a>) -> BoxFuture<'a, Result<MetaBoxes>> {
+        Box::pin(async { Ok(MetaBoxes::default()) })
+    }
+
+    /// `wp_ajax_query-attachments` at priority -1: the sizes the plugin adds to `image_size_names_choose` for the answer.
+    fn query_attachments_sizes(&self, _ctx: &AdminContext<'_>) -> Vec<String> {
+        Vec::new()
+    }
+
+    /// The `wp_prepare_attachment_for_js` filter the plugin adds on `wp_ajax_query-attachments`, after the others.
+    fn query_attachment_js(&self, _ctx: &AdminContext<'_>, _response: &mut serde_json::Map<String, serde_json::Value>) {}
+
+    /// The extension of the first `wp_mime_type_icon()` the plugin calls on `admin_enqueue_scripts` of the screen: it fixes
+    /// the icons of the request (`icon_files` in the object cache), `.png` where WordPress asks for `.svg`.
+    fn admin_mime_icon_ext(&self, _ctx: &AdminContext<'_>) -> Option<&'static str> {
+        None
+    }
+
     /// `show_user_profile`/`edit_user_profile` of `profile.php`/`user-edit.php` (the user's ID) and `user_new_form` of
     /// `user-new.php` (`None`): what the plugin prints at the end of the form, and what it asks of the screen for it.
     fn user_form<'a>(&'a self, _ctx: &'a AdminContext<'a>, _user_id: Option<u64>) -> BoxFuture<'a, Result<MetaBoxes>> {
@@ -825,6 +858,23 @@ pub struct PostSaved<'a> {
     pub writer: &'a rustpress_db::Writer,
     /// The post as it was stored.
     pub post: &'a rustpress_db::Post,
+}
+
+/// A field of `attachment_fields_to_edit` with `'input' => 'html'`.
+#[derive(Debug, Clone, Default)]
+pub struct AttachmentField {
+    pub id: String,
+    pub label: String,
+    pub html: String,
+}
+
+/// An attachment the administration saves, as `attachment_fields_to_save` sees it (before the post is updated).
+pub struct AttachmentSaved<'a> {
+    pub ctx: &'a AdminContext<'a>,
+    pub writer: &'a rustpress_db::Writer,
+    pub attachment: &'a Post,
+    /// `wp_ajax_save_attachment_compat()` rather than `edit_post()`.
+    pub ajax: bool,
 }
 
 /// A user the administration saved, as `profile_update`/`user_register` see it.
@@ -1635,6 +1685,54 @@ impl Plugins {
         let mut out = MetaBoxes::default();
         for plugin in self.hooks() {
             let boxes = plugin.term_form(ctx, taxonomy, term).await?;
+            out.html.push_str(&boxes.html);
+            out.media |= boxes.media;
+            out.hidden_editor = out.hidden_editor.or(boxes.hidden_editor);
+        }
+        Ok(out)
+    }
+
+    /// The sizes of `image_size_names_choose` the plugins add to `query-attachments`.
+    pub fn query_attachments_sizes(&self, ctx: &AdminContext<'_>) -> Vec<String> {
+        self.hooks().flat_map(|plugin| plugin.query_attachments_sizes(ctx)).collect()
+    }
+
+    /// The filters the plugins add to the attachments of `query-attachments`.
+    pub fn query_attachment_js(&self, ctx: &AdminContext<'_>, response: &mut serde_json::Map<String, serde_json::Value>) {
+        for plugin in self.hooks() {
+            plugin.query_attachment_js(ctx, response);
+        }
+    }
+
+    /// The extension of the icons of the request: that of the first plugin that asks for icons early, else `svg`.
+    pub fn admin_mime_icon_ext(&self, ctx: &AdminContext<'_>) -> &'static str {
+        self.hooks().find_map(|plugin| plugin.admin_mime_icon_ext(ctx)).unwrap_or("svg")
+    }
+
+    /// `attachment_fields_to_edit` of the plugins, in their order.
+    pub async fn attachment_fields_to_edit(&self, ctx: &AdminContext<'_>, attachment: &Post, in_modal: bool) -> Result<Vec<AttachmentField>> {
+        let mut out = Vec::new();
+        for plugin in self.hooks() {
+            out.extend(plugin.attachment_fields_to_edit(ctx, attachment, in_modal).await?);
+        }
+        Ok(out)
+    }
+
+    /// `attachment_fields_to_save` of the plugins; the first `wp_die()` ends the request.
+    pub async fn attachment_fields_to_save(&self, ctx: &AttachmentSaved<'_>) -> Result<Option<Die>> {
+        for plugin in self.hooks() {
+            if let Some(die) = plugin.attachment_fields_to_save(ctx).await? {
+                return Ok(Some(die));
+            }
+        }
+        Ok(None)
+    }
+
+    /// The uploader the plugins ask for on a screen without boxes.
+    pub async fn screen_uploader(&self, ctx: &AdminContext<'_>) -> Result<MetaBoxes> {
+        let mut out = MetaBoxes::default();
+        for plugin in self.hooks() {
+            let boxes = plugin.screen_uploader(ctx).await?;
             out.html.push_str(&boxes.html);
             out.media |= boxes.media;
             out.hidden_editor = out.hidden_editor.or(boxes.hidden_editor);

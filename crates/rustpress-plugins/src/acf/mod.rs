@@ -13,6 +13,7 @@
 
 mod admin;
 mod dashicons;
+mod edit_attachment;
 mod edit_comment;
 mod edit_term;
 mod edit_user;
@@ -236,6 +237,34 @@ impl ActivePlugin for Loaded {
         edit_post::admin_enqueue(ctx, assets);
         edit_term::admin_enqueue(ctx, assets);
         edit_user::admin_enqueue(ctx, assets);
+        edit_attachment::admin_enqueue(ctx, assets);
+    }
+
+    fn attachment_fields_to_edit<'a>(&'a self, ctx: &'a rustpress_core::native::AdminContext<'a>, attachment: &'a rustpress_db::Post, in_modal: bool) -> BoxFuture<'a, Result<Vec<rustpress_core::native::AttachmentField>>> {
+        Box::pin(edit_attachment::attachment_fields_to_edit(&self.groups, ctx, attachment, in_modal))
+    }
+
+    fn attachment_fields_to_save<'a>(&'a self, ctx: &'a rustpress_core::native::AttachmentSaved<'a>) -> BoxFuture<'a, Result<Option<rustpress_core::native::Die>>> {
+        Box::pin(save::save_attachment(&self.groups, ctx))
+    }
+
+    fn query_attachments_sizes(&self, ctx: &rustpress_core::native::AdminContext<'_>) -> Vec<String> {
+        edit_attachment::query_attachments_sizes(&self.groups, ctx)
+    }
+
+    fn query_attachment_js(&self, ctx: &rustpress_core::native::AdminContext<'_>, response: &mut serde_json::Map<String, serde_json::Value>) {
+        edit_attachment::query_attachment_js(&self.groups, ctx, response);
+    }
+
+    /// `ACF_Media::enqueue_scripts()` localizes `wp_mime_type_icon()` wherever `acf-input` is enqueued.
+    fn admin_mime_icon_ext(&self, ctx: &rustpress_core::native::AdminContext<'_>) -> Option<&'static str> {
+        let mut assets = rustpress_core::native::Assets::default();
+        self.admin_enqueue(ctx, &mut assets);
+        assets.scripts.iter().any(|a| a.handle == "acf-input").then_some("png")
+    }
+
+    fn screen_uploader<'a>(&'a self, ctx: &'a rustpress_core::native::AdminContext<'a>) -> BoxFuture<'a, Result<rustpress_core::native::MetaBoxes>> {
+        Box::pin(async move { Ok(edit_attachment::screen_uploader(ctx)) })
     }
 
     fn user_form<'a>(&'a self, ctx: &'a rustpress_core::native::AdminContext<'a>, user_id: Option<u64>) -> BoxFuture<'a, Result<rustpress_core::native::MetaBoxes>> {
@@ -297,6 +326,9 @@ impl ActivePlugin for Loaded {
                 return Ok(footer);
             }
             if let Some(footer) = edit_user::footer_scripts(&self.groups, ctx).await? {
+                return Ok(footer);
+            }
+            if let Some(footer) = edit_attachment::footer_scripts(&self.groups, ctx).await? {
                 return Ok(footer);
             }
             edit_comment::footer_scripts(&self.groups, ctx).await

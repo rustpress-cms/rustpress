@@ -395,6 +395,8 @@ pub struct Assets {
     pub plugin_late_styles: String,
     /// Stylesheets WordPress registers that plugins enqueue (`wp-color-picker`): after those of the screen.
     pub plugin_core_styles: Vec<String>,
+    /// Stylesheets WordPress registers that a plugin's late styles printed already (outside `load-styles.php`).
+    pub plugin_done_styles: Vec<String>,
     /// What the plugins print on `admin_notices`, the end of `admin-header.php`.
     pub notices: String,
     /// What a plugin's `admin_footer_text` prints instead of the thanks for using WordPress.
@@ -658,6 +660,11 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
     // Stylesheets of WordPress a plugin enqueues on `admin_enqueue_scripts`.
     for handle in &assets.plugin_core_styles {
         styles.enqueue(handle);
+    }
+    for handle in &assets.plugin_done_styles {
+        if !styles.deps.done.contains(handle) {
+            styles.deps.done.push(handle.clone());
+        }
     }
     let admin_styles = styles.print_admin_styles(true);
     let colors = format!("<link rel='stylesheet' id='colors-css' href='{}/wp-admin/css/colors/modern/colors.min.css?ver={version}' media='all' />\n", env.loader.site_url);

@@ -5,7 +5,7 @@
 //! Differs from the plugin: options that change a field when a value comes in (`save_custom`, `save_options`,
 //! `save_other_choice`) and files sent by the basic uploader (`ACF_Media::save_files()`) are not handled.
 
-use rustpress_core::native::{CommentSaved, Die, PostSaved, TermSaved, UserSaved};
+use rustpress_core::native::{AttachmentSaved, CommentSaved, Die, PostSaved, TermSaved, UserSaved};
 use rustpress_core::{Result, Site};
 use rustpress_db::{MetaKind, Writer};
 use rustpress_phpser::{Key, Value};
@@ -47,7 +47,7 @@ fn strlen(value: &Value) -> usize {
 }
 
 /// `floatval()`.
-fn floatval(value: &Value) -> f64 {
+pub(super) fn floatval(value: &Value) -> f64 {
     match super::php::numval(value) {
         Value::Int(i) => i as f64,
         Value::Float(f) => f,
@@ -424,6 +424,45 @@ pub async fn save_user(groups: &[FieldGroup], ctx: &UserSaved<'_>) -> Result<Opt
         let Some(field) = field_by_key(groups, &key_text(&k)) else { continue };
         let value = if unfiltered { v } else { kses_deep(v) };
         update_value(ctx.writer, (MetaKind::User, ctx.user_id), value, field, &field.name).await?;
+    }
+    Ok(None)
+}
+
+/// `acf_form_attachment::save_attachment()` on `attachment_fields_to_save`: `acf_verify_nonce( 'attachment' )`, then
+/// `acf_save_post()` – without validation for `save-attachment-compat`, else after `acf_validate_save_post( true )`
+/// with `wp_die()`.
+pub async fn save_attachment(groups: &[FieldGroup], ctx: &AttachmentSaved<'_>) -> Result<Option<Die>> {
+    let form = ctx.ctx.form;
+    let site = ctx.ctx.site;
+    let nonce = form.iter().chain(ctx.ctx.query.iter()).rev().find(|(k, _)| k == "_acf_nonce").map(|(_, v)| v.as_str()).unwrap_or_default();
+    if nonce.is_empty() || nonce == "0" || !(ctx.ctx.verify_nonce)(nonce, "attachment") {
+        return Ok(None);
+    }
+    let acf = rustpress_core::native::form_value(form, "acf");
+    let items = match &acf {
+        Some(Value::Array(items)) => items.clone(),
+        _ => Vec::new(),
+    };
+    if !ctx.ajax {
+        let mut errors = Vec::new();
+        for (k, v) in &items {
+            let key = key_text(k);
+            if let Some(field) = field_by_key(groups, &key) {
+                validate_value(site, v, field, truthy(field.get("required")), &format!("acf[{key}]"), &mut errors);
+            }
+        }
+        if !errors.is_empty() {
+            return Ok(Some(validation_die(site, &errors)));
+        }
+    }
+    if !acf.as_ref().is_some_and(|v| truthy(Some(v))) {
+        return Ok(None);
+    }
+    let unfiltered = (ctx.ctx.can)("unfiltered_html");
+    for (k, v) in items {
+        let Some(field) = field_by_key(groups, &key_text(&k)) else { continue };
+        let value = if unfiltered { v } else { kses_deep(v) };
+        update_value(ctx.writer, (MetaKind::Post, ctx.attachment.id), value, field, &field.name).await?;
     }
     Ok(None)
 }

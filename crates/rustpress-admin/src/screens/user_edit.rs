@@ -484,7 +484,7 @@ async fn form_on(ctx: &Ctx<'_>, user: &User, own: bool, errors: &[String], file:
     let requested: u64 = request.get("user_id").map_or(0, |v| v.trim().parse().unwrap_or(0));
     let localize = vec![("user-profile".to_owned(), "userProfileL10n".to_owned(), serde_json::json!({"user_id": requested, "nonce": ctx.create_nonce(&format!("reset-password-for-{requested}"))}))];
     let mut assets = Assets { scripts, localize, ..Default::default() };
-    super::meta_boxes::plugin_box_assets(ctx, &fields, &mut assets, Vec::new(), true).await;
+    super::meta_boxes::plugin_box_assets(ctx, &fields, &mut assets, Vec::new(), true, None).await;
     render(ctx, &screen, &h, &assets).await
 }
 
@@ -977,6 +977,6 @@ pub async fn user_new(ctx: &Ctx<'_>) -> AdminResponse {
     h.push_str(&format!("<input type=\"submit\" name=\"createuser\" id=\"createusersub\" class=\"button button-primary\" value=\"{}\"  /></p>\n</form>\n</div>\n", esc_attr(&tr("Add User"))));
     let screen = Screen { file: "user-new.php".into(), parent_file: "users.php".into(), submenu_file: Some("user-new.php".into()), title: tr("Add User"), help: Some(new_help(ctx)), content_inline: true, ..Default::default() };
     let mut assets = Assets { scripts: vec!["wp-ajax-response".into(), "user-profile".into()], ..Default::default() };
-    super::meta_boxes::plugin_box_assets(ctx, &fields, &mut assets, Vec::new(), true).await;
+    super::meta_boxes::plugin_box_assets(ctx, &fields, &mut assets, Vec::new(), true, None).await;
     render(ctx, &screen, &h, &assets).await
 }

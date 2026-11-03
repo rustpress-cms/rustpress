@@ -248,6 +248,8 @@ pub enum Screen<'a> {
     User { user_id: Option<u64>, form: Option<&'a str> },
     /// `[ 'comment' => $post_type ]`.
     Comment { post_type: String },
+    /// `[ 'attachment_id' => $id, 'attachment' => $id ]`.
+    Attachment { post: &'a Post },
 }
 
 /// The request around a match: the database, the site and the signed-in user.
@@ -458,6 +460,15 @@ async fn match_rule(rule: &Rule, screen: &Screen<'_>, ctx: &MatchContext<'_>) ->
         },
         "comment" => match screen {
             Screen::Comment { post_type } => compare(&string(post_type), rule),
+            _ => false,
+        },
+        // The MIME type; a value without a slash matches its first part (`image`).
+        "attachment" => match screen {
+            Screen::Attachment { post } => {
+                let mime = &post.post_mime_type;
+                let general = !rule_value.is_empty() && !rule_value.char_indices().any(|(i, c)| c == '/' && i > 0) && mime.split('/').next() == Some(rule_value.as_str());
+                compare(&string(if general { &rule_value } else { mime }), rule)
+            }
             _ => false,
         },
         _ => false,

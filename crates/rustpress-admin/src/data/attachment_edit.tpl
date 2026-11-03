@@ -1,4 +1,3 @@
-
 <div class="wrap">
 <h1 class="wp-heading-inline">
 Edit Media</h1>
@@ -53,7 +52,7 @@ Edit Media</h1>
 
 
 	</div>
-	<input type="hidden" id="image-edit-context" value="edit-attachment" />
+	{{COMPAT}}<input type="hidden" id="image-edit-context" value="edit-attachment" />
 </div><!-- /post-body-content -->
 
 <div id="postbox-container-1" class="postbox-container">
@@ -305,4 +304,3 @@ Edit Media</h1>
 	</td></tr></tbody></table>
 	</form>
 	
-

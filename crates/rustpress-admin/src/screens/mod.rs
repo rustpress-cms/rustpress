@@ -687,9 +687,53 @@ pub async fn render(ctx: &Ctx<'_>, screen: &Screen, content: &str, assets: &Asse
         let href = style.ver.as_ref().map_or_else(|| style.src.clone(), |ver| rustpress_core::urls::add_query_arg(&style.src, "ver", ver));
         out.push_str(&format!("<link rel='stylesheet' id='{}-css' href='{}' media='{}' />\n", esc_attr(&style.handle), rustpress_core::formatting::esc_url(&href), esc_attr(&style.media)));
     }
+    // A stylesheet of WordPress a plugin enqueues late (`wp_enqueue_media()` of ACF's uploader) joins the concatenated
+    // ones; its dependencies outside `load-styles.php` print in the order of the queue, after the plugin's styles before
+    // it.
+    let mut core_registry: Option<crate::styles::Styles> = None;
+    fn late_core_style(registry: &mut crate::styles::Styles, handle: &str, screen_styles: &[String], printed: &mut Vec<String>, assets: &mut Assets) {
+        if printed.iter().any(|h| h == handle) || screen_styles.iter().any(|h| h == handle) {
+            return;
+        }
+        printed.push(handle.to_owned());
+        let Some(dependency) = registry.deps.get(handle).cloned() else { return };
+        for dep in &dependency.deps {
+            late_core_style(registry, dep, screen_styles, printed, assets);
+        }
+        let src = dependency.src.unwrap_or_default();
+        if src.is_empty() || registry.default_dirs.iter().any(|d| src.starts_with(d.as_str())) {
+            assets.plugin_core_styles.push(handle.to_owned());
+        } else {
+            assets.plugin_late_styles.push_str(&registry.print_one(handle));
+            assets.plugin_done_styles.push(handle.to_owned());
+        }
+    }
+    // The screen's own stylesheets and their dependencies are in the queue already.
+    fn closure(registry: &crate::styles::Styles, handle: &str, out: &mut Vec<String>) {
+        if out.iter().any(|h| h == handle) {
+            return;
+        }
+        out.push(handle.to_owned());
+        for dep in registry.deps.get(handle).map(|d| d.deps.clone()).unwrap_or_default() {
+            closure(registry, &dep, out);
+        }
+    }
+    let mut screen_styles: Vec<String> = Vec::new();
     for style in plugin_assets.styles.iter().filter(|s| !s.registered_only) {
         if style.src.is_empty() {
-            assets.plugin_core_styles.push(style.handle.clone());
+            if style.priority > 10 {
+                if core_registry.is_none() {
+                    let registry = crate::registry::default_styles(&env.loader);
+                    for handle in &assets.styles {
+                        closure(&registry, handle, &mut screen_styles);
+                    }
+                    core_registry = Some(registry);
+                }
+                let registry = core_registry.as_mut().expect("just set");
+                late_core_style(registry, &style.handle, &screen_styles, &mut printed, &mut assets);
+            } else {
+                assets.plugin_core_styles.push(style.handle.clone());
+            }
             continue;
         }
         let target = if style.priority > 10 { &mut assets.plugin_late_styles } else { &mut assets.plugin_styles };

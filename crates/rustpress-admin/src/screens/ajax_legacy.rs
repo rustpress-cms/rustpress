@@ -350,6 +350,23 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUs
                 return error(None);
             }
             let ctx = Ctx { env, request, user: user.clone(), token: token.to_owned() };
+            // `attachment_fields_to_save` of the plugins, then `wp_update_post()`.
+            if let Some(writer) = env.writer {
+                if !env.site.plugins.is_empty() {
+                    let parts = ctx.plugin_parts();
+                    let plugin_ctx = ctx.plugin_context(&parts, "admin-ajax.php");
+                    let saved = rustpress_core::native::AttachmentSaved { ctx: &plugin_ctx, writer, attachment: &post, ajax: true };
+                    if let Some(failed) = env.site.plugins.attachment_fields_to_save(&saved).await.unwrap_or_else(|e| {
+                        tracing::error!(error = %e, "a plugin failed on attachment_fields_to_save");
+                        None
+                    }) {
+                        return text(200, &failed.message);
+                    }
+                }
+                let content = Content { site: env.site, db: env.db, writer, user, now: env.now };
+                content.insert_post(&crate::content::PostData { id: Some(post.id), ..Default::default() }).await.or_log();
+            }
+            let post = env.db.post(post.id).await.ok().flatten().unwrap_or(post);
             match super::ajax_media::attachment_js(&ctx, &post).await {
                 Some(item) => success(item),
                 None => error(None),

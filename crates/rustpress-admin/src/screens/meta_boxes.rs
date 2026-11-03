@@ -532,10 +532,21 @@ fn looks_serialized(raw: &str) -> bool {
     t.len() >= 4 && matches!(t.as_bytes()[0], b'a' | b'O' | b's' | b'i' | b'd' | b'b' | b'C' | b'E') && t.as_bytes()[1] == b':'
 }
 
+/// The data of `wp_enqueue_media()` when a plugin calls it on `admin_enqueue_scripts` and enqueues its scripts and
+/// styles itself: the settings, the inline scripts and the templates where the footer has come so far.
+pub async fn media_data(ctx: &Ctx<'_>, assets: &mut crate::chrome::Assets, post_id: u64) {
+    let mut media = crate::chrome::Assets::default();
+    super::media_ui::enqueue(ctx, &mut media, post_id).await;
+    assets.localize.extend(media.localize);
+    assets.raw_data.extend(media.raw_data);
+    assets.inline.extend(media.inline);
+    assets.pre_footer.push_str(&media.pre_footer);
+}
+
 /// What the boxes or fields of the plugins ask of a classic screen: the media library while the page is printed
 /// (`wp_enqueue_media()`), and an editor in the footer, after `editors` (the page's own editors); with `buttons_css` it prints
-/// the `editor-buttons` style no editor before printed.
-pub async fn plugin_box_assets(ctx: &Ctx<'_>, boxes: &rustpress_core::native::MetaBoxes, assets: &mut crate::chrome::Assets, editors: Vec<super::editor::EditorEntry>, buttons_css: bool) {
+/// the `editor-buttons` style no editor before printed. `global_post` is the global `$post` of the screen.
+pub async fn plugin_box_assets(ctx: &Ctx<'_>, boxes: &rustpress_core::native::MetaBoxes, assets: &mut crate::chrome::Assets, editors: Vec<super::editor::EditorEntry>, buttons_css: bool, global_post: Option<&rustpress_db::Post>) {
     if boxes.media && ctx.can("upload_files") {
         let mut media = crate::chrome::Assets::default();
         super::media_ui::enqueue(ctx, &mut media, 0).await;
@@ -547,7 +558,12 @@ pub async fn plugin_box_assets(ctx: &Ctx<'_>, boxes: &rustpress_core::native::Me
         assets.pre_footer.push_str(&media.pre_footer);
     }
     let Some(hidden) = &boxes.hidden_editor else { return };
-    let (html, entry) = super::editor::default_editor(ctx, &hidden.id, "", buttons_css);
+    // The editor's body classes name the global `$post`, if the screen has one.
+    let post = match global_post {
+        Some(post) => Some(super::editor::EditorPost::of(ctx, post).await),
+        None => None,
+    };
+    let (html, entry) = super::editor::default_editor_for(ctx, &hidden.id, "", buttons_css, post.as_ref());
     assets.footer_first = format!("{}{html}{}", hidden.before, hidden.after);
     let rich = entry.tinymce.is_some();
     let mut editors = editors;
