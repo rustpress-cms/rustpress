@@ -343,8 +343,15 @@ impl<'a> Generator<'a> {
 
 /// `WP_Rewrite::rewrite_rules()`: the rules for the structure in `input`, in the order WordPress stores them.
 pub fn rewrite_rules(input: &RewriteInput<'_>) -> Vec<(String, String)> {
+    rewrite_rules_from(input, None).0
+}
+
+/// [`rewrite_rules`] with the `$wp_rewrite->extra_rules_top` an earlier flush of the same request left (`persisted`):
+/// the rules of the permastructs went into it then, and keep their places. Also gives `extra_rules_top` after this
+/// flush.
+fn rewrite_rules_from(input: &RewriteInput<'_>, persisted: Option<Rules>) -> (Vec<(String, String)>, Rules) {
     if input.permalink_structure.is_empty() {
-        return Vec::new();
+        return (Vec::new(), Rules::default());
     }
     let mut g = Generator::new(input);
     let mut top = Rules::default();
@@ -421,6 +428,9 @@ pub fn rewrite_rules(input: &RewriteInput<'_>) -> Vec<(String, String)> {
         extra.push(g.permastruct(&rtype.name, &slug, with_front, rtype.ep_mask, rtype.feeds));
     }
     let mut top = early_top.merge(top);
+    if let Some(persisted) = persisted {
+        top = persisted;
+    }
 
     let (robots, favicon, sitemap) = if input.home_at_root {
         (
@@ -451,6 +461,7 @@ pub fn rewrite_rules(input: &RewriteInput<'_>) -> Vec<(String, String)> {
         let rules = g.generate(&permastruct.struct_, permastruct.ep_mask, true, permastruct.feed, false, true);
         top = top.merge(rules);
     }
+    let extra_rules_top = top.clone();
 
     // `^[^%]*%(?:postname|category|tag|author)%`
     let verbose_page_rules = {
@@ -460,7 +471,7 @@ pub fn rewrite_rules(input: &RewriteInput<'_>) -> Vec<(String, String)> {
     };
     let mut rules = top.merge(robots).merge(favicon).merge(sitemap).merge(deprecated).merge(registration).merge(root_rewrite).merge(comments_rewrite).merge(search_rewrite).merge(author_rewrite).merge(date_rewrite);
     rules = if verbose_page_rules { rules.merge(page_rewrite).merge(post_rewrite) } else { rules.merge(post_rewrite).merge(page_rewrite) };
-    rules.0
+    (rules.0, extra_rules_top)
 }
 
 /// `_wp_filter_taxonomy_base()`, the filter on `get_option( 'category_base' )` and `'tag_base'`.
@@ -491,12 +502,48 @@ pub struct Reregistered<'a> {
 /// come from a fresh snapshot of the site under `wp_root`, the type comes last – into `rewrite_rules`. A type the
 /// plugin renamed keeps its old registration until the next request, as in WordPress.
 pub async fn flush_rewrite_rules(site: &crate::Site, writer: &rustpress_db::Writer, wp_root: &std::path::Path, change: Reregistered<'_>) -> crate::Result<()> {
-    let fresh = crate::Site::load_at(site.db.clone(), wp_root).await?;
-    let again = if change.active { fresh.types.rewrite_types().into_iter().find(|t| t.taxonomy == change.taxonomy && t.name == change.name) } else { None };
-    let mut types = site.types.clone();
-    types.register_again(change.taxonomy, change.name, again);
-    let mut site = fresh;
-    site.types = types;
+    flush_rewrite_rules_after(site, writer, wp_root, &[change]).await
+}
+
+/// [`flush_rewrite_rules`] after each of several types was registered again during the request, in that order (an
+/// import, a bulk action): `$wp_rewrite->extra_rules_top` lives on from one flush to the next – the rules of the
+/// permastructs keep the places the first flush gave them, `unregister_post_type()` takes out the archive rules and
+/// registering again adds them at the end.
+pub async fn flush_rewrite_rules_after(site: &crate::Site, writer: &rustpress_db::Writer, wp_root: &std::path::Path, changes: &[Reregistered<'_>]) -> crate::Result<()> {
+    let mut fresh = crate::Site::load_at(site.db.clone(), wp_root).await?;
+    let registered = fresh.types.rewrite_types();
+    fresh.types = site.types.clone();
+    let mut persisted: Option<Rules> = None;
+    let mut rules = Vec::new();
+    for change in changes {
+        let again = if change.active { registered.iter().find(|t| t.taxonomy == change.taxonomy && t.name == change.name).cloned() } else { None };
+        fresh.types.register_again(change.taxonomy, change.name, again.clone());
+        let archive = format!("index.php?post_type={}", change.name);
+        if let Some(top) = persisted.as_mut()
+            && !change.taxonomy
+        {
+            // `WP_Post_Type::remove_rewrite_rules()`, then `add_rewrite_rules()` of the new registration.
+            top.0.retain(|(_, query)| !query.contains(&archive));
+            if again.as_ref().is_some_and(|t| t.archive.is_some()) {
+                let (_, fresh_top) = with_input(&fresh, |input| rewrite_rules_from(input, None));
+                for (regex, query) in fresh_top.0 {
+                    if query == archive || query.starts_with(&format!("{archive}&")) {
+                        top.set(regex, query);
+                    }
+                }
+            }
+        }
+        let (flushed, top) = with_input(&fresh, |input| rewrite_rules_from(input, persisted.take()));
+        rules = flushed;
+        persisted = Some(top);
+    }
+    let serialized = if rules.is_empty() { String::new() } else { serialize_rules(&rules) };
+    writer.update_option("rewrite_rules", &serialized).await?;
+    Ok(())
+}
+
+/// The [`RewriteInput`] of a site's options and types.
+fn with_input<T>(site: &crate::Site, f: impl FnOnce(&RewriteInput<'_>) -> T) -> T {
     let structure = site.options.string("permalink_structure", "");
     let front = structure.find('%').map_or("", |at| &structure[..at]).to_owned();
     let home = site.settings.home.trim_end_matches('/');
@@ -512,10 +559,7 @@ pub async fn flush_rewrite_rules(site: &crate::Site, writer: &rustpress_db::Writ
         blog_public: site.options.string("blog_public", "1") != "0",
         types: &site.types,
     };
-    let rules = rewrite_rules(&input);
-    let serialized = if rules.is_empty() { String::new() } else { serialize_rules(&rules) };
-    writer.update_option("rewrite_rules", &serialized).await?;
-    Ok(())
+    f(&input)
 }
 
 #[cfg(test)]

@@ -414,6 +414,8 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         match site.plugins.list_load(&plugin_ctx).await {
             Ok(Some(rustpress_core::native::PageLoad::Redirect(location))) => return redirect(&location),
             Ok(Some(rustpress_core::native::PageLoad::Die { status, title, message })) => return super::die(ctx.env, status, &title, &message),
+            Ok(Some(rustpress_core::native::PageLoad::Output { headers, body })) => return super::plugin_output(headers, body),
+            Ok(Some(rustpress_core::native::PageLoad::Notices(_))) => {}
             Ok(None) => {}
             Err(e) => tracing::error!(error = %e, "plugin list_load failed"),
         }

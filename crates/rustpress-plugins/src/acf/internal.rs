@@ -21,9 +21,14 @@ pub fn validated(post: &AcfPost, defaults: Value) -> Value {
     set(&mut raw, "key", super::php::string(&post.name));
     set(&mut raw, "menu_order", Value::Int(post.menu_order));
     set(&mut raw, "active", Value::Bool(matches!(post.status.as_str(), "publish" | "auto-draft")));
-    let Value::Array(default_items) = &defaults else { return Value::Array(raw) };
+    validated_value(&Value::Array(raw), defaults)
+}
+
+/// `validate_post()` of an item that is an array already (the defaults under it, the booleans converted).
+pub fn validated_value(raw: &Value, defaults: Value) -> Value {
+    let Value::Array(default_items) = &defaults else { return raw.clone() };
     let boolean: Vec<Key> = default_items.iter().filter(|(_, v)| matches!(v, Value::Bool(_))).map(|(k, _)| k.clone()).collect();
-    let Value::Array(mut items) = parse_args(&Value::Array(raw), defaults) else { unreachable!() };
+    let Value::Array(mut items) = parse_args(raw, defaults) else { unreachable!() };
     for (k, v) in &mut items {
         if !boolean.iter().any(|b| key_eq(b, k)) {
             continue;
@@ -177,8 +182,9 @@ fn boolval(value: Option<&Value>) -> bool {
     truthy(value)
 }
 
-/// `array_map( 'esc_html', array_map( 'strval', array_filter( $post['labels'] ) ) )`.
-fn labels(post: &Value) -> Option<Lit> {
+/// `array_map( 'esc_html', array_map( 'strval', array_filter( $post['labels'] ) ) )` (`$escape_labels`), or the
+/// labels as they are.
+fn labels(post: &Value, escape: bool) -> Option<Lit> {
     let items = get(post, "labels").and_then(Value::as_array)?;
     let labels: Vec<(Option<Lit>, Lit)> = items
         .iter()
@@ -188,7 +194,8 @@ fn labels(post: &Value) -> Option<Lit> {
                 Key::Int(i) => Lit::Int(*i),
                 Key::Str(s) => Lit::Str(String::from_utf8_lossy(s).into_owned()),
             };
-            (Some(key), Lit::Str(rustpress_core::formatting::esc_html(&strval(Some(v)))))
+            let text = strval(Some(v));
+            (Some(key), Lit::Str(if escape { rustpress_core::formatting::esc_html(&text) } else { text }))
         })
         .collect();
     (!labels.is_empty()).then_some(Lit::Array(labels))
@@ -253,8 +260,13 @@ fn query_var(post: &Value, type_key: &str, args: &mut Args) {
 
 /// `ACF_Post_Type::get_post_type_args()`. A menu icon from the media library is left unknown.
 pub fn post_type_args(post: &Value) -> Lit {
+    post_type_args_with(post, true)
+}
+
+/// `ACF_Post_Type::get_post_type_args( $post, $escape_labels )`.
+pub fn post_type_args_with(post: &Value, escape_labels: bool) -> Lit {
     let mut args = Args::default();
-    if let Some(labels) = labels(post) {
+    if let Some(labels) = labels(post, escape_labels) {
         args.set("labels", labels);
     }
     if truthy(get(post, "description")) {
@@ -404,8 +416,13 @@ pub fn post_type_args(post: &Value) -> Lit {
 
 /// `ACF_Taxonomy::get_taxonomy_args()`.
 pub fn taxonomy_args(post: &Value) -> Lit {
+    taxonomy_args_with(post, true)
+}
+
+/// `ACF_Taxonomy::get_taxonomy_args( $post, $escape_labels )`.
+pub fn taxonomy_args_with(post: &Value, escape_labels: bool) -> Lit {
     let mut args = Args::default();
-    if let Some(labels) = labels(post) {
+    if let Some(labels) = labels(post, escape_labels) {
         args.set("labels", labels);
     }
     if truthy(get(post, "description")) {

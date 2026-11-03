@@ -59,8 +59,9 @@ fn targets(ctx: &AdminContext<'_>, action: &str) -> Vec<u64> {
     }
 }
 
-/// `acf_update_internal_post_type_active_status()`: the item saved again with `active` changed.
-async fn set_active(ctx: &AdminContext<'_>, post: &Post, active: bool) -> Result<bool> {
+/// `acf_update_internal_post_type_active_status()`: the item saved again with `active` changed; a post type with a key
+/// or a taxonomy goes to `reregistered` for the flush of the rewrite rules after all items.
+async fn set_active(ctx: &AdminContext<'_>, post: &Post, active: bool, reregistered: &mut Vec<(bool, String, bool)>) -> Result<bool> {
     let Some(writer) = ctx.writer else { return Ok(false) };
     let defaults = match post.post_type.as_str() {
         "acf-field-group" => Value::Array(super::save_group::group_defaults()),
@@ -75,7 +76,17 @@ async fn set_active(ctx: &AdminContext<'_>, post: &Post, active: bool) -> Result
     let content = rustpress_content::content::Content { site: ctx.site, db: &ctx.site.db, writer, user: &system, now: ctx.now };
     // `update_post()` unslashes the loaded item.
     let Value::Array(items) = super::php::wp_unslash(Value::Array(items)) else { return Ok(false) };
-    super::save_group::update_internal_post(&content, Some(ctx.wp_root), &post.post_type, items).await?;
+    let taxonomy = post.post_type == "acf-taxonomy";
+    let name = items.iter().find(|(k, _)| super::php::key_eq(k, &rustpress_phpser::Key::Str(if taxonomy { b"taxonomy".to_vec() } else { b"post_type".to_vec() }))).map(|(_, v)| v.clone());
+    let registers = match post.post_type.as_str() {
+        "acf-post-type" => super::php::truthy(name.as_ref()),
+        "acf-taxonomy" => name.as_ref().is_some_and(|v| !matches!(v, Value::Null)),
+        _ => false,
+    };
+    if registers {
+        reregistered.push((taxonomy, super::php::strval(name.as_ref()), active));
+    }
+    super::save_group::update_internal_post(&content, None, &post.post_type, items).await?;
     Ok(true)
 }
 
@@ -101,6 +112,7 @@ pub async fn load(ctx: &AdminContext<'_>) -> Result<Option<PageLoad>> {
             return Ok(Some(expired(ctx)));
         }
         let mut done: Vec<u64> = Vec::new();
+        let mut reregistered = Vec::new();
         for id in ids {
             let Some(post) = site.db.post(id).await? else { continue };
             match action {
@@ -112,11 +124,16 @@ pub async fn load(ctx: &AdminContext<'_>) -> Result<Option<PageLoad>> {
                     }
                 }
                 _ => {
-                    if set_active(ctx, &post, action == "acfactivate").await? {
+                    if set_active(ctx, &post, action == "acfactivate", &mut reregistered).await? {
                         done.push(id);
                     }
                 }
             }
+        }
+        // Each item flushed the rewrite rules; the last flush is what stays.
+        if let (false, Some(writer)) = (reregistered.is_empty(), ctx.writer) {
+            let changes: Vec<rustpress_core::rewrite_gen::Reregistered<'_>> = reregistered.iter().map(|(taxonomy, name, active)| rustpress_core::rewrite_gen::Reregistered { taxonomy: *taxonomy, name, active: *active }).collect();
+            rustpress_core::rewrite_gen::flush_rewrite_rules_after(site, writer, ctx.wp_root, &changes).await?;
         }
         let nonce = (ctx.nonce)("bulk-posts");
         let ids = done.iter().map(u64::to_string).collect::<Vec<_>>().join(",");
