@@ -181,6 +181,6 @@ pub async fn footer_scripts(groups: &[FieldGroup], ctx: &AdminContext<'_>) -> Re
                 .collect(),
         )
     });
-    let form = FormData { screen: Json::String("post".into()), post_id: json!(post.id), validation: Json::Bool(true), postboxes, block_editor: ctx.block_editor, bare: false };
+    let form = FormData { screen: Json::String("post".into()), post_id: json!(post.id), validation: Json::Bool(true), postboxes, block_editor: ctx.block_editor, ..Default::default() };
     Ok(Some(super::form::footer(ctx.site, &form, ctx.wp_version, &(ctx.nonce)("acf_nonce"), ctx.user_agent, ctx.can, Uploader::Enqueue)))
 }

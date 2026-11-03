@@ -687,6 +687,13 @@ pub async fn render(ctx: &Ctx<'_>, screen: &Screen, content: &str, assets: &Asse
     };
     // What the command palette's scripts need on every screen: the fetch layer, the data and preferences persistence.
     let mut assets = assets.clone();
+    // `wp_dequeue_script()` of the plugins.
+    for handle in &plugin_assets.dequeue {
+        for list in [&mut assets.scripts, &mut assets.early_scripts, &mut assets.late_scripts, &mut assets.post_header_scripts] {
+            list.retain(|h| h != handle);
+        }
+        assets.localize.retain(|(h, _, _)| h != handle);
+    }
     assets.plugin_scripts.extend(plugin_assets.scripts);
     // `admin_notices` comes before `options-head.php`.
     assets.notices = format!("{notices}{}", assets.notices);

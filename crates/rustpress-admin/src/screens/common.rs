@@ -232,6 +232,15 @@ pub fn wp_is_mobile(ctx: &Ctx<'_>) -> bool {
 
 /// `WP_Screen::get_columns()` of a screen with the `layout_columns` option: the user's choice, else the default.
 pub async fn layout_columns(ctx: &Ctx<'_>, screen_id: &str, default: u32) -> u32 {
+    // `get_user_option_screen_layout_{$screen_id}` of the plugins.
+    if !ctx.site().plugins.is_empty() {
+        let parts = ctx.plugin_parts();
+        let mut plugin_ctx = ctx.plugin_context(&parts, "");
+        plugin_ctx.screen_id = screen_id;
+        if let Some(columns) = ctx.site().plugins.screen_layout(&plugin_ctx, screen_id) {
+            return columns;
+        }
+    }
     user_option(ctx, &format!("screen_layout_{screen_id}")).await.and_then(|v| v.trim().parse::<u32>().ok()).filter(|n| *n != 0).unwrap_or(default)
 }
 

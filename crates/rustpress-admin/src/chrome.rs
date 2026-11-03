@@ -115,6 +115,8 @@ pub struct ScreenOptions {
     pub layout_columns: Option<(u32, u32)>,
     /// The "Additional settings" of an edit screen: whether the full-height editor is on (`editor_expand`).
     pub editor_expand: Option<bool>,
+    /// What plugins append to the settings (`screen_settings`).
+    pub extra_settings: String,
 }
 
 /// `WP_Screen::render_screen_meta()`: the help, the screen options and the buttons that open them.
@@ -211,6 +213,8 @@ fn screen_meta_with(help: Option<&Help>, options: Option<&ScreenOptions>, tr: &d
                 tr("Enable full-height editor and distraction-free functionality.")
             ));
         }
+        // What plugins append on `screen_settings`.
+        out.push_str(&options.extra_settings);
         // `screen_options_show_submit`: the items per page and the view mode need the button.
         if options.per_page.is_some() || options.view_mode.is_some() {
             out.push_str(&format!("<p class=\"submit\"><input type=\"submit\" name=\"screen-options-apply\" id=\"screen-options-apply\" class=\"button button-primary\" value=\"{}\"  /></p>", esc_attr(&tr("Apply"))));

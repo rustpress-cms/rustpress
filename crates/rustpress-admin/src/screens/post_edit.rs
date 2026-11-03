@@ -38,12 +38,19 @@ fn edit_link(ctx: &Ctx<'_>, id: u64) -> String {
     ctx.admin_url(&format!("post.php?post={id}&action=edit"))
 }
 
+/// `labels->edit_item` and `labels->add_new_item`: those of the registration, else the defaults of posts or, for a
+/// hierarchical type, pages (`_get_custom_object_labels()`).
 fn labels(ctx: &Ctx<'_>, info: &TypeInfo) -> (String, String) {
     let tr = |s: &str| ctx.tr(s);
-    match info.name.as_str() {
-        "post" => (tr("Edit Post"), tr("Add Post")),
-        "page" => (tr("Edit Page"), tr("Add Page")),
+    let (edit, add) = match info.name.as_str() {
+        "post" => return (tr("Edit Post"), tr("Add Post")),
+        "page" => return (tr("Edit Page"), tr("Add Page")),
+        _ if info.hierarchical => (tr("Edit Page"), tr("Add Page")),
         _ => (tr("Edit Post"), tr("Add Post")),
+    };
+    match ctx.site().types.admin_post_types().into_iter().find(|t| t.name == info.name) {
+        Some(registered) => (registered.label("edit_item").unwrap_or(edit), registered.label("add_new_item").unwrap_or(add)),
+        None => (edit, add),
     }
 }
 
@@ -1026,7 +1033,9 @@ async fn form(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, is_new: bool) -> Admi
             rustpress_core::i18n::sprintf(&tr("Word count: %s"), &["<span class=\"word-count\">0</span>"])
         ));
     }
-    h.push_str("\t</div><!-- /post-body-content -->\n\n<div id=\"postbox-container-1\" class=\"postbox-container\">\n");
+    // The indentation of the `<?php` that closes the editor's branch.
+    h.push_str(if supports("editor") { "\t" } else { "" });
+    h.push_str("</div><!-- /post-body-content -->\n\n<div id=\"postbox-container-1\" class=\"postbox-container\">\n");
     h.push_str(&super::meta_boxes::do_meta_boxes(ctx, &boxes, "side", &state));
     h.push_str("</div>\n<div id=\"postbox-container-2\" class=\"postbox-container\">\n");
     h.push_str(&super::meta_boxes::do_meta_boxes(ctx, &boxes, "normal", &state));
@@ -1036,7 +1045,7 @@ async fn form(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, is_new: bool) -> Admi
         h.push_str(&super::comments::reply_form_single(ctx));
     }
     h.push('\n');
-    if post_title.is_empty() {
+    if !super::common::wp_is_mobile(ctx) && supports("title") && post_title.is_empty() {
         h.push_str("<script>\ntry{document.post.title.focus();}catch(e){}\n</script>\n");
     }
     // A plugin's editor on `admin_footer` (priority 1) joins the settings of the page's editors, after the reply form's.
@@ -1068,7 +1077,21 @@ async fn form(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, is_new: bool) -> Admi
     let options = crate::chrome::ScreenOptions {
         meta_boxes: Some(super::meta_boxes::prefs(&boxes, &state)),
         layout_columns: Some((2, columns)),
-        editor_expand: supports("editor").then(|| !super::common::wp_is_mobile(ctx)).filter(|shown| *shown).map(|_| expand_setting),
+        // `WP_Screen::show_screen_options()`: every edit screen has the setting, hidden until the script shows it.
+        editor_expand: Some(expand_setting),
+        extra_settings: if site.plugins.is_empty() {
+            String::new()
+        } else {
+            let parts = ctx.plugin_parts();
+            let mut plugin_ctx = ctx.plugin_context(&parts, if is_new { "post-new.php" } else { "post.php" });
+            plugin_ctx.screen_id = &info.name;
+            plugin_ctx.typenow = &info.name;
+            plugin_ctx.edited_post = Some(post);
+            site.plugins.screen_settings(&plugin_ctx, String::new()).await.unwrap_or_else(|e| {
+                tracing::error!(error = %e, "plugin screen_settings failed");
+                String::new()
+            })
+        },
         ..Default::default()
     };
     let screen = Screen { file: file.into(), parent_file, submenu_file: Some(submenu_file), post_type: info.name.clone(), title: window_title, help: Some(help), view_item, options: Some(options), edited_post: Some(post.clone()), ..Default::default() };
