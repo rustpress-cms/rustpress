@@ -12,6 +12,7 @@
 //! media scripts of `acf_enqueue_uploader()` (a hidden `wp_editor()`, `wp_enqueue_media()`) are not printed.
 
 mod admin;
+mod admin_lists;
 mod dashicons;
 mod edit_attachment;
 mod edit_comment;
@@ -297,6 +298,7 @@ impl ActivePlugin for Loaded {
 
     fn admin_enqueue(&self, ctx: &rustpress_core::native::AdminContext<'_>, assets: &mut rustpress_core::native::Assets) {
         admin::admin_enqueue(ctx.site, assets);
+        admin_lists::admin_enqueue(ctx, assets);
         edit_comment::admin_enqueue(ctx, assets);
         edit_post::admin_enqueue(ctx, assets);
         edit_term::admin_enqueue(ctx, assets);
@@ -402,11 +404,14 @@ impl ActivePlugin for Loaded {
     }
 
     fn admin_footer<'a>(&'a self, ctx: &'a rustpress_core::native::AdminContext<'a>) -> BoxFuture<'a, Result<String>> {
-        Box::pin(async move { Ok(format!("{}{}", edit_comment::admin_footer(ctx), edit_term::admin_footer(ctx))) })
+        Box::pin(async move { Ok(format!("{}{}{}", admin_lists::admin_footer(ctx), edit_comment::admin_footer(ctx), edit_term::admin_footer(ctx))) })
     }
 
     fn admin_print_footer_scripts<'a>(&'a self, ctx: &'a rustpress_core::native::AdminContext<'a>) -> BoxFuture<'a, Result<String>> {
         Box::pin(async move {
+            if let Some(footer) = admin_lists::footer_scripts(ctx) {
+                return Ok(footer);
+            }
             if let Some(footer) = edit_post::footer_scripts(&self.groups, ctx).await? {
                 return Ok(footer);
             }
@@ -424,7 +429,67 @@ impl ActivePlugin for Loaded {
     }
 
     fn admin_body_class(&self, ctx: &rustpress_core::native::AdminContext<'_>, classes: String) -> String {
-        admin::admin_body_class(ctx, classes)
+        admin_lists::admin_body_class(ctx, admin::admin_body_class(ctx, classes))
+    }
+
+    fn parent_file(&self, _ctx: &rustpress_core::native::AdminContext<'_>, parent_file: String) -> String {
+        admin_lists::parent_file(parent_file)
+    }
+
+    fn submenu_file(&self, _ctx: &rustpress_core::native::AdminContext<'_>, submenu_file: String) -> String {
+        admin_lists::submenu_file(submenu_file)
+    }
+
+    fn in_admin_header<'a>(&'a self, ctx: &'a rustpress_core::native::AdminContext<'a>) -> BoxFuture<'a, Result<String>> {
+        Box::pin(async move { Ok(admin_lists::in_admin_header(ctx)) })
+    }
+
+    fn admin_footer_text(&self, ctx: &rustpress_core::native::AdminContext<'_>) -> Option<String> {
+        admin_lists::footer_text(ctx)
+    }
+
+    fn update_footer(&self, ctx: &rustpress_core::native::AdminContext<'_>) -> Option<String> {
+        admin_lists::update_footer(ctx)
+    }
+
+    fn screen_help(&self, ctx: &rustpress_core::native::AdminContext<'_>) -> Option<rustpress_core::native::AdminHelp> {
+        admin_lists::help(ctx)
+    }
+
+    fn list_statuses(&self, _site: &Site) -> Vec<rustpress_core::native::ListStatus> {
+        admin_lists::list_statuses()
+    }
+
+    fn status_label_count(&self, ctx: &rustpress_core::native::AdminContext<'_>, status: &str, n: u64) -> Option<String> {
+        admin_lists::status_label_count(ctx, status, n)
+    }
+
+    fn posts_columns(&self, ctx: &rustpress_core::native::AdminContext<'_>, post_type: &str, columns: Vec<(String, String)>) -> Vec<(String, String)> {
+        admin_lists::posts_columns(ctx, post_type, columns)
+    }
+
+    fn posts_custom_column<'a>(&'a self, ctx: &'a rustpress_core::native::AdminContext<'a>, column: &'a str, post: &'a rustpress_db::Post) -> BoxFuture<'a, Result<String>> {
+        Box::pin(admin_lists::posts_custom_column(&self.groups, ctx, column, post))
+    }
+
+    fn post_row_actions(&self, ctx: &rustpress_core::native::AdminContext<'_>, post: &rustpress_db::Post, hierarchical: bool, actions: Vec<(String, String)>) -> Vec<(String, String)> {
+        admin_lists::post_row_actions(ctx, post, hierarchical, actions)
+    }
+
+    fn bulk_actions(&self, ctx: &rustpress_core::native::AdminContext<'_>, _screen_id: &str, actions: Vec<(String, String)>) -> Vec<(String, String)> {
+        admin_lists::bulk_actions(ctx, actions)
+    }
+
+    fn list_views(&self, ctx: &rustpress_core::native::AdminContext<'_>, _screen_id: &str, views: Vec<(String, String)>) -> Vec<(String, String)> {
+        admin_lists::list_views(ctx, views)
+    }
+
+    fn display_post_states(&self, ctx: &rustpress_core::native::AdminContext<'_>, post: &rustpress_db::Post, states: Vec<(String, String)>) -> Vec<(String, String)> {
+        admin_lists::display_post_states(ctx, post, states)
+    }
+
+    fn list_not_found(&self, ctx: &rustpress_core::native::AdminContext<'_>, post_type: &str) -> Option<String> {
+        admin_lists::list_not_found(ctx, post_type)
     }
 
     fn admin_ajax<'a>(&'a self, action: &'a str, ctx: &'a rustpress_core::native::AdminContext<'a>) -> BoxFuture<'a, Result<Option<rustpress_core::native::AjaxAnswer>>> {

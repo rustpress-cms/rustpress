@@ -93,8 +93,37 @@ pub fn type_info(ctx: &Ctx<'_>, name: &str) -> Option<TypeInfo> {
             .types
             .any_post_type(other)
             .filter(|t| t.public || t.queryable || site.types.admin_post_types().iter().any(|a| a.name == other && a.show_ui))
-            .map(|t| TypeInfo { name: other.to_owned(), hierarchical: t.hierarchical, label: t.plural_label(), singular: t.singular_label(), labels: ListLabels::defaults(ctx, t.hierarchical) }),
+            .map(|t| {
+                let mut labels = ListLabels::defaults(ctx, t.hierarchical);
+                // `_get_custom_object_labels()`: what the registration gives replaces the default.
+                if let Some(registered) = site.types.admin_post_types().into_iter().find(|a| a.name == other) {
+                    let given = |key: &str, default: &mut String| {
+                        if let Some(label) = registered.label(key) {
+                            *default = label;
+                        }
+                    };
+                    given("add_new_item", &mut labels.add_new);
+                    given("search_items", &mut labels.search_items);
+                    given("not_found", &mut labels.not_found);
+                    given("not_found_in_trash", &mut labels.not_found_in_trash);
+                    given("filter_items_list", &mut labels.filter_items_list);
+                    given("items_list_navigation", &mut labels.items_list_navigation);
+                    given("items_list", &mut labels.items_list);
+                }
+                TypeInfo { name: other.to_owned(), hierarchical: t.hierarchical, label: t.plural_label(), singular: t.singular_label(), labels }
+            }),
     }
+}
+
+/// The plugin context of the list of `post_type` (`get_current_screen()` is `edit-{$post_type}`).
+macro_rules! list_plugin_ctx {
+    ($ctx:expr, $parts:ident, $screen_id:ident, $post_type:expr, $name:ident) => {
+        let $parts = $ctx.plugin_parts();
+        let $screen_id = format!("edit-{}", $post_type);
+        let mut $name = $ctx.plugin_context(&$parts, "edit.php");
+        $name.screen_id = &$screen_id;
+        $name.typenow = $post_type;
+    };
 }
 
 /// `post_class()` for a list row.
@@ -386,7 +415,11 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     let current_url = format!("{origin}{}", request.request_uri);
 
     // Parameters
-    let post_status = request.get("post_status").filter(|s| ["publish", "future", "draft", "pending", "private", "trash", "auto-draft", "inherit"].contains(s)).map(str::to_owned);
+    let plugin_statuses = site.plugins.list_statuses(site);
+    let post_status = request.get("post_status").filter(|s| ["publish", "future", "draft", "pending", "private", "trash", "auto-draft", "inherit"].contains(s) || plugin_statuses.iter().any(|p| p.name == *s)).map(str::to_owned);
+    // The statuses "All" lists: those of WordPress and the plugins' with `show_in_admin_all_list`.
+    let all_statuses: Vec<String> = ALL_STATUSES.iter().map(|s| (*s).to_owned()).chain(plugin_statuses.iter().filter(|p| p.show_in_admin_all_list).map(|p| p.name.to_owned())).collect();
+    list_plugin_ctx!(ctx, plugin_parts, plugin_screen_id, info.name.as_str(), plugin_ctx);
     let status_param = request.get("post_status").unwrap_or("all").to_owned();
     let is_trash = post_status.as_deref() == Some("trash");
     let author = request.get("author").and_then(|a| a.parse::<u64>().ok()).filter(|a| *a != 0);
@@ -410,7 +443,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     // Counts
     let counts = db.post_status_counts(&info.name).await.unwrap_or_default();
     let count_of = |status: &str| counts.iter().find(|(s, _)| s == status).map_or(0, |(_, n)| *n);
-    let total_all: u64 = ALL_STATUSES.iter().map(|s| count_of(s)).sum();
+    let total_all: u64 = all_statuses.iter().map(|s| count_of(s)).sum();
     let mine = db.count_user_posts(&info.name, ctx.user.id, &["trash", "auto-draft"]).await.unwrap_or(0);
     let sticky = if info.name == "post" { sticky_ids(ctx) } else { Vec::new() };
 
@@ -443,13 +476,22 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         ("private", "Private <span class=\"count\">(%s)</span>", "Private <span class=\"count\">(%s)</span>"),
         ("trash", "Trash <span class=\"count\">(%s)</span>", "Trash <span class=\"count\">(%s)</span>"),
     ];
-    for (status, one, many) in status_labels {
+    // The statuses in the order of their registration: WordPress's, then those of the plugins.
+    let statuses: Vec<(&str, Option<(&str, &str)>)> = status_labels.iter().map(|(status, one, many)| (*status, Some((*one, *many)))).chain(plugin_statuses.iter().filter(|p| p.show_in_admin_status_list).map(|p| (p.name, None))).collect();
+    for (status, core_label) in statuses {
         let n = count_of(status);
         if n == 0 {
             continue;
         }
         let url = add_query_arg(&add_query_arg("edit.php", "post_status", status), "post_type", &info.name);
-        let label = rustpress_core::i18n::sprintf(&site.trn(one, many, n as i64), &[&site.number_i18n(n)]);
+        let label_count = match site.plugins.status_label_count(&plugin_ctx, status, n) {
+            Some(label) => label,
+            None => match core_label {
+                Some((one, many)) => site.trn(one, many, n as i64),
+                None => continue,
+            },
+        };
+        let label = rustpress_core::i18n::sprintf(&label_count, &[&site.number_i18n(n)]);
         links.push((status.to_owned(), view_link(&url, &label, post_status.as_deref() == Some(status))));
         if status == "publish" && !sticky.is_empty() {
             let sticky_count = sticky.len() as u64;
@@ -487,7 +529,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         post_types: vec![info.name.clone()],
         statuses: match &post_status {
             Some(status) => vec![status.clone()],
-            None => ALL_STATUSES.iter().map(|s| (*s).to_owned()).collect(),
+            None => all_statuses.clone(),
         },
         author,
         order_by,
@@ -606,7 +648,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
             list.push(("edit".into(), site.trx("Bulk edit", "verb")));
         }
         list.push(if is_trash { ("delete".into(), tr("Delete permanently")) } else { ("trash".into(), tr("Move to Trash")) });
-        list
+        site.plugins.bulk_actions(&plugin_ctx, &plugin_screen_id, list)
     };
     let table = Table {
         site,
@@ -629,7 +671,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     // Rows
     let mut rows = String::new();
     if posts.is_empty() {
-        let not_found = if is_trash { info.labels.not_found_in_trash.clone() } else { info.labels.not_found.clone() };
+        let not_found = if is_trash { info.labels.not_found_in_trash.clone() } else { site.plugins.list_not_found(&plugin_ctx, &info.name).unwrap_or_else(|| info.labels.not_found.clone()) };
         rows.push_str(&format!("<tr class=\"no-items\"><td class=\"colspanchange\" colspan=\"{}\">{not_found}</td></tr>", columns.iter().filter(|c| !c.hidden).count()));
     }
     for (post, level) in posts.iter().zip(levels.iter()) {
@@ -688,15 +730,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     };
 
     let nonce_field = ctx.nonce_field("bulk-posts");
-    let caption = {
-        let (ordered_by, direction) = match (orderby_param.as_str(), order_param.as_str()) {
-            ("title", o) => (tr("Table ordered by Title."), o == "desc"),
-            ("comment_count", o) => (tr("Table ordered by Comments."), o == "desc"),
-            ("", _) if info.name == "page" => (tr("Table ordered by Hierarchical Menu Order and Title."), false),
-            (_, o) => (tr("Table ordered by Date."), o != "asc"),
-        };
-        format!("{ordered_by} {}", if direction { tr("Descending.") } else { tr("Ascending.") })
-    };
+    let caption = table_description(ctx, &info, &columns);
     let list_heading = info.labels.items_list.clone();
     let table_html = table.display(&nonce_field, &extra_top, &extra_bottom, &caption, &rows, &list_heading);
     // `heading_pagination` is the post type's `items_list_navigation`.
@@ -745,7 +779,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     let inline = if posts.is_empty() { String::new() } else { super::inline_edit::inline_edit(ctx, &info, posts.first(), columns.iter().filter(|c| !c.hidden).count(), &taxonomies, &mode).await };
     let content = format!(
         "<div class=\"wrap\">\n{heading}{notice}\n{}\n<form id=\"posts-filter\" method=\"get\">\n\n{search_box}\n{hidden_fields}{table_html}\n</form>\n\n{inline}\n<div id=\"ajax-response\"></div>\n<div class=\"clear\"></div>\n</div>\n\n",
-        views(&filter_heading, &links)
+        views(&filter_heading, &site.plugins.list_views(&plugin_ctx, &plugin_screen_id, links))
     );
     // `wp_admin_bar_edit_menu()`: a post type with an archive gets "View Posts" on its list.
     let archive_item = if ctx.can("read") { site.post_type_archive_link(&info.name).map(|url| (if info.hierarchical { tr("View Pages") } else { tr("View Posts") }, url)) } else { None };
@@ -763,7 +797,12 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         ..Default::default()
     };
     let _ = remove_query_arg("", "");
-    render(ctx, &screen, &content, &Assets { scripts: vec!["inline-edit-post".into(), "heartbeat".into()], ..Default::default() }).await
+    let mut assets = Assets { scripts: vec!["inline-edit-post".into(), "heartbeat".into()], ..Default::default() };
+    if info.name == "wp_block" {
+        assets.scripts.push("wp-list-reusable-blocks".into());
+        assets.styles.push("wp-list-reusable-blocks".into());
+    }
+    render(ctx, &screen, &content, &assets).await
 }
 
 /// The columns of the list: `WP_Posts_List_Table::get_columns()`.
@@ -793,7 +832,48 @@ pub(super) fn list_columns(ctx: &Ctx<'_>, info: &TypeInfo, status_param: &str, t
         );
     }
     columns.push(Column::new("date", &tr("Date")).sortable("date", true, Some(&tr("Date")), if info.name == "page" { None } else { Some("desc") }));
-    columns
+    if site.plugins.is_empty() {
+        return columns;
+    }
+    // `manage_{$post_type}_posts_columns`: the columns of WordPress keep what they know of sorting.
+    list_plugin_ctx!(ctx, parts, screen_id, info.name.as_str(), plugin_ctx);
+    let pairs: Vec<(String, String)> = columns.iter().map(|c| (c.key.clone(), c.label.clone())).collect();
+    site.plugins
+        .posts_columns(&plugin_ctx, &info.name, pairs)
+        .into_iter()
+        .map(|(key, label)| match columns.iter().find(|c| c.key == key) {
+            Some(core) => Column { label, ..core.clone() },
+            None => Column::new(&key, &label),
+        })
+        .collect()
+}
+
+/// `WP_List_Table::print_table_description()` with the sortable columns of `WP_Posts_List_Table`: what the first
+/// sortable column the table is ordered by says, in the initial view the one with an initial order.
+fn table_description(ctx: &Ctx<'_>, info: &TypeInfo, columns: &[Column]) -> String {
+    let tr = |s: &str| ctx.tr(s);
+    let request = ctx.request;
+    let mut current_orderby = request.get("orderby").unwrap_or_default().to_owned();
+    let mut current_order = if request.get("order") == Some("desc") { "desc".to_owned() } else { "asc".to_owned() };
+    let page = info.name == "page";
+    for column in columns {
+        let (orderby, text, initial) = match column.key.as_str() {
+            "title" => ("title", if page && request.get("orderby").is_none() { tr("Table ordered by Hierarchical Menu Order and Title.") } else { tr("Table ordered by Title.") }, if page { "asc" } else { "" }),
+            // `parent` has no text: the description ends there.
+            "parent" => return String::new(),
+            "comments" => ("comment_count", tr("Table ordered by Comments."), ""),
+            "date" => ("date", tr("Table ordered by Date."), if page { "" } else { "desc" }),
+            _ => continue,
+        };
+        if current_orderby.is_empty() && !initial.is_empty() {
+            current_orderby = orderby.to_owned();
+            current_order = initial.to_owned();
+        }
+        if current_orderby == orderby {
+            return format!("{text} {}", if current_order == "asc" { tr("Ascending.") } else { tr("Descending.") });
+        }
+    }
+    String::new()
 }
 
 /// What a row of the posts list needs besides the post.
@@ -986,7 +1066,16 @@ pub(super) async fn post_row(ctx: &Ctx<'_>, post: &Post, level: usize, row: &Row
             "date" => {
                 out.push_str(&format!("<td class='date column-date' data-colname=\"{}\">{}</td>", tr("Date"), date_cell(ctx, post)));
             }
-            _ => {}
+            key => {
+                // `column_default()`: the `manage_…_custom_column` actions print the cell.
+                list_plugin_ctx!(ctx, parts, screen_id, info.name.as_str(), plugin_ctx);
+                let cell = site.plugins.posts_custom_column(&plugin_ctx, key, post).await.unwrap_or_else(|e| {
+                    tracing::error!(error = %e, "plugin posts_custom_column failed");
+                    String::new()
+                });
+                // `Table::display()` marks the cells of hidden columns.
+                out.push_str(&format!("<td class='{key} column-{key}' data-colname=\"{}\">{cell}</td>", esc_attr(&rustpress_core::formatting::wp_strip_all_tags(&column.label))));
+            }
         }
     }
     out.push_str("\t\t</tr>\n\t\t");
@@ -1063,36 +1152,43 @@ async fn inline_data(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, taxonomies: &[
 /// `get_post_states()` as `_post_states()` prints it.
 fn post_states(ctx: &Ctx<'_>, post: &Post, status_param: &str, sticky: bool) -> String {
     let site = ctx.site();
-    let mut states: Vec<String> = Vec::new();
+    let mut states: Vec<(String, String)> = Vec::new();
+    let mut state = |key: &str, text: String| states.push((key.to_owned(), text));
     if !post.post_password.is_empty() {
-        states.push(site.trx("Password protected", "post status"));
+        state("protected", site.trx("Password protected", "post status"));
     }
     if post.post_status == "private" && status_param != "private" {
-        states.push(site.trx("Private", "post status"));
+        state("private", site.trx("Private", "post status"));
     }
     if post.post_status == "draft" && status_param != "draft" {
-        states.push(site.trx("Draft", "post status"));
+        state("draft", site.trx("Draft", "post status"));
     }
     if post.post_status == "pending" && status_param != "pending" {
-        states.push(site.trx("Pending", "post status"));
+        state("pending", site.trx("Pending", "post status"));
     }
     if sticky {
-        states.push(site.trx("Sticky", "post status"));
+        state("sticky", site.trx("Sticky", "post status"));
     }
     if post.post_status == "future" {
-        states.push(site.trx("Scheduled", "post status"));
+        state("scheduled", site.trx("Scheduled", "post status"));
     }
     if site.options.get("show_on_front") == Some("page") {
         if site.options.u64("page_on_front", 0) == post.id {
-            states.push(site.trx("Front Page", "page label"));
+            state("page_on_front", site.trx("Front Page", "page label"));
         }
         if site.options.u64("page_for_posts", 0) == post.id {
-            states.push(site.trx("Posts Page", "page label"));
+            state("page_for_posts", site.trx("Posts Page", "page label"));
         }
     }
     if site.options.u64("wp_page_for_privacy_policy", 0) == post.id {
-        states.push(site.trx("Privacy Policy Page", "page label"));
+        state("page_for_privacy_policy", site.trx("Privacy Policy Page", "page label"));
     }
+    // `display_post_states`.
+    if !site.plugins.is_empty() {
+        list_plugin_ctx!(ctx, parts, screen_id, post.post_type.as_str(), plugin_ctx);
+        states = site.plugins.display_post_states(&plugin_ctx, post, states);
+    }
+    let states: Vec<String> = states.into_iter().map(|(_, text)| text).collect();
     if states.is_empty() {
         return String::new();
     }
@@ -1153,6 +1249,10 @@ async fn row_actions_for(ctx: &Ctx<'_>, post: &Post, title: &str, can_edit: bool
                 tr("Export as JSON")
             ),
         ));
+    }
+    if !site.plugins.is_empty() {
+        list_plugin_ctx!(ctx, parts, screen_id, info.name.as_str(), plugin_ctx);
+        actions = site.plugins.post_row_actions(&plugin_ctx, post, info.hierarchical, actions);
     }
     let mut html = row_actions(site, &actions);
     // `row_actions()` ends with the toggle button, which the title cell prints itself.

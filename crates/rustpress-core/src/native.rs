@@ -239,6 +239,79 @@ pub trait ActivePlugin: Send + Sync {
         Box::pin(async { Ok(Vec::new()) })
     }
 
+    /// The `parent_file` filter of `menu-header.php`: the top-level menu entry the screen belongs to.
+    fn parent_file(&self, _ctx: &AdminContext<'_>, parent_file: String) -> String {
+        parent_file
+    }
+
+    /// The `submenu_file` filter of `menu-header.php`: the highlighted submenu entry.
+    fn submenu_file(&self, _ctx: &AdminContext<'_>, submenu_file: String) -> String {
+        submenu_file
+    }
+
+    /// `in_admin_header` after the toolbar of the administration: what the plugin prints before `#wpbody`.
+    fn in_admin_header<'a>(&'a self, _ctx: &'a AdminContext<'a>) -> BoxFuture<'a, Result<String>> {
+        Box::pin(async { Ok(String::new()) })
+    }
+
+    /// The `update_footer` filter: the right part of the footer (`Version %s` by default).
+    fn update_footer(&self, _ctx: &AdminContext<'_>) -> Option<String> {
+        None
+    }
+
+    /// The help the plugin adds to the screen on `current_screen` (`WP_Screen::add_help_tab()`,
+    /// `set_help_sidebar()`), before the screen's own.
+    fn screen_help(&self, _ctx: &AdminContext<'_>) -> Option<AdminHelp> {
+        None
+    }
+
+    /// The post statuses of `register_post_status()` as the lists of `edit.php` use them.
+    fn list_statuses(&self, _site: &Site) -> Vec<ListStatus> {
+        Vec::new()
+    }
+
+    /// `$wp_post_statuses[ $status ]->label_count` on the list of `ctx`, translated for `n` (with `%s` for the
+    /// number): the plugin's own statuses, or a core status it relabels; `None` keeps the core label.
+    fn status_label_count(&self, _ctx: &AdminContext<'_>, _status: &str, _n: u64) -> Option<String> {
+        None
+    }
+
+    /// `manage_{$post_type}_posts_columns` of `edit.php`: the columns as `(key, title)`.
+    fn posts_columns(&self, _ctx: &AdminContext<'_>, _post_type: &str, columns: Vec<(String, String)>) -> Vec<(String, String)> {
+        columns
+    }
+
+    /// `manage_{$post_type}_posts_custom_column` (and `manage_pages_custom_column`/`manage_posts_custom_column`):
+    /// what the plugin prints in a column of a row that is not one of WordPress.
+    fn posts_custom_column<'a>(&'a self, _ctx: &'a AdminContext<'a>, _column: &'a str, _post: &'a Post) -> BoxFuture<'a, Result<String>> {
+        Box::pin(async { Ok(String::new()) })
+    }
+
+    /// `post_row_actions` (`page_row_actions` for hierarchical types): the actions of a row as `(class, link)`.
+    fn post_row_actions(&self, _ctx: &AdminContext<'_>, _post: &Post, _hierarchical: bool, actions: Vec<(String, String)>) -> Vec<(String, String)> {
+        actions
+    }
+
+    /// `bulk_actions-{$screen_id}`: `(value, label)`.
+    fn bulk_actions(&self, _ctx: &AdminContext<'_>, _screen_id: &str, actions: Vec<(String, String)>) -> Vec<(String, String)> {
+        actions
+    }
+
+    /// `views_{$screen_id}`: the links above a list as `(class, link)`.
+    fn list_views(&self, _ctx: &AdminContext<'_>, _screen_id: &str, views: Vec<(String, String)>) -> Vec<(String, String)> {
+        views
+    }
+
+    /// `display_post_states`: the states after a row's title as `(key, HTML)`.
+    fn display_post_states(&self, _ctx: &AdminContext<'_>, _post: &Post, states: Vec<(String, String)>) -> Vec<(String, String)> {
+        states
+    }
+
+    /// `$post_type_object->labels->not_found` as the plugin changes it for the list of `ctx` (HTML).
+    fn list_not_found(&self, _ctx: &AdminContext<'_>, _post_type: &str) -> Option<String> {
+        None
+    }
+
     /// The extension of the first `wp_mime_type_icon()` the plugin calls on `admin_enqueue_scripts` of the screen: it fixes
     /// the icons of the request (`icon_files` in the object cache), `.png` where WordPress asks for `.svg`.
     fn admin_mime_icon_ext(&self, _ctx: &AdminContext<'_>) -> Option<&'static str> {
@@ -1144,6 +1217,20 @@ pub struct AdminContext<'a> {
     pub taxonomy: Option<&'a str>,
     /// The term of `term.php`.
     pub edited_term: Option<&'a rustpress_db::Term>,
+    /// `get_current_screen()->id` (`edit-acf-field-group`); empty outside a screen.
+    pub screen_id: &'a str,
+    /// `$typenow`: the post type of the screen.
+    pub typenow: &'a str,
+}
+
+/// A post status a plugin registers, as the lists of `edit.php` use it.
+#[derive(Debug, Clone)]
+pub struct ListStatus {
+    pub name: &'static str,
+    /// `show_in_admin_all_list`: counted and listed under "All".
+    pub show_in_admin_all_list: bool,
+    /// `show_in_admin_status_list`: a link of its own above the list.
+    pub show_in_admin_status_list: bool,
 }
 
 impl AdminContext<'_> {
@@ -1717,6 +1804,92 @@ impl Plugins {
         for plugin in self.hooks() {
             plugin.query_attachment_js(ctx, response);
         }
+    }
+
+    /// `parent_file` after the plugins.
+    pub fn parent_file(&self, ctx: &AdminContext<'_>, parent_file: String) -> String {
+        self.hooks().fold(parent_file, |file, plugin| plugin.parent_file(ctx, file))
+    }
+
+    /// `submenu_file` after the plugins.
+    pub fn submenu_file(&self, ctx: &AdminContext<'_>, submenu_file: String) -> String {
+        self.hooks().fold(submenu_file, |file, plugin| plugin.submenu_file(ctx, file))
+    }
+
+    /// `in_admin_header` of the plugins.
+    pub async fn in_admin_header(&self, ctx: &AdminContext<'_>) -> Result<String> {
+        let mut out = String::new();
+        for plugin in self.hooks() {
+            out.push_str(&plugin.in_admin_header(ctx).await?);
+        }
+        Ok(out)
+    }
+
+    /// `update_footer` of the first plugin that changes it.
+    pub fn update_footer(&self, ctx: &AdminContext<'_>) -> Option<String> {
+        self.hooks().find_map(|plugin| plugin.update_footer(ctx))
+    }
+
+    /// The help the plugins add to a screen, in their order.
+    pub fn screen_help(&self, ctx: &AdminContext<'_>) -> Option<AdminHelp> {
+        let mut out: Option<AdminHelp> = None;
+        for help in self.hooks().filter_map(|plugin| plugin.screen_help(ctx)) {
+            let all = out.get_or_insert_with(AdminHelp::default);
+            all.tabs.extend(help.tabs);
+            if !help.sidebar.is_empty() {
+                all.sidebar = help.sidebar;
+            }
+        }
+        out
+    }
+
+    /// The post statuses the plugins register, in their order.
+    pub fn list_statuses(&self, site: &Site) -> Vec<ListStatus> {
+        self.hooks().flat_map(|plugin| plugin.list_statuses(site)).collect()
+    }
+
+    /// The label of a status with its count on a list, from the first plugin that gives one.
+    pub fn status_label_count(&self, ctx: &AdminContext<'_>, status: &str, n: u64) -> Option<String> {
+        self.hooks().find_map(|plugin| plugin.status_label_count(ctx, status, n))
+    }
+
+    /// The columns of a posts list after the plugins.
+    pub fn posts_columns(&self, ctx: &AdminContext<'_>, post_type: &str, columns: Vec<(String, String)>) -> Vec<(String, String)> {
+        self.hooks().fold(columns, |columns, plugin| plugin.posts_columns(ctx, post_type, columns))
+    }
+
+    /// What the plugins print in a column of theirs.
+    pub async fn posts_custom_column(&self, ctx: &AdminContext<'_>, column: &str, post: &Post) -> Result<String> {
+        let mut out = String::new();
+        for plugin in self.hooks() {
+            out.push_str(&plugin.posts_custom_column(ctx, column, post).await?);
+        }
+        Ok(out)
+    }
+
+    /// The row actions after the plugins.
+    pub fn post_row_actions(&self, ctx: &AdminContext<'_>, post: &Post, hierarchical: bool, actions: Vec<(String, String)>) -> Vec<(String, String)> {
+        self.hooks().fold(actions, |actions, plugin| plugin.post_row_actions(ctx, post, hierarchical, actions))
+    }
+
+    /// The bulk actions after the plugins.
+    pub fn bulk_actions(&self, ctx: &AdminContext<'_>, screen_id: &str, actions: Vec<(String, String)>) -> Vec<(String, String)> {
+        self.hooks().fold(actions, |actions, plugin| plugin.bulk_actions(ctx, screen_id, actions))
+    }
+
+    /// The views of a list after the plugins.
+    pub fn list_views(&self, ctx: &AdminContext<'_>, screen_id: &str, views: Vec<(String, String)>) -> Vec<(String, String)> {
+        self.hooks().fold(views, |views, plugin| plugin.list_views(ctx, screen_id, views))
+    }
+
+    /// The post states after the plugins.
+    pub fn display_post_states(&self, ctx: &AdminContext<'_>, post: &Post, states: Vec<(String, String)>) -> Vec<(String, String)> {
+        self.hooks().fold(states, |states, plugin| plugin.display_post_states(ctx, post, states))
+    }
+
+    /// The `not_found` label of the first plugin that changes it.
+    pub fn list_not_found(&self, ctx: &AdminContext<'_>, post_type: &str) -> Option<String> {
+        self.hooks().find_map(|plugin| plugin.list_not_found(ctx, post_type))
     }
 
     /// The extension of the icons of the request: that of the first plugin that asks for icons early, else `svg`.

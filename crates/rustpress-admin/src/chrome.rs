@@ -401,6 +401,10 @@ pub struct Assets {
     pub notices: String,
     /// What a plugin's `admin_footer_text` prints instead of the thanks for using WordPress.
     pub footer_text: Option<String>,
+    /// What a plugin's `update_footer` prints instead of the version.
+    pub update_footer: Option<String>,
+    /// What the plugins print on `in_admin_header`, after the toolbar.
+    pub admin_header: String,
 }
 
 /// A page that `@wordpress/boot` renders, with the routes `wp-includes/build/routes/registry.php` lists for it.
@@ -885,6 +889,7 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
     bar.view_item = screen.view_item.clone();
     bar.view_archive = screen.view_archive;
     out.push_str(&adminbar::render_admin(site, env.user, &bar));
+    out.push_str(&assets.admin_header);
     out.push_str("\n<div id=\"wpbody\" role=\"main\">\n\n<div id=\"wpbody-content\">\n");
     let meta = match (&screen.help, &screen.options) {
         (help, Some(options)) => {
@@ -920,7 +925,7 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
     out.push_str(&format!(
         "<div id=\"wpfooter\" role=\"contentinfo\">\n\t\t<p id=\"footer-left\" class=\"alignleft\">\n\t\t{}\t</p>\n\t<p id=\"footer-upgrade\" class=\"alignright\">\n\t\t{}\t</p>\n\t<div class=\"clear\"></div>\n</div>\n",
         assets.footer_text.clone().unwrap_or_else(|| format!("<span id=\"footer-thankyou\">{}</span>", rustpress_core::i18n::sprintf(&tr("Thank you for creating with <a href=\"%s\">WordPress</a>."), &["https://wordpress.org/"]))),
-        rustpress_core::i18n::sprintf(&tr("Version %s"), &[&version])
+        assets.update_footer.clone().unwrap_or_else(|| rustpress_core::i18n::sprintf(&tr("Version %s"), &[&version]))
     ));
     out.push_str(&assets.footer_first);
     out.push_str(&assets.plugin_footer);
