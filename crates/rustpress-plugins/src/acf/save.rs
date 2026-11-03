@@ -477,7 +477,7 @@ fn field_by_key<'a>(groups: &'a [FieldGroup], key: &str) -> Option<&'a Field> {
 
 /// `acf_validation::ajax_validate_save_post()` (`wp_ajax_acf/validate_save_post`, also for visitors): the errors of
 /// every value of a known field, for the form's script.
-pub fn ajax_validate(groups: &[FieldGroup], ctx: &rustpress_core::native::AdminContext<'_>) -> rustpress_core::native::AjaxAnswer {
+pub async fn ajax_validate(groups: &[FieldGroup], ctx: &rustpress_core::native::AdminContext<'_>) -> rustpress_core::Result<rustpress_core::native::AjaxAnswer> {
     let site = ctx.site;
     let tr = |text: &str| site.trd("acf", text);
     let request = |name: &str| ctx.form.iter().chain(ctx.query.iter()).rev().find(|(k, _)| k == name).map(|(_, v)| v.as_str());
@@ -487,9 +487,10 @@ pub fn ajax_validate(groups: &[FieldGroup], ctx: &rustpress_core::native::AdminC
         let message = if nonce.is_empty() { tr("ACF was unable to perform validation because no nonce was received by the server.") } else { tr("ACF was unable to perform validation because the provided nonce failed verification.") };
         let url = rustpress_core::formatting::esc_url("https://www.advancedcustomfields.com/resources/validation-nonce-errors/?utm_source=ACF+Free&utm_medium=insideplugin&utm_campaign=docs&utm_content=validation-nonce");
         let data = serde_json::json!({"valid": 0, "errors": [{"input": false, "message": message, "action": {"label": tr("Learn more"), "url": url}}]});
-        return rustpress_core::native::AjaxAnswer::json(200, encode(data));
+        return Ok(rustpress_core::native::AjaxAnswer::json(200, encode(data)));
     }
-    let mut errors = Vec::new();
+    // `acf_validate_internal_post_type_values()` of the post type and taxonomy editors.
+    let mut errors = super::internal_edit::validate_values(ctx).await?;
     if let Some(Value::Array(items)) = rustpress_core::native::form_value(ctx.form, "acf")
         && !items.is_empty()
     {
@@ -506,7 +507,7 @@ pub fn ajax_validate(groups: &[FieldGroup], ctx: &rustpress_core::native::AdminC
         let list: Vec<serde_json::Value> = errors.into_iter().map(|(input, message)| serde_json::json!({"input": input, "message": message})).collect();
         serde_json::json!({"valid": 0, "errors": list})
     };
-    rustpress_core::native::AjaxAnswer::json(200, encode(data))
+    Ok(rustpress_core::native::AjaxAnswer::json(200, encode(data)))
 }
 
 /// `ACF_Form_Post::allow_save_post()`: not ACF's own posts or revisions, and only the post the form is about.

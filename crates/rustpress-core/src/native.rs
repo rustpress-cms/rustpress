@@ -265,9 +265,9 @@ pub trait ActivePlugin: Send + Sync {
         Box::pin(async { Ok(None) })
     }
 
-    /// `post_updated_messages`: the message `$number` of the edit screen of `post_type` after a save (`Some(None)`
-    /// for `false`, which prints nothing).
-    fn post_updated_message(&self, _site: &Site, _post_type: &str, _number: u32) -> Option<Option<String>> {
+    /// `post_updated_messages`: the message `$number` of the edit screen of `post` after a save (`Some(None)` for
+    /// `false`, which prints nothing); `nonce` is `wp_create_nonce()` of the signed-in user.
+    fn post_updated_message(&self, _site: &Site, _post: &Post, _number: u32, _nonce: &dyn Fn(&str) -> String) -> Option<Option<String>> {
         None
     }
 
@@ -961,6 +961,8 @@ pub struct PostMetaBoxes {
     pub hidden_fields: Vec<FormPart>,
     /// An editor printed on `admin_footer` (priority 1), as for [`MetaBoxes::hidden_editor`].
     pub hidden_editor: Option<HiddenEditor>,
+    /// `wp_enqueue_media()` while the boxes are printed, as for [`MetaBoxes::media`].
+    pub media: bool,
 }
 
 /// What happened to a post in [`ActivePlugin::post_trash_change`].
@@ -1895,8 +1897,8 @@ impl Plugins {
     }
 
     /// The message after a save of the first plugin that gives one.
-    pub fn post_updated_message(&self, site: &Site, post_type: &str, number: u32) -> Option<Option<String>> {
-        self.hooks().find_map(|plugin| plugin.post_updated_message(site, post_type, number))
+    pub fn post_updated_message(&self, site: &Site, post: &Post, number: u32, nonce: &dyn Fn(&str) -> String) -> Option<Option<String>> {
+        self.hooks().find_map(|plugin| plugin.post_updated_message(site, post, number, nonce))
     }
 
     /// The layout of the first plugin that sets one.
@@ -2067,6 +2069,7 @@ impl Plugins {
             out.after_title.extend(boxes.after_title);
             out.hidden_fields.extend(boxes.hidden_fields);
             out.hidden_editor = out.hidden_editor.or(boxes.hidden_editor);
+            out.media |= boxes.media;
         }
         Ok(out)
     }

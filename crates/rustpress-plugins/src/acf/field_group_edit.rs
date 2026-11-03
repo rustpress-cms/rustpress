@@ -156,8 +156,9 @@ pub async fn screen_settings(ctx: &AdminContext<'_>, html: String) -> Result<Str
     ))
 }
 
-/// `views/global/form-top.php` for a field group.
-pub fn form_top(ctx: &AdminContext<'_>, post: &Post) -> String {
+/// `views/global/form-top.php` for a field group; `prefilled` is the title of an empty group made for a post type or
+/// taxonomy ("Movie fields").
+pub fn form_top(ctx: &AdminContext<'_>, post: &Post, prefilled: Option<String>) -> String {
     let site = ctx.site;
     let title = if post.post_status == "auto-draft" { "add_new_item" } else { "edit_item" };
     let title = site.types.admin_post_types().into_iter().find(|t| t.name == "acf-field-group").and_then(|t| t.label(title)).unwrap_or_default();
@@ -165,7 +166,7 @@ pub fn form_top(ctx: &AdminContext<'_>, post: &Post) -> String {
         "<div class=\"acf-headerbar acf-headerbar-field-editor\">\n\t<div class=\"acf-headerbar-inner\">\n\n\t\t<div class=\"acf-headerbar-content\">\n\t\t\t<h1 class=\"acf-page-title\">\n\t\t\t{}\t\t\t</h1>\n\t\t\t\t\t\t<div class=\"acf-title-wrap\">\n\t\t\t\t<label class=\"screen-reader-text\" id=\"title-prompt-text\" for=\"title\">{}</label>\n\t\t\t\t<input form=\"post\" type=\"text\" name=\"post_title\" size=\"30\" value=\"{}\" id=\"title\" class=\"acf-headerbar-title-field\" spellcheck=\"true\" autocomplete=\"off\" placeholder=\"{}\" />\n\t\t\t</div>\n\t\t\t\t\t</div>\n\n\t\t<div class=\"acf-headerbar-actions\" id=\"submitpost\">\n\t\t\t\t\t\t\t<a href=\"#\" class=\"acf-btn acf-btn-secondary add-field\">\n\t\t\t\t\t<i class=\"acf-icon acf-icon-plus\"></i>\n\t\t\t\t\t{}\t\t\t\t</a>\n\t\t\t\t\t\t<button form=\"post\" class=\"acf-btn acf-publish\" name=\"{}\" type=\"submit\">\n\t\t\t\t{}\t\t\t</button>\n\t\t</div>\n\n\t</div>\n</div>\n",
         esc_html(&title),
         esc_html(&site.tr("Add title")),
-        esc_attr(&post.post_title),
+        esc_attr(&if post.post_title.is_empty() { prefilled.unwrap_or_default() } else { post.post_title.clone() }),
         esc_attr(&tr(site, "Field Group Title")),
         esc_tr(site, "Add Field"),
         if post.post_status == "publish" { "save" } else { "publish" },
@@ -252,6 +253,8 @@ struct View<'a> {
     num_groups: usize,
     /// `$field_group['ID']`.
     group_id: u64,
+    /// In `wp_ajax_acf/field_group/render_field_settings`.
+    ajax: bool,
 }
 
 /// `views/acf-field-group/conditional-logic.php`.
@@ -317,10 +320,14 @@ async fn conditional_logic(view: &View<'_>, field: &RenderField) -> Result<Strin
 async fn type_settings(view: &View<'_>, field: &mut RenderField, tab: Tab) -> Result<String> {
     let site = view.render.site;
     let kind = strval(field.get("type"));
+    // A type ACF does not register (one of PRO, or none) has no actions.
+    if super::field_types::get(&kind).is_none() {
+        return Ok(String::new());
+    }
     let mut parts: Vec<Part> = Vec::new();
     match tab {
         Tab::Validation => parts.extend(super::field_settings::required_setting(site, &kind)),
-        Tab::Presentation => parts.extend(super::field_settings::bindings_setting(site, field)),
+        Tab::Presentation => parts.extend(super::field_settings::bindings_setting(site, field, view.ajax)),
         _ => {}
     }
     // `render_required_setting()` renders the field as it was; the type's settings may change it.
@@ -604,6 +611,14 @@ async fn options_box(ctx: &AdminContext<'_>, render: &Ctx<'_>, post: &Post) -> R
     let mut location = super::fields::parse_location(&group);
     if location.is_empty() {
         location = vec![vec![super::fields::Rule { param: "post_type".into(), operator: "==".into(), value: string("post") }]];
+        // A group made for a post type or taxonomy ("Add fields" after saving one).
+        for (kind, param) in [(super::internal_edit::Kind::PostType, "post_type"), (super::internal_edit::Kind::Taxonomy, "taxonomy")] {
+            if let Some(item) = super::internal_edit::from_request_args(ctx, kind, "add-fields").await?
+                && truthy(item.get(param))
+            {
+                location = vec![vec![super::fields::Rule { param: param.into(), operator: "==".into(), value: item.get(param).cloned().unwrap_or(Value::Null) }]];
+            }
+        }
     }
     let t = |text: &str| string(&tr(site, text));
     let choices = |items: &[(&str, &str)]| Value::Array(items.iter().map(|(k, v)| (key(k), string(&tr(site, v)))).collect());
@@ -684,7 +699,7 @@ pub async fn meta_boxes(groups: &[FieldGroup], ctx: &AdminContext<'_>, post: &Po
     let field_label = move |k: &str| labels.iter().find(|(key, _)| key == k).map(|(_, l)| l.clone());
     let theme_json = ctx.wp_root.join("wp-content/themes").join(&site.settings.stylesheet).join("theme.json").exists() || ctx.wp_root.join("wp-content/themes").join(&site.settings.template).join("theme.json").exists();
     let env = Env { site, render: &render, field_label: &field_label, now: ctx.now, can_upload: (ctx.can)("upload_files"), theme_json };
-    let view = View { render: &render, env: &env, num_groups: groups.len(), group_id: post.id };
+    let view = View { render: &render, env: &env, num_groups: groups.len(), group_id: post.id, ajax: false };
     let fields: Vec<RenderField> = group_fields(groups, site, post).await?.iter().map(|f| editor_field(&render, f)).collect();
     let fields_html = fields_list(&view, fields, Value::Int(0), false).await?;
     let boxes = vec![
@@ -772,7 +787,7 @@ pub async fn ajax_render_field_settings(groups: &[FieldGroup], ctx: &AdminContex
     let theme_json = ctx.wp_root.join("wp-content/themes").join(&site.settings.stylesheet).join("theme.json").exists() || ctx.wp_root.join("wp-content/themes").join(&site.settings.template).join("theme.json").exists();
     let env = Env { site, render: &render, field_label: &field_label, now: ctx.now, can_upload: (ctx.can)("upload_files"), theme_json };
     let group_id = request(ctx, "post_id").map_or(0, |id| super::php::intval(Some(&string(id))).max(0) as u64);
-    let view = View { render: &render, env: &env, num_groups: groups.len(), group_id };
+    let view = View { render: &render, env: &env, num_groups: groups.len(), group_id, ajax: true };
     let mut sections = serde_json::Map::new();
     for tab in Tab::ALL {
         // Every action gets the field as it was.

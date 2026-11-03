@@ -26,6 +26,7 @@ mod fields;
 mod form;
 mod format;
 mod internal;
+mod internal_edit;
 mod list_actions;
 mod locations;
 mod php;
@@ -306,6 +307,7 @@ impl ActivePlugin for Loaded {
         admin::admin_enqueue(ctx.site, assets);
         admin_lists::admin_enqueue(ctx, assets);
         field_group_edit::admin_enqueue(ctx, assets);
+        internal_edit::admin_enqueue(ctx, assets);
         edit_comment::admin_enqueue(ctx, assets);
         edit_post::admin_enqueue(ctx, assets);
         edit_term::admin_enqueue(ctx, assets);
@@ -385,6 +387,9 @@ impl ActivePlugin for Loaded {
             if field_group_edit::edited_group(ctx).is_some() {
                 return field_group_edit::meta_boxes(&self.groups, ctx, post).await;
             }
+            if internal_edit::edited(ctx).is_some() {
+                return internal_edit::meta_boxes(ctx, post).await;
+            }
             edit_post::meta_boxes(&self.groups, ctx, post).await
         })
     }
@@ -393,6 +398,9 @@ impl ActivePlugin for Loaded {
         Box::pin(async move {
             if ctx.post.post_type == "acf-field-group" {
                 return save_group::save_post(ctx).await;
+            }
+            if internal_edit::Kind::of(&ctx.post.post_type).is_some() {
+                return internal_edit::save_post(ctx).await;
             }
             save::save_post(&self.groups, ctx).await
         })
@@ -432,6 +440,9 @@ impl ActivePlugin for Loaded {
             if let Some(footer) = field_group_edit::footer_scripts(ctx) {
                 return Ok(footer);
             }
+            if let Some(footer) = internal_edit::footer_scripts(ctx) {
+                return Ok(footer);
+            }
             if let Some(footer) = edit_post::footer_scripts(&self.groups, ctx).await? {
                 return Ok(footer);
             }
@@ -449,7 +460,7 @@ impl ActivePlugin for Loaded {
     }
 
     fn admin_body_class(&self, ctx: &rustpress_core::native::AdminContext<'_>, classes: String) -> String {
-        field_group_edit::admin_body_class(ctx, admin_lists::admin_body_class(ctx, admin::admin_body_class(ctx, classes)))
+        internal_edit::admin_body_class(ctx, field_group_edit::admin_body_class(ctx, admin_lists::admin_body_class(ctx, admin::admin_body_class(ctx, classes))))
     }
 
     fn post_trash_change<'a>(&'a self, change: &'a rustpress_core::native::PostChange<'a>) -> BoxFuture<'a, Result<()>> {
@@ -468,12 +479,12 @@ impl ActivePlugin for Loaded {
         Box::pin(list_actions::notices(ctx))
     }
 
-    fn post_updated_message(&self, site: &Site, post_type: &str, number: u32) -> Option<Option<String>> {
-        save_group::post_updated_message(site, post_type, number)
+    fn post_updated_message(&self, site: &Site, post: &rustpress_db::Post, number: u32, nonce: &dyn Fn(&str) -> String) -> Option<Option<String>> {
+        save_group::post_updated_message(site, &post.post_type, number).or_else(|| internal_edit::post_updated_message(site, post, number, nonce))
     }
 
     fn screen_layout(&self, _ctx: &rustpress_core::native::AdminContext<'_>, screen_id: &str) -> Option<u32> {
-        field_group_edit::screen_layout(screen_id)
+        field_group_edit::screen_layout(screen_id).or_else(|| internal_edit::screen_layout(screen_id))
     }
 
     fn screen_settings<'a>(&'a self, ctx: &'a rustpress_core::native::AdminContext<'a>, html: String) -> BoxFuture<'a, Result<String>> {
@@ -489,7 +500,7 @@ impl ActivePlugin for Loaded {
     }
 
     fn in_admin_header<'a>(&'a self, ctx: &'a rustpress_core::native::AdminContext<'a>) -> BoxFuture<'a, Result<String>> {
-        Box::pin(async move { Ok(admin_lists::in_admin_header(ctx)) })
+        Box::pin(async move { Ok(format!("{}{}", admin_lists::in_admin_header(ctx), internal_edit::form_top(ctx).await?)) })
     }
 
     fn admin_footer_text(&self, ctx: &rustpress_core::native::AdminContext<'_>) -> Option<String> {
@@ -543,17 +554,23 @@ impl ActivePlugin for Loaded {
     fn admin_ajax<'a>(&'a self, action: &'a str, ctx: &'a rustpress_core::native::AdminContext<'a>) -> BoxFuture<'a, Result<Option<rustpress_core::native::AjaxAnswer>>> {
         Box::pin(async move {
             Ok(match action {
-                "acf/validate_save_post" => Some(save::ajax_validate(&self.groups, ctx)),
+                "acf/validate_save_post" => Some(save::ajax_validate(&self.groups, ctx).await?),
                 "acf/field_group/render_field_settings" => Some(field_group_edit::ajax_render_field_settings(&self.groups, ctx).await?),
                 "acf/field_group/render_location_rule" => Some(field_group_edit::ajax_render_location_rule(ctx).await?),
                 "acf/field_group/move_field" => Some(field_group_edit::ajax_move_field(ctx).await?),
+                "acf/link_field_groups" => Some(internal_edit::ajax_link_field_groups(ctx).await?),
                 _ => None,
             })
         })
     }
 
     fn admin_ajax_nopriv<'a>(&'a self, action: &'a str, ctx: &'a rustpress_core::native::AdminContext<'a>) -> BoxFuture<'a, Result<Option<rustpress_core::native::AjaxAnswer>>> {
-        Box::pin(async move { Ok((action == "acf/validate_save_post").then(|| save::ajax_validate(&self.groups, ctx))) })
+        Box::pin(async move {
+            if action != "acf/validate_save_post" {
+                return Ok(None);
+            }
+            Ok(Some(save::ajax_validate(&self.groups, ctx).await?))
+        })
     }
 
     fn comment_post<'a>(&'a self, ctx: &'a rustpress_core::native::CommentSaved<'a>) -> BoxFuture<'a, Result<Option<rustpress_core::native::Die>>> {

@@ -507,18 +507,11 @@ pub fn taxonomy_args(post: &Value) -> Lit {
     Lit::Array(args.0)
 }
 
-/// `ACF_Post_Type::register_post_types()` and `ACF_Taxonomy::register_taxonomies()` on `acf/init`: the active
-/// post types, then the active taxonomies; a type that already exists is skipped.
+/// `ACF_Taxonomy::register_taxonomies()` and `ACF_Post_Type::register_post_types()` on `acf/init` (`init` at
+/// priority 5): the active taxonomies, then the active post types – `acf.php` includes the taxonomy class first, so
+/// its callback runs first –; a type that already exists is skipped.
 pub fn registrations(post_types: &[AcfPost], taxonomies: &[AcfPost]) -> Vec<Registration> {
     let mut out: Vec<Registration> = Vec::new();
-    for post in post_types {
-        let post = validated(post, post_type_defaults());
-        let name = strval(post.get("post_type"));
-        if !truthy(post.get("active")) || name.is_empty() || is_builtin_post_type(&name) || out.iter().any(|r| !r.taxonomy && r.name == name) {
-            continue;
-        }
-        out.push(Registration { name, taxonomy: false, args: post_type_args(&post), object_types: Vec::new() });
-    }
     for post in taxonomies {
         let post = validated(post, taxonomy_defaults());
         let name = strval(post.get("taxonomy"));
@@ -526,7 +519,15 @@ pub fn registrations(post_types: &[AcfPost], taxonomies: &[AcfPost]) -> Vec<Regi
             continue;
         }
         let object_types = to_array(post.get("object_type")).iter().map(|(_, v)| strval(Some(v))).collect();
-        out.push(Registration { name, taxonomy: true, args: taxonomy_args(&post), object_types });
+        out.push(Registration { name, taxonomy: true, args: taxonomy_args(&post), object_types, priority: 5 });
+    }
+    for post in post_types {
+        let post = validated(post, post_type_defaults());
+        let name = strval(post.get("post_type"));
+        if !truthy(post.get("active")) || name.is_empty() || is_builtin_post_type(&name) || out.iter().any(|r| !r.taxonomy && r.name == name) {
+            continue;
+        }
+        out.push(Registration { name, taxonomy: false, args: post_type_args(&post), object_types: Vec::new(), priority: 5 });
     }
     out
 }

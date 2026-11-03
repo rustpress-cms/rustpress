@@ -166,7 +166,7 @@ fn weekdays(site: &Site) -> Value {
 }
 
 /// `acf_get_pretty_post_types()`.
-fn pretty_post_types(site: &Site) -> Value {
+pub(super) fn pretty_post_types(site: &Site) -> Value {
     let items: Vec<(String, String)> = super::format::all_post_types(site).into_iter().map(|t| (t.clone(), super::render::post_type_singular(site, &t))).collect();
     Value::Array(super::render::disambiguate(items).into_iter().map(|(k, v)| (key(&k), string(&v))).collect())
 }
@@ -179,7 +179,7 @@ fn pretty_post_statuses(site: &Site) -> Value {
 }
 
 /// `acf_get_taxonomy_labels()` of every taxonomy.
-fn taxonomy_labels(site: &Site) -> Value {
+pub(super) fn taxonomy_labels(site: &Site) -> Value {
     let taxonomies = super::render::acf_taxonomies(site, None);
     Value::Array(super::render::taxonomy_singulars(site, &taxonomies).into_iter().map(|(k, v)| (key(&k), string(&v))).collect())
 }
@@ -551,15 +551,16 @@ pub fn required_setting(site: &Site, kind: &str) -> Option<Part> {
     super::field_types::supports_required(kind).then(|| set(vec![("label", t(site, "Required")), ("instructions", string("")), ("type", string("true_false")), ("name", string("required")), ("ui", Value::Int(1)), ("class", string("field-required"))]))
 }
 
-/// `acf_field::render_bindings_setting()` (presentation, priority 5): a stored field without the setting allows it.
-pub fn bindings_setting(site: &Site, field: &mut RenderField) -> Option<Part> {
+/// `acf_field::render_bindings_setting()` (presentation, priority 5): a stored field without the setting allows it,
+/// except in `wp_ajax_acf/field_group/render_field_settings` (`in_ajax`).
+pub fn bindings_setting(site: &Site, field: &mut RenderField, in_ajax: bool) -> Option<Part> {
     if !super::field_types::supports_bindings(&strval(field.get("type"))) {
         return None;
     }
     let link = format!("<a target=\"_blank\" href=\"{}\">{}</a>", super::admin_lists::utm("https://www.advancedcustomfields.com/resources/bindings-security/", "docs", "field-settings", "", "", ""), rustpress_core::formatting::esc_html(&t_str(site, "Learn more.")));
     let instructions = rustpress_core::i18n::sprintf(&rustpress_core::formatting::esc_html(&t_str(site, "Allow content editors to access and display the field value in the editor UI using Block Bindings or the ACF Shortcode. %s")), &[&link]);
     if field.get("allow_in_bindings").is_none_or(|v| matches!(v, Value::Null)) {
-        let stored = truthy(field.get("ID"));
+        let stored = truthy(field.get("ID")) && !in_ajax;
         field.set("allow_in_bindings", Value::Bool(stored));
     }
     Some(set(vec![("label", t(site, "Allow Access to Value in Editor UI")), ("instructions", string(&instructions)), ("type", string("true_false")), ("name", string("allow_in_bindings")), ("ui", Value::Int(1)), ("class", string("field-show-in-bindings"))]))

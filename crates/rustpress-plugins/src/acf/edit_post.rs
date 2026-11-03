@@ -162,6 +162,8 @@ pub async fn meta_boxes(groups: &[FieldGroup], ctx: &AdminContext<'_>, post: &Po
             before: "\t\t<div id=\"acf-hidden-wp-editor\" style=\"display: none;\">\n\t\t\t".into(),
             after: "\t\t</div>\n\t\t\t".into(),
         }),
+        // The post screens enqueue the media library themselves.
+        media: false,
     })
 }
 

@@ -136,6 +136,139 @@ impl TaxonomyInfo {
     }
 }
 
+/// What `WP_Post_Type::add_rewrite_rules()` or `WP_Taxonomy::add_rewrite_rules()` adds for a custom type: the
+/// rewrite tag, the archive rules and the permastruct.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RewriteType {
+    pub name: String,
+    pub taxonomy: bool,
+    /// `rewrite['slug']`.
+    pub slug: String,
+    /// `rewrite['with_front']`; `None` for a type only the stored rules know, whose slug carries the old front.
+    pub with_front: Option<bool>,
+    /// The tag is `(.+?)`: a hierarchical post type, a taxonomy with `rewrite['hierarchical']`.
+    pub hierarchical: bool,
+    pub query_var: Option<String>,
+    /// The archive slug of `has_archive` (post types).
+    pub archive: Option<String>,
+    /// `rewrite['feeds']` (post types; a taxonomy's permastruct always has feeds).
+    pub feeds: bool,
+    /// `rewrite['pages']`: the paged archive rule (post types).
+    pub pages: bool,
+    /// `rewrite['ep_mask']`.
+    pub ep_mask: u32,
+    /// Registered on `init` before priority 10: the archive rules come before those of the REST API.
+    pub early: bool,
+}
+
+impl RewriteType {
+    /// `WP_Post_Type::set_props()` (as in the administration) for a literal registration; `None` with
+    /// `'rewrite' => false`.
+    fn of_post_type(reg: &Registration) -> Option<Self> {
+        let args = &reg.args;
+        let rewrite = match args.get("rewrite") {
+            Some(Lit::Bool(false)) => return None,
+            Some(rewrite @ Lit::Array(_)) => rewrite.clone(),
+            _ => Lit::Array(Vec::new()),
+        };
+        let set = |key: &str| rewrite.get(key).filter(|v| !matches!(v, Lit::Null));
+        let slug = set("slug").filter(|v| v.truthy() == Some(true)).and_then(Lit::as_str).map_or_else(|| reg.name.clone(), str::to_owned);
+        let has_archive = args.get("has_archive").cloned().unwrap_or(Lit::Bool(false));
+        let archive = match &has_archive {
+            v if v.truthy() == Some(false) => None,
+            Lit::Bool(true) | Lit::Unknown => Some(slug.clone()),
+            Lit::Str(s) => Some(s.clone()),
+            Lit::Int(i) => Some(i.to_string()),
+            _ => Some(slug.clone()),
+        };
+        let feeds = match set("feeds") {
+            Some(feeds) if archive.is_some() => feeds.truthy().unwrap_or(true),
+            _ => archive.is_some(),
+        };
+        let ep_mask = match (set("ep_mask"), args.get("permalink_epmask")) {
+            (Some(Lit::Int(mask)), _) | (None, Some(Lit::Int(mask))) => *mask as u32,
+            _ => 1,
+        };
+        Some(Self {
+            name: reg.name.clone(),
+            taxonomy: false,
+            slug,
+            with_front: Some(set("with_front").is_none_or(|v| v.truthy().unwrap_or(true))),
+            hierarchical: args.get("hierarchical").and_then(Lit::truthy).unwrap_or(false),
+            query_var: query_var(args, &reg.name),
+            archive,
+            feeds,
+            pages: set("pages").is_none_or(|v| v.truthy().unwrap_or(true)),
+            ep_mask,
+            early: reg.priority < 10,
+        })
+    }
+
+    /// `WP_Taxonomy::set_props()` (as in the administration) for a literal registration; `None` with
+    /// `'rewrite' => false`.
+    fn of_taxonomy(reg: &Registration) -> Option<Self> {
+        let args = &reg.args;
+        let rewrite = match args.get("rewrite") {
+            Some(Lit::Bool(false)) => return None,
+            Some(rewrite @ Lit::Array(_)) => rewrite.clone(),
+            _ => Lit::Array(Vec::new()),
+        };
+        let set = |key: &str| rewrite.get(key).filter(|v| !matches!(v, Lit::Null));
+        let slug = set("slug").filter(|v| v.truthy() == Some(true)).and_then(Lit::as_str).map_or_else(|| crate::slug::sanitize_title(&reg.name), str::to_owned);
+        let hierarchical = args.get("hierarchical").and_then(Lit::truthy).unwrap_or(false);
+        Some(Self {
+            name: reg.name.clone(),
+            taxonomy: true,
+            slug,
+            with_front: Some(set("with_front").is_none_or(|v| v.truthy().unwrap_or(true))),
+            hierarchical: hierarchical && set("hierarchical").is_some_and(|v| v.truthy().unwrap_or(false)),
+            query_var: query_var(args, &reg.name),
+            archive: None,
+            feeds: true,
+            pages: true,
+            ep_mask: match set("ep_mask") {
+                Some(Lit::Int(mask)) => *mask as u32,
+                _ => 0,
+            },
+            early: reg.priority < 10,
+        })
+    }
+
+    /// A post type only the stored rules know.
+    fn inferred_post_type(info: &PostTypeInfo) -> Self {
+        Self {
+            name: info.name.clone(),
+            taxonomy: false,
+            slug: info.slug.clone(),
+            with_front: None,
+            hierarchical: info.hierarchical,
+            query_var: info.query_var.clone(),
+            archive: info.archive_slug.clone(),
+            feeds: info.archive_slug.is_some(),
+            pages: true,
+            ep_mask: 1,
+            early: false,
+        }
+    }
+
+    /// A taxonomy only the stored rules know.
+    fn inferred_taxonomy(info: &TaxonomyInfo) -> Self {
+        Self {
+            name: info.name.clone(),
+            taxonomy: true,
+            slug: info.slug.clone(),
+            with_front: None,
+            hierarchical: info.rewrite_hierarchical,
+            query_var: info.query_var.clone(),
+            archive: None,
+            feeds: true,
+            pages: true,
+            ep_mask: 0,
+            early: false,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct Types {
     pub post_types: Vec<PostTypeInfo>,
@@ -146,6 +279,9 @@ pub struct Types {
     /// changed permalink structure are built from them. Empty until [Types::apply] ran.
     rewrite_post_types: Vec<PostTypeInfo>,
     rewrite_taxonomies: Vec<TaxonomyInfo>,
+    /// What the custom types add to the rewrite rules, in the order they were registered (the literal registrations,
+    /// then the types only the stored rules know). `None` until [Types::apply] ran.
+    rewrite_types: Option<Vec<RewriteType>>,
     /// The post types the `register_post_type()` calls name, in their order, with their labels (also those without
     /// pages of their own).
     pub registered_post_types: Vec<RegisteredLabels>,
@@ -546,6 +682,35 @@ impl Types {
         self.taxonomies.sort_by_key(|t| position(&t.name, true));
         self.rewrite_post_types = self.post_types.clone();
         self.rewrite_taxonomies = self.taxonomies.clone();
+        // The rewrite rules of the registrations with literal arguments in their order, also of the types that have no
+        // posts or terms yet; a computed registration and a type no registration names keep what the rules say.
+        let mut rewrite_types = Vec::new();
+        let mut covered: Vec<(bool, String)> = Vec::new();
+        for reg in &self.registrations {
+            let built_in = if reg.taxonomy { BUILT_IN_TAXONOMIES.contains(&reg.name.as_str()) } else { BUILT_IN_POST_TYPES.contains(&reg.name.as_str()) || is_internal_post_type(&reg.name) };
+            if built_in || covered.iter().any(|(t, n)| *t == reg.taxonomy && n == &reg.name) {
+                continue;
+            }
+            let found = match (&reg.args, reg.taxonomy) {
+                (Lit::Array(_), false) => RewriteType::of_post_type(reg),
+                (Lit::Array(_), true) => RewriteType::of_taxonomy(reg),
+                (_, false) => self.rewrite_post_types.iter().find(|t| t.name == reg.name).map(RewriteType::inferred_post_type),
+                (_, true) => self.rewrite_taxonomies.iter().find(|t| t.name == reg.name).map(RewriteType::inferred_taxonomy),
+            };
+            covered.push((reg.taxonomy, reg.name.clone()));
+            rewrite_types.extend(found);
+        }
+        for info in &self.rewrite_post_types {
+            if !covered.iter().any(|(t, n)| !*t && n == &info.name) {
+                rewrite_types.push(RewriteType::inferred_post_type(info));
+            }
+        }
+        for info in &self.rewrite_taxonomies {
+            if !covered.iter().any(|(t, n)| *t && n == &info.name) {
+                rewrite_types.push(RewriteType::inferred_taxonomy(info));
+            }
+        }
+        self.rewrite_types = Some(rewrite_types);
         // Types that cannot be requested on the frontend have no pages, whatever their rules say.
         let hidden: Vec<String> = self.post_types.iter().filter(|t| !t.queryable).map(|t| t.name.clone()).collect();
         self.hidden_post_types.extend(hidden);
@@ -571,6 +736,29 @@ impl Types {
     /// The taxonomies that have rewrite rules, with the ones that have no pages.
     pub fn rewrite_taxonomies(&self) -> &[TaxonomyInfo] {
         if self.rewrite_taxonomies.is_empty() { &self.taxonomies } else { &self.rewrite_taxonomies }
+    }
+
+    /// `unregister_post_type()`/`unregister_taxonomy()` after `init`, and with `again` registering the type anew (as a
+    /// plugin does when it saves a type): its rewrite rules come behind all others.
+    pub fn register_again(&mut self, taxonomy: bool, name: &str, again: Option<RewriteType>) {
+        if self.rewrite_types.is_none() {
+            self.rewrite_types = Some(self.rewrite_types());
+        }
+        let Some(types) = self.rewrite_types.as_mut() else { return };
+        types.retain(|t| !(t.taxonomy == taxonomy && t.name == name));
+        if let Some(mut entry) = again {
+            entry.early = false;
+            types.push(entry);
+        }
+    }
+
+    /// What the custom types add to the rewrite rules, in the order WordPress registers them. Without registrations
+    /// (before [Types::apply]): the post types the stored rules know, then their taxonomies.
+    pub fn rewrite_types(&self) -> Vec<RewriteType> {
+        match &self.rewrite_types {
+            Some(types) => types.clone(),
+            None => self.rewrite_post_types().iter().map(RewriteType::inferred_post_type).chain(self.rewrite_taxonomies().iter().map(RewriteType::inferred_taxonomy)).collect(),
+        }
     }
 
     pub fn post_type(&self, name: &str) -> Option<&PostTypeInfo> {
@@ -628,6 +816,9 @@ pub struct Registration {
     pub args: Lit,
     /// `register_taxonomy()`'s object types.
     pub object_types: Vec<String>,
+    /// The priority of the `init` callback that registers the type: below 10 the type's archive rules come before
+    /// those of the REST API and the sitemaps.
+    pub priority: i32,
 }
 
 fn is_identifier_char(c: char) -> bool {
@@ -677,7 +868,7 @@ pub fn scan_source(php: &str) -> Vec<Registration> {
                     let args = if parser.eat(",") { parser.expr() } else { Lit::Unknown };
                     let end = parser.at;
                     if let Lit::Str(name) = name {
-                        out.push(Registration { name, taxonomy, args, object_types });
+                        out.push(Registration { name, taxonomy, args, object_types, priority: 10 });
                     }
                     i = end.max(i + call.len());
                     advanced = true;

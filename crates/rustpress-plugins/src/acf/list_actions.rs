@@ -73,7 +73,9 @@ async fn set_active(ctx: &AdminContext<'_>, post: &Post, active: bool) -> Result
     super::php::set(&mut items, "active", Value::Bool(active));
     let system = rustpress_auth::CurrentUser::system();
     let content = rustpress_content::content::Content { site: ctx.site, db: &ctx.site.db, writer, user: &system, now: ctx.now };
-    super::save_group::update_internal_post(&content, &post.post_type, items).await?;
+    // `update_post()` unslashes the loaded item.
+    let Value::Array(items) = super::php::wp_unslash(Value::Array(items)) else { return Ok(false) };
+    super::save_group::update_internal_post(&content, Some(ctx.wp_root), &post.post_type, items).await?;
     Ok(true)
 }
 
