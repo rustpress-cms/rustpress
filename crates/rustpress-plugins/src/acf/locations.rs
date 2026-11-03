@@ -321,7 +321,7 @@ fn role_names(site: &Site) -> Vec<(String, String)> {
 }
 
 /// `views/acf-field-group/location-rule.php`.
-async fn rule_row(render: &Ctx<'_>, wp_root: &std::path::Path, rule: &Rule, group_id: &str, rule_id: &str) -> Result<String> {
+pub(super) async fn rule_row(render: &Ctx<'_>, wp_root: &std::path::Path, rule: &Rule, group_id: &str, rule_id: &str) -> Result<String> {
     let site = render.site;
     let prefix = format!("acf_field_group[location][{group_id}][{rule_id}]");
     let select = |name: &str, value: Value, choices: Value, class: Option<&str>| {

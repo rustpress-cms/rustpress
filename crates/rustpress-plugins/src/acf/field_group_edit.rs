@@ -7,7 +7,7 @@
 use futures::future::BoxFuture;
 use rustpress_core::Result;
 use rustpress_core::formatting::{esc_attr, esc_html, esc_url};
-use rustpress_core::native::{AdminContext, Assets, FormPart, PluginMetaBox, PostMetaBoxes};
+use rustpress_core::native::{AdminContext, AjaxAnswer, Assets, FormPart, PluginMetaBox, PostMetaBoxes};
 use rustpress_db::Post;
 use rustpress_phpser::{Key, Value};
 
@@ -710,4 +710,132 @@ pub fn footer_scripts(ctx: &AdminContext<'_>) -> Option<String> {
     let form = super::form::FormData { screen: serde_json::Value::String("field_group".into()), post_id: serde_json::json!(post.id), validation: serde_json::Value::Bool(false), field_group_data: data, ..Default::default() };
     let input_footer = super::admin_lists::pro_features(site);
     Some(super::form::footer_with(site, &form, ctx.wp_version, &(ctx.nonce)("acf_nonce"), ctx.user_agent, ctx.can, super::form::Uploader::No, &input_footer))
+}
+
+/// A value of `$_REQUEST` (the POST body before the query string).
+fn request<'a>(ctx: &'a AdminContext<'_>, name: &str) -> Option<&'a str> {
+    ctx.post_field(name).or_else(|| ctx.query.iter().rev().find(|(k, _)| k == name).map(|(_, v)| v.as_str()))
+}
+
+/// `acf_verify_ajax()` and `acf_current_user_can_admin()`: the nonce `acf_nonce` of the request and `manage_options`.
+fn ajax_allowed(ctx: &AdminContext<'_>) -> bool {
+    let nonce = request(ctx, "nonce").unwrap_or_default();
+    !nonce.is_empty() && (ctx.verify_nonce)(nonce, "acf_nonce") && (ctx.can)("manage_options")
+}
+
+/// The slashes `wp_magic_quotes()` adds to every string of `$_POST` (`addslashes()`).
+fn slashed(value: Value) -> Value {
+    match value {
+        Value::Str(s) => {
+            let mut out = Vec::with_capacity(s.len());
+            for b in s {
+                match b {
+                    b'\'' | b'"' | b'\\' => out.extend([b'\\', b]),
+                    0 => out.extend(*b"\\0"),
+                    _ => out.push(b),
+                }
+            }
+            Value::Str(out)
+        }
+        Value::Array(items) => Value::Array(items.into_iter().map(|(k, v)| (k, slashed(v))).collect()),
+        other => other,
+    }
+}
+
+/// `acf_punctify()`.
+fn punctify(text: &str) -> String {
+    let trimmed = text.trim();
+    if rustpress_core::formatting::wp_strip_all_tags(trimmed).trim().ends_with('.') { trimmed.to_owned() } else { format!("{trimmed}.") }
+}
+
+/// `wp_ajax_acf/field_group/render_field_settings` (`ACF_Admin_Field_Group::ajax_render_field_settings()`): the
+/// settings of every tab after the type of a field changed, for the field as the editor posts it (with the slashes
+/// of `wp_magic_quotes()`, which ACF keeps).
+pub async fn ajax_render_field_settings(groups: &[FieldGroup], ctx: &AdminContext<'_>) -> Result<AjaxAnswer> {
+    let failed = || AjaxAnswer::json(200, "{\"success\":false}".into());
+    if !ajax_allowed(ctx) {
+        return Ok(failed());
+    }
+    let mut items = match rustpress_core::native::form_value(ctx.form, "field").map(slashed) {
+        Some(Value::Array(items)) if !items.is_empty() => items,
+        _ => return Ok(failed()),
+    };
+    let prefix = ctx.post_field("prefix").map_or(Value::Null, |p| slashed(string(p)));
+    super::php::set(&mut items, "prefix", prefix);
+    // `acf_get_valid_field()`.
+    let field = if truthy(items.iter().find(|(k, _)| super::php::key_eq(k, &key("_valid"))).map(|(_, v)| v)) { RenderField { items, sub_fields: Vec::new() } } else { RenderField::raw(items, Vec::new()) };
+    let site = ctx.site;
+    let services = super::edit_comment::AdminServices(ctx.wp_root.to_owned());
+    let render = super::edit_post::render_ctx(ctx, &services);
+    let labels = field_labels(groups);
+    let field_label = move |k: &str| labels.iter().find(|(key, _)| key == k).map(|(_, l)| l.clone());
+    let theme_json = ctx.wp_root.join("wp-content/themes").join(&site.settings.stylesheet).join("theme.json").exists() || ctx.wp_root.join("wp-content/themes").join(&site.settings.template).join("theme.json").exists();
+    let env = Env { site, render: &render, field_label: &field_label, now: ctx.now, can_upload: (ctx.can)("upload_files"), theme_json };
+    let group_id = request(ctx, "post_id").map_or(0, |id| super::php::intval(Some(&string(id))).max(0) as u64);
+    let view = View { render: &render, env: &env, num_groups: groups.len(), group_id };
+    let mut sections = serde_json::Map::new();
+    for tab in Tab::ALL {
+        // Every action gets the field as it was.
+        let mut field = RenderField { items: field.items.clone(), sub_fields: Vec::new() };
+        sections.insert(tab.key().to_owned(), serde_json::Value::String(type_settings(&view, &mut field, tab).await?));
+    }
+    let body = rustpress_blocks::php_json::encode_with(&serde_json::json!({"success": true, "data": sections}), rustpress_blocks::php_json::Flags { unescaped_slashes: false, unescaped_unicode: false });
+    Ok(AjaxAnswer::json(200, body))
+}
+
+/// `wp_ajax_acf/field_group/render_location_rule` (`ACF_Admin_Field_Group::ajax_render_location_rule()`): the row of
+/// a location rule whose type changed (`views/acf-field-group/location-rule.php`). Not rebuilt: the conversion of
+/// numeric term IDs in `post_taxonomy`/`post_category` rules of ACF 4 (`validate_post_taxonomy_location_rule()`).
+pub async fn ajax_render_location_rule(ctx: &AdminContext<'_>) -> Result<AjaxAnswer> {
+    let empty = || AjaxAnswer::text(200, "");
+    if !ajax_allowed(ctx) {
+        return Ok(empty());
+    }
+    let items = match rustpress_core::native::form_value(ctx.form, "rule").map(slashed) {
+        Some(Value::Array(items)) if !items.is_empty() => items,
+        _ => return Ok(empty()),
+    };
+    // `acf_validate_location_rule()`.
+    let get = |name: &str, default: &str| items.iter().find(|(k, _)| super::php::key_eq(k, &key(name))).map_or_else(|| string(default), |(_, v)| v.clone());
+    let rule = super::fields::Rule { param: strval(Some(&get("param", ""))), operator: strval(Some(&get("operator", "=="))), value: get("value", "") };
+    let services = super::edit_comment::AdminServices(ctx.wp_root.to_owned());
+    let render = super::edit_post::render_ctx(ctx, &services);
+    let html = super::locations::rule_row(&render, ctx.wp_root, &rule, &strval(Some(&get("group", ""))), &strval(Some(&get("id", "")))).await?;
+    Ok(AjaxAnswer::text(200, &html))
+}
+
+/// `wp_ajax_acf/field_group/move_field` (`ACF_Admin_Field_Group::ajax_move_field()`): the dialog with the other field
+/// groups, or the move to the chosen one and its confirmation.
+pub async fn ajax_move_field(ctx: &AdminContext<'_>) -> Result<AjaxAnswer> {
+    let empty = || AjaxAnswer::text(200, "");
+    let site = ctx.site;
+    // `acf_parse_args( $_POST, … )`: only the POST body counts.
+    let nonce = ctx.post_field("nonce").unwrap_or_default();
+    if nonce.is_empty() || !(ctx.verify_nonce)(nonce, "acf_nonce") || !(ctx.can)("manage_options") {
+        return Ok(empty());
+    }
+    let arg = |name: &str| ctx.post_field(name).map(string).unwrap_or(Value::Int(0));
+    let id = |name: &str| super::php::intval(Some(&arg(name))).max(0) as u64;
+    let groups = site.db.acf_posts("acf-field-group").await?;
+    if truthy(Some(&arg("field_id"))) && truthy(Some(&arg("field_group_id"))) {
+        let target = groups.iter().find(|g| g.id == id("field_group_id"));
+        let Some(label) = super::save_group::move_field(ctx, id("field_id"), target.map(|g| g.id)).await? else { return Ok(empty()) };
+        let link = format!("<a href=\"{}\" target=\"_blank\">{}</a>", site.site_url(&format!("wp-admin/post.php?post={}&action=edit", target.map_or(0, |g| g.id))), esc_html(&target.map(|g| g.title.clone()).unwrap_or_default()));
+        let text = rustpress_core::i18n::sprintf(&punctify(&tr(site, "The %1$s field can now be found in the %2$s field group")), &[&esc_html(&label), &link]);
+        return Ok(AjaxAnswer::text(200, &format!("<p><strong>{}</strong></p><p>{text}</p><a href=\"#\" class=\"button button-primary acf-close-popup\">{}</a>", esc_tr(site, "Move Complete."), esc_tr(site, "Close Modal"))));
+    }
+    let current = id("post_id");
+    let choices: Vec<(Key, Value)> = groups.iter().filter(|g| g.id != 0 && g.id != current).map(|g| (Key::Int(g.id as i64), string(&g.title))).collect();
+    let services = super::edit_comment::AdminServices(ctx.wp_root.to_owned());
+    let render = super::edit_post::render_ctx(ctx, &services);
+    let field = RenderField::raw(vec![(key("type"), string("select")), (key("name"), string("acf_field_group")), (key("choices"), Value::Array(choices)), (key("aria-label"), string(&tr(site, "Please select the destination for this field")))], Vec::new());
+    Ok(AjaxAnswer::text(
+        200,
+        &format!(
+            "<p>{}</p><form id=\"acf-move-field-form\">{}<button type=\"submit\" class=\"acf-btn\">{}</button></form>",
+            esc_tr(site, "Please select the destination for this field"),
+            render_field_wrap(&render, field, "div", "label").await?,
+            esc_tr(site, "Move Field")
+        ),
+    ))
 }

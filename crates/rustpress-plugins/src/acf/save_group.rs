@@ -393,6 +393,25 @@ fn sub_fields_render(w: &Writer<'_>, fields: &[super::fields::Field]) -> Vec<Ren
     fields.iter().map(|f| loaded(w.content.site, f)).collect()
 }
 
+/// The move of `ACF_Admin_Field_Group::ajax_move_field()`: the field (as `acf_get_field()` loads it) gets the new
+/// group as its parent and loses its conditional logic. The field's label, or `None` without the field.
+pub(super) async fn move_field(ctx: &rustpress_core::native::AdminContext<'_>, field_id: u64, group_id: Option<u64>) -> Result<Option<String>> {
+    let Some(writer) = ctx.writer else { return Ok(None) };
+    let site = ctx.site;
+    let all = site.db.acf_fields().await?;
+    let Some((parent, field_key)) = all.iter().find(|f| f.id == field_id).map(|f| (f.parent, f.name.clone())) else { return Ok(None) };
+    let Some(field) = super::fields::children_of(parent, &all).into_iter().find(|f| f.key == field_key) else { return Ok(None) };
+    let mut field = loaded(site, &field);
+    // `$new_field_group['ID']` of a group that does not exist is `null`.
+    field.set("parent", group_id.map_or(Value::Null, |id| Value::Int(id as i64)));
+    field.set("conditional_logic", Value::Int(0));
+    let label = strval(field.get("label"));
+    let system = rustpress_auth::CurrentUser::system();
+    let w = Writer { content: rustpress_content::content::Content { site, db: &site.db, writer, user: &system, now: ctx.now }, user: ctx.user };
+    update_field(&w, field.items, false).await?;
+    Ok(Some(label))
+}
+
 /// `acf_get_field()`: validated, with the prefix `acf` and the type's `load_field()`.
 fn loaded(site: &Site, field: &super::fields::Field) -> RenderField {
     let services = super::edit_comment::AdminServices(std::path::PathBuf::new());
