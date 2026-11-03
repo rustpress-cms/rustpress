@@ -1,7 +1,7 @@
 # Working on RustPress
 
 Notes for coding agents and new contributors. [README.md](README.md) explains what RustPress is and how to run it.
-[PLAN.md](PLAN.md) (in German) holds the plan, the status of every area and what is still open; read the part about
+[PLAN.md](PLAN.md) holds the plan, the status of every area and what is still open; read the part about
 the area you touch before you start.
 
 ## The one rule: WordPress is the oracle
@@ -30,6 +30,7 @@ same HTML, headers, feeds, REST JSON, redirects and stored rows. So:
 | `dev/mu-plugins/` | must-use plugins for the reference (no auto-updates, mail log, test post types, ...) |
 | `packaging/`, `Dockerfile*` | release packages and container images |
 | `site/` | the project website (GitHub Pages, English and German) |
+| `docs/` | guides, such as [porting a plugin](docs/porting-a-plugin.md) |
 
 ## Building and testing
 
@@ -74,6 +75,9 @@ headers and language packs.
   default and a doc comment naming the WordPress hook.
 - **Version:** each module follows exactly one plugin release (`version()`). Compare against that release, installed
   and active in the reference.
+- **Step by step:** [docs/porting-a-plugin.md](docs/porting-a-plugin.md) walks through a port from choosing the release to
+  the pull request. Users ask for plugins with the "Port request" issue template; `rustpress check` lists the active
+  plugins of a site and which of them have a module.
 - **Workflow:**
   1. Read the plugin's PHP.
   2. Write a golden generator that has the real plugin produce the expected output for many inputs.
@@ -90,8 +94,8 @@ is how the diff report finds what to update.
 
 ## Conventions
 
-- **Language:** code, comments, commit messages and PR descriptions are in English. PLAN.md and README.de.md are in
-  German.
+- **Language:** everything in the repository is in English (code, comments, PLAN.md, reports, `compat/known.toml`,
+  commit messages and PR descriptions), except the German translations README.de.md and `site/de/`.
 - **Code:** match the surrounding code in naming, comment density and idiom. Doc comments name the PHP function or
   hook a function stands for and say what differs, if anything. Prefer small, exact ports over general frameworks.
 - **Regex:** Rust's `regex` has no back references or look-arounds. Use `fancy-regex` where the PHP pattern needs

@@ -2,9 +2,30 @@
 
 [Website](https://rustpress-cms.github.io/rustpress/de/) · [English](README.md) · **Deutsch**
 
-Ein WordPress-Ersatz in Rust: Bestehende WordPress-Seiten laufen **ohne PHP** und **ohne Konvertierung der Datenbank**. RustPress liest die vorhandene MySQL/MariaDB (`wp_*`-Schema) und das vorhandene `wp-content/` und liefert dieselben Antworten wie WordPress. Mit `allow_writes` laufen auch Anmeldung, Kommentare und die Verwaltung (`wp-admin`).
+Ein WordPress-Ersatz in Rust: Bestehende WordPress-Seiten mit einem Block-Theme laufen **ohne PHP** und **ohne Konvertierung der Datenbank**. RustPress liest die vorhandene MySQL/MariaDB (`wp_*`-Schema) und das vorhandene `wp-content/` und liefert dieselben Antworten wie WordPress. Mit `allow_writes` laufen auch Anmeldung, Kommentare und die Verwaltung (`wp-admin`).
 
 Unterstützt werden **Block-Themes** (`theme.json` + HTML-Templates) und als Rust-Nachbau das klassische Theme **Twenty Seventeen**. Andere klassische PHP-Themes und PHP-Plugins laufen bewusst nicht; wichtige Plugins werden als native Module nachgebaut, die übernehmen, solange das Plugin aktiv ist (seine Dateien bleiben in `wp-content/plugins`): bisher **WP Date Remover** 1.1.3 und **SVG Support** 2.6.1 (Webseite, Einstellungen und bereinigte SVG-Uploads); **Contact Form 7** 6.2.4.1 (Formulare, Prüfung, Spam-Schutz und E-Mail auf der Webseite; Formularliste, Editor, Dashboard und Integrationsseite in der Verwaltung); **Yoast SEO** 28.8 (der Kopf der Webseite: Titel, Meta-Beschreibung, Robots, Canonical, Open Graph, Twitter und der Schema-Graph; XML-Sitemaps, Breadcrumbs, `robots.txt`, `yoast_head` in der REST-API und die Änderungen an den Feeds); **Redirection** 5.10.1 (Weiterleitungen mit allen Bedingungen und Aktionen, eigene Kopfzeilen, die kanonische Domain, Zähler und die Protokolle von Weiterleitungen und 404-Seiten); **Advanced Custom Fields** 6.8.10 (die in ACF angelegten Post-Typen und Taxonomien, das Feld `acf` der REST-API mit den Werten der Feldgruppen, roh oder formatiert mit `?acf_format=standard`, der Shortcode `[acf]`, die Felder im Kommentarformular, die mit dem Kommentar gespeichert werden, und die Felder in den Bearbeiten-Masken von Kommentaren und Beiträgen, im Block-Editor wie im klassischen). Der aktuelle Stand und die Planung stehen in [PLAN.md](PLAN.md).
+
+## Läuft meine Seite?
+
+`rustpress check` mit der Konfiguration der Seite (dieselben `RUSTPRESS_*`-Variablen oder dieselbe TOML-Datei wie der Server) liest das aktive Theme und die aktiven Plugins und sagt, was davon läuft. Es ändert nichts.
+
+```text
+$ RUSTPRESS_DATABASE_URL=mysql://user:pass@localhost/wordpress RUSTPRESS_WP_ROOT=/var/www/html rustpress check
+[ok  ] Theme twentytwentyfive: block theme, runs as it is
+[ok  ] Plugin wordpress-seo/wp-seo.php 28.8: native module
+[no  ] Plugin elementor/elementor.php 3.30.0: PHP plugin without a native module; RustPress ignores it
+```
+
+| Läuft | Läuft (noch) nicht |
+|---|---|
+| Block-Themes, auch Twenty Twenty-Two bis Twenty Twenty-Five | Klassische PHP-Themes außer Twenty Seventeen (Astra, GeneratePress, Divi, Hello Elementor, …) |
+| Twenty Seventeen (nativ nachgebaut) | Page-Builder (Elementor, Divi, WPBakery) und WooCommerce |
+| Yoast SEO, Contact Form 7, Redirection, Advanced Custom Fields, SVG Support, WP Date Remover | Alle anderen PHP-Plugins: Sie werden ignoriert, was sie zur Seite beitragen, fehlt |
+| Plugins, die RustPress überflüssig macht: Seiten-Caches, WP Mail SMTP | Multisite, der Customizer, PHP in der `functions.php` eines Block-Themes über einfache Registrierungen hinaus |
+| Jede Sprache, für die WordPress ein Sprachpaket hat | Dienste mit ausgehendem HTTP (Akismet, reCAPTCHA, Update-Prüfung) |
+
+Fehlt ein Plugin, hilft eine [Port-Anfrage](https://github.com/rustpress-cms/rustpress/issues/new?template=port-request.yml); wer selbst nachbauen will, findet die Anleitung in [docs/porting-a-plugin.md](docs/porting-a-plugin.md) (englisch).
 
 ## Was funktioniert
 
@@ -14,6 +35,7 @@ Unterstützt werden **Block-Themes** (`theme.json` + HTML-Templates) und als Rus
 - REST-API `wp/v2` (Beiträge, Seiten, Medien, Kategorien, Schlagwörter, Benutzer, Kommentare), mit `allow_writes` auch schreibend
 - Verwaltung (`wp-admin`): Anmeldung, Beiträge und Seiten mit dem Block-Editor, Medien, Kommentare, Benutzer, Einstellungen, Datenschutz, Export
 - Installer wie WordPress (`setup-config.php`, `install.php`), lädt auf Wunsch die WordPress-Dateien herunter
+- `rustpress check` prüft vorab, ob eine Seite läuft
 - Shared Hosting als CGI-Programm (statisch gelinktes Binary, Konfiguration aus `wp-config.php`)
 - E-Mail per SMTP (`RUSTPRESS_SMTP_URL`), auch für Kontaktformulare
 - Statische Dateien aus `wp-content/` und `wp-includes/`
@@ -59,7 +81,7 @@ RustPress kennt keine Sprache im Code. Texte, Monats- und Wochentagsnamen, Anfü
 
 ## Entwickeln und testen
 
-Wie am Projekt gearbeitet wird (WordPress als Orakel, Referenz-Stack, Golden-Tests, native Plugin-Module), steht für Mitwirkende und Coding-Agents in [AGENTS.md](AGENTS.md) (englisch).
+Wie am Projekt gearbeitet wird (WordPress als Orakel, Referenz-Stack, Golden-Tests, native Plugin-Module), steht für Mitwirkende und Coding-Agents in [AGENTS.md](AGENTS.md), [CONTRIBUTING.md](CONTRIBUTING.md) und [docs/porting-a-plugin.md](docs/porting-a-plugin.md) (alle englisch). Sicherheitslücken bitte vertraulich melden, siehe [SECURITY.md](SECURITY.md).
 
 Die Tests vergleichen RustPress mit einem echten WordPress. Dafür gibt es einen Referenz-Stack (rootless Podman in WSL2; MariaDB auf `:3306`, WordPress 7 mit Twenty Twenty-Five auf `:8080`):
 
@@ -81,7 +103,7 @@ dev/compat.ps1                      # TT25, TT24 und TT23 nacheinander auf der R
 cargo run -p rustpress-compat -- --dump /ueber-uns/   # beide Antworten nach compat/dump/ schreiben
 ```
 
-Abweichungen, die verstanden und bewusst akzeptiert sind, stehen mit Begründung in `compat/known.toml`; nur andere Abweichungen lassen den Lauf fehlschlagen. Die Berichte liegen unter `compat/reports/`.
+Abweichungen, die verstanden und bewusst akzeptiert sind, stehen mit Begründung in `compat/known.toml`; nur andere Abweichungen lassen den Lauf fehlschlagen. Die Berichte liegen unter `compat/reports/`; [compat/reports/README.md](compat/reports/README.md) sagt, aus welchem Lauf welcher stammt. Anmeldung, Verwaltung, Installer und Plugin-Module prüfen eigene Golden-Tests und Skripte in `dev/`.
 
 ### Neuen WordPress-Versionen folgen
 

@@ -1,0 +1,24 @@
+name: Labels
+
+# Creates the labels the issue forms in .github/ISSUE_TEMPLATE use. `gh label create --force` updates a label
+# that already exists, so the workflow can run again after a change.
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/labels.yml"]
+  workflow_dispatch:
+
+permissions:
+  issues: write
+
+jobs:
+  labels:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - run: |
+          gh label create "port request" --force --color 0e8a16 --description "A plugin or theme that should run on RustPress"
+          gh label create "difference" --force --color fbca04 --description "RustPress answers differently than WordPress"
+          gh label create "bug" --force --color d73a4a --description "Something isn't working"

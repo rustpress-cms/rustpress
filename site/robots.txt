@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://rustpress-cms.github.io/rustpress/sitemap.xml

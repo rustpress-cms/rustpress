@@ -43,12 +43,12 @@ fn strip_origin(link: &str) -> String {
 pub fn compare(kind: Kind, ours: &Response, theirs: &Response) -> Vec<Difference> {
     let mut out = Vec::new();
     if ours.status != theirs.status {
-        out.push(Difference::new("status", format!("RustPress {} statt {}", ours.status, theirs.status)));
+        out.push(Difference::new("status", format!("RustPress {} instead of {}", ours.status, theirs.status)));
     }
     for name in HEADERS {
         let (a, b) = (header_value(ours, name), header_value(theirs, name));
         if a != b {
-            out.push(Difference::new(format!("header:{name}"), format!("RustPress {} statt {}", show(&a), show(&b))));
+            out.push(Difference::new(format!("header:{name}"), format!("RustPress {} instead of {}", show(&a), show(&b))));
         }
     }
     let redirect = (300..400).contains(&theirs.status) && (300..400).contains(&ours.status);
@@ -90,7 +90,7 @@ fn unbrand(html: &str) -> String {
 }
 
 fn show(value: &Option<String>) -> String {
-    value.as_ref().map_or_else(|| "(fehlt)".to_owned(), |v| format!("`{v}`"))
+    value.as_ref().map_or_else(|| "(missing)".to_owned(), |v| format!("`{v}`"))
 }
 
 fn between<'a>(html: &'a str, open: &str, close: &str) -> Option<&'a str> {
@@ -198,17 +198,17 @@ pub fn normalize(html: &str) -> String {
 fn compare_documents(ours: &str, theirs: &str, out: &mut Vec<Difference>) {
     let (a, b) = (between(ours, "<title>", "</title>"), between(theirs, "<title>", "</title>"));
     if a != b {
-        out.push(Difference::new("title", format!("RustPress {a:?} statt {b:?}")));
+        out.push(Difference::new("title", format!("RustPress {a:?} instead of {b:?}")));
     }
     let (a, b) = (between(ours, "<body class=\"", "\""), between(theirs, "<body class=\"", "\""));
     if a != b {
-        out.push(Difference::new("body-class", format!("RustPress {a:?} statt {b:?}")));
+        out.push(Difference::new("body-class", format!("RustPress {a:?} instead of {b:?}")));
     }
     let (a, b) = (head_ids(ours), head_ids(theirs));
     if a != b {
         let missing: Vec<&String> = b.iter().filter(|i| !a.contains(i)).collect();
         let extra: Vec<&String> = a.iter().filter(|i| !b.contains(i)).collect();
-        let detail = if missing.is_empty() && extra.is_empty() { "andere Reihenfolge".to_owned() } else { format!("fehlt: {missing:?}, zu viel: {extra:?}") };
+        let detail = if missing.is_empty() && extra.is_empty() { "different order".to_owned() } else { format!("missing: {missing:?}, extra: {extra:?}") };
         out.push(Difference::new("head-ids", detail));
     }
     let id = "core-block-supports-inline-css";
@@ -224,15 +224,15 @@ fn compare_documents(ours: &str, theirs: &str, out: &mut Vec<Difference>) {
     let (a, b) = (head_elements(between(ours, "<head>", "</head>").unwrap_or_default()), head_elements(between(theirs, "<head>", "</head>").unwrap_or_default()));
     for (key, text) in &b {
         match a.iter().find(|(k, _)| k == key) {
-            None => out.push(Difference::new("head", format!("fehlt: {key}"))),
-            Some((_, mine)) if normalize(mine) != normalize(text) => out.push(Difference::new("head", format!("{key} ist anders:
+            None => out.push(Difference::new("head", format!("missing: {key}"))),
+            Some((_, mine)) if normalize(mine) != normalize(text) => out.push(Difference::new("head", format!("{key} differs:
 {}", describe_difference(normalize(mine).as_bytes(), normalize(text).as_bytes())))),
             _ => {}
         }
     }
     for (key, _) in &a {
         if !b.iter().any(|(k, _)| k == key) {
-            out.push(Difference::new("head", format!("zu viel: {key}")));
+            out.push(Difference::new("head", format!("extra: {key}")));
         }
     }
     let (a, b) = (normalize(&footer_region(ours)), normalize(&footer_region(theirs)));
@@ -249,7 +249,7 @@ pub fn describe_difference(ours: &[u8], theirs: &[u8]) -> String {
         let end = (at + 100).min(bytes.len());
         String::from_utf8_lossy(&bytes[start.min(bytes.len())..end]).replace('\n', "⏎").replace('`', "'")
     };
-    format!("{} statt {} Bytes, erster Unterschied bei {at}:\nRustPress: …{}…\nWordPress: …{}…", ours.len(), theirs.len(), window(ours), window(theirs))
+    format!("{} instead of {} bytes, first difference at {at}:\nRustPress: …{}…\nWordPress: …{}…", ours.len(), theirs.len(), window(ours), window(theirs))
 }
 
 #[cfg(test)]
@@ -311,6 +311,6 @@ mod tests {
     #[test]
     fn differences_point_at_the_first_changed_byte() {
         let text = describe_difference(b"abcdef", b"abcxef");
-        assert!(text.contains("erster Unterschied bei 3"), "{text}");
+        assert!(text.contains("first difference at 3"), "{text}");
     }
 }

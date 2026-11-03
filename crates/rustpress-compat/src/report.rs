@@ -68,14 +68,14 @@ impl Report {
     /// The Markdown report.
     pub fn to_markdown(&self, known: &Known) -> String {
         let mut out = String::new();
-        let _ = writeln!(out, "# Kompatibilitätsbericht: {}\n", self.label);
-        let _ = writeln!(out, "Stand: {} · Referenz: WordPress {} · Theme: `{}`\n", self.generated, self.wp_version, self.label);
+        let _ = writeln!(out, "# Compatibility report: {}\n", self.label);
+        let _ = writeln!(out, "As of: {} · Reference: WordPress {} · Theme: `{}`\n", self.generated, self.wp_version, self.label);
         let total = self.outcomes.len();
         let identical = self.outcomes.iter().filter(|o| o.is_identical()).count();
         let unexpected = self.unexpected_count();
-        let _ = writeln!(out, "**{total} URLs verglichen: {identical} identisch, {} mit bekannten Abweichungen, {unexpected} mit unerwarteten Abweichungen.**\n", total - identical - unexpected);
+        let _ = writeln!(out, "**{total} URLs compared: {identical} identical, {} with known differences, {unexpected} with unexpected differences.**\n", total - identical - unexpected);
 
-        let _ = writeln!(out, "| Art | URLs | identisch | bekannt | unerwartet | Median RustPress | Median WordPress |");
+        let _ = writeln!(out, "| Kind | URLs | identical | known | unexpected | Median RustPress | Median WordPress |");
         let _ = writeln!(out, "|---|---:|---:|---:|---:|---:|---:|");
         for kind in Kind::ALL {
             let of_kind: Vec<&Outcome> = self.outcomes.iter().filter(|o| o.target.kind == kind).collect();
@@ -89,9 +89,9 @@ impl Report {
             let _ = writeln!(out, "| {} | {} | {same} | {} | {bad} | {ours} ms | {theirs} ms |", kind.label(), of_kind.len(), of_kind.len() - same - bad);
         }
 
-        let _ = writeln!(out, "\n## Unerwartete Abweichungen\n");
+        let _ = writeln!(out, "\n## Unexpected differences\n");
         if unexpected == 0 {
-            let _ = writeln!(out, "Keine.\n");
+            let _ = writeln!(out, "None.\n");
         }
         for outcome in self.unexpected() {
             let _ = writeln!(out, "### `{}` ({})\n", outcome.target.path, outcome.target.kind.label());
@@ -118,18 +118,18 @@ impl Report {
                 }
             }
         }
-        let _ = writeln!(out, "## Bekannte Abweichungen\n");
+        let _ = writeln!(out, "## Known differences\n");
         if seen.is_empty() {
-            let _ = writeln!(out, "Keine aufgetreten.\n");
+            let _ = writeln!(out, "None seen.\n");
         }
         for (reason, urls) in &seen {
             let shown: Vec<&String> = urls.iter().take(12).collect();
-            let more = if urls.len() > shown.len() { format!(" … und {} weitere", urls.len() - shown.len()) } else { String::new() };
+            let more = if urls.len() > shown.len() { format!(" … and {} more", urls.len() - shown.len()) } else { String::new() };
             let _ = writeln!(out, "- **{reason}**: {}{more}", shown.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", "));
         }
         let unused: Vec<_> = known.entries().filter(|d| !seen.contains_key(d.reason.as_str())).collect();
         if !unused.is_empty() {
-            let _ = writeln!(out, "\nEingetragen, aber in diesem Lauf nicht aufgetreten:\n");
+            let _ = writeln!(out, "\nListed, but not seen in this run:\n");
             for d in unused {
                 let _ = writeln!(out, "- `{}` ({}): {}", d.path, d.aspect, d.reason);
             }
@@ -167,14 +167,14 @@ mod tests {
             generated: "2026-10-24".into(),
             outcomes: vec![
                 outcome("/", Kind::Page, vec![]),
-                outcome("/login", Kind::Other, vec![finding("status", Some("Anmeldung fehlt"))]),
+                outcome("/login", Kind::Other, vec![finding("status", Some("no sign-in"))]),
                 outcome("/kaputt/", Kind::Page, vec![Finding { difference: Difference { aspect: "body".into(), detail: "a\nb".into() }, reason: None }]),
             ],
         };
         let md = report.to_markdown(&Known::default());
-        assert!(md.contains("3 URLs verglichen: 1 identisch, 1 mit bekannten Abweichungen, 1 mit unerwarteten Abweichungen"), "{md}");
+        assert!(md.contains("3 URLs compared: 1 identical, 1 with known differences, 1 with unexpected differences"), "{md}");
         assert!(md.contains("### `/kaputt/`"));
-        assert!(md.contains("**Anmeldung fehlt**: `/login` (status)"));
+        assert!(md.contains("**no sign-in**: `/login` (status)"));
         assert_eq!(report.unexpected_count(), 1);
     }
 }

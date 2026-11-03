@@ -4,6 +4,7 @@
 pub mod admin;
 pub mod app;
 pub mod cgi;
+pub mod check;
 pub mod client;
 pub mod config;
 pub mod install;

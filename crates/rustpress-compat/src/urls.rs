@@ -22,12 +22,12 @@ impl Kind {
 
     pub fn label(self) -> &'static str {
         match self {
-            Kind::Page => "HTML-Seiten",
+            Kind::Page => "HTML pages",
             Kind::Feed => "Feeds",
             Kind::Sitemap => "Sitemaps",
             Kind::Rest => "REST-API",
-            Kind::Asset => "Dateien",
-            Kind::Other => "Sonstiges",
+            Kind::Asset => "Files",
+            Kind::Other => "Other",
         }
     }
 }

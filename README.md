@@ -2,7 +2,7 @@
 
 # RustPress
 
-**WordPress, without PHP.** A drop-in replacement for WordPress written in Rust: point it at an existing WordPress database and `wp-content/`, and it serves the same pages.
+**WordPress, without PHP.** A replacement for WordPress written in Rust: point it at the database and `wp-content/` of an existing site with a block theme, and it serves the same pages, byte for byte.
 
 [Website](https://rustpress-cms.github.io/rustpress/) · **English** · [Deutsch](README.de.md)
 
@@ -39,6 +39,30 @@ RustPress reads the existing MySQL/MariaDB database (the usual `wp_*` schema, no
 - Other classic PHP themes and PHP plugins do **not** run. Important plugins are rebuilt as native modules that take over while the plugin is active (its files stay in `wp-content/plugins`): so far **WP Date Remover** 1.1.3 and **SVG Support** 2.6.1 (website, settings and sanitized SVG uploads); **Contact Form 7** 6.2.4.1 (forms, validation, spam checks and mail on the website; the list, the editor, the dashboard and the integration page in the administration); **Yoast SEO** 28.8 (the head of the website: title, meta description, robots, canonical, Open Graph, Twitter and the schema graph; XML sitemaps, breadcrumbs, `robots.txt`, `yoast_head` in the REST API and the feed changes); **Redirection** 5.10.1 (redirects with all conditions and actions, custom headers, the canonical domain, hit counters and the logs of redirects and 404 pages); **Advanced Custom Fields** 6.8.10 (the post types and taxonomies defined in ACF, the `acf` field of the REST API with the values of the field groups, raw or formatted with `?acf_format=standard`, the `[acf]` shortcode, the fields of the comment form, which are saved with the comment, and the fields on the edit screens of comments and posts, in the block editor and the classic one).
 - Theme assets, uploads, translations and `block.json` files are read from the WordPress files on disk, so a WordPress installation (or the files the installer downloads) is still needed.
 
+## Will it run my site?
+
+Run `rustpress check` with the site's configuration (the same `RUSTPRESS_*` variables or TOML file as the server). It reads the active theme and plugins and says which of them run, without changing anything:
+
+```text
+$ RUSTPRESS_DATABASE_URL=mysql://user:pass@localhost/wordpress RUSTPRESS_WP_ROOT=/var/www/html rustpress check
+[ok  ] Theme twentytwentyfive: block theme, runs as it is
+[ok  ] Plugin wordpress-seo/wp-seo.php 28.8: native module
+[no  ] Plugin elementor/elementor.php 3.30.0: PHP plugin without a native module; RustPress ignores it
+
+Not yet: 1 part(s) of this site do not run in RustPress. Tell us which ones you need:
+https://github.com/rustpress-cms/rustpress/issues/new?template=port-request.yml
+```
+
+| Runs | Does not run (yet) |
+|---|---|
+| Block themes, including Twenty Twenty-Two to Twenty Twenty-Five | Classic PHP themes other than Twenty Seventeen (Astra, GeneratePress, Divi, Hello Elementor, ...) |
+| Twenty Seventeen (ported natively) | Page builders (Elementor, Divi, WPBakery) and WooCommerce |
+| Yoast SEO, Contact Form 7, Redirection, Advanced Custom Fields, SVG Support, WP Date Remover | Any other PHP plugin: it is ignored, so whatever it adds to the site is missing |
+| Plugins that RustPress makes unnecessary: page caches, WP Mail SMTP | Multisite, the Customizer, PHP in a block theme's `functions.php` beyond simple registrations |
+| Every site language WordPress has a language pack for | Services that need outgoing HTTP (Akismet, reCAPTCHA, update checks) |
+
+The plugins that people need most are ported next: ask for one with a [port request](https://github.com/rustpress-cms/rustpress/issues/new?template=port-request.yml), or port it yourself with [docs/porting-a-plugin.md](docs/porting-a-plugin.md).
+
 ## Features
 
 - Pages, posts, archives, search and 404 with the site's block theme, including images (`srcset`, lazy loading, galleries)
@@ -46,6 +70,7 @@ RustPress reads the existing MySQL/MariaDB database (the usual `wp_*` schema, no
 - REST API `wp/v2` (posts, pages, media, categories, tags, users, comments), read and write
 - Administration (`wp-admin`): sign-in, posts and pages with the block editor, media, comments, users, settings, privacy tools, export
 - A WordPress-style installer (`setup-config.php`, `install.php`) that can download and verify the WordPress files itself
+- `rustpress check`, which tells whether a site runs before RustPress takes it over
 - Shared hosting as a CGI program: one statically linked binary, configured from `wp-config.php`
 - E-mail over SMTP (password reset, new users, comment notifications, privacy requests, contact forms)
 - Every language that WordPress has a language pack for, including right-to-left languages
@@ -61,7 +86,7 @@ RustPress reads the existing MySQL/MariaDB database (the usual `wp_*` schema, no
 | Twenty Twenty-Three | 913 | 897 | 16 | **0** |
 | Twenty Twenty-Two | 916 | 897 | 19 | **0** |
 
-Accepted differences are listed with their reason in [`compat/known.toml`](compat/known.toml).
+The runs cover what visitors and API clients see: pages, feeds, sitemaps, the REST API, redirects and files. They run RustPress without `allow_writes`; sign-in, `wp-admin`, the installer and the native plugin modules are compared with their own golden tests and scripts in [`dev/`](dev). Accepted differences are listed with their reason in [`compat/known.toml`](compat/known.toml); [compat/reports/README.md](compat/reports/README.md) says which run each report comes from. The times in the reports come from one local run and are no benchmark.
 
 ## Getting started
 
@@ -163,7 +188,7 @@ RustPress is experimental. It is tested against WordPress 7.1.4 and runs a real 
 
 ## Contributing
 
-Issues and pull requests are welcome. [AGENTS.md](AGENTS.md) explains how the project works (WordPress as the oracle, the reference stack, golden tests, native plugin modules) for contributors and coding agents alike. Please run `cargo test --workspace` and `cargo clippy --workspace --all-targets` before opening a pull request. Security issues: please report them privately through [GitHub security advisories](https://github.com/rustpress-cms/rustpress/security/advisories/new) instead of a public issue.
+Issues and pull requests are welcome; [CONTRIBUTING.md](CONTRIBUTING.md) has the short version. [AGENTS.md](AGENTS.md) explains how the project works (WordPress as the oracle, the reference stack, golden tests, native plugin modules) for contributors and coding agents alike, and [docs/porting-a-plugin.md](docs/porting-a-plugin.md) walks through porting a plugin step by step. Please run `cargo test --workspace` and `cargo clippy --workspace --all-targets` before opening a pull request. Security issues: please report them privately as described in [SECURITY.md](SECURITY.md). Changes are listed in [CHANGELOG.md](CHANGELOG.md).
 
 ## License
 

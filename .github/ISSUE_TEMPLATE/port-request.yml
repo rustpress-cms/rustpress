@@ -1,0 +1,34 @@
+name: Port request
+description: A theme or plugin your site needs that RustPress does not run yet.
+title: "Port request: "
+labels: ["port request"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        PHP themes and plugins never run in RustPress; the ones that matter are rebuilt in Rust. These requests decide which come next. Please search the open requests first and give a 👍 to an existing one instead of opening a new one.
+  - type: input
+    id: name
+    attributes:
+      label: Theme or plugin
+      description: Its name and the wordpress.org link, if it has one.
+      placeholder: "Elementor, https://wordpress.org/plugins/elementor/"
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version you use
+  - type: textarea
+    id: use
+    attributes:
+      label: What your site uses it for
+      description: The parts of the plugin your site depends on (front end, administration, REST API, shortcodes, blocks, ...). A smaller part is easier to port.
+    validations:
+      required: true
+  - type: textarea
+    id: check
+    attributes:
+      label: Output of `rustpress check`
+      description: Optional. Run it with the site's configuration; it lists the theme and the active plugins.
+      render: text
