@@ -719,9 +719,138 @@ impl<'a> Rest<'a> {
         }
         let methods = entry.get("methods").and_then(Value::as_array).map(|m| m.iter().filter_map(Value::as_str).map(str::to_owned).collect()).unwrap_or_default();
         let mut data = Value::Object(data);
+        self.add_plugin_taxonomies(route, &mut data);
+        self.add_registered_post_types(&mut data);
         self.add_registered_meta(route, &mut data);
         self.add_plugin_statuses(&mut data);
         Some((data, methods))
+    }
+
+    /// The taxonomies of a post type beyond categories and tags (`show_in_rest`) go into the schema and the arguments
+    /// of its routes after the tags, shaped like the categories (hierarchical) or the tags
+    /// (`WP_REST_Posts_Controller::get_item_schema()`, `get_collection_params()`).
+    fn add_plugin_taxonomies(&self, route: &str, data: &mut Value) {
+        let Some(base) = route.strip_prefix("/wp/v2/").map(|r| r.split('/').next().unwrap_or_default()) else { return };
+        let post_type = match base {
+            "posts" => "post".to_owned(),
+            "pages" => "page".to_owned(),
+            "media" => "attachment".to_owned(),
+            other => match self.site.types.post_types.iter().find(|t| t.rest_base() == other) {
+                Some(info) => info.name.clone(),
+                None => return,
+            },
+        };
+        let taxonomies: Vec<(String, String, bool)> = self
+            .site
+            .types
+            .taxonomies
+            .iter()
+            .filter(|t| t.show_in_rest && t.object_types.contains(&post_type) && !matches!(t.name.as_str(), "category" | "post_tag"))
+            .map(|t| (t.name.clone(), t.rest_base().to_owned(), t.hierarchical))
+            .collect();
+        if taxonomies.is_empty() {
+            return;
+        }
+        fn rename(value: &Value, from: &[(&str, &str)]) -> Value {
+            let text = |s: &str| from.iter().fold(s.to_owned(), |s, (a, b)| s.replace(a, b));
+            match value {
+                Value::String(s) => Value::String(text(s)),
+                Value::Array(items) => Value::Array(items.iter().map(|v| rename(v, from)).collect()),
+                Value::Object(map) => Value::Object(map.iter().map(|(k, v)| (text(k), rename(v, from))).collect()),
+                other => other.clone(),
+            }
+        }
+        fn walk(value: &mut Value, taxonomies: &[(String, String, bool)]) {
+            match value {
+                // The `links` of the schema: `action-assign-…` and `action-create-…` after those of the tags.
+                Value::Array(items) if items.iter().any(|l| l.get("rel").and_then(Value::as_str) == Some("https://api.w.org/action-create-tags")) => {
+                    let link = |rel: &str| items.iter().find(|l| l.get("rel").and_then(Value::as_str) == Some(rel)).cloned();
+                    let mut added = Vec::new();
+                    for (name, base, hierarchical) in taxonomies {
+                        let (template, from) = if *hierarchical { ("categories", [("categories", base.as_str()), ("category", name.as_str())]) } else { ("tags", [("tags", base.as_str()), ("post_tag", name.as_str())]) };
+                        for action in ["assign", "create"] {
+                            if let Some(shape) = link(&format!("https://api.w.org/action-{action}-{template}")) {
+                                added.push(rename(&shape, &from));
+                            }
+                        }
+                    }
+                    let at = items.iter().position(|l| l.get("rel").and_then(Value::as_str) == Some("https://api.w.org/action-create-tags")).map_or(items.len(), |i| i + 1);
+                    items.splice(at..at, added);
+                }
+                Value::Object(map) => {
+                    for child in map.values_mut() {
+                        walk(child, taxonomies);
+                    }
+                    // After `tags` (schema, writes) and after `tags_exclude` (the filters of the collection).
+                    for (after, suffix) in [("tags_exclude", "_exclude"), ("tags", "")] {
+                        if !map.contains_key(after) || (suffix.is_empty() && map.contains_key("tags_exclude")) {
+                            continue;
+                        }
+                        let mut added = Vec::new();
+                        for (name, base, hierarchical) in taxonomies {
+                            let (template, from) = if *hierarchical { (format!("categories{suffix}"), [("categories", base.as_str()), ("category", name.as_str())]) } else { (format!("tags{suffix}"), [("tags", base.as_str()), ("post_tag", name.as_str())]) };
+                            if let Some(shape) = map.get(&template) {
+                                added.push((format!("{base}{suffix}"), rename(shape, &from)));
+                            }
+                        }
+                        if suffix == "_exclude" {
+                            // `{$base}` comes before `{$base}_exclude`.
+                            let mut both = Vec::new();
+                            for (name, base, hierarchical) in taxonomies {
+                                let (template, from) = if *hierarchical { ("categories", [("categories", base.as_str()), ("category", name.as_str())]) } else { ("tags", [("tags", base.as_str()), ("post_tag", name.as_str())]) };
+                                if let Some(shape) = map.get(template) {
+                                    both.push((base.clone(), rename(shape, &from)));
+                                }
+                                if let Some(pos) = added.iter().position(|(k, _)| *k == format!("{base}_exclude")) {
+                                    both.push(added.remove(pos));
+                                }
+                            }
+                            added = both;
+                        }
+                        let mut rebuilt = Map::new();
+                        for (key, value) in std::mem::take(map) {
+                            let is_after = key == after;
+                            rebuilt.insert(key, value);
+                            if is_after {
+                                for (key, value) in std::mem::take(&mut added) {
+                                    rebuilt.insert(key, value);
+                                }
+                            }
+                        }
+                        *map = rebuilt;
+                    }
+                }
+                Value::Array(items) => items.iter_mut().for_each(|item| walk(item, taxonomies)),
+                _ => {}
+            }
+        }
+        walk(data, &taxonomies);
+    }
+
+    /// `get_post_types( [ 'show_in_rest' => true ] )` in the `has_published_posts` filter of the users: WordPress's
+    /// types, then the registered ones in the order of their registrations (the plugins' before the others').
+    fn add_registered_post_types(&self, data: &mut Value) {
+        let registered: Vec<&str> = self.site.types.rewrite_post_types().iter().map(|t| t.name.as_str()).collect();
+        let shown: Vec<&str> = self.site.types.rewrite_post_types().iter().filter(|t| t.show_in_rest).map(|t| t.name.as_str()).collect();
+        fn walk(value: &mut Value, registered: &[&str], shown: &[&str]) {
+            match value {
+                Value::Object(map) => {
+                    if let Some(Value::Object(list)) = map.get_mut("has_published_posts").and_then(|v| v.get_mut("items")).and_then(|v| v.get_mut("enum")) {
+                        let mut rebuilt: Map<String, Value> = list.iter().filter(|(k, _)| !registered.contains(&k.as_str())).map(|(k, v)| (k.clone(), v.clone())).collect();
+                        for name in shown {
+                            rebuilt.insert((*name).to_owned(), Value::from(*name));
+                        }
+                        *list = rebuilt;
+                    }
+                    for child in map.values_mut() {
+                        walk(child, registered, shown);
+                    }
+                }
+                Value::Array(items) => items.iter_mut().for_each(|item| walk(item, registered, shown)),
+                _ => {}
+            }
+        }
+        walk(data, &registered, &shown);
     }
 
     /// The meta keys plugins registered for the post type of a route go into the `meta` of its schema and arguments

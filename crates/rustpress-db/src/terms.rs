@@ -183,6 +183,13 @@ impl Db {
         Ok(query.fetch_optional(&self.pool).await?)
     }
 
+    /// `get_terms( [ 'taxonomy' => $taxonomy, 'orderby' => 'count', 'order' => 'DESC', 'number' => $limit ] )` of
+    /// `wp_popular_terms_checklist()`: the used terms, ties in the order of the database.
+    pub async fn popular_terms(&self, taxonomy: &str, limit: u64) -> Result<Vec<Term>> {
+        let sql = format!("SELECT DISTINCT {TERM_COLUMNS} FROM {} WHERE tt.taxonomy IN (?) AND tt.count > 0 ORDER BY tt.count DESC LIMIT {limit}", self.term_from());
+        Ok(sqlx::query_as(AssertSqlSafe(sql)).bind(taxonomy).fetch_all(&self.pool).await?)
+    }
+
     /// All terms of a taxonomy by name; inside [`Db::with_term_cache`] read once per request (term permalinks walk
     /// their parents through it).
     pub async fn terms(&self, taxonomy: &str) -> Result<Vec<Term>> {

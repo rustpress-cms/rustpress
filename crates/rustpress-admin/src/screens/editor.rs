@@ -135,7 +135,9 @@ pub fn classic_editor(ctx: &Ctx<'_>, content: &str, post_type: &str, post_status
             .replace("{CONTENT_CSS}", &css.join(","))
             .replace("{BODY_CLASS}", &body_class)
             .replace("{LANG}", &lang)
-            .replace("{LANG_ATTR}", &site.language_tag());
+            .replace("{LANG_ATTR}", &site.language_tag())
+            // `'wpautop' => ! has_blocks()` of the content.
+            .replace("wpautop:false,indent:true", if content.contains("<!-- wp:") { "wpautop:false,indent:true" } else { "wpautop:true,indent:false" });
         plugins = "charmap,colorpicker,hr,lists,media,paste,tabfocus,textcolor,fullscreen,wordpress,wpautoresize,wpeditimage,wpemoji,wpgallery,wplink,wpdialogs,wptextpattern,wpview".to_owned();
     }
     // `editor_js()`: the settings, then (with TinyMCE) its scripts, then the start of the editors.

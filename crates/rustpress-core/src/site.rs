@@ -120,7 +120,7 @@ impl Site {
             "wp_font_family" => feature == "title",
             "wp_font_face" => false,
             "wp_block" => matches!(feature, "title" | "excerpt" | "editor" | "revisions" | "custom-fields"),
-            other => self.types.post_type(other).is_none_or(|t| t.supports(feature)),
+            other => self.types.any_post_type(other).is_none_or(|t| t.supports(feature)),
         }
     }
 
