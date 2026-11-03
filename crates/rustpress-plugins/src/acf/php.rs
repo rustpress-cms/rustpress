@@ -112,6 +112,31 @@ fn normalize(k: &Key) -> Key {
     }
 }
 
+/// `wp_unslash()` (`stripslashes_deep()`) of every string: ACF unslashes what it saves, which only changes values that
+/// come from the database rather than from a (slashed) form.
+pub fn wp_unslash(value: Value) -> Value {
+    match value {
+        Value::Str(s) => {
+            let mut out = Vec::with_capacity(s.len());
+            let mut bytes = s.into_iter();
+            while let Some(b) = bytes.next() {
+                if b != b'\\' {
+                    out.push(b);
+                    continue;
+                }
+                match bytes.next() {
+                    Some(b'0') => out.push(0),
+                    Some(next) => out.push(next),
+                    None => {}
+                }
+            }
+            Value::Str(out)
+        }
+        Value::Array(items) => Value::Array(items.into_iter().map(|(k, v)| (k, wp_unslash(v))).collect()),
+        other => other,
+    }
+}
+
 /// `wp_parse_args( $args, $defaults )`: the defaults with the given values over them, keys of the defaults first.
 pub fn parse_args(args: &Value, defaults: Value) -> Value {
     let Value::Array(mut out) = defaults else { return args.clone() };

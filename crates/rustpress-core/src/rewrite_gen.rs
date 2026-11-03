@@ -148,6 +148,8 @@ struct Generator<'a> {
     /// `$wp_rewrite->front` and `root`.
     front: String,
     root: String,
+    /// The custom post types (`get_post_types( array( '_builtin' => false ) )`) and whether they are hierarchical.
+    post_types: Vec<(String, bool)>,
 }
 
 fn preg_index(number: usize) -> String {
@@ -235,9 +237,9 @@ impl Generator<'_> {
                         page = true;
                     }
                 }
-                if !post && let Some(ptype) = self.input.types.rewrite_post_types().iter().find(|t| struct_.contains(&format!("%{}%", t.name))) {
+                if !post && let Some((_, hierarchical)) = self.post_types.iter().find(|(name, _)| struct_.contains(&format!("%{name}%"))) {
                     post = true;
-                    page = ptype.hierarchical;
+                    page = *hierarchical;
                 }
 
                 if post {
@@ -290,7 +292,13 @@ impl<'a> Generator<'a> {
         let front = structure.find('%').map_or("", |at| &structure[..at]).to_owned();
         let using_index = structure.trim_start_matches('/').starts_with(INDEX);
         let root = if using_index { format!("{INDEX}/") } else { String::new() };
-        Self { input, tags: Tags::core(), front, root }
+        let mut post_types: Vec<(String, bool)> = input.types.rewrite_types().into_iter().filter(|t| !t.taxonomy).map(|t| (t.name, t.hierarchical)).collect();
+        for info in input.types.rewrite_post_types() {
+            if !post_types.iter().any(|(name, _)| name == &info.name) {
+                post_types.push((info.name.clone(), info.hierarchical));
+            }
+        }
+        Self { input, tags: Tags::core(), front, root, post_types }
     }
 
     fn using_index_permalinks(&self) -> bool {
@@ -369,44 +377,50 @@ pub fn rewrite_rules(input: &RewriteInput<'_>) -> Vec<(String, String)> {
     g.tags.add("%post_format%", "([^/]+)", "post_format=");
     extra.push(g.permastruct("post_format", "type", true, EP_NONE, true));
 
-    // Custom post types: `WP_Post_Type::add_rewrite_rules()`.
-    let mut type_permastructs = Vec::new();
-    for ptype in input.types.rewrite_post_types() {
-        let (slug, with_front) = g.without_old_front(&ptype.slug);
-        let slug = slug.trim_matches('/').to_owned();
-        let regex = if ptype.hierarchical { "(.+?)" } else { "([^/]+)" };
-        let query = match &ptype.query_var {
-            Some(var) => format!("{var}="),
-            None if ptype.hierarchical => format!("post_type={}&pagename=", ptype.name),
-            None => format!("post_type={}&name=", ptype.name),
+    // The custom post types and taxonomies in the order they were registered: `WP_Post_Type::add_rewrite_rules()` and
+    // `WP_Taxonomy::add_rewrite_rules()`. The archives of types registered before the REST API come before its rules.
+    let mut early_top = Rules::default();
+    for rtype in input.types.rewrite_types() {
+        let (slug, with_front) = match rtype.with_front {
+            Some(with_front) => (rtype.slug.clone(), with_front),
+            None => {
+                let (slug, with_front) = g.without_old_front(&rtype.slug);
+                (slug.trim_matches('/').to_owned(), with_front)
+            }
         };
-        g.tags.add(&format!("%{}%", ptype.name), regex, &query);
-        if let Some(archive) = &ptype.archive_slug {
-            let (base, _) = g.without_old_front(archive);
-            let archive_slug = format!("{}{}", if with_front { g.front.trim_start_matches('/') } else { "" }, base.trim_matches('/'));
-            let name = &ptype.name;
+        let regex = if rtype.hierarchical { "(.+?)" } else { "([^/]+)" };
+        let query = match &rtype.query_var {
+            Some(var) => format!("{var}="),
+            None if rtype.taxonomy => format!("taxonomy={}&term=", rtype.name),
+            None if rtype.hierarchical => format!("post_type={}&pagename=", rtype.name),
+            None => format!("post_type={}&name=", rtype.name),
+        };
+        g.tags.add(&format!("%{}%", rtype.name), regex, &query);
+        if let Some(archive) = &rtype.archive {
+            let archive_slug = match rtype.with_front {
+                // `substr( $wp_rewrite->front, 1 )` or `$wp_rewrite->root`.
+                Some(true) => format!("{}{archive}", g.front.get(1..).unwrap_or_default()),
+                Some(false) => format!("{}{archive}", g.root),
+                None => {
+                    let (base, _) = g.without_old_front(archive);
+                    format!("{}{}", if with_front { g.front.trim_start_matches('/') } else { "" }, base.trim_matches('/'))
+                }
+            };
+            let name = &rtype.name;
             let feeds = FEEDS.join("|");
-            top.set(format!("{archive_slug}/?$"), format!("index.php?post_type={name}"));
-            top.set(format!("{archive_slug}/feed/({feeds})/?$"), format!("index.php?post_type={name}&feed=$matches[1]"));
-            top.set(format!("{archive_slug}/({feeds})/?$"), format!("index.php?post_type={name}&feed=$matches[1]"));
-            top.set(format!("{archive_slug}/page/([0-9]{{1,}})/?$"), format!("index.php?post_type={name}&paged=$matches[1]"));
+            let target = if rtype.early { &mut early_top } else { &mut top };
+            target.set(format!("{archive_slug}/?$"), format!("index.php?post_type={name}"));
+            if rtype.feeds {
+                target.set(format!("{archive_slug}/feed/({feeds})/?$"), format!("index.php?post_type={name}&feed=$matches[1]"));
+                target.set(format!("{archive_slug}/({feeds})/?$"), format!("index.php?post_type={name}&feed=$matches[1]"));
+            }
+            if rtype.pages {
+                target.set(format!("{archive_slug}/page/([0-9]{{1,}})/?$"), format!("index.php?post_type={name}&paged=$matches[1]"));
+            }
         }
-        type_permastructs.push(g.permastruct(&ptype.name, &slug, with_front, EP_PERMALINK, ptype.archive_slug.is_some()));
+        extra.push(g.permastruct(&rtype.name, &slug, with_front, rtype.ep_mask, rtype.feeds));
     }
-    extra.extend(type_permastructs);
-
-    // Custom taxonomies: `WP_Taxonomy::add_rewrite_rules()`.
-    for taxonomy in input.types.rewrite_taxonomies() {
-        let (slug, with_front) = g.without_old_front(&taxonomy.slug);
-        let slug = slug.trim_matches('/').to_owned();
-        let regex = if taxonomy.rewrite_hierarchical { "(.+?)" } else { "([^/]+)" };
-        let query = match &taxonomy.query_var {
-            Some(var) => format!("{var}="),
-            None => format!("taxonomy={}&term=", taxonomy.name),
-        };
-        g.tags.add(&format!("%{}%", taxonomy.name), regex, &query);
-        extra.push(g.permastruct(&taxonomy.name, &slug, with_front, EP_NONE, true));
-    }
+    let mut top = early_top.merge(top);
 
     let (robots, favicon, sitemap) = if input.home_at_root {
         (
@@ -461,6 +475,47 @@ pub fn taxonomy_base(base: &str) -> String {
 pub fn serialize_rules(rules: &[(String, String)]) -> String {
     let items = rules.iter().map(|(k, v)| (Key::Str(k.clone().into_bytes()), Value::Str(v.clone().into_bytes()))).collect();
     String::from_utf8_lossy(&rustpress_phpser::serialize(&Value::Array(items))).into_owned()
+}
+
+/// What a plugin did to a type during a request before it called `flush_rewrite_rules()`: it unregistered the type
+/// `name` and, if `active`, registered it again with its new arguments.
+#[derive(Debug, Clone, Copy)]
+pub struct Reregistered<'a> {
+    pub taxonomy: bool,
+    pub name: &'a str,
+    pub active: bool,
+}
+
+/// `flush_rewrite_rules()` after a plugin changed a type during a request: the types the request registered on `init`
+/// (`site`, the snapshot it started with), then the plugin's `unregister_*()` and register call – the new arguments
+/// come from a fresh snapshot of the site under `wp_root`, the type comes last – into `rewrite_rules`. A type the
+/// plugin renamed keeps its old registration until the next request, as in WordPress.
+pub async fn flush_rewrite_rules(site: &crate::Site, writer: &rustpress_db::Writer, wp_root: &std::path::Path, change: Reregistered<'_>) -> crate::Result<()> {
+    let fresh = crate::Site::load_at(site.db.clone(), wp_root).await?;
+    let again = if change.active { fresh.types.rewrite_types().into_iter().find(|t| t.taxonomy == change.taxonomy && t.name == change.name) } else { None };
+    let mut types = site.types.clone();
+    types.register_again(change.taxonomy, change.name, again);
+    let mut site = fresh;
+    site.types = types;
+    let structure = site.options.string("permalink_structure", "");
+    let front = structure.find('%').map_or("", |at| &structure[..at]).to_owned();
+    let home = site.settings.home.trim_end_matches('/');
+    let category_base = site.options.string("category_base", "");
+    let tag_base = site.options.string("tag_base", "");
+    let input = RewriteInput {
+        permalink_structure: &structure,
+        old_front: &front,
+        category_base: &category_base,
+        tag_base: &tag_base,
+        page_on_front: site.options.u64("page_on_front", 0),
+        home_at_root: home.split_once("://").is_none_or(|(_, rest)| !rest.contains('/')),
+        blog_public: site.options.string("blog_public", "1") != "0",
+        types: &site.types,
+    };
+    let rules = rewrite_rules(&input);
+    let serialized = if rules.is_empty() { String::new() } else { serialize_rules(&rules) };
+    writer.update_option("rewrite_rules", &serialized).await?;
+    Ok(())
 }
 
 #[cfg(test)]

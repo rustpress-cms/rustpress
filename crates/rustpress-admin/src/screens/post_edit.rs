@@ -800,7 +800,7 @@ async fn author_box(ctx: &Ctx<'_>, post: &Post) -> String {
 /// The messages after saving (`$messages` of `edit-form-advanced.php`).
 fn message_text(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, number: u32) -> Option<String> {
     let site = ctx.site();
-    if let Some(message) = site.plugins.post_updated_message(site, &info.name, number) {
+    if let Some(message) = site.plugins.post_updated_message(site, post, number, &|action| ctx.create_nonce(action)) {
         return message;
     }
     let tr = |s: &str| ctx.tr(s);
@@ -1059,17 +1059,29 @@ async fn form(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, is_new: bool) -> Admi
     }
     // A plugin's editor on `admin_footer` (priority 1) joins the settings of the page's editors, after the reply form's.
     let mut footer_first = String::new();
+    // Whether a plugin's editor is the page's only one, and if it is a rich one.
+    let mut lone_editor: Option<bool> = None;
+    let mut lone_entry = None;
     if let Some(hidden) = &plugin_boxes.hidden_editor {
         let editor_post = super::editor::EditorPost::of(ctx, post).await;
-        let (html, entry) = super::editor::default_editor_for(ctx, &hidden.id, "", false, Some(&editor_post));
+        // Without an editor of its own the page has not printed the `editor-buttons` style yet.
+        let (html, entry) = super::editor::default_editor_for(ctx, &hidden.id, "", !supports("editor"), Some(&editor_post));
         footer_first = format!("{}{html}{}", hidden.before, hidden.after);
+        if !supports("editor") {
+            lone_editor = Some(entry.tinymce.is_some());
+            lone_entry = Some(entry.clone());
+        }
         if let Some(mce) = &entry.tinymce {
             editor_preinit = editor_preinit.replacen("}},\n\t\t\tqtInit:", &format!("}},'{}':{mce}}},\n\t\t\tqtInit:", entry.id), 1);
         }
         editor_preinit = editor_preinit.replacen("}},\n\t\t\tref:", &format!("}},'{}':{{id:\"{}\",buttons:\"{}\"}}}},\n\t\t\tref:", entry.id, entry.id, entry.quicktags), 1);
     }
     // `_WP_Editors::editor_js()` prints the settings in the footer, before the scripts that start the editors.
-    let editor_footer = format!("{editor_preinit}{editor_footer}");
+    let editor_footer = match lone_entry {
+        // The settings and the start of a plugin's editor that is the page's only one.
+        Some(entry) => super::editor::editors_js(ctx, &[entry]),
+        None => format!("{editor_preinit}{editor_footer}"),
+    };
 
     let (parent_file, mut submenu_file) = if info.name == "post" { ("edit.php".to_owned(), "edit.php".to_owned()) } else { (format!("edit.php?post_type={}", info.name), format!("edit.php?post_type={}", info.name)) };
     // post-new.php marks "Add New" in the menu.
@@ -1163,9 +1175,12 @@ async fn form(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, is_new: bool) -> Admi
         Some(holder) => super::meta_boxes::post_locked_dialog(ctx, post, holder, &all_items_label(ctx, info)).await,
         None => super::meta_boxes::post_lock_dialog(ctx, &info.name, &all_items_label(ctx, info)),
     };
-    if thumbnail_support || media_buttons {
+    // A plugin's box that needs the media library calls `wp_enqueue_media()` without a post while it is printed.
+    let plugin_media = !thumbnail_support && !media_buttons && plugin_boxes.media && ctx.can("upload_files");
+    let mut late_templates = String::new();
+    if thumbnail_support || media_buttons || plugin_media {
         let mut media = Assets::default();
-        super::media_ui::enqueue(ctx, &mut media, post.id).await;
+        super::media_ui::enqueue(ctx, &mut media, if plugin_media { 0 } else { post.id }).await;
         // Before the header for featured images, else by the media button while the page is printed.
         if thumbnail_support {
             assets.early_scripts.extend(media.scripts);
@@ -1177,11 +1192,31 @@ async fn form(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, is_new: bool) -> Admi
         assets.localize.extend(media.localize);
         assets.raw_data.extend(media.raw_data);
         assets.inline.extend(media.inline);
-        assets.pre_footer.push_str(&media.pre_footer);
+        // The templates of a box's `wp_enqueue_media()` come after the notices `edit-form-advanced.php` hooked before.
+        if plugin_media {
+            late_templates = media.pre_footer;
+        } else {
+            assets.pre_footer.push_str(&media.pre_footer);
+        }
     }
     assets.footer_first = footer_first;
+    // `_WP_Editors::enqueue_scripts()` for a plugin's editor on a page without an editor of its own, as on the comment
+    // screen (`meta_boxes::plugin_box_assets()`).
+    if let Some(rich) = lone_editor {
+        if rich {
+            assets.post_header_scripts.push("editor".into());
+            assets.inline.push(("editor".into(), "window.wp.oldEditor = window.wp.editor;".into(), "after".into()));
+        }
+        assets.late_scripts.retain(|h| !matches!(h.as_str(), "quicktags" | "wplink" | "jquery-ui-autocomplete"));
+        assets.post_header_scripts.extend(["quicktags".into(), "wplink".into(), "jquery-ui-autocomplete".into()]);
+        if ctx.can("upload_files") {
+            assets.post_header_scripts.extend(["thickbox".into(), "media-upload".into(), "wp-embed".into()]);
+            assets.post_header_styles.push("thickbox".into());
+        }
+    }
     let comment_tables = usize::from(boxes.iter().any(|b| b.id == "commentsdiv")) + usize::from(supports("comments"));
     assets.pre_footer.push_str(&super::meta_boxes::edit_footer_notices(ctx, &screen_id, comment_tables));
+    assets.pre_footer.push_str(&late_templates);
     render(ctx, &screen, &h, &assets).await
 }
 

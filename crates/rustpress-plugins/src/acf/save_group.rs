@@ -224,10 +224,11 @@ pub(super) fn group_defaults() -> Vec<(Key, Value)> {
     .collect()
 }
 
-/// `ACF_Internal_Post_Type::update_post( $post )` of a field group, post type or taxonomy: `validate_post()` (the
-/// defaults of the type), `acf_parse_types()`, `pre_update_field_group()` and the post.
-pub(super) async fn update_internal_post(content: &rustpress_content::content::Content<'_>, post_type: &str, posted: Vec<(Key, Value)>) -> Result<()> {
-    let mut items = match post_type {
+/// `validate_post()` of a field group, post type or taxonomy that is not `_valid` yet: the defaults of the type, `ID`
+/// and `menu_order` as integers, and `active` as a boolean (`ACF_Internal_Post_Type`) or – for post types – every
+/// boolean setting posted as `'0'`, `'1'`, `'false'` or `'true'` as a boolean (`ACF_Post_Type::validate_post()`).
+fn validate_internal(post_type: &str, posted: Vec<(Key, Value)>) -> Vec<(Key, Value)> {
+    let defaults = match post_type {
         "acf-post-type" => match super::internal::post_type_defaults() {
             Value::Array(items) => items,
             _ => Vec::new(),
@@ -238,6 +239,7 @@ pub(super) async fn update_internal_post(content: &rustpress_content::content::C
         },
         _ => group_defaults(),
     };
+    let mut items = defaults.clone();
     for (k, v) in posted {
         super::php::set_key(&mut items, k, v);
     }
@@ -245,9 +247,32 @@ pub(super) async fn update_internal_post(content: &rustpress_content::content::C
     super::php::set(&mut items, "ID", Value::Int(id));
     let menu_order = super::php::intval(get(&items, "menu_order"));
     super::php::set(&mut items, "menu_order", Value::Int(menu_order));
-    let active = truthy(get(&items, "active"));
-    super::php::set(&mut items, "active", Value::Bool(active));
+    if post_type == "acf-post-type" {
+        for (k, v) in items.iter_mut() {
+            if !matches!(defaults.iter().find(|(d, _)| super::php::key_eq(d, k)), Some((_, Value::Bool(_)))) {
+                continue;
+            }
+            if let Value::Str(s) = v {
+                match s.as_slice() {
+                    b"0" | b"1" => *v = Value::Bool(s.as_slice() == b"1"),
+                    b"false" | b"true" => *v = Value::Bool(s.as_slice() == b"true"),
+                    _ => {}
+                }
+            }
+        }
+    } else {
+        let active = truthy(get(&items, "active"));
+        super::php::set(&mut items, "active", Value::Bool(active));
+    }
     super::php::set(&mut items, "_valid", Value::Bool(true));
+    items
+}
+
+/// `ACF_Internal_Post_Type::update_post( $post )` of a field group, post type or taxonomy: `validate_post()`,
+/// `acf_parse_types()`, `pre_update_field_group()`, the post and `flush_post_cache()` – a post type with a key or a
+/// taxonomy registers again, so the rewrite rules of the site under `wp_root` are flushed.
+pub(super) async fn update_internal_post(content: &rustpress_content::content::Content<'_>, wp_root: Option<&std::path::Path>, post_type: &str, posted: Vec<(Key, Value)>) -> Result<()> {
+    let items = if truthy(get(&posted, "_valid")) { posted } else { validate_internal(post_type, posted) };
     let mut items = parse_types(items);
     if post_type == "acf-field-group" && truthy(get(&items, "location")) {
         let cleaned = clean_groups(get(&items, "location").unwrap_or(&Value::Null));
@@ -258,6 +283,7 @@ pub(super) async fn update_internal_post(content: &rustpress_content::content::C
         remove(&mut stored, name);
     }
     let title = strval(get(&items, "title"));
+    let id = super::php::intval(get(&items, "ID"));
     let data = rustpress_content::content::PostData {
         id: Some(id.max(0) as u64),
         post_status: Some(if truthy(get(&items, "active")) { "publish" } else { "acf-disabled" }.into()),
@@ -273,6 +299,18 @@ pub(super) async fn update_internal_post(content: &rustpress_content::content::C
         ..Default::default()
     };
     content_result(content.insert_post(&data).await)?;
+    let registers = match post_type {
+        "acf-post-type" => truthy(get(&items, "post_type")),
+        "acf-taxonomy" => get(&items, "taxonomy").is_some_and(|v| !matches!(v, Value::Null)),
+        _ => false,
+    };
+    if let Some(wp_root) = wp_root.filter(|_| registers) {
+        // The type is unregistered and, when active, registered again.
+        let taxonomy = post_type == "acf-taxonomy";
+        let name = strval(get(&items, if taxonomy { "taxonomy" } else { "post_type" }));
+        let change = rustpress_core::rewrite_gen::Reregistered { taxonomy, name: &name, active: truthy(get(&items, "active")) };
+        rustpress_core::rewrite_gen::flush_rewrite_rules(content.site, content.writer, wp_root, change).await?;
+    }
     Ok(())
 }
 
@@ -319,7 +357,7 @@ pub async fn save_post(ctx: &PostSaved<'_>) -> Result<()> {
     };
     super::php::set(&mut group, "ID", Value::Int(post.id as i64));
     super::php::set(&mut group, "title", string(actx.post_field("post_title").unwrap_or_default()));
-    update_internal_post(&w.content, "acf-field-group", group).await
+    update_internal_post(&w.content, None, "acf-field-group", group).await
 }
 
 /// `uniqid( $prefix )` after `usleep( 1 )`: keys made one after the other differ.
@@ -380,12 +418,22 @@ async fn duplicate_field(w: &Writer<'_>, mut field: RenderField, parent: u64, ke
     if strval(field.get("type")) == "group" {
         // `acf_extract_var( $field, 'sub_fields' )`.
         remove(&mut field.items, "sub_fields");
+        // `acf_update_field()` unslashes the loaded field; the group is saved with what the first save returned.
+        field.items = unslash_items(field.items);
         let id = update_field(w, field.items.clone(), false).await?;
         field.set("ID", Value::Int(id as i64));
         let render = sub_fields_render(w, &sub_fields);
         duplicate_fields(w, render, id).await?;
     }
-    update_field(w, field.items, false).await
+    update_field(w, unslash_items(field.items), false).await
+}
+
+/// [`super::php::wp_unslash`] of a loaded array.
+fn unslash_items(items: Vec<(Key, Value)>) -> Vec<(Key, Value)> {
+    match super::php::wp_unslash(Value::Array(items)) {
+        Value::Array(items) => items,
+        _ => Vec::new(),
+    }
 }
 
 /// The sub fields of a group as `acf_get_fields()` loads them.
@@ -408,7 +456,7 @@ pub(super) async fn move_field(ctx: &rustpress_core::native::AdminContext<'_>, f
     let label = strval(field.get("label"));
     let system = rustpress_auth::CurrentUser::system();
     let w = Writer { content: rustpress_content::content::Content { site, db: &site.db, writer, user: &system, now: ctx.now }, user: ctx.user };
-    update_field(&w, field.items, false).await?;
+    update_field(&w, unslash_items(field.items), false).await?;
     Ok(Some(label))
 }
 
@@ -442,7 +490,7 @@ pub(super) async fn duplicate_field_group(ctx: &rustpress_core::native::AdminCon
     }
     super::php::set(&mut items, "ID", Value::Int(id as i64));
     duplicate_fields(&w, fields, id).await?;
-    update_internal_post(&w.content, "acf-field-group", items).await?;
+    update_internal_post(&w.content, None, "acf-field-group", unslash_items(items)).await?;
     Ok(Some(id))
 }
 

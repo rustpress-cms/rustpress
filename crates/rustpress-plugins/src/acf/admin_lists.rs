@@ -248,12 +248,8 @@ pub fn in_admin_header(ctx: &AdminContext<'_>) -> String {
         Some("acf_options_preview") => Some(tr(ctx.site, "Options Pages")),
         _ => None,
     };
-    let mut out = navigation(ctx, page_title.as_deref());
-    // `views/global/form-top.php` on the edit screens (`$screen->base === 'post'`).
-    if let Some(post) = super::field_group_edit::edited_group(ctx) {
-        out.push_str(&super::field_group_edit::form_top(ctx, post));
-    }
-    out
+    // `views/global/form-top.php` of the edit screens follows (`internal_edit::form_top()`).
+    navigation(ctx, page_title.as_deref())
 }
 
 /// `ACF_Admin::setup_help_tab()`.
