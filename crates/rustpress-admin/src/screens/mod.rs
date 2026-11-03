@@ -204,6 +204,7 @@ impl Ctx<'_> {
             nonce: Box::new(move |action| auth.create_nonce(action, id, &token, now).unwrap_or_default()),
             verify: Box::new(move |nonce, action| verify_auth.verify_nonce(nonce, action, id, &verify_token, now).is_some()),
             same_origin,
+            files: self.request.files.iter().map(|f| rustpress_core::native::RestFile { field: f.field.clone(), filename: f.filename.clone(), content_type: f.content_type.clone(), bytes: f.bytes.clone() }).collect(),
         }
     }
 
@@ -232,6 +233,7 @@ impl Ctx<'_> {
             edited_term: None,
             screen_id: "",
             typenow: "",
+            files: &parts.files,
         }
     }
 
@@ -257,6 +259,17 @@ impl Ctx<'_> {
     pub fn settings_fields(&self, group: &str) -> String {
         format!("<input type='hidden' name='option_page' value='{}' /><input type=\"hidden\" name=\"action\" value=\"update\" />{}", esc_attr(group), self.nonce_field(&format!("{group}-options")))
     }
+}
+
+/// What a plugin sends itself while a page loads: the headers of the administration area, then its own (`header()`
+/// replaces one of the same name, which moves to the end).
+pub(crate) fn plugin_output(own: Vec<(String, String)>, body: String) -> AdminResponse {
+    let mut headers = page_headers();
+    for (name, value) in own {
+        headers.retain(|(n, _)| !n.eq_ignore_ascii_case(&name));
+        headers.push((name, value));
+    }
+    AdminResponse { status: 200, headers, cookies: Vec::new(), body, bytes: Vec::new() }
 }
 
 /// `nocache_headers()` and the frame headers of the administration area.
@@ -532,6 +545,7 @@ pub struct PluginParts {
     nonce: Box<dyn Fn(&str) -> String + Send + Sync>,
     verify: Box<dyn Fn(&str, &str) -> bool + Send + Sync>,
     same_origin: bool,
+    files: Vec<rustpress_core::native::RestFile>,
 }
 
 /// A page a plugin added to the menu (`admin.php?page=` or `<parent>?page=`): the plugin's output in the frame.
@@ -546,9 +560,12 @@ async fn plugin_page(ctx: &Ctx<'_>, plugin: &dyn ActivePlugin, page: &AdminPage)
     };
     let parts = ctx.plugin_parts();
     let plugin_ctx = ctx.plugin_context(&parts, &hook);
+    let mut load_notices = String::new();
     match plugin.admin_page_load(page.slug, &plugin_ctx).await {
         Ok(Some(rustpress_core::native::PageLoad::Redirect(location))) => return redirect(&location),
         Ok(Some(rustpress_core::native::PageLoad::Die { status, title, message })) => return die(ctx.env, status, &title, &message),
+        Ok(Some(rustpress_core::native::PageLoad::Output { headers, body })) => return plugin_output(headers, body),
+        Ok(Some(rustpress_core::native::PageLoad::Notices(html))) => load_notices = html,
         Ok(None) => {}
         Err(e) => tracing::error!(page = page.slug, error = %e, "loading the plugin page failed"),
     }
@@ -622,7 +639,7 @@ async fn plugin_page(ctx: &Ctx<'_>, plugin: &dyn ActivePlugin, page: &AdminPage)
         ..Default::default()
     };
     // `options-head.php` below Settings: the messages of `options.php`, and "Settings saved." for `updated`.
-    let mut assets = Assets::default();
+    let mut assets = Assets { notices: load_notices, ..Default::default() };
     if page.parent == "options-general.php" {
         if ctx.request.get("updated").is_some() {
             let saved = notices::SettingsError { setting: "general".into(), code: "settings_updated".into(), message: ctx.tr("Settings saved."), kind: "success".into() };

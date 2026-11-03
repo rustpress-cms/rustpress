@@ -54,6 +54,17 @@ impl Db {
         Ok(rows.into_iter().map(acf_post).collect())
     }
 
+    /// `ACF_Internal_Post_Type::get_post_object( $key )`: the post of an ACF item by its key, also a disabled or
+    /// trashed one (`orderby` `menu_order title`).
+    pub async fn acf_post_by_key(&self, post_type: &str, key: &str) -> Result<Option<AcfPost>> {
+        let sql = format!(
+            "SELECT ID, post_parent, post_title, post_name, post_excerpt, menu_order, post_status, post_content FROM {} WHERE post_type = ? AND post_name = ? AND post_status IN ('publish', 'acf-disabled', 'trash') ORDER BY menu_order ASC, post_title ASC LIMIT 1",
+            self.prefix.table("posts")
+        );
+        let row: Option<Row> = sqlx::query_as(AssertSqlSafe(sql)).bind(post_type).bind(key).fetch_optional(&self.pool).await?;
+        Ok(row.map(acf_post))
+    }
+
     /// `acf_get_raw_fields()` for every parent at once: the published and trashed `acf-field` posts, ordered by
     /// `menu_order`.
     pub async fn acf_fields(&self) -> Result<Vec<AcfPost>> {

@@ -310,6 +310,10 @@ impl ActivePlugin for Loaded {
         Box::pin(tools::admin_page(slug, ctx))
     }
 
+    fn admin_page_load<'a>(&'a self, slug: &'a str, ctx: &'a rustpress_core::native::AdminContext<'a>) -> BoxFuture<'a, Result<Option<rustpress_core::native::PageLoad>>> {
+        Box::pin(tools::load(slug, ctx))
+    }
+
     fn admin_page_parts<'a>(&'a self, slug: &'a str, ctx: &'a rustpress_core::native::AdminContext<'a>) -> BoxFuture<'a, Result<Option<(Vec<rustpress_core::native::FormPart>, Vec<rustpress_core::native::PluginMetaBox>)>>> {
         Box::pin(tools::admin_page_parts(slug, ctx))
     }

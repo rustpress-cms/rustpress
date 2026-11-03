@@ -1102,6 +1102,10 @@ pub enum PageLoad {
     Redirect(String),
     /// `wp_die( $message, $title, $status )`; the message is HTML.
     Die { status: u16, title: String, message: String },
+    /// The plugin sends its own answer and exits (a download): the headers it sets and what it prints.
+    Output { headers: Vec<(String, String)>, body: String },
+    /// The page goes on; the plugin prints these notices on `admin_notices` (what it did while loading).
+    Notices(String),
 }
 
 /// What a plugin answers to `admin-ajax.php`.
@@ -1283,6 +1287,8 @@ pub struct AdminContext<'a> {
     pub screen_id: &'a str,
     /// `$typenow`: the post type of the screen.
     pub typenow: &'a str,
+    /// `$_FILES`: the uploaded files of a multipart form.
+    pub files: &'a [RestFile],
 }
 
 /// A post status a plugin registers, as the lists of `edit.php` use it.

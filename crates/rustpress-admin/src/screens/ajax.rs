@@ -178,6 +178,7 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse
                 edited_term: None,
                 screen_id: "",
                 typenow: "",
+                files: &[],
             };
             match env.site.plugins.admin_ajax_nopriv(&action, &ctx).await {
                 Ok(Some(answer)) => {
