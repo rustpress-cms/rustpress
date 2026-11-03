@@ -44,6 +44,10 @@ pub struct Screen {
     /// `$hook_suffix` of a plugin's page (`settings_page_svg-support`): it is the screen's ID, `adminpage` and body
     /// class.
     pub hook_suffix: Option<String>,
+    /// The global `$post` of `post.php`/`post-new.php`.
+    pub edited_post: Option<rustpress_db::Post>,
+    /// `WP_Screen::is_block_editor()`.
+    pub block_editor: bool,
 }
 
 impl Screen {
@@ -697,7 +701,8 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
     if let Some(nonce) = env.loader.nonce.as_ref() {
         heartbeat.insert("nonce".into(), serde_json::Value::String(nonce("heartbeat-nonce")));
     }
-    if matches!(screen.file.as_str(), "post.php" | "post-new.php") {
+    // A plugin that registers scripts on `init` builds the registry before the suspension filter is added.
+    if matches!(screen.file.as_str(), "post.php" | "post-new.php") && !env.site.plugins.registers_scripts_on_init() {
         heartbeat.insert("suspension".into(), serde_json::Value::String("disable".into()));
     }
     scripts.relocalize("heartbeat", "heartbeatSettings", &serde_json::Value::Object(heartbeat));
@@ -765,10 +770,11 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
     let footer_scripts = scripts.print_footer_scripts(true);
 
     let mut classes = vec!["wp-admin".to_owned(), "wp-core-ui".to_owned(), "no-js".to_owned()];
+    // The editors add their class on `admin_body_class` after the plugins did.
+    classes.extend(assets.plugin_body_classes.split_whitespace().map(str::to_owned));
     if screen.fullscreen {
         classes.push("is-fullscreen-mode".to_owned());
     }
-    classes.extend(assets.plugin_body_classes.split_whitespace().map(str::to_owned));
     classes.extend(screen.early_classes.iter().cloned());
     classes.push(screen.hook_suffix.clone().unwrap_or_else(|| format!("{}-php", page)));
     classes.push("auto-fold".to_owned());

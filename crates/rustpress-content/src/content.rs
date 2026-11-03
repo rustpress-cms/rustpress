@@ -29,6 +29,41 @@ impl From<rustpress_db::Error> for ContentError {
     }
 }
 
+impl From<rustpress_core::Error> for ContentError {
+    fn from(e: rustpress_core::Error) -> Self {
+        match e {
+            rustpress_core::Error::Db(e) => ContentError::Db(e),
+        }
+    }
+}
+
+/// The actions and filters of `wp_insert_post()` that plugins take part in.
+pub trait InsertHooks: Sync {
+    /// `save_post`.
+    fn save_post(&self, post_id: u64) -> futures::future::BoxFuture<'_, rustpress_core::Result<()>>;
+    /// `wp_save_post_revision_post_has_changed`.
+    fn revision_post_has_changed(&self, post_id: u64, latest_revision: u64, changed: bool) -> futures::future::BoxFuture<'_, rustpress_core::Result<bool>>;
+    /// `_wp_put_post_revision`.
+    fn put_post_revision(&self, post_id: u64, revision_id: u64) -> futures::future::BoxFuture<'_, rustpress_core::Result<()>>;
+}
+
+/// No plugin takes part.
+struct NoHooks;
+
+impl InsertHooks for NoHooks {
+    fn save_post(&self, _post_id: u64) -> futures::future::BoxFuture<'_, rustpress_core::Result<()>> {
+        Box::pin(async { Ok(()) })
+    }
+
+    fn revision_post_has_changed(&self, _post_id: u64, _latest_revision: u64, changed: bool) -> futures::future::BoxFuture<'_, rustpress_core::Result<bool>> {
+        Box::pin(async move { Ok(changed) })
+    }
+
+    fn put_post_revision(&self, _post_id: u64, _revision_id: u64) -> futures::future::BoxFuture<'_, rustpress_core::Result<()>> {
+        Box::pin(async { Ok(()) })
+    }
+}
+
 impl std::fmt::Display for ContentError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -229,6 +264,12 @@ impl Content<'_> {
 
     /// `wp_insert_post()` / `wp_update_post()`. Returns the post ID.
     pub async fn insert_post(&self, data: &PostData) -> Result<u64> {
+        self.insert_post_with(data, &NoHooks).await
+    }
+
+    /// [`Self::insert_post`] with the plugins' `save_post` and the filters of the revision it makes (on
+    /// `wp_after_insert_post`, after `save_post`).
+    pub async fn insert_post_with(&self, data: &PostData, hooks: &dyn InsertHooks) -> Result<u64> {
         let before = match data.id.filter(|id| *id != 0) {
             Some(id) => Some(self.db.post(id).await?.ok_or_else(|| ContentError::Message(self.site.tr("Invalid post ID.")))?),
             None => None,
@@ -454,8 +495,9 @@ impl Content<'_> {
         if let Some(template) = &data.page_template {
             self.writer.update_post_meta(post_id, "_wp_page_template", template).await?;
         }
+        hooks.save_post(post_id).await?;
         if update && post_type != "attachment" {
-            self.save_revision(post_id).await?;
+            self.save_revision(post_id, hooks).await?;
         }
         // `_update_term_count_on_transition_post_status()`: the counts follow the publish state.
         let final_status = stored.as_ref().map_or(post_status.as_str(), |p| p.post_status.as_str());
@@ -476,7 +518,7 @@ impl Content<'_> {
     }
 
     /// `wp_save_post_revision()`.
-    async fn save_revision(&self, post_id: u64) -> Result<()> {
+    async fn save_revision(&self, post_id: u64, hooks: &dyn InsertHooks) -> Result<()> {
         let Some(post) = self.db.post(post_id).await? else { return Ok(()) };
         if post.post_status == "auto-draft" || !self.site.post_type_supports(&post.post_type, "revisions") {
             return Ok(());
@@ -487,6 +529,7 @@ impl Content<'_> {
             let changed = normalize_whitespace(&post.post_title) != normalize_whitespace(&latest.post_title)
                 || normalize_whitespace(&post.post_content) != normalize_whitespace(&latest.post_content)
                 || normalize_whitespace(&post.post_excerpt) != normalize_whitespace(&latest.post_excerpt);
+            let changed = hooks.revision_post_has_changed(post_id, latest.id, changed).await?;
             if !changed {
                 return Ok(());
             }
@@ -517,6 +560,7 @@ impl Content<'_> {
         let revision_id = self.writer.insert_row("posts", &fields).await?;
         let guid = format!("{}/?p={revision_id}", self.site.settings.home.trim_end_matches('/'));
         self.writer.update_rows("posts", "ID", revision_id, &[("guid", Val::Str(guid))]).await?;
+        hooks.put_post_revision(post_id, revision_id).await?;
         Ok(())
     }
 

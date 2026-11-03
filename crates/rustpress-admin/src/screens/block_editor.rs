@@ -30,13 +30,14 @@ pub(super) enum EditorPage {
     Boot,
 }
 
-/// `get_all_registered_block_bindings_sources()` as the editors list them: the sources of WordPress, then the theme's.
+/// `get_all_registered_block_bindings_sources()` as the editors list them: the plugins' sources, those of WordPress,
+/// then the theme's.
 fn bindings_sources(ctx: &Ctx<'_>) -> Value {
     let site = ctx.site();
-    let mut sources: Vec<Value> = [("core/pattern-overrides", "Pattern Overrides", &["pattern/overrides"][..]), ("core/post-data", "Post Data", &["postId", "postType"]), ("core/post-meta", "Post Meta", &["postId", "postType"]), ("core/term-data", "Term Data", &["termId", "taxonomy"])]
+    let mut sources: Vec<Value> = site.plugins.block_bindings_sources(site).into_iter().map(|(name, label, uses)| json!({"name": name, "label": label, "usesContext": uses})).collect();
+    sources.extend([("core/pattern-overrides", "Pattern Overrides", &["pattern/overrides"][..]), ("core/post-data", "Post Data", &["postId", "postType"]), ("core/post-meta", "Post Meta", &["postId", "postType"]), ("core/term-data", "Term Data", &["termId", "taxonomy"])]
         .into_iter()
-        .map(|(name, label, uses)| json!({"name": name, "label": site.trx(label, "block bindings source"), "usesContext": uses}))
-        .collect();
+        .map(|(name, label, uses)| json!({"name": name, "label": site.trx(label, "block bindings source"), "usesContext": uses})));
     let domain = site.settings.template.clone();
     for source in ctx.env.theme.block_bindings_sources() {
         let label = match &source.label_context {
@@ -67,11 +68,11 @@ pub fn uses_block_editor(ctx: &Ctx<'_>, post: &Post) -> bool {
 }
 
 /// The answer of one REST request, in the shape of the preloading middleware.
-async fn preload_one(ctx: &Ctx<'_>, method: &str, path: &str) -> Option<Value> {
+async fn preload_one(ctx: &Ctx<'_>, method: &str, path: &str, earlier: &[String]) -> Option<Value> {
     let env = ctx.env;
     let writer = env.writer?;
     let (route, query) = path.split_once('?').map_or((path, ""), |(r, q)| (r, q));
-    let rest = rustpress_rest::Rest::new(ctx.site(), env.theme, env.registry).with_host(ctx.request.host.as_deref().unwrap_or_default()).in_admin();
+    let rest = rustpress_rest::Rest::new(ctx.site(), env.theme, env.registry).with_host(ctx.request.host.as_deref().unwrap_or_default()).in_admin().after_routes(earlier.to_vec());
     let (auth, user_id, token, now) = (env.auth.clone(), ctx.user.id, ctx.token.clone(), env.now);
     let nonce: std::sync::Arc<dyn Fn(&str) -> String + Send + Sync> = std::sync::Arc::new(move |action: &str| auth.create_nonce(action, user_id, &token, now).unwrap_or_default());
     let access = Access { user: ctx.user.clone(), app_password: None, writer: Some(writer), now: env.now, uploads: super::ajax_media::uploads_dir(env), nonce: Some(nonce), roles: Some(env.roles), salts: Some(env.auth.salts()), comment_notify: None };
@@ -161,8 +162,12 @@ async fn preload(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, global_styles_id: 
 pub(super) async fn preload_paths(ctx: &Ctx<'_>, paths: Vec<(String, String)>) -> Value {
     let mut ordered = Map::new();
     let mut options = Map::new();
+    // One PHP process answers them all: what a plugin registers for one request stays for the next.
+    let mut earlier: Vec<String> = Vec::new();
     for (method, path) in paths {
-        let Some(value) = preload_one(ctx, &method, &path).await else { continue };
+        let answer = preload_one(ctx, &method, &path, &earlier).await;
+        earlier.push(path.split_once('?').map_or(path.as_str(), |(r, _)| r).to_owned());
+        let Some(value) = answer else { continue };
         if method == "OPTIONS" {
             if !ordered.contains_key("OPTIONS") {
                 ordered.insert("OPTIONS".into(), Value::Null);
@@ -560,7 +565,14 @@ pub(super) async fn shared_inline(ctx: &Ctx<'_>, assets: &mut Assets, preloaded:
         ),
         "before".into(),
     ));
-    let definitions = statics().get("blockDefinitions").cloned().unwrap_or(Value::Null);
+    let mut definitions = statics().get("blockDefinitions").cloned().unwrap_or(Value::Null);
+    // The variations that follow the post types and taxonomies of this site.
+    let rest = rustpress_rest::Rest::new(site, ctx.env.theme, ctx.env.registry);
+    for (block, variations) in rest.type_variations() {
+        if let Some(slot) = definitions.get_mut(block).and_then(|b| b.get_mut("variations")) {
+            *slot = Value::Array(variations);
+        }
+    }
     let categories = statics().get("blockCategories").cloned().unwrap_or(Value::Null);
     let categories = format!("wp.blocks.setCategories( {} );", inline_json(&categories));
     let definitions = format!("wp.blocks.unstable__bootstrapServerSideBlockDefinitions({});", inline_json(&definitions));
@@ -583,7 +595,35 @@ pub async fn render_editor(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo) -> Admin
     let tr = |s: &str| ctx.tr(s);
     let gs_id = global_styles_id(ctx).await;
     let preloaded = preload(ctx, post, info, gs_id).await;
-    let settings = editor_settings(ctx, post, info).await;
+    let mut settings = editor_settings(ctx, post, info).await;
+    // `add_meta_boxes` of the plugins (`register_and_do_post_meta_boxes()`).
+    let plugin_boxes = {
+        let parts = ctx.plugin_parts();
+        let mut plugin_ctx = ctx.plugin_context(&parts, if post.post_status == "auto-draft" { "post-new.php" } else { "post.php" });
+        plugin_ctx.edited_post = Some(post);
+        plugin_ctx.block_editor = true;
+        site.plugins.post_meta_boxes(&plugin_ctx, post).await.unwrap_or_else(|e| {
+            tracing::error!(error = %e, "plugin post meta boxes failed");
+            rustpress_core::native::PostMetaBoxes::default()
+        })
+    };
+    // Without the custom fields box the editor does not offer it.
+    if plugin_boxes.removed.iter().any(|id| id == "postcustom")
+        && let Some(map) = settings.as_object_mut()
+    {
+        map.shift_remove("enableCustomFields");
+    }
+    let boxes: Vec<super::meta_boxes::MetaBox> = plugin_boxes.boxes.iter().cloned().map(super::meta_boxes::MetaBox::from_plugin).collect();
+    let state = super::meta_boxes::BoxState::load(ctx, &post.post_type, &post.post_type).await;
+    let location = |context: &str| super::meta_boxes::do_meta_boxes(ctx, &boxes, context, &state);
+    let hidden_fields: String = plugin_boxes
+        .hidden_fields
+        .iter()
+        .map(|part| match part {
+            rustpress_core::native::FormPart::Html(html) => html.clone(),
+            rustpress_core::native::FormPart::MetaBoxes(context) => location(context),
+        })
+        .collect();
     let is_new = post.post_status == "auto-draft";
     let heading = if is_new {
         if info.hierarchical { tr("Add Page") } else { tr("Add Post") }
@@ -643,11 +683,12 @@ pub async fn render_editor(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo) -> Admin
         json!([])
     };
     let init = format!(
-        "( function() {{\n\twindow._wpLoadBlockEditor = new Promise( function( resolve ) {{\n\t\twp.domReady( function() {{\n\t\t\tresolve( wp.editPost.initializeEditor( 'editor', {}, {}, {}, {} ) );\n\t\t}} );\n\t}} );\n}} )();\nwindow._wpLoadBlockEditor.then( function() {{\n\t\twp.data.dispatch( 'core/edit-post' ).setAvailableMetaBoxesPerLocation( {{\"side\":[],\"normal\":[],\"advanced\":[]}} );\n\t}} );",
+        "( function() {{\n\twindow._wpLoadBlockEditor = new Promise( function( resolve ) {{\n\t\twp.domReady( function() {{\n\t\t\tresolve( wp.editPost.initializeEditor( 'editor', {}, {}, {}, {} ) );\n\t\t}} );\n\t}} );\n}} )();\nwindow._wpLoadBlockEditor.then( function() {{\n\t\twp.data.dispatch( 'core/edit-post' ).setAvailableMetaBoxesPerLocation( {} );\n\t}} );",
         json!(post.post_type),
         post.id,
         inline_json(&settings),
-        inline_json(&initial_edits)
+        inline_json(&initial_edits),
+        inline_json(&super::meta_boxes::per_location(&boxes, &state))
     );
     shared_inline(ctx, &mut assets, &preloaded, EditorPage::Post).await;
     assets.inline.push(("wp-edit-post".into(), init, "after".into()));
@@ -656,7 +697,7 @@ pub async fn render_editor(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo) -> Admin
     let classic_link = esc_url(&ctx.admin_url(&format!("update.php?action=install-plugin&plugin=classic-editor&_wpnonce={}", ctx.create_nonce("install-plugin_classic-editor")))).replace("&#038;", "&amp;");
     let content = format!(
         "
-<div class=\"block-editor\">\n\t<h1 class=\"screen-reader-text hide-if-no-js\">{heading}</h1>\n\t<div id=\"editor\" class=\"block-editor__container hide-if-no-js\"></div>\n\t<div id=\"metaboxes\" class=\"hidden\">\n\t\t\t<form class=\"metabox-base-form\">\n\t{nonce_field}\t<input type=\"hidden\" id=\"user-id\" name=\"user_ID\" value=\"{user}\" />\n\t<input type=\"hidden\" id=\"hiddenaction\" name=\"action\" value=\"editpost\" />\n\t<input type=\"hidden\" id=\"originalaction\" name=\"originalaction\" value=\"editpost\" />\n\t<input type=\"hidden\" id=\"post_type\" name=\"post_type\" value=\"{pt}\" />\n\t<input type=\"hidden\" id=\"original_post_status\" name=\"original_post_status\" value=\"{status}\" />\n\t<input type=\"hidden\" id=\"referredby\" name=\"referredby\" value=\"\" />\n\n\t<input type=\"hidden\" name=\"_wp_original_http_referer\" value=\"\" />{auto_draft}<input type='hidden' id='post_ID' name='post_ID' value='{id}' /><input type=\"hidden\" id=\"meta-box-order-nonce\" name=\"meta-box-order-nonce\" value=\"{order_nonce}\" /><input type=\"hidden\" id=\"closedpostboxesnonce\" name=\"closedpostboxesnonce\" value=\"{closed_nonce}\" /><input type=\"hidden\" id=\"samplepermalinknonce\" name=\"samplepermalinknonce\" value=\"{sample_nonce}\" />\t</form>\n\t<form id=\"toggle-custom-fields-form\" method=\"post\" action=\"{post_php}\">\n\t\t<input type=\"hidden\" id=\"toggle-custom-fields-nonce\" name=\"toggle-custom-fields-nonce\" value=\"{toggle_nonce}\" /><input type=\"hidden\" name=\"_wp_http_referer\" value=\"{referer}\" />\t\t<input type=\"hidden\" name=\"action\" value=\"toggle-custom-fields\" />\n\t</form>\n\t\t\t<form class=\"metabox-location-side\" onsubmit=\"return false;\">\n\t\t\t<div id=\"poststuff\" class=\"sidebar-open\">\n\t\t\t\t<div id=\"postbox-container-2\" class=\"postbox-container\">\n\t\t\t\t\t<div id=\"side-sortables\" class=\"meta-box-sortables\"></div>\t\t\t\t</div>\n\t\t\t</div>\n\t\t</form>\n\t\t\t<form class=\"metabox-location-normal\" onsubmit=\"return false;\">\n\t\t\t<div id=\"poststuff\" class=\"sidebar-open\">\n\t\t\t\t<div id=\"postbox-container-2\" class=\"postbox-container\">\n\t\t\t\t\t<div id=\"normal-sortables\" class=\"meta-box-sortables\"></div>\t\t\t\t</div>\n\t\t\t</div>\n\t\t</form>\n\t\t\t<form class=\"metabox-location-advanced\" onsubmit=\"return false;\">\n\t\t\t<div id=\"poststuff\" class=\"sidebar-open\">\n\t\t\t\t<div id=\"postbox-container-2\" class=\"postbox-container\">\n\t\t\t\t\t<div id=\"advanced-sortables\" class=\"meta-box-sortables\"></div>\t\t\t\t</div>\n\t\t\t</div>\n\t\t</form>\n\t\t\t</div>\n\n\t\t<div class=\"wrap hide-if-js block-editor-no-js\">\n\t\t<h1 class=\"wp-heading-inline\">{heading}</h1>\n\t\t<div class=\"notice notice-error\"><p>{no_js}</p></div>\t</div>\n</div>\n",
+<div class=\"block-editor\">\n\t<h1 class=\"screen-reader-text hide-if-no-js\">{heading}</h1>\n\t<div id=\"editor\" class=\"block-editor__container hide-if-no-js\"></div>\n\t<div id=\"metaboxes\" class=\"hidden\">\n\t\t\t<form class=\"metabox-base-form\">\n\t{nonce_field}\t<input type=\"hidden\" id=\"user-id\" name=\"user_ID\" value=\"{user}\" />\n\t<input type=\"hidden\" id=\"hiddenaction\" name=\"action\" value=\"editpost\" />\n\t<input type=\"hidden\" id=\"originalaction\" name=\"originalaction\" value=\"editpost\" />\n\t<input type=\"hidden\" id=\"post_type\" name=\"post_type\" value=\"{pt}\" />\n\t<input type=\"hidden\" id=\"original_post_status\" name=\"original_post_status\" value=\"{status}\" />\n\t<input type=\"hidden\" id=\"referredby\" name=\"referredby\" value=\"\" />\n\n\t<input type=\"hidden\" name=\"_wp_original_http_referer\" value=\"\" />{auto_draft}<input type='hidden' id='post_ID' name='post_ID' value='{id}' /><input type=\"hidden\" id=\"meta-box-order-nonce\" name=\"meta-box-order-nonce\" value=\"{order_nonce}\" /><input type=\"hidden\" id=\"closedpostboxesnonce\" name=\"closedpostboxesnonce\" value=\"{closed_nonce}\" /><input type=\"hidden\" id=\"samplepermalinknonce\" name=\"samplepermalinknonce\" value=\"{sample_nonce}\" />{hidden_fields}\t</form>\n\t<form id=\"toggle-custom-fields-form\" method=\"post\" action=\"{post_php}\">\n\t\t<input type=\"hidden\" id=\"toggle-custom-fields-nonce\" name=\"toggle-custom-fields-nonce\" value=\"{toggle_nonce}\" /><input type=\"hidden\" name=\"_wp_http_referer\" value=\"{referer}\" />\t\t<input type=\"hidden\" name=\"action\" value=\"toggle-custom-fields\" />\n\t</form>\n\t\t\t<form class=\"metabox-location-side\" onsubmit=\"return false;\">\n\t\t\t<div id=\"poststuff\" class=\"sidebar-open\">\n\t\t\t\t<div id=\"postbox-container-2\" class=\"postbox-container\">\n\t\t\t\t\t{side}\t\t\t\t</div>\n\t\t\t</div>\n\t\t</form>\n\t\t\t<form class=\"metabox-location-normal\" onsubmit=\"return false;\">\n\t\t\t<div id=\"poststuff\" class=\"sidebar-open\">\n\t\t\t\t<div id=\"postbox-container-2\" class=\"postbox-container\">\n\t\t\t\t\t{normal}\t\t\t\t</div>\n\t\t\t</div>\n\t\t</form>\n\t\t\t<form class=\"metabox-location-advanced\" onsubmit=\"return false;\">\n\t\t\t<div id=\"poststuff\" class=\"sidebar-open\">\n\t\t\t\t<div id=\"postbox-container-2\" class=\"postbox-container\">\n\t\t\t\t\t{advanced}\t\t\t\t</div>\n\t\t\t</div>\n\t\t</form>\n\t\t\t</div>\n\n\t\t<div class=\"wrap hide-if-js block-editor-no-js\">\n\t\t<h1 class=\"wp-heading-inline\">{heading}</h1>\n\t\t<div class=\"notice notice-error\"><p>{no_js}</p></div>\t</div>\n</div>\n",
         heading = esc_html(&heading),
         nonce_field = ctx.nonce_field(&format!("update-post_{}", post.id)),
         user = ctx.user.id,
@@ -667,6 +708,9 @@ pub async fn render_editor(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo) -> Admin
         order_nonce = ctx.create_nonce("meta-box-order"),
         closed_nonce = ctx.create_nonce("closedpostboxes"),
         sample_nonce = ctx.create_nonce("samplepermalink"),
+        side = location("side"),
+        normal = location("normal"),
+        advanced = location("advanced"),
         toggle_nonce = ctx.create_nonce("toggle-custom-fields"),
         post_php = esc_url(&ctx.admin_url("post.php")),
         referer = super::referer_field_value(&ctx.request.request_uri),
@@ -689,8 +733,26 @@ pub async fn render_editor(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo) -> Admin
         view_item: view,
         fullscreen: true,
         body_classes: vec!["block-editor-page".into(), "wp-embed-responsive".into()],
+        edited_post: Some(post.clone()),
+        block_editor: true,
         ..Default::default()
     };
+    // The editor a plugin prints on `admin_footer`, with what `_WP_Editors::enqueue_scripts()` adds for it.
+    if let Some(hidden) = &plugin_boxes.hidden_editor {
+        let editor_post = super::editor::EditorPost::of(ctx, post).await;
+        let (html, entry) = super::editor::default_editor_for(ctx, &hidden.id, "", false, Some(&editor_post));
+        assets.footer_first = format!("{}{html}{}", hidden.before, hidden.after);
+        let rich = entry.tinymce.is_some();
+        // The default editor's scripts already printed TinyMCE and the link dialog.
+        assets.footer.push_str(&super::editor::editors_js_with(ctx, &[entry], false));
+        if rich {
+            assets.post_header_scripts.push("editor".into());
+        }
+        if ctx.can("upload_files") {
+            assets.post_header_scripts.push("wp-embed".into());
+            assets.post_header_styles.push("thickbox".into());
+        }
+    }
     let _ = env;
     render(ctx, &screen, &content, &assets).await
 }

@@ -850,10 +850,14 @@ pub async fn comment_php(ctx: &Ctx<'_>) -> AdminResponse {
         return super::common::die_plain(ctx, "You cannot edit this comment because the associated post is in the Trash. Please restore the post first, then try again.");
     }
     // `comment_footer_die()`: the message in the frame of the administration.
+    // `comment_footer_die()` after the header: `editcomment` has added its help and the comment script by then.
+    let editing = action == "editcomment";
     let footer_die = |message: String| async move {
         let content = format!("<div class='wrap'><p>{message}</p></div>");
-        let screen = Screen { file: "comment.php".into(), parent_file: "edit-comments.php".into(), submenu_file: Some("edit-comments.php".into()), title: ctx.tr("Edit Comment"), ..Default::default() };
-        render(ctx, &screen, &content, &Assets::default()).await
+        let help = editing.then(|| edit_help(ctx));
+        let screen = Screen { file: "comment.php".into(), parent_file: "edit-comments.php".into(), submenu_file: Some("edit-comments.php".into()), title: ctx.tr("Edit Comment"), help, content_inline: editing, ..Default::default() };
+        let assets = if editing { Assets { scripts: vec!["comment".into()], ..Default::default() } } else { Assets::default() };
+        render(ctx, &screen, &content, &assets).await
     };
     let moderation = !matches!(action.as_str(), "editcomment" | "editedcomment");
     if moderation {

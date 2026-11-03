@@ -12,14 +12,19 @@ use super::Ctx;
 pub struct MetaBox {
     pub id: String,
     pub title: String,
-    pub context: &'static str,
-    pub priority: &'static str,
+    pub context: String,
+    pub priority: String,
     pub html: String,
 }
 
 impl MetaBox {
-    pub fn new(id: &str, title: &str, context: &'static str, priority: &'static str, html: String) -> Self {
-        Self { id: id.to_owned(), title: title.to_owned(), context, priority, html }
+    pub fn new(id: &str, title: &str, context: &str, priority: &str, html: String) -> Self {
+        Self { id: id.to_owned(), title: title.to_owned(), context: context.to_owned(), priority: priority.to_owned(), html }
+    }
+
+    /// A box a plugin added.
+    pub fn from_plugin(b: rustpress_core::native::PluginMetaBox) -> Self {
+        Self { id: b.id, title: b.title, context: b.context, priority: b.priority, html: b.html }
     }
 }
 
@@ -87,8 +92,8 @@ pub fn postbox(ctx: &Ctx<'_>, id: &str, title: &str, closed: bool, hidden: bool,
 }
 
 /// Where the boxes are after the user's order moved them (`add_meta_box( …, 'sorted' )`): `(context, priority)`.
-fn placement<'a>(boxes: &'a [MetaBox], state: &BoxState) -> Vec<(&'a MetaBox, String, &'static str)> {
-    let mut placed: Vec<(&MetaBox, String, &'static str)> = boxes.iter().map(|b| (b, b.context.to_owned(), b.priority)).collect();
+fn placement<'a>(boxes: &'a [MetaBox], state: &BoxState) -> Vec<(&'a MetaBox, String, &'a str)> {
+    let mut placed: Vec<(&MetaBox, String, &str)> = boxes.iter().map(|b| (b, b.context.clone(), b.priority.as_str())).collect();
     let mut sorted: Vec<(String, String)> = Vec::new();
     for (context, ids) in &state.order {
         for id in ids {
@@ -100,7 +105,7 @@ fn placement<'a>(boxes: &'a [MetaBox], state: &BoxState) -> Vec<(&'a MetaBox, St
             sorted.push((context.clone(), id.clone()));
         }
     }
-    let mut out: Vec<(&MetaBox, String, &'static str)> = Vec::new();
+    let mut out: Vec<(&MetaBox, String, &str)> = Vec::new();
     // The boxes that keep their place, then the sorted ones in their order.
     placed.retain(|(b, ..)| !sorted.iter().any(|(_, id)| *id == b.id));
     out.extend(placed);
@@ -128,12 +133,31 @@ pub fn do_meta_boxes(ctx: &Ctx<'_>, boxes: &[MetaBox], context: &str, state: &Bo
     out
 }
 
+/// The boxes of the block editor's `setAvailableMetaBoxesPerLocation()` (`the_block_editor_meta_boxes()`): `(id,
+/// title)` per location, after the user's order.
+pub fn per_location(boxes: &[MetaBox], state: &BoxState) -> serde_json::Value {
+    let placed = placement(boxes, state);
+    let mut out = serde_json::Map::new();
+    for location in ["side", "normal", "advanced"] {
+        let mut list = Vec::new();
+        for priority in ["high", "sorted", "core", "default", "low"] {
+            for (b, c, p) in &placed {
+                if c == location && *p == priority && !b.title.is_empty() {
+                    list.push(serde_json::json!({"id": b.id, "title": b.title}));
+                }
+            }
+        }
+        out.insert(location.to_owned(), serde_json::Value::Array(list));
+    }
+    serde_json::Value::Object(out)
+}
+
 /// `meta_box_prefs()`: the boxes in the order they were added (by context, then priority), without the publish box.
 pub fn prefs(boxes: &[MetaBox], state: &BoxState) -> Vec<(String, String, bool)> {
     let mut contexts: Vec<&str> = Vec::new();
     for b in boxes {
-        if !contexts.contains(&b.context) {
-            contexts.push(b.context);
+        if !contexts.contains(&b.context.as_str()) {
+            contexts.push(&b.context);
         }
     }
     let mut out = Vec::new();

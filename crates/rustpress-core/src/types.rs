@@ -207,6 +207,21 @@ impl AdminTaxonomy {
     }
 }
 
+/// A registered type with the flags lists of types filter by (`get_post_types( $args )`, `get_taxonomies( $args )`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RegisteredType {
+    pub name: String,
+    pub hierarchical: bool,
+    pub public: bool,
+    pub publicly_queryable: bool,
+    pub show_in_nav_menus: bool,
+    pub show_in_rest: bool,
+    /// `labels->name` (or `label`), as given.
+    pub label: Option<String>,
+    /// `labels->singular_name`, else the name.
+    pub singular: Option<String>,
+}
+
 /// The labels of an argument list: `labels[...]` and `label`.
 fn labels_of(args: &Lit) -> Vec<(String, String)> {
     let mut out = Vec::new();
@@ -261,6 +276,36 @@ impl Types {
                     },
                     menu_icon: args.get("menu_icon").and_then(Lit::as_str).map(str::to_owned),
                     labels: labels_of(args),
+                }
+            })
+            .collect()
+    }
+
+    /// The post types (or taxonomies) of the registrations that are not WordPress's own, in their order, with the
+    /// defaults of `register_post_type()`/`register_taxonomy()` for their flags.
+    pub fn registered_types(&self, taxonomy: bool) -> Vec<RegisteredType> {
+        let flag = |args: &Lit, key: &str, default: bool| match args.get(key) {
+            None | Some(Lit::Null) => default,
+            Some(value) => value.truthy().unwrap_or(true),
+        };
+        self.registrations
+            .iter()
+            .filter(|r| r.taxonomy == taxonomy && if taxonomy { !BUILT_IN_TAXONOMIES.contains(&r.name.as_str()) } else { !BUILT_IN_POST_TYPES.contains(&r.name.as_str()) && !is_internal_post_type(&r.name) })
+            .map(|r| {
+                let args = &r.args;
+                let public = flag(args, "public", taxonomy);
+                let labels = labels_of(args);
+                let given = |k: &str| labels.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone());
+                let label = given("name").filter(|n| !n.is_empty()).or_else(|| given("label").filter(|l| !l.is_empty()));
+                RegisteredType {
+                    name: r.name.clone(),
+                    hierarchical: flag(args, "hierarchical", false),
+                    public,
+                    publicly_queryable: flag(args, "publicly_queryable", public),
+                    show_in_nav_menus: flag(args, "show_in_nav_menus", public),
+                    show_in_rest: flag(args, "show_in_rest", false),
+                    singular: given("singular_name").or_else(|| label.clone()),
+                    label,
                 }
             })
             .collect()

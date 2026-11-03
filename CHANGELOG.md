@@ -20,8 +20,8 @@ All notable changes to RustPress. Each release names the WordPress release it fo
   - **Redirection** 5.10.1: redirects with all conditions and actions, custom headers, the canonical domain, hit
     counters and logs ([#20](https://github.com/rustpress-cms/rustpress/pull/20)).
   - **Advanced Custom Fields** 6.8.10: ACF post types and taxonomies, the `acf` field of the REST API, the `[acf]`
-    shortcode and the fields of the comment form ([#21](https://github.com/rustpress-cms/rustpress/pull/21) to
-    [#26](https://github.com/rustpress-cms/rustpress/pull/26)).
+    shortcode, the fields of the comment form and the fields on the edit screens of comments and posts
+    ([#21](https://github.com/rustpress-cms/rustpress/pull/21) to [#28](https://github.com/rustpress-cms/rustpress/pull/28)).
 - The project website in English and German ([#13](https://github.com/rustpress-cms/rustpress/pull/13)) and
   `AGENTS.md` for contributors and coding agents ([#15](https://github.com/rustpress-cms/rustpress/pull/15)).
 - The compatibility reports, `compat/known.toml` and the project plan are in English.
