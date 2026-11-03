@@ -213,6 +213,75 @@ impl Rest<'_> {
         Ok(fields.into_iter().filter(|(k, _)| self.field_included(k)).collect())
     }
 
+    /// The schemas of the plugins' fields (`register_rest_field()`) at the end of `schema.properties` and of the
+    /// arguments of the endpoints that write (`get_endpoint_args_for_item_schema()`, with `required: false`).
+    pub(crate) async fn add_plugin_schema(&self, data: &mut Value) -> Result<()> {
+        if self.site.plugins.is_empty() {
+            return Ok(());
+        }
+        let services = rustpress_theme::head::Services::new(self.theme, self.site, &self.blank, self.registry);
+        let (route, query_string) = self.route.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        let earlier = self.earlier_routes.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        let included = |field: &str| self.field_included(field);
+        let ctx = rustpress_core::native::RestFieldContext { site: self.site, query: &self.blank, services: &services, route: &route, method: self.method(), query_string: &query_string, earlier_routes: &earlier, field_included: &included };
+        let fields = self.site.plugins.rest_schema_fields(&ctx).await?;
+        if fields.is_empty() {
+            return Ok(());
+        }
+        // At the end of the posts controller's part: the media controller adds its own properties after it. In the
+        // preloads of a screen the field comes with the first request, after the routes were registered: the schema
+        // gets it at its end, the arguments never.
+        let preload = self.admin;
+        let put = |map: &mut Map<String, Value>, fields: &[(String, Value)]| {
+            let after = if !preload && map.contains_key("alt_text") && map.contains_key("template") { Some("template") } else { None };
+            let Some(after) = after else {
+                for (name, value) in fields {
+                    map.insert(name.clone(), value.clone());
+                }
+                return;
+            };
+            let mut rebuilt = Map::new();
+            for (key, value) in std::mem::take(map) {
+                let is_after = key == after;
+                rebuilt.insert(key, value);
+                if is_after {
+                    for (name, value) in fields {
+                        rebuilt.insert(name.clone(), value.clone());
+                    }
+                }
+            }
+            *map = rebuilt;
+        };
+        if let Some(Value::Object(properties)) = data.get_mut("schema").and_then(|s| s.get_mut("properties")) {
+            put(properties, &fields);
+        }
+        if preload {
+            return Ok(());
+        }
+        if let Some(Value::Array(endpoints)) = data.get_mut("endpoints") {
+            for endpoint in endpoints {
+                let writes = endpoint.get("methods").and_then(Value::as_array).is_some_and(|m| m.iter().any(|m| matches!(m.as_str(), Some("POST" | "PUT" | "PATCH"))));
+                if !writes {
+                    continue;
+                }
+                if let Some(Value::Object(args)) = endpoint.get_mut("args") {
+                    let with_required: Vec<(String, Value)> = fields
+                        .iter()
+                        .map(|(name, schema)| {
+                            let mut arg = schema.clone();
+                            if let Value::Object(map) = &mut arg {
+                                map.insert("required".into(), Value::Bool(false));
+                            }
+                            (name.clone(), arg)
+                        })
+                        .collect();
+                    put(args, &with_required);
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Adds the links of the plugins (`rest_prepare_{$type}`) to the `_links` of an object, before the `curies`.
     pub(crate) async fn add_plugin_links(&self, object: rustpress_core::native::RestObject<'_>, data: &mut Map<String, Value>) -> Result<()> {
         if self.site.plugins.is_empty() {
