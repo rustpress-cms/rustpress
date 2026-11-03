@@ -1,0 +1,54 @@
+			<script type="text/javascript">
+				(function($){
+
+					// Displays a modal comparing local changes.
+					function reviewSync( props ) {
+						var modal = acf.newModal({
+							title: acf.__('Review local JSON changes'),
+							content: '<p class="acf-modal-feedback"><i class="acf-loading"></i> ' + acf.__('Loading diff') + '</p>',
+							toolbar: '<a href="' + props.href + '" class="button button-primary button-sync-changes disabled">' + acf.__('Sync changes') + '</a>',
+						});
+
+						// Call AJAX.
+						var xhr = $.ajax({
+							url: acf.get('ajaxurl'),
+							method: 'POST',
+							dataType: 'json',
+							data: acf.prepareForAjax({
+								action:	'acf/ajax/local_json_diff',
+								id: props.id
+							})
+						})
+							.done(function( data, textStatus, jqXHR ) {
+								modal.content( data.html );
+								modal.$('.button-sync-changes').removeClass('disabled');
+							})
+							.fail(function( jqXHR, textStatus, errorThrown ) {
+								if( error = acf.getXhrError(jqXHR) ) {
+									modal.content( '<p class="acf-modal-feedback error">' + error + '</p>' );
+								}
+							});
+					}
+
+					$ (document ).on( 'ready', function( e ) {
+						if ( ! acf.get( 'is_pro' ) || acf.get( 'isLicenseActive' ) || acf.get( 'isLicenseExpired' ) ) {
+							return;
+						}
+
+						$( '.acf-has-block-location .column-title strong' )
+							.addClass( 'acf-js-tooltip' )
+							.attr( 'title', acf.__( 'Field groups for blocks cannot be edited without a license.', 'acf' ) );
+
+						$( '.acf-admin-options-pages .column-title strong' )
+							.addClass( 'acf-js-tooltip' )
+							.attr( 'title', acf.__( 'Options pages cannot be edited without a license.', 'acf' ) );
+					} );
+
+					// Add event listener.
+					$(document).on('click', 'a[data-event="review-sync"]', function( e ){
+						e.preventDefault();
+						reviewSync( $(this).data() );
+					});
+				})(jQuery);
+			</script>
+			

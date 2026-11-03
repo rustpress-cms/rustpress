@@ -230,6 +230,8 @@ impl Ctx<'_> {
             block_editor: false,
             taxonomy: None,
             edited_term: None,
+            screen_id: "",
+            typenow: "",
         }
     }
 
@@ -638,6 +640,25 @@ pub async fn render(ctx: &Ctx<'_>, screen: &Screen, content: &str, assets: &Asse
     plugin_ctx.block_editor = screen.block_editor;
     plugin_ctx.taxonomy = screen.taxonomy.as_deref();
     plugin_ctx.edited_term = screen.edited_term.as_ref();
+    let screen_id = screen.screen_id();
+    let typenow = screen.typenow();
+    plugin_ctx.screen_id = &screen_id;
+    plugin_ctx.typenow = &typenow;
+    // The help plugins add on `current_screen` comes before the screen's own tabs.
+    let mut screen = screen.clone();
+    if !env.site.plugins.is_empty() {
+        let parent_file = if screen.parent_file.is_empty() { screen.file.clone() } else { screen.parent_file.clone() };
+        screen.parent_file = env.site.plugins.parent_file(&plugin_ctx, parent_file);
+        let submenu_file = screen.submenu_file.clone().unwrap_or_else(|| screen.file.clone());
+        screen.submenu_file = Some(env.site.plugins.submenu_file(&plugin_ctx, submenu_file));
+    }
+    if let Some(help) = env.site.plugins.screen_help(&plugin_ctx) {
+        let own = screen.help.take().unwrap_or_default();
+        let mut tabs: Vec<crate::chrome::HelpTab> = help.tabs.into_iter().map(|tab| crate::chrome::HelpTab { id: tab.id, title: tab.title, content: tab.content }).collect();
+        tabs.extend(own.tabs);
+        screen.help = Some(crate::chrome::Help { tabs, sidebar: if own.sidebar.is_empty() { help.sidebar } else { own.sidebar } });
+    }
+    let screen = &screen;
     let plugin_assets = env.site.plugins.admin_assets(&plugin_ctx);
     let notices = env.site.plugins.admin_notices(&plugin_ctx).await.unwrap_or_else(|e| {
         tracing::error!(error = %e, "plugin notices failed");
@@ -670,6 +691,11 @@ pub async fn render(ctx: &Ctx<'_>, screen: &Screen, content: &str, assets: &Asse
     // `admin_notices` comes before `options-head.php`.
     assets.notices = format!("{notices}{}", assets.notices);
     assets.footer_text = env.site.plugins.admin_footer_text(&plugin_ctx);
+    assets.update_footer = env.site.plugins.update_footer(&plugin_ctx);
+    assets.admin_header = env.site.plugins.in_admin_header(&plugin_ctx).await.unwrap_or_else(|e| {
+        tracing::error!(error = %e, "plugin in_admin_header failed");
+        String::new()
+    });
     assets.plugin_body_classes = env.site.plugins.admin_body_class(&plugin_ctx);
     // The stylesheets of the plugins: one WordPress registers joins the styles of the screen; a plugin's own comes after
     // its dependencies among the plugins' stylesheets, those of priority 10 before the emoji styles, later ones after.

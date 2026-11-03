@@ -293,11 +293,10 @@ pub fn build(site: &Site, can_upload: bool, groups: &[&FieldGroup]) -> Json {
     json!({"description": "ACF field data", "type": "object", "properties": properties})
 }
 
-/// `ACF_Rest_Api::object_type_has_field_group()`: a group belongs to an object type when a rule group has a rule of
-/// that type – for posts a `post_type` rule that fits the post type, for terms a `taxonomy` rule that fits the
-/// taxonomy, for users and comments any of their rules.
-pub fn object_type_has_field_group(group: &FieldGroup, object_type: &str, sub_type: &str) -> bool {
-    let object_type_of = |param: &str| match param {
+/// `acf_get_location_rule( $param )->get_object_type()`: the `$object_type` of ACF's location types (free), empty
+/// for the others.
+pub(super) fn object_type_of(param: &str) -> &'static str {
+    match param {
         "attachment" => "attachment",
         "comment" => "comment",
         "nav_menu_item" => "menu_item",
@@ -307,7 +306,13 @@ pub fn object_type_has_field_group(group: &FieldGroup, object_type: &str, sub_ty
         "user_form" | "user_role" => "user",
         "widget" => "widget",
         _ => "",
-    };
+    }
+}
+
+/// `ACF_Rest_Api::object_type_has_field_group()`: a group belongs to an object type when a rule group has a rule of
+/// that type – for posts a `post_type` rule that fits the post type, for terms a `taxonomy` rule that fits the
+/// taxonomy, for users and comments any of their rules.
+pub fn object_type_has_field_group(group: &FieldGroup, object_type: &str, sub_type: &str) -> bool {
     group.location.iter().any(|rules| {
         let mut matched = false;
         for rule in rules {

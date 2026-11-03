@@ -210,19 +210,7 @@ pub async fn load(db: &Db) -> Result<Vec<FieldGroup>> {
         .iter()
         .map(|post| {
             let settings = rustpress_core::options::maybe_unserialize(&post.content);
-            let location = match settings.get("location") {
-                Some(Value::Array(groups)) => groups
-                    .iter()
-                    .map(|(_, rules)| match rules {
-                        Value::Array(rules) => rules
-                            .iter()
-                            .map(|(_, rule)| Rule { param: strval(rule.get("param")), operator: strval(rule.get("operator")), value: rule.get("value").cloned().unwrap_or(Value::Null) })
-                            .collect(),
-                        _ => Vec::new(),
-                    })
-                    .collect(),
-                _ => Vec::new(),
-            };
+            let location = parse_location(&settings);
             FieldGroup {
                 id: post.id,
                 key: post.name.clone(),
@@ -235,6 +223,20 @@ pub async fn load(db: &Db) -> Result<Vec<FieldGroup>> {
             }
         })
         .collect())
+}
+
+/// The `location` of a field group's settings: groups of rules.
+pub(super) fn parse_location(settings: &Value) -> Vec<Vec<Rule>> {
+    match settings.get("location") {
+        Some(Value::Array(groups)) => groups
+            .iter()
+            .map(|(_, rules)| match rules {
+                Value::Array(rules) => rules.iter().map(|(_, rule)| Rule { param: strval(rule.get("param")), operator: strval(rule.get("operator")), value: rule.get("value").cloned().unwrap_or(Value::Null) }).collect(),
+                _ => Vec::new(),
+            })
+            .collect(),
+        _ => Vec::new(),
+    }
 }
 
 /// What `acf_get_field_groups( $args )` matches against (the "screen").
@@ -250,6 +252,8 @@ pub enum Screen<'a> {
     Comment { post_type: String },
     /// `[ 'attachment_id' => $id, 'attachment' => $id ]`.
     Attachment { post: &'a Post },
+    /// `[ 'post_type' => $post_type ]` without a post (the "Field Groups" column of ACF's post types).
+    PostType { post_type: &'a str },
 }
 
 /// The request around a match: the database, the site and the signed-in user.
@@ -346,7 +350,7 @@ async fn match_rule(rule: &Rule, screen: &Screen<'_>, ctx: &MatchContext<'_>) ->
     let rule_value = strval(Some(&rule.value));
     Ok(match rule.param.as_str() {
         "post_type" => match screen {
-            Screen::Post { post_type: Some(post_type), .. } => compare(&string(post_type), rule),
+            Screen::Post { post_type: Some(post_type), .. } | Screen::PostType { post_type } => compare(&string(post_type), rule),
             Screen::Post { post, .. } => compare(&string(&post.post_type), rule),
             _ => false,
         },
@@ -405,6 +409,14 @@ async fn match_rule(rule: &Rule, screen: &Screen<'_>, ctx: &MatchContext<'_>) ->
                 } else {
                     let template = db.acf_meta(MetaKind::Post, post.id, "_wp_page_template").await?.unwrap_or_default();
                     compare(&string(if template.is_empty() { "default" } else { &template }), rule)
+                }
+            }
+            // No post: its template is "default".
+            Screen::PostType { post_type } => {
+                if (rule.param == "page_template" && rule_value == "default" && *post_type != "page") || !has_templates(post_type) {
+                    false
+                } else {
+                    compare(&string("default"), rule)
                 }
             }
             _ => false,

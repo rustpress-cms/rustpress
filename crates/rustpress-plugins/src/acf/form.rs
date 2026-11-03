@@ -149,6 +149,9 @@ pub struct FormData {
     pub postboxes: Option<Json>,
     /// `acf_is_block_editor()`.
     pub block_editor: bool,
+    /// Only `acf` was enqueued (`acf_enqueue_script( 'acf' )` of ACF's lists), not the inputs: no data of the field
+    /// types.
+    pub bare: bool,
 }
 
 /// When `acf_enqueue_uploader()` ran, which decides where its `toolbars` are in `acf.data`.
@@ -178,7 +181,6 @@ pub(super) fn footer(site: &Site, form: &FormData, wp_version: &str, nonce: &str
 /// [`footer`] with what `acf/input/admin_footer` prints between `acf.data` and `acf.doAction( 'prepare' )`.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn footer_with(site: &Site, form: &FormData, wp_version: &str, nonce: &str, user_agent: Option<&str>, can: &(dyn Fn(&str) -> bool + Send + Sync), uploader: Uploader, input_footer: &str) -> String {
-    let locale = site.locale_data();
     let mut data = Map::new();
     if let Some(postboxes) = &form.postboxes {
         data.insert("postboxes".into(), postboxes.clone());
@@ -186,6 +188,36 @@ pub(super) fn footer_with(site: &Site, form: &FormData, wp_version: &str, nonce:
     if uploader == Uploader::Enqueue {
         data.insert("toolbars".into(), toolbars());
     }
+    if !form.bare {
+        field_type_data(site, can, &mut data);
+    }
+    // `acf_field_wysiwyg::acf_enqueue_uploader()` on `acf/enqueue_uploader`: the toolbars of the editors.
+    if uploader == Uploader::Render {
+        data.insert("toolbars".into(), toolbars());
+    }
+    data.insert("admin_url".into(), Json::String(format!("{}/", site.site_url("wp-admin"))));
+    data.insert("ajaxurl".into(), Json::String(site.site_url("wp-admin/admin-ajax.php")));
+    data.insert("nonce".into(), Json::String(nonce.to_owned()));
+    data.insert("acf_version".into(), Json::String(super::VERSION.to_owned()));
+    data.insert("wp_version".into(), Json::String(wp_version.to_owned()));
+    data.insert("browser".into(), Json::String(browser(user_agent).to_owned()));
+    data.insert("locale".into(), Json::String(acf_locale(site)));
+    data.insert("rtl".into(), Json::Bool(site.is_rtl()));
+    data.insert("screen".into(), form.screen.clone());
+    data.insert("post_id".into(), form.post_id.clone());
+    data.insert("validation".into(), form.validation.clone());
+    data.insert("editor".into(), Json::String(if form.block_editor { "block" } else { "classic" }.into()));
+    data.insert("is_pro".into(), Json::Bool(false));
+    data.insert("debug".into(), Json::Bool(false));
+    data.insert("StrictMode".into(), Json::Bool(false));
+    let json = rustpress_blocks::php_json::encode_with(&Json::Object(data), rustpress_blocks::php_json::Flags { unescaped_slashes: false, unescaped_unicode: false });
+    format!("<script>\nacf.data = {json};\n</script>\n{input_footer}<script>\nacf.doAction( 'prepare' );\n</script>\n")
+}
+
+/// What the field types localize on `acf/input/admin_enqueue_scripts`: the texts of Select2, the pickers and the
+/// Google Map, the icons and the MIME types.
+fn field_type_data(site: &Site, can: &(dyn Fn(&str) -> bool + Send + Sync), data: &mut Map<String, Json>) {
+    let locale = site.locale_data();
     let select2 = [
         ("matches_1", "One result is available, press enter to select it."),
         ("matches_n", "%d results are available, use up and down arrow keys to navigate."),
@@ -251,27 +283,6 @@ pub(super) fn footer_with(site: &Site, form: &FormData, wp_version: &str, nonce:
     data.insert("mimeTypeIcon".into(), Json::String(site.site_url("wp-includes/images/media/default.png")));
     let mimes = rustpress_content::media::allowed_mime_types_for(site, &[], can, false, false);
     data.insert("mimeTypes".into(), Json::Object(mimes.into_iter().map(|(k, v)| (k, Json::String(v))).collect()));
-    // `acf_field_wysiwyg::acf_enqueue_uploader()` on `acf/enqueue_uploader`: the toolbars of the editors.
-    if uploader == Uploader::Render {
-        data.insert("toolbars".into(), toolbars());
-    }
-    data.insert("admin_url".into(), Json::String(format!("{}/", site.site_url("wp-admin"))));
-    data.insert("ajaxurl".into(), Json::String(site.site_url("wp-admin/admin-ajax.php")));
-    data.insert("nonce".into(), Json::String(nonce.to_owned()));
-    data.insert("acf_version".into(), Json::String(super::VERSION.to_owned()));
-    data.insert("wp_version".into(), Json::String(wp_version.to_owned()));
-    data.insert("browser".into(), Json::String(browser(user_agent).to_owned()));
-    data.insert("locale".into(), Json::String(acf_locale(site)));
-    data.insert("rtl".into(), Json::Bool(site.is_rtl()));
-    data.insert("screen".into(), form.screen.clone());
-    data.insert("post_id".into(), form.post_id.clone());
-    data.insert("validation".into(), form.validation.clone());
-    data.insert("editor".into(), Json::String(if form.block_editor { "block" } else { "classic" }.into()));
-    data.insert("is_pro".into(), Json::Bool(false));
-    data.insert("debug".into(), Json::Bool(false));
-    data.insert("StrictMode".into(), Json::Bool(false));
-    let json = rustpress_blocks::php_json::encode_with(&Json::Object(data), rustpress_blocks::php_json::Flags { unescaped_slashes: false, unescaped_unicode: false });
-    format!("<script>\nacf.data = {json};\n</script>\n{input_footer}<script>\nacf.doAction( 'prepare' );\n</script>\n")
 }
 
 /// `acf_form_data()`: the hidden inputs ACF reads when the form is sent.
