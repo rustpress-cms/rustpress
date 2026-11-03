@@ -195,6 +195,8 @@ pub struct AdminTaxonomy {
     pub object_types: Vec<String>,
     pub show_ui: bool,
     pub show_in_menu: bool,
+    /// `meta_box_cb` is not `false` (or a PHP callback RustPress cannot run): the classic editor shows its box.
+    pub meta_box: bool,
     pub labels: Vec<(String, String)>,
 }
 
@@ -323,7 +325,7 @@ impl Types {
             .map(|r| {
                 let public = flag(&r.args, "public", true);
                 let show_ui = flag(&r.args, "show_ui", public);
-                AdminTaxonomy { name: r.name.clone(), object_types: r.object_types.clone(), show_ui, show_in_menu: flag(&r.args, "show_in_menu", show_ui), labels: labels_of(&r.args) }
+                AdminTaxonomy { name: r.name.clone(), object_types: r.object_types.clone(), show_ui, show_in_menu: flag(&r.args, "show_in_menu", show_ui), meta_box: !matches!(r.args.get("meta_box_cb"), Some(Lit::Bool(false) | Lit::Unknown)), labels: labels_of(&r.args) }
             })
             .collect()
     }
@@ -437,8 +439,13 @@ impl Types {
             if !matches!(args, Lit::Array(_)) {
                 continue;
             }
-            // Without rewrite rules (plain permalinks) nothing could be inferred: the registration is all there is.
-            if create_missing {
+            // Without rewrite rules (plain permalinks) nothing could be inferred: the registration is all there is. A
+            // type that is not publicly queryable has no rules to be found by in any case.
+            let queryable = match args.get("publicly_queryable") {
+                Some(value) => value.truthy().unwrap_or(true),
+                None => args.get("public").is_some_and(|v| v.truthy().unwrap_or(true)),
+            };
+            if create_missing || (!reg.taxonomy && !queryable) {
                 let slug = match args.get("rewrite") {
                     Some(rewrite) => rewrite.get("slug").and_then(Lit::as_str).map(str::to_owned).unwrap_or_else(|| reg.name.clone()),
                     None => reg.name.clone(),
@@ -568,6 +575,12 @@ impl Types {
 
     pub fn post_type(&self, name: &str) -> Option<&PostTypeInfo> {
         self.post_types.iter().find(|t| t.name == name)
+    }
+
+    /// A post type of the site, also one that cannot be requested on the frontend (`get_post_type_object()` for the
+    /// administration).
+    pub fn any_post_type(&self, name: &str) -> Option<&PostTypeInfo> {
+        self.post_type(name).or_else(|| self.rewrite_post_types.iter().find(|t| t.name == name))
     }
 
     pub fn taxonomy(&self, name: &str) -> Option<&TaxonomyInfo> {

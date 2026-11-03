@@ -87,7 +87,13 @@ pub fn type_info(ctx: &Ctx<'_>, name: &str) -> Option<TypeInfo> {
                 },
             })
         }
-        other => site.types.post_type(other).filter(|t| t.public || t.queryable).map(|t| TypeInfo { name: other.to_owned(), hierarchical: t.hierarchical, label: t.plural_label(), singular: t.singular_label(), labels: ListLabels::defaults(ctx, t.hierarchical) }),
+        // `show_ui` decides, which follows `public` unless the registration says otherwise; a type that is not publicly
+        // queryable is only among the registered ones.
+        other => site
+            .types
+            .any_post_type(other)
+            .filter(|t| t.public || t.queryable || site.types.admin_post_types().iter().any(|a| a.name == other && a.show_ui))
+            .map(|t| TypeInfo { name: other.to_owned(), hierarchical: t.hierarchical, label: t.plural_label(), singular: t.singular_label(), labels: ListLabels::defaults(ctx, t.hierarchical) }),
     }
 }
 

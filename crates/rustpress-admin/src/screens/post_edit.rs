@@ -405,9 +405,16 @@ async fn register_meta_boxes(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, is_new
         let current = db.terms_for_post(post.id, Some("post_format")).await.unwrap_or_default().first().and_then(|t| t.slug.strip_prefix("post-format-").map(str::to_owned)).unwrap_or_else(|| "0".to_owned());
         boxes.push(MetaBox::new("formatdiv", &site.trx("Format", "post format"), "side", "core", post_format_box(ctx, &formats, &current)));
     }
-    if info.name == "post" {
-        boxes.push(MetaBox::new("categorydiv", &tr("Categories"), "side", "core", category_box(ctx, post).await));
-        boxes.push(MetaBox::new("tagsdiv-post_tag", &tr("Tags"), "side", "core", tags_box(ctx, post).await));
+    // `register_and_do_post_meta_boxes()`: a box per taxonomy, `{$taxonomy}div` or `tagsdiv-{$taxonomy}`.
+    for tax in tax_boxes(ctx, &info.name) {
+        let title = tax.label(ctx, "name", "Categories", "Tags");
+        if tax.hierarchical {
+            let html = category_box(ctx, post, &tax).await;
+            boxes.push(MetaBox::new(&format!("{}div", tax.name), &title, "side", "core", html));
+        } else {
+            let html = tags_box(ctx, post, &tax).await;
+            boxes.push(MetaBox::new(&format!("tagsdiv-{}", tax.name), &title, "side", "core", html));
+        }
     }
     if supports("page-attributes") || !super::inline_edit::page_templates(ctx, info).is_empty() {
         let label = if info.name == "page" { tr("Page Attributes") } else { tr("Post Attributes") };
@@ -505,24 +512,26 @@ async fn comments_box(ctx: &Ctx<'_>, post: &Post) -> String {
 }
 
 /// `wp_terms_checklist()`: the category boxes.
-async fn category_box(ctx: &Ctx<'_>, post: &Post) -> String {
+async fn category_box(ctx: &Ctx<'_>, post: &Post, tax: &TaxBox) -> String {
     let tr = |s: &str| ctx.tr(s);
     let db = ctx.env.db;
-    let terms = db.terms("category").await.unwrap_or_default();
+    let name = tax.name.as_str();
+    let terms = db.terms(name).await.unwrap_or_default();
     // A new post has no category yet; the default one is given when it is saved.
-    let selected: Vec<u64> = if post.id != 0 { db.terms_for_post(post.id, Some("category")).await.unwrap_or_default().into_iter().map(|t| t.term_id).collect() } else { Vec::new() };
+    let selected: Vec<u64> = if post.id != 0 { db.terms_for_post(post.id, Some(name)).await.unwrap_or_default().into_iter().map(|t| t.term_id).collect() } else { Vec::new() };
     let assigned = selected.clone();
-    let mut popular: Vec<&rustpress_db::Term> = terms.iter().filter(|t| t.count > 0).collect();
-    popular.sort_by(|a, b| b.count.cmp(&a.count).then(a.name.cmp(&b.name)));
-    popular.truncate(10);
+    // `wp_popular_terms_checklist()`: the ten most used, in the order of the database.
+    let popular_terms = db.popular_terms(name, 10).await.unwrap_or_default();
+    let popular: Vec<&rustpress_db::Term> = popular_terms.iter().collect();
     let popular_ids: Vec<u64> = popular.iter().map(|t| t.term_id).collect();
     let item = |t: &rustpress_db::Term, checked: bool| {
         let class = if popular_ids.contains(&t.term_id) { " class=\"popular-category\"" } else { "" };
         format!(
-            "<li id='in-category-{id}-1'{class}><label class=\"selectit\"><input value=\"{id}\" type=\"checkbox\" name=\"post_category[]\" id=\"in-category-{id}-2\"{} /> {}</label>",
+            "<li id='in-{name}-{id}-1'{class}><label class=\"selectit\"><input value=\"{id}\" type=\"checkbox\" name=\"{input}[]\" id=\"in-{name}-{id}-2\"{} /> {}</label>",
             if checked { " checked='checked'" } else { "" },
             esc_html(&t.name),
-            id = t.term_id
+            id = t.term_id,
+            input = tax.input_name()
         )
     };
     fn tree(terms: &[rustpress_db::Term], parent: u64, selected: &[u64], item: &dyn Fn(&rustpress_db::Term, bool) -> String, skip: &[u64], out: &mut String) {
@@ -550,16 +559,47 @@ async fn category_box(ctx: &Ctx<'_>, post: &Post) -> String {
     }
     let skip: Vec<u64> = checked_terms.iter().map(|t| t.term_id).collect();
     tree(&terms, 0, &selected, &item, &skip, &mut list);
+    // `Walker::walk()`: the terms whose parent was not shown (it is checked, on top) come last, flat, grouped by
+    // their parent in the order the parents first appear.
+    let shown = |t: &rustpress_db::Term| {
+        let mut parent = t.parent;
+        loop {
+            if parent == 0 {
+                return true;
+            }
+            if skip.contains(&parent) {
+                return false;
+            }
+            match terms.iter().find(|p| p.term_id == parent) {
+                Some(p) => parent = p.parent,
+                None => return false,
+            }
+        }
+    };
+    let orphans: Vec<&rustpress_db::Term> = terms.iter().filter(|t| !skip.contains(&t.term_id) && !shown(t)).collect();
+    let mut parents: Vec<u64> = Vec::new();
+    for term in &orphans {
+        if !parents.contains(&term.parent) {
+            parents.push(term.parent);
+        }
+    }
+    for parent in parents {
+        for term in orphans.iter().filter(|t| t.parent == parent) {
+            list.push('\n');
+            list.push_str(&item(term, selected.contains(&term.term_id)));
+            list.push_str("</li>\n");
+        }
+    }
     let mut pop = String::new();
     for term in &popular {
         pop.push_str(&format!(
-            "\n\t\t<li id=\"popular-category-{id}\" class=\"popular-category\">\n\t\t\t<label class=\"selectit\">\n\t\t\t\t<input id=\"in-popular-category-{id}\" type=\"checkbox\"{} value=\"{id}\"  />\n\t\t\t\t{}\t\t\t</label>\n\t\t</li>\n\n\t\t",
+            "\n\t\t<li id=\"popular-{name}-{id}\" class=\"popular-category\">\n\t\t\t<label class=\"selectit\">\n\t\t\t\t<input id=\"in-popular-{name}-{id}\" type=\"checkbox\"{} value=\"{id}\"  />\n\t\t\t\t{}\t\t\t</label>\n\t\t</li>\n\n\t\t",
             if assigned.contains(&term.term_id) { " checked=\"checked\"" } else { " " },
             esc_html(&term.name),
             id = term.term_id
         ));
     }
-    let mut parent_options = String::from("\t<option value='-1'>&mdash; Parent Category &mdash;</option>\n");
+    let mut parent_options = format!("\t<option value='-1'>&mdash; {} &mdash;</option>\n", tax.label(ctx, "parent_item", "Parent Category", "Parent Category"));
     fn parent_tree(terms: &[rustpress_db::Term], parent: u64, level: usize, out: &mut String) {
         let mut children: Vec<&rustpress_db::Term> = terms.iter().filter(|t| t.parent == parent).collect();
         children.sort_by_key(|t| t.name.to_lowercase());
@@ -570,40 +610,85 @@ async fn category_box(ctx: &Ctx<'_>, post: &Post) -> String {
     }
     parent_tree(&terms, 0, 0, &mut parent_options);
     let adder = if ctx.can("manage_categories") {
+        let add_new = tax.label(ctx, "add_new_item", "Add Category", "Add Tag");
         format!(
-            "\t\t\t<div id=\"category-adder\" class=\"wp-hidden-children\">\n\t\t\t\t<a id=\"category-add-toggle\" href=\"#category-add\" class=\"hide-if-no-js taxonomy-add-new\">\n\t\t\t\t\t+ {}\t\t\t\t</a>\n\t\t\t\t<p id=\"category-add\" class=\"category-add wp-hidden-child\">\n\t\t\t\t\t<label class=\"screen-reader-text\" for=\"newcategory\">{}</label>\n\t\t\t\t\t<input type=\"text\" name=\"newcategory\" id=\"newcategory\" class=\"form-required form-input-tip\" value=\"{}\" aria-required=\"true\" />\n\t\t\t\t\t<label class=\"screen-reader-text\" for=\"newcategory_parent\">\n\t\t\t\t\t\t{}\t\t\t\t\t</label>\n\t\t\t\t\t<select  name='newcategory_parent' id='newcategory_parent' class='postform'>\n{parent_options}</select>\n\t\t\t\t\t<input type=\"button\" id=\"category-add-submit\" data-wp-lists=\"add:categorychecklist:category-add\" class=\"button category-add-submit\" value=\"{}\" />\n\t\t\t\t\t<input type=\"hidden\" id=\"_ajax_nonce-add-category\" name=\"_ajax_nonce-add-category\" value=\"{}\" />\t\t\t\t\t<span id=\"category-ajax-response\"></span>\n\t\t\t\t</p>\n\t\t\t</div>\n\t\t",
-            tr("Add Category"),
-            tr("Add Category"),
-            tr("New Category Name"),
-            tr("Parent Category:"),
-            tr("Add Category"),
-            ctx.create_nonce("add-category")
+            "\t\t\t<div id=\"{name}-adder\" class=\"wp-hidden-children\">\n\t\t\t\t<a id=\"{name}-add-toggle\" href=\"#{name}-add\" class=\"hide-if-no-js taxonomy-add-new\">\n\t\t\t\t\t+ {add_new}\t\t\t\t</a>\n\t\t\t\t<p id=\"{name}-add\" class=\"category-add wp-hidden-child\">\n\t\t\t\t\t<label class=\"screen-reader-text\" for=\"new{name}\">{add_new}</label>\n\t\t\t\t\t<input type=\"text\" name=\"new{name}\" id=\"new{name}\" class=\"form-required form-input-tip\" value=\"{}\" aria-required=\"true\" />\n\t\t\t\t\t<label class=\"screen-reader-text\" for=\"new{name}_parent\">\n\t\t\t\t\t\t{}\t\t\t\t\t</label>\n\t\t\t\t\t<select  name='new{name}_parent' id='new{name}_parent' class='postform'>\n{parent_options}</select>\n\t\t\t\t\t<input type=\"button\" id=\"{name}-add-submit\" data-wp-lists=\"add:{name}checklist:{name}-add\" class=\"button category-add-submit\" value=\"{add_new}\" />\n\t\t\t\t\t<input type=\"hidden\" id=\"_ajax_nonce-add-{name}\" name=\"_ajax_nonce-add-{name}\" value=\"{}\" />\t\t\t\t\t<span id=\"{name}-ajax-response\"></span>\n\t\t\t\t</p>\n\t\t\t</div>\n\t\t",
+            esc_attr(&tax.label(ctx, "new_item_name", "New Category Name", "New Tag Name")),
+            tax.label(ctx, "parent_item_colon", "Parent Category:", "Parent Category:"),
+            ctx.create_nonce(&format!("add-{name}"))
         )
     } else {
         String::new()
     };
     let inner = format!(
-        "\t<div id=\"taxonomy-category\" class=\"categorydiv\">\n\t\t<ul id=\"category-tabs\" class=\"category-tabs\" role=\"tablist\">\n\t\t\t<li class=\"tabs\"><a href=\"#category-all\" role=\"tab\" aria-selected=\"true\" aria-controls=\"category-all\">{}</a></li>\n\t\t\t<li class=\"hide-if-no-js\"><a href=\"#category-pop\" role=\"tab\" aria-controls=\"category-pop\">{}</a></li>\n\t\t</ul>\n\n\t\t<div id=\"category-pop\" class=\"tabs-panel\" style=\"display: none;\" role=\"tabpanel\">\n\t\t\t<ul id=\"categorychecklist-pop\" class=\"categorychecklist form-no-clear\" >\n\t\t\t\t{pop}\t\t\t</ul>\n\t\t</div>\n\n\t\t<div id=\"category-all\" class=\"tabs-panel\" role=\"tabpanel\">\n\t\t\t<input type='hidden' name='post_category[]' value='0' />\t\t\t<ul id=\"categorychecklist\" data-wp-lists=\"list:category\" class=\"categorychecklist form-no-clear\">\n\t\t\t\t{list}\t\t\t</ul>\n\t\t</div>\n\t{adder}\t</div>\n\t",
-        tr("All Categories"),
-        tr("Most Used")
+        "\t<div id=\"taxonomy-{name}\" class=\"categorydiv\">\n\t\t<ul id=\"{name}-tabs\" class=\"category-tabs\" role=\"tablist\">\n\t\t\t<li class=\"tabs\"><a href=\"#{name}-all\" role=\"tab\" aria-selected=\"true\" aria-controls=\"{name}-all\">{}</a></li>\n\t\t\t<li class=\"hide-if-no-js\"><a href=\"#{name}-pop\" role=\"tab\" aria-controls=\"{name}-pop\">{}</a></li>\n\t\t</ul>\n\n\t\t<div id=\"{name}-pop\" class=\"tabs-panel\" style=\"display: none;\" role=\"tabpanel\">\n\t\t\t<ul id=\"{name}checklist-pop\" class=\"categorychecklist form-no-clear\" >\n\t\t\t\t{pop}\t\t\t</ul>\n\t\t</div>\n\n\t\t<div id=\"{name}-all\" class=\"tabs-panel\" role=\"tabpanel\">\n\t\t\t<input type='hidden' name='{input}[]' value='0' />\t\t\t<ul id=\"{name}checklist\" data-wp-lists=\"list:{name}\" class=\"categorychecklist form-no-clear\">\n\t\t\t\t{list}\t\t\t</ul>\n\t\t</div>\n\t{adder}\t</div>\n\t",
+        tax.label(ctx, "all_items", "All Categories", "All Tags"),
+        tr("Most Used"),
+        input = tax.input_name()
     );
     inner
 }
 
+/// A taxonomy of the edited type with a box (`register_and_do_post_meta_boxes()`).
+pub struct TaxBox {
+    pub name: String,
+    pub hierarchical: bool,
+    /// The labels the registration gives (none for the built-in taxonomies).
+    pub labels: Vec<(String, String)>,
+}
+
+impl TaxBox {
+    /// `get_taxonomy_labels()`: the registration's label, else the default of categories or of tags.
+    pub fn label(&self, ctx: &Ctx<'_>, key: &str, hierarchical: &str, flat: &str) -> String {
+        let given = |k: &str| self.labels.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone()).filter(|v| !v.is_empty());
+        let name = given("name").or_else(|| given("label"));
+        let value = match key {
+            "all_items" => given("all_items").or_else(|| given("menu_name")).or(name),
+            other => given(other),
+        };
+        value.unwrap_or_else(|| ctx.tr(if self.hierarchical { hierarchical } else { flat }))
+    }
+
+    /// The name of the form field: `post_category` for categories, `tax_input[{$taxonomy}]` else.
+    fn input_name(&self) -> String {
+        if self.name == "category" { "post_category".to_owned() } else { format!("tax_input[{}]", self.name) }
+    }
+}
+
+/// `get_object_taxonomies( $post )` with a box: the built-in ones of posts, then the registered ones with `show_ui`
+/// and a `meta_box_cb`, in their order.
+pub fn tax_boxes(ctx: &Ctx<'_>, post_type: &str) -> Vec<TaxBox> {
+    let site = ctx.site();
+    let mut out = Vec::new();
+    if post_type == "post" {
+        out.push(TaxBox { name: "category".into(), hierarchical: true, labels: vec![("name".into(), site.tr("Categories")), ("all_items".into(), site.tr("All Categories"))] });
+        out.push(TaxBox { name: "post_tag".into(), hierarchical: false, labels: vec![("name".into(), site.tr("Tags")), ("all_items".into(), site.tr("All Tags"))] });
+    }
+    for tax in site.types.admin_taxonomies() {
+        if !tax.show_ui || !tax.object_types.iter().any(|t| t == post_type) || !tax.meta_box {
+            continue;
+        }
+        let hierarchical = site.types.taxonomy(&tax.name).is_some_and(|t| t.hierarchical);
+        out.push(TaxBox { name: tax.name.clone(), hierarchical, labels: tax.labels.clone() });
+    }
+    out
+}
+
 /// `post_tags_meta_box()`.
-async fn tags_box(ctx: &Ctx<'_>, post: &Post) -> String {
+async fn tags_box(ctx: &Ctx<'_>, post: &Post, tax: &TaxBox) -> String {
+    let name = tax.name.as_str();
     let tr = |s: &str| ctx.tr(s);
-    let tags = if post.id != 0 { ctx.env.db.terms_for_post(post.id, Some("post_tag")).await.unwrap_or_default() } else { Vec::new() };
+    let tags = if post.id != 0 { ctx.env.db.terms_for_post(post.id, Some(name)).await.unwrap_or_default() } else { Vec::new() };
     // `get_terms_to_edit()` joins with a plain comma; the box puts the delimiter of the language and a space.
     let names = esc_attr(&tags.iter().map(|t| t.name.clone()).collect::<Vec<_>>().join(",")).replace(',', &format!("{} ", ctx.site().trx(",", "tag delimiter")));
     let inner = format!(
-        "<div class=\"tagsdiv\" id=\"post_tag\">\n\t<div class=\"jaxtag\">\n\t<div class=\"nojs-tags hide-if-js\">\n\t\t<label for=\"tax-input-post_tag\">{}</label>\n\t\t<p><textarea name=\"tax_input[post_tag]\" rows=\"3\" cols=\"20\" class=\"the-tags\" id=\"tax-input-post_tag\"  aria-describedby=\"new-tag-post_tag-desc\">{}</textarea></p>\n\t</div>\n\t\t<div class=\"ajaxtag hide-if-no-js\">\n\t\t<label class=\"screen-reader-text\" for=\"new-tag-post_tag\">{}</label>\n\t\t<input data-wp-taxonomy=\"post_tag\" type=\"text\" id=\"new-tag-post_tag\" name=\"newtag[post_tag]\" class=\"newtag form-input-tip\" size=\"16\" autocomplete=\"off\" aria-describedby=\"new-tag-post_tag-desc\" value=\"\" />\n\t\t<input type=\"button\" class=\"button tagadd\" value=\"{}\" />\n\t</div>\n\t<p class=\"howto\" id=\"new-tag-post_tag-desc\">{}</p>\n\t\t</div>\n\t<ul class=\"tagchecklist\" role=\"list\"></ul>\n</div>\n\t<p class=\"hide-if-no-js\"><button type=\"button\" class=\"button-link tagcloud-link\" id=\"link-post_tag\" aria-expanded=\"false\">{}</button></p>\n\t",
-        tr("Add or remove tags"),
+        "<div class=\"tagsdiv\" id=\"{name}\">\n\t<div class=\"jaxtag\">\n\t<div class=\"nojs-tags hide-if-js\">\n\t\t<label for=\"tax-input-{name}\">{}</label>\n\t\t<p><textarea name=\"tax_input[{name}]\" rows=\"3\" cols=\"20\" class=\"the-tags\" id=\"tax-input-{name}\"  aria-describedby=\"new-tag-{name}-desc\">{}</textarea></p>\n\t</div>\n\t\t<div class=\"ajaxtag hide-if-no-js\">\n\t\t<label class=\"screen-reader-text\" for=\"new-tag-{name}\">{}</label>\n\t\t<input data-wp-taxonomy=\"{name}\" type=\"text\" id=\"new-tag-{name}\" name=\"newtag[{name}]\" class=\"newtag form-input-tip\" size=\"16\" autocomplete=\"off\" aria-describedby=\"new-tag-{name}-desc\" value=\"\" />\n\t\t<input type=\"button\" class=\"button tagadd\" value=\"{}\" />\n\t</div>\n\t<p class=\"howto\" id=\"new-tag-{name}-desc\">{}</p>\n\t\t</div>\n\t<ul class=\"tagchecklist\" role=\"list\"></ul>\n</div>\n\t<p class=\"hide-if-no-js\"><button type=\"button\" class=\"button-link tagcloud-link\" id=\"link-{name}\" aria-expanded=\"false\">{}</button></p>\n\t",
+        tax.label(ctx, "add_or_remove_items", "Add or remove categories", "Add or remove tags"),
         names,
-        tr("Add Tag"),
+        tax.label(ctx, "add_new_item", "Add Category", "Add Tag"),
         tr("Add"),
-        tr("Separate tags with commas"),
-        tr("Choose from the most used tags")
+        tax.label(ctx, "separate_items_with_commas", "Separate tags with commas", "Separate tags with commas"),
+        tax.label(ctx, "choose_from_most_used", "Choose from the most used tags", "Choose from the most used tags")
     );
     inner
 }
@@ -1358,6 +1443,23 @@ async fn edit_post(ctx: &Ctx<'_>, post_id: u64) -> AdminResponse {
         if request.form.iter().any(|(k, _)| k == "post_category[]") && ctx.can("manage_categories") || ctx.can("edit_posts") && request.form.iter().any(|(k, _)| k == "post_category[]") { Some(list) } else { None }
     };
     let tags: Option<Vec<String>> = field("tax_input[post_tag]").map(|raw| raw.split(',').map(|t| t.trim().to_owned()).filter(|t| !t.is_empty()).collect());
+    // `edit_post()` turns `tax_input` into terms with the taxonomy's `meta_box_sanitize_cb`: the IDs of the checkboxes,
+    // the names of the text input (`taxonomy_meta_box_sanitize_cb_input()`); `wp_insert_post()` drops the zeros.
+    let mut tax_input: Vec<(String, Vec<TermRef>)> = Vec::new();
+    for tax in tax_boxes(ctx, &info.name).into_iter().filter(|t| t.name != "category" && t.name != "post_tag") {
+        if tax.hierarchical {
+            let key = format!("tax_input[{}][]", tax.name);
+            if request.form.iter().any(|(k, _)| *k == key) {
+                let ids = request.form.iter().filter(|(k, _)| *k == key).filter_map(|(_, v)| v.trim().parse::<u64>().ok()).filter(|id| *id != 0).map(TermRef::Id).collect();
+                tax_input.push((tax.name.clone(), ids));
+            }
+        } else if let Some(raw) = field(&format!("tax_input[{}]", tax.name)) {
+            let comma = ctx.site().trx(",", "tag delimiter");
+            let raw = if comma != "," { raw.replace(&comma, ",") } else { raw.to_owned() };
+            let names = raw.trim_matches([' ', '\n', '\t', '\r', '\0', '\x0B', ',']).split(',').map(|t| t.trim().to_owned()).filter(|t| !t.is_empty()).map(TermRef::Name).collect();
+            tax_input.push((tax.name.clone(), names));
+        }
+    }
     let parent = field("parent_id").map(|p| p.parse::<u64>().unwrap_or(0));
     // `_wp_translate_postdata()`: the override, else the form's author, else the current user (the block editor's
     // meta box form has no author); another author needs `edit_others_posts`.
@@ -1387,6 +1489,7 @@ async fn edit_post(ctx: &Ctx<'_>, post_id: u64) -> AdminResponse {
         post_date_gmt,
         post_category: categories,
         tags_input: tags,
+        tax_input,
         edit_date,
         page_template,
         ..Default::default()
