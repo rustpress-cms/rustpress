@@ -52,6 +52,46 @@ async fn post_settings(ctx: &Ctx<'_>, post_id: u64) -> Json {
 }
 
 /// Adds what `wp_enqueue_media()` and `wp_print_media_templates()` add to the page.
+/// `get_compat_media_markup( $id, [ 'in_modal' => $in_modal ] )['item']`: the fields of `attachment_fields_to_edit`
+/// in their table, after the hidden `menu_order`.
+///
+/// Differs from WordPress: the taxonomies of attachments in the modal are not listed (WordPress registers none).
+pub async fn compat_media_markup(ctx: &Ctx<'_>, post: &rustpress_db::Post, in_modal: bool) -> String {
+    let site = ctx.site();
+    if site.plugins.is_empty() {
+        return String::new();
+    }
+    let parts = ctx.plugin_parts();
+    let mut plugin_ctx = ctx.plugin_context(&parts, if in_modal { "admin-ajax.php" } else { "post.php" });
+    if !in_modal {
+        plugin_ctx.edited_post = Some(post);
+    }
+    let fields = site.plugins.attachment_fields_to_edit(&plugin_ctx, post, in_modal).await.unwrap_or_else(|e| {
+        tracing::error!(error = %e, "plugin attachment fields failed");
+        Vec::new()
+    });
+    // The fields WordPress removes, and the hidden ones (`_` first).
+    const UNSET: [&str; 9] = ["image-size", "align", "image_alt", "post_title", "post_excerpt", "post_content", "url", "menu_order", "image_url"];
+    let mut item = String::new();
+    for field in fields.iter().filter(|f| !f.id.starts_with('_') && !UNSET.contains(&f.id.as_str())) {
+        let id_attr = format!("attachments-{}-{}", post.id, field.id);
+        item.push_str(&format!(
+            "\t\t<tr class='compat-field-{}'>\t\t\t<th scope='row' class='label'><label for='{id_attr}'><span class='alignleft'>{}</span><br class='clear' /></label></th>\n\t\t\t<td class='field'>{}</td>\n\t\t</tr>\n",
+            field.id, field.label, field.html
+        ));
+    }
+    if item.is_empty() {
+        return item;
+    }
+    // `wp_required_field_message()`.
+    let indicator = format!("<span class=\"required\">{}</span>", rustpress_core::formatting::esc_html(&site.tr("*")));
+    let message = format!("<span class=\"required-field-message\">{}</span>", rustpress_core::i18n::sprintf(&site.tr("Required fields are marked %s"), &[&indicator]));
+    format!(
+        "<input type=\"hidden\" name=\"attachments[{}][menu_order]\" value=\"{}\" /><p class=\"media-types media-types-required-info\">{message}</p><table class=\"compat-attachment-fields\">{item}</table>",
+        post.id, post.menu_order
+    )
+}
+
 pub async fn enqueue(ctx: &Ctx<'_>, assets: &mut Assets, post_id: u64) {
     let site = ctx.site();
     let baked = bake();

@@ -1121,6 +1121,6 @@ async fn edit_form(ctx: &Ctx<'_>, comment: &Comment) -> AdminResponse {
     let screen = Screen { file: "comment.php".into(), parent_file: "edit-comments.php".into(), submenu_file: Some("edit-comments.php".into()), title: tr("Edit Comment"), help: Some(edit_help(ctx)), content_inline: true, ..Default::default() };
     let mut assets = Assets { scripts: vec!["comment".into()], late_scripts: vec!["quicktags".into(), "wplink".into(), "jquery-ui-autocomplete".into()], footer: super::editor::quicktags_editor_js(ctx, &[("content", "strong,em,link,block,del,ins,img,ul,ol,li,code,close")]), ..Default::default() };
     let content = super::editor::EditorEntry { id: "content".into(), quicktags: "strong,em,link,block,del,ins,img,ul,ol,li,code,close".into(), tinymce: None };
-    super::meta_boxes::plugin_box_assets(ctx, &meta_boxes, &mut assets, vec![content], false).await;
+    super::meta_boxes::plugin_box_assets(ctx, &meta_boxes, &mut assets, vec![content], false, None).await;
     render(ctx, &screen, &h, &assets).await
 }

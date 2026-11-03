@@ -6,7 +6,7 @@ use rustpress_core::formatting::{esc_attr, esc_html, esc_url};
 use rustpress_core::i18n::sprintf;
 use rustpress_db::{Post, User, UserListQuery};
 
-use super::ajax_media::{mime_icon, size_format, uploads_dir};
+use super::ajax_media::{size_format, uploads_dir};
 use super::{AdminResponse, Ctx, die, redirect, render};
 use crate::chrome::{Assets, Screen};
 use crate::content::{Content, PostData};
@@ -79,7 +79,7 @@ pub async fn form(ctx: &Ctx<'_>, post: &Post) -> AdminResponse {
     let thumb_url = if image {
         metadata.as_ref().and_then(|m| rustpress_blocks::images::intermediate_size(&url, m, 900, 450)).map_or_else(|| url.clone(), |(u, _, _)| u)
     } else {
-        format!("{siteurl}/wp-includes/images/media/{}", mime_icon(&post.post_mime_type))
+        format!("{siteurl}/wp-includes/images/media/{}", super::ajax_media::mime_icon_as(&post.post_mime_type, super::ajax_media::screen_icon_ext(ctx, "post.php", Some(post))))
     };
     // `wp_image_editor_supports()`: the formats the editor can read and write.
     let edit_button = if matches!(post.post_mime_type.as_str(), "image/jpeg" | "image/png" | "image/gif" | "image/webp") {
@@ -215,7 +215,8 @@ pub async fn form(ctx: &Ctx<'_>, post: &Post) -> AdminResponse {
         .replace("{{NONCE_REPLY}}", &ctx.create_nonce("replyto-comment"))
         .replace("{{NONCE_UNFILTERED}}", &ctx.create_nonce("unfiltered-html-comment"))
         .replace("{{ID}}", &id.to_string())
-        .replace("{{SITE}}", &siteurl);
+        .replace("{{SITE}}", &siteurl)
+        .replace("{{COMPAT}}", &super::media_ui::compat_media_markup(ctx, post, false).await);
 
     // The boxes the user hid (`do_meta_boxes()` gives them `hide-if-js`) and the layout of the screen.
     let hidden = super::common::hidden_meta_boxes(ctx, "attachment", "attachment").await;
@@ -237,12 +238,51 @@ pub async fn form(ctx: &Ctx<'_>, post: &Post) -> AdminResponse {
         ..Default::default()
     };
     let baked = super::pages::load(ctx, "attachment-edit");
-    let screen = Screen { file: "post.php".into(), parent_file: "upload.php".into(), submenu_file: Some("upload.php".into()), post_type: "attachment".into(), title: tr("Edit Media"), help: Some(baked.help), view_item: Some((tr("View Media File"), site.permalink(post).await.unwrap_or_default())), options: Some(options), ..Default::default() };
+    // `admin-header.php` names the attachment in the window title.
+    let window_title = match rustpress_blocks::content::the_title_for(site, post) {
+        title if !title.is_empty() => sprintf(&tr("%1$s &#8220;%2$s&#8221;"), &[&tr("Edit Media"), &title]),
+        _ => tr("Edit Media"),
+    };
+    let screen = Screen { file: "post.php".into(), parent_file: "upload.php".into(), submenu_file: Some("upload.php".into()), post_type: "attachment".into(), title: window_title, help: Some(baked.help), view_item: Some((tr("View Media File"), site.permalink(post).await.unwrap_or_default())), options: Some(options), edited_post: Some(post.clone()), ..Default::default() };
     let scripts: Vec<String> = ["admin-comments", "suggest", "post", "image-edit"].into_iter().map(String::from).collect();
-    let word_count = serde_json::json!({"type": "words", "shortcodes": ["wp_caption", "caption", "gallery", "playlist", "audio", "video", "embed"]});
+    // `array_keys( $shortcode_tags )`: WordPress's, then the plugins'.
+    let mut shortcodes: Vec<String> = ["wp_caption", "caption", "gallery", "playlist", "audio", "video", "embed"].iter().map(|s| (*s).to_owned()).collect();
+    shortcodes.extend(site.plugins.shortcode_tags().iter().map(|s| (*s).to_owned()));
+    let word_count = serde_json::json!({"type": "words", "shortcodes": shortcodes});
     // `admin_footer`: the lock dialog, the backup notice and the arguments of the two comment list tables.
-    let pre_footer = format!("{}{}", super::meta_boxes::post_lock_dialog(ctx, "attachment", &tr("Media")), super::meta_boxes::edit_footer_notices(ctx, "attachment", 2));
-    let assets = Assets { scripts, styles: vec!["imgareaselect".into()], late_scripts: vec!["wplink".into()], localize: vec![("word-count".into(), "wordCountL10n".into(), word_count)], pre_footer, ..Default::default() };
+    // `_local_storage_notice()` is hooked before `wp_enqueue_media()` prints its templates, the list tables after.
+    let notices = super::meta_boxes::edit_footer_notices(ctx, "attachment", 2);
+    let (local_notice, list_args) = notices.split_at(notices.find("<script>list_args").unwrap_or(notices.len()));
+    let pre_footer = format!("{}{local_notice}", super::meta_boxes::post_lock_dialog(ctx, "attachment", &tr("Media")));
+    // The editors of the description and of the reply form: Quicktags only.
+    let editors = [("attachment_content", "strong,em,link,block,del,ins,img,ul,ol,li,code,close"), ("replycontent", "strong,em,link,block,del,ins,img,ul,ol,li,code,close")];
+    let mut assets = Assets {
+        scripts,
+        styles: vec!["imgareaselect".into()],
+        late_scripts: vec!["quicktags".into(), "wplink".into(), "jquery-ui-autocomplete".into()],
+        localize: vec![("word-count".into(), "wordCountL10n".into(), word_count)],
+        pre_footer,
+        footer: super::editor::quicktags_editor_js(ctx, &editors),
+        // `wp_page_reload_on_back_button_js()` on `admin_print_scripts-post.php`.
+        head_early: "\t<script>\n\t\tif ( typeof performance !== 'undefined' && performance.navigation && performance.navigation.type === 2 ) {\n\t\t\tdocument.location.reload( true );\n\t\t}\n\t</script>\n\t".into(),
+        ..Default::default()
+    };
+    // What the plugins' uploader asks for: the media library from the start, an editor in the footer after the page's.
+    let mut uploader = rustpress_core::native::MetaBoxes::default();
+    if !site.plugins.is_empty() {
+        let parts = ctx.plugin_parts();
+        let mut plugin_ctx = ctx.plugin_context(&parts, "post.php");
+        plugin_ctx.edited_post = Some(post);
+        uploader = site.plugins.screen_uploader(&plugin_ctx).await.unwrap_or_default();
+    }
+    if uploader.media && ctx.can("upload_files") {
+        // A plugin's `wp_enqueue_media()` on `admin_enqueue_scripts` names no post.
+        super::meta_boxes::media_data(ctx, &mut assets, 0).await;
+    }
+    assets.pre_footer.push_str(list_args);
+    uploader.media = false;
+    let own = editors.iter().map(|(id, qt)| super::editor::EditorEntry { id: (*id).into(), quicktags: (*qt).into(), tinymce: None }).collect();
+    super::meta_boxes::plugin_box_assets(ctx, &uploader, &mut assets, own, false, Some(post)).await;
     render(ctx, &screen, &html, &assets).await
 }
 
@@ -270,16 +310,32 @@ pub async fn save(ctx: &Ctx<'_>, post: &Post) -> AdminResponse {
         post_name: field("post_name").map(str::to_owned),
         ..Default::default()
     };
-    if let Err(e) = content.insert_post(&data).await {
-        return die(ctx.env, 200, "WordPress &rsaquo; Error", &format!("<p>{}</p>", esc_html(&e.to_string())));
-    }
+    // `edit_post()`: the alternative text, `attachment_fields_to_save`, `_edit_last`, then the post.
     if let Some(alt) = field("_wp_attachment_image_alt") {
         let current = ctx.env.db.post_meta_value(post.id, "_wp_attachment_image_alt").await.ok().flatten().unwrap_or_default();
         if current != alt {
             writer.update_post_meta(post.id, "_wp_attachment_image_alt", &rustpress_core::formatting::strip_tags(alt)).await.or_log();
         }
     }
+    if !ctx.site().plugins.is_empty() {
+        let parts = ctx.plugin_parts();
+        let mut plugin_ctx = ctx.plugin_context(&parts, "post.php");
+        plugin_ctx.edited_post = Some(post);
+        let saved = rustpress_core::native::AttachmentSaved { ctx: &plugin_ctx, writer, attachment: post, ajax: false };
+        if let Some(failed) = ctx.site().plugins.attachment_fields_to_save(&saved).await.unwrap_or_else(|e| {
+            tracing::error!(error = %e, "a plugin failed on attachment_fields_to_save");
+            None
+        }) {
+            return die(ctx.env, failed.status, &failed.title, &failed.message);
+        }
+    }
     writer.update_post_meta(post.id, "_edit_last", &ctx.user.id.to_string()).await.or_log();
+    if let Err(e) = content.insert_post(&data).await {
+        return die(ctx.env, 200, "WordPress &rsaquo; Error", &format!("<p>{}</p>", esc_html(&e.to_string())));
+    }
     writer.update_post_meta(post.id, "_edit_lock", &format!("{}:{}", ctx.env.now, ctx.user.id)).await.or_log();
-    redirect(&rustpress_core::urls::add_query_arg(&edit_link(ctx, post.id), "message", "1"))
+    // `redirect_post()`: an attachment keeps `inherit`, so the button decides.
+    let has = |name: &str| request.post_field(name).is_some();
+    let message = if has("save") || has("publish") { if has("publish") { "6" } else { "1" } } else { "4" };
+    redirect(&rustpress_core::urls::add_query_arg(&edit_link(ctx, post.id), "message", message))
 }

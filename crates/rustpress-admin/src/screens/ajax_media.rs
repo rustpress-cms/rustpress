@@ -22,7 +22,24 @@ pub fn size_format(bytes: u64) -> String {
     format!("{bytes} B")
 }
 
-/// `wp_mime_type_icon()` for non-images.
+/// [`mime_icon`] in the icon set of the request (`svg` or `png`).
+pub fn mime_icon_as(mime: &str, ext: &str) -> String {
+    let icon = mime_icon(mime);
+    format!("{}.{ext}", icon.trim_end_matches(".svg"))
+}
+
+/// The icon set of the screen: `svg`, unless a plugin asked for icons on `admin_enqueue_scripts`.
+pub fn screen_icon_ext(ctx: &Ctx<'_>, hook_suffix: &str, edited_post: Option<&Post>) -> &'static str {
+    if ctx.site().plugins.is_empty() {
+        return "svg";
+    }
+    let parts = ctx.plugin_parts();
+    let mut plugin_ctx = ctx.plugin_context(&parts, hook_suffix);
+    plugin_ctx.edited_post = edited_post;
+    ctx.site().plugins.admin_mime_icon_ext(&plugin_ctx)
+}
+
+/// `wp_mime_type_icon( $mime, '.svg' )` for non-images.
 pub fn mime_icon(mime: &str) -> &'static str {
     let (kind, sub) = mime.split_once('/').unwrap_or((mime, ""));
     match kind {
@@ -139,9 +156,9 @@ pub async fn attachment_js_with(ctx: &Ctx<'_>, post: &Post, extra_sizes: &[Strin
         && let Some(parent) = db.post(post.post_parent).await.ok().flatten()
         && ctx.user.can_read_post(&parent)
     {
+        response.insert("uploadedToTitle".into(), json!(if parent.post_title.is_empty() { ctx.tr("(no title)") } else { parent.post_title.clone() }));
         // `get_edit_post_link()` is null without `edit_post`.
         response.insert("uploadedToLink".into(), if ctx.user.can_edit_post(&parent) { json!(ctx.admin_url(&format!("post.php?post={}&action=edit", parent.id))) } else { Json::Null });
-        response.insert("uploadedToTitle".into(), json!(if parent.post_title.is_empty() { ctx.tr("(no title)") } else { parent.post_title.clone() }));
     }
     let filesize = stored_meta.as_ref().and_then(|m| m.get("filesize")).and_then(Json::as_u64).unwrap_or_else(|| {
         let uploads = uploads_dir(ctx.env);
@@ -207,7 +224,8 @@ pub async fn attachment_js_with(ctx: &Ctx<'_>, post: &Post, extra_sizes: &[Strin
         response.insert("image".into(), json!({"src": icon, "width": w, "height": h}));
         response.insert("thumb".into(), json!({"src": icon, "width": w, "height": h}));
     }
-    response.insert("compat".into(), json!({"item": "", "meta": ""}));
+    // `get_compat_media_markup( $id, [ 'in_modal' => true ] )`; `media_meta` stays empty.
+    response.insert("compat".into(), json!({"item": super::media_ui::compat_media_markup(ctx, post, true).await, "meta": ""}));
     // `get_media_states()`
     let mut states: Vec<String> = Vec::new();
     if site.options.u64("site_icon", 0) == post.id {
@@ -312,9 +330,16 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUs
             let query = attachment_query(request);
             let limit = query.limit;
             let (posts, total) = env.db.list_attachments(&query).await.unwrap_or_default();
+            // What the plugins add on `wp_ajax_query-attachments`: image sizes and a filter of the answer.
+            let parts = ctx.plugin_parts();
+            let plugin_ctx = ctx.plugin_context(&parts, "admin-ajax.php");
+            let sizes = if env.site.plugins.is_empty() { Vec::new() } else { env.site.plugins.query_attachments_sizes(&plugin_ctx) };
             let mut items = Vec::new();
             for post in &posts {
-                if let Some(item) = attachment_js(&ctx, post).await {
+                if let Some(mut item) = attachment_js_with(&ctx, post, &sizes).await {
+                    if let Json::Object(map) = &mut item {
+                        env.site.plugins.query_attachment_js(&plugin_ctx, map);
+                    }
                     items.push(item);
                 }
             }

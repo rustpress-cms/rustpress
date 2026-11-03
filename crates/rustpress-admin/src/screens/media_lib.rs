@@ -171,6 +171,10 @@ pub async fn upload_php(ctx: &Ctx<'_>) -> AdminResponse {
         }
         h.push_str(&format!("\n\t\t<hr class=\"wp-header-end\">\n\n\t\t<div class=\"notice error hide-if-js\"><p>{}</p></div>\t</div>\n\t", sprintf(&tr("The grid view for the Media Library requires JavaScript. <a href=\"%s\">Switch to the list view</a>."), &["upload.php?mode=list"])));
         let screen = Screen { file: "upload.php".into(), parent_file: "upload.php".into(), submenu_file: Some("upload.php".into()), title, help: Some(help(ctx)), content_inline: true, ..Default::default() };
+        // The media library is already there.
+        let mut uploader = screen_uploader(ctx).await;
+        uploader.media = false;
+        super::meta_boxes::plugin_box_assets(ctx, &uploader, &mut assets, Vec::new(), true, None).await;
         return render(ctx, &screen, &h, &assets).await;
     }
     list_mode(ctx, title).await
@@ -225,6 +229,7 @@ async fn list_mode(ctx: &Ctx<'_>, title: String) -> AdminResponse {
     for item in &items {
         rows.push_str(&row(ctx, item, detached).await);
     }
+    let last_item = items.last().cloned();
     let mut columns = vec![
         Column::new("cb", ""),
         Column::new("title", &tr("File")).sortable("title", false, Some(&tr("File")), None),
@@ -330,7 +335,25 @@ async fn list_mode(ctx: &Ctx<'_>, title: String) -> AdminResponse {
         select = tr("Select")
     ));
     let screen = Screen { file: "upload.php".into(), parent_file: "upload.php".into(), submenu_file: Some("upload.php".into()), title, help: Some(list_help(ctx)), options: Some(screen_options), ..Default::default() };
-    render(ctx, &screen, &h, &Assets { scripts: vec!["media".into(), "clipboard".into()], ..Default::default() }).await
+    let mut assets = Assets { scripts: vec!["media".into(), "clipboard".into()], ..Default::default() };
+    let mut uploader = screen_uploader(ctx).await;
+    if uploader.media && ctx.can("upload_files") {
+        super::meta_boxes::media_data(ctx, &mut assets, 0).await;
+    }
+    uploader.media = false;
+    // The loop of the list leaves its last attachment as the global `$post`.
+    super::meta_boxes::plugin_box_assets(ctx, &uploader, &mut assets, Vec::new(), true, last_item.as_ref()).await;
+    render(ctx, &screen, &h, &assets).await
+}
+
+/// What the plugins' uploader asks of `upload.php`.
+async fn screen_uploader(ctx: &Ctx<'_>) -> rustpress_core::native::MetaBoxes {
+    if ctx.site().plugins.is_empty() {
+        return Default::default();
+    }
+    let parts = ctx.plugin_parts();
+    let plugin_ctx = ctx.plugin_context(&parts, "upload.php");
+    ctx.site().plugins.screen_uploader(&plugin_ctx).await.unwrap_or_default()
 }
 
 fn notice(ctx: &Ctx<'_>) -> String {
@@ -376,7 +399,7 @@ async fn row(ctx: &Ctx<'_>, post: &Post, detached: bool) -> String {
         let (w, h) = rustpress_blocks::images::constrain_dimensions(w, h, 60, 60);
         format!("<span class=\"media-icon image-icon\"><img width=\"{w}\" height=\"{h}\" src=\"{}\" class=\"attachment-60x60 size-60x60\" alt=\"\" decoding=\"async\" loading=\"lazy\" /></span>", esc_url(&src))
     } else {
-        let icon_url = format!("{}/wp-includes/images/media/{}", site.settings.siteurl.trim_end_matches('/'), super::ajax_media::mime_icon(&post.post_mime_type));
+        let icon_url = format!("{}/wp-includes/images/media/{}", site.settings.siteurl.trim_end_matches('/'), super::ajax_media::mime_icon_as(&post.post_mime_type, super::ajax_media::screen_icon_ext(ctx, "upload.php", None)));
         format!("<span class=\"media-icon {kind}-icon\"><img width=\"48\" height=\"64\" src=\"{}\" class=\"attachment-60x60 size-60x60\" alt=\"\" decoding=\"async\" loading=\"lazy\" /></span>", esc_url(&icon_url))
     };
     let can_edit = ctx.user.can_edit_post(post);
