@@ -243,8 +243,9 @@ pub enum Screen<'a> {
     Post { post: &'a Post, post_type: Option<&'a str> },
     /// `[ 'taxonomy' => $taxonomy ]`.
     Term { taxonomy: &'a str },
-    /// `[ 'user_id' => $id, 'rest' => true ]`.
-    User { user_id: u64 },
+    /// `[ 'user_id' => $id, 'user_form' => $view ]` of the user screens (`None` is `'new'`), and
+    /// `[ 'user_id' => $id, 'rest' => true ]` without a form.
+    User { user_id: Option<u64>, form: Option<&'a str> },
     /// `[ 'comment' => $post_type ]`.
     Comment { post_type: String },
 }
@@ -436,9 +437,16 @@ async fn match_rule(rule: &Rule, screen: &Screen<'_>, ctx: &MatchContext<'_>) ->
         }
         // `is_super_admin()` of a single site is `delete_users`; a visitor has no roles.
         "current_user_role" => reverse(if rule_value == "super_admin" { ctx.user.can("delete_users") } else { !rule_value.is_empty() && ctx.user.can(&rule_value) }, rule),
-        "user_form" => matches!(screen, Screen::User { .. }),
+        // The REST API has no forms; the choice "Add / Edit" (valued `edit`) also matches the add form.
+        "user_form" => match screen {
+            Screen::User { form: None, .. } => true,
+            Screen::User { form: Some(form), .. } => compare(&string(if rule_value == "edit" && *form == "add" { "edit" } else { form }), rule),
+            _ => false,
+        },
+        // A new user has the default role.
         "user_role" => match screen {
-            Screen::User { user_id } => {
+            Screen::User { user_id: None, .. } => compare(&string(&ctx.site.options.string("default_role", "")), rule),
+            Screen::User { user_id: Some(user_id), .. } => {
                 let role = if !rule_value.is_empty() && user_has_role(db, *user_id, &rule_value).await? { rule_value.clone() } else { String::new() };
                 compare(&string(&role), rule)
             }

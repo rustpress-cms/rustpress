@@ -206,6 +206,18 @@ pub trait ActivePlugin: Send + Sync {
         Box::pin(async { Ok(MetaBoxes::default()) })
     }
 
+    /// `show_user_profile`/`edit_user_profile` of `profile.php`/`user-edit.php` (the user's ID) and `user_new_form` of
+    /// `user-new.php` (`None`): what the plugin prints at the end of the form, and what it asks of the screen for it.
+    fn user_form<'a>(&'a self, _ctx: &'a AdminContext<'a>, _user_id: Option<u64>) -> BoxFuture<'a, Result<MetaBoxes>> {
+        Box::pin(async { Ok(MetaBoxes::default()) })
+    }
+
+    /// `profile_update` and `user_register` of a user the administration saved (`edit_user()`); a `wp_die()` of the
+    /// plugin ends the request.
+    fn saved_user<'a>(&'a self, _ctx: &'a UserSaved<'a>) -> BoxFuture<'a, Result<Option<Die>>> {
+        Box::pin(async { Ok(None) })
+    }
+
     /// `create_term` and `edit_term` of a term the administration saved (`wp_insert_term()`, `wp_update_term()`); a
     /// `wp_die()` of the plugin ends the request.
     fn saved_term<'a>(&'a self, _ctx: &'a TermSaved<'a>) -> BoxFuture<'a, Result<Option<Die>>> {
@@ -813,6 +825,15 @@ pub struct PostSaved<'a> {
     pub writer: &'a rustpress_db::Writer,
     /// The post as it was stored.
     pub post: &'a rustpress_db::Post,
+}
+
+/// A user the administration saved, as `profile_update`/`user_register` see it.
+pub struct UserSaved<'a> {
+    pub ctx: &'a AdminContext<'a>,
+    pub writer: &'a rustpress_db::Writer,
+    pub user_id: u64,
+    /// `user_register` rather than `profile_update`.
+    pub created: bool,
 }
 
 /// A term the administration saved, as `create_term`/`edit_term` see it.
@@ -1619,6 +1640,28 @@ impl Plugins {
             out.hidden_editor = out.hidden_editor.or(boxes.hidden_editor);
         }
         Ok(out)
+    }
+
+    /// `show_user_profile`/`edit_user_profile`/`user_new_form` of the plugins.
+    pub async fn user_form(&self, ctx: &AdminContext<'_>, user_id: Option<u64>) -> Result<MetaBoxes> {
+        let mut out = MetaBoxes::default();
+        for plugin in self.hooks() {
+            let boxes = plugin.user_form(ctx, user_id).await?;
+            out.html.push_str(&boxes.html);
+            out.media |= boxes.media;
+            out.hidden_editor = out.hidden_editor.or(boxes.hidden_editor);
+        }
+        Ok(out)
+    }
+
+    /// `profile_update`/`user_register` of the plugins; the first `wp_die()` ends the request.
+    pub async fn saved_user(&self, ctx: &UserSaved<'_>) -> Result<Option<Die>> {
+        for plugin in self.hooks() {
+            if let Some(die) = plugin.saved_user(ctx).await? {
+                return Ok(Some(die));
+            }
+        }
+        Ok(None)
     }
 
     /// `create_term`/`edit_term` of the plugins; the first `wp_die()` ends the request.

@@ -172,6 +172,12 @@ fn toolbars() -> Json {
 /// `ACF_Assets::print_footer_scripts()`: `acf.data` with what the field types localized, and `acf.doAction(
 /// 'prepare' )`.
 pub(super) fn footer(site: &Site, form: &FormData, wp_version: &str, nonce: &str, user_agent: Option<&str>, can: &(dyn Fn(&str) -> bool + Send + Sync), uploader: Uploader) -> String {
+    footer_with(site, form, wp_version, nonce, user_agent, can, uploader, "")
+}
+
+/// [`footer`] with what `acf/input/admin_footer` prints between `acf.data` and `acf.doAction( 'prepare' )`.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn footer_with(site: &Site, form: &FormData, wp_version: &str, nonce: &str, user_agent: Option<&str>, can: &(dyn Fn(&str) -> bool + Send + Sync), uploader: Uploader, input_footer: &str) -> String {
     let locale = site.locale_data();
     let mut data = Map::new();
     if let Some(postboxes) = &form.postboxes {
@@ -265,7 +271,7 @@ pub(super) fn footer(site: &Site, form: &FormData, wp_version: &str, nonce: &str
     data.insert("debug".into(), Json::Bool(false));
     data.insert("StrictMode".into(), Json::Bool(false));
     let json = rustpress_blocks::php_json::encode_with(&Json::Object(data), rustpress_blocks::php_json::Flags { unescaped_slashes: false, unescaped_unicode: false });
-    format!("<script>\nacf.data = {json};\n</script>\n<script>\nacf.doAction( 'prepare' );\n</script>\n")
+    format!("<script>\nacf.data = {json};\n</script>\n{input_footer}<script>\nacf.doAction( 'prepare' );\n</script>\n")
 }
 
 /// `acf_form_data()`: the hidden inputs ACF reads when the form is sent.

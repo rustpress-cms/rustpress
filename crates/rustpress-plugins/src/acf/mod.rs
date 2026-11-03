@@ -15,6 +15,7 @@ mod admin;
 mod dashicons;
 mod edit_comment;
 mod edit_term;
+mod edit_user;
 mod edit_post;
 mod fields;
 mod form;
@@ -196,7 +197,7 @@ impl Loaded {
             // The terms controller names its object type `tag` for `post_tag`, so a field registered for
             // `post_tag` never shows.
             RestObject::Term(term) if term.taxonomy == base && request.object_type == "term" && base != "post_tag" => Some(Target { object: Object { kind: MetaKind::Term, id: term.term_id }, screen: Screen::Term { taxonomy: &term.taxonomy } }),
-            RestObject::User(user) if base == "user" => Some(Target { object: Object { kind: MetaKind::User, id: user.id }, screen: Screen::User { user_id: user.id } }),
+            RestObject::User(user) if base == "user" => Some(Target { object: Object { kind: MetaKind::User, id: user.id }, screen: Screen::User { user_id: Some(user.id), form: None } }),
             RestObject::Comment(comment) if base == "comment" => {
                 let post_type = ctx.site.db.post(comment.comment_post_id).await?.map(|p| p.post_type).unwrap_or_default();
                 Some(Target { object: Object { kind: MetaKind::Comment, id: comment.comment_id }, screen: Screen::Comment { post_type } })
@@ -234,6 +235,15 @@ impl ActivePlugin for Loaded {
         edit_comment::admin_enqueue(ctx, assets);
         edit_post::admin_enqueue(ctx, assets);
         edit_term::admin_enqueue(ctx, assets);
+        edit_user::admin_enqueue(ctx, assets);
+    }
+
+    fn user_form<'a>(&'a self, ctx: &'a rustpress_core::native::AdminContext<'a>, user_id: Option<u64>) -> BoxFuture<'a, Result<rustpress_core::native::MetaBoxes>> {
+        Box::pin(edit_user::user_form(&self.groups, ctx, user_id))
+    }
+
+    fn saved_user<'a>(&'a self, ctx: &'a rustpress_core::native::UserSaved<'a>) -> BoxFuture<'a, Result<Option<rustpress_core::native::Die>>> {
+        Box::pin(save::save_user(&self.groups, ctx))
     }
 
     fn term_form<'a>(&'a self, ctx: &'a rustpress_core::native::AdminContext<'a>, taxonomy: &'a str, term: Option<&'a rustpress_db::Term>) -> BoxFuture<'a, Result<rustpress_core::native::MetaBoxes>> {
@@ -284,6 +294,9 @@ impl ActivePlugin for Loaded {
                 return Ok(footer);
             }
             if let Some(footer) = edit_term::footer_scripts(&self.groups, ctx).await? {
+                return Ok(footer);
+            }
+            if let Some(footer) = edit_user::footer_scripts(&self.groups, ctx).await? {
                 return Ok(footer);
             }
             edit_comment::footer_scripts(&self.groups, ctx).await
