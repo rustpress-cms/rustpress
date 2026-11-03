@@ -800,6 +800,9 @@ async fn author_box(ctx: &Ctx<'_>, post: &Post) -> String {
 /// The messages after saving (`$messages` of `edit-form-advanced.php`).
 fn message_text(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, number: u32) -> Option<String> {
     let site = ctx.site();
+    if let Some(message) = site.plugins.post_updated_message(site, &info.name, number) {
+        return message;
+    }
     let tr = |s: &str| ctx.tr(s);
     let page = info.name == "page";
     let permalink = site.home_url(&if page { format!("?page_id={}", post.id) } else { format!("?p={}", post.id) });
@@ -1039,6 +1042,12 @@ async fn form(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, is_new: bool) -> Admi
     h.push_str(&super::meta_boxes::do_meta_boxes(ctx, &boxes, "side", &state));
     h.push_str("</div>\n<div id=\"postbox-container-2\" class=\"postbox-container\">\n");
     h.push_str(&super::meta_boxes::do_meta_boxes(ctx, &boxes, "normal", &state));
+    // `edit_form_advanced`/`edit_page_form`: `WP_Embed::maybe_run_ajax_cache()` after a save.
+    if ctx.request.get("message").is_some_and(|m| !m.is_empty() && m != "0") {
+        let ajax = ctx.admin_url("admin-ajax.php");
+        let relative = ajax.find("://").and_then(|at| ajax[at + 3..].find('/').map(|slash| ajax[at + 3 + slash..].to_owned())).unwrap_or(ajax);
+        h.push_str(&format!("<script>\n\tjQuery( function($) {{\n\t\t$.get(\"{}?action=oembed-cache&post={}\");\n\t}} );\n</script>\n\t\t", esc_url(&relative), post.id));
+    }
     h.push_str(&super::meta_boxes::do_meta_boxes(ctx, &boxes, "advanced", &state));
     h.push_str("</div>\n</div><!-- /post-body -->\n<br class=\"clear\" />\n</div><!-- /poststuff -->\n</form>\n</div>\n\n");
     if supports("comments") {

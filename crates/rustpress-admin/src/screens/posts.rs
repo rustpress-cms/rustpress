@@ -340,7 +340,9 @@ async fn bulk_action(ctx: &Ctx<'_>, info: &TypeInfo) -> Option<AdminResponse> {
                 if !may_delete(&post) {
                     return Some(super::common::die_plain(ctx, "Sorry, you are not allowed to restore this item from the Trash."));
                 }
-                if !content.untrash_post(*id).await.unwrap_or(false) {
+                // "Undo" after trashing restores the previous status (`wp_untrash_post_set_previous_status()`).
+                let undo = ctx.request.get("doaction") == Some("undo");
+                if !content.untrash_post_with(*id, undo).await.unwrap_or(false) {
                     return Some(super::common::die_plain(ctx, "Error in restoring the item from Trash."));
                 }
                 done += 1;
@@ -405,6 +407,16 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     let edit_cap = if info.name == "page" { "edit_pages" } else { "edit_posts" };
     if !ctx.can(edit_cap) {
         return super::die(ctx.env, 403, "WordPress &rsaquo; Error", &format!("<h1>{}</h1><p>{}</p>", tr("You need a higher level of permission."), if info.name == "page" { tr("Sorry, you are not allowed to edit pages.") } else { tr("Sorry, you are not allowed to edit posts.") }));
+    }
+    // `current_screen` of the plugins.
+    if !site.plugins.is_empty() {
+        list_plugin_ctx!(ctx, parts, screen_id, info.name.as_str(), plugin_ctx);
+        match site.plugins.list_load(&plugin_ctx).await {
+            Ok(Some(rustpress_core::native::PageLoad::Redirect(location))) => return redirect(&location),
+            Ok(Some(rustpress_core::native::PageLoad::Die { status, title, message })) => return super::die(ctx.env, status, &title, &message),
+            Ok(None) => {}
+            Err(e) => tracing::error!(error = %e, "plugin list_load failed"),
+        }
     }
     if let Some(response) = bulk_action(ctx, &info).await {
         return response;
