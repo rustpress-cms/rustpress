@@ -20,7 +20,13 @@ pub struct TaxInfo {
     pub plural: String,
     pub singular: String,
     pub query_var: Option<String>,
+    /// The global `$post_type` of `edit-tags.php` (`WP_Terms_List_Table`: the screen's if it has a UI, else `post`);
+    /// [`edit_page`] makes it that of `term.php`.
     pub post_type: String,
+    /// `WP_Screen::$post_type`: the requested type if it exists (else empty), without one `post`.
+    pub screen_post_type: String,
+    /// The taxonomy's `object_type`.
+    pub objects: Vec<String>,
     pub labels: TaxLabels,
 }
 
@@ -64,9 +70,17 @@ pub fn tax_info(ctx: &Ctx<'_>, name: &str, post_type: Option<&str>) -> Option<Ta
             (info.hierarchical, info.plural_label(), info.singular_label(), info.query_var.clone(), info.object_types.clone())
         }
     };
-    let post_type = post_type.filter(|p| !p.is_empty() && objects.iter().any(|o| o == p)).map(str::to_owned).or_else(|| objects.first().cloned()).unwrap_or_else(|| "post".to_owned());
+    // `WP_Screen::get()` takes the requested post type when it exists, `post` without one.
+    let screen_post_type = match post_type {
+        Some(p) if site.types.is_post_type(p) => p.to_owned(),
+        Some(_) => String::new(),
+        None => "post".to_owned(),
+    };
+    // `WP_Terms_List_Table::__construct()`: a type of `get_post_types( [ 'show_ui' => true ] )`, else `post`.
+    let shows_ui = matches!(screen_post_type.as_str(), "post" | "page" | "attachment" | "wp_block" | "wp_navigation") || (!rustpress_core::types::is_internal_post_type(&screen_post_type) && site.types.post_type(&screen_post_type).is_some());
+    let post_type = if !screen_post_type.is_empty() && shows_ui { screen_post_type.clone() } else { "post".to_owned() };
     let labels = TaxLabels::new(site, hierarchical);
-    Some(TaxInfo { name: name.to_owned(), hierarchical, plural, singular, query_var, post_type, labels })
+    Some(TaxInfo { name: name.to_owned(), hierarchical, plural, singular, query_var, post_type, screen_post_type, objects, labels })
 }
 
 pub(super) fn messages(ctx: &Ctx<'_>, info: &TaxInfo) -> Vec<String> {
@@ -78,9 +92,14 @@ pub(super) fn messages(ctx: &Ctx<'_>, info: &TaxInfo) -> Vec<String> {
     }
 }
 
+/// `get_edit_term_link( $tag, $taxonomy, $this->screen->post_type )`: without a post type the first of the taxonomy.
 fn term_edit_url(ctx: &Ctx<'_>, info: &TaxInfo, term: &Term, referer: &str) -> String {
-    let mut url = ctx.admin_url(&format!("term.php?taxonomy={}&tag_ID={}&post_type={}", info.name, term.term_id, info.post_type));
-    if !referer.is_empty() {
+    let object = if info.screen_post_type.is_empty() { info.objects.first().cloned().unwrap_or_default() } else { info.screen_post_type.clone() };
+    let mut url = ctx.admin_url(&format!("term.php?taxonomy={}&tag_ID={}&post_type={object}", info.name, term.term_id));
+    // `add_query_arg( 'wp_http_referer', urlencode( $uri ) )`: an Ajax request without a referer adds the bare key.
+    if referer.is_empty() {
+        url.push_str("&wp_http_referer");
+    } else {
         url.push_str(&format!("&wp_http_referer={}", rustpress_core::canonical::rawurlencode(referer)));
     }
     url
@@ -125,7 +144,7 @@ async fn row(ctx: &Ctx<'_>, info: &TaxInfo, term: &Term, level: usize, pad_level
         Some(var) => add_query_arg("edit.php", var, &term.slug),
         None => add_query_arg(&add_query_arg("edit.php", "taxonomy", &info.name), "term", &term.slug),
     };
-    let count_url = if info.post_type != "post" { add_query_arg(&count_url, "post_type", &info.post_type) } else { count_url };
+    let count_url = if info.screen_post_type != "post" { add_query_arg(&count_url, "post_type", &info.screen_post_type) } else { count_url };
     format!(
         "<tr id=\"tag-{id}\" class=\"level-{level}\"><td class=\"check-column\">{checkbox}</td><th class='name column-name has-row-actions column-primary' data-colname=\"{n}\" scope=\"row\" aria-label=\"{label}\"><strong>{title}</strong><br /><div class=\"hidden\" id=\"inline_{id}\"><div class=\"name\">{ename}</div><div class=\"slug\">{eslug}</div><div class=\"parent\">{parent}</div></div>{actions}</th><td class='description column-description' data-colname=\"{d}\">{description}</td><td class='slug column-slug' data-colname=\"{s}\">{eslug}</td><td class='posts column-posts' data-colname=\"{c}\"><a href='{}'>{}</a></td></tr>",
         esc_url(&count_url),
@@ -260,7 +279,7 @@ fn screen_for(info: &TaxInfo, title: String, help: Option<Help>, file: &str) -> 
         other => format!("edit-tags.php?taxonomy={}&amp;post_type={other}", info.name),
     };
     let id = format!("edit-{}", info.name);
-    Screen { file: file.into(), parent_file: parent, submenu_file: Some(submenu), post_type: info.post_type.clone(), id, title, help, ..Default::default() }
+    Screen { file: file.into(), parent_file: parent, submenu_file: Some(submenu), post_type: info.screen_post_type.clone(), id, title, help, ..Default::default() }
 }
 
 /// `edit-tags.php`.
@@ -322,7 +341,10 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
             description: request.post_field("description").unwrap_or_default().to_owned(),
         };
         return match content.insert_term(&info.name, &data).await {
-            Ok(_) => back(1, false),
+            Ok(id) => match saved_term(ctx, "edit-tags.php", writer, id, &info.name, true).await {
+                Some(failed) => super::die(ctx.env, failed.status, &failed.title, &failed.message),
+                None => back(1, false),
+            },
             Err(_) => back(4, true),
         };
     }
@@ -460,7 +482,8 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         order_inputs = order_inputs
     ));
     h.push_str("<div id=\"col-container\" class=\"wp-clearfix\">\n\n<div id=\"col-left\">\n<div class=\"col-wrap\">\n\n\t\n");
-    h.push_str(&add_form(ctx, &info).await);
+    let fields = term_form(ctx, "edit-tags.php", &info.name, None).await;
+    h.push_str(&add_form(ctx, &info, &fields.html).await);
     h.push_str("</div>\n</div><!-- /col-left -->\n\n<div id=\"col-right\">\n<div class=\"col-wrap\">\n\n\n<form id=\"posts-filter\" method=\"post\">\n");
     h.push_str(&table_html);
     h.push_str("\n</form>\n\n");
@@ -482,23 +505,20 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     } else if info.name == "post_tag" {
         h.push_str(&format!("{}\t</p>\n</div>\n\t</div>\n", sprintf(&tr("Tags can be selectively converted to categories using the <a href=\"%s\">tag to category converter</a>."), &[&ctx.admin_url("import.php")])));
     } else {
-        // The notes are the description of the taxonomy; without one there is no box.
-        let description = site.types.taxonomy(&info.name).map(|t| t.description.clone()).unwrap_or_default();
-        if description.is_empty() {
-            h.push_str("</div>\n");
-        } else {
-            h.push_str(&format!("<div class=\"form-wrap edit-term-notes\">\n<p>\n\t{}</p>\n</div>\n\t</div>\n", esc_html(&description)));
-        }
+        // Other taxonomies have no notes.
+        h.push_str("</div>\n");
     }
     h.push_str("</div><!-- /col-right -->\n\n</div><!-- /col-container -->\n\n</div><!-- /wrap -->\n\n<script>\ntry{document.forms.addtag['tag-name'].focus();}catch(e){}\n</script>\n\t\n");
     h.push_str(&inline_edit(ctx, &info, table.columns.iter().filter(|c| !c.hidden).count()));
     let mut screen = screen_for(&info, title, help(ctx, &info), "edit-tags.php");
     screen.options = Some(screen_options);
-    let assets = Assets { scripts: vec!["admin-tags".into(), "inline-edit-tax".into()], ..Default::default() };
+    screen.taxonomy = Some(info.name.clone());
+    let mut assets = Assets { scripts: vec!["admin-tags".into(), "inline-edit-tax".into()], ..Default::default() };
+    super::meta_boxes::plugin_box_assets(ctx, &fields, &mut assets, Vec::new(), true).await;
     render(ctx, &screen, &h, &assets).await
 }
 
-async fn add_form(ctx: &Ctx<'_>, info: &TaxInfo) -> String {
+async fn add_form(ctx: &Ctx<'_>, info: &TaxInfo, plugin_fields: &str) -> String {
     let tr = |s: &str| ctx.tr(s);
     let singular = &info.labels.add_new_item;
     let mut h = format!(
@@ -536,7 +556,8 @@ async fn add_form(ctx: &Ctx<'_>, info: &TaxInfo) -> String {
         tr("Description"),
         tr("The description is not prominent by default; however, some themes may show it.")
     ));
-    h.push_str(&format!("\t\t<p class=\"submit\">\n\t\t<input type=\"submit\" name=\"submit\" id=\"submit\" class=\"button button-primary\" value=\"{}\"  />\t\t<span class=\"spinner\"></span>\n\t</p>\n\t</form></div>\n", esc_attr(&sprintf(&tr("%s"), &[singular]))));
+    // `{$taxonomy}_add_form_fields`.
+    h.push_str(&format!("\t{plugin_fields}\t<p class=\"submit\">\n\t\t<input type=\"submit\" name=\"submit\" id=\"submit\" class=\"button button-primary\" value=\"{}\"  />\t\t<span class=\"spinner\"></span>\n\t</p>\n\t</form></div>\n", esc_attr(&sprintf(&tr("%s"), &[singular]))));
     h
 }
 
@@ -551,7 +572,7 @@ fn inline_edit(ctx: &Ctx<'_>, info: &TaxInfo, column_count: usize) -> String {
         cancel = tr("Cancel"),
         nonce = ctx.create_nonce("taxinlineeditnonce"),
         tax = info.name,
-        pt = info.post_type
+        pt = info.screen_post_type
     )
 }
 
@@ -580,9 +601,11 @@ pub async fn edit_page(ctx: &Ctx<'_>) -> AdminResponse {
     } else {
         ctx.env.db.term_by_id(None, id).await.ok().flatten().map(|t| t.taxonomy).unwrap_or_default()
     };
-    let Some(info) = tax_info(ctx, &taxonomy, request.request("post_type")) else {
+    let Some(mut info) = tax_info(ctx, &taxonomy, request.request("post_type")) else {
         return super::common::die_plain(ctx, "You attempted to edit an item that does not exist. Perhaps it was deleted?");
     };
+    // `term.php`: the screen's post type, else the first of the taxonomy.
+    info.post_type = if info.screen_post_type.is_empty() { info.objects.first().cloned().unwrap_or_default() } else { info.screen_post_type.clone() };
     if !ctx.can("manage_categories") {
         return forbidden_heading(ctx, "Sorry, you are not allowed to edit this item.");
     }
@@ -631,11 +654,15 @@ pub async fn edit_page(ctx: &Ctx<'_>) -> AdminResponse {
         ));
     }
     h.push_str(&format!(
-        "\t\t<tr class=\"form-field term-description-wrap\">\n\t\t\t<th scope=\"row\"><label for=\"description\">{}</label></th>\n\t\t\t<td><textarea name=\"description\" id=\"description\" rows=\"5\" cols=\"50\" class=\"large-text\" aria-describedby=\"description-description\">{}</textarea>\n\t\t\t<p class=\"description\" id=\"description-description\">{}</p></td>\n\t\t</tr>\n\t\t\t</table>\n\n",
+        "\t\t<tr class=\"form-field term-description-wrap\">\n\t\t\t<th scope=\"row\"><label for=\"description\">{}</label></th>\n\t\t\t<td><textarea name=\"description\" id=\"description\" rows=\"5\" cols=\"50\" class=\"large-text\" aria-describedby=\"description-description\">{}</textarea>\n\t\t\t<p class=\"description\" id=\"description-description\">{}</p></td>\n\t\t</tr>\n\t\t\t</table>\n",
         tr("Description"),
         esc_textarea(&term.description),
         tr("The description is not prominent by default; however, some themes may show it.")
     ));
+    // `{$taxonomy}_edit_form`.
+    let fields = term_form(ctx, "term.php", &info.name, Some(&term)).await;
+    h.push_str(&fields.html);
+    h.push('\n');
     let default = info.name == "category" && site.options.u64("default_category", 1) == term.term_id;
     h.push_str(&format!("<div class=\"edit-tag-actions\">\n\n\t<input type=\"submit\" class=\"button button-primary\" value=\"{}\"  />\n\t", tr("Update")));
     if !default {
@@ -651,8 +678,12 @@ pub async fn edit_page(ctx: &Ctx<'_>) -> AdminResponse {
     if let Ok(link) = site.term_link(&term).await {
         screen.view_item = Some((info.labels.view_item.clone(), link));
     }
+    screen.taxonomy = Some(info.name.clone());
+    screen.edited_term = Some(term);
+    let mut assets = Assets { early_scripts: vec!["admin-tags".into()], ..Default::default() };
+    super::meta_boxes::plugin_box_assets(ctx, &fields, &mut assets, Vec::new(), true).await;
     // The empty help of the screen ends without a line break.
-    render(ctx, &screen, &format!("\n{h}"), &Assets { early_scripts: vec!["admin-tags".into()], ..Default::default() }).await
+    render(ctx, &screen, &format!("\n{h}"), &assets).await
 }
 
 /// `edit-tags.php?action=editedtag`: saves the edit form of `term.php`.
@@ -672,20 +703,51 @@ async fn edited_tag(ctx: &Ctx<'_>, info: &TaxInfo) -> AdminResponse {
         description: request.post_field("description").unwrap_or_default().to_owned(),
     };
     let ok = content.update_term(id, &info.name, &data).await.is_ok();
-    let original = request.post_field("_wp_original_http_referer").unwrap_or_default();
-    let mut url = ctx.admin_url(&format!("term.php?taxonomy={}&tag_ID={id}&post_type={}", info.name, info.post_type));
-    if !original.is_empty() {
-        url = add_query_arg(&url, "wp_http_referer", original);
+    if ok && let Some(failed) = saved_term(ctx, "edit-tags.php", writer, id, &info.name, false).await {
+        return super::die(ctx.env, failed.status, &failed.title, &failed.message);
     }
-    url = add_query_arg(&url, "message", if ok { "3" } else { "5" });
-    if !ok {
-        url = add_query_arg(&url, "error", "1");
-    }
+    // Back to `wp_get_referer()` (the edit form), else the request, with the message.
+    let referer = super::common::wp_get_referer(ctx).unwrap_or_else(|| request.request_uri.clone());
+    let referer = ["_wp_http_referer", "_wpnonce", "error", "message", "paged"].iter().fold(referer, |url, key| rustpress_core::urls::remove_query_arg(&url, key));
+    let url = if ok { add_query_arg(&referer, "message", "3") } else { add_query_arg(&add_query_arg(&referer, "error", "1"), "message", "5") };
     redirect(&url)
 }
 
-/// The row HTML for the Ajax handlers (`add-tag`, `inline-save-tax`).
+/// `{$taxonomy}_add_form_fields`/`{$taxonomy}_edit_form` of the plugins.
+async fn term_form(ctx: &Ctx<'_>, hook_suffix: &str, taxonomy: &str, term: Option<&Term>) -> rustpress_core::native::MetaBoxes {
+    if ctx.site().plugins.is_empty() {
+        return Default::default();
+    }
+    let parts = ctx.plugin_parts();
+    let mut plugin_ctx = ctx.plugin_context(&parts, hook_suffix);
+    plugin_ctx.taxonomy = Some(taxonomy);
+    plugin_ctx.edited_term = term;
+    ctx.site().plugins.term_form(&plugin_ctx, taxonomy, term).await.unwrap_or_else(|e| {
+        tracing::error!(error = %e, "plugin term form failed");
+        Default::default()
+    })
+}
+
+/// `create_term`/`edit_term` of the plugins after a term was saved; a `wp_die()` of one of them.
+pub async fn saved_term(ctx: &Ctx<'_>, hook_suffix: &str, writer: &rustpress_db::Writer, term_id: u64, taxonomy: &str, created: bool) -> Option<rustpress_core::native::Die> {
+    if ctx.site().plugins.is_empty() {
+        return None;
+    }
+    let parts = ctx.plugin_parts();
+    let mut plugin_ctx = ctx.plugin_context(&parts, hook_suffix);
+    plugin_ctx.taxonomy = Some(taxonomy);
+    let saved = rustpress_core::native::TermSaved { ctx: &plugin_ctx, writer, term_id, taxonomy, created };
+    ctx.site().plugins.saved_term(&saved).await.unwrap_or_else(|e| {
+        tracing::error!(error = %e, "a plugin failed on create_term/edit_term");
+        None
+    })
+}
+
+/// The row HTML for the Ajax handlers (`add-tag`, `inline-save-tax`): the screen `edit-{$taxonomy}` has the requested
+/// post type if it exists, else `post`, and the edit links go back to `wp_get_referer()`.
 pub async fn row_html(ctx: &Ctx<'_>, taxonomy: &str, term: &Term, level: usize) -> Option<String> {
-    let info = tax_info(ctx, taxonomy, None)?;
-    Some(row(ctx, &info, term, level, level, "").await)
+    let post_type = ctx.request.request("post_type").filter(|p| ctx.site().types.is_post_type(p));
+    let info = tax_info(ctx, taxonomy, post_type)?;
+    let referer = super::common::wp_get_referer(ctx).unwrap_or_default();
+    Some(row(ctx, &info, term, level, level, &referer).await)
 }

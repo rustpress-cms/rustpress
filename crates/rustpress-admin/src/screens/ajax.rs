@@ -174,6 +174,8 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse
                 wp_root: env.loader.includes.parent().unwrap_or(&env.loader.includes),
                 edited_post: None,
                 block_editor: false,
+                taxonomy: None,
+                edited_term: None,
             };
             match env.site.plugins.admin_ajax_nopriv(&action, &ctx).await {
                 Ok(Some(answer)) => {

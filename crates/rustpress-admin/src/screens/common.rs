@@ -90,10 +90,12 @@ pub fn term_tree(terms: &[Term], exclude: &[u64]) -> Vec<(Term, usize)> {
 pub async fn dropdown_terms(ctx: &Ctx<'_>, taxonomy: &str, name: &str, id: &str, selected_id: u64, class: &str, none: Option<(&str, &str)>, exclude: &[u64]) -> String {
     let terms = ctx.env.db.terms(taxonomy).await.unwrap_or_default();
     let mut out = format!("<select  name='{name}' id='{id}' class='{class}'>\n");
+    let tree = term_tree(&terms, exclude);
+    // Without terms to list the "none" option is the selected one.
     if let Some((value, label)) = none {
-        out.push_str(&format!("\t<option value='{}'>{label}</option>\n", esc_attr(value)));
+        out.push_str(&format!("\t<option value='{}'{}>{label}</option>\n", esc_attr(value), if tree.is_empty() { " selected='selected'" } else { "" }));
     }
-    for (term, level) in term_tree(&terms, exclude) {
+    for (term, level) in tree {
         let pad = "&nbsp;".repeat(level * 3);
         let sel = if term.term_id == selected_id { " selected=\"selected\"" } else { "" };
         out.push_str(&format!("\t<option class=\"level-{level}\" value=\"{}\"{sel}>{pad}{}</option>\n", term.term_id, esc_html(&term.name)));

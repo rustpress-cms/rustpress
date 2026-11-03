@@ -1120,36 +1120,7 @@ async fn edit_form(ctx: &Ctx<'_>, comment: &Comment) -> AdminResponse {
     let h = format!("<form name=\"post\" action=\"comment.php\" method=\"post\" id=\"post\">\n{h}");
     let screen = Screen { file: "comment.php".into(), parent_file: "edit-comments.php".into(), submenu_file: Some("edit-comments.php".into()), title: tr("Edit Comment"), help: Some(edit_help(ctx)), content_inline: true, ..Default::default() };
     let mut assets = Assets { scripts: vec!["comment".into()], late_scripts: vec!["quicktags".into(), "wplink".into(), "jquery-ui-autocomplete".into()], footer: super::editor::quicktags_editor_js(ctx, &[("content", "strong,em,link,block,del,ins,img,ul,ol,li,code,close")]), ..Default::default() };
-    // What the plugins' boxes ask for: the media library while the page is printed, an editor in the footer.
-    if meta_boxes.media && ctx.can("upload_files") {
-        let mut media = Assets::default();
-        super::media_ui::enqueue(ctx, &mut media, 0).await;
-        assets.post_header_scripts.splice(0..0, media.scripts);
-        assets.post_header_styles.extend(media.styles);
-        assets.localize.extend(media.localize);
-        assets.raw_data.extend(media.raw_data);
-        assets.inline.extend(media.inline);
-        assets.pre_footer.push_str(&media.pre_footer);
-    }
-    if let Some(hidden) = &meta_boxes.hidden_editor {
-        let (html, entry) = super::editor::default_editor(ctx, &hidden.id, "", false);
-        assets.footer_first = format!("{}{html}{}", hidden.before, hidden.after);
-        let content = super::editor::EditorEntry { id: "content".into(), quicktags: "strong,em,link,block,del,ins,img,ul,ol,li,code,close".into(), tinymce: None };
-        let rich = entry.tinymce.is_some();
-        assets.footer = super::editor::editors_js(ctx, &[content, entry]);
-        // `_WP_Editors::enqueue_scripts()` when the footer is printed: the editor (with TinyMCE), Quicktags and the
-        // link dialog, and for the media button thickbox and the media upload.
-        if rich {
-            assets.post_header_scripts.push("editor".into());
-            // `wp_default_packages_inline_scripts()`: the classic block keeps the old editor object.
-            assets.inline.push(("editor".into(), "window.wp.oldEditor = window.wp.editor;".into(), "after".into()));
-        }
-        assets.late_scripts.retain(|h| !matches!(h.as_str(), "quicktags" | "wplink" | "jquery-ui-autocomplete"));
-        assets.post_header_scripts.extend(["quicktags".into(), "wplink".into(), "jquery-ui-autocomplete".into()]);
-        if ctx.can("upload_files") {
-            assets.post_header_scripts.extend(["thickbox".into(), "media-upload".into(), "wp-embed".into()]);
-            assets.post_header_styles.push("thickbox".into());
-        }
-    }
+    let content = super::editor::EditorEntry { id: "content".into(), quicktags: "strong,em,link,block,del,ins,img,ul,ol,li,code,close".into(), tinymce: None };
+    super::meta_boxes::plugin_box_assets(ctx, &meta_boxes, &mut assets, vec![content], false).await;
     render(ctx, &screen, &h, &assets).await
 }

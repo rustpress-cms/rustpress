@@ -87,7 +87,7 @@ pub async fn meta_boxes(groups: &[FieldGroup], ctx: &AdminContext<'_>, comment: 
 
 /// The fields that call `acf_enqueue_uploader()` while they are rendered: images, files and icons with the media
 /// library, links and WYSIWYG editors always (sub fields of groups included).
-fn wants_uploader(groups: &[&FieldGroup], media_library: bool) -> bool {
+pub(super) fn wants_uploader(groups: &[&FieldGroup], media_library: bool) -> bool {
     fn walk(fields: &[super::fields::Field], media_library: bool) -> bool {
         fields.iter().any(|f| matches!(f.kind.as_str(), "link" | "wysiwyg") || (media_library && matches!(f.kind.as_str(), "image" | "file" | "icon_picker")) || walk(&f.sub_fields, media_library))
     }
@@ -96,7 +96,7 @@ fn wants_uploader(groups: &[&FieldGroup], media_library: bool) -> bool {
 
 /// `ACF_Assets::enqueue_uploader()`: `wp_enqueue_media()` for who may upload, and the hidden editor of
 /// `print_uploader_scripts()` on `admin_footer`.
-fn uploader_boxes(html: String, ctx: &AdminContext<'_>, groups: &[&FieldGroup]) -> MetaBoxes {
+pub(super) fn uploader_boxes(html: String, ctx: &AdminContext<'_>, groups: &[&FieldGroup]) -> MetaBoxes {
     let can_upload = (ctx.can)("upload_files");
     if !wants_uploader(groups, can_upload) {
         return MetaBoxes { html, ..MetaBoxes::default() };

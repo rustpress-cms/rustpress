@@ -14,6 +14,7 @@
 mod admin;
 mod dashicons;
 mod edit_comment;
+mod edit_term;
 mod edit_post;
 mod fields;
 mod form;
@@ -232,6 +233,15 @@ impl ActivePlugin for Loaded {
         admin::admin_enqueue(ctx.site, assets);
         edit_comment::admin_enqueue(ctx, assets);
         edit_post::admin_enqueue(ctx, assets);
+        edit_term::admin_enqueue(ctx, assets);
+    }
+
+    fn term_form<'a>(&'a self, ctx: &'a rustpress_core::native::AdminContext<'a>, taxonomy: &'a str, term: Option<&'a rustpress_db::Term>) -> BoxFuture<'a, Result<rustpress_core::native::MetaBoxes>> {
+        Box::pin(edit_term::term_form(&self.groups, ctx, taxonomy, term))
+    }
+
+    fn saved_term<'a>(&'a self, ctx: &'a rustpress_core::native::TermSaved<'a>) -> BoxFuture<'a, Result<Option<rustpress_core::native::Die>>> {
+        Box::pin(save::save_term(&self.groups, ctx))
     }
 
     fn post_meta_boxes<'a>(&'a self, ctx: &'a rustpress_core::native::AdminContext<'a>, post: &'a rustpress_db::Post) -> BoxFuture<'a, Result<rustpress_core::native::PostMetaBoxes>> {
@@ -265,15 +275,18 @@ impl ActivePlugin for Loaded {
     }
 
     fn admin_footer<'a>(&'a self, ctx: &'a rustpress_core::native::AdminContext<'a>) -> BoxFuture<'a, Result<String>> {
-        Box::pin(async move { Ok(edit_comment::admin_footer(ctx)) })
+        Box::pin(async move { Ok(format!("{}{}", edit_comment::admin_footer(ctx), edit_term::admin_footer(ctx))) })
     }
 
     fn admin_print_footer_scripts<'a>(&'a self, ctx: &'a rustpress_core::native::AdminContext<'a>) -> BoxFuture<'a, Result<String>> {
         Box::pin(async move {
-            match edit_post::footer_scripts(&self.groups, ctx).await? {
-                Some(footer) => Ok(footer),
-                None => edit_comment::footer_scripts(&self.groups, ctx).await,
+            if let Some(footer) = edit_post::footer_scripts(&self.groups, ctx).await? {
+                return Ok(footer);
             }
+            if let Some(footer) = edit_term::footer_scripts(&self.groups, ctx).await? {
+                return Ok(footer);
+            }
+            edit_comment::footer_scripts(&self.groups, ctx).await
         })
     }
 
