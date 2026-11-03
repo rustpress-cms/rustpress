@@ -765,6 +765,13 @@ impl Types {
         self.post_types.iter().find(|t| t.name == name)
     }
 
+    /// `post_type_exists()`: a type WordPress registers itself, or one the site's registrations or rules know.
+    pub fn post_type_exists(&self, name: &str) -> bool {
+        matches!(name, "post" | "page" | "attachment" | "revision" | "nav_menu_item" | "custom_css" | "customize_changeset" | "oembed_cache" | "user_request" | "wp_block" | "wp_template" | "wp_template_part" | "wp_global_styles" | "wp_navigation" | "wp_font_family" | "wp_font_face")
+            || self.any_post_type(name).is_some()
+            || self.registrations.iter().any(|r| !r.taxonomy && r.name == name)
+    }
+
     /// A post type of the site, also one that cannot be requested on the frontend (`get_post_type_object()` for the
     /// administration).
     pub fn any_post_type(&self, name: &str) -> Option<&PostTypeInfo> {

@@ -81,7 +81,7 @@ fn view(ctx: &AdminContext<'_>) -> String {
 }
 
 /// `$_GET['page']` of a plugin page (`$plugin_page`).
-fn plugin_page<'a>(ctx: &'a AdminContext<'a>) -> Option<&'a str> {
+pub(super) fn plugin_page<'a>(ctx: &'a AdminContext<'a>) -> Option<&'a str> {
     if matches!(ctx.hook_suffix, "edit.php" | "post.php" | "post-new.php") { None } else { ctx.get("page") }
 }
 
@@ -212,7 +212,7 @@ fn header(ctx: &AdminContext<'_>, page_title: Option<&str>) -> String {
     }
     out.push_str("\t</h1>\n\t");
     if options_preview {
-        out.push_str(&format!("\t\t<a href=\"#\" class=\"acf-btn acf-btn-sm disabled\">\n\t\t\t\t<i class=\"acf-icon acf-icon-plus\"></i>\n\t\t\t\t{}\t\t\t</a>\n\t", esc_tr(site, "Add Options Page")));
+        out.push_str(&format!("\t\t\t<a href=\"#\" class=\"acf-btn acf-btn-sm disabled\">\n\t\t\t\t<i class=\"acf-icon acf-icon-plus\"></i>\n\t\t\t\t{}\t\t\t</a>\n\t", esc_tr(site, "Add Options Page")));
     }
     out.push('\t');
     if post_type_object && (ctx.can)("manage_options") {
@@ -362,25 +362,24 @@ pub(super) fn localize(name: &str, data: &[(&str, String)]) -> String {
 }
 
 /// `ACF_Admin_Email_Opt_In_Banner::should_show()`.
-fn shows_banner(ctx: &AdminContext<'_>) -> bool {
-    (ctx.can)("manage_options")
-        && (list_of(ctx).is_some() || ctx.get("page") == Some("acf_options_preview"))
-        && !matches!(ctx.site.options.get("acf_email_opt_in_banner_state"), Some("dismissed" | "submitted"))
+/// `banner_state` is `get_option( 'acf_email_opt_in_banner_state' )` (not autoloaded).
+fn shows_banner(ctx: &AdminContext<'_>, banner_state: Option<&str>) -> bool {
+    (ctx.can)("manage_options") && (list_of(ctx).is_some() || ctx.get("page") == Some("acf_options_preview")) && !matches!(banner_state, Some("dismissed" | "submitted"))
 }
 
 /// `admin_enqueue_scripts` of the lists (`acf_enqueue_script( 'acf' )` with its texts) and of the banner.
-pub fn admin_enqueue(ctx: &AdminContext<'_>, assets: &mut Assets) {
-    if list_of(ctx).is_none() {
-        return;
-    }
+pub fn admin_enqueue(ctx: &AdminContext<'_>, assets: &mut Assets, banner_state: Option<&str>) {
     let site = ctx.site;
-    let acf = assets.script("acf", acf_url(site, "assets/build/js/acf.min.js"), &["jquery"], super::VERSION, false);
-    let texts = ["Review local JSON changes", "Loading diff", "Sync changes", "Please activate your ACF PRO license to edit this options page.", "Please activate your ACF PRO license to edit field groups assigned to an ACF Block."];
-    let translated: Vec<(&str, String)> = texts.iter().map(|t| (*t, esc_tr(site, t))).filter(|(k, v)| *k != v.as_str()).collect();
-    if !translated.is_empty() {
-        acf.extra = Some(localize("acfL10n", &translated));
+    if list_of(ctx).is_some() {
+        let acf = assets.script("acf", acf_url(site, "assets/build/js/acf.min.js"), &["jquery"], super::VERSION, false);
+        let texts = ["Review local JSON changes", "Loading diff", "Sync changes", "Please activate your ACF PRO license to edit this options page.", "Please activate your ACF PRO license to edit field groups assigned to an ACF Block."];
+        let translated: Vec<(&str, String)> = texts.iter().map(|t| (*t, esc_tr(site, t))).filter(|(k, v)| *k != v.as_str()).collect();
+        if !translated.is_empty() {
+            acf.extra = Some(localize("acfL10n", &translated));
+        }
     }
-    if shows_banner(ctx) {
+    // The banner is also on the options pages preview (`is_supported_screen()`).
+    if shows_banner(ctx, banner_state) {
         let banner = assets.script("acf-email-opt-in-banner", acf_url(site, "assets/build/js/acf-email-opt-in-banner.min.js"), &["jquery", "acf"], super::VERSION, true);
         banner.extra = Some(localize(
             "acf_email_opt_in_banner",
@@ -391,13 +390,13 @@ pub fn admin_enqueue(ctx: &AdminContext<'_>, assets: &mut Assets) {
 
 /// `admin_footer` of the lists: the script of `admin_footer()` (priority 1), `views/acf-field-group/pro-features.php`
 /// (`include_pro_features()`) and the banner (`views/email-opt-in-banner.php`).
-pub fn admin_footer(ctx: &AdminContext<'_>) -> String {
-    if list_of(ctx).is_none() {
-        return String::new();
+pub fn admin_footer(ctx: &AdminContext<'_>, banner_state: Option<&str>) -> String {
+    let mut out = String::new();
+    if list_of(ctx).is_some() {
+        out.push_str(include_str!("list_footer.html"));
+        out.push_str(&pro_features(ctx.site));
     }
-    let mut out = include_str!("list_footer.html").to_owned();
-    out.push_str(&pro_features(ctx.site));
-    if shows_banner(ctx) {
+    if shows_banner(ctx, banner_state) {
         out.push_str(&banner(ctx.site));
     }
     out
@@ -435,6 +434,36 @@ pub(super) fn pro_features(site: &Site) -> String {
         utm("https://wpengine.com/developer/", "bx_prod_referral", "acf_free_plugin_cta_panel_logo", "", "acf_plugin", "referral"),
         esc_tr(site, "More Tools from WP Engine"),
     )
+}
+
+/// `wp_ajax_acf/email_opt_in_banner/state` and `…/submit` (`ACF_Admin_Email_Opt_In_Banner::ajax_set_state()`,
+/// `ajax_submit()`): the banner's state, kept in `acf_email_opt_in_banner_state`. Differs from ACF: the submission
+/// is not sent to the form service of ACF's makers (RustPress makes no such requests), so a new address gets the error
+/// ACF answers when that request fails.
+pub async fn ajax_banner(action: &str, ctx: &AdminContext<'_>) -> rustpress_core::Result<rustpress_core::native::AjaxAnswer> {
+    use rustpress_core::native::AjaxAnswer;
+    let error = || AjaxAnswer::json(200, "{\"success\":false}".into());
+    let request = |name: &str| ctx.post_field(name).or_else(|| ctx.query.iter().rev().find(|(k, _)| k == name).map(|(_, v)| v.as_str()));
+    let nonce = request("nonce").unwrap_or_default();
+    if nonce.is_empty() || !(ctx.verify_nonce)(nonce, "acf_nonce") || !(ctx.can)("manage_options") {
+        return Ok(error());
+    }
+    let success = |state: &str| AjaxAnswer::json(200, format!("{{\"success\":true,\"data\":{{\"state\":\"{state}\"}}}}"));
+    if action == "acf/email_opt_in_banner/submit" {
+        if ctx.site.db.option("acf_email_opt_in_banner_state").await?.as_deref() == Some("submitted") {
+            return Ok(success("submitted"));
+        }
+        // An invalid address and the request that is not made end alike.
+        return Ok(error());
+    }
+    let state = request("state").unwrap_or_default();
+    if !matches!(state, "dismissed" | "submitted") {
+        return Ok(error());
+    }
+    if let Some(writer) = ctx.writer {
+        writer.update_option_with_autoload("acf_email_opt_in_banner_state", state, "off").await?;
+    }
+    Ok(success(state))
 }
 
 /// `views/email-opt-in-banner.php`.
@@ -700,9 +729,7 @@ fn label_list(labels: &[String]) -> String {
 
 /// `get_post_type_object( $name )` exists.
 fn post_type_exists(site: &Site, name: &str) -> bool {
-    matches!(name, "post" | "page" | "attachment" | "revision" | "nav_menu_item" | "custom_css" | "customize_changeset" | "oembed_cache" | "user_request" | "wp_block" | "wp_template" | "wp_template_part" | "wp_global_styles" | "wp_navigation" | "wp_font_family" | "wp_font_face")
-        || site.types.any_post_type(name).is_some()
-        || site.types.admin_post_types().iter().any(|t| t.name == name)
+    site.types.post_type_exists(name) || site.types.admin_post_types().iter().any(|t| t.name == name)
 }
 
 /// The strings of an array setting.

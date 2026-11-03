@@ -36,6 +36,7 @@ mod rest_schema;
 mod save;
 mod save_group;
 mod shortcode;
+mod tools;
 mod value;
 
 use futures::future::BoxFuture;
@@ -74,7 +75,7 @@ impl NativePlugin for Acf {
     }
 
     fn load<'a>(&'a self, site: &'a Site) -> BoxFuture<'a, Result<Box<dyn ActivePlugin>>> {
-        Box::pin(async move { Ok(Box::new(Loaded { groups: fields::load(&site.db).await?, shortcode: shortcode::enabled(&site.options) }) as Box<dyn ActivePlugin>) })
+        Box::pin(async move { Ok(Box::new(Loaded { groups: fields::load(&site.db).await?, shortcode: shortcode::enabled(&site.options), banner_state: site.db.option("acf_email_opt_in_banner_state").await? }) as Box<dyn ActivePlugin>) })
     }
 }
 
@@ -82,6 +83,8 @@ pub struct Loaded {
     groups: Vec<FieldGroup>,
     /// `acf_get_setting( 'enable_shortcode' )`.
     shortcode: bool,
+    /// `acf_email_opt_in_banner_state`, which is not autoloaded.
+    banner_state: Option<String>,
 }
 
 /// What `ACF_Rest_Request::parse_request()` learns from the route.
@@ -303,11 +306,20 @@ impl ActivePlugin for Loaded {
         admin::admin_pages(site)
     }
 
+    fn admin_page<'a>(&'a self, slug: &'a str, ctx: &'a rustpress_core::native::AdminContext<'a>) -> BoxFuture<'a, Result<String>> {
+        Box::pin(tools::admin_page(slug, ctx))
+    }
+
+    fn admin_page_parts<'a>(&'a self, slug: &'a str, ctx: &'a rustpress_core::native::AdminContext<'a>) -> BoxFuture<'a, Result<Option<(Vec<rustpress_core::native::FormPart>, Vec<rustpress_core::native::PluginMetaBox>)>>> {
+        Box::pin(tools::admin_page_parts(slug, ctx))
+    }
+
     fn admin_enqueue(&self, ctx: &rustpress_core::native::AdminContext<'_>, assets: &mut rustpress_core::native::Assets) {
         admin::admin_enqueue(ctx.site, assets);
-        admin_lists::admin_enqueue(ctx, assets);
+        admin_lists::admin_enqueue(ctx, assets, self.banner_state.as_deref());
         field_group_edit::admin_enqueue(ctx, assets);
         internal_edit::admin_enqueue(ctx, assets);
+        tools::admin_enqueue(ctx, assets);
         edit_comment::admin_enqueue(ctx, assets);
         edit_post::admin_enqueue(ctx, assets);
         edit_term::admin_enqueue(ctx, assets);
@@ -429,7 +441,7 @@ impl ActivePlugin for Loaded {
     }
 
     fn admin_footer<'a>(&'a self, ctx: &'a rustpress_core::native::AdminContext<'a>) -> BoxFuture<'a, Result<String>> {
-        Box::pin(async move { Ok(format!("{}{}{}", admin_lists::admin_footer(ctx), edit_comment::admin_footer(ctx), edit_term::admin_footer(ctx))) })
+        Box::pin(async move { Ok(format!("{}{}{}", admin_lists::admin_footer(ctx, self.banner_state.as_deref()), edit_comment::admin_footer(ctx), edit_term::admin_footer(ctx))) })
     }
 
     fn admin_print_footer_scripts<'a>(&'a self, ctx: &'a rustpress_core::native::AdminContext<'a>) -> BoxFuture<'a, Result<String>> {
@@ -441,6 +453,9 @@ impl ActivePlugin for Loaded {
                 return Ok(footer);
             }
             if let Some(footer) = internal_edit::footer_scripts(ctx) {
+                return Ok(footer);
+            }
+            if let Some(footer) = tools::footer_scripts(ctx) {
                 return Ok(footer);
             }
             if let Some(footer) = edit_post::footer_scripts(&self.groups, ctx).await? {
@@ -460,7 +475,7 @@ impl ActivePlugin for Loaded {
     }
 
     fn admin_body_class(&self, ctx: &rustpress_core::native::AdminContext<'_>, classes: String) -> String {
-        internal_edit::admin_body_class(ctx, field_group_edit::admin_body_class(ctx, admin_lists::admin_body_class(ctx, admin::admin_body_class(ctx, classes))))
+        tools::admin_body_class(ctx, internal_edit::admin_body_class(ctx, field_group_edit::admin_body_class(ctx, admin_lists::admin_body_class(ctx, admin::admin_body_class(ctx, classes)))))
     }
 
     fn post_trash_change<'a>(&'a self, change: &'a rustpress_core::native::PostChange<'a>) -> BoxFuture<'a, Result<()>> {
@@ -559,6 +574,7 @@ impl ActivePlugin for Loaded {
                 "acf/field_group/render_location_rule" => Some(field_group_edit::ajax_render_location_rule(ctx).await?),
                 "acf/field_group/move_field" => Some(field_group_edit::ajax_move_field(ctx).await?),
                 "acf/link_field_groups" => Some(internal_edit::ajax_link_field_groups(ctx).await?),
+                "acf/email_opt_in_banner/state" | "acf/email_opt_in_banner/submit" => Some(admin_lists::ajax_banner(action, ctx).await?),
                 _ => None,
             })
         })

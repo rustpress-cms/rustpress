@@ -360,8 +360,10 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse
         && !capabilities.iter().any(|capability| ctx.can(capability)) {
             return die(env, 403, "WordPress &rsaquo; Error", &ctx.tr("Sorry, you are not allowed to access this page."));
         }
+    // `admin.php`: the parent of a plugin page is `{$pagenow}?post_type={$typenow}` when the request names a post type.
+    let typed_parent = request.request("post_type").filter(|t| env.site.types.post_type_exists(t)).map(|t| format!("{}?post_type={t}", request.file));
     if let Some(slug) = request.get("page").filter(|p| !p.is_empty())
-        && let Some((plugin, page)) = env.site.plugins.admin_page_of(env.site, &request.file, slug)
+        && let Some((plugin, page)) = typed_parent.as_deref().and_then(|parent| env.site.plugins.admin_page_of(env.site, parent, slug)).or_else(|| env.site.plugins.admin_page_of(env.site, &request.file, slug))
     {
         if !ctx.can(page.capability) {
             return die(env, 403, "WordPress &rsaquo; Error", &ctx.tr("Sorry, you are not allowed to access this page."));
@@ -550,10 +552,28 @@ async fn plugin_page(ctx: &Ctx<'_>, plugin: &dyn ActivePlugin, page: &AdminPage)
         Ok(None) => {}
         Err(e) => tracing::error!(page = page.slug, error = %e, "loading the plugin page failed"),
     }
-    let content = plugin.admin_page(page.slug, &plugin_ctx).await.unwrap_or_else(|e| {
-        tracing::error!(page = page.slug, error = %e, "plugin page failed");
-        String::new()
-    });
+    let content = match plugin.admin_page_parts(page.slug, &plugin_ctx).await {
+        // A page with meta boxes: `do_meta_boxes()` where the callback calls it, with what the user changed.
+        Ok(Some((parts, boxes))) => {
+            let state = meta_boxes::BoxState::load(ctx, &hook, "").await;
+            let boxes: Vec<meta_boxes::MetaBox> = boxes.into_iter().map(meta_boxes::MetaBox::from_plugin).collect();
+            parts
+                .into_iter()
+                .map(|part| match part {
+                    rustpress_core::native::FormPart::Html(html) => html,
+                    rustpress_core::native::FormPart::MetaBoxes(context) => meta_boxes::do_meta_boxes(ctx, &boxes, &context, &state),
+                })
+                .collect()
+        }
+        Ok(None) => plugin.admin_page(page.slug, &plugin_ctx).await.unwrap_or_else(|e| {
+            tracing::error!(page = page.slug, error = %e, "plugin page failed");
+            String::new()
+        }),
+        Err(e) => {
+            tracing::error!(page = page.slug, error = %e, "plugin page failed");
+            String::new()
+        }
+    };
     let plugin_help = ctx.site().plugins.admin_page_help(ctx.site(), page.slug, &ctx.request.query);
     // The screen options of a plugin's list: its columns as `render_list_table_columns_preferences()` lists them.
     let options = match plugin.admin_screen_options(page.slug, ctx.site(), &ctx.request.query) {
@@ -597,6 +617,8 @@ async fn plugin_page(ctx: &Ctx<'_>, plugin: &dyn ActivePlugin, page: &AdminPage)
         hook_suffix: Some(hook.clone()),
         // The callback prints its markup right after the header.
         content_inline: true,
+        // `$typenow` of `admin.php`: the post type of the request, if it exists.
+        post_type: ctx.request.request("post_type").filter(|t| ctx.site().types.post_type_exists(t)).unwrap_or_default().to_owned(),
         ..Default::default()
     };
     // `options-head.php` below Settings: the messages of `options.php`, and "Settings saved." for `updated`.
