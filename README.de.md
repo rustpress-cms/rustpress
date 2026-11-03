@@ -119,12 +119,17 @@ dev/wp-bump.sh 7.1.4          # neue Version setzen und das Referenz-WordPress d
 | Crate | Aufgabe |
 |---|---|
 | `rustpress-phpser` | PHP-`serialize`/`unserialize`, byte-genau |
-| `rustpress-db` | Lesezugriffe auf das WordPress-Schema (sqlx) |
+| `rustpress-db` | Zugriff auf das WordPress-Schema (sqlx) |
 | `rustpress-core` | Optionen, Rewrite-Regeln, Hauptabfrage, Template-Hierarchie, Canonical, Sitemaps |
 | `rustpress-blocks` | Block-Parser und -Renderer, Block-Supports, Style-Engine |
-| `rustpress-theme` | `theme.json`, Templates, Global Styles, Dokument und Feeds |
-| `rustpress-rest` | REST-API (lesend) |
-| `rustpress-server` | axum-Server |
+| `rustpress-theme` | `theme.json`, Templates, Global Styles, Dokument und Feeds, Twenty Seventeen |
+| `rustpress-content` | Schreiben von Beiträgen, Begriffen, Benutzern, Kommentaren und Uploads |
+| `rustpress-auth` | Passwörter, Cookies, Sitzungen, Nonces und Berechtigungen |
+| `rustpress-admin` | `wp-admin`, Anmeldung und Installer |
+| `rustpress-rest` | REST-API |
+| `rustpress-mail` | E-Mail |
+| `rustpress-plugins` | native Module, die WordPress-Plugins ersetzen |
+| `rustpress-server` | axum-Server und CGI-Modus |
 | `rustpress-compat` | Vergleichslauf gegen ein echtes WordPress mit Bericht |
 
 ## Lizenz
