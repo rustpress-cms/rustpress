@@ -13,6 +13,9 @@
 
 mod admin;
 mod admin_lists;
+mod field_group_edit;
+mod field_settings;
+mod field_types;
 mod dashicons;
 mod edit_attachment;
 mod edit_comment;
@@ -23,6 +26,7 @@ mod fields;
 mod form;
 mod format;
 mod internal;
+mod locations;
 mod php;
 mod render;
 mod rest_format;
@@ -299,6 +303,7 @@ impl ActivePlugin for Loaded {
     fn admin_enqueue(&self, ctx: &rustpress_core::native::AdminContext<'_>, assets: &mut rustpress_core::native::Assets) {
         admin::admin_enqueue(ctx.site, assets);
         admin_lists::admin_enqueue(ctx, assets);
+        field_group_edit::admin_enqueue(ctx, assets);
         edit_comment::admin_enqueue(ctx, assets);
         edit_post::admin_enqueue(ctx, assets);
         edit_term::admin_enqueue(ctx, assets);
@@ -374,7 +379,12 @@ impl ActivePlugin for Loaded {
     }
 
     fn post_meta_boxes<'a>(&'a self, ctx: &'a rustpress_core::native::AdminContext<'a>, post: &'a rustpress_db::Post) -> BoxFuture<'a, Result<rustpress_core::native::PostMetaBoxes>> {
-        Box::pin(edit_post::meta_boxes(&self.groups, ctx, post))
+        Box::pin(async move {
+            if field_group_edit::edited_group(ctx).is_some() {
+                return field_group_edit::meta_boxes(&self.groups, ctx, post).await;
+            }
+            edit_post::meta_boxes(&self.groups, ctx, post).await
+        })
     }
 
     fn save_post<'a>(&'a self, ctx: &'a rustpress_core::native::PostSaved<'a>) -> BoxFuture<'a, Result<()>> {
@@ -412,6 +422,9 @@ impl ActivePlugin for Loaded {
             if let Some(footer) = admin_lists::footer_scripts(ctx) {
                 return Ok(footer);
             }
+            if let Some(footer) = field_group_edit::footer_scripts(ctx) {
+                return Ok(footer);
+            }
             if let Some(footer) = edit_post::footer_scripts(&self.groups, ctx).await? {
                 return Ok(footer);
             }
@@ -429,7 +442,15 @@ impl ActivePlugin for Loaded {
     }
 
     fn admin_body_class(&self, ctx: &rustpress_core::native::AdminContext<'_>, classes: String) -> String {
-        admin_lists::admin_body_class(ctx, admin::admin_body_class(ctx, classes))
+        field_group_edit::admin_body_class(ctx, admin_lists::admin_body_class(ctx, admin::admin_body_class(ctx, classes)))
+    }
+
+    fn screen_layout(&self, _ctx: &rustpress_core::native::AdminContext<'_>, screen_id: &str) -> Option<u32> {
+        field_group_edit::screen_layout(screen_id)
+    }
+
+    fn screen_settings<'a>(&'a self, ctx: &'a rustpress_core::native::AdminContext<'a>, html: String) -> BoxFuture<'a, Result<String>> {
+        Box::pin(field_group_edit::screen_settings(ctx, html))
     }
 
     fn parent_file(&self, _ctx: &rustpress_core::native::AdminContext<'_>, parent_file: String) -> String {

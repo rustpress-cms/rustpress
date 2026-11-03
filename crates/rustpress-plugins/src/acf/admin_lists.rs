@@ -48,12 +48,20 @@ pub(super) fn utm(url: &str, campaign: &str, content: &str, anchor: &str, source
 
 /// `acf_slugify( $str )`.
 fn slugify(site: &Site, text: &str) -> String {
-    rustpress_core::slug::remove_accents(text, &site.locale())
-        .to_ascii_lowercase()
-        .chars()
-        .map(|c| if matches!(c, '_' | '-' | '/' | ' ') { '-' } else { c })
-        .filter(|c| c.is_ascii_alphanumeric() || *c == '-')
-        .collect()
+    slugify_ascii(&rustpress_core::slug::remove_accents(text, &site.locale()))
+}
+
+/// `acf_slugify()` of a text without accents.
+pub(super) fn slugify_ascii(text: &str) -> String {
+    text.to_ascii_lowercase().chars().map(|c| if matches!(c, '_' | '-' | '/' | ' ') { '-' } else { c }).filter(|c| c.is_ascii_alphanumeric() || *c == '-').collect()
+}
+
+/// `get_user_meta( $user_id, 'acf_user_settings', true )` (`acf_get_user_setting()`).
+pub(super) async fn user_settings(site: &Site, user: u64) -> rustpress_core::Result<Value> {
+    Ok(match site.db.acf_meta(rustpress_db::MetaKind::User, user, "acf_user_settings").await? {
+        Some(raw) => rustpress_core::options::maybe_unserialize(&raw),
+        None => Value::Array(Vec::new()),
+    })
 }
 
 /// `get_current_screen()->post_type` is one of ACF's: `ACF_Admin::current_screen()` adds its frame.
@@ -240,7 +248,12 @@ pub fn in_admin_header(ctx: &AdminContext<'_>) -> String {
         Some("acf_options_preview") => Some(tr(ctx.site, "Options Pages")),
         _ => None,
     };
-    navigation(ctx, page_title.as_deref())
+    let mut out = navigation(ctx, page_title.as_deref());
+    // `views/global/form-top.php` on the edit screens (`$screen->base === 'post'`).
+    if let Some(post) = super::field_group_edit::edited_group(ctx) {
+        out.push_str(&super::field_group_edit::form_top(ctx, post));
+    }
+    out
 }
 
 /// `ACF_Admin::setup_help_tab()`.
@@ -395,7 +408,7 @@ pub fn admin_footer(ctx: &AdminContext<'_>) -> String {
 }
 
 /// `views/acf-field-group/pro-features.php` of the free version.
-fn pro_features(site: &Site) -> String {
+pub(super) fn pro_features(site: &Site) -> String {
     let title = esc_tr(site, "Unlock Advanced Features and Build Even More with ACF PRO");
     let chip = format!("<div class=\"acf-pro-label\"><img src=\"{}\" alt=\"{}\"></div>", esc_url(&acf_url(site, "assets/images/pro-chip.svg")), esc_attr(&tr(site, "ACF PRO logo")));
     let feature = |icon: &str, label: &str| format!("\t\t\t<div class=\"acf-field-group-pro-feature\">\n\t\t\t\t<i class=\"field-type-icon {icon}\"></i>\n\t\t\t\t<span class=\"field-type-label\">{}</span>\n\t\t\t</div>\n", esc_tr(site, label));

@@ -249,6 +249,16 @@ pub trait ActivePlugin: Send + Sync {
         submenu_file
     }
 
+    /// `get_user_option_screen_layout_{$screen_id}`: the number of columns the plugin sets for a screen.
+    fn screen_layout(&self, _ctx: &AdminContext<'_>, _screen_id: &str) -> Option<u32> {
+        None
+    }
+
+    /// The `screen_settings` filter: what the plugin appends to the settings of "Screen Options".
+    fn screen_settings<'a>(&'a self, _ctx: &'a AdminContext<'a>, html: String) -> BoxFuture<'a, Result<String>> {
+        Box::pin(async { Ok(html) })
+    }
+
     /// `in_admin_header` after the toolbar of the administration: what the plugin prints before `#wpbody`.
     fn in_admin_header<'a>(&'a self, _ctx: &'a AdminContext<'a>) -> BoxFuture<'a, Result<String>> {
         Box::pin(async { Ok(String::new()) })
@@ -1314,6 +1324,8 @@ pub struct Asset {
 pub struct Assets {
     pub styles: Vec<Asset>,
     pub scripts: Vec<Asset>,
+    /// `wp_dequeue_script( $handle )` of scripts the screen enqueues.
+    pub dequeue: Vec<String>,
 }
 
 impl Assets {
@@ -1814,6 +1826,20 @@ impl Plugins {
     /// `submenu_file` after the plugins.
     pub fn submenu_file(&self, ctx: &AdminContext<'_>, submenu_file: String) -> String {
         self.hooks().fold(submenu_file, |file, plugin| plugin.submenu_file(ctx, file))
+    }
+
+    /// The layout of the first plugin that sets one.
+    pub fn screen_layout(&self, ctx: &AdminContext<'_>, screen_id: &str) -> Option<u32> {
+        self.hooks().find_map(|plugin| plugin.screen_layout(ctx, screen_id))
+    }
+
+    /// `screen_settings` after the plugins.
+    pub async fn screen_settings(&self, ctx: &AdminContext<'_>, html: String) -> Result<String> {
+        let mut html = html;
+        for plugin in self.hooks() {
+            html = plugin.screen_settings(ctx, html).await?;
+        }
+        Ok(html)
     }
 
     /// `in_admin_header` of the plugins.

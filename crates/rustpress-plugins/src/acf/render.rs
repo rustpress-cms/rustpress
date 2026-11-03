@@ -125,7 +125,7 @@ fn key_value(k: &Key) -> Value {
     }
 }
 
-fn key_text(k: &Key) -> String {
+pub(super) fn key_text(k: &Key) -> String {
     match k {
         Key::Int(i) => i.to_string(),
         Key::Str(s) => String::from_utf8_lossy(s).into_owned(),
@@ -433,6 +433,11 @@ impl RenderField {
             }
         }
         let mut f = Self { items: out, sub_fields };
+        // `(int)` of `ID` and `menu_order`.
+        for name in ["ID", "menu_order"] {
+            let value = super::php::intval(f.get(name));
+            f.set(name, Value::Int(value));
+        }
         for (name, default) in super::fields::type_defaults(&f.kind()) {
             if !isset(f.get(name)) {
                 f.set(name, default);
@@ -546,7 +551,13 @@ fn render_instructions(field: &RenderField, tooltip: bool) -> String {
 }
 
 /// `acf_render_field_wrap( $field, $element, $instruction )`.
-pub fn render_field_wrap<'a>(ctx: &'a Ctx<'a>, mut field: RenderField, element: &'a str, instruction: &'a str) -> BoxFuture<'a, Result<String>> {
+pub fn render_field_wrap<'a>(ctx: &'a Ctx<'a>, field: RenderField, element: &'a str, instruction: &'a str) -> BoxFuture<'a, Result<String>> {
+    render_field_wrap_with(ctx, field, element, instruction, false)
+}
+
+/// `acf_render_field_wrap( $field, $element, $instruction, $field_setting )`: a field setting shows the instructions
+/// below its label as a tooltip, those below the field after the input.
+pub fn render_field_wrap_with<'a>(ctx: &'a Ctx<'a>, mut field: RenderField, element: &'a str, instruction: &'a str, field_setting: bool) -> BoxFuture<'a, Result<String>> {
     Box::pin(async move {
         field.prepare();
         let (element, inner) = match element {
@@ -617,23 +628,26 @@ pub fn render_field_wrap<'a>(ctx: &'a Ctx<'a>, mut field: RenderField, element: 
             out.push_str(&format!("<{inner} class=\"acf-label\">\n"));
             out.push_str(&render_label(&field));
             if instruction == "label" {
-                out.push_str(&render_instructions(&field, false));
+                out.push_str(&render_instructions(&field, field_setting));
             }
             out.push_str(&format!("</{inner}>\n"));
         }
         out.push_str(&format!("<{inner} class=\"acf-input\">\n"));
         out.push_str(&render_field(ctx, field.clone()).await?);
-        if instruction == "field" {
+        if !field_setting && instruction == "field" {
             out.push_str(&render_instructions(&field, false));
         }
         out.push_str(&format!("</{inner}>\n"));
+        if field_setting && instruction == "field" {
+            out.push_str(&render_instructions(&field, false));
+        }
         out.push_str(&format!("</{element}>\n"));
         Ok(out)
     })
 }
 
 /// `acf_render_field()`: the type's `render_field()`.
-async fn render_field(ctx: &Ctx<'_>, mut field: RenderField) -> Result<String> {
+pub(super) async fn render_field(ctx: &Ctx<'_>, mut field: RenderField) -> Result<String> {
     field.prepare();
     Ok(match field.kind().as_str() {
         "text" | "password" => render_text(field),
@@ -1431,6 +1445,12 @@ fn render_tab(field: RenderField) -> String {
     if field.truthy("unique_tab_key") {
         atts.set("data-unique-tab-key", field.get("unique_tab_key").cloned().unwrap_or(Value::Null));
     }
+    // The tabs of the field group editor.
+    if let Some(settings_type) = field.isset("settings-type") {
+        let slug = super::admin_lists::slugify_ascii(&text(Some(&settings_type)));
+        atts.set("data-settings-type", string(&slug));
+        atts.append("class", &format!(" acf-settings-type-{slug}"));
+    }
     if field.truthy("class") {
         atts.append("class", &format!(" {}", field.str("class")));
     }
@@ -1668,7 +1688,7 @@ fn post_types_of(site: &Site, field: &RenderField) -> Vec<String> {
 }
 
 /// `acf_get_post_title()`: the title (with `(no title)`), the status when not published, a dash per ancestor.
-async fn post_title(ctx: &Ctx<'_>, post: &rustpress_db::Post) -> Result<String> {
+pub(super) async fn post_title(ctx: &Ctx<'_>, post: &rustpress_db::Post) -> Result<String> {
     let mut title = if ctx.admin { rustpress_blocks::content::the_title_in_admin(ctx.site, post) } else { rustpress_blocks::content::the_title_for(ctx.site, post) };
     if title.is_empty() {
         title = ctx.acf("(no title)");
@@ -1967,7 +1987,7 @@ async fn render_taxonomy(ctx: &Ctx<'_>, mut field: RenderField) -> Result<String
 }
 
 /// `acf_get_post_type_label()`: the singular name, the name itself for a type that does not exist.
-fn post_type_singular(site: &Site, name: &str) -> String {
+pub(super) fn post_type_singular(site: &Site, name: &str) -> String {
     match name {
         "post" => site.trx("Post", "post type singular name"),
         "page" => site.trx("Page", "post type singular name"),
@@ -1982,14 +2002,14 @@ fn post_type_singular(site: &Site, name: &str) -> String {
 
 /// Labels that more than one entry shares get the entry's name added (`acf_get_pretty_post_types()`,
 /// `acf_get_taxonomy_labels()`).
-fn disambiguate(items: Vec<(String, String)>) -> Vec<(String, String)> {
+pub(super) fn disambiguate(items: Vec<(String, String)>) -> Vec<(String, String)> {
     let count = |label: &str| items.iter().filter(|(_, l)| l == label).count();
     items.iter().map(|(name, label)| (name.clone(), if count(label) > 1 { format!("{label} ({name})") } else { label.clone() })).collect()
 }
 
 /// `acf_get_taxonomies()`: the public ones of WordPress and every registered one; with post types, the taxonomies
 /// of those types (`acf_get_taxonomies_for_post_type()`).
-fn acf_taxonomies(site: &Site, post_types: Option<&[String]>) -> Vec<String> {
+pub(super) fn acf_taxonomies(site: &Site, post_types: Option<&[String]>) -> Vec<String> {
     let registered: Vec<&rustpress_core::types::TaxonomyInfo> = site.types.rewrite_taxonomies().iter().chain(site.types.taxonomies.iter()).collect();
     if let Some(types) = post_types {
         let mut out: Vec<String> = Vec::new();
@@ -2013,7 +2033,7 @@ fn acf_taxonomies(site: &Site, post_types: Option<&[String]>) -> Vec<String> {
 }
 
 /// `acf_get_taxonomy_labels()` of a list of taxonomies.
-fn taxonomy_singulars(site: &Site, taxonomies: &[String]) -> Vec<(String, String)> {
+pub(super) fn taxonomy_singulars(site: &Site, taxonomies: &[String]) -> Vec<(String, String)> {
     disambiguate(taxonomies.iter().map(|t| (t.clone(), site.taxonomy_singular_label(t))).collect())
 }
 
@@ -2029,6 +2049,53 @@ fn term_children(parent: u64, terms: &[rustpress_db::Term], seen: &mut Vec<u64>)
         out.extend(term_children(term.term_id, terms, seen));
     }
     out
+}
+
+/// `acf_get_taxonomy_terms()` of every taxonomy: `{taxonomy}:{slug}` by the taxonomy's label.
+pub(super) async fn taxonomy_terms(ctx: &Ctx<'_>) -> Result<Value> {
+    Ok(Value::Array(term_filter_choices(ctx, &RenderField::raw(Vec::new(), Vec::new()), &[]).await?))
+}
+
+/// `reset( acf_get_taxonomy_terms( [ 'category' ] ) )`: the categories in their tree.
+pub(super) async fn category_terms(ctx: &Ctx<'_>) -> Result<Value> {
+    let mut terms = ctx.site.db.terms("category").await?;
+    let ordered = term_children(0, &terms, &mut Vec::new());
+    if ordered.len() == terms.len() {
+        terms = ordered;
+    }
+    let mut out = Vec::new();
+    for term in &terms {
+        out.push((key(&format!("category:{}", term.slug)), string(&term_title(ctx, term, true).await?)));
+    }
+    Ok(Value::Array(out))
+}
+
+/// `acf_get_user_role_labels()`: the roles of the site in their order, translated (`translate_user_role()`).
+pub(super) fn user_role_names(site: &Site) -> Vec<(String, String)> {
+    let Some(Value::Array(items)) = site.options.value(&format!("{}user_roles", site.db.table_prefix())) else { return Vec::new() };
+    items.iter().filter(|(k, _)| matches!(k, Key::Str(_))).map(|(k, role)| (key_text(k), site.trx(&text(role.get("name")), "User role"))).collect()
+}
+
+/// `acf_get_image_sizes()`: the sizes with their dimensions, then the full size.
+pub(super) fn image_size_choices(site: &Site) -> Vec<(String, String)> {
+    let mut sizes: Vec<(String, String)> = [("thumbnail", "Thumbnail"), ("medium", "Medium"), ("large", "Large")].iter().map(|(k, v)| ((*k).to_owned(), site.trd("acf", v))).collect();
+    // `get_intermediate_image_sizes()`.
+    for size in ["thumbnail", "medium", "medium_large", "large", "1536x1536", "2048x2048"] {
+        if sizes.iter().any(|(k, _)| k == size) {
+            continue;
+        }
+        // `ucwords( str_replace( '-', ' ', $size ) )`.
+        let label = size.replace('-', " ");
+        let label: String = label.split(' ').map(|w| { let mut c = w.chars(); match c.next() { Some(f) => f.to_uppercase().collect::<String>() + c.as_str(), None => String::new() } }).collect::<Vec<_>>().join(" ");
+        sizes.push((size.to_owned(), label));
+    }
+    for (size, label) in sizes.iter_mut() {
+        if let (Some(w), Some(h)) = image_size(site, size) {
+            label.push_str(&format!(" ({w} x {h})"));
+        }
+    }
+    sizes.push(("full".to_owned(), site.trd("acf", "Full Size")));
+    sizes
 }
 
 /// The choices of the taxonomy filter: `{taxonomy}:{slug}` by the taxonomy's label (`acf_get_choices_from_terms()`
@@ -2235,7 +2302,7 @@ async fn render_icon_picker(ctx: &Ctx<'_>, field: RenderField) -> Result<String>
 }
 
 /// `uniqid( $prefix )`: the time in seconds and microseconds as hex.
-fn uniqid(prefix: &str) -> String {
+pub(super) fn uniqid(prefix: &str) -> String {
     let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
     format!("{prefix}{:08x}{:05x}", now.as_secs(), now.subsec_micros())
 }

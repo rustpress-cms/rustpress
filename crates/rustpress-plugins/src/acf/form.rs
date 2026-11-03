@@ -63,9 +63,16 @@ fn texts(site: &Site) -> Vec<(&'static str, String)> {
 }
 
 /// `wp_localize_script( 'acf', 'acfL10n', $text )` with the texts that differ from English.
-fn localized_texts(site: &Site) -> Option<String> {
+fn localized_texts(site: &Site, extra: &[(&'static str, String)]) -> Option<String> {
+    let mut all = texts(site);
+    for (key, value) in extra {
+        match all.iter_mut().find(|(k, _)| k == key) {
+            Some(slot) => slot.1 = value.clone(),
+            None => all.push((key, value.clone())),
+        }
+    }
     let mut map = Map::new();
-    for (key, value) in texts(site) {
+    for (key, value) in all {
         if key.replace(".verb", "") != value {
             map.insert(key.to_owned(), Json::String(rustpress_core::formatting::html_entity_decode(&value)));
         }
@@ -80,11 +87,16 @@ fn localized_texts(site: &Site) -> Option<String> {
 /// The scripts and styles of `acf_enqueue_scripts()` on the website: `ACF_Assets::register_scripts()`, then what
 /// `enqueue_scripts()` and the field types enqueue, in that order.
 pub(super) fn enqueue(site: &Site, wp_version: &str, assets: &mut Assets, admin: bool) {
+    enqueue_with_texts(site, wp_version, assets, admin, &[]);
+}
+
+/// [`enqueue`] with the texts a screen adds (`acf_localize_text()` before the scripts print).
+pub(super) fn enqueue_with_texts(site: &Site, wp_version: &str, assets: &mut Assets, admin: bool, extra: &[(&'static str, String)]) {
     let ver = super::VERSION;
     let mut scripts = Assets::default();
     let acf = scripts.script("acf", acf_url(site, "assets/build/js/acf.min.js"), &["jquery"], ver, false);
     acf.registered_only = true;
-    acf.extra = localized_texts(site);
+    acf.extra = localized_texts(site, extra);
     scripts.script("acf-input", acf_url(site, "assets/build/js/acf-input.min.js"), &["jquery", "jquery-ui-sortable", "jquery-ui-resizable", "acf", "wp-a11y"], ver, false);
     scripts.style("acf-global", acf_url(site, "assets/build/css/acf-global.min.css"), &["dashicons"], ver, "all").registered_only = true;
     scripts.style("acf-input", acf_url(site, "assets/build/css/acf-input.min.css"), &["acf-global"], ver, "all");
@@ -152,6 +164,9 @@ pub struct FormData {
     /// Only `acf` was enqueued (`acf_enqueue_script( 'acf' )` of ACF's lists), not the inputs: no data of the field
     /// types.
     pub bare: bool,
+    /// What the field group screen localizes (`acf_localize_data()` on `acf/input/admin_enqueue_scripts`): after the
+    /// data of the field types, before that of the uploads.
+    pub field_group_data: Vec<(String, Json)>,
 }
 
 /// When `acf_enqueue_uploader()` ran, which decides where its `toolbars` are in `acf.data`.
@@ -189,7 +204,7 @@ pub(super) fn footer_with(site: &Site, form: &FormData, wp_version: &str, nonce:
         data.insert("toolbars".into(), toolbars());
     }
     if !form.bare {
-        field_type_data(site, can, &mut data);
+        field_type_data(site, can, &mut data, &form.field_group_data);
     }
     // `acf_field_wysiwyg::acf_enqueue_uploader()` on `acf/enqueue_uploader`: the toolbars of the editors.
     if uploader == Uploader::Render {
@@ -216,7 +231,7 @@ pub(super) fn footer_with(site: &Site, form: &FormData, wp_version: &str, nonce:
 
 /// What the field types localize on `acf/input/admin_enqueue_scripts`: the texts of Select2, the pickers and the
 /// Google Map, the icons and the MIME types.
-fn field_type_data(site: &Site, can: &(dyn Fn(&str) -> bool + Send + Sync), data: &mut Map<String, Json>) {
+fn field_type_data(site: &Site, can: &(dyn Fn(&str) -> bool + Send + Sync), data: &mut Map<String, Json>, field_group: &[(String, Json)]) {
     let locale = site.locale_data();
     let select2 = [
         ("matches_1", "One result is available, press enter to select it."),
@@ -280,6 +295,9 @@ fn field_type_data(site: &Site, can: &(dyn Fn(&str) -> bool + Send + Sync), data
         }),
     );
     data.insert("iconPickeri10n".into(), Json::Object(super::dashicons::DASHICONS.iter().map(|(name, label)| ((*name).to_owned(), Json::String(esc_tr(site, label)))).collect()));
+    for (name, value) in field_group {
+        data.insert(name.clone(), value.clone());
+    }
     data.insert("mimeTypeIcon".into(), Json::String(site.site_url("wp-includes/images/media/default.png")));
     let mimes = rustpress_content::media::allowed_mime_types_for(site, &[], can, false, false);
     data.insert("mimeTypes".into(), Json::Object(mimes.into_iter().map(|(k, v)| (k, Json::String(v))).collect()));
@@ -287,7 +305,20 @@ fn field_type_data(site: &Site, can: &(dyn Fn(&str) -> bool + Send + Sync), data
 
 /// `acf_form_data()`: the hidden inputs ACF reads when the form is sent.
 pub fn form_data(screen: &str, post_id: Value, nonce: &str) -> String {
-    let inputs = [("screen", super::php::string(screen)), ("post_id", post_id), ("validation", Value::Bool(true)), ("nonce", super::php::string(nonce)), ("changed", Value::Int(0))];
+    form_data_with(screen, post_id, &[], nonce)
+}
+
+/// `acf_form_data( $args )` with more arguments: `validation` replaces the default, others come after it.
+pub fn form_data_with(screen: &str, post_id: Value, args: &[(&str, Value)], nonce: &str) -> String {
+    let mut inputs: Vec<(&str, Value)> = vec![("screen", super::php::string(screen)), ("post_id", post_id), ("validation", Value::Bool(true))];
+    for (name, value) in args {
+        match inputs.iter_mut().find(|(k, _)| k == name) {
+            Some(slot) => slot.1 = value.clone(),
+            None => inputs.push((name, value.clone())),
+        }
+    }
+    inputs.push(("nonce", super::php::string(nonce)));
+    inputs.push(("changed", Value::Int(0)));
     let mut out = "\t<div id=\"acf-form-data\" class=\"acf-hidden\">\n\t\t".to_owned();
     for (name, value) in inputs {
         out.push_str(&hidden_input(&Attrs::new(&[("id", super::php::string(&format!("_acf_{name}"))), ("name", super::php::string(&format!("_acf_{name}"))), ("value", value)])));

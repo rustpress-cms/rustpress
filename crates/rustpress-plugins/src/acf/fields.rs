@@ -195,6 +195,11 @@ pub fn from_settings(settings: Value, sub_fields: Vec<Field>) -> Field {
 }
 
 /// `acf_get_fields()` of a parent (a field group or a group field).
+/// The fields of a parent (`acf_get_fields()`).
+pub(super) fn children_of(parent: u64, all: &[AcfPost]) -> Vec<Field> {
+    children(parent, all)
+}
+
 fn children(parent: u64, all: &[AcfPost]) -> Vec<Field> {
     all.iter().filter(|p| p.parent == parent).map(|p| field_from(p, all)).collect()
 }
