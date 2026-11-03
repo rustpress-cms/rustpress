@@ -233,6 +233,12 @@ pub trait ActivePlugin: Send + Sync {
     /// The `wp_prepare_attachment_for_js` filter the plugin adds on `wp_ajax_query-attachments`, after the others.
     fn query_attachment_js(&self, _ctx: &AdminContext<'_>, _response: &mut serde_json::Map<String, serde_json::Value>) {}
 
+    /// The `schema` of the fields the plugin registers with `register_rest_field()` for the route of `ctx` (its
+    /// `OPTIONS`): `(field, schema)` for `schema.properties` and the arguments of the writing endpoints.
+    fn rest_schema_fields<'a>(&'a self, _ctx: &'a RestFieldContext<'a>) -> BoxFuture<'a, Result<Vec<(String, serde_json::Value)>>> {
+        Box::pin(async { Ok(Vec::new()) })
+    }
+
     /// The extension of the first `wp_mime_type_icon()` the plugin calls on `admin_enqueue_scripts` of the screen: it fixes
     /// the icons of the request (`icon_files` in the object cache), `.png` where WordPress asks for `.svg`.
     fn admin_mime_icon_ext(&self, _ctx: &AdminContext<'_>) -> Option<&'static str> {
@@ -1688,6 +1694,15 @@ impl Plugins {
             out.html.push_str(&boxes.html);
             out.media |= boxes.media;
             out.hidden_editor = out.hidden_editor.or(boxes.hidden_editor);
+        }
+        Ok(out)
+    }
+
+    /// The schemas of the plugins' REST fields for a route.
+    pub async fn rest_schema_fields(&self, ctx: &RestFieldContext<'_>) -> Result<Vec<(String, serde_json::Value)>> {
+        let mut out = Vec::new();
+        for plugin in self.hooks() {
+            out.extend(plugin.rest_schema_fields(ctx).await?);
         }
         Ok(out)
     }

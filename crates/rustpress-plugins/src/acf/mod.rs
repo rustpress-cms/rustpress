@@ -25,6 +25,7 @@ mod internal;
 mod php;
 mod render;
 mod rest_format;
+mod rest_schema;
 mod save;
 mod shortcode;
 mod value;
@@ -207,6 +208,69 @@ impl Loaded {
         })
     }
 
+    /// The groups of an object of the route when the caller may read it (`current_user_can_read_request_object()`:
+    /// the controller's `get_item_permissions_check()` in the `view` context), else `None`.
+    async fn readable_object_groups<'a>(&'a self, ctx: &RestFieldContext<'_>, request: &Request, id: u64) -> Result<Option<Vec<&'a FieldGroup>>> {
+        let db = &ctx.site.db;
+        let viewer = ctx.query.viewer.as_ref();
+        let can = |capability: &str| viewer.is_some_and(|v| v.can(capability));
+        let matcher = MatchContext { site: ctx.site, user: fields::MatchUser::of(viewer), admin: false };
+        match request.object_type {
+            "post" => {
+                let Some(post) = db.post(id).await?.filter(|p| p.post_type == request.sub_type) else { return Ok(None) };
+                let readable = post.post_status == "publish" || viewer.is_some_and(|v| v.can_edit_post(&post)) || (post.post_status == "private" && viewer.is_some_and(|v| v.can_read_private(&post.post_type)));
+                if !readable {
+                    return Ok(None);
+                }
+                Ok(Some(self.visible_rest_groups(&Screen::Post { post: &post, post_type: None }, &matcher).await?))
+            }
+            "term" => {
+                if db.term_by_id(Some(&request.sub_type), id).await?.is_none() {
+                    return Ok(None);
+                }
+                Ok(Some(self.visible_rest_groups(&Screen::Term { taxonomy: &request.sub_type }, &matcher).await?))
+            }
+            "user" => {
+                if db.user(id).await?.is_none() {
+                    return Ok(None);
+                }
+                let own = viewer.is_some_and(|v| v.id == id);
+                let mut published = 0;
+                if !own && !can("list_users") && !can("edit_users") {
+                    for (post_type, _) in post_types(ctx.site) {
+                        published += db.count_published_user_posts(&post_type, id).await?;
+                    }
+                    if published == 0 {
+                        return Ok(None);
+                    }
+                }
+                Ok(Some(self.visible_rest_groups(&Screen::User { user_id: Some(id), form: None }, &matcher).await?))
+            }
+            "comment" => {
+                let Some(comment) = db.comment_any(id).await? else { return Ok(None) };
+                let post = db.post(comment.comment_post_id).await?;
+                let readable = can("moderate_comments") || (comment.comment_approved == "1" && post.as_ref().is_some_and(|p| p.post_status == "publish"));
+                if !readable {
+                    return Ok(None);
+                }
+                let post_type = post.map(|p| p.post_type).unwrap_or_default();
+                Ok(Some(self.visible_rest_groups(&Screen::Comment { post_type }, &matcher).await?))
+            }
+            _ => Ok(None),
+        }
+    }
+
+    /// The groups that show in REST and match `screen`.
+    async fn visible_rest_groups<'a>(&'a self, screen: &Screen<'_>, matcher: &MatchContext<'_>) -> Result<Vec<&'a FieldGroup>> {
+        let mut out = Vec::new();
+        for group in self.groups.iter().filter(|g| g.show_in_rest) {
+            if group.visible(screen, matcher).await? {
+                out.push(group);
+            }
+        }
+        Ok(out)
+    }
+
     /// `ACF_Rest_Api::get_field_groups_by_id()` and `get_fields()`: the fields of the visible groups that show in REST.
     async fn rest_fields<'a>(&'a self, target: &Target<'_>, ctx: &RestFieldContext<'_>) -> Result<Vec<&'a Field>> {
         let matcher = MatchContext { site: ctx.site, user: fields::MatchUser::of(ctx.query.viewer.as_ref()), admin: false };
@@ -246,6 +310,30 @@ impl ActivePlugin for Loaded {
 
     fn attachment_fields_to_save<'a>(&'a self, ctx: &'a rustpress_core::native::AttachmentSaved<'a>) -> BoxFuture<'a, Result<Option<rustpress_core::native::Die>>> {
         Box::pin(save::save_attachment(&self.groups, ctx))
+    }
+
+    /// `register_rest_field( $base, 'acf', [ 'schema' => … ] )` of the route: the type-level union of the field
+    /// groups, or – on an object's route, where the caller may read it – the groups of the object
+    /// (`maybe_apply_per_object_schema()`, `enrich_options_endpoint_args()`). The terms controller names `post_tag`
+    /// `tag`, so that schema has none.
+    fn rest_schema_fields<'a>(&'a self, ctx: &'a RestFieldContext<'a>) -> BoxFuture<'a, Result<Vec<(String, serde_json::Value)>>> {
+        Box::pin(async move {
+            let Some(request) = parse_request(ctx.site, ctx.route) else { return Ok(Vec::new()) };
+            let base = request.child.clone().unwrap_or_else(|| request.sub_type.clone());
+            if base == "post_tag" || request.child.is_some() {
+                return Ok(Vec::new());
+            }
+            let viewer = ctx.query.viewer.as_ref();
+            let can_upload = viewer.is_some_and(|v| v.can("upload_files"));
+            let mut groups: Vec<&FieldGroup> = self.groups.iter().filter(|g| g.show_in_rest && rest_schema::object_type_has_field_group(g, request.object_type, &request.sub_type)).collect();
+            let id = ctx.route.trim_end_matches('/').rsplit('/').next().and_then(|s| s.parse::<u64>().ok());
+            if let Some(id) = id
+                && let Some(visible) = self.readable_object_groups(ctx, &request, id).await?
+            {
+                groups = visible;
+            }
+            Ok(vec![("acf".to_owned(), rest_schema::build(ctx.site, can_upload, &groups))])
+        })
     }
 
     fn query_attachments_sizes(&self, ctx: &rustpress_core::native::AdminContext<'_>) -> Vec<String> {

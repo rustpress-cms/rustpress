@@ -256,7 +256,7 @@ impl Rest<'_> {
         let segments: Vec<&str> = route.trim_start_matches('/').split('/').collect();
         let method = self.method().to_owned();
         if method == "OPTIONS" {
-            return Ok(Some(self.options(route)));
+            return Ok(Some(self.options(route).await));
         }
         // The body is only read here: an upload is not copied.
         let no_body = Body::None;
@@ -328,9 +328,9 @@ impl Rest<'_> {
     }
 
     /// `OPTIONS`: the methods the user may use. The schema stays empty.
-    fn options(&self, route: &str) -> Outcome {
+    async fn options(&self, route: &str) -> Outcome {
         // A path no route matches gets an empty answer.
-        let Some((data, methods)) = self.route_help(if route.is_empty() { "/" } else { route }) else {
+        let Some((mut data, methods)) = self.route_help(if route.is_empty() { "/" } else { route }) else {
             let mut resp = crate::Resp::item(serde_json::json!([]));
             resp.allow = Some(String::new());
             return Ok(resp);
@@ -339,6 +339,7 @@ impl Rest<'_> {
         // for who may edit.
         let writes = self.access.is_some() && self.can("edit_posts");
         let allowed: Vec<&str> = methods.iter().map(String::as_str).filter(|m| *m == "GET" || writes).collect();
+        rustpress_core::OrLog::or_log(self.add_plugin_schema(&mut data).await);
         let mut resp = crate::Resp::item(data);
         resp.allow = Some(allowed.join(", "));
         Ok(resp)
