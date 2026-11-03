@@ -1770,6 +1770,7 @@ dependencies = [
  "md5",
  "regex",
  "rustpress-admin",
+ "rustpress-auth",
  "rustpress-blocks",
  "rustpress-content",
  "rustpress-core",

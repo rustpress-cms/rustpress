@@ -249,6 +249,28 @@ pub trait ActivePlugin: Send + Sync {
         submenu_file
     }
 
+    /// `trashed_post`, `untrashed_post` and `deleted_post`: after a post went to the trash, came back or was deleted.
+    fn post_trash_change<'a>(&'a self, _change: &'a PostChange<'a>) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async { Ok(()) })
+    }
+
+    /// `wp_untrash_post_status`: the status a post restored from the trash gets (`draft` by default).
+    fn untrash_post_status(&self, _post: &Post, _new_status: &str, _previous: &str) -> Option<String> {
+        None
+    }
+
+    /// `current_screen` of a posts list (`edit.php`, before WordPress handles its bulk actions): an action of the plugin
+    /// that redirects, or stops with an error.
+    fn list_load<'a>(&'a self, _ctx: &'a AdminContext<'a>) -> BoxFuture<'a, Result<Option<PageLoad>>> {
+        Box::pin(async { Ok(None) })
+    }
+
+    /// `post_updated_messages`: the message `$number` of the edit screen of `post_type` after a save (`Some(None)`
+    /// for `false`, which prints nothing).
+    fn post_updated_message(&self, _site: &Site, _post_type: &str, _number: u32) -> Option<Option<String>> {
+        None
+    }
+
     /// `get_user_option_screen_layout_{$screen_id}`: the number of columns the plugin sets for a screen.
     fn screen_layout(&self, _ctx: &AdminContext<'_>, _screen_id: &str) -> Option<u32> {
         None
@@ -939,6 +961,27 @@ pub struct PostMetaBoxes {
     pub hidden_fields: Vec<FormPart>,
     /// An editor printed on `admin_footer` (priority 1), as for [`MetaBoxes::hidden_editor`].
     pub hidden_editor: Option<HiddenEditor>,
+}
+
+/// What happened to a post in [`ActivePlugin::post_trash_change`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PostChangeKind {
+    Trashed,
+    Untrashed,
+    Deleted,
+}
+
+/// A post that went to the trash, came back or was deleted.
+pub struct PostChange<'a> {
+    pub site: &'a Site,
+    pub writer: &'a rustpress_db::Writer,
+    /// `time()`.
+    pub now: i64,
+    /// The signed-in user.
+    pub user: u64,
+    /// The post before the change.
+    pub post: &'a Post,
+    pub kind: PostChangeKind,
 }
 
 /// A post `edit_post()` saved, with the request that sent it.
@@ -1826,6 +1869,34 @@ impl Plugins {
     /// `submenu_file` after the plugins.
     pub fn submenu_file(&self, ctx: &AdminContext<'_>, submenu_file: String) -> String {
         self.hooks().fold(submenu_file, |file, plugin| plugin.submenu_file(ctx, file))
+    }
+
+    /// `trashed_post`, `untrashed_post` or `deleted_post` of the plugins.
+    pub async fn post_trash_change(&self, change: &PostChange<'_>) -> Result<()> {
+        for plugin in self.hooks() {
+            plugin.post_trash_change(change).await?;
+        }
+        Ok(())
+    }
+
+    /// The status of a post restored from the trash after the plugins.
+    pub fn untrash_post_status(&self, post: &Post, new_status: &str, previous: &str) -> String {
+        self.hooks().fold(new_status.to_owned(), |status, plugin| plugin.untrash_post_status(post, &status, previous).unwrap_or(status))
+    }
+
+    /// The first action of a plugin on a posts list.
+    pub async fn list_load(&self, ctx: &AdminContext<'_>) -> Result<Option<PageLoad>> {
+        for plugin in self.hooks() {
+            if let Some(load) = plugin.list_load(ctx).await? {
+                return Ok(Some(load));
+            }
+        }
+        Ok(None)
+    }
+
+    /// The message after a save of the first plugin that gives one.
+    pub fn post_updated_message(&self, site: &Site, post_type: &str, number: u32) -> Option<Option<String>> {
+        self.hooks().find_map(|plugin| plugin.post_updated_message(site, post_type, number))
     }
 
     /// The layout of the first plugin that sets one.

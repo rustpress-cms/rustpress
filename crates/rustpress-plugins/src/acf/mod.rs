@@ -26,12 +26,14 @@ mod fields;
 mod form;
 mod format;
 mod internal;
+mod list_actions;
 mod locations;
 mod php;
 mod render;
 mod rest_format;
 mod rest_schema;
 mod save;
+mod save_group;
 mod shortcode;
 mod value;
 
@@ -388,7 +390,12 @@ impl ActivePlugin for Loaded {
     }
 
     fn save_post<'a>(&'a self, ctx: &'a rustpress_core::native::PostSaved<'a>) -> BoxFuture<'a, Result<()>> {
-        Box::pin(save::save_post(&self.groups, ctx))
+        Box::pin(async move {
+            if ctx.post.post_type == "acf-field-group" {
+                return save_group::save_post(ctx).await;
+            }
+            save::save_post(&self.groups, ctx).await
+        })
     }
 
     fn revision_post_has_changed<'a>(&'a self, ctx: &'a rustpress_core::native::PostSaved<'a>, latest_revision: u64, changed: bool) -> BoxFuture<'a, Result<bool>> {
@@ -443,6 +450,26 @@ impl ActivePlugin for Loaded {
 
     fn admin_body_class(&self, ctx: &rustpress_core::native::AdminContext<'_>, classes: String) -> String {
         field_group_edit::admin_body_class(ctx, admin_lists::admin_body_class(ctx, admin::admin_body_class(ctx, classes)))
+    }
+
+    fn post_trash_change<'a>(&'a self, change: &'a rustpress_core::native::PostChange<'a>) -> BoxFuture<'a, Result<()>> {
+        Box::pin(save_group::post_trash_change(change))
+    }
+
+    fn untrash_post_status(&self, post: &rustpress_db::Post, _new_status: &str, previous: &str) -> Option<String> {
+        save_group::untrash_post_status(post, previous)
+    }
+
+    fn list_load<'a>(&'a self, ctx: &'a rustpress_core::native::AdminContext<'a>) -> BoxFuture<'a, Result<Option<rustpress_core::native::PageLoad>>> {
+        Box::pin(list_actions::load(ctx))
+    }
+
+    fn admin_notices<'a>(&'a self, ctx: &'a rustpress_core::native::AdminContext<'a>) -> BoxFuture<'a, Result<String>> {
+        Box::pin(list_actions::notices(ctx))
+    }
+
+    fn post_updated_message(&self, site: &Site, post_type: &str, number: u32) -> Option<Option<String>> {
+        save_group::post_updated_message(site, post_type, number)
     }
 
     fn screen_layout(&self, _ctx: &rustpress_core::native::AdminContext<'_>, screen_id: &str) -> Option<u32> {

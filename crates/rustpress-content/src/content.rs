@@ -445,6 +445,10 @@ impl Content<'_> {
         let post_id = if update {
             // `post_content_filtered` is kept as it is stored.
             fields.retain(|(c, _)| *c != "post_content_filtered");
+            // An update stores the guid as `get_post_field( 'guid' )` displays it (`esc_url()`: `&` becomes `&#038;`).
+            if let Some(before) = &before {
+                fields.push(("guid", Val::Str(rustpress_core::formatting::esc_url(&rustpress_core::formatting::wp_strip_all_tags(&before.guid)))));
+            }
             self.writer.update_rows("posts", "ID", post_id, &fields).await?;
             post_id
         } else {
@@ -534,8 +538,9 @@ impl Content<'_> {
                 return Ok(());
             }
         }
+        // `_wp_post_revision_data()` has no author, so `wp_insert_post()` takes the current user's.
         let fields: Vec<(&str, Val)> = vec![
-            ("post_author", Val::Int(post.post_author as i64)),
+            ("post_author", Val::Int(self.user.id as i64)),
             ("post_date", Val::Str(post.post_modified.clone())),
             ("post_date_gmt", Val::Str(post.post_modified_gmt.clone())),
             ("post_content", Val::Str(post.post_content.clone())),
@@ -738,6 +743,7 @@ impl Content<'_> {
         self.writer.add_post_meta(id, "_wp_trash_meta_status", &post.post_status).await?;
         self.writer.add_post_meta(id, "_wp_trash_meta_time", &self.now.to_string()).await?;
         self.insert_post(&PostData { id: Some(id), post_status: Some("trash".into()), ..Default::default() }).await?;
+        self.post_trash_change(&post, rustpress_core::native::PostChangeKind::Trashed).await?;
         // `wp_trash_post_comments()`
         let comments_table = self.writer.table("comments");
         let rows = self.db.comment_statuses(id).await?;
@@ -750,19 +756,29 @@ impl Content<'_> {
         Ok(true)
     }
 
-    /// `wp_untrash_post()`.
+    /// `wp_untrash_post()`: the post becomes a draft (an attachment `inherit`) unless a plugin's
+    /// `wp_untrash_post_status` says otherwise.
     pub async fn untrash_post(&self, id: u64) -> Result<bool> {
+        self.untrash_post_with(id, false).await
+    }
+
+    /// [`Self::untrash_post`], with `wp_untrash_post_set_previous_status()` (the "Undo" of `edit.php`): back to the
+    /// status the post had.
+    pub async fn untrash_post_with(&self, id: u64, previous_status: bool) -> Result<bool> {
         let Some(post) = self.db.post(id).await? else { return Ok(false) };
         if post.post_status != "trash" {
             return Ok(false);
         }
         let new_status = if post.post_type == "attachment" { "inherit" } else { "draft" };
-        // `wp_untrash_post_set_previous_status()`: back to what it was.
-        let previous = self.db.post_meta_value(id, "_wp_trash_meta_status").await?.filter(|s| !s.is_empty());
-        let status = previous.unwrap_or_else(|| new_status.to_owned());
+        let previous = self.db.post_meta_value(id, "_wp_trash_meta_status").await?.unwrap_or_default();
+        let mut status = self.site.plugins.untrash_post_status(&post, new_status, &previous);
+        if previous_status {
+            status = previous.clone();
+        }
         self.writer.delete_post_meta(id, "_wp_trash_meta_status").await?;
         self.writer.delete_post_meta(id, "_wp_trash_meta_time").await?;
         self.insert_post(&PostData { id: Some(id), post_status: Some(status), ..Default::default() }).await?;
+        self.post_trash_change(&post, rustpress_core::native::PostChangeKind::Untrashed).await?;
         // `wp_untrash_post_comments()`
         if let Some(raw) = self.db.post_meta_value(id, "_wp_trash_meta_comments_status").await?
             && let Ok(Value::Array(items)) = rustpress_phpser::unserialize(raw.as_bytes())
@@ -815,7 +831,19 @@ impl Content<'_> {
         self.writer.delete_rows("comments", "comment_post_ID", id).await?;
         self.writer.delete_rows("postmeta", "post_id", id).await?;
         self.writer.delete_rows("posts", "ID", id).await?;
+        self.post_trash_change(&post, rustpress_core::native::PostChangeKind::Deleted).await?;
         Ok(true)
+    }
+
+    /// `trashed_post`, `untrashed_post` and `deleted_post` of the plugins.
+    async fn post_trash_change(&self, post: &rustpress_db::Post, kind: rustpress_core::native::PostChangeKind) -> Result<()> {
+        if self.site.plugins.is_empty() {
+            return Ok(());
+        }
+        let change = rustpress_core::native::PostChange { site: self.site, writer: self.writer, now: self.now, user: self.user.id, post, kind };
+        self.site.plugins.post_trash_change(&change).await.map_err(|e| match e {
+            rustpress_core::Error::Db(e) => ContentError::Db(e),
+        })
     }
 }
 

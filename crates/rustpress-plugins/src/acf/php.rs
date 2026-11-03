@@ -81,6 +81,14 @@ pub fn string(text: &str) -> Value {
 }
 
 /// `$array[ $name ] = $value`: in place when the key exists, appended otherwise.
+/// `$items[ $key ] = $value` with a key as it is.
+pub fn set_key(items: &mut Vec<(Key, Value)>, k: Key, value: Value) {
+    match items.iter_mut().find(|(existing, _)| key_eq(existing, &k)) {
+        Some(slot) => slot.1 = value,
+        None => items.push((k, value)),
+    }
+}
+
 pub fn set(items: &mut Vec<(Key, Value)>, name: &str, value: Value) {
     let k = key(name);
     match items.iter_mut().find(|(existing, _)| key_eq(existing, &k)) {
