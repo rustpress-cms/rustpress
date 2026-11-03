@@ -163,7 +163,7 @@ async fn form_on(ctx: &Ctx<'_>, user: &User, own: bool, errors: &[String], file:
     let bar_front = meta(ctx, id, "show_admin_bar_front").await;
     let comment_shortcuts = meta(ctx, id, "comment_shortcuts").await;
     let syntax = meta(ctx, id, "syntax_highlighting").await;
-    let infinite = meta(ctx, id, "media_infinite_scrolling").await;
+    let infinite = meta(ctx, id, "infinite_scrolling").await;
     let heading = if own { tr("Profile") } else { sprintf(&tr("Edit User %s"), &[&esc_html(&user.display_name)]) };
     let action_url = ctx.admin_url(if own { "profile.php" } else { "user-edit.php" });
     // `$wp_http_referer`: where the list of users was, kept while the user is edited.
@@ -449,6 +449,13 @@ async fn form_on(ctx: &Ctx<'_>, user: &User, own: bool, errors: &[String], file:
             rustpress_core::i18n::sprintf(&tr("If this is a development website, you can <a href=\"%s\">set the environment type accordingly</a> to enable application passwords."), &["https://developer.wordpress.org/apis/wp-config-php/#wp-environment-type"])
         ));
     }
+    // `show_user_profile`/`edit_user_profile` after the application passwords.
+    let fields = user_form(ctx, file, Some(id)).await;
+    if !fields.html.is_empty()
+        && let Some(at) = h.rfind("\t\t\t\t\t\n\t\t\t\t\t\n\t\t\t\t\t\n")
+    {
+        h.replace_range(at..at + 18, &format!("\t\t\t\t\t\n\t\t\t\t\t{}\n\t\t\t\t\t\n", fields.html));
+    }
     h.push_str(&format!("<input type=\"hidden\" name=\"action\" value=\"update\" />\n\t\t\t\t<input type=\"hidden\" name=\"user_id\" id=\"user_id\" value=\"{id}\" />\n\n\t\t\t\t<p class=\"submit\"><input type=\"submit\" name=\"submit\" id=\"submit\" class=\"button button-primary\" value=\"{}\"  /></p>\n\t\t\t</form>\n\t\t</div>\n\t\t<script>\n\tif (window.location.hash == '#password') {{\n\t\tdocument.getElementById('pass1').focus();\n\t}}\n</script>\n\n<script>\n\tjQuery( function( $ ) {{\n\t\tvar languageSelect = $( '#locale' );\n\t\t$( 'form' ).on( 'submit', function() {{\n\t\t\t/*\n\t\t\t * Don't show a spinner for English and installed languages,\n\t\t\t * as there is nothing to download.\n\t\t\t */\n\t\t\tif ( ! languageSelect.find( 'option:selected' ).data( 'installed' ) ) {{\n\t\t\t\t$( '#submit', this ).after( '<span class=\"spinner language-install-spinner is-active\" />' );\n\t\t\t}}\n\t\t}});\n\t}} );\n</script>\n\n", if own { tr("Update Profile") } else { tr("Update User") }));
     if app_available {
         // The file ends with a line break of its own; the page ends right after the last template.
@@ -476,7 +483,9 @@ async fn form_on(ctx: &Ctx<'_>, user: &User, own: bool, errors: &[String], file:
     // `userProfileL10n` names the user of `?user_id=`.
     let requested: u64 = request.get("user_id").map_or(0, |v| v.trim().parse().unwrap_or(0));
     let localize = vec![("user-profile".to_owned(), "userProfileL10n".to_owned(), serde_json::json!({"user_id": requested, "nonce": ctx.create_nonce(&format!("reset-password-for-{requested}"))}))];
-    render(ctx, &screen, &h, &Assets { scripts, localize, ..Default::default() }).await
+    let mut assets = Assets { scripts, localize, ..Default::default() };
+    super::meta_boxes::plugin_box_assets(ctx, &fields, &mut assets, Vec::new(), true).await;
+    render(ctx, &screen, &h, &assets).await
 }
 
 /// The help of `profile.php` and `user-edit.php`.
@@ -552,6 +561,109 @@ fn new_help(ctx: &Ctx<'_>) -> Help {
     }
 }
 
+/// PHP's `empty()` of a string.
+fn php_empty(text: &str) -> bool {
+    text.is_empty() || text == "0"
+}
+
+/// The checks of `edit_user()` in their order: the errors of the sent profile of `user` (`None` for a new user),
+/// with `email` as `$_POST['email']`. `WP_Error::get_error_messages()` lists them by code, in the order the codes
+/// first came.
+async fn edit_user_errors(ctx: &Ctx<'_>, user: Option<&User>, email: Option<&str>) -> Vec<String> {
+    let tr = |s: &str| ctx.tr(s);
+    let field = |name: &str| ctx.request.post_field(name);
+    let mut errors: Vec<(&str, String)> = Vec::new();
+    let user_login = match user {
+        Some(u) => Some(u.user_login.clone()),
+        None => field("user_login").map(|l| sanitize::user_login(l, true)),
+    };
+    let pass1 = field("pass1").unwrap_or_default().trim();
+    let pass2 = field("pass2").unwrap_or_default().trim();
+    // `$user->user_email` is only set by an address `is_email()` accepts.
+    let mut user_email = None;
+    if let Some(email) = email {
+        if super::options::is_email(email) {
+            user_email = Some(email.to_owned());
+        } else {
+            errors.push(("invalid_email", tr("<strong>Error:</strong> The email address is not correct.")));
+        }
+    }
+    if user_login.as_deref() == Some("") {
+        errors.push(("user_login", tr("<strong>Error:</strong> Please enter a username.")));
+    }
+    if user.is_some() && php_empty(&sanitize::text_field(field("nickname").unwrap_or_default())) {
+        errors.push(("nickname", tr("<strong>Error:</strong> Please enter a nickname.")));
+    }
+    if user.is_none() && php_empty(pass1) {
+        errors.push(("pass", tr("<strong>Error:</strong> Please enter a password.")));
+    }
+    if pass1.contains('\\') {
+        errors.push(("pass", tr("<strong>Error:</strong> Passwords may not contain the character \"\\\".")));
+    }
+    if (user.is_some() || !php_empty(pass1)) && pass1 != pass2 {
+        errors.push(("pass", tr("<strong>Error:</strong> Passwords do not match. Please enter the same password in both password fields.")));
+    }
+    if user.is_none() {
+        // `validate_username()`: nothing may change in sanitizing.
+        if let Some(raw) = field("user_login") {
+            let sanitized = sanitize::user_login(raw, true);
+            if sanitized != raw || sanitized.is_empty() {
+                errors.push(("user_login", tr("<strong>Error:</strong> This username is invalid because it uses illegal characters. Please enter a valid username.")));
+            }
+        }
+        if let Some(login) = user_login.as_deref().filter(|l| !l.is_empty())
+            && ctx.env.db.user_by_login(login).await.ok().flatten().is_some()
+        {
+            errors.push(("user_login", tr("<strong>Error:</strong> This username is already registered. Please choose another one.")));
+        }
+    }
+    match user_email.as_deref() {
+        None | Some("") | Some("0") => errors.push(("empty_email", tr("<strong>Error:</strong> Please enter an email address."))),
+        Some(email) => {
+            if let Some(owner) = ctx.env.db.user_by_email(email).await.ok().flatten()
+                && user.is_none_or(|u| u.id != owner.id)
+            {
+                errors.push(("email_exists", tr("<strong>Error:</strong> This email is already registered. Please choose another one.")));
+            }
+        }
+    }
+    let mut grouped: Vec<(&str, Vec<String>)> = Vec::new();
+    for (code, message) in errors {
+        match grouped.iter_mut().find(|(c, _)| *c == code) {
+            Some((_, list)) => list.push(message),
+            None => grouped.push((code, vec![message])),
+        }
+    }
+    grouped.into_iter().flat_map(|(_, list)| list).collect()
+}
+
+/// `show_user_profile`/`edit_user_profile` (with the user) and `user_new_form` of the plugins.
+async fn user_form(ctx: &Ctx<'_>, hook_suffix: &str, user_id: Option<u64>) -> rustpress_core::native::MetaBoxes {
+    if ctx.site().plugins.is_empty() {
+        return Default::default();
+    }
+    let parts = ctx.plugin_parts();
+    let plugin_ctx = ctx.plugin_context(&parts, hook_suffix);
+    ctx.site().plugins.user_form(&plugin_ctx, user_id).await.unwrap_or_else(|e| {
+        tracing::error!(error = %e, "plugin user form failed");
+        Default::default()
+    })
+}
+
+/// `profile_update`/`user_register` of the plugins after a user was saved; a `wp_die()` of one of them.
+async fn saved_user(ctx: &Ctx<'_>, hook_suffix: &str, writer: &rustpress_db::Writer, user_id: u64, created: bool) -> Option<rustpress_core::native::Die> {
+    if ctx.site().plugins.is_empty() {
+        return None;
+    }
+    let parts = ctx.plugin_parts();
+    let plugin_ctx = ctx.plugin_context(&parts, hook_suffix);
+    let saved = rustpress_core::native::UserSaved { ctx: &plugin_ctx, writer, user_id, created };
+    ctx.site().plugins.saved_user(&saved).await.unwrap_or_else(|e| {
+        tracing::error!(error = %e, "a plugin failed on profile_update/user_register");
+        None
+    })
+}
+
 /// `profile.php`.
 pub async fn profile(ctx: &Ctx<'_>) -> AdminResponse {
     let user = ctx.env.db.user(ctx.user.id).await.ok().flatten();
@@ -560,7 +672,7 @@ pub async fn profile(ctx: &Ctx<'_>) -> AdminResponse {
         return response;
     }
     if ctx.request.post && ctx.request.post_field("action") == Some("update") {
-        return save(ctx, ctx.user.id, true).await;
+        return save(ctx, ctx.user.id, true, "profile.php").await;
     }
     form(ctx, &user, true, &[]).await
 }
@@ -579,7 +691,7 @@ pub async fn user_edit(ctx: &Ctx<'_>) -> AdminResponse {
     };
     let own = id == ctx.user.id;
     if ctx.request.post && ctx.request.post_field("action") == Some("update") {
-        return save(ctx, id, own).await;
+        return save(ctx, id, own, "user-edit.php").await;
     }
     // The own profile on `user-edit.php` is the profile page with the toolbar entry "View User".
     form_on(ctx, &user, own, &[], "user-edit.php").await
@@ -629,9 +741,6 @@ async fn new_email_links(ctx: &Ctx<'_>, user: &User) -> Option<AdminResponse> {
 /// `send_confirmation_on_profile_email()`: the new address gets a link; the address stays as it is until it is used.
 async fn send_confirmation_on_profile_email(ctx: &Ctx<'_>, user: &User, email: &str) -> bool {
     let Some(writer) = ctx.env.writer else { return false };
-    if ctx.env.mailer.is_none() {
-        return false;
-    }
     use rand::Rng;
     let hash = format!("{:x}", md5::compute(format!("{email}{}{}", ctx.env.now, rand::rng().random::<u32>())));
     let stored = Value::Array(vec![(Key::Str(b"hash".to_vec()), Value::Str(hash.as_bytes().to_vec())), (Key::Str(b"newemail".to_vec()), Value::Str(email.as_bytes().to_vec()))]);
@@ -651,7 +760,7 @@ async fn send_confirmation_on_profile_email(ctx: &Ctx<'_>, user: &User, email: &
 }
 
 /// `edit_user()` for the profile forms.
-async fn save(ctx: &Ctx<'_>, id: u64, own: bool) -> AdminResponse {
+async fn save(ctx: &Ctx<'_>, id: u64, own: bool, file: &str) -> AdminResponse {
     let request = ctx.request;
     let tr = |s: &str| ctx.tr(s);
     if !ctx.verify_nonce(&format!("update-user_{id}")) {
@@ -661,38 +770,32 @@ async fn save(ctx: &Ctx<'_>, id: u64, own: bool) -> AdminResponse {
     let Some(user) = ctx.env.db.user(id).await.ok().flatten() else { return forbidden(ctx, "Invalid user ID.") };
     let content = Content { site: ctx.site(), db: ctx.env.db, writer, user: &ctx.user, now: ctx.env.now };
     let field = |name: &str| request.post_field(name).map(str::to_owned);
-    let mut errors: Vec<String> = Vec::new();
+    // `edit_user()` refuses a role the user may not give before it checks anything else.
+    if !own && ctx.can("promote_users") && let Some(role) = field("role") && !role.is_empty() && !ctx.env.roles.contains(&role) {
+        return super::die(ctx.env, 403, "WordPress &rsaquo; Error", &format!("<p>{}</p>", ctx.tr("Sorry, you are not allowed to give users that role.")));
+    }
     let nickname = field("nickname").unwrap_or_default();
-    if nickname.trim().is_empty() {
-        errors.push(tr("<strong>Error:</strong> Please enter a nickname."));
+    // `send_confirmation_on_profile_email()` on `personal_options_update`, before `edit_user()`: your own new address
+    // waits for the link sent to it, and the form goes on with the current one (its errors are dropped).
+    let mut posted_email = field("email");
+    if own && let Some(new_email) = posted_email.clone().filter(|e| *e != user.user_email) {
+        if super::options::is_email(&new_email) {
+            if ctx.env.db.user_by_email(&new_email).await.ok().flatten().is_some() {
+                writer.delete_user_meta(id, "_new_email").await.or_log();
+            } else {
+                send_confirmation_on_profile_email(ctx, &user, &new_email).await;
+            }
+        }
+        posted_email = Some(user.user_email.clone());
     }
-    let email = field("email").unwrap_or_default();
-    let email = email.trim().to_owned();
-    if email.is_empty() {
-        errors.push(tr("<strong>Error:</strong> Please enter an email address."));
-    } else if !super::options::is_email(&super::options::sanitize_email(&email)) {
-        errors.push(tr("<strong>Error:</strong> The email address isn&#8217;t correct."));
-    } else if let Some(other) = ctx.env.db.user_by_email(&super::options::sanitize_email(&email)).await.ok().flatten()
-        && other.id != id
-    {
-        errors.push(tr("<strong>Error:</strong> This email is already registered. Please choose another one."));
-    }
-    let pass1 = field("pass1").unwrap_or_default();
-    let pass2 = field("pass2").unwrap_or_default();
-    if pass1.contains('\\') {
-        errors.push(tr("<strong>Error:</strong> Passwords may not contain the character &#8220;\\&#8221;."));
-    }
-    if !pass1.is_empty() && pass1 != pass2 {
-        errors.push(tr("<strong>Error:</strong> Passwords do not match. Please enter the same password in both password fields."));
-    }
+    let email = posted_email.clone().unwrap_or_default().trim().to_owned();
+    let pass1 = field("pass1").unwrap_or_default().trim().to_owned();
+    let errors = edit_user_errors(ctx, Some(&user), posted_email.as_deref()).await;
     if !errors.is_empty() {
-        return form(ctx, &user, own, &errors).await;
+        return form_on(ctx, &user, own, &errors, file).await;
     }
-    // Your own address changes only when the link sent to the new one is used.
     let old_email = user.user_email.clone();
     let old_login = user.user_login.clone();
-    let email_changed = email != old_email;
-    let email = if own && email_changed && send_confirmation_on_profile_email(ctx, &user, &email).await { old_email.clone() } else { email };
     let mut data = UserData {
         id: Some(id),
         user_email: Some(email.clone()),
@@ -703,13 +806,13 @@ async fn save(ctx: &Ctx<'_>, id: u64, own: bool) -> AdminResponse {
         last_name: field("last_name"),
         description: field("description"),
         rich_editing: Some(if field("rich_editing").as_deref() == Some("false") { "false".into() } else { "true".into() }),
+        infinite_scrolling: Some(if field("infinite_scrolling").as_deref() == Some("false") { "false".into() } else { "true".into() }),
         comment_shortcuts: Some(if field("comment_shortcuts").as_deref() == Some("true") { "true".into() } else { "false".into() }),
         show_admin_bar_front: Some(if field("admin_bar_front").is_some() { "true".into() } else { "false".into() }),
         ..Default::default()
     };
-    if own {
-        data.syntax_highlighting = Some(if field("syntax_highlighting").as_deref() == Some("false") { "false".into() } else { "true".into() });
-    }
+    // `edit_user()` takes it from the form for every user, shown or not.
+    data.syntax_highlighting = Some(if field("syntax_highlighting").as_deref() == Some("false") { "false".into() } else { "true".into() });
     if !pass1.is_empty() {
         data.user_pass = Some(pass1);
     }
@@ -729,7 +832,10 @@ async fn save(ctx: &Ctx<'_>, id: u64, own: bool) -> AdminResponse {
     // `locale` "site-default" is stored as an empty string like WordPress.
     match content.insert_user(&data).await {
         Ok(_) => {}
-        Err(e) => return form(ctx, &user, own, &[format!("<strong>Error:</strong> {e}")]).await,
+        Err(e) => return form_on(ctx, &user, own, &[format!("<strong>Error:</strong> {e}")], file).await,
+    }
+    if let Some(failed) = saved_user(ctx, file, writer, id, false).await {
+        return super::die(ctx.env, failed.status, &failed.title, &failed.message);
     }
     if data.user_pass.is_some() && own {
         // The session stays; the other ones end like in `wp_update_user()`.
@@ -781,24 +887,11 @@ pub async fn user_new(ctx: &Ctx<'_>) -> AdminResponse {
         let content = Content { site: ctx.site(), db: ctx.env.db, writer, user: &ctx.user, now: ctx.env.now };
         let login = submitted("user_login");
         let email = submitted("email");
-        let pass1 = submitted("pass1");
-        let pass2 = submitted("pass2");
-        if sanitize::user_login(&login, true).is_empty() {
-            errors.push(tr("<strong>Error:</strong> Please enter a username."));
-        }
-        if email.trim().is_empty() {
-            errors.push(tr("<strong>Error:</strong> Please enter an email address."));
-        } else if !super::options::is_email(&super::options::sanitize_email(&email)) {
-            errors.push(tr("<strong>Error:</strong> The email address isn&#8217;t correct."));
-        }
-        if pass1.is_empty() {
-            errors.push(tr("<strong>Error:</strong> Please enter a password."));
-        } else if pass1 != pass2 {
-            errors.push(tr("<strong>Error:</strong> Passwords do not match. Please enter the same password in both password fields."));
-        }
+        let pass1 = submitted("pass1").trim().to_owned();
         if ctx.can("promote_users") && !submitted("role").is_empty() && !ctx.env.roles.contains(&submitted("role")) {
             return super::die(ctx.env, 403, "WordPress &rsaquo; Error", &format!("<p>{}</p>", ctx.tr("Sorry, you are not allowed to give users that role.")));
         }
+        errors = edit_user_errors(ctx, None, request.post_field("email")).await;
         if errors.is_empty() {
             let role = submitted("role");
             let data = UserData {
@@ -817,31 +910,42 @@ pub async fn user_new(ctx: &Ctx<'_>) -> AdminResponse {
             };
             match content.insert_user(&data).await {
                 Ok(new_id) => {
-                    return redirect(&ctx.admin_url(&format!("users.php?id={new_id}&update=add")));
+                    if let Some(failed) = saved_user(ctx, "user-new.php", writer, new_id, true).await {
+                        return super::die(ctx.env, failed.status, &failed.title, &failed.message);
+                    }
+                    // `WP_Internal_Pointers::dismiss_pointers_for_new_users()` on `user_register`, after the plugins.
+                    writer.update_user_meta(new_id, "dismissed_wp_pointers", "").await.or_log();
+                    // `wp_redirect()` of the relative address.
+                    return redirect(&if ctx.can("list_users") { format!("users.php?update=add&id={new_id}") } else { "user-new.php?update=add".to_owned() });
                 }
                 Err(e) => errors.push(format!("<strong>Error:</strong> {e}")),
             }
         }
     }
+    // `$creating`: the sent values come back only when the form was sent with its button.
+    let creating = request.post_field("createuser").is_some();
+    let shown = |name: &str| if creating { submitted(name) } else { String::new() };
     let names = super::general::role_names(ctx).await;
     let default_role = {
-        let r = submitted("role");
+        let r = shown("role");
         if r.is_empty() { ctx.site().options.string("default_role", "subscriber") } else { r }
     };
     // `?>` right before the page.
     let mut h = format!("<div class=\"wrap\">\n<h1 id=\"add-new-user\">\n{}</h1>\n\n", tr("Add User"));
+    // `$add_user_errors`: `wp_admin_notice()` with a paragraph per message.
+    h.push('\n');
     if !errors.is_empty() {
-        h.push_str(&format!("<div class=\"error\"><ul>\n{}</ul></div>\n", errors.iter().map(|e| format!("\t<li>{e}</li>\n")).collect::<String>()));
+        h.push_str(super::notices::notice(&errors.iter().map(|e| format!("<p>{e}</p>\n")).collect::<String>(), "", false, "", &["error"], false).trim_end_matches('\n'));
     }
-    h.push_str("\n<div id=\"ajax-response\"></div>\n\n");
+    h.push_str("<div id=\"ajax-response\"></div>\n\n");
     h.push_str(&format!("<p>{}</p>\n", tr("Create a brand new user and add them to this site.")));
     h.push_str("<form method=\"post\" name=\"createuser\" id=\"createuser\" class=\"validate\" novalidate=\"novalidate\"\n\t>\n<input name=\"action\" type=\"hidden\" value=\"createuser\" />\n");
     h.push_str(&format!("\t<input type=\"hidden\" id=\"_wpnonce_create-user\" name=\"_wpnonce_create-user\" value=\"{}\" /><input type=\"hidden\" name=\"_wp_http_referer\" value=\"{}\" />\t<table class=\"form-table\" role=\"presentation\">\n", ctx.create_nonce("create-user"), super::referer_field_value(&request.request_uri)));
-    h.push_str(&format!("\t<tr class=\"form-field form-required\">\n\t\t<th scope=\"row\"><label for=\"user_login\">{} <span class=\"description\">{}</span></label></th>\n\t\t<td><input name=\"user_login\" type=\"text\" id=\"user_login\" class=\"ltr\" value=\"{}\" aria-required=\"true\" autocapitalize=\"none\" autocorrect=\"off\" autocomplete=\"off\" maxlength=\"60\" /></td>\n\t</tr>\n", tr("Username"), tr("(required)"), esc_attr(&submitted("user_login"))));
-    h.push_str(&format!("\t<tr class=\"form-field form-required\">\n\t\t<th scope=\"row\"><label for=\"email\">{} <span class=\"description\">{}</span></label></th>\n\t\t<td><input name=\"email\" type=\"email\" id=\"email\" value=\"{}\" /></td>\n\t</tr>\n", tr("Email"), tr("(required)"), esc_attr(&submitted("email"))));
-    h.push_str(&format!("\t\t<tr class=\"form-field\">\n\t\t<th scope=\"row\"><label for=\"first_name\">{} </label></th>\n\t\t<td><input name=\"first_name\" type=\"text\" id=\"first_name\" value=\"{}\" /></td>\n\t</tr>\n", tr("First Name"), esc_attr(&submitted("first_name"))));
-    h.push_str(&format!("\t<tr class=\"form-field\">\n\t\t<th scope=\"row\"><label for=\"last_name\">{} </label></th>\n\t\t<td><input name=\"last_name\" type=\"text\" id=\"last_name\" value=\"{}\" /></td>\n\t</tr>\n", tr("Last Name"), esc_attr(&submitted("last_name"))));
-    h.push_str(&format!("\t<tr class=\"form-field\">\n\t\t<th scope=\"row\"><label for=\"url\">{}</label></th>\n\t\t<td><input name=\"url\" type=\"url\" id=\"url\" class=\"code\" value=\"{}\" /></td>\n\t</tr>\n", tr("Website"), esc_attr(&submitted("url"))));
+    h.push_str(&format!("\t<tr class=\"form-field form-required\">\n\t\t<th scope=\"row\"><label for=\"user_login\">{} <span class=\"description\">{}</span></label></th>\n\t\t<td><input name=\"user_login\" type=\"text\" id=\"user_login\" class=\"ltr\" value=\"{}\" aria-required=\"true\" autocapitalize=\"none\" autocorrect=\"off\" autocomplete=\"off\" maxlength=\"60\" /></td>\n\t</tr>\n", tr("Username"), tr("(required)"), esc_attr(&shown("user_login"))));
+    h.push_str(&format!("\t<tr class=\"form-field form-required\">\n\t\t<th scope=\"row\"><label for=\"email\">{} <span class=\"description\">{}</span></label></th>\n\t\t<td><input name=\"email\" type=\"email\" id=\"email\" value=\"{}\" /></td>\n\t</tr>\n", tr("Email"), tr("(required)"), esc_attr(&shown("email"))));
+    h.push_str(&format!("\t\t<tr class=\"form-field\">\n\t\t<th scope=\"row\"><label for=\"first_name\">{} </label></th>\n\t\t<td><input name=\"first_name\" type=\"text\" id=\"first_name\" value=\"{}\" /></td>\n\t</tr>\n", tr("First Name"), esc_attr(&shown("first_name"))));
+    h.push_str(&format!("\t<tr class=\"form-field\">\n\t\t<th scope=\"row\"><label for=\"last_name\">{} </label></th>\n\t\t<td><input name=\"last_name\" type=\"text\" id=\"last_name\" value=\"{}\" /></td>\n\t</tr>\n", tr("Last Name"), esc_attr(&shown("last_name"))));
+    h.push_str(&format!("\t<tr class=\"form-field\">\n\t\t<th scope=\"row\"><label for=\"url\">{}</label></th>\n\t\t<td><input name=\"url\" type=\"url\" id=\"url\" class=\"code\" value=\"{}\" /></td>\n\t</tr>\n", tr("Website"), esc_attr(&shown("url"))));
     h.push_str(&format!("\t\t\t\t<tr class=\"form-field user-language-wrap\">\n\t\t\t<th scope=\"row\">\n\t\t\t\t<label for=\"locale\">\n\t\t\t\t\t\t\t\t\t\t{}<span class=\"dashicons dashicons-translation\" aria-hidden=\"true\"></span>\n\t\t\t\t</label>\n\t\t\t</th>\n\t\t\t<td>\n\t\t\t\t{}\t\t\t</td>\n\t\t</tr>\n", tr("Language"), language_select(ctx, "site-default", true, false)));
     h.push_str(&format!(
         "\t\t\t<tr class=\"form-field form-required user-pass1-wrap\">\n\t\t<th scope=\"row\">\n\t\t\t<label for=\"pass1\">\n\t\t\t\t{}\t\t\t\t<span class=\"description hide-if-js\">{}</span>\n\t\t\t</label>\n\t\t</th>\n\t\t<td>\n\t\t\t<input type=\"hidden\" value=\" \" /><!-- #24364 workaround -->\n\t\t\t<button type=\"button\" class=\"button wp-generate-pw hide-if-no-js\">{}</button>\n\t\t\t<div class=\"wp-pwd\">\n\t\t\t\t\t\t\t\t<div class=\"password-input-wrapper\">\n\t\t\t\t\t<input type=\"password\" name=\"pass1\" id=\"pass1\" class=\"regular-text ltr\" autocomplete=\"new-password\" spellcheck=\"false\" data-reveal=\"1\" data-pw=\"{}\" aria-describedby=\"pass-strength-result\" />\n\t\t\t\t\t<div style=\"display:none\" id=\"pass-strength-result\" aria-live=\"polite\"></div>\n\t\t\t\t</div>\n\t\t\t\t<button type=\"button\" class=\"button wp-hide-pw user-new-password-toggle hide-if-no-js\" data-toggle=\"0\" aria-label=\"{}\">\n\t\t\t\t\t<span class=\"dashicons dashicons-hidden\" aria-hidden=\"true\"></span>\n\t\t\t\t\t<span class=\"text\">{}</span>\n\t\t\t\t</button>\n\t\t\t</div>\n\t\t</td>\n\t</tr>\n",
@@ -863,11 +967,16 @@ pub async fn user_new(ctx: &Ctx<'_>) -> AdminResponse {
     h.push_str(&format!(
         "\t<tr>\n\t\t<th scope=\"row\">{}</th>\n\t\t<td>\n\t\t\t<input type=\"checkbox\" name=\"send_user_notification\" id=\"send_user_notification\" value=\"1\" {} />\n\t\t\t<label for=\"send_user_notification\">{}</label>\n\t\t</td>\n\t</tr>\n",
         tr("Send User Notification"),
-        checked(true),
+        checked(!creating || request.post_field("send_user_notification").is_some()),
         tr("Send the new user an email about their account")
     ));
     h.push_str(&format!("\t\t\t<tr class=\"form-field\">\n\t\t<th scope=\"row\"><label for=\"role\">{}</label></th>\n\t\t<td><select name=\"role\" id=\"role\">\n\t\t\t{}\t\t\t</select>\n\t\t</td>\n\t</tr>\n", tr("Role"), role_options(&names, ctx, &default_role)));
-    h.push_str(&format!("\t\t</table>\n\n\t\n\t<p class=\"submit\"><input type=\"submit\" name=\"createuser\" id=\"createusersub\" class=\"button button-primary\" value=\"{}\"  /></p>\n</form>\n</div>\n", esc_attr(&tr("Add User"))));
+    // `user_new_form`.
+    let fields = user_form(ctx, "user-new.php", None).await;
+    h.push_str(&format!("\t\t</table>\n\n\t{}\n\t<p class=\"submit\">", fields.html));
+    h.push_str(&format!("<input type=\"submit\" name=\"createuser\" id=\"createusersub\" class=\"button button-primary\" value=\"{}\"  /></p>\n</form>\n</div>\n", esc_attr(&tr("Add User"))));
     let screen = Screen { file: "user-new.php".into(), parent_file: "users.php".into(), submenu_file: Some("user-new.php".into()), title: tr("Add User"), help: Some(new_help(ctx)), content_inline: true, ..Default::default() };
-    render(ctx, &screen, &h, &Assets { scripts: vec!["wp-ajax-response".into(), "user-profile".into()], ..Default::default() }).await
+    let mut assets = Assets { scripts: vec!["wp-ajax-response".into(), "user-profile".into()], ..Default::default() };
+    super::meta_boxes::plugin_box_assets(ctx, &fields, &mut assets, Vec::new(), true).await;
+    render(ctx, &screen, &h, &assets).await
 }

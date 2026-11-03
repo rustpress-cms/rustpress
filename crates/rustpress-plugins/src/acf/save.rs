@@ -5,7 +5,7 @@
 //! Differs from the plugin: options that change a field when a value comes in (`save_custom`, `save_options`,
 //! `save_other_choice`) and files sent by the basic uploader (`ACF_Media::save_files()`) are not handled.
 
-use rustpress_core::native::{CommentSaved, Die, PostSaved, TermSaved};
+use rustpress_core::native::{CommentSaved, Die, PostSaved, TermSaved, UserSaved};
 use rustpress_core::{Result, Site};
 use rustpress_db::{MetaKind, Writer};
 use rustpress_phpser::{Key, Value};
@@ -378,6 +378,52 @@ pub async fn save_term(groups: &[FieldGroup], ctx: &TermSaved<'_>) -> Result<Opt
         let Some(field) = field_by_key(groups, &key_text(&k)) else { continue };
         let value = if unfiltered { v } else { kses_deep(v) };
         update_value(ctx.writer, (MetaKind::Term, ctx.term_id), value, field, &field.name).await?;
+    }
+    Ok(None)
+}
+
+/// `ACF_Form_User::save_user()` on `profile_update`/`user_register`: `acf_verify_nonce( 'user' )`, the values of the
+/// fields of the groups that apply to the user (`get_allowed_field_keys()`: a new user's groups of the forms
+/// `register` and `add`, else those of `edit`), `acf_validate_save_post( true )` with `wp_die()` and
+/// `acf_save_post( "user_{$id}" )`.
+pub async fn save_user(groups: &[FieldGroup], ctx: &UserSaved<'_>) -> Result<Option<Die>> {
+    let form = ctx.ctx.form;
+    let site = ctx.ctx.site;
+    let nonce = form.iter().rev().find(|(k, _)| k == "_acf_nonce").map(|(_, v)| v.as_str()).unwrap_or_default();
+    if nonce.is_empty() || nonce == "0" || !(ctx.ctx.verify_nonce)(nonce, "user") {
+        return Ok(None);
+    }
+    let Some(acf) = rustpress_core::native::form_value(form, "acf") else { return Ok(None) };
+    let Value::Array(items) = acf else { return Ok(None) };
+    let queries: &[(Option<u64>, &str)] = if ctx.created { &[(None, "register"), (None, "add")] } else { &[(Some(ctx.user_id), "edit")] };
+    let matcher = MatchContext { site, user: super::fields::MatchUser::Admin(ctx.ctx.can), admin: true };
+    let mut allowed: Vec<String> = Vec::new();
+    for (user_id, view) in queries {
+        for group in groups {
+            if group.visible(&Screen::User { user_id: *user_id, form: Some(view) }, &matcher).await? {
+                allowed.extend(group.fields.iter().filter(|f| !f.key.is_empty()).map(|f| f.key.clone()));
+            }
+        }
+    }
+    let items: Vec<(Key, Value)> = items.into_iter().filter(|(k, _)| allowed.contains(&key_text(k))).collect();
+    if items.is_empty() {
+        return Ok(None);
+    }
+    let mut errors = Vec::new();
+    for (k, v) in &items {
+        let key = key_text(k);
+        if let Some(field) = field_by_key(groups, &key) {
+            validate_value(site, v, field, truthy(field.get("required")), &format!("acf[{key}]"), &mut errors);
+        }
+    }
+    if !errors.is_empty() {
+        return Ok(Some(validation_die(site, &errors)));
+    }
+    let unfiltered = (ctx.ctx.can)("unfiltered_html");
+    for (k, v) in items {
+        let Some(field) = field_by_key(groups, &key_text(&k)) else { continue };
+        let value = if unfiltered { v } else { kses_deep(v) };
+        update_value(ctx.writer, (MetaKind::User, ctx.user_id), value, field, &field.name).await?;
     }
     Ok(None)
 }

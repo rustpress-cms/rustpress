@@ -33,6 +33,7 @@ pub struct UserData {
     pub show_admin_bar_front: Option<String>,
     pub rich_editing: Option<String>,
     pub syntax_highlighting: Option<String>,
+    pub infinite_scrolling: Option<String>,
     pub comment_shortcuts: Option<String>,
 }
 
@@ -196,13 +197,14 @@ impl Content<'_> {
         pairs.extend(meta("description", data.description.as_ref().map(|v| rustpress_core::kses::kses_data(v)).as_ref(), ""));
         pairs.extend(meta("rich_editing", data.rich_editing.as_ref(), "true"));
         pairs.extend(meta("syntax_highlighting", data.syntax_highlighting.as_ref(), "true"));
+        pairs.extend(meta("infinite_scrolling", data.infinite_scrolling.as_ref(), "true"));
         pairs.extend(meta("comment_shortcuts", data.comment_shortcuts.as_ref(), "false"));
         pairs.extend(meta("admin_color", data.admin_color.as_ref(), "modern"));
-        pairs.extend(meta("show_admin_bar_front", data.show_admin_bar_front.as_ref(), "true"));
-        pairs.extend(meta("locale", data.locale.as_ref(), ""));
         if !update {
             pairs.push(("use_ssl".into(), "0".into()));
         }
+        pairs.extend(meta("show_admin_bar_front", data.show_admin_bar_front.as_ref(), "true"));
+        pairs.extend(meta("locale", data.locale.as_ref(), ""));
         for (key, value) in pairs {
             self.writer.update_user_meta(user_id, &key, &value).await?;
         }
