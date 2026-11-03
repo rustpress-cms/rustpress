@@ -541,7 +541,15 @@ impl ActivePlugin for Loaded {
     }
 
     fn admin_ajax<'a>(&'a self, action: &'a str, ctx: &'a rustpress_core::native::AdminContext<'a>) -> BoxFuture<'a, Result<Option<rustpress_core::native::AjaxAnswer>>> {
-        Box::pin(async move { Ok((action == "acf/validate_save_post").then(|| save::ajax_validate(&self.groups, ctx))) })
+        Box::pin(async move {
+            Ok(match action {
+                "acf/validate_save_post" => Some(save::ajax_validate(&self.groups, ctx)),
+                "acf/field_group/render_field_settings" => Some(field_group_edit::ajax_render_field_settings(&self.groups, ctx).await?),
+                "acf/field_group/render_location_rule" => Some(field_group_edit::ajax_render_location_rule(ctx).await?),
+                "acf/field_group/move_field" => Some(field_group_edit::ajax_move_field(ctx).await?),
+                _ => None,
+            })
+        })
     }
 
     fn admin_ajax_nopriv<'a>(&'a self, action: &'a str, ctx: &'a rustpress_core::native::AdminContext<'a>) -> BoxFuture<'a, Result<Option<rustpress_core::native::AjaxAnswer>>> {
