@@ -453,6 +453,13 @@ pub trait ActivePlugin: Send + Sync {
         Box::pin(async { Ok(String::new()) })
     }
 
+    /// The callback of a page that prints meta boxes: its output in parts, [`FormPart::MetaBoxes`] where it calls
+    /// `do_meta_boxes( $screen, $context, … )`, and the boxes it added (`add_meta_box()`); `None` for
+    /// [`Self::admin_page`].
+    fn admin_page_parts<'a>(&'a self, _slug: &'a str, _ctx: &'a AdminContext<'a>) -> BoxFuture<'a, Result<Option<(Vec<FormPart>, Vec<PluginMetaBox>)>>> {
+        Box::pin(async { Ok(None) })
+    }
+
     /// `plugin_action_links_{$plugin_file}`: the links below the plugin's name in the list of plugins.
     fn plugin_action_links(&self, _site: &Site, links: Vec<String>) -> Vec<String> {
         links
