@@ -5,7 +5,7 @@
 //! Differs from the plugin: options that change a field when a value comes in (`save_custom`, `save_options`,
 //! `save_other_choice`) and files sent by the basic uploader (`ACF_Media::save_files()`) are not handled.
 
-use rustpress_core::native::{CommentSaved, Die, PostSaved};
+use rustpress_core::native::{CommentSaved, Die, PostSaved, TermSaved};
 use rustpress_core::{Result, Site};
 use rustpress_db::{MetaKind, Writer};
 use rustpress_phpser::{Key, Value};
@@ -319,13 +319,7 @@ pub async fn save_comment(groups: &[FieldGroup], ctx: &CommentSaved<'_>) -> Resu
         validate_value(site, value, field, truthy(field.get("required")), &format!("acf[{}]", field.key), &mut errors);
     }
     if !errors.is_empty() {
-        let tr = |text: &str| site.trd("acf", text);
-        let mut message = format!("<h2>{}</h2><ul>", tr("Validation failed"));
-        for (_, error) in &errors {
-            message.push_str(&format!("<li>{error}</li>"));
-        }
-        message.push_str("</ul>");
-        return Ok(Some(Die { title: rustpress_core::formatting::esc_html(&tr("Validation failed")), message: rustpress_core::kses::kses_post(&message), status: 500 }));
+        return Ok(Some(validation_die(site, &errors)));
     }
     // `acf_save_post( "comment_{$id}" )`.
     if !unfiltered {
@@ -333,6 +327,57 @@ pub async fn save_comment(groups: &[FieldGroup], ctx: &CommentSaved<'_>) -> Resu
     }
     for (field, value) in values {
         update_value(ctx.writer, (MetaKind::Comment, ctx.comment_id), value, field, &field.name).await?;
+    }
+    Ok(None)
+}
+
+/// The `wp_die()` of `acf_validate_save_post( true )`.
+fn validation_die(site: &Site, errors: &[(String, String)]) -> Die {
+    let tr = |text: &str| site.trd("acf", text);
+    let mut message = format!("<h2>{}</h2><ul>", tr("Validation failed"));
+    for (_, error) in errors {
+        message.push_str(&format!("<li>{error}</li>"));
+    }
+    message.push_str("</ul>");
+    Die { title: rustpress_core::formatting::esc_html(&tr("Validation failed")), message: rustpress_core::kses::kses_post(&message), status: 500 }
+}
+
+/// `acf_form_taxonomy::save_term()` on `create_term`/`edit_term`: `acf_verify_nonce( 'taxonomy' )`,
+/// `acf_validate_save_post( true )` (a `wp_die()` with the errors) and `acf_save_post( "term_{$id}" )`.
+///
+/// Differs from the plugin: `acf_get_field()` also finds a field by its name or ID; only keys are looked up.
+pub async fn save_term(groups: &[FieldGroup], ctx: &TermSaved<'_>) -> Result<Option<Die>> {
+    let form = ctx.ctx.form;
+    let site = ctx.ctx.site;
+    let nonce = form.iter().rev().find(|(k, _)| k == "_acf_nonce").map(|(_, v)| v.as_str()).unwrap_or_default();
+    if nonce.is_empty() || nonce == "0" || !(ctx.ctx.verify_nonce)(nonce, "taxonomy") {
+        return Ok(None);
+    }
+    let acf = rustpress_core::native::form_value(form, "acf");
+    let items = match &acf {
+        Some(Value::Array(items)) => items.clone(),
+        _ => Vec::new(),
+    };
+    let mut errors = Vec::new();
+    if acf.as_ref().is_some_and(|v| truthy(Some(v))) {
+        for (k, v) in &items {
+            let key = key_text(k);
+            if let Some(field) = field_by_key(groups, &key) {
+                validate_value(site, v, field, truthy(field.get("required")), &format!("acf[{key}]"), &mut errors);
+            }
+        }
+    }
+    if !errors.is_empty() {
+        return Ok(Some(validation_die(site, &errors)));
+    }
+    if !acf.as_ref().is_some_and(|v| truthy(Some(v))) {
+        return Ok(None);
+    }
+    let unfiltered = (ctx.ctx.can)("unfiltered_html");
+    for (k, v) in items {
+        let Some(field) = field_by_key(groups, &key_text(&k)) else { continue };
+        let value = if unfiltered { v } else { kses_deep(v) };
+        update_value(ctx.writer, (MetaKind::Term, ctx.term_id), value, field, &field.name).await?;
     }
     Ok(None)
 }

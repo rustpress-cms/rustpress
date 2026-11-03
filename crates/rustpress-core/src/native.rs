@@ -200,6 +200,18 @@ pub trait ActivePlugin: Send + Sync {
         Box::pin(async { Ok(MetaBoxes::default()) })
     }
 
+    /// `{$taxonomy}_add_form_fields` of `edit-tags.php` (`term` is `None`) and `{$taxonomy}_edit_form` of `term.php`:
+    /// what the plugin prints into the form of a term, and what it asks of the screen for it.
+    fn term_form<'a>(&'a self, _ctx: &'a AdminContext<'a>, _taxonomy: &'a str, _term: Option<&'a rustpress_db::Term>) -> BoxFuture<'a, Result<MetaBoxes>> {
+        Box::pin(async { Ok(MetaBoxes::default()) })
+    }
+
+    /// `create_term` and `edit_term` of a term the administration saved (`wp_insert_term()`, `wp_update_term()`); a
+    /// `wp_die()` of the plugin ends the request.
+    fn saved_term<'a>(&'a self, _ctx: &'a TermSaved<'a>) -> BoxFuture<'a, Result<Option<Die>>> {
+        Box::pin(async { Ok(None) })
+    }
+
     /// `add_meta_boxes` of `post.php`/`post-new.php` ([`AdminContext::edited_post`] is the post): the plugin's boxes,
     /// the boxes of WordPress it removes, and what it prints on the actions of the form.
     fn post_meta_boxes<'a>(&'a self, _ctx: &'a AdminContext<'a>, _post: &'a rustpress_db::Post) -> BoxFuture<'a, Result<PostMetaBoxes>> {
@@ -803,6 +815,16 @@ pub struct PostSaved<'a> {
     pub post: &'a rustpress_db::Post,
 }
 
+/// A term the administration saved, as `create_term`/`edit_term` see it.
+pub struct TermSaved<'a> {
+    pub ctx: &'a AdminContext<'a>,
+    pub writer: &'a rustpress_db::Writer,
+    pub term_id: u64,
+    pub taxonomy: &'a str,
+    /// `create_term` rather than `edit_term`.
+    pub created: bool,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct HiddenEditor {
     pub id: String,
@@ -1041,6 +1063,10 @@ pub struct AdminContext<'a> {
     pub edited_post: Option<&'a rustpress_db::Post>,
     /// `WP_Screen::is_block_editor()`.
     pub block_editor: bool,
+    /// `get_current_screen()->taxonomy` of `edit-tags.php`/`term.php`.
+    pub taxonomy: Option<&'a str>,
+    /// The term of `term.php`.
+    pub edited_term: Option<&'a rustpress_db::Term>,
 }
 
 impl AdminContext<'_> {
@@ -1581,6 +1607,28 @@ impl Plugins {
             out.hidden_editor = out.hidden_editor.or(boxes.hidden_editor);
         }
         Ok(out)
+    }
+
+    /// `{$taxonomy}_add_form_fields`/`{$taxonomy}_edit_form` of the plugins.
+    pub async fn term_form(&self, ctx: &AdminContext<'_>, taxonomy: &str, term: Option<&rustpress_db::Term>) -> Result<MetaBoxes> {
+        let mut out = MetaBoxes::default();
+        for plugin in self.hooks() {
+            let boxes = plugin.term_form(ctx, taxonomy, term).await?;
+            out.html.push_str(&boxes.html);
+            out.media |= boxes.media;
+            out.hidden_editor = out.hidden_editor.or(boxes.hidden_editor);
+        }
+        Ok(out)
+    }
+
+    /// `create_term`/`edit_term` of the plugins; the first `wp_die()` ends the request.
+    pub async fn saved_term(&self, ctx: &TermSaved<'_>) -> Result<Option<Die>> {
+        for plugin in self.hooks() {
+            if let Some(die) = plugin.saved_term(ctx).await? {
+                return Ok(Some(die));
+            }
+        }
+        Ok(None)
     }
 
     /// `add_meta_boxes` of the plugins on the edit screen of `post`.

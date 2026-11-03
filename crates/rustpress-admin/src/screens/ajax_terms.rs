@@ -103,14 +103,20 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUs
             };
             let mut x = AjaxResponse::new("add-tag");
             let created = match content.insert_term(&info.name, &data).await {
-                Ok(id) => env.db.term_by_id(Some(&info.name), id).await.ok().flatten(),
+                Ok(id) => {
+                    // `_ajax_wp_die_handler()`: a plugin's `wp_die()` answers with its message.
+                    if let Some(failed) = terms::saved_term(&ctx, "admin-ajax.php", writer, id, &info.name, true).await {
+                        return text(200, &failed.message);
+                    }
+                    env.db.term_by_id(Some(&info.name), id).await.ok().flatten()
+                }
                 Err(e) => {
-                    x.add("taxonomy", 0, None, Err(("error", &e.to_string())), &[]);
+                    x.add("taxonomy", 0, Some(1), Err(("error", &e.to_string())), &[]);
                     return x.send();
                 }
             };
             let Some(term) = created else {
-                x.add("taxonomy", 0, None, Err(("error", &env.site.tr("An error has occurred. Please reload the page and try again."))), &[]);
+                x.add("taxonomy", 0, Some(1), Err(("error", &env.site.tr("An error has occurred. Please reload the page and try again."))), &[]);
                 return x.send();
             };
             let all = env.db.terms(&info.name).await.unwrap_or_default();
@@ -118,7 +124,7 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUs
             let noparents = if info.hierarchical { terms::row_html(&ctx, &info.name, &term, level).await.unwrap_or_default() } else { String::new() };
             let parents = terms::row_html(&ctx, &info.name, &term, 0).await.unwrap_or_default();
             let message = terms::messages(&ctx, &info).swap_remove(1);
-            x.add("taxonomy", 0, None, Ok(&message), &[("parents", parents), ("noparents", noparents), ("notice", message.clone())]);
+            x.add("taxonomy", 0, Some(1), Ok(&message), &[("parents", parents), ("noparents", noparents), ("notice", message.clone())]);
             let fields = vec![
                 ("term_id", term.term_id.to_string()),
                 ("name", term.name.clone()),
@@ -148,6 +154,9 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUs
             };
             if let Err(e) = content.update_term(id, &info.name, &data).await {
                 return text(500, &e.to_string());
+            }
+            if let Some(failed) = terms::saved_term(&ctx, "admin-ajax.php", writer, id, &info.name, false).await {
+                return text(200, &failed.message);
             }
             let Some(updated) = env.db.term_by_id(Some(&info.name), id).await.ok().flatten() else { return text(500, "0") };
             let all = env.db.terms(&info.name).await.unwrap_or_default();

@@ -531,3 +531,39 @@ fn looks_serialized(raw: &str) -> bool {
     let t = raw.trim();
     t.len() >= 4 && matches!(t.as_bytes()[0], b'a' | b'O' | b's' | b'i' | b'd' | b'b' | b'C' | b'E') && t.as_bytes()[1] == b':'
 }
+
+/// What the boxes or fields of the plugins ask of a classic screen: the media library while the page is printed
+/// (`wp_enqueue_media()`), and an editor in the footer, after `editors` (the page's own editors); with `buttons_css` it prints
+/// the `editor-buttons` style no editor before printed.
+pub async fn plugin_box_assets(ctx: &Ctx<'_>, boxes: &rustpress_core::native::MetaBoxes, assets: &mut crate::chrome::Assets, editors: Vec<super::editor::EditorEntry>, buttons_css: bool) {
+    if boxes.media && ctx.can("upload_files") {
+        let mut media = crate::chrome::Assets::default();
+        super::media_ui::enqueue(ctx, &mut media, 0).await;
+        assets.post_header_scripts.splice(0..0, media.scripts);
+        assets.post_header_styles.extend(media.styles);
+        assets.localize.extend(media.localize);
+        assets.raw_data.extend(media.raw_data);
+        assets.inline.extend(media.inline);
+        assets.pre_footer.push_str(&media.pre_footer);
+    }
+    let Some(hidden) = &boxes.hidden_editor else { return };
+    let (html, entry) = super::editor::default_editor(ctx, &hidden.id, "", buttons_css);
+    assets.footer_first = format!("{}{html}{}", hidden.before, hidden.after);
+    let rich = entry.tinymce.is_some();
+    let mut editors = editors;
+    editors.push(entry);
+    assets.footer = super::editor::editors_js(ctx, &editors);
+    // `_WP_Editors::enqueue_scripts()` when the footer is printed: the editor (with TinyMCE), Quicktags and the link
+    // dialog, and for the media button thickbox and the media upload.
+    if rich {
+        assets.post_header_scripts.push("editor".into());
+        // `wp_default_packages_inline_scripts()`: the classic block keeps the old editor object.
+        assets.inline.push(("editor".into(), "window.wp.oldEditor = window.wp.editor;".into(), "after".into()));
+    }
+    assets.late_scripts.retain(|h| !matches!(h.as_str(), "quicktags" | "wplink" | "jquery-ui-autocomplete"));
+    assets.post_header_scripts.extend(["quicktags".into(), "wplink".into(), "jquery-ui-autocomplete".into()]);
+    if ctx.can("upload_files") {
+        assets.post_header_scripts.extend(["thickbox".into(), "media-upload".into(), "wp-embed".into()]);
+        assets.post_header_styles.push("thickbox".into());
+    }
+}

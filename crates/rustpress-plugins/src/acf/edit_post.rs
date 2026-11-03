@@ -94,7 +94,7 @@ fn group_style(group: &FieldGroup) -> String {
 }
 
 /// The renderer of the administration (`uploader` is `basic` for who may not upload).
-fn render_ctx<'a>(ctx: &'a AdminContext<'a>, services: &'a AdminServices) -> Ctx<'a> {
+pub(super) fn render_ctx<'a>(ctx: &'a AdminContext<'a>, services: &'a AdminServices) -> Ctx<'a> {
     let uploader = if (ctx.can)("upload_files") { "wp" } else { "basic" };
     let rich_edit = super::form::rich_edit_browser(ctx.user_agent.unwrap_or_default());
     Ctx { site: ctx.site, nonce: ctx.nonce, services, admin: true, uploader, wants_uploader: Default::default(), can: ctx.can, rich_edit, default_editor: if rich_edit { "tinymce" } else { "html" }, wysiwyg_height: 300 }
@@ -102,13 +102,18 @@ fn render_ctx<'a>(ctx: &'a AdminContext<'a>, services: &'a AdminServices) -> Ctx
 
 /// `acf_render_fields( $fields, $post_id, 'div', $instruction_placement )`.
 pub async fn render_fields(render: &Ctx<'_>, object: Object, group: &FieldGroup) -> Result<String> {
+    render_fields_as(render, object, group, "div", &group.setting("instruction_placement", "label")).await
+}
+
+/// `acf_render_fields( $fields, $post_id, $el, $instruction )`.
+pub async fn render_fields_as(render: &Ctx<'_>, object: Object, group: &FieldGroup, el: &str, instruction: &str) -> Result<String> {
     let mut out = String::new();
     for field in &group.fields {
         let mut f = RenderField::load(field, render);
         if matches!(f.get("value"), None | Some(Value::Null)) {
             f.set("value", get_value(&render.site.db, object, field, &field.name).await?);
         }
-        out.push_str(&render_field_wrap(render, f, "div", &group.setting("instruction_placement", "label")).await?);
+        out.push_str(&render_field_wrap(render, f, el, instruction).await?);
     }
     Ok(out)
 }

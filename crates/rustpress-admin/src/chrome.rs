@@ -48,6 +48,10 @@ pub struct Screen {
     pub edited_post: Option<rustpress_db::Post>,
     /// `WP_Screen::is_block_editor()`.
     pub block_editor: bool,
+    /// `WP_Screen::$taxonomy` of the term screens.
+    pub taxonomy: Option<String>,
+    /// The term of `term.php`.
+    pub edited_term: Option<rustpress_db::Term>,
 }
 
 impl Screen {

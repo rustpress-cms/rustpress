@@ -228,6 +228,8 @@ impl Ctx<'_> {
             wp_root: self.env.loader.includes.parent().unwrap_or(&self.env.loader.includes),
             edited_post: None,
             block_editor: false,
+            taxonomy: None,
+            edited_term: None,
         }
     }
 
@@ -634,6 +636,8 @@ pub async fn render(ctx: &Ctx<'_>, screen: &Screen, content: &str, assets: &Asse
     let mut plugin_ctx = ctx.plugin_context(&parts, &hook_suffix);
     plugin_ctx.edited_post = screen.edited_post.as_ref();
     plugin_ctx.block_editor = screen.block_editor;
+    plugin_ctx.taxonomy = screen.taxonomy.as_deref();
+    plugin_ctx.edited_term = screen.edited_term.as_ref();
     let plugin_assets = env.site.plugins.admin_assets(&plugin_ctx);
     let notices = env.site.plugins.admin_notices(&plugin_ctx).await.unwrap_or_else(|e| {
         tracing::error!(error = %e, "plugin notices failed");
