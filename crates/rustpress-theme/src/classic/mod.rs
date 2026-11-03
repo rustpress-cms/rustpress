@@ -1,6 +1,6 @@
 //! Classic (PHP) themes, ported to Rust. A theme here is not interpreted: its templates are
 //! written out in Rust, following the theme's PHP files, and compared with the real WordPress
-//! (see the "Klassische Themes" section of PLAN.md). Its stylesheets, scripts and images are
+//! (see the "Classic themes" section of PLAN.md). Its stylesheets, scripts and images are
 //! served from its directory unchanged.
 
 pub mod comments;

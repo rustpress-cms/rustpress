@@ -1,0 +1,33 @@
+name: Bug
+description: Something fails, crashes or cannot be set up.
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected and what happened instead. Error messages and log lines help.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: RustPress version
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: How RustPress runs
+      options:
+        - Server (binary or package)
+        - Docker
+        - CGI on shared hosting
+        - From source
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Operating system or host
+      placeholder: Debian 13 on x86_64, or the name of the shared host

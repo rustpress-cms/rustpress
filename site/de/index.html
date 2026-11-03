@@ -8,6 +8,10 @@
 <meta property="og:title" content="RustPress – WordPress, ohne PHP">
 <meta property="og:description" content="Ein Ersatz für WordPress, geschrieben in Rust und Byte für Byte mit einem echten WordPress verglichen.">
 <meta property="og:type" content="website">
+<meta property="og:image" content="https://rustpress-cms.github.io/rustpress/social-preview.png">
+<meta property="og:image:width" content="1280">
+<meta property="og:image:height" content="640">
+<meta name="twitter:card" content="summary_large_image">
 <meta property="og:url" content="https://rustpress-cms.github.io/rustpress/de/">
 <link rel="canonical" href="https://rustpress-cms.github.io/rustpress/de/">
 <link rel="alternate" hreflang="en" href="https://rustpress-cms.github.io/rustpress/">
@@ -23,6 +27,7 @@
     <nav>
       <a class="opt" href="#how">So funktioniert es</a>
       <a class="opt" href="#compatibility">Kompatibilität</a>
+      <a class="opt" href="#check">Läuft meine Seite?</a>
       <a class="opt" href="#install">Installation</a>
       <a href="https://github.com/rustpress-cms/rustpress">GitHub</a>
       <a href="../" hreflang="en" lang="en">English</a>
@@ -35,7 +40,7 @@
 <div class="hero">
   <div class="wrap">
     <h1>WordPress, <em>ohne PHP.</em></h1>
-    <p class="lead">RustPress ersetzt WordPress und ist in Rust geschrieben. Es liest eine bestehende WordPress-Datenbank und den Ordner <code>wp-content/</code> und liefert dieselben Seiten, Feeds und REST-Antworten, Byte für Byte mit einem echten WordPress verglichen.</p>
+    <p class="lead">RustPress ersetzt WordPress und ist in Rust geschrieben. Es liest die Datenbank und den Ordner <code>wp-content/</code> einer bestehenden Seite mit Block-Theme und liefert dieselben Seiten, Feeds und REST-Antworten, Byte für Byte mit einem echten WordPress verglichen.</p>
     <div class="actions">
       <a class="btn primary" href="#install">Loslegen</a>
       <a class="btn" href="https://github.com/rustpress-cms/rustpress/releases/latest">Herunterladen</a>
@@ -160,6 +165,31 @@
         <h3>Advanced Custom Fields <span class="ver">6.8.10</span></h3>
         <p>In ACF angelegte Post-Typen und Taxonomien, Feldgruppen und ihre Werte in der REST-API, roh oder formatiert, der Shortcode <code>[acf]</code>, die Felder im Kommentarformular, die mit dem Kommentar gespeichert werden, und die Felder in den Bearbeiten-Masken von Kommentaren, Beiträgen (im Block-Editor wie im klassischen) und Begriffen. Die Masken von Benutzern und Medien und Block Bindings folgen.</p>
         <span class="tag done">REST-API</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="check">
+  <div class="wrap">
+    <h2>Läuft meine Seite?</h2>
+    <p class="intro">Vorher fragen: <code>rustpress check</code> liest mit der Konfiguration der Seite das aktive Theme und die aktiven Plugins, sagt, was davon läuft, und ändert nichts.</p>
+<pre><code>$ rustpress check
+[ok  ] Theme twentytwentyfive: block theme, runs as it is
+[ok  ] Plugin wordpress-seo/wp-seo.php 28.8: native module
+[no  ] Plugin elementor/elementor.php 3.30.0: PHP plugin without a native module; RustPress ignores it</code></pre>
+    <div class="grid steps" style="margin-top:20px">
+      <div class="card">
+        <h3>Läuft</h3>
+        <p>Block-Themes, Twenty Seventeen, die sechs Plugins oben, Seiten-Caches und WP Mail SMTP (nicht nötig), jede Sprache.</p>
+      </div>
+      <div class="card">
+        <h3>Noch nicht</h3>
+        <p>Andere klassische PHP-Themes, Page-Builder wie Elementor oder Divi, WooCommerce, alle anderen PHP-Plugins, Multisite, der Customizer.</p>
+      </div>
+      <div class="card">
+        <h3>Plugin fehlt?</h3>
+        <p>Eine <a href="https://github.com/rustpress-cms/rustpress/issues/new?template=port-request.yml">Port-Anfrage</a> stellen oder es mit der <a href="https://github.com/rustpress-cms/rustpress/blob/main/docs/porting-a-plugin.md">Schritt-für-Schritt-Anleitung</a> (englisch) selbst nachbauen.</p>
       </div>
     </div>
   </div>
