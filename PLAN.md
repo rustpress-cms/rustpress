@@ -1,29 +1,152 @@
 # Plan: RustPress, a drop-in replacement for WordPress without PHP
 
-## Context
+This file holds the plan, the state of every area and what is still open. The first part is the current picture
+(2026-11-03); the part **History** below keeps every entry as it was written, oldest first, with the details of each
+step: what was ported, how it was compared and what deliberately differs.
 
-Goal: existing WordPress sites run without PHP and without converting the database. The Rust binary reads the existing MySQL/MariaDB (the original `wp_*` schema) and the existing `wp-content/` directly.
+## Goal and decisions
 
-Decided (agreed with the maintainer):
-- **Themes/plugins:** only block themes are supported (`theme.json` + HTML templates, no PHP needed). Important plugins are rebuilt later as native Rust modules. Classic PHP themes and arbitrary PHP plugins deliberately do not run.
-- **Milestone 1:** read-only front end (pages, posts, archives, feeds, REST API for reading). There is no write access to the database.
-- **Database:** MySQL/MariaDB through `sqlx`.
+- **Goal:** an existing WordPress site runs without PHP and without converting anything. The Rust binary reads the
+  original MySQL/MariaDB schema (`wp_*`) and the existing `wp-content/` and answers byte for byte like the WordPress
+  release in `WORDPRESS_VERSION`: HTML, headers, feeds, REST JSON, redirects and the rows it stores.
+- **WordPress is the oracle.** Everything is ported from the PHP source and compared with a real WordPress (golden
+  tests, compare scripts in `dev/`, `rustpress-compat`). A difference that cannot be avoided is recorded with its reason
+  (`compat/known.toml` for the compat runs, this file for the rest).
+- **Themes:** block themes (`theme.json` + HTML templates). Twenty Seventeen is the one classic theme, rebuilt natively
+  (decision of 2026-10-25). Other classic PHP themes do not run.
+- **Plugins:** PHP never runs. Important plugins are rebuilt as native modules (`crates/rustpress-plugins`) that take
+  over while the plugin is in `active_plugins`; the plugin's files stay for assets, headers and language packs.
+- **Writing is an explicit switch** (`RUSTPRESS_ALLOW_WRITES=1` / `allow_writes`): without it RustPress is a read-only
+  replacement; with it the administration, sign-in, comments and the REST write API work.
+- **Not planned:** a PHP interpreter, Multisite, outgoing HTTP to WordPress.org or other services (updates, directories,
+  remote oEmbed), caching and security plugins (architecture), WooCommerce, Elementor.
 
-State at the start: a workspace with one crate, `crates/rustpress-phpser` (`unserialize`/`serialize` in `src/lib.rs`, 8 tests green). The toolchain `stable-x86_64-pc-windows-msvc` is set up. PHP and MySQL are not installed locally.
-
-## Target architecture (workspace crates)
+## Architecture
 
 | Crate | Purpose |
 |---|---|
-| `rustpress-phpser` (exists) | PHP serialize, byte-exact. Gets references (`R:`/`r:`) and `S:`. |
-| `rustpress-db` | `sqlx` MySQL pool, table prefix from the config, typed reads for `posts`, `postmeta`, `options`, `terms`, `term_taxonomy`, `term_relationships`, `users`, `usermeta`, `comments`. The connection is only used for reading. |
-| `rustpress-core` | Options cache (uses `phpser` for serialized values), post query (a subset of `WP_Query`), permalink/rewrite resolution from `permalink_structure` and `rewrite_rules`, template hierarchy. |
-| `rustpress-blocks` | Parser for block comments (`<!-- wp:name {json} -->`) and renderer for the core blocks, first paragraph, heading, image, list, group, columns, post-title, post-content, query, navigation, template-part. |
-| `rustpress-theme` | `theme.json`, `templates/*.html`, `parts/*.html`, global styles CSS generator, resolving the active theme from the options `template`/`stylesheet`. |
-| `rustpress-server` | `axum` binary: routing, static files (`wp-content/uploads`, theme assets), configuration (database URL, WordPress path), logging. |
-| `rustpress-compat` (tests only) | Golden tests: the same URL against a real WordPress and against RustPress, the normalized HTML is compared. |
+| `rustpress-phpser` | PHP `serialize`/`unserialize`, byte-exact |
+| `rustpress-db` | access to the WordPress schema (sqlx), the read pool and the `Writer` |
+| `rustpress-core` | options, rewrite rules and their generation, main query, template hierarchy, canonical redirects, sitemaps, kses, the native plugin framework (`native.rs`) |
+| `rustpress-blocks` | block parser and renderer, block supports, style engine, dynamic blocks, Interactivity |
+| `rustpress-theme` | `theme.json`, templates, global styles, documents and feeds, the script loader, Twenty Seventeen |
+| `rustpress-content` | writing posts, terms, users, comments and uploads |
+| `rustpress-auth` | passwords, cookies, sessions, nonces, capabilities (`map_meta_cap`), application passwords |
+| `rustpress-admin` | `wp-admin`, sign-in and the installer |
+| `rustpress-rest` | the REST API, read and write |
+| `rustpress-mail` | e-mail (`wp_mail()` over SMTP) |
+| `rustpress-plugins` | the native plugin modules |
+| `rustpress-server` | the axum server and the CGI mode |
+| `rustpress-compat` | the comparison run against a real WordPress |
 
-## Steps
+The reference stack, the tools and the working rules are in [AGENTS.md](AGENTS.md).
+
+## State by area
+
+- **Website** – equal to WordPress for the bundled block themes Twenty Twenty-Five, -Four, -Three and -Two (about 780
+  URLs each: pages, patterns, feeds, sitemaps, REST, files; 0 unexpected differences), across eight permalink
+  structures and a matrix of settings, and in de_DE, ru_RU, ar and ja. Twenty Seventeen on the maintainer's real site:
+  all HTML pages byte-identical (318 URLs). Covered: the main query and template hierarchy, canonical redirects, custom
+  post types and taxonomies (from the stored rules and the literal `register_*()` calls of plugins and themes),
+  shortcodes, embeds/oEmbed, the dynamic blocks including Interactivity, the comment form and submitting comments,
+  previews and private content for signed-in users, the admin bar.
+- **REST API** – read and write: posts, pages, media, terms, users, comments and notes, settings, templates and the site
+  editor's routes, widgets (reading), block types, fonts, application passwords, Site Health, abilities, the full index;
+  `OPTIONS` with the schemas. Compared with `dev/rest-sweep.py` and the write compare scripts.
+- **Sign-in and users** – `wp-login.php` complete (sign-in/out, lost password, reset, registration, admin e-mail check,
+  `postpass`, interim login), sessions, nonces and capabilities as in WordPress, application passwords, e-mail.
+- **Administration** – every screen of a block-theme site byte-identical except environment and randomness
+  (`dev/raw-sweep.py`, 12 known pages): dashboard, lists with bulk and quick edit, the classic and the block editor,
+  the site editor, media with the image editor, comments, users, settings including permalinks, themes and plugins
+  (also installing from a ZIP), tools, privacy, Site Health, the file editors, revisions, Screen Options and help.
+- **Languages** – the language packs of WordPress, themes and plugins are the only source; plural forms, dates,
+  texturize characters and right-to-left work for every language (checked in four). `admin-<locale>.mo` in the
+  administration, JS translations for plugin scripts.
+- **Native plugins** – the framework in `rustpress-core/src/native.rs` (hooks for the website, the administration, REST,
+  saving and rewriting) and these modules, each following one plugin release:
+  - WP Date Remover 1.1.3 – complete.
+  - SVG Support 2.6.1 – website, settings, sanitized SVG uploads.
+  - Contact Form 7 6.2.4.1 – forms, submitting with mail, the administration.
+  - Yoast SEO 28.8 – the head, schema, sitemaps, breadcrumbs, REST, feeds.
+  - Redirection 5.10.1 – the website (redirects, 404s, logs with write access).
+  - Advanced Custom Fields 6.8.10 – post types and taxonomies, values in REST and the shortcode, fields on every edit
+    screen and in the comment form with saving, the lists, the editors of field groups, post types and taxonomies with
+    their Ajax, the tools (export as JSON and PHP, import), the options pages preview.
+- **Following WordPress** – `WORDPRESS_VERSION` is the target; a daily workflow opens an issue per release with the
+  report of `dev/wp-diff.sh`; `dev/wp-bump.sh` moves the reference. 7.1.4 was followed (issue #9).
+- **Review** – the security and robustness findings of the review of 2026-10-26 (A1, A2) are fixed except S12; the
+  performance work (A3) is done except the rest of P14/P15. RustPress answers most pages faster than the reference.
+- **Packaging** – release tags `v*` build every package and container image; the server also runs as CGI on shared
+  hosting (see the README).
+
+## Open
+
+**Website**
+- `core/playlist` and `[playlist]`, `core/rss` (network), `useFirstImageFromPost`, galleries with `dynamicContent`.
+- Comment feeds of archives and searches (`withcomments`): RustPress answers them with the main comment feed.
+- Twenty Seventeen: post formats with their own templates, the `front-page.php` panels, the color scheme `custom` and
+  the header text color, the social menu, `wp_link_pages()`, the theme's `rtl.css`. More classic themes.
+- The `functions.php` of themes: only literal calls are read.
+- Caching of rendered pages.
+
+**Languages**
+- A language per request (the user's language, Polylang/WPML): an `I18nRegistry` from which each request gets its
+  translator; all calls already go through `Site::tr`.
+- JavaScript translations of core scripts (Interactivity texts), hot reload of language packs, variants such as
+  `de_DE_formal`, a command `rustpress i18n install <locale>`.
+
+**Sign-in, administration, REST**
+- Rehashing a password on sign-in (`wp_password_needs_rehash()` exists, but sign-in does not call it).
+- `customize.php` and `media-upload.php` (postponed until the test on a real web server in CGI mode).
+- The "Excerpt" view of the post list (`mode=excerpt`).
+- Widgets: writing widgets and sidebars, the forms of classic widgets, `widget-types/<id>/encode|render`, `rendered`
+  of registered sidebars.
+- `parse-media-shortcode` with a preview (the scripts of `wp-mediaelement`/`wp-playlist`).
+- REST: `_method`; first and last name and nickname get `_wp_specialchars` in WordPress (RustPress:
+  `sanitize_text_field`); in the `edit` context WordPress renders a post's content once more before `content.rendered`
+  (ID counters one higher, cause not found).
+- The dashboard and the block editor are still slower than the reference.
+
+**Native plugins**
+- Contact Form 7: the configuration check (`WPCF7_ConfigValidator`), setting up the services, `action=validate`, the
+  REST routes to read, create, change and delete forms, the block `contact-form-7/contact-form-selector`.
+- Yoast SEO: FAQ/HowTo blocks in the schema, the admin bar, signed-in viewers, the administration.
+- Redirection: the administration (the React interface and REST `redirection/v1`), monitoring changed permalinks,
+  import/export.
+- ACF: block bindings `acf/field` (waiting for block bindings in the core), saving values through REST, the labels of
+  chosen posts, terms and users in conditional logic (`acf/conditional_logic/choices`), widgets of plugins in the
+  `widget` rule, `not_registered` (a key another plugin registered first), the import from Custom Post Type UI, field
+  groups from local JSON or PHP.
+- Next: Polylang (needs the language per request). Following plugin releases (`PLUGIN_VERSIONS` and the diff report).
+
+**Review and tests**
+- S12: the CSS of global styles is stored unfiltered (only relevant with custom roles without `unfiltered_html`).
+- The rest of P14/P15 (synchronous file access in the administration).
+- Phase 4 of the review: merging duplicates, removing dead code, splitting long functions; test suites (database
+  schema, a role matrix, hostile inputs); the small deviations listed in A4.
+- Golden tests and `rustpress-compat` in CI against a reference in service containers (CI skips them today).
+- `rustpress-auth/tests/oracle.rs` depends on session tokens in the shared database (create the fixture again first).
+- Compat: third-party block themes, a run with the release build.
+
+## Recorded differences
+
+Differences of the compat runs are in [`compat/known.toml`](compat/known.toml). Everything else:
+
+- **Environment:** RustPress makes no outgoing requests: the directories and updates of WordPress.org,
+  `credits.php`, font collections, remote oEmbed, loopback and the Site Health tests that need them, Akismet and the
+  services of Contact Form 7 (reCAPTCHA, Turnstile, Stripe), the e-mail opt-in of ACF. Without `RUSTPRESS_SMTP_URL`
+  every mail fails as `wp_mail()` does on a host without mail.
+- **The container and the database:** the order of templates and of `readdir()` in the file editors, rows with the same
+  sort value (`orderby=comment_count`, posts with the same date), random values (nonces, `antispambot()`, passwords,
+  the quiz question of Contact Form 7).
+- **Per module:** the "Not rebuilt" and "Differs" notes in the entries of each plugin below (History, "Plugins as
+  native modules").
+
+## History
+
+The entries as they were written, oldest first. The "Open", "Next" and "Still open" notes in them are the state of their date; what is open now is the list **Open** above. The "Not rebuilt" and "Differs" notes record deliberate differences and still apply.
+
+### Steps
 
 0. **Keep the plan in the repository**: this plan is stored as `PLAN.md` in the repository root. This holds for good: every plan is also written down in the repository and kept up to date there (the maintainer's wish).
 0. ✅ Done: `PLAN.md` is in the repository.
@@ -40,26 +163,26 @@ State at the start: a workspace with one crate, `crates/rustpress-phpser` (`unse
 
 Order until the first visible result: steps 1 to 4, then steps 5 to 7 for a single post page, then in breadth.
 
-## Reuse
+### Reuse
 - `rustpress_phpser::{unserialize, serialize, Value, Key, Error}` for `option_value`, `meta_value` and `rewrite_rules`.
 - Workspace settings in `Cargo.toml` (`edition = 2024`, license GPL-2.0-or-later) are inherited by all new crates through `*.workspace = true`.
 
-## Prerequisites still to install
+### Prerequisites still to install
 - ✅ **PHP 8.4** (`winget install PHP.PHP.8.4`) for the comparison tests of `phpser` is installed.
 - **Containers:** instead of Docker Desktop, **rootless Podman 5.4.2 in the existing Debian WSL2** is used (`wsl -d Debian -- podman ...`). It runs a MariaDB as the test database and a reference WordPress. Docker is installed there, but its daemon is not running, and `sudo` asks for a password. The WSL also holds unrelated containers that are not touched.
 - A sample WordPress instance with a block theme (e.g. Twenty Twenty-Five) and test content.
 
-## Verification
+### Verification
 - `cargo test --workspace` and `cargo clippy --workspace -- -D warnings` must be green.
 - `phpser`: a proptest round trip plus a cross-check with `php -r` on real `wp_options` values.
 - With the test database: `cargo run -p rustpress-server`, then `curl http://localhost:PORT/`, `/hello-world/` and `/wp-json/wp/v2/posts`. The HTML is compared with the output of the reference WordPress.
 - The compat suite (`rustpress-compat`) reports the normalized difference per URL. Goal for milestone 1: front page, single post, page, category archive and 404 are identical except for known exceptions.
 
-## Open risks
+### Open risks
 - Byte-exact HTML equality is unrealistic, because WordPress filters (`wptexturize`, `wpautop`, emoji scripts) change a lot. So the comparison happens after normalization, and the filters are rebuilt one by one.
 - Plugins that produce content through shortcodes or filters are missing in milestone 1 and have to be added one by one as Rust modules.
 
-## Localization
+### Localization
 
 Goal: hundreds of languages without writing code for any one of them. The concept is implemented and compared with the real WordPress in four languages.
 
@@ -90,7 +213,7 @@ Goal: hundreds of languages without writing code for any one of them. The concep
 - Hot reload of language packs (today: on restart or theme reload) and variants such as `de_DE_formal` (WordPress loads a separate complete pack for it, so no fallback is needed).
 - Twenty Twenty-Seven does not exist on wordpress.org (yet); block themes from other sources run as soon as their files are under `wp-content/themes/`.
 
-## Classic themes: Twenty Seventeen natively (decision of 2026-10-25)
+### Classic themes: Twenty Seventeen natively (decision of 2026-10-25)
 
 The maintainer wants to render their own site (example.org, a dump in the scratch schema `soli`) with its theme **Twenty Seventeen**. That is a classic PHP theme and so an exception to the decision "block themes only". A PHP interpreter stays ruled out. Instead the theme is **rebuilt natively in Rust**, as important plugins will be later: the theme's templates (`header.php`, `footer.php`, `index.php`, `template-parts/…`) are ported by hand, and its files (`style.css`, `assets/…`) are served unchanged from disk.
 
@@ -107,7 +230,7 @@ The maintainer wants to render their own site (example.org, a dump in the scratc
 
 **Still open in the port:** post formats with their own template (image, gallery, video, audio) and `front-page.php` with panels; the color scheme `custom` (`color-patterns.php`) and the header text color; the social menu in the footer; `wp_link_pages`; the theme's RTL stylesheet (`rtl.css`). The site's plugins (`wp-date-remover`, `svg-support`) are missing. Open for the maintainer to decide: absolute addresses of the original site in `wp_navigation` menus (search and replace in the scratch database, or mapping while rendering) and a switch for the footer "Proudly powered by WordPress".
 
-## State and next steps (2026-10-25)
+### State and next steps (2026-10-25)
 
 Reproducible with `dev/up.sh` and the seeds (`dev/seed.sh`, `seed_images*.sh`, `seed_blocks.sh`, `seed_patterns.sh`, `seed_content2.sh`, `seed_types.sh`; all idempotent through options); `cargo test --workspace` compares everything against the running reference WordPress (without the stack the golden tests skip themselves).
 
@@ -142,7 +265,7 @@ Known gaps, roughly ordered by value:
 - **Languages**: per request (user language, Polylang/WPML) and JavaScript translations.
 - **Multisite**, caching of rendered pages, `private` content and password cookies.
 - **Compat**: third-party themes and their `functions.php` (only literals in `register_block_style()`/`wp_enqueue_block_style()`/`wp_enqueue_style()`), comparison with the release build (the times in the report come from the debug build), posts with exactly the same date (MariaDB order undefined).
-## Administration (wp-admin): plan (decision of 2026-10-25)
+### Administration (wp-admin): plan (decision of 2026-10-25)
 
 The front-end comparison is largely exhausted (remaining list above). The next big block is the administration, which is what makes WordPress for editors and administrators. For the first time it needs **write access** to the database. Decided (without asking back, since "carry on with the admin side" was requested):
 
@@ -205,15 +328,15 @@ The front-end comparison is largely exhausted (remaining list above). The next b
 - **Submitting comments (`wp-comments-post.php`)**: `rustpress-admin/src/comments_post.rs` (checks, the error page "Comment Submission Failure", duplicate/flood, moderation, the cookies `comment_author_*`, the redirect with `unapproved`/`moderation-hash`) and `mail_comments.rs` (mails to the author and the moderators); `wp_kses` ported (`rustpress-core/src/kses.rs`, a golden test against the oracle with 95 cases); the client address through `ConnectInfo`. On the page afterwards: one's own pending comment (ten minutes by hash, otherwise by the cookie address or the user), the notice "awaiting moderation", the form prefilled from the cookies, `byuser`/`comment-author-<nicename>`, `noindex` in previews (`rustpress-blocks/src/commenter.rs`). Comparison: `dev/comment-post-compare.py`, `dev/comment-front-compare.py`.
 - Open: the REST index (`/wp-json/` lists only 16 of 145 routes), `wp-block-editor/v1/export` (theme ZIP), `wp-abilities/v1`, `oembed` routes in the index, `block-types` with real data, the widget routes, Ajax `get-comments`/`fetch-list`/`set-post-thumbnail`/`parse-embed`/`add-meta`/`save-attachment-compat`/`send-attachment-to-editor`.
 
-## Review and remaining to-do (2026-10-26)
+### Review and remaining to-do (2026-10-26)
 
 A complete review of the code base (five passes over all crates, ~77,000 lines). Findings marked ✔ were read again at the place named and confirmed.
 
-## A. Review findings (prioritized)
+### A. Review findings (prioritized)
 
 **State (2026-10-30):** the ✔ in the tables means "confirmed", not "done". Everything from A1 and A2 is done except S12 (postponed, only relevant with custom roles without `unfiltered_html`); S11 needs no change (WordPress prints the URL the same way). Open from A3: the rest of P14/P15 (P9/P10 done on 2026-10-30, see "State of phase 3 (2026-10-30)"). Details under "State of phase 1" and "State of phase 3" in part C.
 
-### A1. Critical / high – security
+#### A1. Critical / high – security
 
 | # | Place | Finding | Fix |
 |---|---|---|---|
@@ -238,7 +361,7 @@ A complete review of the code base (five passes over all crates, ~77,000 lines).
 | S19 ✔ | `rustpress-server/src/app.rs:86-92,212,247,254,516` | **Every POST – even a failed anonymous login or comment – triggers `reload_now()`** (reloading options, theme, registry) under a mutex all readers wait behind. Amplification. | Handlers report "changed", reload only then; coalesce reloads (a dirty flag, at most one in progress); `current()` returns the old snapshot and reloads in the background (also concerns the 60 s reload in `app.rs:62-83`). |
 | S20 | `rustpress-server/src/admin.rs:271-291`, `app.rs:490` | A failed application password is served as anonymous instead of 401 (`incorrect_password`/`invalid_username` as in `rest_application_password_check_errors`). | 401 JSON for `RestAuth::BadAppPassword`. |
 
-### A2. Critical / high – correctness and robustness
+#### A2. Critical / high – correctness and robustness
 
 | # | Place | Finding | Fix |
 |---|---|---|---|
@@ -264,7 +387,7 @@ A complete review of the code base (five passes over all crates, ~77,000 lines).
 | R20 | `rustpress-server/src/app.rs:210,251`, `admin.rs:433` | The client IP is only the socket peer (admin screens: `None`); behind a proxy all visitors share one IP → the flood check "one comment per 15 s site-wide", the moderation/reset IP is meaningless. Likewise `is_ssl()` from `siteurl` instead of the request (`admin.rs:333,376,408`, `login.rs:201`). | A `trusted_proxies` configuration + `X-Forwarded-For`/`X-Forwarded-Proto` (or `force_ssl`). |
 | R21 | `rustpress-admin/src/multipart.rs:31-78` | `header_param(.., "name")` matches the `name="` in `filename="` when that comes first; `\"`/`%22` in file names; bare `\n` headers are silently dropped. No crash (bounds checked), but wrong field names. | A tokenizer for the `Content-Disposition` parameters; tests with broken bodies. |
 
-### A3. Medium – performance (per request)
+#### A3. Medium – performance (per request)
 
 | # | Place | Finding | Fix |
 |---|---|---|---|
@@ -285,7 +408,7 @@ A complete review of the code base (five passes over all crates, ~77,000 lines).
 | P15 | `server/admin.rs:524-531` (`load_styles/scripts`: `read_file` + 2× `canonicalize` per handle), `chrome.rs:252-348` (`*.asset.php`, the emoji loader per admin render), `statics.rs:86-93`, `app.rs:224` | Synchronous file access per request in the administration. | Cache asset versions in `AdminParts`; concatenation in `spawn_blocking`. |
 | P16 | `rustpress-content/src/media.rs:242-381` | Image decode/resize/write synchronous in the async `handle_upload`; no `Limits` for the decoder (a decompression bomb – whether the `image` defaults apply is unverified). | `spawn_blocking` + explicit `image::Limits`. |
 
-### A4. Low – maintainability, deviations, tests
+#### A4. Low – maintainability, deviations, tests
 
 - **Duplicates**: two `kses` (`core/plugins.rs:49-117` without `bad_protocol` → `javascript:` in a plugin description), two comment implementations (`legacy_comments.rs` vs `dynamic/comments.rs`: `comment_class`, `comment_author`, the form, the reply link), LIKE escaping 5× in `rustpress-db`, `origin()` 6×, `esc_textarea` 5×, `sticky_ids` 3×, `sanitize_key` 3×, `php_urlencode`/`kebab_case`/`strip_tags` twice, `comment_any`/`comment` identical.
 - **Dead code**: `let _ = x;` suppressions (datetime.rs:170, hierarchy.rs:104, health.rs:66, php_lit.rs:313, text_diff.rs:406, setcookie.rs:98, shortcodes.rs:157, content.rs:171, feed.rs:495, …), `|| true`/`&& false` (post_edit.rs:624, seventeen.rs:329, navigation.rs:480, style_engine.rs:344, rest/edit/users.rs:37, types.rs:279), empty `if`s (posts.rs:359, rest/edit/posts.rs:198), identical match arms (rest/edit/posts.rs:268), a duplicate nonce check (ajax_terms.rs), a no-op replace in `document.rs:369`, an outdated comment in `document.rs:539`.
@@ -299,7 +422,7 @@ A complete review of the code base (five passes over all crates, ~77,000 lines).
 
 ---
 
-## B. Structural improvements (ordered by value)
+### B. Structural improvements (ordered by value)
 
 1. **`map_meta_cap` in one place** in `rustpress-auth::CurrentUser` (`can_edit_post`, `can_delete_post`, `can_read_post`, `can_edit_comment`, `can_edit_user`) – model `rustpress-rest/src/edit/caps.rs`. Then replace all ad hoc checks in admin/rest/content; the write functions in `rustpress-content` take the `CurrentUser` and check themselves (then no caller can forget the check). Closes S1–S4, S6–S8, R12, R15 at once.
 2. **`Allowed::post()`** in `rustpress-core::kses` + applied to all HTML output fed from attributes (S5). At the same time replace `core/plugins.rs::kses_data` with `kses::kses`.
@@ -314,9 +437,9 @@ A complete review of the code base (five passes over all crates, ~77,000 lines).
 
 ---
 
-## C. Complete to-do list (remaining items, in working order)
+### C. Complete to-do list (remaining items, in working order)
 
-### Phase 1 – security (before anything else)
+#### Phase 1 – security (before anything else)
 0. Immediate fixes (small, high value): `kses_post` → core kses with `Allowed::post()` (S17, S5), the order/character set of `validate_redirect` (S16), the body limit before auth + `body_text` only in the login branch (S18), reload only on change (S19), `.await` in `ajax_privacy.rs:329` (R1), the `functions_php` endless loop (R5).
 1. A `map_meta_cap` helper in `rustpress-auth` (B1) used in: `screens/posts.rs` bulk (S1), heartbeat nonces + `save-attachment` + `attachment_edit::save` (S2), media nonces/deleting/bulk (S3), `ajax_comments` (S4), heartbeat `wp-refresh-post-lock`, upload `post_id`, attach/detach, `save-attachment-order`, the REST `edit/posts.rs` author filter (S6), REST `users` (S7), REST `media` (S8), deleting revisions (R12).
 2. `Allowed::post()` + applying it (S5), `esc_url` in `feed.rs:568` (S11), the moderation hash in constant time (S15).
@@ -335,13 +458,13 @@ A complete review of the code base (five passes over all crates, ~77,000 lines).
 
 - Open (found in the REST comparison): in the `edit` context WordPress renders a post's content one extra time before `content.rendered` (counters such as `tabs_2`, `audio-271-3`, `attachment_26-2` are one higher than in RustPress, also with `_fields=content`); the cause was not found in the controller or the default filters.
 
-### Phase 2 – correctness/robustness
+#### Phase 2 – correctness/robustness
 6. R2/R3 (backticks), R4 (rewrite_gen), R10 (FIELD()), R16 (html.rs entities), R17 (index guards), R18 (REST references/dates), R19 (`sanitize_text_field`), R21 (multipart).
 7. Cycles/depth/overflow (R6–R9) with tests.
 8. R11 (non-GET → 404), R13 (comments for moderators), R14 (swallowed write errors, every place).
 9. Turn on the workspace lints (B4, B3) and work through the hits.
 
-### Phase 3 – performance
+#### Phase 3 – performance
 10. Regex caching everywhere (P1).
 11. Cache static WP files/stylesheet/template lists at load (P2, P7), the icon manifest, the script/style registry per snapshot (P14), asset versions (P15).
 12. A per-request cache for comments/users/the query block (P3, P8, P9).
@@ -426,12 +549,12 @@ Measurement afterwards (release, `RUSTPRESS_RELOAD_SECS=1`, median / minimum of 
 - Tools: the reference of the real site starts with `podman start rustpress-wp-soli` (port 8081, database `soli_ref`); comparison `rustpress-compat --reference 127.0.0.1:8081 --host localhost:8081 --db mysql://wordpress:wordpress@127.0.0.1:3306/soli_ref --wp-root <the volume rustpress-wp-soli>`. The plugins are in both references and in `wp-local` (the version as in the module). In the main reference they are deactivated when idle.
 - `wp-date-remover` in the reference WordPress: the style `wp-date-remover-css` and a script (with `jquery`, `ver=1.0.0`) on every page, a (mostly empty) `<script type="text/javascript">` in `wp_footer` before the script modules; categories with the term meta `wp-date-remover = 1` (only non-empty ones, `get_categories()`) hide the date on `the_post`: `core/post-date` then prints nothing (and its style moves back because the first block was empty), the footer gets three jQuery lines per affected post.
 
-### Phase 4 – maintainability and tests
+#### Phase 4 – maintainability and tests
 16. Merge duplicates, remove dead code, split long functions (A4).
 17. Test suites (B9): database schema tests, a role matrix, hostile inputs, golden tests in CI.
 18. Catch up on the small WP deviations from A4 (each by an oracle comparison).
 
-### Phase 5 – missing features (wp-admin and REST)
+#### Phase 5 – missing features (wp-admin and REST)
 - (new) The "Excerpt" list view (`mode=excerpt`, `posts_list_mode` through `set_user_setting()`/`user-settings`): RustPress does not evaluate `mode`.
 19. `customize.php` – **postponed (2026-10-27)** until the test on the real web server (CGI mode): not in the menu for block themes, needed only for Twenty Seventeen; a complete Customizer is big. So far only the 403 semantics.
 20. `media-upload.php` (the old upload dialog without JavaScript) – **postponed (2026-10-27)**, same reason. Uploading already works through `media-new.php`, the media library, the media dialog, the block editor and REST.
@@ -447,12 +570,12 @@ Measurement afterwards (release, `RUSTPRESS_RELOAD_SECS=1`, median / minimum of 
 27. So far: the template order from the container file system, everything with outgoing HTTP (WordPress.org, updates, loopback, remote patterns only from cache), PHP plugins.
 30. Byte equality of the administration (state 2026-10-27, `dev/raw-sweep.py [--user rpeditor]`, `dev/raw-page-diff.py PAGE --from '<!DOCTYPE' --to '</html>'`): all pages of the administration are equal raw (with whitespace and script contents) except environment and randomness: `credits.php` (api.wordpress.org), `plugin-editor.php` (`readdir()`), `site-editor.php` (the template order, see 27), `site-health.php` (deliberate texts), random values (`antispambot()` in `edit-comments.php`, passwords, `options-writing.php`), values with `localhost:8080` in the shared database (`home`/`siteurl`, the user URL, page content). Important parts: the frame (head, help tabs, script order, footer, a11y regions), the classic form (`rp-classic`: scripts as in `post.php`/`edit-form-advanced.php`/`_WP_Editors`, the link dialog, the lock dialog for someone else's lock including `get-post-lock`), the block editor (preloads in WP order with the `is_admin()` view of the REST API, editor settings, binding sources, the `wp_enqueue_editor()` defaults), the site editor, boot pages, lists, baked pages. REST: `OPTIONS` with the route description and schema (`route_schemas.json`, generated with `dev/gen-rest-schemas.py`), index links after `_fields`, the member order of `theme.json` (serde's `Map::remove` is a `swap_remove` – `shift_remove` everywhere the order matters); `dev/rest-sweep.py --raw` compares with order. Upload limit: `RUSTPRESS_MAX_UPLOAD_SIZE` (the dev server 2 MB like the reference). Addendum (2026-10-27): `wp_get_post_content_block_attributes()` from the template; with a browser user agent (`user_can_richedit()` only holds for known browsers, the comparison scripts send none) also the TinyMCE parts: `wp_print_scripts( 'wp-tinymce' )` and `wp_mce_translation()` (from `class-wp-editor.php` through `php_lit` with a translator) in the block editor and in the classic form, `window.wp.oldEditor`, `body_class` with format and template, `supportsLayout` before `supportsTemplateMode`, `enableCustomFields` from the user meta. What WordPress builds from `HTTP_HOST`, RustPress now also takes from the request's host (the canonical link, list pagination and column headers, `auth_redirect()`, `wp_auth_check_html()`, the `crossorigin` of the media templates through `wp_is_client_side_media_processing_enabled()`); checked with a Chrome user agent and the host 127.0.0.1: only the port and random values remain.
 
-### Verification (per phase)
+#### Verification (per phase)
 - `cargo test` in the workspace (including the new role matrix) + `cargo clippy` without warnings in the lint categories.
 - Oracle comparisons: `dev/admin-files-sweep.py --user <role>`, `dev/ajax-sweep.py --user <role>`, `dev/rest-sweep.py`, `dev/front-compare.py --anon|--user rpeditor`, `dev/comment-post-compare.py`, `dev/comment-front-compare.py`, `dev/export-compare.py`, `dev/screen-diff.sh` for changed screens – the goal as before: 0 differences except the documented environment differences.
 - After every run, clean up the shared database (test users, auto-drafts, `cpc-` comments, `session_tokens`).
 - Measure performance before/after (item 15).
 
-### First step when implementing
+#### First step when implementing
 Add the section "Review and remaining to-do (2026-10-26)" with part C to `PLAN.md`.
 

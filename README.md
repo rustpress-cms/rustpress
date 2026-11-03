@@ -179,6 +179,7 @@ dev/wp-bump.sh 7.1.4          # set the new version and bring the reference Word
 | `rustpress-admin` | `wp-admin`, sign-in and the installer |
 | `rustpress-rest` | REST API |
 | `rustpress-mail` | e-mail |
+| `rustpress-plugins` | native modules that stand in for WordPress plugins |
 | `rustpress-server` | axum server and CGI mode |
 | `rustpress-compat` | comparison run against a real WordPress |
 
