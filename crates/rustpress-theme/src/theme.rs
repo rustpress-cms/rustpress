@@ -125,7 +125,7 @@ impl Theme {
             dirs.push(&template_dir);
         }
         for dir in dirs {
-            if let Ok(php) = std::fs::read_to_string(dir.join("functions.php")) {
+            if let Some(php) = rustpress_core::files::read(&dir.join("functions.php")) {
                 block_style_inline.extend(crate::functions_php::block_style_inline_styles(&php));
                 block_stylesheets.extend(crate::functions_php::block_stylesheets(&php));
                 wp_block_styles |= crate::functions_php::adds_theme_support(&php, "wp-block-styles");
@@ -483,7 +483,7 @@ fn read_partials(style_dirs: &[PathBuf]) -> Vec<Value> {
 /// Patterns a classic block theme registers from `inc/block-patterns.php`:
 /// `$block_patterns = array( 'name', ... )` and `register_block_pattern( 'theme/' . $block_pattern, require ... )`.
 fn scan_registered_patterns(theme_dir: &Path, patterns: &mut HashMap<String, PathBuf>) {
-    let Ok(php) = std::fs::read_to_string(theme_dir.join("inc").join("block-patterns.php")) else { return };
+    let Some(php) = rustpress_core::files::read(&theme_dir.join("inc").join("block-patterns.php")) else { return };
     let Some(prefix) = php.find("register_block_pattern(").map(|i| &php[i..]).and_then(|rest| {
         let rest = rest["register_block_pattern(".len()..].trim_start();
         let rest = rest.strip_prefix('\'')?;
@@ -509,7 +509,7 @@ fn scan_patterns(dir: &Path, patterns: &mut HashMap<String, PathBuf>) {
         if path.extension().and_then(|e| e.to_str()) != Some("php") {
             continue;
         }
-        let Ok(text) = std::fs::read_to_string(&path) else { continue };
+        let Some(text) = rustpress_core::files::read(&path) else { continue };
         let header: String = text.chars().take(4096).collect();
         if let Some(slug) = header.lines().find_map(|l| l.trim().trim_start_matches('*').trim().strip_prefix("Slug:")) {
             patterns.insert(slug.trim().to_owned(), path);

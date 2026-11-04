@@ -413,7 +413,10 @@ impl Db {
             limit: Some(1),
             ..PostQuery::default()
         };
-        Ok(self.posts(&query).await?.pop())
+        let post = self.posts(&query).await?.pop();
+        // `get_post()` keeps the row in the `posts` cache group.
+        crate::primed::remember_post(id, post.clone());
+        Ok(post)
     }
 
     /// `redirect_guess_404_permalink()`: the first publicly viewable post whose

@@ -249,7 +249,7 @@ impl I18n {
             return i18n;
         }
         let languages = wp_root.join("wp-content").join("languages");
-        let read = |path: std::path::PathBuf| std::fs::read(path).ok().and_then(|b| Catalog::parse(&b));
+        let read = |path: std::path::PathBuf| crate::files::read_bytes(&path).and_then(|b| Catalog::parse(&b));
         if let Some(core) = read(languages.join(format!("{locale}.mo"))) {
             i18n.domains.insert("default".to_owned(), Arc::new(core));
         }
@@ -270,7 +270,7 @@ impl I18n {
             return;
         }
         let path = wp_root.join("wp-content").join("languages").join("plugins").join(format!("{domain}-{}.mo", self.locale));
-        if let Some(catalog) = std::fs::read(path).ok().and_then(|b| Catalog::parse(&b)) {
+        if let Some(catalog) = crate::files::read_bytes(&path).and_then(|b| Catalog::parse(&b)) {
             self.domains.insert(domain.to_owned(), Arc::new(catalog));
         }
     }

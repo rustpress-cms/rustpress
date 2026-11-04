@@ -125,7 +125,7 @@ impl Registry {
     pub fn registration_order(&self) -> Vec<String> {
         // The widget blocks, then the blocks with a PHP file (their `init` callbacks come first), then the static ones.
         let mut names = vec!["core/legacy-widget".to_owned(), "core/widget-group".to_owned()];
-        if let Ok(text) = std::fs::read_to_string(self.blocks_dir.join("require-dynamic-blocks.php")) {
+        if let Some(text) = rustpress_core::files::read(&self.blocks_dir.join("require-dynamic-blocks.php")) {
             for line in text.lines() {
                 if let Some(file) = line.split("/blocks/").nth(1).and_then(|l| l.split(".php").next()) {
                     let name = format!("core/{file}");
@@ -135,7 +135,7 @@ impl Registry {
                 }
             }
         }
-        if let Ok(text) = std::fs::read_to_string(self.blocks_dir.join("require-static-blocks.php")) {
+        if let Some(text) = rustpress_core::files::read(&self.blocks_dir.join("require-static-blocks.php")) {
             for line in text.lines() {
                 if let Some(name) = line.trim().strip_prefix('\'').and_then(|l| l.split('\'').next()) {
                     names.push(format!("core/{name}"));
@@ -193,7 +193,7 @@ impl Registry {
             return None;
         }
         let dir = self.blocks_dir.join(slug);
-        let text = std::fs::read_to_string(dir.join("block.json")).ok()?;
+        let text = rustpress_core::files::read(&dir.join("block.json"))?;
         let json: Value = serde_json::from_str(&text).ok()?;
         let object = json.as_object()?;
         Some(BlockType {

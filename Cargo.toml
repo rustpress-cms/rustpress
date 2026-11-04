@@ -57,7 +57,9 @@ chrono-tz = "0.10"
 fancy-regex = "0.20"
 futures = "0.3"
 md5 = "0.8"
+mimalloc = { version = "0.1", default-features = false }
 regex = "1"
+regex-syntax = "0.8"
 sha2 = "0.10"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
