@@ -101,22 +101,19 @@ impl Db {
 impl Db {
     /// The distinct `post_type` values in use.
     pub async fn used_post_types(&self) -> Result<Vec<String>> {
-        let sql = format!("SELECT DISTINCT post_type FROM {} ORDER BY post_type", self.prefix.table("posts"));
-        Ok(sqlx::query_scalar(AssertSqlSafe(sql)).fetch_all(&self.pool).await?)
+        crate::sql::Sql::new(format!("SELECT DISTINCT post_type FROM {} ORDER BY post_type", self.prefix.table("posts"))).fetch_column(&self.pool).await
     }
 
     /// The distinct `taxonomy` values in use.
     pub async fn used_taxonomies(&self) -> Result<Vec<String>> {
-        let sql = format!("SELECT DISTINCT taxonomy FROM {} ORDER BY taxonomy", self.prefix.table("term_taxonomy"));
-        Ok(sqlx::query_scalar(AssertSqlSafe(sql)).fetch_all(&self.pool).await?)
+        crate::sql::Sql::new(format!("SELECT DISTINCT taxonomy FROM {} ORDER BY taxonomy", self.prefix.table("term_taxonomy"))).fetch_column(&self.pool).await
     }
 }
 
 impl Db {
     /// The taxonomies in which some term has a parent.
     pub async fn taxonomies_with_parents(&self) -> Result<Vec<String>> {
-        let sql = format!("SELECT DISTINCT taxonomy FROM {} WHERE parent <> 0 ORDER BY taxonomy", self.prefix.table("term_taxonomy"));
-        Ok(sqlx::query_scalar(AssertSqlSafe(sql)).fetch_all(&self.pool).await?)
+        crate::sql::Sql::new(format!("SELECT DISTINCT taxonomy FROM {} WHERE parent <> 0 ORDER BY taxonomy", self.prefix.table("term_taxonomy"))).fetch_column(&self.pool).await
     }
 
     /// `(taxonomy, post_type)` pairs that have at least one relationship.
@@ -127,6 +124,6 @@ impl Db {
             self.prefix.table("term_taxonomy"),
             self.prefix.table("posts")
         );
-        Ok(sqlx::query_as(AssertSqlSafe(sql)).fetch_all(&self.pool).await?)
+        crate::sql::Sql::new(sql).fetch_all(&self.pool).await
     }
 }

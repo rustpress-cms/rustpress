@@ -1743,6 +1743,7 @@ dependencies = [
  "fancy-regex",
  "futures",
  "regex",
+ "regex-automata",
  "regex-syntax",
  "rustpress-db",
  "rustpress-phpser",

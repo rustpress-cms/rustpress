@@ -82,13 +82,9 @@ impl Db {
         if ids.is_empty() {
             return Ok(Vec::new());
         }
-        let marks = vec!["?"; ids.len()].join(",");
-        let sql = format!("SELECT {} FROM {} WHERE ID IN ({marks})", crate::models::USER_COLUMNS, self.prefix.table("users"));
-        let mut query = sqlx::query_as(AssertSqlSafe(sql));
-        for id in ids {
-            query = query.bind(*id);
-        }
-        Ok(query.fetch_all(&self.pool).await?)
+        let mut sql = crate::sql::Sql::new(format!("SELECT {} FROM {} WHERE ID IN (", crate::models::USER_COLUMNS, self.prefix.table("users")));
+        sql.push_list(ids.iter().copied()).push(")");
+        sql.fetch_all(&self.pool).await
     }
 
     /// All users, ordered by display name (the author drop-down).

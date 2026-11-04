@@ -1,5 +1,5 @@
 use sqlx::AssertSqlSafe;
-use sqlx::{MySql, QueryBuilder};
+use crate::sql::Sql;
 
 use crate::models::{POST_COLUMNS, Post, PostMeta};
 use crate::{Db, Result};
@@ -139,7 +139,7 @@ impl Default for PostQuery {
 
 impl PostQuery {
     /// Appends `FROM <posts> WHERE ...` including the `WHERE` clause.
-    fn push_filters(&self, qb: &mut QueryBuilder<MySql>, db: &Db) {
+    fn push_filters(&self, qb: &mut Sql, db: &Db) {
         qb.push(" FROM ").push(db.prefix.table("posts")).push(" p WHERE 1 = 1");
         push_in(qb, "p.post_type", &self.post_types);
         if self.statuses.iter().any(|s| s == "publish") && (!self.private_types.is_empty() || self.private_author.is_some()) {
@@ -255,7 +255,7 @@ fn like_pattern(term: &str) -> String {
 }
 
 /// `(CASE WHEN ... THEN 1 ... ELSE 6 END)`, ported from `parse_search_order`.
-fn push_relevance(qb: &mut QueryBuilder<MySql>, query: &PostQuery) {
+fn push_relevance(qb: &mut Sql, query: &PostQuery) {
     let terms = &query.search;
     let phrase = query.search_phrase.as_deref().filter(|_| terms.len() > 1);
     qb.push("(CASE ");
@@ -285,9 +285,9 @@ fn push_relevance(qb: &mut QueryBuilder<MySql>, query: &PostQuery) {
     qb.push("ELSE 6 END)");
 }
 
-fn push_in<T>(qb: &mut QueryBuilder<MySql>, column: &str, values: &[T])
+fn push_in<T>(qb: &mut Sql, column: &str, values: &[T])
 where
-    T: Clone + Send + sqlx::Type<MySql> + for<'q> sqlx::Encode<'q, MySql> + 'static,
+    T: Clone + Into<crate::sql::Arg>,
 {
     if values.is_empty() {
         return;
@@ -301,7 +301,7 @@ where
 }
 
 /// The `ORDER BY` and `LIMIT` of a [`PostQuery`].
-fn push_order_and_limit(qb: &mut QueryBuilder<MySql>, query: &PostQuery) {
+fn push_order_and_limit(qb: &mut Sql, query: &PostQuery) {
     let column = match query.order_by {
         OrderBy::Date => "p.post_date",
         OrderBy::Modified => "p.post_modified",
@@ -344,26 +344,26 @@ fn push_order_and_limit(qb: &mut QueryBuilder<MySql>, query: &PostQuery) {
 
 impl Db {
     pub async fn posts(&self, query: &PostQuery) -> Result<Vec<Post>> {
-        let mut qb = QueryBuilder::<MySql>::new(format!("SELECT {POST_COLUMNS}"));
+        let mut qb = Sql::new(format!("SELECT {POST_COLUMNS}"));
         query.push_filters(&mut qb, self);
         push_order_and_limit(&mut qb, query);
-        Ok(qb.build_query_as().fetch_all(&self.pool).await?)
+        qb.fetch_all(&self.pool).await
     }
 
     /// `(ID, post_parent)` of the matching posts in the order of [`Db::posts`] (`'fields' => 'id=>parent'`), for
     /// lists that need every match but not the rows.
     pub async fn post_parents(&self, query: &PostQuery) -> Result<Vec<(u64, u64)>> {
-        let mut qb = QueryBuilder::<MySql>::new("SELECT p.ID, p.post_parent");
+        let mut qb = Sql::new("SELECT p.ID, p.post_parent");
         query.push_filters(&mut qb, self);
         push_order_and_limit(&mut qb, query);
-        Ok(qb.build_query_as().fetch_all(&self.pool).await?)
+        qb.fetch_all(&self.pool).await
     }
 
     /// Number of matching posts, ignoring `limit`/`offset` (for pagination).
     pub async fn count_posts(&self, query: &PostQuery) -> Result<u64> {
-        let mut qb = QueryBuilder::<MySql>::new("SELECT COUNT(*)");
+        let mut qb = Sql::new("SELECT COUNT(*)");
         query.push_filters(&mut qb, self);
-        let count: i64 = qb.build_query_scalar().fetch_one(&self.pool).await?;
+        let count: i64 = qb.fetch_scalar(&self.pool).await?;
         Ok(count as u64)
     }
 
@@ -424,7 +424,7 @@ impl Db {
     /// `excluded` (not public) are left out as well.
     pub async fn guess_post_by_name(&self, name: &str, post_type: Option<&str>, excluded: &[&str], year: Option<u32>, month: Option<u32>, day: Option<u32>) -> Result<Option<u64>> {
         let escaped: String = name.chars().flat_map(|c| if matches!(c, '\\' | '%' | '_') { vec!['\\', c] } else { vec![c] }).collect();
-        let mut qb = QueryBuilder::<MySql>::new(format!("SELECT ID FROM {} WHERE post_name LIKE ", self.prefix.table("posts")));
+        let mut qb = Sql::new(format!("SELECT ID FROM {} WHERE post_name LIKE ", self.prefix.table("posts")));
         qb.push_bind(format!("{escaped}%"));
         match post_type {
             Some(t) => {
@@ -447,23 +447,22 @@ impl Db {
             qb.push(" AND DAYOFMONTH(post_date) = ").push_bind(d);
         }
         qb.push(" AND post_status = 'publish' ORDER BY post_name, ID LIMIT 1");
-        Ok(qb.build_query_scalar::<u64>().fetch_optional(&self.pool).await?)
+        Ok(qb.fetch_column::<u64>(&self.pool).await?.into_iter().next())
     }
 
     /// `get_adjacent_post()` without term filters: the published post of the same type that comes
     /// directly before or after `(date, id)` in the order `post_date, ID`.
     pub async fn adjacent_post_id(&self, post_type: &str, date: &str, id: u64, previous: bool) -> Result<Option<u64>> {
         let (op, order) = if previous { ("<", "DESC") } else { (">", "ASC") };
-        let sql = format!(
-            "SELECT ID FROM {} WHERE (post_date {op} ? OR (post_date = ? AND ID {op} ?)) AND post_type = ? AND post_status = 'publish' ORDER BY post_date {order}, ID {order} LIMIT 1",
-            self.prefix.table("posts")
-        );
-        Ok(sqlx::query_scalar::<_, u64>(AssertSqlSafe(sql)).bind(date.to_owned()).bind(date.to_owned()).bind(id).bind(post_type.to_owned()).fetch_optional(&self.pool).await?)
+        let mut sql = Sql::new(format!("SELECT ID FROM {} WHERE (post_date {op} ", self.prefix.table("posts")));
+        sql.push_bind(date).push(" OR (post_date = ").push_bind(date).push(format!(" AND ID {op} ")).push_bind(id);
+        sql.push(")) AND post_type = ").push_bind(post_type).push(format!(" AND post_status = 'publish' ORDER BY post_date {order}, ID {order} LIMIT 1"));
+        Ok(sql.fetch_column::<u64>(&self.pool).await?.into_iter().next())
     }
 
     /// `wp_old_slug_redirect()` lookup: a post that once had this slug (`_wp_old_slug`).
     pub async fn post_by_old_slug(&self, name: &str, post_type: &str, year: Option<u32>, month: Option<u32>, day: Option<u32>) -> Result<Option<u64>> {
-        let mut qb = QueryBuilder::<MySql>::new(format!(
+        let mut qb = Sql::new(format!(
             "SELECT post_id FROM {} AS m INNER JOIN {} AS p ON p.ID = m.post_id WHERE m.meta_key = '_wp_old_slug' AND m.meta_value = ",
             self.prefix.table("postmeta"),
             self.prefix.table("posts")
@@ -479,7 +478,7 @@ impl Db {
             qb.push(" AND DAYOFMONTH(p.post_date) = ").push_bind(d);
         }
         qb.push(" AND p.post_status = 'publish' ORDER BY m.meta_id LIMIT 1");
-        Ok(qb.build_query_scalar::<u64>().fetch_optional(&self.pool).await?)
+        Ok(qb.fetch_column::<u64>(&self.pool).await?.into_iter().next())
     }
     /// `get_lastpostmodified( 'GMT' )`: the newest `post_modified_gmt` of published content.
     pub async fn last_post_modified_gmt(&self, post_types: &[&str]) -> Result<Option<String>> {
@@ -498,11 +497,9 @@ impl Db {
         if let Some(primed) = crate::primed::primed_meta(post_id) {
             return Ok(primed);
         }
-        let sql = format!(
-            "SELECT meta_id, post_id, meta_key, meta_value FROM {} WHERE post_id = ? ORDER BY meta_id",
-            self.prefix.table("postmeta")
-        );
-        let rows: Vec<PostMeta> = sqlx::query_as(AssertSqlSafe(sql)).bind(post_id).fetch_all(&self.pool).await?;
+        let mut sql = Sql::new(format!("SELECT meta_id, post_id, meta_key, meta_value FROM {} WHERE post_id = ", self.prefix.table("postmeta")));
+        sql.push_bind(post_id).push(" ORDER BY meta_id");
+        let rows: Vec<PostMeta> = sql.fetch_all(&self.pool).await?;
         crate::primed::remember_meta(post_id, &rows);
         Ok(rows)
     }

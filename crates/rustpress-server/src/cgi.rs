@@ -70,10 +70,44 @@ fn translate(path: &Path, server_dir: &Path, local_dir: &Path) -> Option<PathBuf
     Some(to.join(path.strip_prefix(&from).ok()?))
 }
 
+/// Counts the statements sqlx reports (`sqlx::query` events) and the time they took, for `Server-Timing`: on shared
+/// hosting the database is on another machine, and its round trips are a large part of a request.
+pub struct DbTiming;
+
+static DB_QUERIES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static DB_NANOS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+impl DbTiming {
+    /// The number of statements and their time in seconds so far.
+    fn totals() -> (u64, f64) {
+        use std::sync::atomic::Ordering::Relaxed;
+        (DB_QUERIES.load(Relaxed), DB_NANOS.load(Relaxed) as f64 / 1e9)
+    }
+}
+
+impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for DbTiming {
+    fn on_event(&self, event: &tracing::Event<'_>, _: tracing_subscriber::layer::Context<'_, S>) {
+        struct Elapsed(f64);
+        impl tracing::field::Visit for Elapsed {
+            fn record_f64(&mut self, field: &tracing::field::Field, value: f64) {
+                if field.name() == "elapsed_secs" {
+                    self.0 = value;
+                }
+            }
+            fn record_debug(&mut self, _: &tracing::field::Field, _: &dyn std::fmt::Debug) {}
+        }
+        let mut elapsed = Elapsed(0.0);
+        event.record(&mut elapsed);
+        DB_QUERIES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        DB_NANOS.fetch_add((elapsed.0 * 1e9) as u64, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
 /// Answers the one request of this process.
 ///
-/// `Server-Timing` reports start-up (`load`, since `started`) and the whole run (`app`), so the time
-/// spent in RustPress can be told apart from the web server and the network in the browser.
+/// `Server-Timing` reports start-up (`load`, since `started`), the database (`db`, with the number of statements)
+/// and the whole run (`app`), so the time spent in RustPress can be told apart from the database, the web server and
+/// the network in the browser.
 pub async fn serve(router: axum::Router, started: std::time::Instant, load: std::time::Duration) -> std::io::Result<()> {
     let request = request_from_env()?;
     let head = request.method() == Method::HEAD;
@@ -81,7 +115,13 @@ pub async fn serve(router: axum::Router, started: std::time::Instant, load: std:
         Ok(response) => response,
         Err(never) => match never {},
     };
-    let timing = format!("load;dur={:.1}, app;dur={:.1}", load.as_secs_f64() * 1000.0, started.elapsed().as_secs_f64() * 1000.0);
+    let (queries, db) = DbTiming::totals();
+    let timing = format!(
+        "load;dur={:.1}, db;dur={:.1};desc=\"{queries} queries\", app;dur={:.1}",
+        load.as_secs_f64() * 1000.0,
+        db * 1000.0,
+        started.elapsed().as_secs_f64() * 1000.0
+    );
     if let Ok(value) = timing.parse() {
         response.headers_mut().insert("server-timing", value);
     }

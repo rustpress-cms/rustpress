@@ -25,7 +25,12 @@ fn main() {
 
 /// One request from the web server (CGI); log lines go to its error log.
 async fn run_cgi() {
-    tracing_subscriber::fmt().with_writer(std::io::stderr).with_ansi(false).with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("warn"))).init();
+    use tracing_subscriber::layer::SubscriberExt;
+    use tracing_subscriber::util::SubscriberInitExt;
+    use tracing_subscriber::Layer;
+    let log = tracing_subscriber::fmt::layer().with_writer(std::io::stderr).with_ansi(false).with_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("warn")));
+    let statements = rustpress_server::cgi::DbTiming.with_filter(tracing_subscriber::filter::Targets::new().with_target("sqlx::query", tracing::Level::TRACE));
+    tracing_subscriber::registry().with(log).with(statements).init();
     let started = std::time::Instant::now();
     let result = async {
         let config = rustpress_server::cgi::config().map_err(|e| e.to_string())?;

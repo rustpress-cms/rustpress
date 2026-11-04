@@ -5,7 +5,6 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 
-use sqlx::AssertSqlSafe;
 
 use crate::models::{Comment, Post, PostMeta, User};
 use crate::{Db, PostQuery, Result};
@@ -107,13 +106,9 @@ impl Db {
         if missing.is_empty() {
             return Ok(());
         }
-        let marks = vec!["?"; missing.len()].join(", ");
-        let sql = format!("SELECT meta_id, post_id, meta_key, meta_value FROM {} WHERE post_id IN ({marks}) ORDER BY meta_id", self.prefix.table("postmeta"));
-        let mut query = sqlx::query_as::<_, PostMeta>(AssertSqlSafe(sql));
-        for id in &missing {
-            query = query.bind(*id);
-        }
-        let rows = query.fetch_all(&self.pool).await?;
+        let mut sql = crate::sql::Sql::new(format!("SELECT meta_id, post_id, meta_key, meta_value FROM {} WHERE post_id IN (", self.prefix.table("postmeta")));
+        sql.push_list(missing.iter().copied()).push(") ORDER BY meta_id");
+        let rows: Vec<PostMeta> = sql.fetch_all(&self.pool).await?;
         let _ = PRIMED_META.try_with(|cache| {
             let mut cache = cache.borrow_mut();
             for id in &missing {

@@ -3,6 +3,7 @@ use std::collections::HashMap;
 
 use sqlx::AssertSqlSafe;
 use crate::models::{TERM_COLUMNS, Term};
+use crate::sql::Sql;
 use crate::{Db, Result};
 
 tokio::task_local! {
@@ -90,18 +91,14 @@ impl Db {
         if missing.is_empty() {
             return Ok(());
         }
-        let marks = vec!["?"; missing.len()].join(", ");
-        let sql = format!(
+        let mut sql = Sql::new(format!(
             "SELECT tr.object_id, {TERM_COLUMNS} FROM {} JOIN {} tr ON tr.term_taxonomy_id = tt.term_taxonomy_id \
-             WHERE tr.object_id IN ({marks}) ORDER BY tr.object_id, tr.term_order, t.term_id",
+             WHERE tr.object_id IN (",
             self.term_from(),
             self.prefix.table("term_relationships"),
-        );
-        let mut query = sqlx::query_as::<_, PostTerm>(AssertSqlSafe(sql));
-        for id in &missing {
-            query = query.bind(*id);
-        }
-        let rows = query.fetch_all(&self.pool).await?;
+        ));
+        sql.push_list(missing.iter().copied()).push(") ORDER BY tr.object_id, tr.term_order, t.term_id");
+        let rows: Vec<PostTerm> = sql.fetch_all(&self.pool).await?;
         let _ = PRIMED_TERMS.try_with(|cache| {
             let mut cache = cache.borrow_mut();
             for id in &missing {
@@ -132,21 +129,18 @@ impl Db {
         if let Ok(Some(terms)) = PRIMED_TERMS.try_with(|cache| cache.borrow().get(&post_id).cloned()) {
             return Ok(terms.into_iter().filter(|t| taxonomy.is_none_or(|tax| t.taxonomy == tax)).collect());
         }
-        let mut sql = format!(
+        let mut sql = Sql::new(format!(
             "SELECT {TERM_COLUMNS} FROM {} JOIN {} tr ON tr.term_taxonomy_id = tt.term_taxonomy_id \
-             WHERE tr.object_id = ?",
+             WHERE tr.object_id = ",
             self.term_from(),
             self.prefix.table("term_relationships"),
-        );
-        if taxonomy.is_some() {
-            sql.push_str(" AND tt.taxonomy = ?");
-        }
-        sql.push_str(" ORDER BY tr.term_order, t.term_id");
-        let mut query = sqlx::query_as(AssertSqlSafe(sql)).bind(post_id);
+        ));
+        sql.push_bind(post_id);
         if let Some(taxonomy) = taxonomy {
-            query = query.bind(taxonomy);
+            sql.push(" AND tt.taxonomy = ").push_bind(taxonomy);
         }
-        Ok(query.fetch_all(&self.pool).await?)
+        sql.push(" ORDER BY tr.term_order, t.term_id");
+        sql.fetch_all(&self.pool).await
     }
 
     /// `get_term_meta( $term_id, $key, true )` of every term that has the key: the first value per term.
@@ -163,24 +157,19 @@ impl Db {
     }
 
     pub async fn term_by_slug(&self, taxonomy: &str, slug: &str) -> Result<Option<Term>> {
-        let sql = format!(
-            "SELECT {TERM_COLUMNS} FROM {} WHERE tt.taxonomy = ? AND t.slug = ?",
-            self.term_from()
-        );
-        Ok(sqlx::query_as(AssertSqlSafe(sql)).bind(taxonomy).bind(slug).fetch_optional(&self.pool).await?)
+        let mut sql = Sql::new(format!("SELECT {TERM_COLUMNS} FROM {} WHERE tt.taxonomy = ", self.term_from()));
+        sql.push_bind(taxonomy).push(" AND t.slug = ").push_bind(slug);
+        sql.fetch_optional(&self.pool).await
     }
 
     /// A term by its `term_id`, optionally restricted to a taxonomy.
     pub async fn term_by_id(&self, taxonomy: Option<&str>, term_id: u64) -> Result<Option<Term>> {
-        let mut sql = format!("SELECT {TERM_COLUMNS} FROM {} WHERE t.term_id = ?", self.term_from());
-        if taxonomy.is_some() {
-            sql.push_str(" AND tt.taxonomy = ?");
-        }
-        let mut query = sqlx::query_as(AssertSqlSafe(sql)).bind(term_id);
+        let mut sql = Sql::new(format!("SELECT {TERM_COLUMNS} FROM {} WHERE t.term_id = ", self.term_from()));
+        sql.push_bind(term_id);
         if let Some(taxonomy) = taxonomy {
-            query = query.bind(taxonomy);
+            sql.push(" AND tt.taxonomy = ").push_bind(taxonomy);
         }
-        Ok(query.fetch_optional(&self.pool).await?)
+        sql.fetch_optional(&self.pool).await
     }
 
     /// `get_terms( [ 'taxonomy' => $taxonomy, 'orderby' => 'count', 'order' => 'DESC', 'number' => $limit ] )` of
@@ -196,11 +185,9 @@ impl Db {
         if let Ok(Some(terms)) = PRIMED_TAXONOMIES.try_with(|cache| cache.borrow().get(taxonomy).cloned()) {
             return Ok(terms);
         }
-        let sql = format!(
-            "SELECT {TERM_COLUMNS} FROM {} WHERE tt.taxonomy = ? ORDER BY t.name",
-            self.term_from()
-        );
-        let terms: Vec<Term> = sqlx::query_as(AssertSqlSafe(sql)).bind(taxonomy).fetch_all(&self.pool).await?;
+        let mut sql = Sql::new(format!("SELECT {TERM_COLUMNS} FROM {} WHERE tt.taxonomy = ", self.term_from()));
+        sql.push_bind(taxonomy).push(" ORDER BY t.name");
+        let terms: Vec<Term> = sql.fetch_all(&self.pool).await?;
         let _ = PRIMED_TAXONOMIES.try_with(|cache| cache.borrow_mut().insert(taxonomy.to_owned(), terms.clone()));
         Ok(terms)
     }
