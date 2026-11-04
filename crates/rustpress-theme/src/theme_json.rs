@@ -225,7 +225,7 @@ pub fn find_variation<'a>(styles: &'a Value, block_name: &str, slug: &str) -> Op
 
 /// Reads and parses a JSON file; `None` if missing or invalid.
 pub fn read_file(path: &Path) -> Option<Value> {
-    let text = std::fs::read_to_string(path).ok()?;
+    let text = rustpress_core::files::read(path)?;
     match serde_json::from_str::<Value>(&text) {
         Ok(v) => Some(v),
         Err(e) => {

@@ -38,6 +38,7 @@ fn forget_cached(table: &str) {
         "users" => crate::primed::forget_users(),
         "terms" | "term_taxonomy" => crate::terms::forget_taxonomies(),
         "postmeta" => crate::primed::forget_meta(),
+        "posts" => crate::primed::forget_posts(),
         _ => {}
     }
 }
@@ -257,6 +258,9 @@ impl Writer {
         }
         if sql.contains("postmeta") {
             crate::primed::forget_meta();
+        }
+        if sql.contains("posts") {
+            crate::primed::forget_posts();
         }
         if sql.contains("term") {
             crate::terms::forget_taxonomies();

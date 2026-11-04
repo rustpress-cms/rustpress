@@ -101,7 +101,7 @@ impl<'s> StylePrinter<'s> {
 
 /// The `version` of a package in `wp-includes/assets/script-loader-packages.php` (`hooks`, `i18n`).
 pub fn package_version(wp_root: &std::path::Path, package: &str) -> Option<String> {
-    let text = std::fs::read_to_string(wp_root.join("wp-includes").join("assets").join("script-loader-packages.php")).ok()?;
+    let text = rustpress_core::files::read(&wp_root.join("wp-includes").join("assets").join("script-loader-packages.php"))?;
     let at = text.find(&format!("'{package}.js' => array("))?;
     let rest = &text[at..];
     let version = &rest[rest.find("'version' => '")? + "'version' => '".len()..];
@@ -154,7 +154,7 @@ impl<'s> ScriptPrinter<'s> {
         let relative = relative.split_once('/')?.1;
         let relative = relative.strip_suffix(".min.js").map_or_else(|| relative.to_owned(), |base| format!("{base}.js"));
         let md5 = format!("{:x}", md5::compute(relative.as_bytes()));
-        std::fs::read_to_string(dir.join("plugins").join(format!("{domain}-{locale}-{md5}.json"))).ok()
+        rustpress_core::files::read(&dir.join("plugins").join(format!("{domain}-{locale}-{md5}.json"))).map(|text| text.to_string())
     }
 
     /// The tags of a core script (with its dependencies), unless they were printed already.

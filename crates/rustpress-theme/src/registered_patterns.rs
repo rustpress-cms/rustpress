@@ -59,7 +59,7 @@ impl Theme {
         let mut out: Vec<PatternEntry> = Vec::new();
         let dir = self.wp_root.join("wp-includes").join("block-patterns");
         for name in CORE_PATTERNS {
-            let Ok(source) = std::fs::read_to_string(dir.join(format!("{name}.php"))) else { continue };
+            let Some(source) = rustpress_core::files::read(&dir.join(format!("{name}.php"))) else { continue };
             let title = source
                 .find("'title'")
                 .and_then(|at| source[at..].find("_x(").map(|x| &source[at + x + 3..]))
@@ -91,7 +91,7 @@ impl Theme {
             let mut files: Vec<_> = entries.flatten().map(|e| e.path()).filter(|p| p.extension().and_then(|e| e.to_str()) == Some("php")).collect();
             files.sort();
             for path in files {
-                let Ok(source) = std::fs::read_to_string(&path) else { continue };
+                let Some(source) = rustpress_core::files::read(&path) else { continue };
                 let head: String = source.chars().take(8192).collect();
                 let header = |name: &str| rustpress_header(&head, name);
                 let (title, slug) = (header("Title"), header("Slug"));

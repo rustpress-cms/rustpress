@@ -9,7 +9,7 @@ pub fn text_domain(dir: &Path) -> String {
         Some(text) => String::from_utf8_lossy(&text.as_bytes()[..text.len().min(8192)]).into_owned(),
         // Not UTF-8 (or missing): the bytes as they are.
         None => {
-            let bytes = std::fs::read(&path).unwrap_or_default();
+            let bytes = rustpress_core::files::read_bytes(&path).unwrap_or_default();
             String::from_utf8_lossy(&bytes[..bytes.len().min(8192)]).into_owned()
         }
     };

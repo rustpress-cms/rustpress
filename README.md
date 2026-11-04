@@ -140,6 +140,8 @@ Then open the site in the browser and follow the installer, or point `WORDPRESS_
 
 On hosts that only offer Apache with CGI, RustPress runs as a single static binary in `cgi-bin/`. It detects CGI mode by itself (`GATEWAY_INTERFACE`), reads the database settings from `wp-config.php` and takes over the site through `.htaccess`. On an empty webspace the installer downloads WordPress 7.1.4 from wordpress.org (checksum-verified) for the theme files and translations. The binary (`rustpress-<target>`, e.g. `rustpress-x86_64-unknown-linux-musl`) is built by CI and attached to every [release](https://github.com/rustpress-cms/rustpress/releases).
 
+Each request starts a new process, so RustPress keeps the theme and WordPress files it reads in `cgi-bin/rustpress-cache.bin` for the next one (a file that changed is read again). Delete it at any time; the next request writes it again.
+
 ## Development
 
 The tests compare RustPress with a real WordPress. A reference stack (MariaDB on `:3306`, WordPress 7 on `:8080`) is started with:

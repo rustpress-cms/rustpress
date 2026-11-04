@@ -83,10 +83,19 @@ fn config_path(config: &Config) -> Option<std::path::PathBuf> {
 pub async fn load_salts(config: &Config, site: &Site) -> Salts {
     let constants = config_path(config).and_then(|path| std::fs::read_to_string(path).ok()).map(|text| rustpress_auth::salts::parse_config_constants(&text)).unwrap_or_default();
     let mut options = std::collections::HashMap::new();
+    // The ones that are not autoloaded in one query instead of one `get_option()` each.
+    let mut missing = Vec::new();
     for name in Salts::option_names() {
-        if let Ok(Some(value)) = site.options.fetch(&site.db, &name).await {
-            options.insert(name, value);
+        match site.options.get(&name) {
+            Some(value) => {
+                options.insert(name, value.to_owned());
+            }
+            None => missing.push(name),
         }
+    }
+    let names: Vec<&str> = missing.iter().map(String::as_str).collect();
+    if let Ok(rows) = site.db.options_named(&names).await {
+        options.extend(rows);
     }
     Salts::new(constants, options)
 }

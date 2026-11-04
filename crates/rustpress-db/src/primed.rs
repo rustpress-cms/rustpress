@@ -71,6 +71,15 @@ pub(crate) fn forget_meta() {
     let _ = PRIMED_META.try_with(|cache| cache.borrow_mut().clear());
 }
 
+pub(crate) fn remember_post(id: u64, post: Option<Post>) {
+    let _ = PRIMED_POSTS.try_with(|cache| cache.borrow_mut().insert(id, post));
+}
+
+/// A write to `wp_posts` (`clean_post_cache()`): rows are read again when asked for.
+pub(crate) fn forget_posts() {
+    let _ = PRIMED_POSTS.try_with(|cache| cache.borrow_mut().clear());
+}
+
 pub(crate) fn primed_post(id: u64) -> Option<Option<Post>> {
     PRIMED_POSTS.try_with(|cache| cache.borrow().get(&id).cloned()).ok().flatten()
 }

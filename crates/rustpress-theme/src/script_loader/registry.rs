@@ -304,7 +304,7 @@ fn run_body(body: &str, vars: &mut Vars, env: &LoaderEnv, mut target: Target<'_>
 }
 
 fn read(path: &Path) -> String {
-    std::fs::read_to_string(path).unwrap_or_default()
+    rustpress_core::files::read_string(path)
 }
 
 fn base_vars() -> Vars {

@@ -649,7 +649,7 @@ pub(super) async fn reusable_block(bc: &BlockCtx<'_>) -> Result<String> {
 fn social_services(bc: &BlockCtx<'_>) -> &'static [(String, String, String)] {
     static SERVICES: std::sync::OnceLock<Vec<(String, String, String)>> = std::sync::OnceLock::new();
     SERVICES.get_or_init(|| {
-        let Ok(php) = std::fs::read_to_string(bc.env.registry.blocks_dir().join("social-link.php")) else { return Vec::new() };
+        let Some(php) = rustpress_core::files::read(&bc.env.registry.blocks_dir().join("social-link.php")) else { return Vec::new() };
         let unescape = |s: &str| s.replace("\\'", "'").replace("\\\\", "\\");
         let Ok(re) = Regex::new(r"'([a-z0-9]+)'\s*=>\s*array\(\s*'name'\s*=>\s*_x\(\s*'((?:[^'\\]|\\.)*)'\s*,\s*'[^']*'\s*\),\s*'icon'\s*=>\s*'((?:[^'\\]|\\.)*)',?\s*\)") else { return Vec::new() };
         re.captures_iter(&php).map(|c| (c[1].to_owned(), unescape(&c[2]), unescape(&c[3]))).collect()

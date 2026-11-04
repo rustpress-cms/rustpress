@@ -59,11 +59,17 @@ pub fn make_clickable(text: &str, opts: &Clickable<'_>) -> String {
     }
     pieces.push(&text[last..]);
     let code_open = re!(r"(?i)^<(?:code|pre|script|style)[\s>]");
-    let scheme_tag = re!(r"^<\s*[\w]{1,20}://");
-    let url_class = r"A-Za-z0-9_\x{80}-\x{10FFFF}#%~/@\[\]*(+=&$-";
-    let url = crate::formatting::cached_regex(&format!(
-        r"([\s(<.,;:!?])((?>[A-Za-z0-9_]{{1,20}})://(?=\S{{1,2000}}\s)(?>[{url_class}]*)(?:['.,;:!?)](?>[{url_class}]+))*)(\)?)(\.\w{{2,6}})?"
-    ));
+    let scheme_tag = re!(r"^<[\t\n\x0B\x0C\r ]*[A-Za-z0-9_]{1,20}://");
+    // Without `/u`, PCRE's `\s` and `\w` are ASCII only and `~i` folds ASCII letters only: a no-break space does not
+    // start a link. Written out like that, the patterns also compile in a fraction of the time (Unicode `\w{1,20}`
+    // alone took 12 ms, which a CGI process pays on every request).
+    // `$url_clickable` without its look-ahead `(?=\S{1,2000}\s)`: compiled by the `regex` crate, the 2000 repetitions
+    // of a Unicode class took longer than the rest of a page (a CGI process compiles it on every request). The
+    // look-ahead is tested by `url_fits` instead; the scheme is possessive, so where it would be tested is fixed by
+    // where the match starts.
+    let url = re!(
+        r"([\t\n\x0B\x0C\r (<.,;:!?])((?>[A-Za-z0-9_]{1,20})://(?>[A-Za-z0-9_\x{80}-\x{10FFFF}#%~/@\[\]*(+=&$-]*)(?:['.,;:!?)](?>[A-Za-z0-9_\x{80}-\x{10FFFF}#%~/@\[\]*(+=&$-]+))*)(\)?)(\.[A-Za-z0-9_]{2,6})?"
+    );
     for piece in pieces {
         if code_open.is_match(piece).unwrap_or(false) {
             nested += 1;
@@ -75,7 +81,7 @@ pub fn make_clickable(text: &str, opts: &Clickable<'_>) -> String {
             continue;
         }
         let padded = format!(" {piece} ");
-        let ret = url.replace_all(&padded, |c: &fancy_regex::Captures<'_, str>| {
+        let ret = replace_urls(url, &padded, |c: &fancy_regex::Captures<'_, str>| {
             let mut link = group(c, 2).to_owned();
             let closing = group(c, 3);
             let mut suffix = if closing == ")" && link.contains('(') {
@@ -97,7 +103,7 @@ pub fn make_clickable(text: &str, opts: &Clickable<'_>) -> String {
             }
             format!("{}<a href=\"{href}\"{}>{href}</a>{suffix}", group(c, 1), clickable_rel(&href, opts))
         });
-        let web = re!(r"(?is)([\s>])((?:www|ftp)\.[A-Za-z0-9_\x{80}-\x{10FFFF}\#$%&~/.\-;:=,?@\[\]+]+)");
+        let web = re!(r"([\t\n\x0B\x0C\r >])((?:[Ww][Ww][Ww]|[Ff][Tt][Pp])\.[A-Za-z0-9_\x{80}-\x{10FFFF}\#$%&~/.\-;:=,?@\[\]+]+)");
         let ret = web.replace_all(&ret, |c: &fancy_regex::Captures<'_, str>| {
             let mut dest = format!("http://{}", group(c, 2));
             let mut tail = String::new();
@@ -111,7 +117,8 @@ pub fn make_clickable(text: &str, opts: &Clickable<'_>) -> String {
             }
             format!("{}<a href=\"{dest}\"{}>{dest}</a>{tail}", group(c, 1), clickable_rel(&dest, opts))
         });
-        let email = re!(r"(?i)([\s>])([.0-9a-z_+-]+)@((?:[0-9a-z-]+\.)+[0-9a-z]{2,})");
+        // `~i` without `/u` folds ASCII letters only (no Kelvin sign for `k`).
+        let email = re!(r"([\t\n\x0B\x0C\r >])([.0-9A-Za-z_+-]+)@((?:[0-9A-Za-z-]+\.)+[0-9A-Za-z]{2,})");
         let ret = email.replace_all(&ret, |c: &fancy_regex::Captures<'_, str>| {
             let address = format!("{}@{}", group(c, 2), group(c, 3));
             format!("{}<a href=\"mailto:{address}\">{address}</a>", group(c, 1))
@@ -119,6 +126,35 @@ pub fn make_clickable(text: &str, opts: &Clickable<'_>) -> String {
         out.push_str(ret.get(1..ret.len().saturating_sub(1)).unwrap_or(""));
     }
     re!(r"(?i)(<a([ \r\n\t]+[^>]+?>|>))<a [^>]+?>([^>]+?)</a></a>").replace_all(&out, "$1$3</a>").into_owned()
+}
+
+/// `preg_replace_callback( $url_clickable, ... )`: [`make_clickable`]'s URL pattern, with its look-ahead
+/// `(?=\S{1,2000}\s)` tested after "://" (bytes and ASCII white space, as PCRE without `/u` reads it).
+fn replace_urls(url: &Regex, text: &str, mut replace: impl FnMut(&fancy_regex::Captures<'_, str>) -> String) -> String {
+    let mut out = String::with_capacity(text.len());
+    let (mut copied, mut from) = (0, 0);
+    while from < text.len() {
+        let Ok(Some(caps)) = url.captures_from_pos(text, from) else { break };
+        let (Some(whole), Some(link)) = (caps.get(0), caps.get(2)) else { break };
+        let after = link.start() + link.as_str().find("://").unwrap_or(0) + 3;
+        if !url_fits(&text.as_bytes()[after..]) {
+            // No match starts here; PCRE tries the next offset.
+            from = whole.start() + text[whole.start()..].chars().next().map_or(1, char::len_utf8);
+            continue;
+        }
+        out.push_str(&text[copied..whole.start()]);
+        out.push_str(&replace(&caps));
+        copied = whole.end();
+        from = whole.end();
+    }
+    out.push_str(&text[copied..]);
+    out
+}
+
+/// `(?=\S{1,2000}\s)` without `/u`: 1 to 2000 bytes that are not white space, then white space.
+fn url_fits(rest: &[u8]) -> bool {
+    let space = rest.iter().position(|b| matches!(b, b' ' | b'\t' | b'\n' | 0x0B | 0x0C | b'\r'));
+    space.is_some_and(|at| (1..=2000).contains(&at))
 }
 
 /// The smilies of WordPress: text, replacement (an image file or an emoji).

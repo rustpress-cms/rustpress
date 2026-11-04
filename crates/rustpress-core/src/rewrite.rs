@@ -6,6 +6,7 @@
 //! the raw request first and then its URL-decoded form, like WordPress does.
 
 use std::collections::BTreeMap;
+use std::sync::OnceLock;
 
 use regex::bytes::{Captures, Regex, RegexBuilder};
 use rustpress_phpser::{Key, Value};
@@ -101,7 +102,59 @@ pub struct Rule {
     pub pattern: String,
     /// `index.php?name=$matches[1]&page=$matches[2]`
     pub query: String,
-    regex: Regex,
+    /// Compiled at the first request that gets this far down the list: most requests stop at one of the first rules,
+    /// and a CGI process that compiled all of them would spend more time on that than on the page.
+    regex: OnceLock<Option<Regex>>,
+    /// The literal text every match starts with (`category/` of `category/(.+?)/?$`): a request without it cannot
+    /// match, and the rule needs no regex.
+    prefix: String,
+}
+
+/// The literal start of a rule pattern: the characters up to the first one with a meaning in a regex or the first
+/// one a quantifier follows. Empty when the pattern has an alternation outside parentheses.
+fn literal_prefix(pattern: &str) -> String {
+    let (mut depth, mut escaped, mut class) = (0i32, false, false);
+    for c in pattern.chars() {
+        match c {
+            _ if escaped => escaped = false,
+            '\\' => escaped = true,
+            ']' if class => class = false,
+            _ if class => {}
+            '[' => class = true,
+            '(' => depth += 1,
+            ')' => depth -= 1,
+            '|' if depth <= 0 => return String::new(),
+            _ => {}
+        }
+    }
+    let body = pattern.strip_prefix('^').unwrap_or(pattern);
+    let mut prefix = String::new();
+    let mut chars = body.chars().peekable();
+    while let Some(c) = chars.next() {
+        if "\\.^$|?*+()[]{}".contains(c) {
+            break;
+        }
+        if matches!(chars.peek(), Some('?' | '*' | '+' | '{')) {
+            // `a?`, `a*`: the character may be missing; `a+` and `a{1,}` keep one, but stopping here is enough.
+            break;
+        }
+        prefix.push(c);
+    }
+    prefix
+}
+
+impl Rule {
+    fn regex(&self) -> Option<&Regex> {
+        self.regex
+            .get_or_init(|| match RegexBuilder::new(&format!("^{}", self.pattern)).unicode(false).build() {
+                Ok(regex) => Some(regex),
+                Err(error) => {
+                    tracing::warn!(pattern = %self.pattern, %error, "rewrite rule does not compile");
+                    None
+                }
+            })
+            .as_ref()
+    }
 }
 
 /// A rule that matched a request.
@@ -128,8 +181,9 @@ impl RewriteRules {
         for (key, query) in value.as_array().unwrap_or_default() {
             let (Key::Str(pattern), Some(query)) = (key, query.as_str()) else { continue };
             let pattern = String::from_utf8_lossy(pattern).into_owned();
-            match RegexBuilder::new(&format!("^{pattern}")).unicode(false).build() {
-                Ok(regex) => rules.push(Rule { pattern, query: query.to_owned(), regex }),
+            // Only parsed here (cheap); [`Rule::regex`] compiles it when a request needs it.
+            match regex_syntax::ParserBuilder::new().unicode(false).utf8(false).build().parse(&format!("^{pattern}")) {
+                Ok(_) => rules.push(Rule { prefix: literal_prefix(&pattern), pattern, query: query.to_owned(), regex: OnceLock::new() }),
                 Err(_) => skipped.push(pattern),
             }
         }
@@ -175,7 +229,11 @@ impl RewriteRules {
             if raw.is_empty() && rule.pattern != "$" {
                 return None;
             }
-            let caps = rule.regex.captures(&raw).or_else(|| rule.regex.captures(&decoded))?;
+            if !raw.starts_with(rule.prefix.as_bytes()) && !decoded.starts_with(rule.prefix.as_bytes()) {
+                return None;
+            }
+            let regex = rule.regex()?;
+            let caps = regex.captures(&raw).or_else(|| regex.captures(&decoded))?;
             Some(Match { rule, vars: substitute(&rule.query, &caps), captures: collect(&caps) })
         })
     }
@@ -310,6 +368,20 @@ mod tests {
         let r = rules(&[("(?<!a)b", "index.php?x=1"), ("ok", "index.php?y=1")]);
         assert_eq!(r.len(), 1);
         assert_eq!(r.skipped, ["(?<!a)b"]);
+    }
+
+    #[test]
+    fn literal_prefixes() {
+        assert_eq!(literal_prefix("category/(.+?)/?$"), "category/");
+        assert_eq!(literal_prefix("^wp-json/?$"), "wp-json");
+        assert_eq!(literal_prefix("^wp-sitemap\\.xml$"), "wp-sitemap");
+        assert_eq!(literal_prefix("[^/]+/([^/]+)/?$"), "");
+        assert_eq!(literal_prefix("(feed|rdf)/?$"), "");
+        assert_eq!(literal_prefix("a|b"), "");
+        assert_eq!(literal_prefix("pages*/x"), "page");
+        assert_eq!(literal_prefix("ab{2}c"), "a");
+        assert_eq!(literal_prefix("$"), "");
+        assert_eq!(literal_prefix("abc[(]|x"), "");
     }
 
     #[test]

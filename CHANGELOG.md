@@ -4,6 +4,9 @@ All notable changes to RustPress. Each release names the WordPress release it fo
 
 ## Unreleased
 
+- Faster, above all in CGI mode: a single post as a CGI process (static musl binary) 140 → 58 ms, the server
+  15–70 % more requests per second (mimalloc, regexes that compile in a fraction of the time, a file snapshot in
+  `cgi-bin/rustpress-cache.bin`, fewer queries); `dev/bench.sh` measures it against the reference WordPress.
 - `rustpress check` tells whether RustPress can serve a site: it lists the theme and the active plugins and says
   which of them run.
 - Native plugin modules (the plugin's files stay in `wp-content/plugins`; the module takes over while the plugin

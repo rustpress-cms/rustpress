@@ -932,7 +932,7 @@ pub fn scan_registrations(wp_root: &Path, active_plugins: &[String], theme_dirs:
         if std::fs::metadata(&file).is_ok_and(|m| m.len() > 1_500_000) {
             continue;
         }
-        if let Ok(php) = std::fs::read_to_string(&file)
+        if let Some(php) = crate::files::read(&file)
             && (php.contains("register_post_type") || php.contains("register_taxonomy"))
         {
             out.extend(scan_source(&php));

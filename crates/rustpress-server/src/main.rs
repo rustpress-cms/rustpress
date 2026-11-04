@@ -2,6 +2,11 @@ use rustpress_server::install::{Gate, Installer};
 use rustpress_server::{App, Config};
 use tracing_subscriber::EnvFilter;
 
+/// mimalloc instead of the system allocator: rendering a page allocates a lot, and the allocator of musl (the static
+/// binary for shared hosting) is several times slower than glibc's, which mimalloc beats as well.
+#[global_allocator]
+static ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 fn main() {
     let cgi = rustpress_server::cgi::is_cgi();
     let mut builder = tokio::runtime::Builder::new_multi_thread();
@@ -25,6 +30,11 @@ async fn run_cgi() {
     let result = async {
         let config = rustpress_server::cgi::config().map_err(|e| e.to_string())?;
         rustpress_db::set_one_request(true);
+        // The contents of theme and WordPress files for the next process, beside the program (cgi-bin/, which the
+        // web server does not hand out as files).
+        if let Ok(dir) = std::env::current_dir() {
+            rustpress_core::files::use_snapshot(dir.join("rustpress-cache.bin"));
+        }
         let router = if config.database_url.is_empty() {
             match Installer::needed(&config).await {
                 Some(installer) => installer.router(),
@@ -42,6 +52,7 @@ async fn run_cgi() {
         };
         let loaded = started.elapsed();
         rustpress_server::cgi::serve(router, started, loaded).await.map_err(|e| e.to_string())?;
+        rustpress_core::files::save_snapshot();
         tracing::debug!(load_ms = loaded.as_secs_f64() * 1000.0, total_ms = started.elapsed().as_secs_f64() * 1000.0, "cgi request");
         Ok::<_, String>(())
     }
