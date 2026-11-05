@@ -5,7 +5,8 @@
 # Idempotent through the `rustpress_seeded_patterns` option.
 set -euo pipefail
 cd "$(dirname "$0")"
-themes=/mnt/c/work/claude/rustpress/themes
+# The bundled themes; THEMES overrides where their files are read from.
+themes=${THEMES:-$(podman volume inspect rustpress-wp -f '{{.Mountpoint}}')/wp-content/themes}
 wp() { ./wp.sh "$@"; }
 
 if wp option get rustpress_seeded_patterns >/dev/null 2>&1; then
@@ -14,13 +15,14 @@ fi
 
 slugs=""
 for theme in twentytwentyfive twentytwentyfour twentytwentythree; do
+  [ -d "$themes/$theme/patterns" ] || continue
   for file in "$themes/$theme"/patterns/*.php; do
     slug=$(grep -m1 -i '^\s*\*\?\s*Slug:' "$file" | sed 's/.*Slug:\s*//' | tr -d '\r ')
     [ -n "$slug" ] && slugs="$slugs $slug"
   done
 done
 # Twenty Twenty-Two lists its patterns in inc/block-patterns.php.
-for name in $(sed -n "/\$block_patterns = array(/,/);/p" "$themes/twentytwentytwo/inc/block-patterns.php" | grep -o "'[a-z0-9-]*'" | tr -d "'"); do
+[ -f "$themes/twentytwentytwo/inc/block-patterns.php" ] && for name in $(sed -n "/\$block_patterns = array(/,/);/p" "$themes/twentytwentytwo/inc/block-patterns.php" | grep -o "'[a-z0-9-]*'" | tr -d "'"); do
   slugs="$slugs twentytwentytwo/$name"
 done
 

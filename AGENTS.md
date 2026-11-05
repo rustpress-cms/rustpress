@@ -49,8 +49,9 @@ Some tests recurse deeply; if a test overflows its stack, set `RUST_MIN_STACK=16
 ## The reference stack
 
 `dev/up.sh` starts MariaDB on `127.0.0.1:3306` (`wordpress`/`wordpress`) and WordPress on `127.0.0.1:8080` in
-rootless Podman. It keeps the WordPress files at `WORDPRESS_VERSION` with automatic updates off. `dev/seed.sh` fills in the
-test content. The golden tests read `RUSTPRESS_TEST_DB` (default: the database above).
+rootless Podman. It keeps the WordPress files at `WORDPRESS_VERSION` with automatic updates off. `dev/seed.sh` installs WordPress if needed
+and fills in the test content (every seed, dated 2026-10-24 like the fixtures). The golden tests read `RUSTPRESS_TEST_DB`
+(default: the database above); on Linux, `dev/test.sh` runs them with the paths of the reference volume.
 
 - RustPress and the reference share **one database**. Anything you create for a comparison (posts, options, active
   plugins, uploads) changes what the goldens expect. Remove it afterwards and deactivate plugins again. The core golden

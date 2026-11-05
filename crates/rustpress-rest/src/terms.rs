@@ -99,8 +99,16 @@ impl Rest<'_> {
         let hide_empty = params.truthy("hide_empty");
         let search = params.get("search").filter(|s| !s.is_empty()).map(str::to_lowercase);
         let parent = if tax.hierarchical { params.parent_list("parent") } else { None };
-        let of_post = match params.id_list("post").and_then(|ids| ids.first().copied()) {
+        let of_post = match params.id_list("post").and_then(|ids| ids.first().copied()).filter(|id| *id != 0) {
             Some(post) => {
+                // `get_items_permissions_check()`: the post must exist, be of a type of the taxonomy and, for a
+                // visitor, be publicly viewable (`check_read_terms_permission_for_post()`).
+                let Some(found) = self.site.db.post(post).await? else {
+                    return Ok(Err(RestError::new("rest_post_invalid_id", "Invalid post ID.", 400)));
+                };
+                if !tax.object_types.contains(&found.post_type) || !self.site.publicly_viewable(&found).await? {
+                    return Ok(Err(RestError::new("rest_forbidden_context", "Sorry, you are not allowed to view terms for this post.", 401)));
+                }
                 let ids: Vec<u64> = self.site.db.terms_for_post(post, Some(taxonomy)).await?.iter().map(|t| t.term_id).collect();
                 Some(ids)
             }

@@ -12,7 +12,7 @@ fn env() -> Option<LoaderEnv> {
         eprintln!("no WordPress files at {root}, skipping");
         return None;
     }
-    Some(LoaderEnv { includes, site_url: "http://localhost:8080".into(), content_url: "http://localhost:8080/wp-content".into(), version: "7.1.3".into(), rtl: false, separate_block_assets: true, compressed_tinymce: false, nonce: None })
+    Some(LoaderEnv { includes, site_url: "http://localhost:8080".into(), content_url: "http://localhost:8080/wp-content".into(), version: rustpress_core::WP_VERSION.into(), rtl: false, separate_block_assets: true, compressed_tinymce: false, nonce: None })
 }
 
 fn fixture() -> Value {
