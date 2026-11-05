@@ -16,6 +16,26 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const RECHECK: Duration = Duration::from_secs(2);
 
+static STATS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static STAT_NANOS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static READS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static READ_NANOS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+fn count<T>(calls: &std::sync::atomic::AtomicU64, nanos: &std::sync::atomic::AtomicU64, f: impl FnOnce() -> T) -> T {
+    let start = Instant::now();
+    let out = f();
+    calls.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    nanos.fetch_add(start.elapsed().as_nanos() as u64, std::sync::atomic::Ordering::Relaxed);
+    out
+}
+
+/// What the file system cost this process so far: (`stat()` calls, their seconds, files read from disk, their
+/// seconds). For `Server-Timing` in CGI mode, where a network file system answers every call.
+pub fn io_totals() -> (u64, f64, u64, f64) {
+    use std::sync::atomic::Ordering::Relaxed;
+    (STATS.load(Relaxed), STAT_NANOS.load(Relaxed) as f64 / 1e9, READS.load(Relaxed), READ_NANOS.load(Relaxed) as f64 / 1e9)
+}
+
 /// What a file holds: UTF-8 text, other bytes, or nothing readable.
 #[derive(Clone)]
 enum Content {
@@ -53,7 +73,7 @@ fn entry<R>(path: &Path, content: bool, f: impl FnOnce(&Entry) -> R) -> R {
     let mut map = cache().lock().expect("file cache");
     let fresh = map.get(path).is_some_and(|e| now.duration_since(e.checked) < RECHECK);
     if !fresh {
-        let meta = std::fs::metadata(path).ok().filter(std::fs::Metadata::is_file);
+        let meta = count(&STATS, &STAT_NANOS, || std::fs::metadata(path)).ok().filter(std::fs::Metadata::is_file);
         let modified = meta.as_ref().and_then(|m| m.modified().ok());
         let size = meta.as_ref().map(std::fs::Metadata::len);
         let kept = map.get_mut(path).filter(|old| old.modified == modified && modified.is_some() && old.size == size).and_then(|old| old.content.take());
@@ -134,7 +154,7 @@ fn load(path: &Path, modified: Option<SystemTime>, size: u64) -> Content {
     {
         return kept.content.clone();
     }
-    let content = std::fs::read(path).map_or(Content::Unreadable, Content::from_bytes);
+    let content = count(&READS, &READ_NANOS, || std::fs::read(path)).map_or(Content::Unreadable, Content::from_bytes);
     // The configuration with the database password never goes into the snapshot.
     let secret = path.file_name().is_some_and(|name| name == "wp-config.php");
     if let (Some(snapshot), Some(stamp)) = (snapshot.as_mut(), stamp)
@@ -152,7 +172,7 @@ const MAGIC: &[u8] = b"rustpress-files 1\n";
 /// Keeps the contents of the files read in `file` for the next process (CGI). Reads what an earlier process kept; a
 /// missing or damaged file just starts empty.
 pub fn use_snapshot(file: PathBuf) {
-    let entries = std::fs::read(&file).ok().and_then(|data| decode(&data)).unwrap_or_default();
+    let entries = count(&READS, &READ_NANOS, || std::fs::read(&file)).ok().and_then(|data| decode(&data)).unwrap_or_default();
     *snapshot().lock().expect("file snapshot") = Some(Snapshot { file, entries, changed: false });
 }
 
