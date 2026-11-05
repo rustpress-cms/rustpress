@@ -29,6 +29,11 @@ path = '^/category/uncategorized/page/2/$'
 aspect = "body"
 reason = "Posts with exactly the same date (here gleich-a/gleich-b) have no defined order in MariaDB; it depends on the query plan and can differ between WordPress and RustPress."
 
+[[deviation]]
+path = '^/(\?s=test&feed=rss2|search/test/feed/rss2/)$'
+aspect = "bytes"
+reason = "The search results sort by title match and date only, and dev/seed_patterns.sh creates many pattern pages in the same second; their order is not defined in MariaDB and depends on the query plan."
+
 # --- Sites with plain permalinks (dev/up-soli.sh, the copy of a real site) ---
 
 [[deviation]]
