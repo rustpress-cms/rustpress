@@ -115,7 +115,11 @@ jobs:
           path: dist
           merge-multiple: true
       - run: cd dist && sha256sum * > SHA256SUMS && cat SHA256SUMS
-      - run: echo "Follows WordPress $(tr -d '[:space:]' < WORDPRESS_VERSION)." > notes.md
+      # The release notes are the tag's section of CHANGELOG.md, or the WordPress release it follows.
+      - run: |
+          awk -v v="${GITHUB_REF_NAME#v}" '/^## / { on = index($0, "## " v " ") == 1; next } on' CHANGELOG.md > notes.md
+          [[ -s notes.md ]] || echo "Follows WordPress $(tr -d '[:space:]' < WORDPRESS_VERSION)." > notes.md
+          cat notes.md
       - if: github.ref_type == 'tag'
         uses: softprops/action-gh-release@v3
         with:
