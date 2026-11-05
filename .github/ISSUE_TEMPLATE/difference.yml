@@ -24,7 +24,7 @@ body:
     id: versions
     attributes:
       label: RustPress and WordPress versions
-      placeholder: RustPress 0.1.1, WordPress 7.1.4
+      placeholder: RustPress 0.2.0, WordPress 7.1.4
     validations:
       required: true
   - type: input

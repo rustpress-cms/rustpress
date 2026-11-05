@@ -2,7 +2,9 @@
 
 All notable changes to RustPress. Each release names the WordPress release it follows.
 
-## Unreleased
+## 0.2.0 (2026-11-05)
+
+Follows WordPress 7.1.4.
 
 - Faster, above all in CGI mode: a single post as a CGI process (static musl binary) 140 → 58 ms, the server
   15–70 % more requests per second (mimalloc, regexes that compile in a fraction of the time, a file snapshot in
@@ -25,11 +27,16 @@ All notable changes to RustPress. Each release names the WordPress release it fo
   - **Redirection** 5.10.1: redirects with all conditions and actions, custom headers, the canonical domain, hit
     counters and logs ([#20](https://github.com/rustpress-cms/rustpress/pull/20)).
   - **Advanced Custom Fields** 6.8.10: ACF post types and taxonomies, the `acf` field of the REST API, the `[acf]`
-    shortcode, the fields of the comment form and the fields on the edit screens of comments and posts
-    ([#21](https://github.com/rustpress-cms/rustpress/pull/21) to [#28](https://github.com/rustpress-cms/rustpress/pull/28)).
+    shortcode, the fields of the comment form and on the edit screens of posts, terms, users, comments and media
+    ([#21](https://github.com/rustpress-cms/rustpress/pull/21) to [#33](https://github.com/rustpress-cms/rustpress/pull/33)),
+    and the ACF administration: the field group editor, the editors of post types and taxonomies, the options
+    pages preview, the tools page and export and import
+    ([#34](https://github.com/rustpress-cms/rustpress/pull/34) to [#40](https://github.com/rustpress-cms/rustpress/pull/40)).
 - The project website in English and German ([#13](https://github.com/rustpress-cms/rustpress/pull/13)) and
   `AGENTS.md` for contributors and coding agents ([#15](https://github.com/rustpress-cms/rustpress/pull/15)).
 - The compatibility reports, `compat/known.toml` and the project plan are in English.
+- The golden tests are reproducible: `dev/seed.sh` installs WordPress and seeds every test post with fixed dates
+  ([#45](https://github.com/rustpress-cms/rustpress/pull/45)). A "Port request" issue template asks for new plugin modules.
 
 ## 0.1.1 (2026-10-30)
 
