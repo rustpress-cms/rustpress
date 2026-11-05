@@ -8,7 +8,7 @@
 use std::collections::BTreeMap;
 use std::sync::OnceLock;
 
-use regex::bytes::{Captures, Regex, RegexBuilder};
+use regex_automata::meta::Regex;
 use rustpress_phpser::{Key, Value};
 
 /// Decodes `%XX` and `+` like PHP's `urldecode()`.
@@ -146,11 +146,19 @@ fn literal_prefix(pattern: &str) -> String {
 impl Rule {
     fn regex(&self) -> Option<&Regex> {
         self.regex
-            .get_or_init(|| match RegexBuilder::new(&format!("^{}", self.pattern)).unicode(false).build() {
-                Ok(regex) => Some(regex),
-                Err(error) => {
-                    tracing::warn!(pattern = %self.pattern, %error, "rewrite rule does not compile");
-                    None
+            .get_or_init(|| {
+                // Only the engines that are cheap to build: a request is matched once, so the lazy DFA and the
+                // one-pass DFA would cost more to build than they save (half the compile time of a rule).
+                let built = Regex::builder()
+                    .configure(Regex::config().hybrid(false).dfa(false).onepass(false))
+                    .syntax(regex_automata::util::syntax::Config::new().unicode(false).utf8(false))
+                    .build(&format!("^{}", self.pattern));
+                match built {
+                    Ok(regex) => Some(regex),
+                    Err(error) => {
+                        tracing::warn!(pattern = %self.pattern, %error, "rewrite rule does not compile");
+                        None
+                    }
                 }
             })
             .as_ref()
@@ -233,18 +241,21 @@ impl RewriteRules {
                 return None;
             }
             let regex = rule.regex()?;
-            let caps = regex.captures(&raw).or_else(|| regex.captures(&decoded))?;
-            Some(Match { rule, vars: substitute(&rule.query, &caps), captures: collect(&caps) })
+            let captures = captures(regex, &raw).or_else(|| captures(regex, &decoded))?;
+            Some(Match { rule, vars: substitute(&rule.query, &captures), captures })
         })
     }
 }
 
-fn collect(caps: &Captures<'_>) -> Vec<Vec<u8>> {
-    (0..caps.len()).map(|i| caps.get(i).map(|m| m.as_bytes().to_vec()).unwrap_or_default()).collect()
+/// The groups of a match of `regex` in `haystack` (empty for a group that did not take part), `None` without a match.
+fn captures(regex: &Regex, haystack: &[u8]) -> Option<Vec<Vec<u8>>> {
+    let mut caps = regex.create_captures();
+    regex.captures(haystack, &mut caps);
+    caps.is_match().then(|| (0..caps.group_len()).map(|i| caps.get_group(i).map(|span| haystack[span].to_vec()).unwrap_or_default()).collect())
 }
 
 /// `index.php?a=$matches[1]&b=$matches[2]` -> `{a: ..., b: ...}`.
-fn substitute(query: &str, caps: &Captures<'_>) -> QueryVars {
+fn substitute(query: &str, caps: &[Vec<u8>]) -> QueryVars {
     // `preg_replace('!^.+\?!', '', $query)`: drop everything up to the last `?`.
     let query = query.rsplit_once('?').map_or(query, |(_, rest)| rest);
     let mut out = Vec::with_capacity(query.len());
@@ -257,7 +268,7 @@ fn substitute(query: &str, caps: &Captures<'_>) -> QueryVars {
         {
             if let Some(m) = caps.get(n) {
                 // `WP_MatchesMapRegex` urlencodes the captures, so `parse_str()` gives back exactly what matched.
-                for &b in m.as_bytes() {
+                for &b in m {
                     if b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.') {
                         out.push(b);
                     } else if b == b' ' {

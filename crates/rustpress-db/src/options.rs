@@ -19,13 +19,9 @@ impl Db {
         if names.is_empty() {
             return Ok(Vec::new());
         }
-        let marks = vec!["?"; names.len()].join(", ");
-        let sql = format!("SELECT option_name, option_value FROM {} WHERE option_name IN ({marks})", self.prefix.table("options"));
-        let mut query = sqlx::query_as(AssertSqlSafe(sql));
-        for name in names {
-            query = query.bind(*name);
-        }
-        Ok(query.fetch_all(&self.pool).await?)
+        let mut sql = crate::sql::Sql::new(format!("SELECT option_name, option_value FROM {} WHERE option_name IN (", self.prefix.table("options")));
+        sql.push_list(names.iter().copied()).push(")");
+        sql.fetch_all(&self.pool).await
     }
 
     /// All options WordPress loads on every request (`autoload` is `yes`/`on`/...).
@@ -34,6 +30,6 @@ impl Db {
             "SELECT option_name, option_value FROM {} WHERE autoload IN ('yes', 'on', 'auto-on', 'auto')",
             self.prefix.table("options")
         );
-        Ok(sqlx::query_as(AssertSqlSafe(sql)).fetch_all(&self.pool).await?)
+        crate::sql::Sql::new(sql).fetch_all(&self.pool).await
     }
 }

@@ -217,22 +217,39 @@ impl TexturizeChars {
     }
 }
 
+/// A pattern compiled at its first use: a CGI process renders one page, and most pages never need most rules.
+#[derive(Debug)]
+struct LazyRegex {
+    pattern: String,
+    regex: OnceLock<Regex>,
+}
+
+impl LazyRegex {
+    fn new(pattern: String) -> Self {
+        Self { pattern, regex: OnceLock::new() }
+    }
+
+    fn get(&self) -> &Regex {
+        self.regex.get_or_init(|| Regex::new(&self.pattern).expect("valid texturize regex"))
+    }
+}
+
 /// The rules of `wptexturize()` for one set of characters.
 #[derive(Debug)]
 pub struct Texturize {
     chars: TexturizeChars,
-    apos: Vec<(Regex, String)>,
-    quote: Vec<(Regex, String)>,
-    dash: Vec<(Regex, String)>,
+    apos: Vec<(LazyRegex, String)>,
+    quote: Vec<(LazyRegex, String)>,
+    dash: Vec<(LazyRegex, String)>,
     static_chars: Vec<(String, String)>,
 }
 
 impl Texturize {
     pub fn new(chars: TexturizeChars) -> Self {
-        let r = |p: String| Regex::new(&p).expect("valid texturize regex");
+        let r = LazyRegex::new;
         let end = "\\n?\\z";
         let (apos_flag, open_sq_flag, open_q_flag) = ("<!--apos-->", "<!--osq-->", "<!--oq-->");
-        let mut apos: Vec<(Regex, String)> = Vec::new();
+        let mut apos: Vec<(LazyRegex, String)> = Vec::new();
         // '99 and '99" are ambiguous among other patterns; assume an abbreviated year at the end of a quotation.
         if chars.apos != "'" || chars.closing_single_quote != "'" {
             apos.push((r(format!("'(\\d\\d)'(?={end}|[.,:;!?)}}\\-\\]]|&gt;|{SPACES})")), format!("{apos_flag}${{1}}{}", chars.closing_single_quote)));
@@ -256,7 +273,7 @@ impl Texturize {
         if chars.apos != "'" {
             apos.push((r(format!("(?<!{SPACES})'(?!{end}|[.,:;!?\"'(){{}}\\[\\]\\-]|&[lg]t;|{SPACES})")), apos_flag.to_owned()));
         }
-        let mut quote: Vec<(Regex, String)> = Vec::new();
+        let mut quote: Vec<(LazyRegex, String)> = Vec::new();
         if chars.opening_quote != "\"" && chars.closing_quote != "\"" {
             quote.push((r(format!("(?<=\\A|{SPACES})\"(\\d[.,\\d]*)\"")), format!("{open_q_flag}${{1}}{}", chars.closing_quote)));
         }
@@ -455,7 +472,7 @@ fn texturize_text(piece: &str, rules: &Texturize) -> String {
     }
     if curl.contains('\'') {
         for (re, rep) in &rules.apos {
-            curl = replace_all_str(re, &curl, rep);
+            curl = replace_all_str(re.get(), &curl, rep);
         }
         curl = texturize_primes(&curl, '\'', &rules.chars.prime, "<!--osq-->", &rules.chars.closing_single_quote);
         curl = curl.replace("<!--apos-->", &rules.chars.apos);
@@ -463,17 +480,17 @@ fn texturize_text(piece: &str, rules: &Texturize) -> String {
     }
     if curl.contains('"') {
         for (re, rep) in &rules.quote {
-            curl = replace_all_str(re, &curl, rep);
+            curl = replace_all_str(re.get(), &curl, rep);
         }
         curl = texturize_primes(&curl, '"', &rules.chars.double_prime, "<!--oq-->", &rules.chars.closing_quote);
         curl = curl.replace("<!--oq-->", &rules.chars.opening_quote);
     }
     if curl.contains('-') {
         for (re, rep) in &rules.dash {
-            curl = replace_all_str(re, &curl, rep);
+            curl = replace_all_str(re.get(), &curl, rep);
         }
     }
-    if re!(r"(?<=\d)x\d").is_match(&curl).unwrap_or(false) {
+    if curl.contains('x') && re!(r"(?<=\d)x\d").is_match(&curl).unwrap_or(false) {
         curl = replace_all_str(re!(r"\b(\d(?:(?<=0)[\d.,]+|(?<!0)[\d.,]*))x(\d[\d.,]*)\b"), &curl, "$1&#215;$2");
     }
     fix_ampersands(&curl)
@@ -570,10 +587,15 @@ pub fn wpautop(text: &str) -> String {
 
     let sub = |text: &str, pattern: &str, replacement: &str| replace_all_str(rx(pattern), text, replacement);
 
-    text = sub(&text, r"<br\s*/?>\s*<br\s*/?>", "\n\n");
+    // Some patterns only run on text that can match them: a CGI process compiles each one it uses.
+    if text.contains("<br") {
+        text = sub(&text, r"<br\s*/?>\s*<br\s*/?>", "\n\n");
+    }
     text = sub(&text, &format!(r"(<{ALLBLOCKS}[\s/>])"), "\n\n$1");
     text = sub(&text, &format!(r"(</{ALLBLOCKS}>)"), "$1\n\n");
-    text = sub(&text, r"(<hr\s*?/?>)", "$1\n\n");
+    if text.contains("<hr") {
+        text = sub(&text, r"(<hr\s*?/?>)", "$1\n\n");
+    }
     text = text.replace("\r\n", "\n").replace('\r', "\n");
     text = replace_in_html_tags(&text, &[("\n", " <!-- wpnl --> ")]);
 
@@ -606,24 +628,34 @@ pub fn wpautop(text: &str) -> String {
     text = out;
 
     text = sub(&text, r"<p>\s*</p>", "");
-    text = sub(&text, r"<p>([^<]+)</(div|address|form)>", "<p>$1</p></$2>");
+    if text.contains("</div>") || text.contains("</address>") || text.contains("</form>") {
+        text = sub(&text, r"<p>([^<]+)</(div|address|form)>", "<p>$1</p></$2>");
+    }
     text = sub(&text, &format!(r"<p>\s*(</?{ALLBLOCKS}[^>]*>)\s*</p>"), "$1");
-    text = sub(&text, r"<p>(<li.+?)</p>", "$1");
-    text = sub(&text, r#"(?i)<p><blockquote((?:[^>"']|"[^"]*"|'[^']*')*)>"#, "<blockquote$1><p>");
+    if text.contains("<p><li") {
+        text = sub(&text, r"<p>(<li.+?)</p>", "$1");
+    }
+    if text.to_ascii_lowercase().contains("<p><blockquote") {
+        text = sub(&text, r#"(?i)<p><blockquote((?:[^>"']|"[^"]*"|'[^']*')*)>"#, "<blockquote$1><p>");
+    }
     text = text.replace("</blockquote></p>", "</p></blockquote>");
     text = sub(&text, &format!(r"<p>\s*(</?{ALLBLOCKS}[^>]*>)"), "$1");
     text = sub(&text, &format!(r"(</?{ALLBLOCKS}[^>]*>)\s*</p>"), "$1");
 
     // Preserve newlines in script/style/svg/math, convert the rest to <br />.
-    let preserved = rx(r"(?s)<(script|style|svg|math).*?</\1>")
-        .replace_all(&text, |caps: &fancy_regex::Captures<'_, str>| caps[0].replace('\n', "<WPPreserveNewline />"))
-        .into_owned();
-    text = preserved.replace("<br>", "<br />").replace("<br/>", "<br />");
+    if ["<script", "<style", "<svg", "<math"].iter().any(|tag| text.contains(tag)) {
+        text = rx(r"(?s)<(script|style|svg|math).*?</\1>")
+            .replace_all(&text, |caps: &fancy_regex::Captures<'_, str>| caps[0].replace('\n', "<WPPreserveNewline />"))
+            .into_owned();
+    }
+    text = text.replace("<br>", "<br />").replace("<br/>", "<br />");
     text = sub(&text, r"(?<!<br />)\s*\n", "<br />\n");
     text = text.replace("<WPPreserveNewline />", "\n");
 
     text = sub(&text, &format!(r"(</?{ALLBLOCKS}[^>]*>)\s*<br />"), "$1");
-    text = sub(&text, r"<br />(\s*</?(?:p|li|div|dl|dd|dt|th|pre|td|ul|ol)[^>]*>)", "$1");
+    if text.contains("<br />") {
+        text = sub(&text, r"<br />(\s*</?(?:p|li|div|dl|dd|dt|th|pre|td|ul|ol)[^>]*>)", "$1");
+    }
     text = sub(&text, r"\n</p>$", "</p>");
 
     for (name, original) in &pre_tags {

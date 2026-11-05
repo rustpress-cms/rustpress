@@ -8,12 +8,9 @@ impl Db {
         if let Some(primed) = crate::primed::primed_approved(post_id) {
             return Ok(primed);
         }
-        let sql = format!(
-            "SELECT {COMMENT_COLUMNS} FROM {} WHERE comment_post_ID = ? AND comment_approved = '1' \
-             ORDER BY comment_date_gmt, comment_ID",
-            self.prefix.table("comments")
-        );
-        Ok(sqlx::query_as(AssertSqlSafe(sql)).bind(post_id).fetch_all(&self.pool).await?)
+        let mut sql = crate::sql::Sql::new(format!("SELECT {COMMENT_COLUMNS} FROM {} WHERE comment_post_ID = ", self.prefix.table("comments")));
+        sql.push_bind(post_id).push(" AND comment_approved = '1' ORDER BY comment_date_gmt, comment_ID");
+        sql.fetch_all(&self.pool).await
     }
 
     /// The approved comments of a post and the pending ones of a user or of an address (`include_unapproved`).
@@ -126,7 +123,7 @@ impl Db {
 
     /// Public (approved) comments matching `query`, newest/oldest first as asked.
     pub async fn comments_query(&self, query: &CommentQuery) -> Result<Vec<Comment>> {
-        let mut qb = sqlx::QueryBuilder::<sqlx::MySql>::new(format!("SELECT {COMMENT_COLUMNS}"));
+        let mut qb = crate::sql::Sql::new(format!("SELECT {COMMENT_COLUMNS}"));
         query.push_filters(&mut qb, self);
         let column = match query.order_by {
             CommentOrder::DateGmt => "c.comment_date_gmt",
@@ -140,13 +137,13 @@ impl Db {
         if let Some(limit) = query.limit {
             qb.push(" LIMIT ").push_bind(limit).push(" OFFSET ").push_bind(query.offset);
         }
-        Ok(qb.build_query_as().fetch_all(&self.pool).await?)
+        qb.fetch_all(&self.pool).await
     }
 
     pub async fn count_comments(&self, query: &CommentQuery) -> Result<u64> {
-        let mut qb = sqlx::QueryBuilder::<sqlx::MySql>::new("SELECT COUNT(*)");
+        let mut qb = crate::sql::Sql::new("SELECT COUNT(*)");
         query.push_filters(&mut qb, self);
-        let count: i64 = qb.build_query_scalar().fetch_one(&self.pool).await?;
+        let count: i64 = qb.fetch_scalar(&self.pool).await?;
         Ok(count as u64)
     }
 }
@@ -216,7 +213,7 @@ impl Default for CommentQuery {
 }
 
 impl CommentQuery {
-    fn push_filters(&self, qb: &mut sqlx::QueryBuilder<sqlx::MySql>, db: &Db) {
+    fn push_filters(&self, qb: &mut crate::sql::Sql, db: &Db) {
         qb.push(" FROM ").push(db.prefix.table("comments")).push(" c");
         if self.public_posts {
             qb.push(" JOIN ").push(db.prefix.table("posts")).push(" p ON p.ID = c.comment_post_ID");
@@ -271,7 +268,7 @@ impl CommentQuery {
     }
 }
 
-fn push_numbers(qb: &mut sqlx::QueryBuilder<sqlx::MySql>, column: &str, values: &[u64], negate: bool) {
+fn push_numbers(qb: &mut crate::sql::Sql, column: &str, values: &[u64], negate: bool) {
     if values.is_empty() {
         return;
     }
@@ -283,7 +280,7 @@ fn push_numbers(qb: &mut sqlx::QueryBuilder<sqlx::MySql>, column: &str, values: 
     qb.push(")");
 }
 
-fn push_ids(qb: &mut sqlx::QueryBuilder<sqlx::MySql>, column: &str, values: &[String], negate: bool) {
+fn push_ids(qb: &mut crate::sql::Sql, column: &str, values: &[String], negate: bool) {
     if values.is_empty() {
         return;
     }

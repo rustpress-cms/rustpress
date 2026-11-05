@@ -7,8 +7,9 @@ impl Db {
         if let Some(primed) = crate::primed::primed_user(id) {
             return Ok(primed);
         }
-        let sql = format!("SELECT {USER_COLUMNS} FROM {} WHERE ID = ?", self.prefix.table("users"));
-        let user: Option<User> = sqlx::query_as(AssertSqlSafe(sql)).bind(id).fetch_optional(&self.pool).await?;
+        let mut sql = crate::sql::Sql::new(format!("SELECT {USER_COLUMNS} FROM {} WHERE ID = ", self.prefix.table("users")));
+        sql.push_bind(id);
+        let user: Option<User> = sql.fetch_optional(&self.pool).await?;
         crate::primed::remember_user(id, user.clone());
         Ok(user)
     }

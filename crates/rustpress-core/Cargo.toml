@@ -13,6 +13,7 @@ rustpress-phpser.workspace = true
 chrono.workspace = true
 chrono-tz.workspace = true
 fancy-regex.workspace = true
+regex-automata.workspace = true
 regex-syntax.workspace = true
 futures.workspace = true
 regex.workspace = true

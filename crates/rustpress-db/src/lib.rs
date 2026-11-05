@@ -2,7 +2,8 @@
 //!
 //! Table names depend on the configurable prefix (`wp_` by default), so the
 //! queries are built at runtime. The prefix is validated and every value is a
-//! bound parameter. Connections are put into `READ ONLY` mode, so a bug here
+//! bound parameter, or, in a process that answers one request, a numeric or
+//! hexadecimal literal (see `sql`). Connections are put into `READ ONLY` mode, so a bug here
 //! cannot modify a site's data.
 //!
 //! Date columns are returned as the strings MySQL stores (`2026-10-24 14:07:01`),
@@ -24,6 +25,7 @@ mod primed;
 mod probe;
 mod redirection;
 mod seo;
+mod sql;
 mod terms;
 mod users;
 mod write;

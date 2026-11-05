@@ -31,7 +31,7 @@ for p in "${paths[@]}"; do curl -s -o /dev/null -H "Host: $host" "http://127.0.0
 for p in "${paths[@]}"; do ab_line http://127.0.0.1:3001 "$p"; done
 kill $server; wait $server 2>/dev/null || true
 
-echo "RustPress CGI (median of 25 processes; load = start-up until the router is ready)"
+echo "RustPress CGI (median of 25 processes; load = start-up until the router is ready, db = time in statements)"
 cgi_dir=$(mktemp -d)
 cgi() { # path
   (cd "$cgi_dir" && env -i PATH=/usr/bin:/bin GATEWAY_INTERFACE=CGI/1.1 REQUEST_METHOD=GET REQUEST_URI="$1" \
@@ -44,6 +44,6 @@ for p in "${paths[@]}"; do
   for _ in $(seq 25); do cgi "$p" 2>/dev/null | grep -a -m1 -i '^server-timing' || true; done | python3 -c "
 import re, statistics, sys
 rows = [[float(v) for v in re.findall(r'dur=([\d.]+)', line)] for line in sys.stdin]
-print('  %-24s load %5.1f ms  total %6.1f ms' % ('$p', statistics.median(r[0] for r in rows), statistics.median(r[1] for r in rows)))"
+print('  %-24s load %5.1f ms  db %5.1f ms  total %6.1f ms' % ('$p', statistics.median(r[0] for r in rows), statistics.median(r[1] for r in rows), statistics.median(r[-1] for r in rows)))"
 done
 rm -rf "$cgi_dir"
