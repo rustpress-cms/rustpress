@@ -1831,6 +1831,7 @@ dependencies = [
  "axum",
  "base64 0.22.1",
  "http-body-util",
+ "libc",
  "mimalloc",
  "rustpress-admin",
  "rustpress-auth",

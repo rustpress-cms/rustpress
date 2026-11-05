@@ -16,6 +16,8 @@ use tower::ServiceExt;
 
 use crate::config::{Config, ConfigError};
 
+use std::fmt::Write as _;
+
 /// The web server started this process as a CGI program.
 pub fn is_cgi() -> bool {
     std::env::var("GATEWAY_INTERFACE").is_ok_and(|v| v.starts_with("CGI/"))
@@ -77,6 +79,30 @@ pub struct DbTiming;
 static DB_QUERIES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 static DB_NANOS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
+static CONNECT_NANOS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Notes the time it took to connect to the database (for `Server-Timing`).
+pub fn note_connect(took: std::time::Duration) {
+    CONNECT_NANOS.fetch_add(took.as_nanos() as u64, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// The processor time of this process (user and system) in seconds; the rest of a request is waiting for the file
+/// system, the database or the machine. `None` where `getrusage()` does not exist.
+fn cpu_seconds() -> Option<f64> {
+    #[cfg(unix)]
+    {
+        let mut usage: libc::rusage = unsafe { std::mem::zeroed() };
+        // SAFETY: `getrusage` only writes into the struct it is given.
+        if unsafe { libc::getrusage(libc::RUSAGE_SELF, &mut usage) } != 0 {
+            return None;
+        }
+        let secs = |t: libc::timeval| t.tv_sec as f64 + t.tv_usec as f64 / 1e6;
+        Some(secs(usage.ru_utime) + secs(usage.ru_stime))
+    }
+    #[cfg(not(unix))]
+    None
+}
+
 impl DbTiming {
     /// The number of statements and their time in seconds so far.
     fn totals() -> (u64, f64) {
@@ -105,9 +131,10 @@ impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for DbTiming {
 
 /// Answers the one request of this process.
 ///
-/// `Server-Timing` reports start-up (`load`, since `started`), the database (`db`, with the number of statements)
-/// and the whole run (`app`), so the time spent in RustPress can be told apart from the database, the web server and
-/// the network in the browser.
+/// `Server-Timing` reports start-up (`load`, since `started`), connecting to the database (`connect`), the statements
+/// (`db`, their number as `desc`), the file system (`stat` and `read`, with their number of calls), the processor time
+/// of the process (`cpu`) and the whole run (`app`, always last), so the time spent in RustPress can be told apart from
+/// the database, the file server, a busy machine and the network in the browser.
 pub async fn serve(router: axum::Router, started: std::time::Instant, load: std::time::Duration) -> std::io::Result<()> {
     let request = request_from_env()?;
     let head = request.method() == Method::HEAD;
@@ -116,12 +143,21 @@ pub async fn serve(router: axum::Router, started: std::time::Instant, load: std:
         Err(never) => match never {},
     };
     let (queries, db) = DbTiming::totals();
-    let timing = format!(
-        "load;dur={:.1}, db;dur={:.1};desc=\"{queries} queries\", app;dur={:.1}",
-        load.as_secs_f64() * 1000.0,
-        db * 1000.0,
-        started.elapsed().as_secs_f64() * 1000.0
+    let (stats, stat_secs, reads, read_secs) = rustpress_core::files::io_totals();
+    let ms = |secs: f64| secs * 1000.0;
+    // Descriptions are tokens, not quoted strings: some hosts' proxies escape quotes in headers.
+    let mut timing = format!(
+        "load;dur={:.1}, connect;dur={:.1}, db;dur={:.1};desc={queries}, stat;dur={:.1};desc={stats}, read;dur={:.1};desc={reads}",
+        ms(load.as_secs_f64()),
+        ms(CONNECT_NANOS.load(std::sync::atomic::Ordering::Relaxed) as f64 / 1e9),
+        ms(db),
+        ms(stat_secs),
+        ms(read_secs),
     );
+    if let Some(cpu) = cpu_seconds() {
+        let _ = write!(timing, ", cpu;dur={:.1}", ms(cpu));
+    }
+    let _ = write!(timing, ", app;dur={:.1}", ms(started.elapsed().as_secs_f64()));
     if let Ok(value) = timing.parse() {
         response.headers_mut().insert("server-timing", value);
     }
