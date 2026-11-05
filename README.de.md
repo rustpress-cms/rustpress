@@ -19,7 +19,7 @@ $ RUSTPRESS_DATABASE_URL=mysql://user:pass@localhost/wordpress RUSTPRESS_WP_ROOT
 
 | Läuft | Läuft (noch) nicht |
 |---|---|
-| Block-Themes, auch Twenty Twenty-Two bis Twenty Twenty-Five | Klassische PHP-Themes außer Twenty Seventeen (Astra, GeneratePress, Divi, Hello Elementor, …) |
+| Block-Themes, auch Twenty Twenty-Two bis Twenty Twenty-Five, Frost und Ollie | Klassische PHP-Themes außer Twenty Seventeen (Astra, GeneratePress, Divi, Hello Elementor, …) |
 | Twenty Seventeen (nativ nachgebaut) | Page-Builder (Elementor, Divi, WPBakery) und WooCommerce |
 | Yoast SEO, Contact Form 7, Redirection, Advanced Custom Fields, SVG Support, WP Date Remover | Alle anderen PHP-Plugins: Sie werden ignoriert, was sie zur Seite beitragen, fehlt |
 | Plugins, die RustPress überflüssig macht: Seiten-Caches, WP Mail SMTP | Multisite, der Customizer, PHP in der `functions.php` eines Block-Themes über einfache Registrierungen hinaus |

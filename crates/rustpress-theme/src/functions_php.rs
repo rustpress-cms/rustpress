@@ -240,6 +240,9 @@ pub struct BlockStylesheet {
     pub handle: String,
     /// File below the theme directory (from `get_parent_theme_file_path()` / `get_theme_file_path()`).
     pub path: String,
+    /// The call passes a `ver` (the theme's version, as the bundled themes do); without one the version is
+    /// WordPress's own.
+    pub theme_version: bool,
 }
 
 /// `wp_enqueue_block_style( $block, array( 'handle' => ..., 'path' => get_..._file_path( 'x.css' ) ) )`.
@@ -254,7 +257,8 @@ pub fn block_stylesheets(php: &str) -> Vec<BlockStylesheet> {
         let Some(open) = ["get_parent_theme_file_path(", "get_theme_file_path("].iter().find_map(|f| rest.find(f).map(|i| i + f.len())) else { continue };
         let mut path_cursor = Cursor { text: rest, at: open };
         let Some(path) = path_cursor.single_quoted() else { continue };
-        out.push(BlockStylesheet { block, handle, path });
+        let theme_version = arguments.contains("'ver'");
+        out.push(BlockStylesheet { block, handle, path, theme_version });
     }
     out
 }
@@ -347,7 +351,7 @@ mod tests {
     #[test]
     fn enqueued_block_and_theme_stylesheets() {
         let php = "function s() { wp_enqueue_block_style( 'core/button', array( 'handle' => 'tt-outline', 'src' => get_parent_theme_file_uri( 'assets/css/b.css' ), 'path' => get_parent_theme_file_path( 'assets/css/b.css' ) ) ); wp_enqueue_style( 'tt-style', get_parent_theme_file_uri( 'style.css' ), array(), '1' ); }";
-        assert_eq!(block_stylesheets(php), vec![BlockStylesheet { block: "core/button".into(), handle: "tt-outline".into(), path: "assets/css/b.css".into() }]);
+        assert_eq!(block_stylesheets(php), vec![BlockStylesheet { block: "core/button".into(), handle: "tt-outline".into(), path: "assets/css/b.css".into(), theme_version: false }]);
         assert_eq!(theme_stylesheet_handle(php).as_deref(), Some("tt-style"));
         assert_eq!(theme_stylesheet_handle("wp_enqueue_style( 'x', get_theme_file_uri( 'a.css' ) );"), None);
         assert!(block_stylesheets("function wp_enqueue_block_style( $a ) {}").is_empty());

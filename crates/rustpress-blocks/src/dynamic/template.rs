@@ -33,7 +33,9 @@ pub(super) async fn template_part(bc: &BlockCtx<'_>) -> Result<String> {
     let id = format!("{stylesheet}//{slug}");
     let Some(part) = bc.env.theme.template_part(slug) else { return Ok(String::new()) };
 
-    let area = if matches!(part.area.as_str(), "header" | "footer" | "navigation-overlay" | "uncategorized") { part.area.clone() } else { "uncategorized".to_owned() };
+    // An area that `get_allowed_block_template_part_areas()` does not list becomes `uncategorized`.
+    let theme_tag = bc.env.theme.template_part_area_tag(&part.area);
+    let area = if matches!(part.area.as_str(), "header" | "footer" | "navigation-overlay" | "uncategorized") || theme_tag.is_some() { part.area.clone() } else { "uncategorized".to_owned() };
     let fresh = bc.env.with_state(|s| s.active_patterns.insert(format!("part:{id}")));
     if !fresh {
         return Ok(String::new());
@@ -44,7 +46,7 @@ pub(super) async fn template_part(bc: &BlockCtx<'_>) -> Result<String> {
     let content = crate::images::filter_content_tags(bc.env, &content, &format!("template_part_{area}")).await?;
 
     let requested = bc.attr_str("tagName").filter(|t| !t.is_empty() && t.chars().all(|c| c.is_ascii_alphanumeric()));
-    let tag = requested.map_or_else(|| area_tag(&area).to_owned(), esc_attr);
+    let tag = requested.map_or_else(|| theme_tag.unwrap_or_else(|| area_tag(&area)).to_owned(), esc_attr);
     let wrapper = bc.wrapper_attributes(&[]);
     let content = content.replace("]]>", "]]&gt;");
     Ok(format!("<{tag} {wrapper}>{content}</{tag}>"))

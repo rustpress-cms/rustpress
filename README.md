@@ -35,7 +35,7 @@
 
 RustPress reads the existing MySQL/MariaDB database (the usual `wp_*` schema, no conversion) and the existing `wp-content/` folder, and answers requests the way WordPress would: same HTML, same feeds, same REST responses, same redirects. There is no PHP interpreter. Themes and core behaviour are ported to Rust and checked against a real WordPress, page by page and byte by byte.
 
-- **Block themes** (`theme.json` + HTML templates) run as they are. The classic theme **Twenty Seventeen** is rebuilt natively in Rust.
+- **Block themes** (`theme.json` + HTML templates) run as they are; checked with the bundled themes, Frost and Ollie (whose `functions.php` is ported). The classic theme **Twenty Seventeen** is rebuilt natively in Rust.
 - Other classic PHP themes and PHP plugins do **not** run. Important plugins are rebuilt as native modules that take over while the plugin is active (its files stay in `wp-content/plugins`): so far **WP Date Remover** 1.1.3 and **SVG Support** 2.6.1 (website, settings and sanitized SVG uploads); **Contact Form 7** 6.2.4.1 (forms, validation, spam checks and mail on the website; the list, the editor, the dashboard and the integration page in the administration); **Yoast SEO** 28.8 (the head of the website: title, meta description, robots, canonical, Open Graph, Twitter and the schema graph; XML sitemaps, breadcrumbs, `robots.txt`, `yoast_head` in the REST API and the feed changes); **Redirection** 5.10.1 (redirects with all conditions and actions, custom headers, the canonical domain, hit counters and the logs of redirects and 404 pages); **Advanced Custom Fields** 6.8.10 (the post types and taxonomies defined in ACF, the `acf` field of the REST API with the values of the field groups, raw or formatted with `?acf_format=standard`, the `[acf]` shortcode, the fields of the comment form, which are saved with the comment, the fields on the edit screens of comments, posts (in the block editor and the classic one), terms, users and media, and ACF's lists of field groups, post types and taxonomies with their actions, the editors of field groups, post types and taxonomies, which save, and the tools to export and import).
 - Theme assets, uploads, translations and `block.json` files are read from the WordPress files on disk, so a WordPress installation (or the files the installer downloads) is still needed.
 
@@ -55,7 +55,7 @@ https://github.com/rustpress-cms/rustpress/issues/new?template=port-request.yml
 
 | Runs | Does not run (yet) |
 |---|---|
-| Block themes, including Twenty Twenty-Two to Twenty Twenty-Five | Classic PHP themes other than Twenty Seventeen (Astra, GeneratePress, Divi, Hello Elementor, ...) |
+| Block themes, including Twenty Twenty-Two to Twenty Twenty-Five, Frost and Ollie | Classic PHP themes other than Twenty Seventeen (Astra, GeneratePress, Divi, Hello Elementor, ...) |
 | Twenty Seventeen (ported natively) | Page builders (Elementor, Divi, WPBakery) and WooCommerce |
 | Yoast SEO, Contact Form 7, Redirection, Advanced Custom Fields, SVG Support, WP Date Remover | Any other PHP plugin: it is ignored, so whatever it adds to the site is missing |
 | Plugins that RustPress makes unnecessary: page caches, WP Mail SMTP | Multisite, the Customizer, PHP in a block theme's `functions.php` beyond simple registrations |

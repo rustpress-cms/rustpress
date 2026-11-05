@@ -54,6 +54,14 @@ pub trait ThemeAccess: Send + Sync {
     fn image_size(&self, _name: &str) -> Option<(u64, u64)> {
         None
     }
+    /// The `render_block_{$name}` filters of the theme's `functions.php`, after core's `render_block` filters.
+    fn render_block_filter(&self, _name: &str, content: String) -> String {
+        content
+    }
+    /// The `area_tag` of a template part area the theme adds (`default_wp_template_part_areas`).
+    fn template_part_area_tag(&self, _area: &str) -> Option<&'static str> {
+        None
+    }
     /// Translation lookup for the theme's text domain; returns the text unchanged by default.
     fn translate(&self, text: &str, _context: Option<&str>) -> String {
         text.to_owned()
