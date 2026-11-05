@@ -19,6 +19,10 @@ pub trait PhpHost {
     fn translate(&self, text: &str, _context: Option<&str>, _domain: &str) -> String {
         text.to_owned()
     }
+    /// The current Unix time, for `gmdate()` and `date()`.
+    fn now(&self) -> i64 {
+        chrono::Utc::now().timestamp()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -418,6 +422,13 @@ impl Parser<'_> {
             }
             "home_url" => string(host.home_url(arg(0))),
             "site_url" => string(host.site_url(arg(0))),
+            // WordPress sets PHP's default time zone to UTC, so `date()` is `gmdate()` (frost/footer-default uses
+            // `gmdate( 'Y' )`).
+            "gmdate" | "date" => {
+                let timestamp = args.get(1).and_then(|t| t.trim().parse().ok()).unwrap_or_else(|| host.now());
+                let moment = chrono::DateTime::from_timestamp(timestamp, 0).unwrap_or_default().fixed_offset();
+                string(rustpress_core::datetime::php_date(arg(0), &moment, "UTC", "UTC", false))
+            }
             "sprintf" | "printf" => {
                 let formatted = php_sprintf(arg(0), &args[1.min(args.len())..]);
                 if name == "printf" { Ok(Value::Printed(formatted)) } else { string(formatted) }
@@ -490,6 +501,30 @@ mod tests {
         fn site_url(&self, path: &str) -> String {
             format!("http://x/{}", path.trim_start_matches('/'))
         }
+    }
+
+    #[test]
+    fn gmdate_formats_the_current_time_in_utc() {
+        struct Fixed;
+        impl PhpHost for Fixed {
+            fn template_directory_uri(&self) -> String {
+                String::new()
+            }
+            fn stylesheet_directory_uri(&self) -> String {
+                String::new()
+            }
+            fn home_url(&self, _: &str) -> String {
+                String::new()
+            }
+            fn site_url(&self, _: &str) -> String {
+                String::new()
+            }
+            fn now(&self) -> i64 {
+                1_798_761_599 // 2026-12-31 23:59:59 UTC
+            }
+        }
+        let src = "<p>&copy; <?php echo esc_html( gmdate( 'Y' ) ); ?> <?php echo date( 'Y-m-d H:i' ); ?></p>";
+        assert_eq!(render(src, &Fixed).unwrap(), "<p>&copy; 2026 2026-12-31 23:59</p>");
     }
 
     fn run(src: &str) -> String {

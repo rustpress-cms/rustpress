@@ -350,10 +350,10 @@ fn archive_title(bc: &BlockCtx<'_>) -> String {
         }
         _ => (site.tr("Archives"), String::new()),
     };
+    // `showPrefix: false` empties the prefix through `get_the_archive_title_prefix`, and without a prefix the title
+    // gets no `<span>`.
     if show_prefix && !prefix.is_empty() {
         format!("{prefix} <span>{}</span>", esc_html_title(&title))
-    } else if !prefix.is_empty() {
-        format!("<span>{}</span>", esc_html_title(&title))
     } else {
         esc_html_title(&title)
     }
