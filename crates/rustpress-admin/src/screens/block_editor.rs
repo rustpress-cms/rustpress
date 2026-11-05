@@ -367,7 +367,7 @@ pub(super) async fn editor_settings(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo)
     settings.insert("__experimentalBlockBindingsSupportedAttributes".into(), get("__experimentalBlockBindingsSupportedAttributes"));
 
     // Global styles.
-    let global = rustpress_theme::global_styles::GlobalStyles::new(&theme.json, env.registry);
+    let global = rustpress_theme::global_styles::GlobalStyles::new(&theme.json, env.registry).with_other_blocks(ctx.site().plugins.block_names());
     let (variables, presets, styles_css) = global.editor_stylesheets();
     let mut styles: Vec<Value> = Vec::new();
     if !variables.is_empty() {
@@ -505,7 +505,7 @@ pub(super) fn editor_head_styles(ctx: &Ctx<'_>, assets: &mut Assets) {
             assets.inline_styles.push(("wp-edit-blocks".into(), code));
         }
     }
-    let global = rustpress_theme::global_styles::GlobalStyles::new(&env.theme.json, env.registry);
+    let global = rustpress_theme::global_styles::GlobalStyles::new(&env.theme.json, env.registry).with_other_blocks(ctx.site().plugins.block_names());
     let (variables, _, _) = global.editor_stylesheets();
     if !variables.is_empty() {
         assets.inline_styles.push(("global-styles-css-custom-properties".into(), variables));

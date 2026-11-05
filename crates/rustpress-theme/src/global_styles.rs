@@ -153,11 +153,20 @@ impl PreparedStyles {
 pub struct GlobalStyles<'a> {
     json: &'a ThemeJson,
     registry: &'a Registry,
+    /// Blocks outside `core/` that are registered (by the native plugins); `styles.blocks` of other blocks (a
+    /// theme's WooCommerce styles without WooCommerce) have no node in `get_styles_block_nodes()`.
+    other_blocks: Vec<String>,
 }
 
 impl<'a> GlobalStyles<'a> {
     pub fn new(json: &'a ThemeJson, registry: &'a Registry) -> Self {
-        Self { json, registry }
+        Self { json, registry, other_blocks: Vec::new() }
+    }
+
+    /// The registered blocks outside `core/`.
+    pub fn with_other_blocks(mut self, names: Vec<String>) -> Self {
+        self.other_blocks = names;
+        self
     }
 
     fn settings(&self) -> Value {
@@ -510,7 +519,7 @@ impl<'a> GlobalStyles<'a> {
         let mut groups = Vec::new();
         let Some(blocks) = styles.get("blocks").and_then(Value::as_object) else { return groups };
         for (name, node) in blocks {
-            if !node.is_object() {
+            if !node.is_object() || (!name.starts_with("core/") && !self.other_blocks.contains(name)) {
                 continue;
             }
             let (selector, _) = self.block_selector(name);

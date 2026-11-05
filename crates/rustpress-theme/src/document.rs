@@ -737,7 +737,8 @@ pub async fn render_document_with(theme: &Theme, site: &Site, query: &QueryResul
             // Stylesheets the theme enqueues for this block (`wp_enqueue_block_style()`) follow it.
             for extra in theme.block_stylesheets().iter().filter(|s| file_name == "style.min.css" && s.block.strip_prefix("core/") == Some(slug) && state.rendered_blocks.contains(&s.block)) {
                 if let Some(file) = theme.theme_file(&extra.path) {
-                    let url = format!("{}/{}?ver={}", theme.template_directory_uri(), extra.path, theme.version());
+                    let ver = if extra.theme_version { theme.version() } else { version.clone() };
+                    let url = format!("{}/{}?ver={ver}", theme.template_directory_uri(), extra.path);
                     sheets.push(Sheet { id: extra.handle.clone(), file: Some((file, url)), inline: None, extra: Vec::new(), rtl_link: None, linked: false });
                 }
             }
@@ -841,7 +842,7 @@ pub async fn render_document_with(theme: &Theme, site: &Site, query: &QueryResul
                 }
             }
         }
-        let mut chunks = theme.global_style_chunks(registry, Some(&queued));
+        let mut chunks = theme.global_style_chunks(registry, site, Some(&queued));
         let presets = rustpress_blocks::duotone::global_styles_presets(&state.duotone);
         if !presets.is_empty() {
             chunks.push(presets);
@@ -965,7 +966,9 @@ pub async fn render_document_with(theme: &Theme, site: &Site, query: &QueryResul
         esc_html(&title),
         crate::head::feed_links(site, query).await?,
         oembed_links(site, query).await?,
-        discovery_links(site, query, &version, state.cpage_override, !plugin_head.removed.contains(&"rel_canonical")).await?,
+        discovery_links(site, query, &version, state.cpage_override, !plugin_head.removed.contains(&"rel_canonical")).await?
+            // A ported block theme's `wp_head` actions of priority 10 come after core's (`rel_canonical`, the shortlink).
+            + &theme.block_theme_port().map(|port| port.wp_head(query)).unwrap_or_default(),
     );
     let bar = match (&extras.toolbar, toolbar_on) {
         (Some(toolbar), true) => toolbar(&ToolbarInfo { template_slug: &rendered.template_slug, query }),

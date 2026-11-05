@@ -136,6 +136,12 @@ impl Theme {
             }
         }
 
+        // A ported block theme's `functions.php` (the parent's, which runs after the child's).
+        if let Some(port) = crate::block_themes::port(&template) {
+            theme_style_handle = theme_style_handle.or_else(|| port.style_handle());
+            block_stylesheets.extend(port.block_stylesheets(&template_dir));
+        }
+
         // Translations: WordPress itself and the text domains of the active theme(s).
         let mut domains = vec![(template.clone(), template_dir.clone())];
         if stylesheet != template {
@@ -321,8 +327,15 @@ impl Theme {
     }
 
     /// `wp_get_global_stylesheet()` in chunks for the block style handles of a page; the sheet is computed once.
-    pub fn global_style_chunks(&self, registry: &Registry, handles: Option<&[String]>) -> Vec<String> {
-        self.global_styles.get_or_init(|| crate::global_styles::GlobalStyles::new(&self.json, registry).prepare()).chunks(handles)
+    pub fn global_style_chunks(&self, registry: &Registry, site: &Site, handles: Option<&[String]>) -> Vec<String> {
+        self.global_styles
+            .get_or_init(|| crate::global_styles::GlobalStyles::new(&self.json, registry).with_other_blocks(site.plugins.block_names()).prepare())
+            .chunks(handles)
+    }
+
+    /// The port of the theme's `functions.php`, if it is a ported block theme.
+    pub fn block_theme_port(&self) -> Option<&'static dyn crate::block_themes::BlockThemePort> {
+        crate::block_themes::port(&self.template)
     }
 
     pub fn stylesheet_dir(&self) -> &Path {
@@ -402,6 +415,17 @@ impl ThemeAccess for Theme {
         let mut resolved = variation.clone();
         crate::theme_json::resolve_custom_vars(&mut resolved);
         GlobalStyles::new(&self.json, &self.registry).variation_stylesheet(block_name, &resolved, scope)
+    }
+
+    fn render_block_filter(&self, name: &str, content: String) -> String {
+        match self.block_theme_port() {
+            Some(port) => port.render_block(name, content),
+            None => content,
+        }
+    }
+
+    fn template_part_area_tag(&self, area: &str) -> Option<&'static str> {
+        self.block_theme_port()?.template_part_areas().iter().find(|(a, _)| *a == area).map(|(_, tag)| *tag)
     }
 
     fn template_directory_uri(&self) -> String {

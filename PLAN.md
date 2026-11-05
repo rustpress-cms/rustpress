@@ -87,12 +87,11 @@ The reference stack, the tools and the working rules are in [AGENTS.md](AGENTS.m
 - Twenty Seventeen: post formats with their own templates, the `front-page.php` panels, the color scheme `custom` and
   the header text color, the social menu, `wp_link_pages()`, the theme's `rtl.css`. More classic themes.
 - The `functions.php` of themes: only literal calls are read.
-- Third-party block themes (compat runs of 2026-11-05 against WordPress 7.1.4): Frost 1.1 is equal except the
-  environment differences Twenty Twenty-Five shows as well (posts with the same date). Ollie 1.6.6 needs its
-  `functions.php`: `style.css` under a computed handle, `wp_enqueue_block_style()` for every file in
-  `assets/styles/` (a `glob()` loop), a `<style>` in `wp_head` when there is a single page of results, a
-  `render_block_core/navigation` filter that binds submenu toggles to `state.isMenuOpen`, and the template part area
-  `sidebar`. That is a native module per theme, like Twenty Seventeen.
+- More third-party block themes. Frost 1.1 and Ollie 1.6.6 are equal (compat runs of 2026-11-05 against WordPress
+  7.1.4) except the environment differences Twenty Twenty-Five shows as well (posts with the same date). A block
+  theme whose `functions.php` does more than the literal calls gets a port in `rustpress-theme/src/block_themes/`
+  (Ollie: its stylesheet handle, the `glob()` loop of `wp_enqueue_block_style()`, a `wp_head` style, a
+  `render_block_core/navigation` filter, the template part area `sidebar`).
 - Caching of rendered pages.
 
 **Languages**
@@ -132,7 +131,7 @@ The reference stack, the tools and the working rules are in [AGENTS.md](AGENTS.m
   schema, a role matrix, hostile inputs); the small deviations listed in A4.
 - Golden tests and `rustpress-compat` in CI against a reference in service containers (CI skips them today).
 - `rustpress-auth/tests/oracle.rs` depends on session tokens in the shared database (create the fixture again first).
-- Compat: more third-party block themes (Ollie needs its `functions.php`, see Website), a run with the release build.
+- Compat: more third-party block themes (see Website), a run with the release build.
 
 ## Recorded differences
 

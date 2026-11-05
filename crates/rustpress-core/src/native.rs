@@ -1754,6 +1754,11 @@ impl Plugins {
     }
 
     /// Whether a plugin renders the block.
+    /// The names of the blocks the active plugins register.
+    pub fn block_names(&self) -> Vec<String> {
+        self.hooks().flat_map(|p| p.block_names().iter().map(|n| (*n).to_owned())).collect()
+    }
+
     pub fn renders_block(&self, name: &str) -> bool {
         self.hooks().any(|p| p.block_names().contains(&name))
     }

@@ -223,6 +223,7 @@ impl<'a> Env<'a> {
                     crate::interactivity::process_directives(&content, &mut s.interactivity)
                 });
             }
+            content = self.theme.render_block_filter(name, content);
             // Blocks that rendered nothing do not load their assets; parents come after their children.
             // Assets enqueued while rendering a block that turns out empty are dequeued again,
             // including those of its inner blocks (`WP_Block::render()`).

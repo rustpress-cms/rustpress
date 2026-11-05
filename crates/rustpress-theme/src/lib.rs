@@ -1,5 +1,6 @@
 //! Block theme support: theme.json, templates, patterns and rendering.
 
+pub mod block_themes;
 pub mod classic;
 pub mod document;
 pub mod embed;

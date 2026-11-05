@@ -835,7 +835,7 @@ async fn head(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State, registry: &Re
             }
         }
     }
-    let global = GlobalStyles::new(&theme.json, registry).classic_chunks(Some(&queued)).join("\n");
+    let global = GlobalStyles::new(&theme.json, registry).with_other_blocks(ctx.site.plugins.block_names()).classic_chunks(Some(&queued)).join("\n");
     out.push_str(&format!("\n<style id=\"global-styles-inline-css\">\n{global}\n/*# sourceURL=global-styles-inline-css */\n</style>\n"));
 
     // The theme's own styles and scripts (`twentyseventeen_scripts()`).
