@@ -94,9 +94,9 @@ const PRESETS: &[Preset] = &[
     Preset { path: &["typography", "fontFamilies"], value_key: "fontFamily", var: "font-family", classes: &[("font-family", "font-family")] },
     Preset { path: &["spacing", "spacingSizes"], value_key: "size", var: "spacing", classes: &[] },
     Preset { path: &["shadow", "presets"], value_key: "shadow", var: "shadow", classes: &[] },
+    Preset { path: &["border", "radiusSizes"], value_key: "size", var: "border-radius", classes: &[] },
+    Preset { path: &["dimensions", "dimensionSizes"], value_key: "size", var: "dimension", classes: &[] },
 ];
-
-const BLOCK_PRESETS: &[Preset] = &[Preset { path: &["dimensions", "dimensionSizes"], value_key: "size", var: "dimension", classes: &[] }];
 
 /// Element selectors (`WP_Theme_JSON::ELEMENTS`) in output order.
 const ELEMENTS: &[(&str, &str)] = &[
@@ -308,20 +308,45 @@ impl<'a> GlobalStyles<'a> {
         if vars.is_empty() { String::new() } else { format!(":root{{{vars}}}") }
     }
 
+    /// The block nodes of `get_css_variables()`: per block of `settings.blocks`, the presets under the block's root
+    /// selector or, when the block declares a selector for the preset's feature (`selectors.dimensions`), under that
+    /// one, then the block's `custom` values under the root selector; one ruleset per selector, the root selector first.
     fn block_variables(&self, settings: &Value) -> String {
         let mut out = String::new();
         let Some(blocks) = self.json.merged.get("settings").and_then(|s| s.get("blocks")).and_then(Value::as_object) else { return out };
-        for name in blocks.keys() {
-            let mut vars = String::new();
-            for preset in BLOCK_PRESETS {
-                for (slug, item) in self.presets(preset.path, Some(name)) {
+        for (name, node) in blocks {
+            let (root, selectors) = self.block_selector(name);
+            let mut by_selector: Vec<(String, String)> = vec![(root.clone(), String::new())];
+            for preset in PRESETS {
+                let items = self.presets(preset.path, Some(name));
+                if items.is_empty() {
+                    continue;
+                }
+                let target = match selectors.get(preset.path[0]) {
+                    Some(Value::String(feature)) => feature.clone(),
+                    Some(Value::Object(feature)) => feature.get("root").and_then(Value::as_str).map_or_else(|| root.clone(), str::to_owned),
+                    _ => root.clone(),
+                };
+                let index = match by_selector.iter().position(|(s, _)| *s == target) {
+                    Some(i) => i,
+                    None => {
+                        by_selector.push((target, String::new()));
+                        by_selector.len() - 1
+                    }
+                };
+                for (slug, item) in items {
                     if let Some(value) = self.preset_value(preset, &item, settings) {
-                        vars.push_str(&format!("--wp--preset--{}--{}: {};", preset.var, to_kebab_case(&slug), value));
+                        by_selector[index].1.push_str(&format!("--wp--preset--{}--{}: {};", preset.var, to_kebab_case(&slug), value));
                     }
                 }
             }
-            if !vars.is_empty() {
-                out.push_str(&format!("{}{{{vars}}}", block_class(name)));
+            if let Some(custom) = node.get("custom").and_then(Value::as_object) {
+                flatten_custom(custom, "--wp--custom", &mut by_selector[0].1);
+            }
+            for (selector, vars) in by_selector {
+                if !vars.is_empty() {
+                    out.push_str(&format!("{selector}{{{vars}}}"));
+                }
             }
         }
         out
