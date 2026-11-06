@@ -72,9 +72,9 @@ pub fn render_admin(site: &Site, user: &CurrentUser, ctx: &BarContext) -> String
         item("contribute", "", &link(&admin("contribute.php"), &tr("Get Involved"), false)),
     ];
     let logo_secondary = vec![
-        item("wporg", "", &link("https://wordpress.org/", &tr("WordPress.org"), false)),
+        item("wporg", "", &link(&tr("https://wordpress.org/"), &tr("WordPress.org"), false)),
         item("documentation", "", &link(&tr("https://wordpress.org/documentation/"), &tr("Documentation"), false)),
-        item("learn", "", &link("https://learn.wordpress.org/", &tr("Learn WordPress"), false)),
+        item("learn", "", &link(&tr("https://learn.wordpress.org/"), &tr("Learn WordPress"), false)),
         item("support-forums", "", &link(&tr("https://wordpress.org/support/forums/"), &tr("Support"), false)),
         item("feedback", "", &link(&tr("https://wordpress.org/support/forum/requests-and-feedback"), &tr("Feedback"), false)),
     ];
@@ -208,7 +208,16 @@ pub struct FrontContext {
     pub site_editor_url: Option<String>,
     /// "Edit Post", "Edit Page", "Edit Category": `(label, address)`.
     pub edit: Option<(String, String)>,
+    /// `get_site_icon_url()` for 32 and 64 pixels.
+    pub site_icon: Option<(String, String)>,
+    /// `wp_is_block_theme()` is false: widgets and menus in the site menu, the Customizer.
+    pub classic_theme: bool,
+    /// The address of the page, for the Customizer to come back to.
+    pub current_url: String,
 }
+
+/// `wp_customize_support_script()`.
+pub const CUSTOMIZE_SUPPORT_SCRIPT: &str = "<script>\n\t\t(function() {\n\t\t\tvar request, b = document.body, c = 'className', cs = 'customize-support', rcs = new RegExp('(^|\\\\s+)(no-)?'+cs+'(\\\\s+|$)');\n\n\t\t\t\trequest = true;\n\t\n\t\t\tb[c] = b[c].replace( rcs, ' ' );\n\t\t\t// The customizer requires postMessage and CORS (if the site is cross domain).\n\t\t\tb[c] += ( window.postMessage && request ? ' ' : ' no-' ) + cs;\n\t\t}());\n\t\n//# sourceURL=wp_customize_support_script\n</script>\n";
 
 /// The toolbar of the site for a signed-in user (`wp_admin_bar_render()` outside of the administration area).
 pub fn render_front(site: &Site, user: &CurrentUser, ctx: &FrontContext) -> String {
@@ -225,9 +234,9 @@ pub fn render_front(site: &Site, user: &CurrentUser, ctx: &FrontContext) -> Stri
         item("contribute", "", &link(&admin("contribute.php"), &tr("Get Involved"), false)),
     ];
     let logo_secondary = vec![
-        item("wporg", "", &link("https://wordpress.org/", &tr("WordPress.org"), false)),
+        item("wporg", "", &link(&tr("https://wordpress.org/"), &tr("WordPress.org"), false)),
         item("documentation", "", &link(&tr("https://wordpress.org/documentation/"), &tr("Documentation"), false)),
-        item("learn", "", &link("https://learn.wordpress.org/", &tr("Learn WordPress"), false)),
+        item("learn", "", &link(&tr("https://learn.wordpress.org/"), &tr("Learn WordPress"), false)),
         item("support-forums", "", &link(&tr("https://wordpress.org/support/forums/"), &tr("Support"), false)),
         item("feedback", "", &link(&tr("https://wordpress.org/support/forum/requests-and-feedback"), &tr("Feedback"), false)),
     ];
@@ -254,13 +263,33 @@ pub fn render_front(site: &Site, user: &CurrentUser, ctx: &FrontContext) -> Stri
         if user.can("switch_themes") {
             appearance.push(item("themes", "", &link(&admin("themes.php"), &tr("Themes"), false)));
         }
+        if ctx.classic_theme && user.can("edit_theme_options") {
+            appearance.push(item("widgets", "", &link(&admin("widgets.php"), &tr("Widgets"), false)));
+            appearance.push(item("menus", "", &link(&admin("nav-menus.php"), &tr("Menus"), false)));
+            // `current_theme_supports( 'custom-header' )`.
+            appearance.push(item("header", "hide-if-customize", &link(&admin("themes.php?page=custom-header"), &tr("Header"), false)));
+        }
         groups.push_str(&submenu(&site_title, "appearance", "ab-submenu", &appearance));
     }
-    top.push(item("site-name", "menupop", &format!("{}<div class=\"ab-sub-wrapper\">{groups}</div>", link(&admin(""), &esc_html(&site_title), true))));
+    let (name_class, name_title) = match &ctx.site_icon {
+        Some((icon, icon_2x)) => {
+            let srcset = if !icon_2x.is_empty() && icon != icon_2x { format!(" srcset=\"{} 2x\"", esc_url(icon_2x)) } else { String::new() };
+            ("menupop has-site-icon", format!("<img class=\"site-icon\" src=\"{}\"{srcset} alt=\"\" width=\"20\" height=\"20\" />{}", esc_url(icon), esc_html(&site_title)))
+        }
+        None => ("menupop", esc_html(&site_title)),
+    };
+    top.push(item("site-name", name_class, &format!("{}<div class=\"ab-sub-wrapper\">{groups}</div>", link(&admin(""), &name_title, true))));
 
     // Edit Site
     if let Some(url) = &ctx.site_editor_url {
         top.push(item("site-editor", "", &link(&esc_url(url), &tr("Edit Site"), false)));
+    }
+
+    // `wp_admin_bar_customize_menu()`
+    let customize = ctx.classic_theme && user.can("edit_theme_options");
+    if customize {
+        let url = rustpress_core::urls::add_query_arg(&site.site_url("wp-admin/customize.php"), "url", &rustpress_core::canonical::php_urlencode(&ctx.current_url));
+        top.push(item("customize", "hide-if-no-customize", &link(&esc_url(&url), &tr("Customize"), false)));
     }
 
     // Updates
@@ -347,8 +376,9 @@ pub fn render_front(site: &Site, user: &CurrentUser, ctx: &FrontContext) -> Stri
         tr("Search")
     );
 
+    let script = if customize { CUSTOMIZE_SUPPORT_SCRIPT } else { "" };
     format!(
-        "\t\t<div id=\"wpadminbar\" class=\"nojq nojs\">\n\t\t\t\t\t\t<div class=\"quicklinks\" id=\"wp-toolbar\" role=\"navigation\" aria-label=\"{}\">\n\t\t\t\t<ul role='menu' id='wp-admin-bar-root-default' class=\"ab-top-menu\">{}</ul><ul role='menu' id='wp-admin-bar-top-secondary' class=\"ab-top-secondary ab-top-menu\">{account}{search}</ul>\t\t\t</div>\n\t\t</div>\n\n\t\t",
+        "{script}\t\t<div id=\"wpadminbar\" class=\"nojq nojs\">\n\t\t\t\t\t\t<div class=\"quicklinks\" id=\"wp-toolbar\" role=\"navigation\" aria-label=\"{}\">\n\t\t\t\t<ul role='menu' id='wp-admin-bar-root-default' class=\"ab-top-menu\">{}</ul><ul role='menu' id='wp-admin-bar-top-secondary' class=\"ab-top-secondary ab-top-menu\">{account}{search}</ul>\t\t\t</div>\n\t\t</div>\n\n\t\t",
         esc_attr(&tr("Toolbar")),
         top.concat()
     )

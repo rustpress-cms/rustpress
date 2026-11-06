@@ -223,14 +223,30 @@ pub async fn front_toolbar(loaded: &std::sync::Arc<Loaded>, user: &std::sync::Ar
     let updates = rustpress_admin::updates::counts(&loaded.site).await.total();
     let pending = loaded.site.db.count_comments_with_status("0").await.unwrap_or(0);
     let logout_nonce = parts.auth.create_nonce("log-out", user.id, token, at).unwrap_or_default();
+    // `has_site_icon()`.
+    let site_icon = if loaded.site.options.string("site_icon", "0") == "0" {
+        None
+    } else {
+        let query = rustpress_core::QueryResult::blank();
+        let env = rustpress_blocks::Env::new(&loaded.site, &query, &loaded.theme, &loaded.registry);
+        let icon = rustpress_theme::embed::site_icon_url(&env, 32, "").await.unwrap_or_default();
+        let icon_2x = rustpress_theme::embed::site_icon_url(&env, 64, "").await.unwrap_or_default();
+        (!icon.is_empty()).then_some((icon, icon_2x))
+    };
     let (loaded, user) = (loaded.clone(), user.clone());
     let toolbar: std::sync::Arc<rustpress_theme::ToolbarFn> = std::sync::Arc::new(move |info: &rustpress_theme::ToolbarInfo<'_>| {
         let site = &loaded.site;
         let admin = |path: &str| site.site_url(&format!("wp-admin/{path}"));
-        let mut context = rustpress_admin::adminbar::FrontContext { updates, pending_comments: pending, logout_nonce: logout_nonce.clone(), ..Default::default() };
+        let mut context = rustpress_admin::adminbar::FrontContext { updates, pending_comments: pending, logout_nonce: logout_nonce.clone(), site_icon: site_icon.clone(), ..Default::default() };
         if [&site.settings.stylesheet, &site.settings.template].iter().any(|t| loaded.theme.wp_root.join("wp-content").join("themes").join(t.as_str()).join("templates").join("index.html").is_file()) && user.can("edit_theme_options") {
             context.site_editor_url = Some(format!("{}?postType=wp_template&postId={}//{}&canvas=edit", admin("site-editor.php"), site.settings.stylesheet, info.template_slug));
         }
+        context.classic_theme = !rustpress_blocks::ThemeAccess::is_block_theme(&loaded.theme);
+        let home = site.home_url("");
+        let scheme = home.split_once("://").map_or("http", |(scheme, _)| scheme);
+        let host = info.query.http_host.as_deref().unwrap_or_else(|| home.split_once("://").map_or("", |(_, rest)| rest.split('/').next().unwrap_or_default()));
+        let query = if info.query.raw_query.is_empty() { String::new() } else { format!("?{}", info.query.raw_query) };
+        context.current_url = format!("{scheme}://{host}{}{query}", info.query.url_path);
         let tr = |s: &str| site.tr(s);
         context.edit = match &info.query.queried {
             rustpress_core::Queried::Post(post) if info.query.flags.is_singular() => {

@@ -161,16 +161,26 @@ pub async fn get_the_content_with(env: &Env<'_>, post: &Post, page: u64, singula
     Ok(content_with_permalink(env, post, page, singular, no_more_link, &permalink))
 }
 
+/// The pages of a post, as `WP_Query::generate_postdata()` splits them.
+pub fn post_pages(content: &str) -> Vec<String> {
+    if !content.contains("<!--nextpage-->") {
+        return vec![content.to_owned()];
+    }
+    let content = content
+        .replace("\n<!--nextpage-->\n", "<!--nextpage-->")
+        .replace("\n<!--nextpage-->", "<!--nextpage-->")
+        .replace("<!--nextpage-->\n", "<!--nextpage-->")
+        // The block delimiters would leave invalid block structures in the split content.
+        .replace("<!-- wp:nextpage -->", "")
+        .replace("<!-- /wp:nextpage -->", "");
+    content.strip_prefix("<!--nextpage-->").unwrap_or(&content).split("<!--nextpage-->").map(str::to_owned).collect()
+}
+
 fn content_with_permalink(env: &Env<'_>, post: &Post, page: u64, singular: bool, no_more_link: bool, permalink: &str) -> String {
     if post_password_required(post) {
         return password_form_for(env, post, permalink);
     }
-    let mut content = post.post_content.clone();
-    content = content
-        .replace("\n<!--nextpage-->\n", "<!--nextpage-->")
-        .replace("\n<!--nextpage-->", "<!--nextpage-->")
-        .replace("<!--nextpage-->\n", "<!--nextpage-->");
-    let pages: Vec<&str> = content.split("<!--nextpage-->").collect();
+    let pages = post_pages(&post.post_content);
     // `WP_Query::generate_postdata()`: `$more` is on for the queried post or page, in feeds and on later pages of a post.
     let q = env.query;
     let _ = singular;

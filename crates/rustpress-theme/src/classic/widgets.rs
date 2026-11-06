@@ -251,10 +251,20 @@ fn meta(s: &Services<'_>, sidebar: &Sidebar, before: &str, settings: &Value) -> 
     let pretty = site.uses_pretty_permalinks();
     let feed = if pretty { site.user_trailingslashit(&site.home_url(&format!("{}feed", site.root()))) } else { site.home_url("?feed=rss2") };
     let comments = if pretty { site.user_trailingslashit(&site.home_url(&format!("{}comments/feed", site.root()))) } else { site.home_url("?feed=comments-rss2") };
+    // `wp_register()`.
+    let register = match &s.q.viewer {
+        Some(viewer) if viewer.can("read") => format!("<li><a href=\"{}\">{}</a></li>", site.site_url("wp-admin/"), site.tr("Site Admin")),
+        None if site.options.get("users_can_register") == Some("1") => format!("<li><a href=\"{}\">{}</a></li>", esc_url(&site.site_url("wp-login.php?action=register")), site.tr("Register")),
+        _ => String::new(),
+    };
     // `wp_loginout()` with the `loginout` filter.
-    let login = site.plugins.loginout(format!("<a href=\"{}\">{}</a>", esc_url(&site.site_url("wp-login.php")), site.tr("Log in")));
+    let login = match &s.q.viewer {
+        Some(viewer) => format!("<a href=\"{}\">{}</a>", esc_url(&rustpress_core::urls::add_query_arg(&site.site_url("wp-login.php?action=logout"), "_wpnonce", &viewer.create_nonce("log-out"))), site.tr("Log out")),
+        None => format!("<a href=\"{}\">{}</a>", esc_url(&site.site_url("wp-login.php")), site.tr("Log in")),
+    };
+    let login = site.plugins.loginout(login);
     format!(
-        "{before}{}{}\n\t\t<ul>\n\t\t\t\t\t\t<li>{login}</li>\n\t\t\t<li><a href=\"{}\">{}</a></li>\n\t\t\t<li><a href=\"{}\">{}</a></li>\n\n\t\t\t<li><a href=\"{}\">{}</a></li>\n\t\t</ul>\n\n\t\t</nav>{}",
+        "{before}{}{}\n\t\t<ul>\n\t\t\t{register}\t\t\t<li>{login}</li>\n\t\t\t<li><a href=\"{}\">{}</a></li>\n\t\t\t<li><a href=\"{}\">{}</a></li>\n\n\t\t\t<li><a href=\"{}\">{}</a></li>\n\t\t</ul>\n\n\t\t</nav>{}",
         heading(sidebar, &title),
         nav_open(&title, &default_title),
         esc_url(&feed),

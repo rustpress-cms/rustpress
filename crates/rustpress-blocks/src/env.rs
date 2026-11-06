@@ -193,6 +193,8 @@ pub struct State {
     pub audio_instances: u64,
     pub video_instances: u64,
     pub mediaelement: bool,
+    /// `$content_width` of a classic theme; 0 when it is not set.
+    pub content_width: u64,
     /// `wp_playlist_scripts()` ran.
     pub playlist: bool,
     /// `static $instance` of `wp_playlist_shortcode()`.
