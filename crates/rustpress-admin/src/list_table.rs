@@ -292,7 +292,6 @@ impl Table<'_> {
             "		"
         } else {
             out.push_str(nonce_field);
-            out.push('\n');
             ""
         };
         // `render_screen_reader_content( 'heading_list' )` prints nothing when the screen has no such heading.

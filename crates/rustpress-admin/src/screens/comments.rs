@@ -563,7 +563,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     } else {
         String::new()
     };
-    let bottom_extra = format!("<div class=\"alignleft actions\">\n{empty_button}</div>\n");
+    let bottom_extra = format!("<div class=\"alignleft actions\">{empty_button}</div>");
     let type_filter = format!(
         "<label class=\"screen-reader-text\" for=\"filter-by-comment-type\">{}</label><select id=\"filter-by-comment-type\" name=\"comment_type\">\t<option value=''>{}</option>\t<option value='comment'{}>{}</option>\n\t<option value='pings'{}>{}</option>\n</select><input type=\"submit\" name=\"filter_action\" id=\"post-query-submit\" class=\"button button-compact\" value=\"{}\"  />",
         tr("Filter by comment type"),
@@ -605,7 +605,8 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
                     let chars: Vec<char> = name.chars().collect();
                     if chars.len() > 50 { format!("{}&hellip;", chars[..50].iter().collect::<String>().trim_end()) } else { name }
                 }
-                None => String::new(),
+                // `_draft_or_post_title()` of a post that does not exist.
+                None => tr("(no title)"),
             };
             if moderated > 0 {
                 sprintf(&tr("Comments (%1$s) on &#8220;%2$s&#8221;"), &[&site.number_i18n(moderated), &post_title])
@@ -630,32 +631,33 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
                     let chars: Vec<char> = name.chars().collect();
                     if chars.len() > 50 { format!("{}&hellip;", chars[..50].iter().collect::<String>().trim_end()) } else { name }
                 }
-                None => String::new(),
+                // `_draft_or_post_title()` of a post that does not exist.
+                None => tr("(no title)"),
             };
             let edit = post.as_ref().map_or_else(String::new, |post| ctx.admin_url(&format!("post.php?post={}&amp;action=edit", post.id)));
-            h.push_str(&format!("<div class=\"wrap\">\n<h1 class=\"wp-heading-inline\">\n{}</h1>\n", sprintf(&tr("Comments on &#8220;%s&#8221;"), &[&format!("<a href=\"{edit}\">{name}</a>")])));
+            h.push_str(&format!("<div class=\"wrap\">\n<h1 class=\"wp-heading-inline\">\n{}</h1>\n\n", sprintf(&tr("Comments on &#8220;%s&#8221;"), &[&format!("<a href=\"{edit}\">{name}</a>")])));
             if let Some(post) = &post {
                 let link = site.permalink(post).await.unwrap_or_default();
                 let label = if post.post_type == "page" { tr("View Page") } else { tr("View Post") };
-                h.push_str(&format!("<a href=\"{}\" class=\"comments-view-item-link\">{}</a>\n", esc_url(&link), label));
+                h.push_str(&format!("<a href=\"{}\" class=\"comments-view-item-link\">{}</a>", esc_url(&link), label));
                 view_item = Some((label, link));
             }
         }
         None => h.push_str(&format!("<div class=\"wrap\">\n<h1 class=\"wp-heading-inline\">\n{}</h1>\n\n", esc_html(&heading))),
     }
     if !search.is_empty() {
-        h.push_str(&format!("<span class=\"subtitle\">{}</span>\n", sprintf(&tr("Search results for: %s"), &[&format!("<strong>{}</strong>", esc_html(&search))])));
+        h.push_str(&format!("<span class=\"subtitle\">{}</span>", sprintf(&tr("Search results for: %s"), &[&format!("<strong>{}</strong>", esc_html(&search))])));
     }
-    h.push_str(if post_id.is_some() && search.is_empty() { "<hr class=\"wp-header-end\">\n\n" } else { "\n<hr class=\"wp-header-end\">\n\n" });
+    h.push_str("\n<hr class=\"wp-header-end\">\n\n");
     h.push_str(&notice(ctx).await);
     h.push('\n');
     h.push_str(&views(&tr("Filter comments list"), &links));
     let p_input = match post_id {
         Some(id) => format!("<input type=\"hidden\" name=\"p\" value=\"{id}\" />\n"),
-        None => "\t\t\n".to_owned(),
+        None => String::new(),
     };
     h.push_str(&format!(
-        "\n<form id=\"comments-form\" method=\"get\">\n\n{}{p_input}<input type=\"hidden\" name=\"comment_status\" value=\"{}\" />\n<input type=\"hidden\" name=\"pagegen_timestamp\" value=\"{}\" />\n\n<input type=\"hidden\" name=\"_total\" value=\"{total}\" />\n<input type=\"hidden\" name=\"_per_page\" value=\"{per_page}\" />\n<input type=\"hidden\" name=\"_page\" value=\"{paged}\" />\n\n\n{}</form>\n",
+        "\n<form id=\"comments-form\" method=\"get\">\n\n{}\n{p_input}<input type=\"hidden\" name=\"comment_status\" value=\"{}\" />\n<input type=\"hidden\" name=\"pagegen_timestamp\" value=\"{}\" />\n\n<input type=\"hidden\" name=\"_total\" value=\"{total}\" />\n<input type=\"hidden\" name=\"_per_page\" value=\"{per_page}\" />\n<input type=\"hidden\" name=\"_page\" value=\"{paged}\" />\n\n\n{}</form>\n",
         if has_items || !search.is_empty() {
             let mut sort = String::new();
             if let Some(by) = request.request("orderby").filter(|v| !v.is_empty()) {
@@ -664,7 +666,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
             if let Some(order) = request.request("order").filter(|v| !v.is_empty()) {
                 sort.push_str(&format!("<input type=\"hidden\" name=\"order\" value=\"{}\" />", esc_attr(order)));
             }
-            format!("{sort}<p class=\"search-box\">\n\t<label class=\"screen-reader-text\" for=\"comment-search-input\">{}</label>\n\t<input type=\"search\" id=\"comment-search-input\" name=\"s\" value=\"{}\" />\n\t\t<input type=\"submit\" id=\"search-submit\" class=\"button button-compact\" value=\"{}\"  /></p>\n", tr("Search Comments:"), esc_attr(&search), esc_attr(&tr("Search Comments")))
+            format!("{sort}<p class=\"search-box\">\n\t<label class=\"screen-reader-text\" for=\"comment-search-input\">{}</label>\n\t<input type=\"search\" id=\"comment-search-input\" name=\"s\" value=\"{}\" />\n\t\t<input type=\"submit\" id=\"search-submit\" class=\"button button-compact\" value=\"{}\"  /></p>\n\t\t", tr("Search Comments:"), esc_attr(&search), esc_attr(&tr("Search Comments")))
         } else {
             String::new()
         },
@@ -676,11 +678,15 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
 ");
     // The reply form spans the columns of the list.
     let reply = reply_form(ctx);
-    h.push_str(&reply.replace("colspan=\"5\"", &format!("colspan=\"{ncols}\"")));
+    h.push_str(reply.replace("colspan=\"5\"", &format!("colspan=\"{ncols}\"")).trim_end_matches('\n'));
+    // The end of `wp_comment_trashnotice()`.
+    h.push_str("\n\t");
     let screen = Screen { file: "edit-comments.php".into(), parent_file: "edit-comments.php".into(), submenu_file: Some("edit-comments.php".into()), title, help: Some(help(ctx)), options: Some(screen_options), view_item, ..Default::default() };
     // The reply form's editor (`editor_js()`).
     let footer = super::editor::quicktags_editor_js(ctx, &[("replycontent", "strong,em,link,block,del,ins,img,ul,ol,li,code,close")]);
-    render(ctx, &screen, &h, &Assets { scripts: vec!["admin-comments".into(), "wp-lists".into()], late_scripts: vec!["wplink".into(), "jquery-ui-autocomplete".into()], footer, ..Default::default() }).await
+    // `WP_List_Table::_js_vars()` on `admin_footer`.
+    let pre_footer = "<script>list_args = {\"class\":\"WP_Comments_List_Table\",\"screen\":{\"id\":\"edit-comments\",\"base\":\"edit-comments\"}};</script>\n".to_owned();
+    render(ctx, &screen, &h, &Assets { scripts: vec!["admin-comments".into(), "wp-lists".into()], late_scripts: vec!["wplink".into(), "jquery-ui-autocomplete".into()], footer, pre_footer, ..Default::default() }).await
 }
 
 /// `wp_comment_reply()`: the inline editor and reply form.

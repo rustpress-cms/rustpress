@@ -139,7 +139,7 @@ impl Default for PostQuery {
 
 impl PostQuery {
     /// Appends `FROM <posts> WHERE ...` including the `WHERE` clause.
-    fn push_filters(&self, qb: &mut Sql, db: &Db) {
+    pub(crate) fn push_filters(&self, qb: &mut Sql, db: &Db) {
         qb.push(" FROM ").push(db.prefix.table("posts")).push(" p WHERE 1 = 1");
         push_in(qb, "p.post_type", &self.post_types);
         if self.statuses.iter().any(|s| s == "publish") && (!self.private_types.is_empty() || self.private_author.is_some()) {

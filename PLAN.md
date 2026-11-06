@@ -83,7 +83,6 @@ The reference stack, the tools and the working rules are in [AGENTS.md](AGENTS.m
 
 **Website**
 - `core/playlist` and `[playlist]`, `core/rss` (network), `useFirstImageFromPost`, galleries with `dynamicContent`.
-- Comment feeds of archives and searches (`withcomments`): RustPress answers them with the main comment feed.
 - Twenty Seventeen: post formats with their own templates, the `front-page.php` panels, the color scheme `custom` and
   the header text color, the social menu, `wp_link_pages()`, the theme's `rtl.css`. More classic themes.
 - The `functions.php` of themes: only literal calls are read.
@@ -101,15 +100,12 @@ The reference stack, the tools and the working rules are in [AGENTS.md](AGENTS.m
   `de_DE_formal`, a command `rustpress i18n install <locale>`.
 
 **Sign-in, administration, REST**
-- Rehashing a password on sign-in (`wp_password_needs_rehash()` exists, but sign-in does not call it).
 - `customize.php` and `media-upload.php` (postponed until the test on a real web server in CGI mode).
-- The "Excerpt" view of the post list (`mode=excerpt`).
 - Widgets: writing widgets and sidebars, the forms of classic widgets, `widget-types/<id>/encode|render`, `rendered`
   of registered sidebars.
 - `parse-media-shortcode` with a preview (the scripts of `wp-mediaelement`/`wp-playlist`).
-- REST: `_method`; first and last name and nickname get `_wp_specialchars` in WordPress (RustPress:
-  `sanitize_text_field`); in the `edit` context WordPress renders a post's content once more before `content.rendered`
-  (ID counters one higher, cause not found).
+- REST: in the `edit` context WordPress renders a post's content once more before `content.rendered` (ID counters one
+  higher, cause not found).
 - The dashboard and the block editor are still slower than the reference.
 
 **Native plugins**
@@ -596,3 +592,29 @@ Measurement afterwards (release, `RUSTPRESS_RELOAD_SECS=1`, median / minimum of 
 #### First step when implementing
 Add the section "Review and remaining to-do (2026-10-26)" with part C to `PLAN.md`.
 
+### Smaller items (2026-11-06)
+
+- **Comment feeds of archives and searches.** `WP_Query::get_posts()`: the comments of the posts the request found
+  (`Db::feed_comments_of_posts()`, the filters of `PostQuery` as a subquery), then the posts of those comments
+  (`QueryResult::feed_comments`). RustPress answered these addresses with a 404 until now, not with the main comment
+  feed as this file said. The titles of the search feeds and the links of the Atom one
+  (`get_search_comments_feed_link()`) follow. A term that does not exist has no comments. Compared with
+  `dev/comment-feed-compare.py`: 30 addresses, 0 differences.
+- **`WP_Query::parse_search()`.** The words of `/search/a%26b/` are decoded (`stripslashes()`, `urldecode()`) unless they
+  come from `$_GET['s']`, and line breaks are removed. This changes the titles and the search of such pages.
+- **Sign-in.** `wp_password_needs_rehash()` and `wp_set_password()` in `wp_authenticate()`; the sign-in cookie uses the
+  new hash. `wp_signon()` clears `user_activation_key` after every successful sign-in, which RustPress did not do; the
+  key of a lost password stayed valid after signing in. Without write access the hash stays. Compared with
+  `dev/login-rehash-compare.py`: md5, phpass, bcrypt without prefix, prefixed with another cost and the current format,
+  by login and by e-mail address, with the right and a wrong password; 40 cases, 0 differences.
+- **REST `_method`.** `$_GET['_method']` before `X-HTTP-Method-Override`, upper-cased. In
+  `dev/rest-users-write-compare.py`, 110 of 110 equal.
+- **`edit-comments.php`.** Equal now except `antispambot()`: the bottom navigation, `list_args`, the end of
+  `wp_comment_trashnotice()`, the line breaks around the search box, the nonce of an empty table, the head with `?p=`
+  and `?s=`, and `(no title)` for a post that does not exist. `raw-sweep.py` lists the page because of the random
+  e-mail addresses, which had hidden these differences.
+- **No longer open, checked against the reference:** the "Excerpt" view (`mode=excerpt`) of posts, pages and comments
+  was already equal. The names of users already go through `name_field()`, which is `pre_user_*`
+  (`sanitize_text_field`, `wp_filter_kses`, `_wp_specialchars`); `dev/rest-users-write-compare.py` now sends special
+  characters.
+- Not done: `labels->view_item` of a custom post type on `edit-comments.php?p=` is still "View Post" or "View Page".

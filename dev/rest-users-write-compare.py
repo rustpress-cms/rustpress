@@ -44,7 +44,10 @@ echo $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->users} WHERE user_login LIKE 
 def steps(login):
     out = [
         ('me-name', 'PUT', '/wp/v2/users/me', {'first_name': 'First ' + login, 'nickname': 'nick-' + login}),
+        ('me-name-chars', 'PUT', '/wp/v2/users/me', {'first_name': "O'Neil & <b>Bold</b> &amp; Q", 'last_name': 'A < B &lt; C', 'nickname': 'x & y <script>z</script> 100%'}),
         ('me-post', 'POST', '/wp/v2/users/me', {'description': 'about <b>me</b>'}),
+        ('method-post-as-get', 'POST', '/wp/v2/users/me?_method=GET', {}),
+        ('method-post-as-put', 'POST', '/wp/v2/users/me?_method=put', {'first_name': 'Lower'}),
         ('me-email-taken', 'PUT', '/wp/v2/users/me', {'email': 'rpuwtarget@example.com'}),
         ('me-email-bad', 'PUT', '/wp/v2/users/me', {'email': 'not-an-email'}),
         ('me-username', 'PUT', '/wp/v2/users/me', {'username': 'someoneelse'}),
@@ -58,6 +61,7 @@ def steps(login):
         ('missing', 'PUT', '/wp/v2/users/999999', {'first_name': 'x'}),
         ('delete-no-reassign', 'DELETE', '/wp/v2/users/{rpuwtarget}', None),
         ('delete-no-force', 'DELETE', '/wp/v2/users/{rpuwtarget}?reassign=1', None),
+        ('method-get-as-delete', 'GET', '/wp/v2/users/{rpuwtarget}?_method=DELETE&reassign=1', None),
         ('delete-bad-reassign', 'DELETE', '/wp/v2/users/{rpuwtarget}?reassign={rpuwtarget}&force=true', None),
         ('delete-reassign-text', 'DELETE', '/wp/v2/users/{rpuwtarget}?reassign=abc&force=true', None),
         ('delete', 'DELETE', '/wp/v2/users/{rpuwtarget}?reassign=false&force=true', None),
