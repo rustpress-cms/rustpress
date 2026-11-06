@@ -62,7 +62,7 @@ impl Content<'_> {
     /// `wp_insert_term()`; returns the new `term_id`.
     pub async fn insert_term(&self, taxonomy: &str, data: &TermData) -> Result<u64> {
         let tr = |s: &str| self.site.tr(s);
-        if self.site.types.taxonomy(taxonomy).is_none() && !matches!(taxonomy, "category" | "post_tag") {
+        if self.site.types.taxonomy(taxonomy).is_none() && !matches!(taxonomy, "category" | "post_tag" | "nav_menu") {
             return Err(ContentError::Message(tr("Invalid taxonomy.")));
         }
         let name = self.clean_name(&data.name);

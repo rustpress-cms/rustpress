@@ -32,6 +32,7 @@ pub mod block_editor;
 pub mod comments;
 pub mod media_lib;
 mod media_upload;
+mod nav_menus;
 pub mod media_ui;
 pub mod common;
 pub mod dashboard;
@@ -190,6 +191,12 @@ impl Ctx<'_> {
     /// `check_admin_referer()` / `wp_verify_nonce()` on `_wpnonce`.
     pub fn verify_nonce(&self, action: &str) -> bool {
         let nonce = self.request.request("_wpnonce").unwrap_or_default();
+        self.env.auth.verify_nonce(nonce, action, self.user.id, &self.token, self.env.now).is_some()
+    }
+
+    /// `check_admin_referer( $action, $query_arg )`.
+    pub fn verify_nonce_field(&self, action: &str, field: &str) -> bool {
+        let nonce = self.request.request(field).unwrap_or_default();
         self.env.auth.verify_nonce(nonce, action, self.user.id, &self.token, self.env.now).is_some()
     }
 
@@ -372,8 +379,12 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse
     // `user_can_access_admin_page()`: the pages of the menu are only for those the menu is for.
     if let Some(capabilities) = menu_capabilities(&request.file)
         && !capabilities.iter().any(|capability| ctx.can(capability)) {
-            return die(env, 403, "WordPress &rsaquo; Error", &ctx.tr("Sorry, you are not allowed to access this page."));
+            return access_denied(&ctx);
         }
+    // The menu of a classic theme has this page.
+    if request.file == "nav-menus.php" && !env.block_theme && !ctx.can("edit_theme_options") {
+        return access_denied(&ctx);
+    }
     // `admin.php`: the parent of a plugin page is `{$pagenow}?post_type={$typenow}` when the request names a post type.
     let typed_parent = request.request("post_type").filter(|t| env.site.types.post_type_exists(t)).map(|t| format!("{}?post_type={t}", request.file));
     if let Some(slug) = request.get("page").filter(|p| !p.is_empty())
@@ -440,8 +451,7 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse
         }
         "media.php" => bare_pages::media(&ctx.admin_url("")),
         // The screens of themes that are not block themes.
-        // `nav-menus.php` first says that the theme has neither menus nor widgets, then checks the capability.
-        "nav-menus.php" => die(env, 500, "WordPress &rsaquo; Error", &ctx.tr("Your theme does not support navigation menus or widgets.")),
+        "nav-menus.php" => nav_menus::nav_menus(&ctx).await,
         "widgets.php" if !ctx.can("edit_theme_options") => higher_permission(&ctx, "Sorry, you are not allowed to edit theme options on this site.", 403),
         "widgets.php" => die(env, 500, "WordPress &rsaquo; Error", &ctx.tr("The theme you are currently using is not widget-aware, meaning that it has no sidebars that you are able to change. For information on making your theme widget-aware, please <a href=\"https://developer.wordpress.org/themes/functionality/widgets/\">follow these instructions</a>.")),
         "link-manager.php" | "link-add.php" | "link.php" if !(ctx.user.can_manage_links_if_enabled() && ctx.can("install_plugins")) => die(env, 500, "WordPress &rsaquo; Error", &ctx.tr("Sorry, you are not allowed to edit the links for this site.")),
@@ -495,6 +505,27 @@ fn die_message(env: &AdminEnv<'_>, status: u16, message: &str) -> AdminResponse 
 /// `wp_die( '<h1>…permission</h1><p>message</p>', 403 )`.
 fn higher_permission(ctx: &Ctx<'_>, message: &str, status: u16) -> AdminResponse {
     die(ctx.env, status, "WordPress &rsaquo; Error", &format!("<h1>{}</h1><p>{}</p>", ctx.tr("You need a higher level of permission."), ctx.tr(message)))
+}
+
+/// The `wp_die()` of `wp-admin/includes/menu.php`, which comes before `admin_init` sends the frame headers.
+fn access_denied(ctx: &Ctx<'_>) -> AdminResponse {
+    let mut response = die(ctx.env, 403, "WordPress &rsaquo; Error", &ctx.tr("Sorry, you are not allowed to access this page."));
+    response.headers.retain(|(name, _)| !matches!(name.as_str(), "Referrer-Policy" | "X-Frame-Options" | "Content-Security-Policy"));
+    response
+}
+
+/// `get_site_icon_url()` for 32 and 64 pixels.
+async fn site_icon(site: &rustpress_core::Site) -> Option<(String, String)> {
+    let id = site.options.u64("site_icon", 0);
+    if id == 0 {
+        return None;
+    }
+    let rows = site.db.post_meta(id).await.ok()?;
+    let value = |key: &str| rows.iter().find(|m| m.meta_key.as_deref() == Some(key)).and_then(|m| m.meta_value.clone());
+    let full = rustpress_blocks::images::attachment_url(site, &value("_wp_attached_file")?);
+    let meta = value("_wp_attachment_metadata").and_then(|raw| rustpress_blocks::images::Metadata::parse(&raw))?;
+    let url = |size: u64| rustpress_blocks::images::intermediate_url(&full, &meta, size, size).unwrap_or_else(|| full.clone());
+    Some((url(32), url(64)))
 }
 
 /// `sprintf()` with one string, not escaped.
@@ -671,7 +702,7 @@ pub async fn render(ctx: &Ctx<'_>, screen: &Screen, content: &str, assets: &Asse
     let env = ctx.env;
     let updates = crate::updates::counts(env.site).await;
     let pending = env.db.count_comments_with_status("0").await.unwrap_or(0);
-    let menu_context = MenuContext { block_theme: env.block_theme, pending_comments: pending, updates: (updates.total(), updates.plugins, updates.themes), site_title: env.site.settings.blogname.clone() };
+    let menu_context = MenuContext { request_uri: ctx.request.request_uri.clone(), block_theme: env.block_theme, pending_comments: pending, updates: (updates.total(), updates.plugins, updates.themes), site_title: env.site.settings.blogname.clone() };
     let menu = AdminMenu::core(env.site, &ctx.user, &menu_context).with_plugin_pages(&env.site.plugins.admin_pages(env.site)).prepare(&ctx.user);
     // `admin_enqueue_scripts` and `admin_notices` of the plugins.
     let hook_suffix = screen.hook_suffix.clone().unwrap_or_else(|| screen.file.clone());
@@ -717,7 +748,7 @@ pub async fn render(ctx: &Ctx<'_>, screen: &Screen, content: &str, assets: &Asse
         loader,
         user: &ctx.user,
         menu: &menu,
-        bar: BarContext { updates: updates.total(), pending_comments: pending, logout_nonce: ctx.create_nonce("log-out"), view_item: None, view_archive: false, view_preview: None, command_palette: true },
+        bar: BarContext { updates: updates.total(), pending_comments: pending, logout_nonce: ctx.create_nonce("log-out"), view_item: None, view_archive: false, view_preview: None, command_palette: true, site_icon: site_icon(env.site).await },
         stylesheet: env.site.settings.stylesheet.clone(),
         cookie_path: paths(env.site).cookie,
         now: env.now,
@@ -934,6 +965,9 @@ pub fn redirect(location: &str) -> AdminResponse {
         headers: vec![
             ("Expires".into(), "Wed, 11 Jan 1984 05:00:00 GMT".into()),
             ("Cache-Control".into(), "no-cache, must-revalidate, max-age=0, no-store, private".into()),
+            ("Referrer-Policy".into(), "strict-origin-when-cross-origin".into()),
+            ("X-Frame-Options".into(), "SAMEORIGIN".into()),
+            ("Content-Security-Policy".into(), "frame-ancestors 'self';".into()),
             ("X-Redirect-By".into(), "WordPress".into()),
             ("Location".into(), location.to_owned()),
             ("Content-Type".into(), "text/html; charset=UTF-8".into()),

@@ -54,6 +54,8 @@ pub struct MenuContext {
     pub updates: (u64, u64, u64),
     /// `$_wp_last_object_menu`-based ordering of custom types needs their definitions.
     pub site_title: String,
+    /// `$_SERVER['REQUEST_URI']`: the Customizer returns to it.
+    pub request_uri: String,
 }
 
 fn item(position: u32, title: &str, capability: &str, slug: &str, classes: &str, id: &str, icon: &str) -> MenuItem {
@@ -193,7 +195,28 @@ impl AdminMenu {
         } else {
             menu.add_sub("themes.php", sub(6, &site.trx("Design", "design menu item"), "edit_theme_options", "site-editor.php"));
         }
-        menu.add_sub("themes.php", sub(9, &tr("Fonts"), "edit_theme_options", "font-library.php"));
+        if !ctx.block_theme {
+            // `$customize_url`, with `wp_removable_query_args()` taken out of the way back.
+            let mut back = ctx.request_uri.clone();
+            for arg in crate::chrome::REMOVABLE_QUERY_ARGS {
+                back = rustpress_core::urls::remove_query_arg(&back, arg);
+            }
+            let customize = format!("customize.php?return={}", rustpress_core::canonical::php_urlencode(&back));
+            let hidden = |mut entry: SubItem| {
+                entry.classes = "hide-if-no-customize".to_owned();
+                entry
+            };
+            menu.add_sub("themes.php", hidden(sub(7, &tr("Customize"), "edit_theme_options", &rustpress_core::formatting::esc_url(&customize))));
+            menu.add_sub("themes.php", sub(8, &tr("Widgets"), "edit_theme_options", "widgets.php"));
+            menu.add_sub("themes.php", sub(9, &tr("Fonts"), "edit_theme_options", "font-library.php"));
+            menu.add_sub("themes.php", sub(10, &tr("Menus"), "edit_theme_options", "nav-menus.php"));
+            let header = format!("{customize}&autofocus%5Bcontrol%5D=header_image");
+            menu.add_sub("themes.php", hidden(sub(15, &site.trx("Header", "custom image header"), appearance, &rustpress_core::formatting::esc_url(&header))));
+            menu.add_sub("themes.php", sub(16, &site.trx("Header", "custom image header"), "edit_theme_options", "themes.php?page=custom-header"));
+            menu.add_sub("themes.php", sub(17, &tr("Theme File Editor"), "edit_themes", "theme-editor.php"));
+        } else {
+            menu.add_sub("themes.php", sub(9, &tr("Fonts"), "edit_theme_options", "font-library.php"));
+        }
         let plugin_count = if user.can("update_plugins") { format!("<span class=\"update-plugins count-{}\"><span class=\"plugin-count\">{}</span></span>", ctx.updates.1, number(ctx.updates.1)) } else { String::new() };
         menu.items.push(item(65, &rustpress_core::i18n::sprintf(&tr("Plugins %s"), &[&plugin_count]), "activate_plugins", "plugins.php", "menu-top menu-icon-plugins", "menu-plugins", "dashicons-admin-plugins"));
         menu.add_sub("plugins.php", sub(5, &tr("Installed Plugins"), "activate_plugins", "plugins.php"));
@@ -222,8 +245,8 @@ impl AdminMenu {
         menu.add_sub("tools.php", sub(20, &rustpress_core::i18n::sprintf(&tr("Site Health %s"), &["<span class=\"menu-counter site-health-counter count-0\"><span class=\"count\">0</span></span>"]), "view_site_health_checks", "site-health.php"));
         menu.add_sub("tools.php", sub(25, &tr("Export Personal Data"), "export_others_personal_data", "export-personal-data.php"));
         menu.add_sub("tools.php", sub(30, &tr("Erase Personal Data"), "erase_others_personal_data", "erase-personal-data.php"));
-        menu.add_sub("tools.php", sub(35, &tr("Theme File Editor"), "edit_themes", "theme-editor.php"));
         if ctx.block_theme {
+            menu.add_sub("tools.php", sub(35, &tr("Theme File Editor"), "edit_themes", "theme-editor.php"));
             menu.add_sub("tools.php", sub(36, &tr("Plugin File Editor"), "edit_plugins", "plugin-editor.php"));
         }
         menu.items.push(item(80, &tr("Settings"), "manage_options", "options-general.php", "menu-top menu-icon-settings", "menu-settings", "dashicons-admin-settings"));

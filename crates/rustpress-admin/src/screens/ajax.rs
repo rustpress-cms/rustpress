@@ -13,6 +13,10 @@ pub(super) fn headers(content_type: &str) -> Vec<(String, String)> {
         ("Cache-Control".into(), "no-cache, must-revalidate, max-age=0, no-store, private".into()),
         ("X-Robots-Tag".into(), "noindex".into()),
         ("X-Content-Type-Options".into(), "nosniff".into()),
+        // `send_frame_options_header()` on `admin_init`, which `admin-ajax.php` fires as well.
+        ("Referrer-Policy".into(), "strict-origin-when-cross-origin".into()),
+        ("X-Frame-Options".into(), "SAMEORIGIN".into()),
+        ("Content-Security-Policy".into(), "frame-ancestors 'self';".into()),
         ("Content-Type".into(), content_type.into()),
     ]
 }

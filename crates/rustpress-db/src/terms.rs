@@ -175,8 +175,16 @@ impl Db {
     /// `get_terms( [ 'taxonomy' => $taxonomy, 'orderby' => 'count', 'order' => 'DESC', 'number' => $limit ] )` of
     /// `wp_popular_terms_checklist()`: the used terms, ties in the order of the database.
     pub async fn popular_terms(&self, taxonomy: &str, limit: u64) -> Result<Vec<Term>> {
-        let sql = format!("SELECT DISTINCT {TERM_COLUMNS} FROM {} WHERE tt.taxonomy IN (?) AND tt.count > 0 ORDER BY tt.count DESC LIMIT {limit}", self.term_from());
-        Ok(sqlx::query_as(AssertSqlSafe(sql)).bind(taxonomy).fetch_all(&self.pool).await?)
+        // Two steps, as `WP_Term_Query`: terms with the same count come in the order of this statement.
+        let sql = format!("SELECT t.term_id FROM {} WHERE tt.taxonomy IN (?) AND tt.count > 0 ORDER BY tt.count DESC LIMIT {limit}", self.term_from());
+        let ids: Vec<u64> = sqlx::query_scalar(AssertSqlSafe(sql)).bind(taxonomy).fetch_all(&self.pool).await?;
+        let mut terms = Vec::with_capacity(ids.len());
+        for id in ids {
+            if let Some(term) = self.term_by_id(Some(taxonomy), id).await? {
+                terms.push(term);
+            }
+        }
+        Ok(terms)
     }
 
     /// All terms of a taxonomy by name; inside [`Db::with_term_cache`] read once per request (term permalinks walk

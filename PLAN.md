@@ -87,9 +87,8 @@ The reference stack, the tools and the working rules are in [AGENTS.md](AGENTS.m
 - `core/rss` (network).
 - Block hooks (`hooked_block_types`): no module registers hooked blocks yet, so `apply_block_hooks_to_content()` only
   normalizes.
-- Twenty Seventeen: a page with `<!--more-->` in the audio and video formats is compared without it; the site icon in the
-  toolbar of the administration (`render_admin()`); `$content_width` for `[gallery]`, embeds and images. More classic
-  themes.
+- Twenty Seventeen: a page with `<!--more-->` in the audio and video formats is compared without it; `$content_width` for
+  `[gallery]`, embeds and images. More classic themes.
 - The `functions.php` of themes: only literal calls are read.
 - More third-party block themes. Frost 1.1 and Ollie 1.6.6 are equal (compat runs of 2026-11-05 against WordPress
   7.1.4) except the environment differences Twenty Twenty-Five shows as well (posts with the same date). A block
@@ -101,12 +100,14 @@ The reference stack, the tools and the working rules are in [AGENTS.md](AGENTS.m
 **Languages**
 - A language per request (the user's language, Polylang/WPML): an `I18nRegistry` from which each request gets its
   translator; all calls already go through `Site::tr`.
-- JavaScript translations of core scripts (Interactivity texts), hot reload of language packs, variants such as
+- JavaScript translations of core scripts (Interactivity texts, and in the administration of a translated site the
+  `*-js-translations` of the head, `wpAjax` and the like, seen on the copy of the real site in German; the title of a page
+  there also has `&#8211;` where the frame prints `&#8212;`), hot reload of language packs, variants such as
   `de_DE_formal`, a command `rustpress i18n install <locale>`.
 
 **Sign-in, administration, REST**
-- `customize.php`. `nav-menus.php` and `widgets.php` for classic themes: they still answer with the error of a block theme,
-  although the toolbar of Twenty Seventeen links to them.
+- `customize.php`. For classic themes: `widgets.php` still answers with the error of a block theme, and
+  `themes.php?page=custom-header` is in the menu without a screen behind it.
 - Widgets: writing widgets and sidebars, the forms of classic widgets, `widget-types/<id>/encode|render`, `rendered`
   of registered sidebars.
 - `parse-media-shortcode` with a preview (the scripts of `wp-mediaelement`/`wp-playlist`).
@@ -788,4 +789,35 @@ only part for a file whose extension contradicts its type.
 
 Compared in `dev/media-upload-compare.py`: the whole page and the headers as five roles, the forms with the rows they leave
 behind, uploads, and 30 attachments of every kind for the pagination, the type filters and the search.
+
+### `nav-menus.php` (2026-11-06)
+
+The menu editor of a classic theme, in `rustpress-admin/src/screens/nav_menus.rs` and `rustpress-content/src/content/nav_menus.rs`:
+`Walker_Nav_Menu_Edit`, `Walker_Nav_Menu_Checklist`, the boxes that add items, the locations tab, `wp_update_nav_menu_object()`,
+`wp_update_nav_menu_item()`, `wp_delete_nav_menu()`, moving items without JavaScript, and the Ajax actions `add-menu-item`,
+`menu-get-metabox`, `menu-quick-search` and `menu-locations-save`. Block themes keep the error WordPress gives them.
+
+Locations and `nav_menu_options` are read from the table on this screen: the page after a save comes before the options of
+the site are read again.
+
+What the comparison found elsewhere, all on every classic site:
+
+- **The menu of the administration:** Customize, Widgets, Menus and Header were missing from Appearance, and the Theme File
+  Editor belongs there, not under Tools. `themes.php?page=custom-header` is listed as in WordPress, its screen is open.
+- **The toolbar of the administration** shows the site icon.
+- **`post_type_supports()`** said yes to revisions of menu items; each save of a menu made revisions nobody could see.
+- **`sanitize_title( $title, $post_ID )`:** a post without a title that gets published takes its ID as the slug, not `-2`.
+- **Term counts:** `nav_menu` counts published menu items.
+- **`popular_terms()`** takes the IDs in a statement of their own, as `WP_Term_Query`: terms with the same count come in
+  MySQL's order of that statement, and which ten it picks depends on it.
+- **Headers:** `admin-ajax.php` and redirects of the administration lacked `X-Frame-Options`, `Referrer-Policy` and the
+  `frame-ancestors` policy (`admin_init` fires for both).
+- `Contextual Help Tab` was not translated.
+
+Checklist entries with the same title come in the order MySQL leaves them; `dev/nav-menus-compare.py` sorts such runs (the
+same limit as "the order of rows with the same sort value").
+
+Compared in `dev/nav-menus-compare.py`: 32 steps on the copy of the real site in German, in a run per side from the same
+state, so both have the same IDs: the page from the body on, its headers and all rows of menus, items, locations and user
+meta after each step, with the site's own menu of 14 items. The head of the page is not compared there, see Languages.
 
