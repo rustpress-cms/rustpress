@@ -32,8 +32,8 @@ fn empty_figcaption_span(content: &str, after: usize) -> Option<(usize, usize)> 
     }
 }
 
-/// `render_block_core_image()` without lightbox support: the `data-id` the gallery adds
-/// and the removal of an empty caption.
+/// `render_block_core_image()`: the `data-id` the gallery adds, whether the lightbox follows and the removal of an
+/// empty caption.
 pub(super) fn image(bc: &BlockCtx<'_>) -> Result<String> {
     let content = &bc.content;
     if !content.to_ascii_lowercase().contains("<img") {
@@ -52,6 +52,14 @@ pub(super) fn image(bc: &BlockCtx<'_>) -> Result<String> {
         };
         editor.set_attribute("data-id", &text);
     }
+    // `block_core_image_render_lightbox()` runs on `render_block_core/image` while this was the last image to ask.
+    let lightbox = bc.attr_str("linkDestination").unwrap_or("none") == "none" && super::lightbox::is_enabled(bc.env, &bc.raw_attrs);
+    bc.env.with_state(|s| {
+        s.image_lightbox = lightbox;
+        if lightbox {
+            s.script_modules.insert("@wordpress/block-library/image/view".to_owned());
+        }
+    });
     let caption_empty = bc.attrs.get("caption").is_none_or(|c| c.is_null() || c.as_str() == Some(""));
     let span = if caption_empty { empty_figcaption_span(content, img_end) } else { None };
     let output = editor.finish();
@@ -137,6 +145,32 @@ fn overlay_markup(bc: &BlockCtx<'_>) -> String {
     format!("<span class=\"{}\" style=\"{}\" aria-hidden=\"true\"></span>", esc_attr(&classes.join(" ")), esc_attr(&safecss_filter_attr(&styles.join(" "))))
 }
 
+/// The first image of a post for `useFirstImageFromPost`: its attributes copied onto a new tag, with `style` added.
+fn first_image(content: &str, style: &str) -> String {
+    let Some(img) = tags(content, 0).into_iter().find(|t| !t.is_closer && t.name == "img") else { return String::new() };
+    let mut editor = TagEditor::first("<img>").expect("the tag is complete");
+    let mut seen: Vec<String> = Vec::new();
+    for attr in &img.attrs {
+        let name = attr.name.to_ascii_lowercase();
+        if seen.contains(&name) {
+            continue;
+        }
+        match &attr.value {
+            Some(value) => editor.set_attribute(&name, value),
+            None => editor.set_boolean_attribute(&name),
+        }
+        seen.push(name);
+    }
+    if !style.is_empty() {
+        let merged = match editor.get_attribute("style").filter(|existing| !existing.is_empty()) {
+            Some(existing) => format!("{};{style}", existing.trim_end_matches(';')),
+            None => style.to_owned(),
+        };
+        editor.set_attribute("style", &merged);
+    }
+    editor.finish()
+}
+
 pub(super) async fn post_featured_image(bc: &BlockCtx<'_>) -> Result<String> {
     let Some(post_id) = bc.context.post_id() else { return Ok(String::new()) };
     let is_link = bc.attr_bool("isLink");
@@ -185,15 +219,18 @@ pub(super) async fn post_featured_image(bc: &BlockCtx<'_>) -> Result<String> {
         style.push_str(&extra);
     }
     if !style.is_empty() {
-        attrs.push(("style".into(), AttrValue::Text(style)));
+        attrs.push(("style".into(), AttrValue::Text(style.clone())));
     }
 
     let thumbnail = images::post_thumbnail_id(bc.env, post_id).await?;
-    let featured = if thumbnail != 0 {
+    let mut featured = if thumbnail != 0 {
         images::get_attachment_image(bc.env, thumbnail, &size, &ImageArgs { attrs, post_thumbnail: true, thumbnail_of: Some(post_id), dimensions: None }).await?
     } else {
         String::new()
     };
+    if featured.is_empty() && bc.attr_bool("useFirstImageFromPost") {
+        featured = post.as_deref().map(|post| first_image(&post.post_content, &style)).unwrap_or_default();
+    }
     if featured.is_empty() {
         return Ok(String::new());
     }
@@ -310,41 +347,6 @@ pub(super) async fn site_logo(bc: &BlockCtx<'_>) -> Result<String> {
     Ok(format!("<div {wrapper}>{logo}</div>"))
 }
 
-// ------------------------------------------------------------------ core/gallery
-
-const GALLERY_FALLBACK_GAP: &str = "var( --wp--style--gallery-gap-default, var( --gallery-block--gutter-size, var( --wp--style--block-gap, 0.5em ) ) )";
-
-/// `block_core_gallery_get_column_gap_value()`.
-fn gallery_column_gap(gap: Option<&Value>) -> String {
-    let text = match gap {
-        Some(Value::Object(sides)) => sides.get("left").and_then(Value::as_str).unwrap_or(GALLERY_FALLBACK_GAP).to_owned(),
-        Some(Value::String(s)) => s.clone(),
-        _ => String::new(),
-    };
-    // Values with characters `safecss_filter_attr()` rejects are dropped.
-    let unsafe_value = text.contains(['\\', '(', '&', '=', '}']) || text.contains("/*");
-    let mut gap = if text.is_empty() || unsafe_value { String::new() } else { text };
-    if let Some(at) = gap.rfind('|').filter(|_| gap.contains("var:preset|spacing|")) {
-        gap = format!("var(--wp--preset--spacing--{})", crate::style_engine::to_kebab_case(&gap[at + 1..]));
-    }
-    let column = if gap.is_empty() { GALLERY_FALLBACK_GAP.to_owned() } else { gap };
-    if column == "0" { "0px".to_owned() } else { column }
-}
-
-/// `block_core_gallery_render()` for galleries made of inner image blocks: a unique class and
-/// the `--wp--style--unstable-gallery-gap` variable the image widths are calculated from.
-pub(super) fn gallery(bc: &BlockCtx<'_>) -> Result<String> {
-    let Some(mut editor) = TagEditor::first(&bc.content) else { return Ok(bc.content.clone()) };
-    let unique = bc.env.with_state(|s| s.unique_id("wp-block-gallery-"));
-    editor.add_class(&unique);
-
-    let own_gap = bc.attrs.get("style").and_then(|s| s.get("spacing")).and_then(Value::as_object).and_then(|spacing| spacing.get("blockGap"));
-    let global_gap = bc.env.theme.global_styles().get("blocks").and_then(|b| b.get("core/gallery")).and_then(|g| g.get("spacing")).and_then(|s| s.get("blockGap"));
-    let gap = gallery_column_gap(own_gap.or(global_gap));
-    bc.env.with_state(|s| s.block_supports_css.add(&format!(".wp-block-gallery.{unique}"), &[("--wp--style--unstable-gallery-gap".to_owned(), gap)], None));
-    Ok(editor.finish())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -365,17 +367,5 @@ mod tests {
     fn the_logo_link_is_removed_but_its_content_stays() {
         assert_eq!(unlink("<a href=\"/\" class=\"x\"><img src=\"l\" /></a>"), "<img src=\"l\" />");
         assert_eq!(unlink("<img src=\"l\" />"), "<img src=\"l\" />");
-    }
-
-    #[test]
-    fn gallery_gaps_become_css_values() {
-        assert_eq!(gallery_column_gap(None), GALLERY_FALLBACK_GAP);
-        assert_eq!(gallery_column_gap(Some(&json!("0"))), "0px");
-        assert_eq!(gallery_column_gap(Some(&json!("2em"))), "2em");
-        assert_eq!(gallery_column_gap(Some(&json!("var:preset|spacing|50"))), "var(--wp--preset--spacing--50)");
-        assert_eq!(gallery_column_gap(Some(&json!({"top": "1em", "left": "3px"}))), "3px");
-        // Anything with characters that could break out of the declaration is replaced.
-        assert_eq!(gallery_column_gap(Some(&json!("1em;color:red}"))), GALLERY_FALLBACK_GAP);
-        assert_eq!(gallery_column_gap(Some(&json!("calc(1em)"))), GALLERY_FALLBACK_GAP);
     }
 }

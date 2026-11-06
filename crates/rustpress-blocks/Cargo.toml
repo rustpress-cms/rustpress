@@ -11,6 +11,7 @@ publish = false
 futures.workspace = true
 md5.workspace = true
 chrono.workspace = true
+rand.workspace = true
 regex.workspace = true
 rustpress-core.workspace = true
 rustpress-db.workspace = true

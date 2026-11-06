@@ -82,7 +82,9 @@ The reference stack, the tools and the working rules are in [AGENTS.md](AGENTS.m
 ## Open
 
 **Website**
-- `core/playlist` and `[playlist]`, `core/rss` (network), `useFirstImageFromPost`, galleries with `dynamicContent`.
+- `[playlist]`, `core/rss` (network).
+- Responsive styles of WordPress 7.1: `block-supports/states.php`, the viewport values of `layout.php`, the viewport
+  part of `block-visibility.php` (a hidden block is not hidden in RustPress either).
 - Twenty Seventeen: post formats with their own templates, the `front-page.php` panels, the color scheme `custom` and
   the header text color, the social menu, `wp_link_pages()`, the theme's `rtl.css`. More classic themes.
 - The `functions.php` of themes: only literal calls are read.
@@ -618,3 +620,21 @@ Add the section "Review and remaining to-do (2026-10-26)" with part C to `PLAN.m
   (`sanitize_text_field`, `wp_filter_kses`, `_wp_specialchars`); `dev/rest-users-write-compare.py` now sends special
   characters.
 - Not done: `labels->view_item` of a custom post type on `edit-comments.php?p=` is still "View Post" or "View Page".
+
+### Media blocks (2026-11-06)
+
+- **`core/image`:** the lightbox (`dynamic/lightbox.rs`): `block_core_image_get_lightbox_settings()` from the block and
+  the global settings, `block_core_image_render_lightbox()` on `render_block_core/image`, which stays on until the next
+  image block turns it off as in WordPress, the overlay on `wp_footer` and `wp_interactivity_config()`. This was not in
+  the list of open items although `render_block_core_image()` said "without lightbox". The overlay and the button are
+  taken from the PHP source (`lightbox_overlay.html`, `lightbox_button.html`). Differs: an image block without a
+  `figure` stays as it is, in WordPress `seek()` fails and the directives land on the `img`.
+- **`core/gallery`:** moved to `dynamic/gallery.rs`, now all of `block_core_gallery_render()`: `dynamicContent` with
+  `core/attached-media`, images rendered through a real `core/image` block, the gaps per viewport,
+  `block_core_gallery_render_context()`, `randomOrder`, the navigation of the lightbox.
+- **`core/post-featured-image`:** `useFirstImageFromPost`.
+- **`core/playlist` and `core/playlist-track`:** new, `dynamic/playlist.rs`.
+- **`TagEditor`:** values are written as `WP_HTML_Tag_Processor::set_attribute()` writes them: `esc_url()` for the
+  attributes of `wp_kses_uri_attributes()`, the five special characters otherwise (`&apos;`, `&` always encoded).
+- Compared with `dev/media-blocks-compare.py` on whole pages: 8 of 9 posts equal. `rpmb-gap` differs only in the viewport
+  values of the layout support, see **Open**.

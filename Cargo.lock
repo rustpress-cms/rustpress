@@ -1684,6 +1684,7 @@ dependencies = [
  "chrono",
  "futures",
  "md5",
+ "rand 0.9.5",
  "regex",
  "rustpress-auth",
  "rustpress-core",
