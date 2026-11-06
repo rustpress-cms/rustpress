@@ -62,6 +62,8 @@ pub struct PostQuery {
     /// post_mime_type LIKE 'image/%' style filter and an exact mime type.
     pub mime_prefix: Option<String>,
     pub mime_type: Option<String>,
+    /// `post_mime_type IN (...)`.
+    pub mime_types: Vec<String>,
     /// Only attachments whose parent is published (or that have none).
     pub public_parent: bool,
     /// Taxonomy filters: a post must match every group (AND), and a group
@@ -115,6 +117,7 @@ impl Default for PostQuery {
             menu_order: None,
             mime_prefix: None,
             mime_type: None,
+            mime_types: Vec::new(),
             public_parent: false,
             tax_groups: Vec::new(),
             search: Vec::new(),
@@ -195,6 +198,7 @@ impl PostQuery {
         if let Some(mime) = &self.mime_type {
             qb.push(" AND p.post_mime_type = ").push_bind(mime.clone());
         }
+        push_in(qb, "p.post_mime_type", &self.mime_types);
         if self.public_parent {
             qb.push(" AND (p.post_parent = 0 OR p.post_parent IN (SELECT parent.ID FROM ").push(db.prefix.table("posts")).push(" parent WHERE parent.post_status = 'publish'))");
         }

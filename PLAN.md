@@ -45,8 +45,9 @@ The reference stack, the tools and the working rules are in [AGENTS.md](AGENTS.m
 
 - **Website** – equal to WordPress for the bundled block themes Twenty Twenty-Five, -Four, -Three and -Two (about 780
   URLs each: pages, patterns, feeds, sitemaps, REST, files; 0 unexpected differences), across eight permalink
-  structures and a matrix of settings, and in de_DE, ru_RU, ar and ja. Twenty Seventeen on the maintainer's real site:
-  all HTML pages byte-identical (318 URLs). Covered: the main query and template hierarchy, canonical redirects, custom
+  structures and a matrix of settings, and in de_DE, ru_RU, ar and ja. Twenty Seventeen on a copy of the maintainer's real site,
+  0 unexpected differences (2026-11-06): 322 URLs with its plain permalinks, all 105 HTML pages identical; 539 URLs with
+  `/%postname%/`. Covered: the main query and template hierarchy, canonical redirects, custom
   post types and taxonomies (from the stored rules and the literal `register_*()` calls of plugins and themes),
   shortcodes, embeds/oEmbed, the dynamic blocks including Interactivity, the comment form and submitting comments,
   previews and private content for signed-in users, the admin bar.
@@ -86,8 +87,9 @@ The reference stack, the tools and the working rules are in [AGENTS.md](AGENTS.m
 - `core/rss` (network).
 - Block hooks (`hooked_block_types`): no module registers hooked blocks yet, so `apply_block_hooks_to_content()` only
   normalizes.
-- Twenty Seventeen: post formats with their own templates, the `front-page.php` panels, the color scheme `custom` and
-  the header text color, the social menu, `wp_link_pages()`, the theme's `rtl.css`. More classic themes.
+- Twenty Seventeen: a page with `<!--more-->` in the audio and video formats is compared without it; the site icon in the
+  toolbar of the administration (`render_admin()`); `$content_width` for `[gallery]`, embeds and images. More classic
+  themes.
 - The `functions.php` of themes: only literal calls are read.
 - More third-party block themes. Frost 1.1 and Ollie 1.6.6 are equal (compat runs of 2026-11-05 against WordPress
   7.1.4) except the environment differences Twenty Twenty-Five shows as well (posts with the same date). A block
@@ -706,3 +708,53 @@ MariaDB orders such ties by its sampled index statistics: after many rows are ad
 `ANALYZE TABLE`, WordPress itself lists them in another order (`/tag/alpha+beta/`, `/wp/v2/posts?include=7,5,6`, at
 times category archives). This is the environment difference noted for the themes above, not a regression; reseed the
 reference when it shows up.
+
+### Twenty Seventeen completed (2026-11-06)
+
+Compared on the copy of the real site (`dev/up-soli.sh`, port 8081) with `dev/serve-soli.ps1` and
+`dev/seventeen-compare.py`: 47 pages, as a visitor and signed in. The script makes its posts in `soli_ref` and restores
+options and theme mods afterwards. It prints a count for each scenario; it showed three scenarios that compared nothing
+at first (the permalink structure was not put back, the language pack had not been installed).
+
+- **Post formats:** `template-parts/post/content-audio.php`, `-video`, `-image`, `-gallery` in `content_part()`:
+  `get_media_embedded_in_content()`, `get_post_gallery()` (`post_galleries()` for shortcodes and blocks), the media count
+  of every `get_the_post_thumbnail()` in a condition.
+- **`wp_link_pages()`**, and `get_the_content()` now gets the page of the request; `?page=2` showed page 1 until now.
+  `post_pages()` follows `WP_Query::generate_postdata()`, including the block delimiters of `core/nextpage`.
+- **`front-page.php`:** `content-front-page.php`, the four panels, the blog panel with its three recent posts. Quirk: its
+  `wp_reset_postdata()` leaves the post of the page for `the_ID()` in the closing comment.
+- **Colors:** `twentyseventeen_colors_css_wrap()` with the CSS from `inc/color-patterns.php`, `twentyseventeen_header_style()`.
+- **Social menu:** `twentyseventeen_nav_menu_social_icons()`.
+- **`$content_width`:** `twentyseventeen_content_width()`; `[video]` and `[playlist]` use it now.
+- **`rtl.css`:** `locale_stylesheet()`, for block themes as well. The block styles of a right-to-left site are the
+  `-rtl` files, the common stylesheet stays, and the `sourceURL` comment keeps naming the left-to-right file.
+- **Late styles:** `wp_hoist_late_printed_styles()` moves what the content enqueues in front of `</head>`, with one more
+  line break. This explains where MediaElement's styles and the block supports go on classic themes.
+- **Signed in:** the toolbar on classic themes (its styles, scripts, the support script, Customize, Widgets, Menus,
+  Header), `twentyseventeen_edit_link()`, the entry footer for who may edit, `wp_register()` and `wp_loginout()` in the
+  Meta widget. The links of the logo menu are translated (`de.wordpress.org`); that was wrong in the block themes, too.
+- **Core:** `get_page_link()` of the front page is `home_url( '/' )`; plain permalinks lost the slash, in canonical links
+  and oEmbed discovery as well. The speculation rules are printed on classic themes, too.
+- `customize.php` itself stays open; the toolbar links to it as WordPress does.
+
+### The real site in `rustpress-compat`, `core/navigation-submenu` (2026-11-06)
+
+A compat run of the copy of the real site found 15 differences that had nothing to do with Twenty Seventeen's templates.
+It ran with `/%postname%/`, which a run of `dev/seventeen-compare.py` had left in the copy before the script saved that
+option; the site itself uses plain permalinks, and that is why there were 539 URLs instead of 322. The differences are
+real all the same, on any site with those addresses:
+
+- **`core/navigation-submenu` was not ported at all:** in a block theme a submenu vanished from the navigation, without any
+  entry in the plan. Now `navigation_submenu()`: `block_core_shared_navigation_item_should_render()`, click, hover and
+  always, the overlay colors from the parent, `current-menu-ancestor`. Quirk kept: `$block->block_type->supports['color']`
+  stays on for the rest of the request, so later submenus get their own colors on the `li`. The URL of a submenu that opens
+  on click is not printed, as in WordPress.
+- **Embeds:** `WP_Query::parse_query()` decides `is_embed` before the query ran, so a term that does not exist gives the 404
+  of the theme, a post that does not exist the embed page. `body_class` of Twenty Seventeen on embed pages.
+- **`get_calendar()` with `?w=`:** the month comes from `DATE_ADD( '%d0101', ... )`; without a year that is `00101`, which
+  MariaDB reads as `YYMMD`, October 1st 2000.
+- **REST:** the search `type=post-format`; `media_type` goes through `get_allowed_mime_types()`, so a visitor's list has no
+  SVG files, and it is an array in the `Link` header.
+
+Compared in `dev/block-states-compare.py` (a page with submenus) and `rustpress-compat`: the copy of the real site with
+plain permalinks 322 URLs and with `/%postname%/` 539 URLs, Twenty Twenty-Five 921 URLs, 0 unexpected differences in each.

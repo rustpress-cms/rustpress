@@ -61,7 +61,7 @@ impl<'a> Kind<'a> {
 }
 
 /// Parameters WordPress turns into arrays before building pagination links.
-pub(crate) const POST_ARRAYS: &[&str] = &["author", "author_exclude", "exclude", "include", "parent", "parent_exclude", "slug", "status", "categories", "categories_exclude", "tags", "tags_exclude"];
+pub(crate) const POST_ARRAYS: &[&str] = &["media_type", "author", "author_exclude", "exclude", "include", "parent", "parent_exclude", "slug", "status", "categories", "categories_exclude", "tags", "tags_exclude"];
 
 /// The members of an item in the `embed` context.
 const EMBED_FIELDS: &[&str] = &["id", "date", "slug", "type", "link", "title", "excerpt", "author", "featured_media", "_links"];
@@ -166,7 +166,13 @@ impl Rest<'_> {
             query.author_not_in = params.id_list("author_exclude").unwrap_or_default();
         }
         if kind == Kind::Attachment {
-            query.mime_prefix = params.get("media_type").filter(|t| matches!(*t, "image" | "video" | "audio" | "application")).map(str::to_owned);
+            // `get_media_types()` of `get_allowed_mime_types()`: this path is for visitors.
+            if let Some(types) = params.list("media_type") {
+                let can = |_: &str| false;
+                let allowed = rustpress_content::media::allowed_mime_types_for(self.site, &[], &can, true, false);
+                query.mime_types = allowed.into_iter().map(|(_, mime)| mime).filter(|mime| types.iter().any(|t| mime.split('/').next() == Some(t.as_str()))).collect();
+                query.mime_types.dedup();
+            }
             query.mime_type = params.get("mime_type").map(str::to_owned);
         }
         if kind != Kind::Post && kind.hierarchical() {

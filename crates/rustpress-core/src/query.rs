@@ -271,7 +271,9 @@ impl Site {
         }
         let mut result = self.run_main_query(result, viewer).await?;
         // `WP_Query::parse_query()`: only requests for one post, or ones that failed, can be embeds.
-        result.flags.is_embed = result.vars.get("embed").is_some() && (result.flags.is_singular() || result.flags.is_404);
+        // The query is still parsed there, so a term that turns out not to exist is no embed.
+        let singular_request = ["name", "p", "pagename", "page_id", "attachment", "attachment_id"].iter().any(|key| result.vars.get(key).is_some_and(|value| !value.is_empty() && value != "0"));
+        result.flags.is_embed = result.vars.get("embed").is_some() && (result.flags.is_singular() || singular_request || result.parse_error_404);
         Ok(result)
     }
 

@@ -59,6 +59,7 @@ pub fn is_dynamic(name: &str) -> bool {
             | "core/navigation"
             | "core/page-list"
             | "core/navigation-link"
+            | "core/navigation-submenu"
             | "core/query"
             | "core/post-template"
             | "core/query-title"
@@ -146,6 +147,7 @@ pub fn render<'a>(bc: &'a BlockCtx<'a>) -> BoxFuture<'a, Result<String>> {
             "core/navigation" => navigation::navigation(bc).await,
             "core/page-list" => navigation::page_list(bc).await,
             "core/navigation-link" => navigation::navigation_link(bc).await,
+            "core/navigation-submenu" => navigation::navigation_submenu(bc).await,
             "core/query" => {
                 // Yoast SEO's `query_loop_next_prev()` (on `render_block`) notes a query that does not inherit the main one.
                 if bc.attrs.get("query").and_then(|q| q.get("inherit")).is_some_and(|i| !i.as_bool().unwrap_or_else(|| i.as_u64().is_some_and(|n| n != 0) || i.as_str().is_some_and(|s| !s.is_empty() && s != "0"))) {
