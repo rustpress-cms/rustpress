@@ -185,6 +185,33 @@ impl Db {
         Ok(sqlx::query_as(AssertSqlSafe(sql)).bind(post_id).fetch_all(&self.pool).await?)
     }
 
+    /// `_wp_delete_orphaned_draft_menu_items()`: menu items added but never saved, older than `before`.
+    pub async fn orphaned_menu_items(&self, before: i64) -> Result<Vec<u64>> {
+        let sql = format!(
+            "SELECT p.ID FROM {} AS p LEFT JOIN {} AS m ON p.ID = m.post_id WHERE p.post_type = 'nav_menu_item' AND p.post_status = 'draft' AND m.meta_key = '_menu_item_orphaned' AND m.meta_value < ?",
+            self.prefix.table("posts"),
+            self.prefix.table("postmeta")
+        );
+        Ok(sqlx::query_scalar(AssertSqlSafe(sql)).bind(before).fetch_all(&self.pool).await?)
+    }
+
+    /// The quick search of the menu editor: `search_columns` is only the title, published posts only.
+    pub async fn posts_by_title(&self, post_type: &str, terms: &[String], order_by: crate::OrderBy, order: crate::Order, limit: u64) -> Result<Vec<Post>> {
+        let mut qb = QueryBuilder::<MySql>::new(format!("SELECT {POST_COLUMNS} FROM {} p WHERE p.post_type = ", self.prefix.table("posts")));
+        qb.push_bind(post_type.to_owned()).push(" AND p.post_status = 'publish'");
+        for term in terms {
+            qb.push(" AND p.post_title LIKE ").push_bind(like_pattern(term));
+        }
+        let direction = if order == crate::Order::Asc { "ASC" } else { "DESC" };
+        if order_by == crate::OrderBy::MenuOrderTitle {
+            qb.push(format!(" ORDER BY p.menu_order {direction}, p.post_title {direction}"));
+        } else {
+            qb.push(format!(" ORDER BY p.post_date {direction}"));
+        }
+        qb.push(" LIMIT ").push_bind(limit as i64);
+        Ok(qb.build_query_as().fetch_all(&self.pool).await?)
+    }
+
     /// `get_available_post_mime_types( 'attachment' )`.
     pub async fn attachment_mime_types(&self) -> Result<Vec<String>> {
         let sql = format!("SELECT DISTINCT post_mime_type FROM {} WHERE post_type = 'attachment'", self.prefix.table("posts"));

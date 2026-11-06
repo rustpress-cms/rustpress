@@ -528,12 +528,15 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUs
                 }
             }
         }
-        // Without a theme that has menus or widgets there is nothing to save; the check comes first, as in WordPress.
         "add-menu-item" => {
             if !check("add-menu_item", Some("menu-settings-column-nonce")) {
                 return denied();
             }
-            text(200, "-1")
+            if !user.can("edit_theme_options") {
+                return text(200, "-1");
+            }
+            let ctx = Ctx { env, request, user: user.clone(), token: token.to_owned() };
+            text(200, &super::nav_menus::ajax_add_menu_item(&ctx).await)
         }
         "menu-locations-save" => {
             if !user.can("edit_theme_options") {
@@ -542,9 +545,17 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUs
             if !check("add-menu_item", Some("menu-settings-column-nonce")) {
                 return denied();
             }
-            text(200, "-1")
+            let ctx = Ctx { env, request, user: user.clone(), token: token.to_owned() };
+            text(200, super::nav_menus::ajax_locations_save(&ctx).await)
         }
-        "menu-get-metabox" | "menu-quick-search" => text(200, if user.can("edit_theme_options") { "" } else { "-1" }),
+        "menu-get-metabox" | "menu-quick-search" => {
+            if !user.can("edit_theme_options") {
+                return text(200, "-1");
+            }
+            let ctx = Ctx { env, request, user: user.clone(), token: token.to_owned() };
+            let body = if action == "menu-get-metabox" { super::nav_menus::ajax_metabox(&ctx).await } else { super::nav_menus::ajax_quick_search(&ctx).await };
+            text(200, &body)
+        }
         "widgets-order" | "save-widget" | "delete-inactive-widgets" => {
             if !check("save-sidebar-widgets", Some("savewidgets")) {
                 return denied();

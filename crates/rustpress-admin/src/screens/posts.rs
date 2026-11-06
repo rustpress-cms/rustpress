@@ -1164,7 +1164,24 @@ async fn inline_data(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, taxonomies: &[
 }
 
 /// `get_post_states()` as `_post_states()` prints it.
-async fn post_states(ctx: &Ctx<'_>, post: &Post, status_param: &str, sticky: bool) -> String {
+pub(super) async fn post_states(ctx: &Ctx<'_>, post: &Post, status_param: &str, sticky: bool) -> String {
+    let site = ctx.site();
+    let states = state_labels(ctx, post, status_param, sticky).await;
+    if states.is_empty() {
+        return String::new();
+    }
+    let separator = site.tr(", ");
+    let count = states.len();
+    let mut out = String::from(" &mdash; ");
+    for (index, state) in states.iter().enumerate() {
+        let suffix = if index + 1 < count { separator.as_str() } else { "" };
+        out.push_str(&format!("<span class='post-state'>{state}{suffix}</span>"));
+    }
+    out
+}
+
+/// `get_post_states()`.
+pub(super) async fn state_labels(ctx: &Ctx<'_>, post: &Post, status_param: &str, sticky: bool) -> Vec<String> {
     let site = ctx.site();
     let mut states: Vec<(String, String)> = Vec::new();
     let mut state = |key: &str, text: String| states.push((key.to_owned(), text));
@@ -1205,18 +1222,7 @@ async fn post_states(ctx: &Ctx<'_>, post: &Post, status_param: &str, sticky: boo
             states
         });
     }
-    let states: Vec<String> = states.into_iter().map(|(_, text)| text).collect();
-    if states.is_empty() {
-        return String::new();
-    }
-    let separator = site.tr(", ");
-    let count = states.len();
-    let mut out = String::from(" &mdash; ");
-    for (index, state) in states.iter().enumerate() {
-        let suffix = if index + 1 < count { separator.as_str() } else { "" };
-        out.push_str(&format!("<span class='post-state'>{state}{suffix}</span>"));
-    }
-    out
+    states.into_iter().map(|(_, text)| text).collect()
 }
 
 /// `handle_row_actions()`.

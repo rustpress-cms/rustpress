@@ -6,6 +6,17 @@ use rustpress_core::Site;
 use rustpress_core::formatting::{esc_attr, esc_html, esc_url};
 
 /// What the toolbar shows besides the user.
+/// `wp_admin_bar_site_menu()`: the class of the site name and its title, with the site icon when there is one.
+fn site_name_title(icon: &Option<(String, String)>, site_title: &str) -> (&'static str, String) {
+    match icon {
+        Some((icon, icon_2x)) => {
+            let srcset = if !icon_2x.is_empty() && icon != icon_2x { format!(" srcset=\"{} 2x\"", esc_url(icon_2x)) } else { String::new() };
+            ("menupop has-site-icon", format!("<img class=\"site-icon\" src=\"{}\"{srcset} alt=\"\" width=\"20\" height=\"20\" />{}", esc_url(icon), esc_html(site_title)))
+        }
+        None => ("menupop", esc_html(site_title)),
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct BarContext {
     /// Updates available (`wp_get_update_data()['counts']['total']`).
@@ -22,6 +33,8 @@ pub struct BarContext {
     pub view_preview: Option<u64>,
     /// The screen loads the command palette (`wp-core-commands` is enqueued).
     pub command_palette: bool,
+    /// `get_site_icon_url()` for 32 and 64 pixels.
+    pub site_icon: Option<(String, String)>,
 }
 
 /// The custom post types of the "New" menu (`show_in_admin_bar`) with `labels->name_admin_bar`, in the order of their
@@ -94,10 +107,11 @@ pub fn render_admin(site: &Site, user: &CurrentUser, ctx: &BarContext) -> String
     // Site name
     let site_title = if blog_name.is_empty() { tr("Dashboard") } else { blog_name.clone() };
     let visit = vec![item("view-site", "", &link(&esc_url(&site.home_url("/")), &tr("Visit Site"), false))];
+    let (name_class, name_title) = site_name_title(&ctx.site_icon, &site_title);
     top.push(item(
         "site-name",
-        "menupop",
-        &format!("{}<div class=\"ab-sub-wrapper\">{}</div>", link(&esc_url(&site.home_url("/")), &esc_html(&site_title), true), submenu(&site_title, "site-name-default", "ab-submenu", &visit)),
+        name_class,
+        &format!("{}<div class=\"ab-sub-wrapper\">{}</div>", link(&esc_url(&site.home_url("/")), &name_title, true), submenu(&site_title, "site-name-default", "ab-submenu", &visit)),
     ));
 
     // Updates
@@ -276,13 +290,7 @@ pub fn render_front(site: &Site, user: &CurrentUser, ctx: &FrontContext) -> Stri
         }
         groups.push_str(&submenu(&site_title, "appearance", "ab-submenu", &appearance));
     }
-    let (name_class, name_title) = match &ctx.site_icon {
-        Some((icon, icon_2x)) => {
-            let srcset = if !icon_2x.is_empty() && icon != icon_2x { format!(" srcset=\"{} 2x\"", esc_url(icon_2x)) } else { String::new() };
-            ("menupop has-site-icon", format!("<img class=\"site-icon\" src=\"{}\"{srcset} alt=\"\" width=\"20\" height=\"20\" />{}", esc_url(icon), esc_html(&site_title)))
-        }
-        None => ("menupop", esc_html(&site_title)),
-    };
+    let (name_class, name_title) = site_name_title(&ctx.site_icon, &site_title);
     top.push(item("site-name", name_class, &format!("{}<div class=\"ab-sub-wrapper\">{groups}</div>", link(&admin(""), &name_title, true))));
 
     // Edit Site

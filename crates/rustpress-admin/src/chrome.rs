@@ -118,6 +118,8 @@ pub struct Help {
 pub struct ScreenOptions {
     /// `(column, title, hidden)` of the columns that can be hidden (`render_list_table_columns_preferences()`).
     pub columns: Vec<(String, String, bool)>,
+    /// `$columns['_title']`: the legend of the columns, instead of "Columns".
+    pub columns_title: Option<String>,
     /// `(option, value)` of "Number of items per page" (`render_per_page_options()`).
     pub per_page: Option<(String, u64)>,
     /// The view mode (`list` or `excerpt`) of the posts and comments lists (`render_view_mode()`).
@@ -177,7 +179,7 @@ fn screen_meta_with(help: Option<&Help>, options: Option<&ScreenOptions>, tr: &d
             out.push_str("\t\t</div>\n\t\t</fieldset>\n\t\t");
         }
         if !options.columns.is_empty() {
-            out.push_str(&format!("\t\t<fieldset class=\"metabox-prefs\">\n\t\t<legend>{}</legend>\n\t\t", tr("Columns")));
+            out.push_str(&format!("\t\t<fieldset class=\"metabox-prefs\">\n\t\t<legend>{}</legend>\n\t\t", options.columns_title.clone().unwrap_or_else(|| tr("Columns"))));
             for (column, title, hidden) in &options.columns {
                 let id = format!("{column}-hide");
                 out.push_str(&format!(
@@ -257,7 +259,7 @@ fn screen_meta(help: &Help, label: &str) -> String {
         // A screen without help tabs: the empty wrapper and no Help button.
         return "		<div id=\"screen-meta\" class=\"metabox-prefs\">
 
-			<div id=\"contextual-help-wrap\" class=\"hidden no-sidebar\" tabindex=\"-1\" aria-label=\"Contextual Help Tab\">
+			<div id=\"contextual-help-wrap\" class=\"hidden no-sidebar\" tabindex=\"-1\" aria-label=\"@@HELP_TAB@@\">
 				<div id=\"contextual-help-back\"></div>
 				<div id=\"contextual-help-columns\">
 					<div class=\"contextual-help-tabs\">
@@ -299,7 +301,7 @@ fn screen_meta(help: &Help, label: &str) -> String {
     format!(
         "		<div id=\"screen-meta\" class=\"metabox-prefs\">
 
-			<div id=\"contextual-help-wrap\" class=\"hidden\" tabindex=\"-1\" aria-label=\"Contextual Help Tab\">
+			<div id=\"contextual-help-wrap\" class=\"hidden\" tabindex=\"-1\" aria-label=\"@@HELP_TAB@@\">
 				<div id=\"contextual-help-back\"></div>
 				<div id=\"contextual-help-columns\">
 					<div class=\"contextual-help-tabs\">
@@ -345,7 +347,7 @@ pub struct ChromeEnv<'a> {
 }
 
 /// `wp_removable_query_args()`.
-const REMOVABLE_QUERY_ARGS: &[&str] = &[
+pub(crate) const REMOVABLE_QUERY_ARGS: &[&str] = &[
     "activate", "activated", "admin_email_remind_later", "approved", "core-major-auto-updates-saved", "deactivate", "delete_count", "deleted", "disabled", "doing_wp_cron", "enabled", "error", "hotkeys_highlight_first",
     "hotkeys_highlight_last", "ids", "locked", "message", "same", "saved", "settings-updated", "skipped", "spammed", "trashed", "unspammed", "untrashed", "update", "updated", "wp-post-new-reload",
 ];
@@ -1029,6 +1031,7 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
         }
         (None, None) => "\t\t".to_owned(),
     };
+    let meta = meta.replace("@@HELP_TAB@@", &esc_attr(&tr("Contextual Help Tab")));
     // The notices end the header; the line break before the page's markup is the page's own.
     match meta.strip_suffix('\n') {
         Some(head) => out.push_str(&format!("{head}{}\n", assets.notices)),

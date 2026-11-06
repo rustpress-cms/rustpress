@@ -9,9 +9,11 @@ use rustpress_phpser::{Key, Value};
 
 mod attachments;
 mod comments;
+mod nav_menus;
 mod terms;
 mod users;
 pub use comments::CommentUpdate;
+pub use nav_menus::MenuItemData;
 pub use terms::TermData;
 pub use users::UserData;
 
@@ -418,6 +420,8 @@ impl Content<'_> {
         {
             post_name = self.add_trashed_suffix(current).await?;
         }
+        // `sanitize_title( $post_title, $post_ID )`: what has no title takes its ID.
+        let post_name = if post_name.is_empty() && update && !DATE_FLOATING.contains(&post_status.as_str()) { post_id.to_string() } else { post_name };
         let post_name = self.unique_post_slug(&post_name, post_id, &post_status, &post_type, post_parent).await?;
 
         let fields: Vec<(&str, Val)> = vec![
@@ -459,7 +463,9 @@ impl Content<'_> {
         };
 
         if post_name.is_empty() && !DATE_FLOATING.contains(&post_status.as_str()) {
-            let unique = self.unique_post_slug(&sanitize_title_save(&post_title, &self.site.locale()), post_id, &post_status, &post_type, post_parent).await?;
+            let title = sanitize_title_save(&post_title, &self.site.locale());
+            let title = if title.is_empty() { post_id.to_string() } else { title };
+            let unique = self.unique_post_slug(&title, post_id, &post_status, &post_type, post_parent).await?;
             self.writer.update_rows("posts", "ID", post_id, &[("post_name", Val::Str(unique))]).await?;
         }
 
@@ -526,7 +532,7 @@ impl Content<'_> {
     /// `wp_save_post_revision()`.
     async fn save_revision(&self, post_id: u64, hooks: &dyn InsertHooks) -> Result<()> {
         let Some(post) = self.db.post(post_id).await? else { return Ok(()) };
-        if post.post_status == "auto-draft" || !self.site.post_type_supports(&post.post_type, "revisions") {
+        if post.post_status == "auto-draft" || post.post_type == "nav_menu_item" || !self.site.post_type_supports(&post.post_type, "revisions") {
             return Ok(());
         }
         let query = rustpress_db::PostQuery { post_types: vec!["revision".into()], statuses: vec!["inherit".into()], parent: Some(post_id), order_by: rustpress_db::OrderBy::Date, ..Default::default() };
@@ -717,7 +723,7 @@ impl Content<'_> {
     pub async fn update_term_counts(&self, tt_ids: &[u64]) -> Result<()> {
         for id in tt_ids {
             let sql = format!(
-                "UPDATE {tt} SET count = (SELECT COUNT(*) FROM {tr} tr INNER JOIN {posts} p ON p.ID = tr.object_id WHERE tr.term_taxonomy_id = {id} AND p.post_status = 'publish' AND p.post_type NOT IN ('revision', 'nav_menu_item', 'attachment')) WHERE term_taxonomy_id = {id}",
+                "UPDATE {tt} SET count = (SELECT COUNT(*) FROM {tr} tr INNER JOIN {posts} p ON p.ID = tr.object_id WHERE tr.term_taxonomy_id = {id} AND p.post_status = 'publish' AND p.post_type NOT IN ('revision', 'attachment') AND (p.post_type <> 'nav_menu_item' OR {tt}.taxonomy = 'nav_menu')) WHERE term_taxonomy_id = {id}",
                 tt = self.writer.table("term_taxonomy"),
                 tr = self.writer.table("term_relationships"),
                 posts = self.writer.table("posts")
