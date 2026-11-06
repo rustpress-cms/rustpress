@@ -181,7 +181,7 @@ pub fn submit_button(text: &str, kind: &str, name: &str, wrap: bool, id: Option<
         if t == "secondary" || t == "button-secondary" {
             continue;
         }
-        let class = if matches!(t, "primary" | "small" | "large") { format!("button-{t}") } else { t.to_owned() };
+        let class = if matches!(t, "primary" | "small" | "large" | "compact") { format!("button-{t}") } else { t.to_owned() };
         if !classes.contains(&class) {
             classes.push(class);
         }

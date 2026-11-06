@@ -8,11 +8,24 @@ use crate::adminbar::{self, BarContext};
 use crate::menu::AdminMenu;
 use crate::registry::{LoaderEnv, default_scripts, default_styles};
 
+/// How a page of `wp_iframe()` was requested.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FrameKind {
+    /// `IFRAME_REQUEST` is set: no toolbar assets and no sign-in check.
+    Request,
+    /// `?inline`: the page is a frame, but WordPress loads as for a screen.
+    Inline,
+}
+
 /// The screen being shown (`$pagenow`, `$parent_file`, `$submenu_file`, `$typenow`).
 #[derive(Debug, Clone, Default)]
 pub struct Screen {
     /// `options-general.php`
     pub file: String,
+    /// A page of `wp_iframe()`, without menu and toolbar.
+    pub frame: Option<FrameKind>,
+    /// `wp_iframe()` was called with a function whose name begins with `media`: `deprecated-media` is enqueued.
+    pub frame_media_styles: bool,
     /// The top-level entry the screen belongs to; defaults to `file`.
     pub parent_file: String,
     /// The highlighted submenu entry; defaults to `file`.
@@ -623,6 +636,71 @@ fn script_modules(env: &ChromeEnv<'_>, editor: bool, route_first: bool, boot: Op
 
 /// `wp-admin/admin-header.php` to `admin-footer.php` around `content` (the inside of `.wrap`, with
 /// its own `<div class="wrap">`).
+/// `wp_auth_check_html()`.
+fn auth_check_html(env: &ChromeEnv<'_>, assets: &Assets) -> String {
+    let site = env.site;
+    let tr = |s: &str| site.tr(s);
+    // `wp_auth_check_html()`: the sign-in form is loaded in the dialog only from the domain of the request.
+    let login_url = site.site_url("wp-login.php");
+    let same_domain = env.host.as_deref().filter(|h| !h.is_empty()).is_none_or(|host| login_url.starts_with(&format!("{}://{host}", if env.secure { "https" } else { "http" })));
+    let src = esc_url(&if assets.empty_locale { format!("{login_url}?interim-login=1&wp_lang") } else { format!("{login_url}?interim-login=1&wp_lang={}", site.locale()) });
+    let (wrap_class, form) = if same_domain { ("hidden", format!("\t\t<div id=\"wp-auth-check-form\" class=\"loading\" data-src=\"{src}\"></div>\n\t\t")) } else { ("hidden fallback", String::new()) };
+    format!(
+        "\t<div id=\"wp-auth-check-wrap\" class=\"{wrap_class}\">\n\t<div id=\"wp-auth-check-bg\"></div>\n\t<div id=\"wp-auth-check\">\n\t<button type=\"button\" class=\"wp-auth-check-close button-link\"><span class=\"screen-reader-text\">\n\t\t{close}\t</span></button>\n\t{form}\t<div class=\"wp-auth-fallback\">\n\t\t<p><b class=\"wp-auth-fallback-expired\" tabindex=\"0\">{expired}</b></p>\n\t\t<p><a href=\"{login}\" target=\"_blank\">{again}</a>\n\t\t{note}</p>\n\t</div>\n\t</div>\n\t</div>\n\t",
+        close = tr("Close dialog"),
+        expired = tr("Session expired"),
+        login = esc_url(&site.site_url("wp-login.php")),
+        again = tr("Please log in again."),
+        note = tr("The login page will open in a new tab. After logging in you can close it and return to this page.")
+    )
+}
+
+/// What [`render`] prepared for [`frame_page`].
+struct FramePage<'a> {
+    admin_styles: &'a str,
+    colors: &'a str,
+    head_scripts: &'a str,
+    footer_styles: &'a str,
+    footer_scripts: &'a str,
+    canonical: &'a str,
+}
+
+/// `wp_iframe()`.
+fn frame_page(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Assets, page: &FramePage<'_>) -> String {
+    let site = env.site;
+    let rtl = site.is_rtl();
+    let toolbar = if screen.frame == Some(FrameKind::Inline) { "wp-toolbar" } else { "" };
+    let language = if rtl { format!("dir=\"rtl\" lang=\"{}\"", esc_attr(&site.language_tag())) } else { format!("lang=\"{}\"", esc_attr(&site.language_tag())) };
+    let blog_name = esc_html(&site.options.string("blogname", "")).replace('\'', "&#039;");
+    let ajax = esc_url(&site.site_url("wp-admin/admin-ajax.php"));
+    let ajax_path = ajax.strip_prefix(&env.loader.site_url).unwrap_or(&ajax).to_owned();
+    let mut out = format!(
+        "<!DOCTYPE html>\n<html class=\"{toolbar}\"\n\t{language}>\n<head>\n<meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\" />\n\t\t<title>{blog_name} &rsaquo; {} &#8212; {}</title>\n\t\t<script>\n\taddLoadEvent = function(func){{if(typeof jQuery!=='undefined')jQuery(function(){{func();}});else if(typeof wpOnload!=='function'){{wpOnload=func;}}else{{var oldonload=wpOnload;wpOnload=function(){{oldonload();func();}}}}}};\n\tvar ajaxurl = '{ajax_path}', pagenow = 'media-upload-popup', adminpage = 'media-upload-popup',\n\tisRtl = {};\n\t</script>\n\t",
+        esc_html(&screen.title),
+        esc_html(&site.tr("WordPress")),
+        i32::from(rtl)
+    );
+    out.push_str(page.admin_styles);
+    out.push_str(page.colors);
+    out.push_str(&env.head_styles);
+    out.push_str(page.head_scripts);
+    out.push_str("<script>var _wpColorScheme = {\"icons\":{\"base\":\"#f3f1f1\",\"focus\":\"#fff\",\"current\":\"#fff\"}};</script>\n");
+    out.push_str(&format!(
+        "\t<link id=\"wp-admin-canonical\" rel=\"canonical\" href=\"{}\" />\n\t<script>\n\t\tif ( window.history.replaceState ) {{\n\t\t\twindow.history.replaceState( null, null, document.getElementById( 'wp-admin-canonical' ).href + window.location.hash );\n\t\t}}\n\t</script>\n\t<meta name=\"viewport\" content=\"width=device-width,initial-scale=1.0\">\t</head>\n\t<body id=\"media-upload\" class=\"wp-core-ui no-js admin-color-modern\">\n\t<script>\n\tdocument.body.className = document.body.className.replace('no-js', 'js');\n\t</script>\n\t",
+        esc_url(page.canonical)
+    ));
+    out.push_str(content);
+    if !assets.no_auth_check {
+        out.push_str(&auth_check_html(env, assets));
+    }
+    out.push_str(&script_modules(env, assets.editor_modules, assets.route_first, assets.boot.as_ref()));
+    out.push_str(page.footer_styles);
+    out.push_str(page.footer_scripts);
+    out.push_str(&emoji_scripts(env, assets.no_emoji));
+    out.push_str("\t<script>if(typeof wpOnload==='function')wpOnload();</script>\n\t</body>\n\t</html>\n\t");
+    out
+}
+
 pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Assets) -> String {
     let site = env.site;
     let tr = |s: &str| site.tr(s);
@@ -634,10 +712,13 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
     let blog_name = site.options.string("blogname", "");
     let admin_title = if blog_name.is_empty() { rustpress_core::formatting::wptexturize(&site.options.string("siteurl", "")) } else { rustpress_core::formatting::wptexturize(&blog_name) };
     let title = format!("{} &lsaquo; {} &#8212; WordPress", esc_html(&screen.title), esc_html(&admin_title).replace('\'', "&#039;"));
+    let request_frame = screen.frame == Some(FrameKind::Request);
 
     // Styles of the head.
     let mut styles = default_styles(&env.loader);
-    styles.add_inline_style("admin-bar", "@media print { #wpadminbar { display:none; } }");
+    if !request_frame {
+        styles.add_inline_style("admin-bar", "@media print { #wpadminbar { display:none; } }");
+    }
     for (handle, code) in &assets.inline_styles {
         if !styles.is_registered(handle) {
             styles.add(handle, None, &[], crate::deps::Ver::None, None);
@@ -646,7 +727,9 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
     }
     // The styles a screen asks for (`wp_enqueue_media()`) are enqueued before `admin-header.php` adds its own.
     if !assets.styles.is_empty() {
-        styles.enqueue("admin-bar");
+        if !request_frame {
+            styles.enqueue("admin-bar");
+        }
         for handle in &assets.styles {
             styles.enqueue(handle);
         }
@@ -655,7 +738,15 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
         "dashicons", "admin-bar", "common", "forms", "admin-menu", "dashboard", "list-tables", "edit", "revisions", "media", "themes", "about", "nav-menus", "wp-pointer", "widgets", "site-icon", "l10n", "wp-base-styles", "wp-tooltip", "buttons",
         "wp-auth-check", "wp-theme", "wp-components", "wp-commands",
     ] {
+        // `wp_iframe()` runs before the sign-in check enqueues its styles.
+        if handle == "wp-auth-check" && screen.frame_media_styles {
+            styles.enqueue("buttons");
+            styles.enqueue("deprecated-media");
+        }
         if handle == "wp-auth-check" && assets.no_auth_check {
+            continue;
+        }
+        if handle == "admin-bar" && request_frame {
             continue;
         }
         styles.enqueue(handle);
@@ -749,7 +840,8 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
         }
     }
     // A screen enqueues its scripts before `admin-header.php` adds the ones of every screen.
-    for handle in ["common", "admin-bar"].into_iter().chain(assets.early_scripts.iter().map(String::as_str)).chain(assets.scripts.iter().map(String::as_str)) {
+    let screen_scripts: &[&str] = if request_frame { &["common"] } else { &["common", "admin-bar"] };
+    for handle in screen_scripts.iter().copied().chain(assets.early_scripts.iter().map(String::as_str)).chain(assets.scripts.iter().map(String::as_str)) {
         scripts.enqueue(handle);
     }
     for (handle, object, data) in &assets.localize {
@@ -766,7 +858,13 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
     if assets.scripts.iter().any(|h| h == "jquery-ui-datepicker") || assets.plugin_scripts.iter().any(|s| s.handle == "jquery-ui-datepicker" && s.src.is_empty()) {
         scripts.add_inline_script("jquery-ui-datepicker", &rustpress_theme::script_loader::localize::jquery_ui_datepicker(site), "after");
     }
-    let always: &[&str] = if assets.no_auth_check { &["svg-painter"] } else { &["svg-painter", "heartbeat", "wp-auth-check"] };
+    // `admin-header.php` enqueues `svg-painter`; `wp_iframe()` does not load it.
+    let always: &[&str] = match (screen.frame.is_some(), assets.no_auth_check) {
+        (false, true) => &["svg-painter"],
+        (false, false) => &["svg-painter", "heartbeat", "wp-auth-check"],
+        (true, true) => &[],
+        (true, false) => &["heartbeat", "wp-auth-check"],
+    };
     for handle in always {
         scripts.enqueue(handle);
     }
@@ -842,6 +940,9 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
         canonical = rustpress_core::urls::remove_query_arg(&canonical, arg);
     }
 
+    if screen.frame.is_some() {
+        return frame_page(env, screen, content, assets, &FramePage { admin_styles: &admin_styles, colors: &colors, head_scripts: &head_scripts, footer_styles: &footer_styles, footer_scripts: &footer_scripts, canonical: &canonical });
+    }
     let pagenow = screen.screen_id();
     let mut out = String::new();
     out.push_str(&format!(
@@ -944,19 +1045,7 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
     out.push_str(&assets.plugin_footer);
     out.push_str(&assets.pre_footer);
     if !assets.no_auth_check {
-        // `wp_auth_check_html()`: the sign-in form is loaded in the dialog only from the domain of the request.
-        let login_url = site.site_url("wp-login.php");
-        let same_domain = env.host.as_deref().filter(|h| !h.is_empty()).is_none_or(|host| login_url.starts_with(&format!("{}://{host}", if env.secure { "https" } else { "http" })));
-        let src = esc_url(&if assets.empty_locale { format!("{login_url}?interim-login=1&wp_lang") } else { format!("{login_url}?interim-login=1&wp_lang={}", site.locale()) });
-        let (wrap_class, form) = if same_domain { ("hidden", format!("\t\t<div id=\"wp-auth-check-form\" class=\"loading\" data-src=\"{src}\"></div>\n\t\t")) } else { ("hidden fallback", String::new()) };
-        out.push_str(&format!(
-            "\t<div id=\"wp-auth-check-wrap\" class=\"{wrap_class}\">\n\t<div id=\"wp-auth-check-bg\"></div>\n\t<div id=\"wp-auth-check\">\n\t<button type=\"button\" class=\"wp-auth-check-close button-link\"><span class=\"screen-reader-text\">\n\t\t{close}\t</span></button>\n\t{form}\t<div class=\"wp-auth-fallback\">\n\t\t<p><b class=\"wp-auth-fallback-expired\" tabindex=\"0\">{expired}</b></p>\n\t\t<p><a href=\"{login}\" target=\"_blank\">{again}</a>\n\t\t{note}</p>\n\t</div>\n\t</div>\n\t</div>\n\t",
-            close = tr("Close dialog"),
-            expired = tr("Session expired"),
-            login = esc_url(&site.site_url("wp-login.php")),
-            again = tr("Please log in again."),
-            note = tr("The login page will open in a new tab. After logging in you can close it and return to this page.")
-        ));
+        out.push_str(&auth_check_html(env, assets));
     }
     let modules = script_modules(env, assets.editor_modules, assets.route_first, assets.boot.as_ref());
     // `print_a11y_script_module_html()`: the live regions, when `@wordpress/a11y` is in the import map.

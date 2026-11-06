@@ -490,6 +490,7 @@ pub async fn handle_upload(content: &Content<'_>, uploads: &Path, file: Uploaded
     let site = content.site;
     // `wp_handle_upload_prefilter` of the plugins comes before every check.
     let mut file = file;
+    let original_name = file.name.clone();
     let can = |capability: &str| content.user.can(capability);
     let uploader = rustpress_core::native::Uploader { site, roles: &content.user.roles, can: &can, rest: file.rest, media_form_nonce: file.media_form_nonce };
     site.plugins.upload_prefilter(&uploader, &mut file.name, &mut file.bytes).map_err(UploadError)?;
@@ -498,14 +499,19 @@ pub async fn handle_upload(content: &Content<'_>, uploads: &Path, file: Uploaded
         return Err(UploadError(rustpress_core::i18n::sprintf(&tr("File is empty. Please upload something more substantial. This error could also be caused by uploads being disabled in your php.ini or by %s being defined as smaller than %s in php.ini."), &["post_max_size", "upload_max_filesize"])));
     }
     let allowed = |ext: &str| check_filetype_in(&format!("x.{ext}"), &mimes).is_some();
-    let name = mark_inner_extensions(&sanitize::file_name(&file.name), allowed);
+    let name = mark_inner_extensions(&sanitize::file_name(&file.name, &site.locale()), allowed);
     let refused = || UploadError(tr("Sorry, you are not allowed to upload this file type."));
     // A type the core refuses may still pass a plugin's `wp_check_filetype_and_ext`.
     let (name, mime) = match check_filetype_in(&name, &mimes).and_then(|(_, mime)| check_image_upload(&name, &mime, &file.bytes)) {
         Some(checked) => checked,
         None => site.plugins.accept_filetype(&name, &mimes).ok_or_else(refused)?,
     };
-    let subdir = upload_subdir(content);
+    // `media_handle_upload()`: a file goes in the folder of the post it is attached to; pages do not backdate it.
+    let parent = if post_parent > 0 { content.db.post(post_parent).await.ok().flatten() } else { None };
+    let subdir = match parent.filter(|post| post.post_type != "page" && post.post_date.get(..4).is_some_and(|year| year.parse::<u32>().is_ok_and(|year| year > 0))) {
+        Some(post) if content.site.options.get("uploads_use_yearmonth_folders") == Some("1") => format!("{}/{}", &post.post_date[..4], &post.post_date[5..7]),
+        _ => upload_subdir(content),
+    };
     let dir: PathBuf = if subdir.is_empty() { uploads.to_path_buf() } else { uploads.join(&subdir) };
     std::fs::create_dir_all(&dir).map_err(|e| UploadError(e.to_string()))?;
     let unique = unique_filename(&dir, &name);
@@ -514,9 +520,10 @@ pub async fn handle_upload(content: &Content<'_>, uploads: &Path, file: Uploaded
     let relative = if subdir.is_empty() { unique.clone() } else { format!("{subdir}/{unique}") };
     let base_url = rustpress_blocks::images::upload_baseurl(content.site);
     let url = format!("{}/{relative}", base_url.trim_end_matches('/'));
+    // `sanitize_text_field( wp_basename( $name, ".$ext" ) )` of the name as it was sent, not of the file.
     let title = {
-        let stem = unique.rsplit_once('.').map_or(unique.as_str(), |(a, _)| a);
-        stem.to_owned()
+        let base = original_name.rsplit(['/', '\\']).next().unwrap_or_default();
+        crate::sanitize::text_field(base.rsplit_once('.').map_or(base, |(stem, _)| stem))
     };
     let data = PostData {
         post_title: Some(title),

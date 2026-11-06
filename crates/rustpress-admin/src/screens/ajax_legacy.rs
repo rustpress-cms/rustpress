@@ -100,7 +100,7 @@ async fn add_meta(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUser
 /// `get_image_send_to_editor()`: `get_image_tag()` of the size, linked to `url`, in a `[caption]` when there is one
 /// (`image_add_caption()`).
 #[allow(clippy::too_many_arguments)]
-async fn image_send_to_editor(env: &AdminEnv<'_>, post: &rustpress_db::Post, caption: &str, align: &str, url: &str, rel: bool, size: &str, alt: &str) -> String {
+pub(super) async fn image_send_to_editor(env: &AdminEnv<'_>, post: &rustpress_db::Post, caption: &str, align: &str, url: &str, rel: bool, size: &str, alt: &str) -> String {
     use rustpress_core::formatting::{esc_attr, esc_url};
     let (meta, attached) = rustpress_blocks::images::load_metadata(env.site, post).await.unwrap_or((None, None));
     let full = rustpress_blocks::images::attachment_url(env.site, attached.as_deref().unwrap_or_default());

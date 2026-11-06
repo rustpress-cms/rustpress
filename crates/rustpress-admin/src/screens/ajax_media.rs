@@ -264,6 +264,7 @@ fn attachment_query(request: &AdminRequest) -> AttachmentQuery {
     }
     if let Some(search) = q("s") {
         query.search = Some(search.to_owned());
+        query.search_terms = rustpress_core::query::parse_search_terms(search, false);
     }
     if let Some(order) = q("order") {
         query.desc = !order.eq_ignore_ascii_case("asc");
@@ -444,7 +445,7 @@ async fn crop_image(ctx: &Ctx<'_>) -> AdminResponse {
     let cropped_name = cropped.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
     let parent_url = rustpress_blocks::images::attachment_url(env.site, &attached);
     let url = parent_url.replace(&basename(&parent_url), &cropped_name);
-    let sanitized_title = crate::sanitize::file_name(&parent.post_title);
+    let sanitized_title = crate::sanitize::file_name(&parent.post_title, &env.site.locale());
     let parent_basename = basename(&parent_url);
     let parent_stem = parent_basename.rsplit_once('.').map_or(parent_basename.clone(), |(a, _)| a.to_owned());
     let use_original_title = !parent.post_title.trim().is_empty() && parent_basename != sanitized_title && parent_stem != sanitized_title;

@@ -92,20 +92,37 @@ pub fn key(key: &str) -> String {
     key.to_lowercase().chars().filter(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '_' | '-')).collect()
 }
 
-/// `sanitize_file_name( $filename )` for the characters that matter on a file system.
-pub fn file_name(name: &str) -> String {
-    let special = ['?', '[', ']', '/', '\\', '=', '<', '>', ':', ';', ',', '\'', '"', '&', '$', '#', '*', '(', ')', '|', '~', '`', '!', '{', '}', '%', '+', '\u{2018}', '\u{2019}', '\u{201c}', '\u{201d}', '\u{00ab}', '\u{00bb}', '\u{2039}', '\u{203a}', '\u{2014}', '\u{2013}', '\u{00a0}'];
-    let mut cleaned: String = name.chars().filter(|c| !special.contains(c) && !c.is_control()).collect();
-    cleaned = cleaned.split_whitespace().collect::<Vec<_>>().join("-");
-    let mut collapsed = String::new();
+/// `sanitize_file_name( $filename )` up to the extensions, which `mark_inner_extensions()` looks at once the allowed
+/// types are known. The extension is lowercased, as `wp_unique_filename()` does afterwards.
+pub fn file_name(name: &str, locale: &str) -> String {
+    const SPECIAL: [char; 33] = [
+        '?', '[', ']', '/', '\\', '=', '<', '>', ':', ';', ',', '\'', '"', '&', '$', '#', '*', '(', ')', '|', '~', '`', '!', '{', '}', '%', '+', '\u{2019}', '\u{ab}', '\u{bb}', '\u{201d}', '\u{201c}', '\0',
+    ];
+    // `\p{Zs}` becomes a space.
+    let is_space = |c: char| matches!(c, '\u{a0}' | '\u{1680}' | '\u{2000}'..='\u{200a}' | '\u{202f}' | '\u{205f}' | '\u{3000}');
+    let plain = rustpress_core::slug::remove_accents(name, locale);
+    let cleaned: String = plain.chars().map(|c| if is_space(c) { ' ' } else { c }).filter(|c| !SPECIAL.contains(c)).collect();
+    // `/\.{2,}/` and `/[\r\n\t -]+/`.
+    let mut collapsed = String::with_capacity(cleaned.len());
+    let mut last = None;
     for c in cleaned.chars() {
-        if c == '-' && collapsed.ends_with('-') {
-            continue;
+        let class = match c {
+            '.' => Some('.'),
+            '\r' | '\n' | '\t' | ' ' | '-' => Some('-'),
+            _ => None,
+        };
+        if class.is_none() || class != last {
+            collapsed.push(class.unwrap_or(c));
         }
-        collapsed.push(c);
+        last = class;
     }
     let collapsed = collapsed.trim_matches(['.', '-', '_']).to_owned();
-    // Non-ASCII letters are kept; the extension is lowercased like WordPress's mime handling expects.
+    if !collapsed.contains('.') {
+        // A file called `jpg` would pass for a file without a name.
+        if let Some((ext, _)) = crate::media::check_filetype(&format!("test.{collapsed}")).filter(|(ext, _)| *ext == collapsed) {
+            return format!("unnamed-file.{ext}");
+        }
+    }
     match collapsed.rsplit_once('.') {
         Some((stem, ext)) if !stem.is_empty() => format!("{stem}.{}", ext.to_lowercase()),
         _ => collapsed,
@@ -169,6 +186,30 @@ pub fn sanitize_email(email: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sanitize_file_name_like_wordpress() {
+        for (name, expected) in [
+            ("Gr\u{fc}\u{df}e aus K\u{f6}ln.JPG", "Gruse-aus-Koln.jpg"),
+            ("a b  c.png", "a-b-c.png"),
+            ("a--b__c.png", "a-b__c.png"),
+            ("..a..b...png", "a.b.png"),
+            ("-_.x._-", "x"),
+            ("jpg", "unnamed-file.jpg"),
+            ("x", "x"),
+            ("tab\tname.png", "tab-name.png"),
+            ("nbsp\u{a0}x.png", "nbsp-x.png"),
+            ("a+b%20c.png", "ab20c.png"),
+            ("quote'\"&.png", "quote.png"),
+            ("\u{ab}x\u{bb}\u{201c}y\u{201d}\u{2019}.png", "xy.png"),
+            ("\u{c6}\u{d8}\u{c5} \u{df}.png", "AEOA-s.png"),
+            ("file.tar.gz", "file.tar.gz"),
+        ] {
+            assert_eq!(file_name(name, "en_US"), expected, "{name}");
+        }
+        // German spells the umlauts out.
+        assert_eq!(file_name("Gr\u{fc}\u{df}e.png", "de_DE"), "Gruesse.png");
+    }
 
     #[test]
     fn sanitize_text_field_like_wordpress() {

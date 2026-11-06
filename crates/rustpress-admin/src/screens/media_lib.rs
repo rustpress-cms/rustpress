@@ -210,6 +210,9 @@ async fn list_mode(ctx: &Ctx<'_>, title: String) -> AdminResponse {
     }
     if !search.is_empty() {
         query.search = Some(search.clone());
+        query.search_terms = rustpress_core::query::parse_search_terms(&search, false);
+        // `WP_Query` sorts by relevance unless the address names an order.
+        query.relevance = request.get("orderby").is_none_or(str::is_empty);
     }
     if month >= 190_000 {
         query.year = Some(month / 100);
@@ -280,14 +283,15 @@ async fn list_mode(ctx: &Ctx<'_>, title: String) -> AdminResponse {
         rows = format!("<tr class=\"no-items\"><td class=\"colspanchange\" colspan=\"5\">{}</td></tr>", tr("No media files found."));
     }
     let table_html = table.display(&nonce_field, "", "", &caption, &rows, &tr("Media items list"));
+    let table_html = table_html.replace(&format!("<h2 class='screen-reader-text'>{}</h2>", table.heading_pagination()), &format!("<h2 class='screen-reader-text'>{}</h2>", tr("Media items list navigation")));
 
     // Filters above the table.
-    let mime_counts = db.attachment_mime_counts().await.unwrap_or_default();
-    let count_of = |prefix: &str| mime_counts.iter().filter(|(m, _)| m.starts_with(prefix)).map(|(_, n)| *n).sum::<u64>();
+    let available = db.attachment_mime_types().await.unwrap_or_default();
     let mut options = format!("<option value=\"\">{}</option>\n", tr("All media items"));
-    for (prefix, key, label) in [("image/", "image", tr("Images")), ("audio/", "audio", tr("Audio")), ("video/", "video", tr("Video"))] {
-        if count_of(prefix) > 0 {
-            options.push_str(&format!("\t<option value=\"post_mime_type:{key}\"{}>{label}</option>\n", if selected_filter == format!("post_mime_type:{key}") { " selected='selected'" } else { "" }));
+    for (key, ..) in super::media_upload::mime_groups() {
+        if available.iter().any(|mime| super::media_upload::group_matches(key, mime)) {
+            let selected = selected_filter.strip_prefix("post_mime_type:").is_some_and(|value| !value.is_empty() && value.split(',').any(|m| super::media_upload::group_matches(key, m.trim())));
+            options.push_str(&format!("\t<option value=\"post_mime_type:{}\"{}>{}</option>\n", esc_attr(key), if selected { " selected='selected'" } else { "" }, super::media_upload::group_label(ctx, key)));
         }
     }
     // Written out, not `selected()`: double quotes.
@@ -295,10 +299,11 @@ async fn list_mode(ctx: &Ctx<'_>, title: String) -> AdminResponse {
     options.push_str(&format!("\t<option value=\"mine\"{}>{}</option>\n", if filter == "mine" { " selected='selected'" } else { "" }, tr("Mine")));
     // `months_dropdown()`: `selected()` gives ` selected='selected'` or nothing.
     let mut months = format!("\t\t\t<option{} value=\"0\">{}</option>\n", if month == 0 { " selected='selected'" } else { "" }, tr("All dates"));
-    for (year, m) in db.attachment_months().await.unwrap_or_default() {
+    // Only the first one has the indentation of the `<?php` before the loop.
+    for (index, (year, m)) in db.attachment_months().await.unwrap_or_default().into_iter().enumerate() {
         let value = format!("{year}{m:02}");
         let name = site.locale_data().month[(m as usize).saturating_sub(1).min(11)].clone();
-        months.push_str(&format!("\t\t<option {} value='{value}'>{}</option>\n", if month.to_string() == value { " selected='selected'" } else { "" }, esc_html(&sprintf(&tr("%1$s %2$d"), &[&name, &year.to_string()]))));
+        months.push_str(&format!("{}<option {} value='{value}'>{}</option>\n", if index == 0 { "\t\t" } else { "" }, if month.to_string() == value { " selected='selected'" } else { "" }, esc_html(&sprintf(&tr("%1$s %2$d"), &[&name, &year.to_string()]))));
     }
     let mut h = format!("<div class=\"wrap\">\n<h1 class=\"wp-heading-inline\">{}</h1>\n\n", esc_html(&title));
     h.push_str(&format!("\t<a href=\"{}\" class=\"page-title-action\">{}</a>\n\t\t\t\t\t\t", esc_url(&ctx.admin_url("media-new.php")), tr("Add Media File")));
@@ -383,23 +388,31 @@ async fn row(ctx: &Ctx<'_>, post: &Post, detached: bool) -> String {
     let meta = db.post_meta(post.id).await.unwrap_or_default();
     let value = |key: &str| meta.iter().find(|m| m.meta_key.as_deref() == Some(key)).and_then(|m| m.meta_value.clone());
     let attached = value("_wp_attached_file").unwrap_or_default();
-    let url = rustpress_blocks::images::attachment_url(site, &attached);
+    // `wp_get_attachment_url()`: the GUID of a row without a file.
+    let url = if attached.is_empty() { post.guid.clone() } else { rustpress_blocks::images::attachment_url(site, &attached) };
     let metadata = value("_wp_attachment_metadata").and_then(|raw| rustpress_blocks::images::Metadata::parse(&raw));
     let kind = post.post_mime_type.split('/').next().unwrap_or_default();
-    let title = if post.post_title.is_empty() { tr("(no title)") } else { post.post_title.clone() };
+    // `_draft_or_post_title()`, before its `esc_html()`.
+    let title = rustpress_blocks::content::the_title_in_admin(site, post);
+    let title = if title.is_empty() { tr("(no title)") } else { title };
     let quote = format!("&#8220;{}&#8221;", esc_html(&title));
     let edit_url = super::common::edit_post_link(ctx, post.id, false).await;
     // The icon: a 60x60 thumbnail for images.
-    let icon = if kind == "image" {
+    let icon = if kind == "image" && !attached.is_empty() {
         let thumb = metadata.as_ref().and_then(|m| rustpress_blocks::images::intermediate_size(&url, m, 60, 60));
         let (src, w, h) = thumb.unwrap_or_else(|| {
-            let (w, h) = metadata.as_ref().map_or((60, 60), |m| (m.width(), m.height()));
+            // `wp_constrain_dimensions()` of a file without dimensions gives 1 by 1.
+            let (w, h) = metadata.as_ref().map_or((1, 1), |m| (m.width(), m.height()));
             (url.clone(), w, h)
         });
         let (w, h) = rustpress_blocks::images::constrain_dimensions(w, h, 60, 60);
         format!("<span class=\"media-icon image-icon\"><img width=\"{w}\" height=\"{h}\" src=\"{}\" class=\"attachment-60x60 size-60x60\" alt=\"\" decoding=\"async\" loading=\"lazy\" /></span>", esc_url(&src))
     } else {
-        let icon_url = format!("{}/wp-includes/images/media/{}", site.settings.siteurl.trim_end_matches('/'), super::ajax_media::mime_icon_as(&post.post_mime_type, super::ajax_media::screen_icon_ext(ctx, "upload.php", None)));
+        let extension = super::ajax_media::screen_icon_ext(ctx, "upload.php", None);
+        // `wp_mime_type_icon()`: documents, spreadsheets and archives are told by the extension of the file.
+        let by_type = !attached.is_empty() || ["audio/", "video/", "text/"].iter().any(|prefix| post.post_mime_type.starts_with(prefix));
+        let icon_name = if by_type { super::ajax_media::mime_icon_as(&post.post_mime_type, extension) } else { format!("default.{extension}") };
+        let icon_url = format!("{}/wp-includes/images/media/{icon_name}", site.settings.siteurl.trim_end_matches('/'));
         format!("<span class=\"media-icon {kind}-icon\"><img width=\"48\" height=\"64\" src=\"{}\" class=\"attachment-60x60 size-60x60\" alt=\"\" decoding=\"async\" loading=\"lazy\" /></span>", esc_url(&icon_url))
     };
     let can_edit = ctx.user.can_edit_post(post);
@@ -453,7 +466,8 @@ async fn row(ctx: &Ctx<'_>, post: &Post, detached: bool) -> String {
             String::new()
         },
         file = tr("File"),
-        label = esc_attr(&title),
+        // `get_primary_column_aria_label()`.
+        label = esc_attr(&rustpress_core::formatting::wp_strip_all_tags(&rustpress_core::formatting::html_entity_decode(&esc_html(&title)))),
         filename_label = tr("File name:"),
         filename = esc_html(attached.rsplit('/').next().unwrap_or_default()),
         actions = row_actions(site, &actions).trim_start_matches("").to_owned(),

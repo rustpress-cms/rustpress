@@ -105,7 +105,8 @@ The reference stack, the tools and the working rules are in [AGENTS.md](AGENTS.m
   `de_DE_formal`, a command `rustpress i18n install <locale>`.
 
 **Sign-in, administration, REST**
-- `customize.php` and `media-upload.php` (postponed until the test on a real web server in CGI mode).
+- `customize.php`. `nav-menus.php` and `widgets.php` for classic themes: they still answer with the error of a block theme,
+  although the toolbar of Twenty Seventeen links to them.
 - Widgets: writing widgets and sidebars, the forms of classic widgets, `widget-types/<id>/encode|render`, `rendered`
   of registered sidebars.
 - `parse-media-shortcode` with a preview (the scripts of `wp-mediaelement`/`wp-playlist`).
@@ -758,3 +759,33 @@ real all the same, on any site with those addresses:
 
 Compared in `dev/block-states-compare.py` (a page with submenus) and `rustpress-compat`: the copy of the real site with
 plain permalinks 322 URLs and with `/%postname%/` 539 URLs, Twenty Twenty-Five 921 URLs, 0 unexpected differences in each.
+
+### `media-upload.php` (2026-11-06)
+
+The upload window from before the media modal, in `rustpress-admin/src/screens/media_upload.rs`: `wp_iframe()` as a frame mode
+of `chrome::render()` (`FrameKind`, with `?inline` loading as a screen does), the four tabs (From Computer, From URL, Gallery,
+Media Library), `get_media_item()`, `media_upload_form_handler()`, uploading with the browser uploader and inserting from a
+URL. Quirks kept: `get_media_items()` sorts by `menu_order DESC, ID DESC`, because `WP_Query` splits `menu_order ASC, ID` at
+spaces; the library asks for `upload_per_page` rows from an offset of `(paged - 1) * 10` and counts pages by 10, unless a
+type was asked for by the media button; the "Save all changes" button of the upload tab saves nothing; `$_GET` values are
+printed with their slashes; `post_id` is checked with `is_numeric()` by `get_post()`, so `1abc` is refused, and used with
+`(int)` everywhere else.
+
+What the comparison found elsewhere:
+
+- **`sanitize_file_name()`** was an approximation. Accents stayed in the names of uploaded files (`Köln.jpg`, on a German
+  site `Koeln.jpg`). Now a port, tested against the reference.
+- **`media_handle_upload()`:** a file attached to a post goes in the folder of the post's date (pages are not backdated), and
+  the title comes from the name as it was sent, not from the file after `wp_unique_filename()`.
+- **Searching attachments:** terms are split as in `WP_Query::parse_search_terms()`, and `upload.php` and the library sort by
+  relevance (`parse_search_order()`) unless the address names an order.
+- **`upload.php`:** the filters for documents, spreadsheets and archives, the months after the first, the heading of the
+  pagination, titles through `get_the_title()`, the label of the row, the GUID of a row without a file.
+- **`get_submit_button()`:** `compact` is shorthand for `button-compact`.
+
+`wp_mime_type_icon()` tells documents, spreadsheets and archives by the extension of the file, the port by the MIME type; they
+only part for a file whose extension contradicts its type.
+
+Compared in `dev/media-upload-compare.py`: the whole page and the headers as five roles, the forms with the rows they leave
+behind, uploads, and 30 attachments of every kind for the pagination, the type filters and the search.
+
