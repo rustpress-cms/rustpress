@@ -3,12 +3,12 @@
 mod actions;
 
 use rustpress_core::OrLog;
-use rustpress_auth::password::check_password;
+use rustpress_auth::password::{check_password, hash_password, needs_rehash};
 use rustpress_auth::setcookie::{CookiePaths, SetCookie};
 use rustpress_auth::{Auth, CurrentUser, Roles, Scheme, session};
 use rustpress_core::Site;
 use rustpress_core::formatting::{esc_attr, esc_html, esc_url};
-use rustpress_db::{AuthUser, Db, Writer};
+use rustpress_db::{AuthUser, Db, Val, Writer};
 
 use crate::deps::Ver;
 use crate::registry::{LoaderEnv, default_scripts, default_styles};
@@ -272,7 +272,7 @@ impl LoginEnv<'_> {
         let by_login = self.db.auth_user_by_login(&username).await.ok().flatten();
         let by_email = if by_login.is_none() && username.contains('@') { self.db.auth_user_by_email(&username).await.ok().flatten() } else { None };
         let is_email = by_login.is_none() && username.contains('@');
-        let Some(user) = by_login.or(by_email) else {
+        let Some(mut user) = by_login.or(by_email) else {
             if is_email {
                 return Err(vec![error("invalid_email", self.tr("Unknown email address. Check again or try your username."))]);
             }
@@ -288,6 +288,13 @@ impl LoginEnv<'_> {
                 rustpress_core::i18n::sprintf(&self.tr("<strong>Error:</strong> The password you entered for the username %s is incorrect."), &[&format!("<strong>{}</strong>", esc_html(&username))])
             };
             return Err(vec![error("incorrect_password", format!("{subject} <a href=\"{}\">{}</a>", self.lostpassword_url(), self.tr("Lost your password?")))]);
+        }
+        // `wp_password_needs_rehash()` and `wp_set_password()`. The sign-in cookie is made from the new hash, as
+        // `wp_generate_auth_cookie()` reads the user again. Without write access the stored hash stays.
+        if let (true, Some(writer)) = (needs_rehash(&user.user_pass), self.writer) {
+            let hash = hash_password(password);
+            writer.update_rows("users", "ID", user.id, &[("user_pass", Val::Str(hash.clone())), ("user_activation_key", Val::Str(String::new()))]).await.or_log();
+            user.user_pass = hash;
         }
         Ok(user)
     }
@@ -553,6 +560,12 @@ impl LoginEnv<'_> {
         let mut errors: Vec<LoginError> = Vec::new();
         match outcome {
             Ok(user) => {
+                // `wp_signon()`: a successful sign-in clears `user_activation_key`.
+                if let Some(writer) = self.writer
+                    && !self.db.user_activation_key(user.id).await.unwrap_or_default().is_empty()
+                {
+                    writer.update_rows("users", "ID", user.id, &[("user_activation_key", Val::Str(String::new()))]).await.or_log();
+                }
                 if credentials_given {
                     // Sign in: a session and the cookies.
                     let Some(writer) = self.writer else {

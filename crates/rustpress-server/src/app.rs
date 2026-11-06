@@ -718,7 +718,9 @@ async fn rest_edit_route(app: &Arc<App>, request: Request<Body>) -> std::result:
     }
     let (parts, body) = request.into_parts();
     let mut method = parts.method.as_str().to_owned();
-    if let Some(over) = parts.headers.get("x-http-method-override").and_then(|v| v.to_str().ok()) {
+    // `WP_REST_Server::serve_request()`: `$_GET['_method']`, then the header; `set_method()` upper-cases.
+    let requested = rest_query.split('&').find_map(|pair| pair.strip_prefix("_method=")).map(|value| String::from_utf8_lossy(&rustpress_core::rewrite::urldecode(value.replace('+', " ").as_bytes())).into_owned());
+    if let Some(over) = requested.as_deref().or_else(|| parts.headers.get("x-http-method-override").and_then(|v| v.to_str().ok())) {
         method = over.to_uppercase();
     }
     let is_read = matches!(method.as_str(), "GET" | "HEAD");

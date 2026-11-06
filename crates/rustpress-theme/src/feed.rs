@@ -242,10 +242,6 @@ pub async fn render_feed(theme: &Theme, site: &Site, q: &QueryResult, registry: 
         && (q.vars.get("withcomments").is_some_and(|v| !v.is_empty() && v != "0")
             || feed_var.contains("comments-")
             || (!q.vars.get("withoutcomments").is_some_and(|v| !v.is_empty() && v != "0") && singular));
-    // Comment feeds of archives and searches are not supported.
-    if comment_feed && !singular && (q.flags.is_archive || q.flags.is_search) {
-        return Ok(None);
-    }
 
     let self_url = format!("{}{}", site.settings.home.trim_end_matches('/').split("://").next().map_or(String::new(), |s| format!("{s}://")) + site.settings.home.trim_end_matches('/').split("://").nth(1).unwrap_or("").split('/').next().unwrap_or(""), request_uri);
     let self_url = esc_url(&self_url);
@@ -277,8 +273,12 @@ pub async fn render_feed(theme: &Theme, site: &Site, q: &QueryResult, registry: 
 
     let comments: Vec<Comment> = if comment_feed {
         let post_id = if singular { q.posts.first().map(|p| p.id) } else { None };
-        if singular && post_id.is_none() {
+        // A term that does not exist: `get_posts()` has no posts, so the comments of none.
+        let unknown_term = !singular && q.feed_comments.is_none() && (q.flags.is_category || q.flags.is_tag || q.flags.is_tax);
+        if (singular && post_id.is_none()) || unknown_term {
             Vec::new()
+        } else if let Some(comments) = &q.feed_comments {
+            comments.clone()
         } else {
             site.db.feed_comments(post_id, site.settings.posts_per_rss).await?
         }
@@ -288,7 +288,7 @@ pub async fn render_feed(theme: &Theme, site: &Site, q: &QueryResult, registry: 
     let built = build_date(site, q, &comments, comment_feed).await?;
     // The posts of a comment feed that is not about one post are those of the latest comments.
     let posts_of_comments;
-    let q = if comment_feed && !singular && matches!(kind, Kind::Rdf | Kind::Rss092) {
+    let q = if comment_feed && !singular && q.feed_comments.is_none() && matches!(kind, Kind::Rdf | Kind::Rss092) {
         let ids: Vec<u64> = comments.iter().map(|c| c.comment_post_id).collect();
         let posts = if ids.is_empty() { Vec::new() } else { site.db.posts(&rustpress_db::PostQuery { ids, statuses: vec!["publish".into()], post_types: site.types.public_post_types().into_iter().map(str::to_owned).collect(), limit: Some(site.settings.posts_per_rss), ..Default::default() }).await? };
         posts_of_comments = QueryResult { posts, ..q.clone() };
@@ -498,6 +498,12 @@ async fn protected_form(c: &Ctx<'_>, post: &Post) -> Result<String> {
     Ok(rustpress_blocks::content::password_form(&c.env, post).await?)
 }
 
+/// The title of the comment feeds of a search: the site title and `get_search_query()`.
+fn search_heading(c: &Ctx<'_>, q: &QueryResult) -> String {
+    let name = bloginfo_rss(&c.site.settings.blogname);
+    sprintf(&ent2ncr(&c.site.tr("Comments for %1$s searching on %2$s")), &[&name, &esc_attr(q.vars.get("s").unwrap_or_default())])
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn rss2_comments(c: &Ctx<'_>, q: &QueryResult, comments: &[Comment], self_url: &str, home: &str, description: &str, title: &str, built: &str) -> Result<String> {
     let singular = q.flags.is_singular();
@@ -506,6 +512,7 @@ async fn rss2_comments(c: &Ctx<'_>, q: &QueryResult, comments: &[Comment], self_
     let heading = match &post {
         Some(p) => sprintf(&ent2ncr(&c.site.tr("Comments on: %s")), &[&c.title_rss(p)]),
         None if singular => sprintf(&ent2ncr(&c.site.tr("Comments on: %s")), &[""]),
+        None if q.flags.is_search => search_heading(c, q),
         None => sprintf(&ent2ncr(&c.site.tr("Comments for %s")), &[title]),
     };
     let link = match &post {
@@ -559,6 +566,7 @@ async fn atom_comments(c: &Ctx<'_>, q: &QueryResult, comments: &[Comment], _self
     let heading = match &post {
         Some(p) => sprintf(&ent2ncr(&c.site.tr("Comments on %s")), &[&c.title_rss(p)]),
         None if singular => sprintf(&ent2ncr(&c.site.tr("Comments on %s")), &[""]),
+        None if q.flags.is_search => search_heading(c, q),
         None => sprintf(&ent2ncr(&c.site.tr("Comments for %s")), &[title]),
     };
     let mut out = String::new();
@@ -581,6 +589,15 @@ async fn atom_comments(c: &Ctx<'_>, q: &QueryResult, comments: &[Comment], _self
 	<link rel=\"self\" type=\"application/atom+xml\" href=\"\" />
 	<id></id>
 "),
+        None if q.flags.is_search => {
+            let words = q.vars.get("s").unwrap_or_default();
+            let feed_link = crate::head::search_comments_feed_link(c.site, words, "atom");
+            out.push_str(&format!(
+                "\t<link rel=\"alternate\" type=\"text/html\" href=\"{}?s={}\" />\n\t<link rel=\"self\" type=\"application/atom+xml\" href=\"{feed_link}\" />\n\t<id>{feed_link}</id>\n",
+                c.site.settings.home.trim_end_matches('/'),
+                esc_attr(words)
+            ));
+        }
         None => {
             let atom_url = bloginfo_rss(&main_feed_link(c.site, "atom", true));
             out.push_str(&format!("\t<link rel=\"alternate\" type=\"text/html\" href=\"{home}\" />\n\t<link rel=\"self\" type=\"application/atom+xml\" href=\"{atom_url}\" />\n\t<id>{atom_url}</id>\n"));

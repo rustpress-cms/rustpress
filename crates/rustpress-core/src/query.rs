@@ -3,7 +3,7 @@
 //! `WP::parse_request`, `WP_Query::parse_query` / `get_posts` and
 //! `WP::handle_404`.
 
-use rustpress_db::{OrderBy, Post, PostQuery, Term, User};
+use rustpress_db::{Comment, OrderBy, Post, PostQuery, Term, User};
 
 use crate::Result;
 use crate::rewrite::{QueryVars, request_path};
@@ -87,6 +87,8 @@ pub struct QueryResult {
     pub queried: Queried,
     pub found_posts: u64,
     pub max_pages: u64,
+    /// `WP_Query::$comments` of the comment feed of an archive or a search; its `posts` are those of these comments.
+    pub feed_comments: Option<Vec<Comment>>,
     /// Current page of an archive (1-based).
     pub paged: u64,
     pub per_page: u64,
@@ -129,6 +131,24 @@ impl QueryResult {
     }
 }
 
+/// `WP_Query::parse_search()`: the words of a search address (`/search/a%26b/`) are still encoded, those of
+/// `$_GET['s']` are not. Line breaks are removed from both.
+fn decode_search(vars: &mut QueryVars, query_string: &str) {
+    let Some(mut words) = vars.get("s").filter(|s| !s.is_empty()).map(str::to_owned) else { return };
+    let from_get = QueryVars::parse(query_string).get("s").is_some_and(|s| !s.is_empty() && s != "0");
+    if !from_get {
+        // Only `$_GET` carries the slashes `stripslashes()` removes again.
+        let mut plain = String::with_capacity(words.len());
+        let mut chars = words.chars();
+        while let Some(c) = chars.next() {
+            plain.extend(if c == '\\' { chars.next() } else { Some(c) });
+        }
+        words = String::from_utf8_lossy(&crate::rewrite::urldecode(plain.as_bytes())).into_owned();
+    }
+    words.retain(|c| c != '\r' && c != '\n');
+    vars.set("s", words);
+}
+
 impl QueryResult {
     pub(crate) fn new(vars: QueryVars, matched_rule: Option<String>) -> Self {
         Self {
@@ -138,6 +158,7 @@ impl QueryResult {
             queried: Queried::None,
             found_posts: 0,
             max_pages: 0,
+            feed_comments: None,
             paged: 1,
             per_page: 10,
             matched_rule,
@@ -238,6 +259,7 @@ impl Site {
         }
 
         self.map_type_vars(&mut vars);
+        decode_search(&mut vars, query_string);
         let mut result = QueryResult::new(vars, matched_rule);
         result.viewer = viewer.cloned();
         result.url_path = url_path.to_owned();
@@ -591,6 +613,21 @@ impl Site {
             posts = self.db.posts(&q).await?;
             found = self.db.count_posts(&q).await?;
             r.max_pages = found.div_ceil(r.per_page);
+            // `WP_Query::get_posts()`: the comment feed of an archive or a search takes the comments of the posts it
+            // found, then its posts become those of the comments (`$where` is only their IDs).
+            let flag = |key: &str| v.get(key).is_some_and(|value| !value.is_empty() && value != "0");
+            if f.is_feed && (f.is_archive || f.is_search) && (flag("withcomments") || v.get("feed").is_some_and(|feed| feed.contains("comments-"))) {
+                let comments = self.db.feed_comments_of_posts(&q, s.posts_per_rss).await?;
+                let mut ids: Vec<u64> = comments.iter().map(|c| c.comment_post_id).collect();
+                ids.sort_unstable();
+                ids.dedup();
+                posts = if ids.is_empty() {
+                    Vec::new()
+                } else {
+                    self.db.posts(&PostQuery { ids, post_types: Vec::new(), statuses: Vec::new(), limit: q.limit, offset: q.offset, ..PostQuery::default() }).await?
+                };
+                r.feed_comments = Some(comments);
+            }
             if f.is_home && paged <= 1 && !s.sticky_posts.is_empty() {
                 posts = self.with_sticky_first(posts).await?;
             }

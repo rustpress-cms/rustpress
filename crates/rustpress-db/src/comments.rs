@@ -121,6 +121,16 @@ impl Db {
         Ok(query.fetch_all(&self.pool).await?)
     }
 
+    /// The comments of the comment feed of an archive or a search, newest first: `WP_Query::get_posts()` keeps the
+    /// `$join` and `$where` of the posts of the request for `$comments_request`.
+    pub async fn feed_comments_of_posts(&self, posts: &crate::PostQuery, limit: u64) -> Result<Vec<Comment>> {
+        let table = self.prefix.table("comments");
+        let mut qb = crate::sql::Sql::new(format!("SELECT {COMMENT_COLUMNS} FROM {table} WHERE comment_approved = '1' AND comment_type != 'note' AND comment_post_ID IN (SELECT p.ID"));
+        posts.push_filters(&mut qb, self);
+        qb.push(format!(") ORDER BY comment_date_gmt DESC LIMIT {limit}"));
+        qb.fetch_all(&self.pool).await
+    }
+
     /// Public (approved) comments matching `query`, newest/oldest first as asked.
     pub async fn comments_query(&self, query: &CommentQuery) -> Result<Vec<Comment>> {
         let mut qb = crate::sql::Sql::new(format!("SELECT {COMMENT_COLUMNS}"));

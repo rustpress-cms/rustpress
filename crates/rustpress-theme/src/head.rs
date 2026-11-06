@@ -14,6 +14,16 @@ fn search_link(site: &Site, words: &str) -> String {
     site.user_trailingslashit(&site.home_url(&format!("{}search/{encoded}", site.root())))
 }
 
+/// `get_search_comments_feed_link()` for the current search words.
+pub(crate) fn search_comments_feed_link(site: &Site, words: &str, feed: &str) -> String {
+    if !site.uses_pretty_permalinks() {
+        let link = site.home_url(&format!("?s={}", rustpress_core::canonical::php_urlencode(words)));
+        return rustpress_core::urls::add_query_arg(&link, "feed", &format!("comments-{feed}"));
+    }
+    let link = format!("{}feed/{feed}/", trailingslashit(&search_link(site, words)));
+    rustpress_core::urls::add_query_arg(&link, "withcomments", "1")
+}
+
 /// `feed_links()` and `feed_links_extra()`.
 pub async fn feed_links(site: &Site, q: &QueryResult) -> Result<String> {
     let name = &site.settings.blogname;
