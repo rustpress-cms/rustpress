@@ -193,6 +193,10 @@ pub struct State {
     pub audio_instances: u64,
     pub video_instances: u64,
     pub mediaelement: bool,
+    /// `wp_playlist_scripts()` ran.
+    pub playlist: bool,
+    /// `static $instance` of `wp_playlist_shortcode()`.
+    pub playlist_instances: u64,
     pub vimeo: bool,
     /// Duotone filters used on the page.
     pub duotone: crate::duotone::DuotoneState,

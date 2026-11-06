@@ -7,7 +7,7 @@ use regex::Regex;
 
 /// The shortcodes WordPress registers itself, in registration order. Others come from plugins,
 /// which do not run here; their tags stay in the text.
-pub const CORE_TAGS: &[&str] = &["wp_playlist", "audio", "video", "embed", "caption", "wp_caption", "gallery"];
+pub const CORE_TAGS: &[&str] = &["playlist", "audio", "video", "embed", "caption", "wp_caption", "gallery"];
 
 /// One match of `get_shortcode_regex()`.
 #[derive(Debug, Clone, PartialEq, Eq)]

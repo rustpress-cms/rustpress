@@ -9,6 +9,11 @@ use crate::env::Env;
 const AUDIO_EXTENSIONS: [&str; 5] = ["mp3", "ogg", "flac", "m4a", "wav"];
 const VIDEO_EXTENSIONS: [&str; 5] = ["mp4", "m4v", "webm", "ogv", "flv"];
 
+/// The type `wp_check_filetype()` finds for a media address.
+pub(crate) fn media_type(url: &str) -> Option<&'static str> {
+    check_filetype(url).map(|(_, mime)| mime)
+}
+
 /// `wp_check_filetype()` for media: `(extension, mime type)` of a URL.
 fn check_filetype(url: &str) -> Option<(String, &'static str)> {
     let path = url.split(['?', '#']).next().unwrap_or(url);
@@ -44,8 +49,8 @@ fn check_filetype(url: &str) -> Option<(String, &'static str)> {
     Some((ext, mime))
 }
 
-fn validate_boolean(value: &str) -> bool {
-    !matches!(value.to_ascii_lowercase().as_str(), "" | "false" | "0" | "off" | "no")
+pub(crate) fn validate_boolean(value: &str) -> bool {
+    !value.is_empty() && value != "0" && !value.eq_ignore_ascii_case("false")
 }
 
 fn attr_value<'a>(atts: &'a Atts, name: &str, default: &'a str) -> &'a str {

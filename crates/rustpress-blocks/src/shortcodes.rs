@@ -61,6 +61,7 @@ async fn do_shortcode_tag(env: &Env<'_>, post: Option<&Arc<Post>>, text: &str, m
     let output = match m.name.as_str() {
         "caption" | "wp_caption" => Some(img_caption_shortcode(env, post, atts, m.content.as_deref().unwrap_or("")).await?),
         "gallery" => Some(gallery_shortcode(env, post, atts).await?),
+        "playlist" => Some(playlist_shortcode(env, post, atts).await?),
         "audio" => Some(crate::media_shortcodes::audio(env, post.map_or(0, |p| p.id), &atts).unwrap_or_default()),
         "video" => Some(crate::media_shortcodes::video(env, post.map_or(0, |p| p.id), &atts, m.content.as_deref().unwrap_or("")).unwrap_or_default()),
         // `WP_Embed` registers `[embed]` as `__return_false`; the real work happens before `wpautop()`.
@@ -176,6 +177,171 @@ pub async fn attachment_link_html(env: &Env<'_>, attachment: &Post, size: &str, 
 }
 
 /// `gallery_shortcode()` for a theme with HTML5 galleries.
+/// `wp_get_attachment_image_src( $id, $size )` as JSON.
+async fn image_source(env: &Env<'_>, id: u64, size: &str) -> Result<Option<serde_json::Value>> {
+    let Some(attachment) = env.site.db.post(id).await? else { return Ok(None) };
+    let (meta, attached) = images::load_metadata(env.site, &attachment).await?;
+    let (Some(meta), Some(attached)) = (meta, attached) else { return Ok(None) };
+    let image = images::image_downsize(&images::attachment_url(env.site, &attached), &meta, size);
+    Ok(Some(serde_json::json!({ "src": image.url, "width": image.width, "height": image.height })))
+}
+
+/// `wp_playlist_shortcode()`.
+async fn playlist_shortcode(env: &Env<'_>, post: Option<&Arc<Post>>, mut atts: Atts) -> Result<String> {
+    use serde_json::{Map, Value, json};
+    let site = env.site;
+    env.with_state(|s| s.playlist_instances += 1);
+    if let Some(ids) = atts.non_empty("ids").map(str::to_owned) {
+        // 'ids' is explicitly ordered, unless you specify otherwise.
+        if atts.non_empty("orderby").is_none() {
+            atts.set("orderby", "post__in");
+        }
+        atts.set("include", &ids);
+    }
+    let get = |name: &str, default: &str| atts.get(name).unwrap_or(default).to_owned();
+    let (order, orderby) = (get("order", "ASC"), get("orderby", "menu_order ID"));
+    let id = php_int(&get("id", &post.map_or(0, |p| p.id).to_string())) as u64;
+    let (include, exclude, style) = (get("include", ""), get("exclude", ""), get("style", "light"));
+    let kind = if get("type", "audio") == "audio" { "audio" } else { "video" };
+    let flag = |name: &str| atts.get(name).is_none_or(crate::media_shortcodes::validate_boolean);
+    let id_list = |list: &str| -> Vec<u64> { list.split(|c: char| !c.is_ascii_alphanumeric()).filter(|s| !s.is_empty()).map(|s| php_int(s) as u64).collect() };
+
+    let mut query = PostQuery { post_types: vec!["attachment".into()], statuses: vec!["inherit".into()], mime_prefix: Some(kind.into()), ..PostQuery::default() };
+    query.order = if order.eq_ignore_ascii_case("DESC") { Order::Desc } else { Order::Asc };
+    query.order_by = match orderby.to_lowercase().as_str() {
+        "post__in" => OrderBy::Include,
+        "title" => OrderBy::Title,
+        "id" => OrderBy::Id,
+        "date" => OrderBy::Date,
+        _ => OrderBy::MenuOrder,
+    };
+    let mut parent = 0;
+    if !is_empty(&include) {
+        query.ids = id_list(&include);
+        if query.ids.is_empty() {
+            return Ok(String::new());
+        }
+        // `get_posts()` shows exactly the included posts.
+        query.limit = Some(query.ids.len() as u64);
+    } else {
+        parent = id;
+        query.parent = Some(id);
+        if !is_empty(&exclude) {
+            query.exclude_ids = id_list(&exclude);
+        }
+    }
+    let attachments = site.db.posts(&query).await?;
+    if parent != 0 {
+        // Terminate the shortcode execution if the user cannot read the post or it is password-protected. A visitor
+        // has no `read` capability, so `current_user_can( 'read_post', ... )` fails for everybody who is not signed in.
+        let readable = match (&env.query.viewer, site.db.post(parent).await?) {
+            (Some(viewer), Some(p)) => viewer.can("read") && viewer.can_read_post(&p) && !post_password_required(&p),
+            _ => false,
+        };
+        if !readable {
+            return Ok(String::new());
+        }
+    }
+    if attachments.is_empty() {
+        return Ok(String::new());
+    }
+    let mut links = String::new();
+    if env.query.flags.is_feed {
+        let mut output = String::from("\n");
+        for attachment in &attachments {
+            output.push_str(&attachment_link_html(env, attachment, "thumbnail", false, &ImageArgs::default()).await?);
+            output.push('\n');
+        }
+        return Ok(output);
+    }
+
+    // `$content_width` is not set for block themes.
+    let (theme_width, default_height) = (640_u64, 360_u64);
+    let mut theme_height = default_height;
+    let mut tracks = Vec::new();
+    for attachment in &attachments {
+        let (meta, attached) = images::load_metadata(site, attachment).await?;
+        let url = attached.map_or_else(|| attachment.guid.clone(), |file| images::attachment_url(site, &file));
+        let mut track = Map::new();
+        track.insert("src".into(), Value::String(url.clone()));
+        track.insert("type".into(), crate::media_shortcodes::media_type(&url).map_or(Value::Bool(false), Value::from));
+        track.insert("title".into(), Value::String(attachment.post_title.clone()));
+        track.insert("caption".into(), Value::String(attachment.post_excerpt.clone()));
+        track.insert("description".into(), Value::String(attachment.post_content.clone()));
+        let mut track_meta = Map::new();
+        if let Some(meta) = &meta {
+            // `wp_get_attachment_id3_keys()`.
+            for key in ["artist", "album", "genre", "year", "length_formatted"] {
+                if let Some(value) = meta.0.get(key).filter(|v| !crate::style_engine::is_empty(v) && v.as_str() != Some("0")) {
+                    track_meta.insert(key.to_owned(), value.clone());
+                }
+            }
+        }
+        track.insert("meta".into(), Value::Object(track_meta));
+        if let (Some(meta), "video") = (&meta, kind) {
+            let (width, height) = (meta.width(), meta.height());
+            let (width, height) = if width != 0 && height != 0 {
+                theme_height = (height as f64 * theme_width as f64 / width as f64).round() as u64;
+                (Value::from(width), Value::from(height))
+            } else {
+                (Value::from(640), Value::from(default_height))
+            };
+            track.insert("dimensions".into(), json!({ "original": { "width": width, "height": height }, "resized": { "width": theme_width, "height": theme_height } }));
+        }
+        // The string itself decides here: `images="false"` counts as true.
+        if atts.get("images").is_none_or(|images| !images.is_empty() && images != "0") {
+            let thumb_id = images::post_thumbnail_id(env, attachment.id).await?;
+            if thumb_id != 0 {
+                if let Some(image) = image_source(env, thumb_id, "full").await? {
+                    track.insert("image".into(), image);
+                }
+                if let Some(thumb) = image_source(env, thumb_id, "thumbnail").await? {
+                    track.insert("thumb".into(), thumb);
+                }
+            } else {
+                // `wp_mime_type_icon( $id, '.svg' )`.
+                let icon = json!({ "src": format!("{}/wp-includes/images/media/{kind}.svg", site.settings.siteurl.trim_end_matches('/')), "width": 48, "height": 64 });
+                track.insert("image".into(), icon.clone());
+                track.insert("thumb".into(), icon);
+            }
+        }
+        tracks.push(Value::Object(track));
+        links.push_str(&format!("<li>{}</li>", attachment_link_html(env, attachment, "thumbnail", false, &ImageArgs::default()).await?));
+    }
+    let data = json!({
+        "type": kind,
+        "tracklist": flag("tracklist"),
+        "tracknumbers": flag("tracknumbers"),
+        "images": flag("images"),
+        "artists": flag("artists"),
+        "tracks": tracks,
+    });
+    // JSON_HEX_TAG | JSON_UNESCAPED_SLASHES.
+    let encoded = crate::php_json::encode_with(&data, crate::php_json::Flags { unescaped_slashes: true, unescaped_unicode: false }).replace('<', "\\u003C").replace('>', "\\u003E");
+    env.with_state(|s| {
+        if !s.playlist {
+            s.playlist = true;
+            s.note_block("wp:mediaelement");
+        }
+    });
+    let current = if kind == "audio" { "\t\t<div class=\"wp-playlist-current-item\"></div>\n\t" } else { "" };
+    let height = if kind == "video" { format!(" height=\"{theme_height}\"") } else { String::new() };
+    Ok(format!(
+        "<div class=\"wp-playlist wp-{kind}-playlist wp-playlist-{}\">\n\t{current}\t<{kind} controls=\"controls\" preload=\"none\" width=\"{}\"\n\t\t{height}\t></{kind}>\n\t<div class=\"wp-playlist-next\"></div>\n\t<div class=\"wp-playlist-prev\"></div>\n\t<noscript>\n\t<ol>\n\t\t{links}\t</ol>\n\t</noscript>\n\t<script type=\"application/json\" class=\"wp-playlist-script\">{encoded}</script>\n</div>\n\t",
+        rustpress_core::formatting::esc_attr(&style),
+        theme_width,
+    ))
+}
+
+/// `wp_underscore_playlist_templates()` on `wp_footer`, before everything else there.
+pub fn playlist_templates(site: &rustpress_core::Site) -> String {
+    let title = site.trx("&#8220;%s&#8221;", "playlist item title");
+    let templates = include_str!("playlist_templates.html")
+        .replace("{$title:{{ data.title }}}", &rustpress_core::i18n::sprintf(&title, &["{{ data.title }}"]))
+        .replace("{$title:{{{ data.title }}}}", &rustpress_core::i18n::sprintf(&title, &["{{{ data.title }}}"]));
+    format!("{templates}\t")
+}
+
 async fn gallery_shortcode(env: &Env<'_>, post: Option<&Arc<Post>>, mut atts: Atts) -> Result<String> {
     let site = env.site;
     let instance = env.with_state(|s| {

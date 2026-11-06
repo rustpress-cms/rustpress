@@ -158,6 +158,11 @@ impl<'s> ScriptPrinter<'s> {
     }
 
     /// The tags of a core script (with its dependencies), unless they were printed already.
+    /// Scripts that were printed another way.
+    pub fn mark_printed(&mut self, handles: &[&str]) {
+        self.printed.extend(handles.iter().map(|h| (*h).to_owned()));
+    }
+
     pub fn core(&mut self, handle: &str) -> String {
         if self.printed.iter().any(|h| h == handle) {
             return String::new();
