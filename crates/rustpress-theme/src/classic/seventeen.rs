@@ -1342,11 +1342,10 @@ async fn wp_footer(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State) -> Resul
 
 // ----------------------------------------------------------------------- page
 
-pub async fn render(ctx: &Ctx<'_>, registry: &Registry, extras: &crate::document::Extras) -> Result<Document> {
+/// `twentyseventeen_body_classes()`.
+pub(super) async fn add_body_classes(ctx: &Ctx<'_>, classes: &mut Vec<String>) -> Result<()> {
     let site = ctx.site;
     let q = ctx.q;
-    // Body classes: core's, then the theme's (`twentyseventeen_body_classes()`).
-    let mut classes = body_classes(ctx.theme, site, q).await?;
     if is_multi_author(site).await? {
         classes.push("group-blog".into());
     }
@@ -1374,6 +1373,15 @@ pub async fn render(ctx: &Ctx<'_>, registry: &Registry, extras: &crate::document
         _ => "light",
     };
     classes.push(format!("colors-{scheme}"));
+    Ok(())
+}
+
+pub async fn render(ctx: &Ctx<'_>, registry: &Registry, extras: &crate::document::Extras) -> Result<Document> {
+    let site = ctx.site;
+    let q = ctx.q;
+    // Body classes: core's, then the theme's (`twentyseventeen_body_classes()`).
+    let mut classes = body_classes(ctx.theme, site, q).await?;
+    add_body_classes(ctx, &mut classes).await?;
 
     let content_width = content_width(ctx);
     ctx.env.with_state(|s| s.content_width = content_width);

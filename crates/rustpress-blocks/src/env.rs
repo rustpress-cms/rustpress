@@ -208,6 +208,8 @@ pub struct State {
     pub active_patterns: HashSet<String>,
     /// Script modules that must be loaded on the page.
     pub script_modules: ModuleSet,
+    /// `render_block_core_navigation_submenu()` turned `color` on for the block type.
+    pub submenu_colors: bool,
     /// `block_core_image_render_lightbox()` is on `render_block_core/image`.
     pub image_lightbox: bool,
     /// `block_core_image_print_lightbox_overlay()` is on `wp_footer`.

@@ -75,6 +75,30 @@ POSTS = {
         (PARAGRAPH % attrs({'style': {'css': '</style><b>x'}})).replace('</style><b>', '\\u003c/style\\u003e\\u003cb\\u003e'),
         PARAGRAPH % attrs({'style': {'css': '  '}}),
     ],
+    'rpbs-submenu': [
+        '<!-- wp:navigation {"overlayMenu":"never","showSubmenuIcon":true} -->'
+        '<!-- wp:navigation-submenu {"label":"Eins <b>fett</b>","url":"http://example.com/a","kind":"custom","description":"Mehr","rel":"me","title":"T","opensInNewTab":true} -->'
+        '<!-- wp:navigation-link {"label":"Unten","url":"http://example.com/b","kind":"custom"} /-->'
+        '<!-- /wp:navigation-submenu -->'
+        '<!-- wp:navigation-submenu {"label":"Leer","url":"http://example.com/c","kind":"custom"} /-->'
+        '<!-- wp:navigation-submenu {"label":"Ohne Text"} --><!-- wp:navigation-link {"label":"","url":"http://example.com/d"} /--><!-- /wp:navigation-submenu -->'
+        '<!-- wp:navigation-submenu {"label":"Gel\u00f6scht","type":"page","id":999999,"kind":"post-type"} --><!-- wp:navigation-link {"label":"Weg","url":"http://example.com/e"} /--><!-- /wp:navigation-submenu -->'
+        '<!-- wp:navigation-submenu {"url":"http://example.com/f"} --><!-- wp:navigation-link {"label":"Kein Label","url":"http://example.com/g"} /--><!-- /wp:navigation-submenu -->'
+        '<!-- /wp:navigation -->',
+        '<!-- wp:navigation {"overlayMenu":"never","openSubmenusOnClick":true,"overlayTextColor":"accent-1","overlayBackgroundColor":"accent-2"} -->'
+        '<!-- wp:navigation-submenu {"label":"Klick","url":"http://example.com/h","kind":"custom","description":"D"} -->'
+        '<!-- wp:navigation-link {"label":"Unten","url":"http://example.com/i","kind":"custom"} /-->'
+        '<!-- /wp:navigation-submenu -->'
+        '<!-- /wp:navigation -->',
+        '<!-- wp:navigation {"overlayMenu":"never","showSubmenuIcon":false,"customOverlayTextColor":"#111111","customOverlayBackgroundColor":"#222222"} -->'
+        '<!-- wp:navigation-submenu {"label":"Bunt","url":"http://example.com/j","kind":"custom","textColor":"accent-3"} -->'
+        '<!-- wp:navigation-link {"label":"Unten","url":"http://example.com/k","kind":"custom"} /-->'
+        '<!-- /wp:navigation-submenu -->'
+        '<!-- wp:navigation-submenu {"label":"Danach","url":"http://example.com/l","kind":"custom","textColor":"accent-3","backgroundColor":"accent-4"} -->'
+        '<!-- wp:navigation-link {"label":"Unten","url":"http://example.com/m","kind":"custom"} /-->'
+        '<!-- /wp:navigation-submenu -->'
+        '<!-- /wp:navigation -->',
+    ],
     'rpbs-layout-flex': [
         group({'layout': {'type': 'flex'}, 'style': {'@mobile': {'layout': {'orientation': 'vertical'}}}}),
         group({'layout': {'type': 'flex', 'justifyContent': 'center'}, 'style': {'@mobile': {'layout': {'justifyContent': 'right'}}, '@tablet': {'layout': {'flexWrap': 'nowrap'}}}}),
@@ -148,7 +172,7 @@ def main():
         lines = int(args[i + 1])
         del args[i:i + 2]
     only = args[0] if args else ''
-    code = "<?php\nwp_custom_css_remove_filters();\n$made = array();\nforeach ( json_decode( base64_decode( '%s' ), true ) as $slug => $blocks ) {\n\t$made[] = wp_insert_post( array( 'post_title' => $slug, 'post_name' => $slug, 'post_status' => 'publish', 'post_date' => '2026-01-02 03:04:05', 'post_content' => wp_slash( implode( \"\\n\", $blocks ) ) ) );\n}\necho json_encode( $made );\n"
+    code = "<?php\nkses_remove_filters();\nwp_custom_css_remove_filters();\n$made = array();\nforeach ( json_decode( base64_decode( '%s' ), true ) as $slug => $blocks ) {\n\t$made[] = wp_insert_post( array( 'post_title' => $slug, 'post_name' => $slug, 'post_status' => 'publish', 'post_date' => '2026-01-02 03:04:05', 'post_content' => wp_slash( implode( \"\\n\", $blocks ) ) ) );\n}\necho json_encode( $made );\n"
     import base64
     ids = mbc.rcc.php(code % base64.b64encode(json.dumps(POSTS).encode()).decode())
     json.loads(ids)
@@ -161,7 +185,7 @@ def main():
             ta, tb = mbc.normalize(a[1], 8080), mbc.normalize(b[1], 3001)
             same = a[0] == b[0] and ta == tb
             bad += not same
-            seen = {name: ta.count(name) for name in ('wp-states-', 'wp-block-hidden-', '@media (width', 'wp-custom-css-')}
+            seen = {name: ta.count(name) for name in ('wp-states-', 'wp-block-hidden-', '@media (width', 'wp-custom-css-', 'wp-block-navigation-submenu')}
             print(('ok   ' if same else 'DIFF ') + f'{post} [{a[0]} {b[0]}] {len(ta)} {len(tb)} {seen}', flush=True)
             if not same:
                 la, lb = ta.split('\n'), tb.split('\n')

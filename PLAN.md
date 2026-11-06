@@ -46,7 +46,7 @@ The reference stack, the tools and the working rules are in [AGENTS.md](AGENTS.m
 - **Website** – equal to WordPress for the bundled block themes Twenty Twenty-Five, -Four, -Three and -Two (about 780
   URLs each: pages, patterns, feeds, sitemaps, REST, files; 0 unexpected differences), across eight permalink
   structures and a matrix of settings, and in de_DE, ru_RU, ar and ja. Twenty Seventeen on the maintainer's real site:
-  all HTML pages byte-identical (318 URLs). Covered: the main query and template hierarchy, canonical redirects, custom
+  539 URLs, 0 unexpected differences (2026-11-06). Covered: the main query and template hierarchy, canonical redirects, custom
   post types and taxonomies (from the stored rules and the literal `register_*()` calls of plugins and themes),
   shortcodes, embeds/oEmbed, the dynamic blocks including Interactivity, the comment form and submitting comments,
   previews and private content for signed-in users, the admin bar.
@@ -696,3 +696,23 @@ at first (the permalink structure was not put back, the language pack had not be
 - **Core:** `get_page_link()` of the front page is `home_url( '/' )`; plain permalinks lost the slash, in canonical links
   and oEmbed discovery as well. The speculation rules are printed on classic themes, too.
 - `customize.php` itself stays open; the toolbar links to it as WordPress does.
+
+### The real site in `rustpress-compat`, `core/navigation-submenu` (2026-11-06)
+
+The compat run of the real site crawled 539 URLs instead of the 318 of 2026-10-25 and found 15 differences that had
+nothing to do with Twenty Seventeen's templates:
+
+- **`core/navigation-submenu` was not ported at all:** in a block theme a submenu vanished from the navigation, without any
+  entry in the plan. Now `navigation_submenu()`: `block_core_shared_navigation_item_should_render()`, click, hover and
+  always, the overlay colors from the parent, `current-menu-ancestor`. Quirk kept: `$block->block_type->supports['color']`
+  stays on for the rest of the request, so later submenus get their own colors on the `li`. The URL of a submenu that opens
+  on click is not printed, as in WordPress.
+- **Embeds:** `WP_Query::parse_query()` decides `is_embed` before the query ran, so a term that does not exist gives the 404
+  of the theme, a post that does not exist the embed page. `body_class` of Twenty Seventeen on embed pages.
+- **`get_calendar()` with `?w=`:** the month comes from `DATE_ADD( '%d0101', ... )`; without a year that is `00101`, which
+  MariaDB reads as `YYMMD`, October 1st 2000.
+- **REST:** the search `type=post-format`; `media_type` goes through `get_allowed_mime_types()`, so a visitor's list has no
+  SVG files, and it is an array in the `Link` header.
+
+Compared in `dev/block-states-compare.py` (a page with submenus) and `rustpress-compat` against the copy of the real site:
+539 URLs, 0 unexpected differences; Twenty Twenty-Five: 921 URLs, 0 unexpected differences.

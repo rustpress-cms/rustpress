@@ -60,6 +60,14 @@ impl Ctx<'_> {
     }
 }
 
+/// `body_class` of the ported theme for a page it does not render itself.
+pub async fn add_body_classes(theme: &Theme, site: &Site, q: &QueryResult, registry: &Registry, classes: &mut Vec<String>) -> Result<()> {
+    let env = Env::new(site, q, theme, registry);
+    let mods = menu::theme_mod(site, &theme.stylesheet);
+    let ctx = Ctx { theme, site, q, env, mods };
+    seventeen::add_body_classes(&ctx, classes).await
+}
+
 /// Renders a request with the ported theme.
 pub async fn render_document(theme: &Theme, site: &Site, q: &QueryResult, registry: &Registry, extras: &crate::document::Extras) -> Result<Document> {
     let env = Env::new(site, q, theme, registry);

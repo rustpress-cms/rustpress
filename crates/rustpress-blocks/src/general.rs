@@ -820,6 +820,16 @@ fn weekday(year: u32, month: u32, day: u32) -> u32 {
 }
 
 /// `get_calendar( $initial )`. `override_month` is `$monthnum`/`$year` of a calendar block.
+/// The month of a week in `get_calendar()`: `SELECT DATE_FORMAT( DATE_ADD( '%d0101', INTERVAL %d DAY ), '%m' )`. Without
+/// a year the date reads `00101`, which MariaDB takes as `YYMMD`: October 1st 2000.
+fn week_month(m: &str, week: i64) -> (u32, u32) {
+    let year = m.get(..4).and_then(|y| y.parse::<i32>().ok()).unwrap_or(0);
+    let start = if year == 0 { chrono::NaiveDate::from_ymd_opt(2000, 10, 1) } else { chrono::NaiveDate::from_ymd_opt(year, 1, 1) };
+    let date = start.and_then(|start| start.checked_add_signed(chrono::TimeDelta::days((week - 1) * 7 + 6)));
+    use chrono::Datelike;
+    (if year == 0 { 2000 } else { year as u32 }, date.map_or(1, |date| date.month()))
+}
+
 pub async fn get_calendar(env: &Env<'_>, initial: bool, override_month: Option<(u32, u32)>) -> Result<String> {
     let site = env.site;
     let locale = site.locale_data();
@@ -829,6 +839,7 @@ pub async fn get_calendar(env: &Env<'_>, initial: bool, override_month: Option<(
     let (this_year, this_month) = match (override_month, vars.u64("monthnum"), vars.u64("year"), vars.get("m")) {
         (Some((year, month)), ..) => (year, month),
         (None, Some(month), Some(year), _) if month > 0 && year > 0 => (year as u32, month as u32),
+        (None, ..) if vars.get("w").is_some_and(|w| w.parse::<i64>().is_ok_and(|w| w != 0)) => week_month(vars.get("m").unwrap_or_default(), vars.get("w").and_then(|w| w.parse().ok()).unwrap_or(0)),
         (None, _, _, Some(m)) if !m.is_empty() => (m.get(..4).and_then(|y| y.parse().ok()).unwrap_or(0), if m.len() < 6 { 1 } else { m.get(4..6).and_then(|v| v.parse().ok()).unwrap_or(1) }),
         _ => (today("Y"), today("n")),
     };

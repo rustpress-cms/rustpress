@@ -351,7 +351,10 @@ pub async fn render(theme: &Theme, site: &Site, q: &QueryResult, registry: &Regi
     }
     body.push_str(&emoji_detection_script(site, wp_root, &version));
 
-    let classes = body_classes(theme, site, q).await?;
+    let mut classes = body_classes(theme, site, q).await?;
+    if crate::classic::is_ported(theme) {
+        crate::classic::add_body_classes(theme, site, q, registry, &mut classes).await?;
+    }
     let html = format!(
         "<!DOCTYPE html>\n<html {}lang=\"{}\" class=\"no-js\">\n<head>\n{head}</head>\n<body class=\"{}\">\n{body}</body>\n</html>\n",
         if rtl { "dir=\"rtl\" " } else { "" },
