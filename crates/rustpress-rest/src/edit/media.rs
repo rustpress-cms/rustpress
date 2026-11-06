@@ -85,6 +85,7 @@ impl Rest<'_> {
         let mime = args.str("media_type").filter(|t| matches!(t.as_str(), "image" | "video" | "audio" | "application")).or_else(|| args.str("mime_type"));
         let query = AttachmentQuery {
             mime,
+            search_terms: args.str("search").map_or_else(Vec::new, |s| rustpress_core::query::parse_search_terms(&s, false)),
             search: args.str("search").filter(|s| !s.is_empty()),
             parent: args.ids("parent").and_then(|p| p.first().copied()),
             ids: args.ids("include").unwrap_or_default(),

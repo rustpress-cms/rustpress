@@ -31,6 +31,7 @@ mod authorize_app;
 pub mod block_editor;
 pub mod comments;
 pub mod media_lib;
+mod media_upload;
 pub mod media_ui;
 pub mod common;
 pub mod dashboard;
@@ -398,6 +399,7 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse
         "term.php" => terms::edit_page(&ctx).await,
         "upload.php" => media_lib::upload_php(&ctx).await,
         "media-new.php" => media_lib::media_new(&ctx).await,
+        "media-upload.php" => media_upload::media_upload(&ctx).await,
         "edit-comments.php" => comments::page(&ctx).await,
         "comment.php" => comments::comment_php(&ctx).await,
         "users.php" => users::page(&ctx).await,

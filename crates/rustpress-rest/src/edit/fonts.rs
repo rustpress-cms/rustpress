@@ -528,7 +528,7 @@ impl Rest<'_> {
             if std::fs::create_dir_all(&dir).is_err() {
                 return Ok(Err(RestError::new("rest_font_upload_unknown_error", "The uploaded file could not be moved to the fonts directory.", 500)));
             }
-            let filename = rustpress_content::media::unique_filename(&dir, &rustpress_content::sanitize::file_name(name));
+            let filename = rustpress_content::media::unique_filename(&dir, &rustpress_content::sanitize::file_name(name, &self.site.locale()));
             if std::fs::write(dir.join(&filename), bytes).is_err() {
                 return Ok(Err(RestError::new("rest_font_upload_unknown_error", "The uploaded file could not be moved to the fonts directory.", 500)));
             }
