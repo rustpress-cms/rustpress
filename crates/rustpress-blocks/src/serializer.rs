@@ -74,6 +74,33 @@ pub fn serialize_with(blocks: &mut [Block], before: &dyn Fn(&mut Block)) -> Stri
     out
 }
 
+/// `apply_block_hooks_to_content_from_post_object()` for a site without hooked blocks: the content is parsed and
+/// written again inside a temporary wrapper, so it comes back normalized. `stylesheet` goes on the template parts
+/// (`_inject_theme_attribute_in_template_part_block()`).
+pub fn apply_block_hooks_to_content(content: &str, post_type: &str, stylesheet: &str) -> String {
+    let classic = (!crate::content::has_blocks(content)).then(|| comment_delimited(Some("core/freeform"), &Map::new(), content));
+    let wrapper = match post_type {
+        "wp_navigation" => "core/navigation",
+        "wp_block" => "core/block",
+        _ => "core/post-content",
+    };
+    let markup = comment_delimited(Some(wrapper), &Map::new(), classic.as_deref().unwrap_or(content));
+    let mut blocks = crate::parser::parse_blocks(&markup);
+    let serialized = serialize_with(&mut blocks, &|block: &mut Block| {
+        if block.name.as_deref() == Some("core/template-part") && !block.attrs.contains_key("theme") {
+            block.attrs.insert("theme".to_owned(), Value::String(stylesheet.to_owned()));
+        }
+    });
+    // `remove_serialized_parent_block()`.
+    let start = serialized.find("-->").map_or(0, |at| at + 3);
+    let end = serialized.rfind("<!--").unwrap_or(serialized.len());
+    let inner = serialized.get(start..end).unwrap_or_default();
+    match &classic {
+        Some(wrapped) => inner.replace(wrapped.as_str(), content),
+        None => inner.to_owned(),
+    }
+}
+
 /// What `resolve_pattern_blocks()` needs to know about a registered pattern.
 #[derive(Debug, Clone, Default)]
 pub struct PatternRef {
@@ -170,6 +197,14 @@ pub fn resolve_pattern_blocks(blocks: Vec<Block>, lookup: &dyn Fn(&str) -> Optio
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn block_hooks_write_the_content_again() {
+        let reserialized = apply_block_hooks_to_content("<!-- wp:paragraph {} --><p>a</p><!-- /wp:paragraph -->", "post", "t");
+        assert_eq!(reserialized, "<!-- wp:paragraph --><p>a</p><!-- /wp:paragraph -->");
+        assert_eq!(apply_block_hooks_to_content("<p>classic</p>", "post", "t"), "<p>classic</p>");
+        assert_eq!(apply_block_hooks_to_content("<!-- wp:template-part {\"slug\":\"x\"} /-->", "page", "t"), "<!-- wp:template-part {\"slug\":\"x\",\"theme\":\"t\"} /-->");
+    }
 
     #[test]
     fn blocks_survive_a_round_trip() {

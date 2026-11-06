@@ -855,6 +855,11 @@ pub async fn render_document_with(theme: &Theme, site: &Site, query: &QueryResul
     if !variation_css.is_empty() {
         styles.push_str(&format!("<style id=\"block-style-variation-styles-inline-css\">\n{variation_css}\n/*# sourceURL=block-style-variation-styles-inline-css */\n</style>\n"));
     }
+    // `wp_enqueue_block_custom_css()`.
+    let custom_css: String = state.inline_styles.iter().filter(|(handle, _)| handle == "wp-block-custom-css").map(|(_, css)| css.as_str()).collect::<Vec<_>>().join("\n");
+    if !custom_css.is_empty() {
+        styles.push_str(&format!("<style id=\"wp-block-custom-css-inline-css\">\n{custom_css}\n/*# sourceURL=wp-block-custom-css-inline-css */\n</style>\n"));
+    }
     if has_variations {
         styles.push_str(&emoji_style());
     }

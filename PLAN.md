@@ -83,8 +83,8 @@ The reference stack, the tools and the working rules are in [AGENTS.md](AGENTS.m
 
 **Website**
 - `[playlist]`, `core/rss` (network).
-- Responsive styles of WordPress 7.1: `block-supports/states.php`, the viewport values of `layout.php`, the viewport
-  part of `block-visibility.php` (a hidden block is not hidden in RustPress either).
+- Block hooks (`hooked_block_types`): no module registers hooked blocks yet, so `apply_block_hooks_to_content()` only
+  normalizes.
 - Twenty Seventeen: post formats with their own templates, the `front-page.php` panels, the color scheme `custom` and
   the header text color, the social menu, `wp_link_pages()`, the theme's `rtl.css`. More classic themes.
 - The `functions.php` of themes: only literal calls are read.
@@ -106,8 +106,8 @@ The reference stack, the tools and the working rules are in [AGENTS.md](AGENTS.m
 - Widgets: writing widgets and sidebars, the forms of classic widgets, `widget-types/<id>/encode|render`, `rendered`
   of registered sidebars.
 - `parse-media-shortcode` with a preview (the scripts of `wp-mediaelement`/`wp-playlist`).
-- REST: in the `edit` context WordPress renders a post's content once more before `content.rendered` (ID counters one
-  higher, cause not found).
+- `wp/v2/block-patterns/patterns`: four remote patterns keep a second space before `/>` that the reference does not have
+  (cause not looked at; seen in `dev/rest-sweep.py`).
 - The dashboard and the block editor are still slower than the reference.
 
 **Native plugins**
@@ -636,5 +636,23 @@ Add the section "Review and remaining to-do (2026-10-26)" with part C to `PLAN.m
 - **`core/playlist` and `core/playlist-track`:** new, `dynamic/playlist.rs`.
 - **`TagEditor`:** values are written as `WP_HTML_Tag_Processor::set_attribute()` writes them: `esc_url()` for the
   attributes of `wp_kses_uri_attributes()`, the five special characters otherwise (`&apos;`, `&` always encoded).
-- Compared with `dev/media-blocks-compare.py` on whole pages: 8 of 9 posts equal. `rpmb-gap` differs only in the viewport
-  values of the layout support, see **Open**.
+- Compared with `dev/media-blocks-compare.py` on whole pages: 9 of 9 posts equal after the next section.
+
+### Block supports of WordPress 7.1 (2026-11-06)
+
+These were missing and not in the list of open items, except the responsive styles the media blocks ran into.
+
+- **`block-visibility.php`** (`states.rs`): `blockVisibility: false` hides a block, which RustPress did not do at all;
+  hidden per viewport with `.wp-block-hidden-*`, and `fetchpriority="auto"` on the images of such a block.
+- **`states.php`** (`states.rs`): `style[':hover']` and the other states of `core/button` and `core/navigation-link`,
+  `style['@mobile']` and `style['@tablet']` with their elements and states, the `wp-states-*` class.
+- **`layout.php`**: the viewport values of the container and of the child layout (`get_layout_style()` takes
+  `LayoutOptions`), the block gap of a style variation in the fallback.
+- **`custom-css.php`** (`custom_css.rs`): the CSS of a block instance, and `wp_strip_custom_css_from_blocks()` on saving
+  for users without `edit_css`. Printing it without the stripping would have let authors add CSS to a page.
+- **`insert_hooked_blocks_into_rest_response()`** explains the open item "in the `edit` context WordPress renders a
+  post's content once more": `content.raw` is parsed and written again (`{}` disappears) and `content.rendered` comes
+  from that. `apply_block_hooks_to_content()` does this without hooked blocks.
+- Compared with `dev/block-states-compare.py` on whole pages, 9 posts with about 50 blocks, and what an author and an
+  administrator save; it prints how often the new classes occur, because a first run of the custom CSS compared two
+  pages without any: `wp_insert_post()` had stripped the CSS while seeding.

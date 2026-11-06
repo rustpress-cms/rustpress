@@ -2,6 +2,7 @@
 //! prints as `global-styles-inline-css` (a port of the relevant parts of
 //! `WP_Theme_JSON::get_stylesheet`).
 
+use rustpress_blocks::custom_css::process_custom_css;
 use rustpress_blocks::Registry;
 use rustpress_blocks::fluid::fluid_font_size;
 use rustpress_blocks::style_engine::to_kebab_case;
@@ -764,42 +765,7 @@ fn base_layout_styles() -> String {
     css
 }
 
-/// `process_blocks_custom_css`: nested rules with `&` become scoped rules.
-fn process_custom_css(css: &str, selector: &str) -> String {
-    let mut out = String::new();
-    for part in css.split('&') {
-        if part.is_empty() || part == "0" {
-            continue;
-        }
-        if !part.contains('{') {
-            // Plain declarations apply to the block itself.
-            out.push_str(&format!(":root :where({}){{{}}}", selector.trim(), part.trim()));
-            continue;
-        }
-        let cleaned = part.replace('}', "");
-        let pieces: Vec<&str> = cleaned.split('{').collect();
-        let [nested, value] = pieces[..] else { continue };
-        // A pseudo-element (`::before`, with the combinators in front of it) goes behind the `:where()`.
-        let (nested, pseudo) = match nested.find("::") {
-            Some(at) => {
-                let start = nested[..at].trim_end_matches(|c: char| matches!(c, '>' | '+' | '~') || c.is_whitespace()).len();
-                let tail = &nested[at + 2..];
-                let end = at + 2 + tail.find(|c: char| !(c.is_ascii_alphabetic() || c == '-')).unwrap_or(tail.len());
-                (format!("{}{}", &nested[..start], &nested[end..]), nested[start..end].to_owned())
-            }
-            None => (nested.to_owned(), String::new()),
-        };
-        // A nested selector that starts with a space is a descendant of the block (each comma part);
-        // otherwise it is appended to the block selector as a whole.
-        let scoped = if nested.starts_with(' ') {
-            nested.split(',').map(|s| format!("{selector} {}", s.trim()).trim_end().to_owned()).collect::<Vec<_>>().join(", ")
-        } else {
-            format!("{selector}{nested}")
-        };
-        out.push_str(&format!(":root :where({scoped}){pseudo}{{{}}}", value.trim()));
-    }
-    out
-}
+
 #[cfg(test)]
 mod tests {
     use serde_json::json;

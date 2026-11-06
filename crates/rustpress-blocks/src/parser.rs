@@ -70,6 +70,35 @@ struct Frame {
     leading_html_start: Option<usize>,
 }
 
+/// A block delimiter that opens a block or is one (`WP_Block_Parser::next_token()`).
+pub struct Delimiter {
+    pub attrs: Map<String, Value>,
+    pub start: usize,
+    pub len: usize,
+}
+
+/// The openers and void blocks of a document, in order.
+pub fn block_delimiters(document: &str) -> Vec<Delimiter> {
+    let mut delimiters = Vec::new();
+    let mut from = 0;
+    while let Some(rel) = document[from..].find("<!--") {
+        let start = from + rel;
+        match parse_delimiter(document, start) {
+            Some(token) => {
+                from = start + token.len;
+                if !matches!(token.kind, TokenKind::Closer) {
+                    delimiters.push(Delimiter { attrs: token.attrs, start, len: token.len });
+                }
+            }
+            None => from = start + 4,
+        }
+        if from >= document.len() {
+            break;
+        }
+    }
+    delimiters
+}
+
 /// Parses a document into top-level blocks.
 pub fn parse_blocks(document: &str) -> Vec<Block> {
     let mut parser = Parser { doc: document, offset: 0, output: Vec::new(), stack: Vec::new() };

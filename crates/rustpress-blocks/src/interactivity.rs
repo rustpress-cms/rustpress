@@ -87,7 +87,7 @@ fn is_empty(value: &Value) -> bool {
 }
 
 /// `array_replace_recursive()`.
-fn merge(target: &mut Value, source: Value) {
+pub(crate) fn merge(target: &mut Value, source: Value) {
     match (target, source) {
         (Value::Object(into), Value::Object(from)) => {
             for (key, value) in from {
