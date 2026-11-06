@@ -301,7 +301,16 @@ impl TagEditor {
         let mut edits: Vec<(usize, usize, String)> = Vec::new();
         let mut inserts: Vec<String> = Vec::new();
         for (lower, name, value) in &self.set {
-            let text = if value == "\u{1}" { name.clone() } else { format!("{name}=\"{}\"", esc_attr(value)) };
+            let text = if value == "\u{1}" {
+                name.clone()
+            } else {
+                let escaped = escape_value(lower, value);
+                // The escaping wiped out the update: `set_attribute()` rejects it.
+                if escaped.is_empty() && !value.is_empty() {
+                    continue;
+                }
+                format!("{name}=\"{escaped}\"")
+            };
             match self.tag.attrs.iter().find(|a| a.name == *lower) {
                 Some(attr) => edits.push((attr.range.start, attr.range.end, text)),
                 None => inserts.push(format!(" {text}")),
@@ -327,6 +336,26 @@ impl TagEditor {
     pub fn finish(self) -> String {
         self.render()
     }
+}
+
+/// The value `WP_HTML_Tag_Processor::set_attribute()` writes: `esc_url()` for the attributes that hold addresses,
+/// otherwise the five special characters of HTML, always encoded.
+fn escape_value(name: &str, value: &str) -> String {
+    if rustpress_core::kses::URI_ATTRIBUTES.contains(&name) {
+        return rustpress_core::formatting::esc_url(value);
+    }
+    let mut out = String::with_capacity(value.len());
+    for c in value.chars() {
+        match c {
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '&' => out.push_str("&amp;"),
+            '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&apos;"),
+            other => out.push(other),
+        }
+    }
+    out
 }
 
 /// Sets or appends to the `style` attribute of the first tag
@@ -390,7 +419,7 @@ mod tests {
         e.set_attribute("title", "say \"hi\"");
         assert_eq!(
             e.finish(),
-            "<a title=\"say &quot;hi&quot;\" href=\"https://e.com/?a=1&amp;b=2\" class=\"k\" rel=nofollow>x</a>"
+            "<a title=\"say &quot;hi&quot;\" href=\"https://e.com/?a=1&#038;b=2\" class=\"k\" rel=nofollow>x</a>"
         );
     }
 

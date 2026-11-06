@@ -202,6 +202,12 @@ pub struct State {
     pub active_patterns: HashSet<String>,
     /// Script modules that must be loaded on the page.
     pub script_modules: ModuleSet,
+    /// `block_core_image_render_lightbox()` is on `render_block_core/image`.
+    pub image_lightbox: bool,
+    /// `block_core_image_print_lightbox_overlay()` is on `wp_footer`.
+    pub lightbox_overlay: bool,
+    /// The last value of [`State::uniqid`].
+    pub last_uniqid: u128,
     /// State and derived state closures of the Interactivity API.
     pub interactivity: crate::interactivity::Interactivity,
     /// A root interactive block is rendering: its directives are processed once it is done.
@@ -249,6 +255,13 @@ impl State {
     pub fn unique_id(&mut self, prefix: &str) -> String {
         self.unique_counter += 1;
         format!("{prefix}{}", self.unique_counter)
+    }
+
+    /// `uniqid()`: seconds and microseconds in hexadecimal, different on every call.
+    pub fn uniqid(&mut self) -> String {
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_micros());
+        self.last_uniqid = now.max(self.last_uniqid + 1);
+        format!("{:08x}{:05x}", self.last_uniqid / 1_000_000, self.last_uniqid % 1_000_000)
     }
 
     /// wp_unique_prefixed_id(  ): a counter per prefix.

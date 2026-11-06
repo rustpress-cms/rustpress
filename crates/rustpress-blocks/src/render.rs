@@ -102,6 +102,10 @@ impl<'a> Env<'a> {
             let available = if name == "core/tabs" {
                 provided = dynamic::tabs::provide_context(self, block, available);
                 &provided
+            } else if name == "core/gallery" {
+                // `block_core_gallery_render_context()`.
+                provided = available.with("galleryId", Value::String(self.with_state(|s| s.uniqid())));
+                &provided
             } else {
                 available
             };
@@ -217,6 +221,9 @@ impl<'a> Env<'a> {
                 content = crate::variations::render_class_name(&raw_attrs, content);
             }
             content = dynamic::name_filter(name, &raw_attrs, content);
+            if name == "core/image" && self.with_state(|s| s.image_lightbox) {
+                content = dynamic::lightbox::render(self, block, &child_ctx, content).await?;
+            }
             if is_root_interactive {
                 content = self.with_state(|s| {
                     s.interactive_root = false;

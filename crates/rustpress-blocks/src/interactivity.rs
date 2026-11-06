@@ -10,6 +10,8 @@ use crate::html::{Tag, TagEditor, is_void, tags};
 /// What `wp_interactivity_state()` and the derived state callbacks leave behind.
 #[derive(Debug, Clone, Default)]
 pub struct Interactivity {
+    /// Namespace -> configuration.
+    config: Map<String, Value>,
     /// Namespace -> state.
     state: Map<String, Value>,
     /// Derived state closures that were registered: `(namespace, path)`.
@@ -23,6 +25,17 @@ impl Interactivity {
     pub fn state(&mut self, namespace: &str, data: Value) {
         let slot = self.state.entry(namespace.to_owned()).or_insert_with(|| Value::Object(Map::new()));
         merge(slot, data);
+    }
+
+    /// `wp_interactivity_config( $ns, $data )`.
+    pub fn config(&mut self, namespace: &str, data: Value) {
+        let slot = self.config.entry(namespace.to_owned()).or_insert_with(|| Value::Object(Map::new()));
+        merge(slot, data);
+    }
+
+    /// `wp_interactivity_state( $ns )`.
+    pub fn namespace_state(&self, namespace: &str) -> Option<&Value> {
+        self.state.get(namespace)
     }
 
     /// `wp_interactivity_state( $ns, array( $name => function () {...} ) )` for a closure the
@@ -39,6 +52,10 @@ impl Interactivity {
     /// The JSON of the `wp-script-module-data-@wordpress/interactivity` script, if there is any data.
     pub fn data_json(&self) -> Option<String> {
         let mut data = Map::new();
+        let config: Map<String, Value> = self.config.iter().filter(|(_, v)| !is_empty(v)).map(|(k, v)| (k.clone(), v.clone())).collect();
+        if !config.is_empty() {
+            data.insert("config".into(), Value::Object(config));
+        }
         let state: Map<String, Value> = self.state.iter().filter(|(_, v)| !is_empty(v)).map(|(k, v)| (k.clone(), v.clone())).collect();
         if !state.is_empty() {
             data.insert("state".into(), Value::Object(state));

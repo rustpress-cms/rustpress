@@ -922,7 +922,8 @@ pub async fn render_document_with(theme: &Theme, site: &Site, query: &QueryResul
         looped.push(id);
     }
     let plugin_footer = site.plugins.wp_footer(site, &looped).await?;
-    let mut footer_scripts = format!("{speculation}{}{plugin_footer}{module_scripts}{}", rustpress_blocks::duotone::footer_svgs(&state.duotone), state.interactivity.data_script().unwrap_or_default());
+    let lightbox = if state.lightbox_overlay { rustpress_blocks::dynamic::lightbox::overlay(site, theme) } else { String::new() };
+    let mut footer_scripts = format!("{speculation}{}{plugin_footer}{module_scripts}{}{lightbox}", rustpress_blocks::duotone::footer_svgs(&state.duotone), state.interactivity.data_script().unwrap_or_default());
     // MediaElement: jQuery in the head, the player scripts in the footer. The scripts plugins enqueue for the head
     // follow, after their dependencies.
     let mut printer = crate::plugin_assets::ScriptPrinter::new(&includes_url, "3.7.1", "3.4.1").with_packages(&theme.wp_root, site);

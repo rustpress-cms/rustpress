@@ -18,7 +18,7 @@ pub const PROTOCOLS: [&str; 22] = [
 ];
 
 /// `wp_kses_uri_attributes()`.
-const URI_ATTRIBUTES: [&str; 17] = ["action", "archive", "background", "cite", "classid", "codebase", "data", "formaction", "href", "icon", "longdesc", "manifest", "poster", "profile", "src", "usemap", "xmlns"];
+pub const URI_ATTRIBUTES: [&str; 17] = ["action", "archive", "background", "cite", "classid", "codebase", "data", "formaction", "href", "icon", "longdesc", "manifest", "poster", "profile", "src", "usemap", "xmlns"];
 
 /// The elements that are allowed and the attributes each one keeps.
 pub struct Allowed {

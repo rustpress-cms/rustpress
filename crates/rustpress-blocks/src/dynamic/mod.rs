@@ -17,7 +17,10 @@ mod comments;
 mod extra;
 mod icon;
 mod featured;
+mod gallery;
+pub mod lightbox;
 mod media;
+mod playlist;
 mod navigation;
 mod post_content;
 mod post_meta;
@@ -48,6 +51,8 @@ pub fn is_dynamic(name: &str) -> bool {
             | "core/file"
             | "core/latest-posts"
             | "core/gallery"
+            | "core/playlist"
+            | "core/playlist-track"
             | "core/post-featured-image"
             | "core/heading"
             | "core/list"
@@ -132,7 +137,9 @@ pub fn render<'a>(bc: &'a BlockCtx<'a>) -> BoxFuture<'a, Result<String>> {
             "core/image" => media::image(bc),
             "core/file" => media::file(bc),
             "core/latest-posts" => latest_posts::latest_posts(bc).await,
-            "core/gallery" => media::gallery(bc),
+            "core/gallery" => gallery::gallery(bc).await,
+            "core/playlist" => playlist::playlist(bc),
+            "core/playlist-track" => playlist::playlist_track(bc),
             "core/post-featured-image" => media::post_featured_image(bc).await,
             "core/heading" => Ok(simple::add_class_to_first(&bc.content, &["h1", "h2", "h3", "h4", "h5", "h6"], "wp-block-heading")),
             "core/list" => Ok(simple::add_class_to_first(&bc.content, &["ol", "ul"], "wp-block-list")),
