@@ -3,8 +3,7 @@
 
 use rustpress_core::OrLog;
 use rustpress_auth::CurrentUser;
-use rustpress_core::formatting::{esc_attr, esc_html, esc_url};
-use rustpress_core::slug::sanitize_title_save;
+use rustpress_core::formatting::{esc_attr, esc_html};
 use rustpress_db::{PostQuery, Val};
 use serde_json::json;
 
@@ -208,44 +207,15 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUs
                 return text(200, "");
             }
             let Some(stored) = env.db.post(post_id).await.ok().flatten() else { return text(403, "-1") };
-            let mut post = stored.clone();
+            let post = stored.clone();
             let may_edit = user.can_edit_post(&post);
             if !may_edit {
                 return text(403, "-1");
             }
             let title = param("new_title");
-            let mut status = post.post_status.clone();
-            if matches!(status.as_str(), "draft" | "pending" | "future") {
-                status = "publish".into();
-                post.post_name = sanitize_title_save(if post.post_name.is_empty() { &post.post_title } else { &post.post_name }, &site.locale());
-            }
-            if let Some(name) = request.post_field("new_slug") {
-                post.post_name = sanitize_title_save(if name.is_empty() { &title } else { name }, &site.locale());
-            }
             let Some(writer) = env.writer else { return text(500, "0") };
             let content = Content { site, db: env.db, writer, user, now: env.now };
-            post.post_name = content.unique_post_slug(&post.post_name, post.id, &status, &post.post_type, post.post_parent).await.unwrap_or(post.post_name.clone());
-            post.post_status = "publish".into();
-            let sample = site.permalink(&post).await.unwrap_or_default();
-            // The address of the link is the one the post has now; drafts get their preview.
-            let view_link = if matches!(stored.post_status.as_str(), "publish" | "private") { site.permalink(&stored).await.unwrap_or_default() } else { site.site_url(&format!("?p={}&preview=true", stored.id)) };
-            let name = post.post_name.clone();
-            let link = sample;
-            if name.is_empty() {
-                return text(200, &format!("<strong>{}</strong>\n<span id=\"sample-permalink\"><a href=\"{}\">{}</a></span>\n", tr("Permalink:"), esc_url(&view_link), esc_html(&link)));
-            }
-            let shown = link.replacen(&format!("/{name}/"), &format!("/<span id=\"editable-post-name\">{}</span>/", esc_html(&name)), 1);
-            text(
-                200,
-                &format!(
-                    "<strong>{}</strong>\n<span id=\"sample-permalink\"><a href=\"{}\">{shown}</a></span>\n&lrm;<span id=\"edit-slug-buttons\"><button type=\"button\" class=\"edit-slug button button-small hide-if-no-js\" aria-label=\"{}\">{}</button></span>\n<span id=\"editable-post-name-full\">{}</span>\n",
-                    tr("Permalink:"),
-                    esc_url(&view_link),
-                    esc_attr(&tr("Edit permalink")),
-                    tr("Edit"),
-                    esc_html(&name)
-                ),
-            )
+            text(200, &super::common::sample_permalink_html(site, Some(&content), user.can("manage_options"), &stored, Some(&title), request.post_field("new_slug"), &tr).await)
         }
         "find_posts" => {
             if !nonce_ok(request.request("_ajax_nonce").unwrap_or_default(), "find-posts") {

@@ -326,3 +326,90 @@ pub async fn set_screen_options(ctx: &Ctx<'_>) -> Option<AdminResponse> {
     }
     Some(super::redirect(&url))
 }
+
+/// `get_preview_post_link()` of an unpublished post: `add_query_arg( 'preview', 'true', get_permalink( $post ) )`.
+pub fn preview_url(permalink: &str) -> String {
+    format!("{permalink}{}preview=true", if permalink.contains('?') { "&" } else { "?" })
+}
+
+/// `get_sample_permalink_html( $post, $new_title, $new_slug )` for someone who may edit the post (and so read it). The
+/// sample address is the post's as if it were published, with the unique slug `wp_unique_post_slug()` makes (when
+/// writing is allowed).
+pub async fn sample_permalink_html(site: &rustpress_core::Site, content: Option<&crate::content::Content<'_>>, can_manage_options: bool, post: &rustpress_db::Post, new_title: Option<&str>, new_slug: Option<&str>, tr: &(dyn Fn(&str) -> String + Sync)) -> String {
+    use rustpress_core::formatting::esc_url;
+    use rustpress_core::slug::sanitize_title_save;
+    // `sanitize_title( $title, $post->ID )`: an empty slug falls back to the ID.
+    let sanitize = |title: &str| {
+        let slug = sanitize_title_save(title, &site.locale());
+        if slug.is_empty() { post.id.to_string() } else { slug }
+    };
+    let mut sample = post.clone();
+    if matches!(post.post_status.as_str(), "auto-draft" | "draft" | "pending" | "future") {
+        sample.post_status = "publish".into();
+        sample.post_name = sanitize(if post.post_name.is_empty() { &post.post_title } else { &post.post_name });
+    }
+    if let Some(slug) = new_slug {
+        sample.post_name = sanitize(if slug.is_empty() { new_title.unwrap_or_default() } else { slug });
+    }
+    if let Some(content) = content {
+        sample.post_name = content.unique_post_slug(&sample.post_name, sample.id, &sample.post_status, &sample.post_type, sample.post_parent).await.unwrap_or(sample.post_name.clone());
+    }
+    let decode = |text: &str| String::from_utf8_lossy(&rustpress_core::rewrite::urldecode(text.as_bytes())).into_owned();
+    let name = sample.post_name.clone();
+    let permalink = site.permalink(&sample).await.unwrap_or_default();
+    // `%postname%`/`%pagename%`: the address has the slug as its last segment.
+    let pretty = !site.options.string("permalink_structure", "").is_empty() && !permalink.contains('?') && !name.is_empty() && permalink.contains(&format!("/{name}/"));
+    let (view_link, target) = if post.post_status == "draft" || post.post_name.is_empty() {
+        (preview_url(&site.permalink(post).await.unwrap_or_default()), format!(" target='wp-preview-{}'", post.id))
+    } else if post.post_status == "publish" || post.post_type == "attachment" {
+        (site.permalink(post).await.unwrap_or_default(), String::new())
+    } else {
+        // Private and scheduled posts can be viewed at their pretty address.
+        let mut named = sample.clone();
+        named.post_name = post.post_name.clone();
+        (site.permalink(&named).await.unwrap_or_default(), String::new())
+    };
+    let mut out = format!("<strong>{}</strong>\n", tr("Permalink:"));
+    if !pretty {
+        let display = decode(&view_link);
+        out.push_str(&format!("<a id=\"sample-permalink\" href=\"{}\"{target}>{}</a>\n", esc_url(&view_link), esc_html(&display)));
+        let front = site.options.string("show_on_front", "") == "page" && site.options.u64("page_on_front", 0) == post.id;
+        if site.options.string("permalink_structure", "").is_empty() && can_manage_options && !front {
+            out.push_str(&format!("<span id=\"change-permalinks\"><a href=\"options-permalink.php\" class=\"button button-small\">{}</a></span>\n", tr("Change Permalink Structure")));
+        }
+        return out;
+    }
+    // `editable_slug` decodes the slug.
+    let name = decode(&name);
+    let chars: Vec<char> = name.chars().collect();
+    let abridged = if chars.len() > 34 { format!("{}&hellip;{}", chars[..16].iter().collect::<String>(), chars[chars.len() - 16..].iter().collect::<String>()) } else { name.clone() };
+    let escaped = esc_html(&decode(&permalink));
+    let slot = format!("/{}/", esc_html(&name));
+    let display = match escaped.rfind(&slot) {
+        Some(at) => format!("{}/<span id=\"editable-post-name\">{}</span>/{}", &escaped[..at], esc_html(&abridged), &escaped[at + slot.len()..]),
+        None => escaped.clone(),
+    };
+    out.push_str(&format!("<span id=\"sample-permalink\"><a href=\"{}\"{target}>{display}</a></span>\n", esc_url(&view_link)));
+    out.push_str(&format!(
+        "&lrm;<span id=\"edit-slug-buttons\"><button type=\"button\" class=\"edit-slug button button-small hide-if-no-js\" aria-label=\"{}\">{}</button></span>\n<span id=\"editable-post-name-full\">{}</span>\n",
+        tr("Edit permalink"),
+        tr("Edit"),
+        esc_html(&name)
+    ));
+    out
+}
+
+/// `get_edit_post_link( $post, $context )` for someone who may edit the post: `post.php?post=ID&action=edit`, with
+/// `&amp;` in the `display` context, as the plugins' `get_edit_post_link` filter leaves it.
+pub async fn edit_post_link(ctx: &Ctx<'_>, post_id: u64, display: bool) -> String {
+    let link = ctx.admin_url(&format!("post.php?post={post_id}{}action=edit", if display { "&amp;" } else { "&" }));
+    if ctx.site().plugins.is_empty() {
+        return link;
+    }
+    let parts = ctx.plugin_parts();
+    let plugin_ctx = ctx.plugin_context(&parts, "");
+    ctx.site().plugins.get_edit_post_link(&plugin_ctx, post_id, link.clone()).await.unwrap_or_else(|e| {
+        tracing::error!(error = %e, "plugin get_edit_post_link failed");
+        link
+    })
+}

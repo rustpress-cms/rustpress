@@ -388,7 +388,7 @@ async fn row(ctx: &Ctx<'_>, post: &Post, detached: bool) -> String {
     let kind = post.post_mime_type.split('/').next().unwrap_or_default();
     let title = if post.post_title.is_empty() { tr("(no title)") } else { post.post_title.clone() };
     let quote = format!("&#8220;{}&#8221;", esc_html(&title));
-    let edit_url = ctx.admin_url(&format!("post.php?post={}&action=edit", post.id));
+    let edit_url = super::common::edit_post_link(ctx, post.id, false).await;
     // The icon: a 60x60 thumbnail for images.
     let icon = if kind == "image" {
         let thumb = metadata.as_ref().and_then(|m| rustpress_blocks::images::intermediate_size(&url, m, 60, 60));
@@ -404,7 +404,7 @@ async fn row(ctx: &Ctx<'_>, post: &Post, detached: bool) -> String {
     };
     let can_edit = ctx.user.can_edit_post(post);
     let can_delete = ctx.user.can_delete_post(post);
-    let title_html = if can_edit { format!("<a href=\"{}\">\t\t\t\t{icon}\n\t\t\t\t{}</a>", esc_attr(&edit_url).replace("&#038;", "&amp;"), esc_html(&title)) } else { format!("{icon}\n\t\t\t\t{}", esc_html(&title)) };
+    let title_html = if can_edit { format!("<a href=\"{}\">\t\t\t\t{icon}\n\t\t\t\t{}</a>", super::common::edit_post_link(ctx, post.id, true).await, esc_html(&title)) } else { format!("{icon}\n\t\t\t\t{}", esc_html(&title)) };
     let state = if site.options.u64("site_logo", 0) == post.id { format!(" &mdash; <span class='post-state'>{}</span>", tr("Logo")) } else { String::new() };
     let mut actions: Vec<(String, String)> = Vec::new();
     if can_edit {
@@ -429,7 +429,7 @@ async fn row(ctx: &Ctx<'_>, post: &Post, detached: bool) -> String {
             let parent_title = if parent.post_title.is_empty() { tr("(no title)") } else { parent.post_title.clone() };
             let detach = if can_edit { format!("<br /><a href=\"upload.php?parent_post_id={}&media[]={}&_wpnonce={}\" class=\"hide-if-no-js detach-from-parent\" aria-label=\"{}\">{}</a>", parent.id, post.id, ctx.create_nonce("bulk-media"), esc_attr(&sprintf(&tr("Detach from %s"), &[&format!("&#8220;{}&#8221;", esc_html(&parent_title))])), tr("Detach")) } else { String::new() };
             let heading = if ctx.user.can_edit_post(&parent) {
-                format!("<strong><a href=\"{}\">{}</a></strong>", esc_url(&ctx.admin_url(&format!("post.php?post={}&action=edit", parent.id))).replace("&#038;", "&amp;"), esc_html(&parent_title))
+                format!("<strong><a href=\"{}\">{}</a></strong>", super::common::edit_post_link(ctx, parent.id, true).await, esc_html(&parent_title))
             } else if ctx.user.can_read_post(&parent) {
                 format!("<strong>{}</strong>", esc_html(&parent_title))
             } else {

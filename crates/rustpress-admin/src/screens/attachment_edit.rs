@@ -13,8 +13,8 @@ use crate::content::{Content, PostData};
 
 const TPL: &str = include_str!("../data/attachment_edit.tpl");
 
-fn edit_link(ctx: &Ctx<'_>, id: u64) -> String {
-    ctx.admin_url(&format!("post.php?post={id}&action=edit"))
+async fn edit_link(ctx: &Ctx<'_>, id: u64) -> String {
+    super::common::edit_post_link(ctx, id, false).await
 }
 
 /// `esc_textarea()`.
@@ -158,7 +158,7 @@ pub async fn form(ctx: &Ctx<'_>, post: &Post) -> AdminResponse {
     let uploaded_to = match db.post(post.post_parent).await.ok().flatten().filter(|_| post.post_parent != 0) {
         Some(parent) => {
             let title = if parent.post_title.is_empty() { tr("(no title)") } else { parent.post_title.clone() };
-            format!("\t\t\t\t<div class=\"misc-pub-section misc-pub-uploadedto\">\n\t\t\t\t\t\t\t\t\t{} <a href=\"{}\"><strong>{}</strong></a>\n\t\t\t\t\t\t\t</div>\n\t\t\t", tr("Uploaded to:"), edit_link(ctx, parent.id), esc_html(&title))
+            format!("\t\t\t\t<div class=\"misc-pub-section misc-pub-uploadedto\">\n\t\t\t\t\t\t\t\t\t{} <a href=\"{}\"><strong>{}</strong></a>\n\t\t\t\t\t\t\t</div>\n\t\t\t", tr("Uploaded to:"), edit_link(ctx, parent.id).await, esc_html(&title))
         }
         None => "	".to_owned(),
     };
@@ -337,5 +337,5 @@ pub async fn save(ctx: &Ctx<'_>, post: &Post) -> AdminResponse {
     // `redirect_post()`: an attachment keeps `inherit`, so the button decides.
     let has = |name: &str| request.post_field(name).is_some();
     let message = if has("save") || has("publish") { if has("publish") { "6" } else { "1" } } else { "4" };
-    redirect(&rustpress_core::urls::add_query_arg(&edit_link(ctx, post.id), "message", message))
+    redirect(&rustpress_core::urls::add_query_arg(&edit_link(ctx, post.id).await, "message", message))
 }

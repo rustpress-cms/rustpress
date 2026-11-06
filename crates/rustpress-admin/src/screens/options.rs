@@ -291,7 +291,8 @@ pub async fn handle(ctx: &Ctx<'_>) -> AdminResponse {
     let all_options: Option<Vec<String>> = (option_page == "options").then(|| request.post_field("page_options").unwrap_or_default().split(',').map(|o| o.trim().to_owned()).filter(|o| !o.is_empty()).collect());
     // `register_setting()` of the plugins.
     let plugin_settings = ctx.site().plugins.registered_settings(&option_page);
-    let allowed = if all_options.is_some() || !plugin_settings.is_empty() { Some(Vec::new()) } else { allowed_options(&option_page) };
+    // A plugin's settings join the core options of the page (`option_page_capability_*`, `allowed_options`).
+    let allowed = if all_options.is_some() { Some(Vec::new()) } else { allowed_options(&option_page).or_else(|| (!plugin_settings.is_empty()).then(Vec::new)) };
     let Some(options) = allowed else {
         return die(ctx.env, 200, "WordPress &rsaquo; Error", &rustpress_core::i18n::sprintf(&ctx.tr("<strong>Error:</strong> The %s options page is not in the allowed options list."), &[&format!("<code>{}</code>", esc_html(&option_page))]));
     };

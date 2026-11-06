@@ -164,6 +164,7 @@ pub async fn meta_boxes(groups: &[FieldGroup], ctx: &AdminContext<'_>, post: &Po
         }),
         // The post screens enqueue the media library themselves.
         media: false,
+        ..PostMetaBoxes::default()
     })
 }
 

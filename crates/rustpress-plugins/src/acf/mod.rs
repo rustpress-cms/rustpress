@@ -550,8 +550,8 @@ impl ActivePlugin for Loaded {
         Box::pin(admin_lists::posts_custom_column(&self.groups, ctx, column, post))
     }
 
-    fn post_row_actions(&self, ctx: &rustpress_core::native::AdminContext<'_>, post: &rustpress_db::Post, hierarchical: bool, actions: Vec<(String, String)>) -> Vec<(String, String)> {
-        admin_lists::post_row_actions(ctx, post, hierarchical, actions)
+    fn post_row_actions<'a>(&'a self, ctx: &'a rustpress_core::native::AdminContext<'a>, post: &'a rustpress_db::Post, hierarchical: bool, actions: Vec<(String, String)>) -> BoxFuture<'a, Result<Vec<(String, String)>>> {
+        Box::pin(async move { Ok(admin_lists::post_row_actions(ctx, post, hierarchical, actions)) })
     }
 
     fn bulk_actions(&self, ctx: &rustpress_core::native::AdminContext<'_>, _screen_id: &str, actions: Vec<(String, String)>) -> Vec<(String, String)> {
@@ -562,8 +562,8 @@ impl ActivePlugin for Loaded {
         admin_lists::list_views(ctx, views)
     }
 
-    fn display_post_states(&self, ctx: &rustpress_core::native::AdminContext<'_>, post: &rustpress_db::Post, states: Vec<(String, String)>) -> Vec<(String, String)> {
-        admin_lists::display_post_states(ctx, post, states)
+    fn display_post_states<'a>(&'a self, ctx: &'a rustpress_core::native::AdminContext<'a>, post: &'a rustpress_db::Post, states: Vec<(String, String)>) -> BoxFuture<'a, Result<Vec<(String, String)>>> {
+        Box::pin(async move { Ok(admin_lists::display_post_states(ctx, post, states)) })
     }
 
     fn list_not_found(&self, ctx: &rustpress_core::native::AdminContext<'_>, post_type: &str) -> Option<String> {

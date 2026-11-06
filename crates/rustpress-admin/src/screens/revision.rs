@@ -207,8 +207,8 @@ async fn revisions_for_js(ctx: &Ctx<'_>, post: &Post, selected: u64, from: Optio
     })
 }
 
-fn edit_link(ctx: &Ctx<'_>, post: &Post) -> String {
-    ctx.admin_url(&format!("post.php?post={}&action=edit", post.id))
+async fn edit_link(ctx: &Ctx<'_>, post: &Post) -> String {
+    super::common::edit_post_link(ctx, post.id, false).await
 }
 
 fn help(ctx: &Ctx<'_>) -> Help {
@@ -254,7 +254,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         let content = Content { site: env.site, db: env.db, writer, user: &ctx.user, now: env.now };
         let data = PostData { id: Some(post.id), post_title: Some(revision.post_title.clone()), post_content: Some(revision.post_content.clone()), post_excerpt: Some(revision.post_excerpt.clone()), ..Default::default() };
         content.insert_post(&data).await.or_log();
-        return redirect(&format!("{}&message=5&revision={}", edit_link(ctx, &post), revision.id));
+        return redirect(&format!("{}&message=5&revision={}", edit_link(ctx, &post).await, revision.id));
     }
 
     let Some((revision, post)) = revision_and_parent(env, &ctx.user, revision_id).await else { return redirect(&edit_php) };
@@ -262,7 +262,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         return redirect(&ctx.admin_url(&format!("edit.php?post_type={}", post.post_type)));
     }
     let tr = |s: &str| ctx.tr(s);
-    let edit = edit_link(ctx, &post);
+    let edit = edit_link(ctx, &post).await;
     let shown_title = {
         let title = rustpress_blocks::content::the_title_for(env.site, &post);
         if post.post_title.is_empty() { tr("(no title)") } else { title }

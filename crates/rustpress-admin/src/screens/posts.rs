@@ -985,8 +985,8 @@ pub(super) async fn post_row(ctx: &Ctx<'_>, post: &Post, level: usize, row: &Row
                     }
                     None => (String::new(), String::new(), String::new()),
                 };
-                let edit_link = ctx.admin_url(&format!("post.php?post={}&action=edit", post.id)).replace('&', "&amp;");
-                let mut states = post_states(ctx, post, status_param, is_sticky);
+                let edit_link = super::common::edit_post_link(ctx, post.id, true).await;
+                let mut states = post_states(ctx, post, status_param, is_sticky).await;
                 if let Some(name) = &parent_name {
                     states.push_str(&format!(" | {} {}", tr("Parent Page:"), esc_html(name)));
                 }
@@ -1164,7 +1164,7 @@ async fn inline_data(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, taxonomies: &[
 }
 
 /// `get_post_states()` as `_post_states()` prints it.
-fn post_states(ctx: &Ctx<'_>, post: &Post, status_param: &str, sticky: bool) -> String {
+async fn post_states(ctx: &Ctx<'_>, post: &Post, status_param: &str, sticky: bool) -> String {
     let site = ctx.site();
     let mut states: Vec<(String, String)> = Vec::new();
     let mut state = |key: &str, text: String| states.push((key.to_owned(), text));
@@ -1200,7 +1200,10 @@ fn post_states(ctx: &Ctx<'_>, post: &Post, status_param: &str, sticky: bool) -> 
     // `display_post_states`.
     if !site.plugins.is_empty() {
         list_plugin_ctx!(ctx, parts, screen_id, post.post_type.as_str(), plugin_ctx);
-        states = site.plugins.display_post_states(&plugin_ctx, post, states);
+        states = site.plugins.display_post_states(&plugin_ctx, post, states.clone()).await.unwrap_or_else(|e| {
+            tracing::error!(error = %e, "plugin display_post_states failed");
+            states
+        });
     }
     let states: Vec<String> = states.into_iter().map(|(_, text)| text).collect();
     if states.is_empty() {
@@ -1221,7 +1224,7 @@ async fn row_actions_for(ctx: &Ctx<'_>, post: &Post, title: &str, can_edit: bool
     let tr = |s: &str| ctx.tr(s);
     let site = ctx.site();
     let mut actions: Vec<(String, String)> = Vec::new();
-    let edit_url = ctx.admin_url(&format!("post.php?post={}&action=edit", post.id)).replace('&', "&amp;");
+    let edit_url = super::common::edit_post_link(ctx, post.id, true).await;
     if can_edit && post.post_status != "trash" {
         actions.push(("edit".into(), format!("<a href=\"{edit_url}\" aria-label=\"{}\">{}</a>", esc_attr(&rustpress_core::i18n::sprintf(&tr("Edit &#8220;%s&#8221;"), &[title])), tr("Edit"))));
         // Patterns have no quick edit.
@@ -1266,7 +1269,10 @@ async fn row_actions_for(ctx: &Ctx<'_>, post: &Post, title: &str, can_edit: bool
     }
     if !site.plugins.is_empty() {
         list_plugin_ctx!(ctx, parts, screen_id, info.name.as_str(), plugin_ctx);
-        actions = site.plugins.post_row_actions(&plugin_ctx, post, info.hierarchical, actions);
+        actions = site.plugins.post_row_actions(&plugin_ctx, post, info.hierarchical, actions.clone()).await.unwrap_or_else(|e| {
+            tracing::error!(error = %e, "plugin post_row_actions failed");
+            actions
+        });
     }
     let mut html = row_actions(site, &actions);
     // `row_actions()` ends with the toggle button, which the title cell prints itself.

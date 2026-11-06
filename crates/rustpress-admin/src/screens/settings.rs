@@ -53,7 +53,19 @@ pub async fn writing(ctx: &Ctx<'_>) -> AdminResponse {
         let label = site.trx(label, "Post format");
         options.push_str(&format!("\t\t<option value=\"{value}\"{}>{label}</option>\n", if current_format == value && value != "0" { " selected=\"selected\"" } else { "" }));
     }
-    h.push_str(&format!("<tr>\n<th scope=\"row\"><label for=\"default_post_format\">{}</label></th>\n<td>\n\t<select name=\"default_post_format\" id=\"default_post_format\">\n{options}\t</select>\n</td>\n</tr>\n\n</table>\n\n", tr("Default Post Format")));
+    h.push_str(&format!("<tr>\n<th scope=\"row\"><label for=\"default_post_format\">{}</label></th>\n<td>\n\t<select name=\"default_post_format\" id=\"default_post_format\">\n{options}\t</select>\n</td>\n</tr>\n\n", tr("Default Post Format")));
+    // `do_settings_fields( 'writing', 'default' )`: the fields plugins add with `add_settings_field()`.
+    if !site.plugins.is_empty() {
+        let parts = ctx.plugin_parts();
+        let plugin_ctx = ctx.plugin_context(&parts, "options-writing.php");
+        for (title, html) in site.plugins.settings_fields(&plugin_ctx, "writing").await.unwrap_or_else(|e| {
+            eprintln!("settings_fields: {e}");
+            Vec::new()
+        }) {
+            h.push_str(&format!("<tr><th scope=\"row\">{title}</th><td>{html}</td></tr>"));
+        }
+    }
+    h.push_str("</table>\n\n");
 
     let strings: Vec<String> = ["a", "b", "c"].iter().map(|_| random_string(8)).collect();
     let email_help = sprintf(

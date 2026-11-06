@@ -30,6 +30,8 @@ pub struct Screen {
     pub view_item: Option<(String, String)>,
     /// `view_item` is the archive of the post type.
     pub view_archive: bool,
+    /// `view_item` is the preview of this draft (`wp_admin_bar_edit_menu()`).
+    pub view_preview: Option<u64>,
     /// The block editor takes the whole window (`is-fullscreen-mode`).
     pub fullscreen: bool,
     /// More classes of the `body` element.
@@ -409,6 +411,10 @@ pub struct Assets {
     pub update_footer: Option<String>,
     /// What the plugins print on `in_admin_header`, after the toolbar.
     pub admin_header: String,
+    /// What the plugins print on `admin_print_styles` at priority 10: before the stylesheets of the screen.
+    pub plugin_print_styles: String,
+    /// What the plugins print on `admin_head-{$hook_suffix}` and `admin_head`: after the scripts of the head.
+    pub plugin_admin_head: String,
 }
 
 /// A page that `@wordpress/boot` renders, with the routes `wp-includes/build/routes/registry.php` lists for it.
@@ -850,6 +856,7 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
         thousands.1,
         i32::from(rtl)
     ));
+    out.push_str(&assets.plugin_print_styles);
     out.push_str(&admin_styles);
     out.push_str(&colors);
     let head_styles = match env.head_styles.split_once("<style id=\"wp-emoji-styles-inline-css\">") {
@@ -864,6 +871,7 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
     }
     out.push_str(&assets.head_early);
     out.push_str(&head_scripts);
+    out.push_str(&assets.plugin_admin_head);
     out.push_str("<script>var _wpColorScheme = {\"icons\":{\"base\":\"#f3f1f1\",\"focus\":\"#fff\",\"current\":\"#fff\"}};</script>\n");
     out.push_str(&format!(
         "\t<link id=\"wp-admin-canonical\" rel=\"canonical\" href=\"{}\" />\n\t<script>\n\t\tif ( window.history.replaceState ) {{\n\t\t\twindow.history.replaceState( null, null, document.getElementById( 'wp-admin-canonical' ).href + window.location.hash );\n\t\t}}\n\t</script>\n\t<meta name=\"viewport\" content=\"width=device-width,initial-scale=1.0\">",
@@ -891,6 +899,7 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
     out.push_str("<div id=\"wpcontent\">\n");
     let mut bar = env.bar.clone();
     bar.view_item = screen.view_item.clone();
+    bar.view_preview = screen.view_preview;
     bar.view_archive = screen.view_archive;
     out.push_str(&adminbar::render_admin(site, env.user, &bar));
     out.push_str(&assets.admin_header);

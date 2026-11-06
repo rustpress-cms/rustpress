@@ -272,7 +272,7 @@ pub async fn row_html_in(ctx: &Ctx<'_>, comment: &Comment, index: usize, current
     let response = match &post {
         Some(post) => {
             let title = rustpress_blocks::content::the_title_for(site, post);
-            let edit = if ctx.can("edit_posts") { format!("<a href='{}' class='comments-edit-item-link'>{}</a>", ctx.admin_url(&format!("post.php?post={}&amp;action=edit", post.id)), esc_html(&title)) } else { esc_html(&title) };
+            let edit = if ctx.can("edit_posts") { format!("<a href='{}' class='comments-edit-item-link'>{}</a>", super::common::edit_post_link(ctx, post.id, true).await, esc_html(&title)) } else { esc_html(&title) };
             let view = site.permalink(post).await.unwrap_or_default();
             let (approved, pending) = counts.get(&post.id).copied().unwrap_or((0, 0));
             format!("<div class=\"response-links\">{edit}<a href='{}' class='comments-view-item-link'>{}</a>{} </div>", esc_url(&view), tr("View Post"), count_bubble(ctx, post.id, approved, pending))
@@ -634,7 +634,10 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
                 // `_draft_or_post_title()` of a post that does not exist.
                 None => tr("(no title)"),
             };
-            let edit = post.as_ref().map_or_else(String::new, |post| ctx.admin_url(&format!("post.php?post={}&amp;action=edit", post.id)));
+            let edit = match &post {
+                Some(post) => super::common::edit_post_link(ctx, post.id, true).await,
+                None => String::new(),
+            };
             h.push_str(&format!("<div class=\"wrap\">\n<h1 class=\"wp-heading-inline\">\n{}</h1>\n\n", sprintf(&tr("Comments on &#8220;%s&#8221;"), &[&format!("<a href=\"{edit}\">{name}</a>")])));
             if let Some(post) = &post {
                 let link = site.permalink(post).await.unwrap_or_default();
@@ -1012,7 +1015,7 @@ async fn edit_form(ctx: &Ctx<'_>, comment: &Comment) -> AdminResponse {
     let comment_time = rustpress_core::datetime::SiteTimezone::gmt_timestamp(&comment.comment_date_gmt).unwrap_or(0);
     let submitted = sprintf(&tr("Submitted on: %s"), &[&format!("<b>{}</b>", site.date(&format!("{} {}", tr("M j, Y"), tr("\\a\\t H:i")).replace("\\a\\t", "\\a\\t"), comment_time))]);
     let response_to = match &post {
-        Some(post) => format!("{} <b><a href='{}'>{}</a></b>", tr("In response to:"), esc_url(&ctx.admin_url(&format!("post.php?post={}&action=edit", post.id))), esc_html(&rustpress_blocks::content::the_title_for(site, post))),
+        Some(post) => format!("{} <b><a href='{}'>{}</a></b>", tr("In response to:"), esc_url(&super::common::edit_post_link(ctx, post.id, false).await), esc_html(&rustpress_blocks::content::the_title_for(site, post))),
         None => String::new(),
     };
     let parent_row = {
