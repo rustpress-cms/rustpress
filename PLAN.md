@@ -82,7 +82,7 @@ The reference stack, the tools and the working rules are in [AGENTS.md](AGENTS.m
 ## Open
 
 **Website**
-- `[playlist]`, `core/rss` (network).
+- `core/rss` (network).
 - Block hooks (`hooked_block_types`): no module registers hooked blocks yet, so `apply_block_hooks_to_content()` only
   normalizes.
 - Twenty Seventeen: post formats with their own templates, the `front-page.php` panels, the color scheme `custom` and
@@ -656,3 +656,14 @@ These were missing and not in the list of open items, except the responsive styl
 - Compared with `dev/block-states-compare.py` on whole pages, 9 posts with about 50 blocks, and what an author and an
   administrator save; it prints how often the new classes occur, because a first run of the custom CSS compared two
   pages without any: `wp_insert_post()` had stripped the CSS while seeding.
+
+### `[playlist]` (2026-11-06)
+
+`wp_playlist_shortcode()` in `shortcodes.rs`, the templates of `wp_underscore_playlist_templates()` from the PHP source,
+`wp-playlist` with `wp-util`, `backbone` and `mediaelement` in the footer. `CORE_TAGS` listed `wp_playlist`, a name
+WordPress does not know, so `[playlist]` stayed in the text. Quirks kept: without `ids` the shortcode prints nothing for
+visitors, because `current_user_can( 'read_post', ... )` fails without a user, and `images="false"` still gives images,
+because `if ( $atts['images'] )` looks at the string. `wp_validate_boolean()` was too strict for `[audio]` and `[video]`
+as well: only `false`, `0` and an empty value are false. `$content_width` is not used, block themes
+do not set it, so Twenty Seventeen differs in the width of a playlist; a page with both `[audio]` and `[playlist]` may
+print the scripts in another order. Compared in `dev/media-blocks-compare.py`.

@@ -631,7 +631,7 @@ pub(crate) fn emoji_detection_script(site: &Site, wp_root: &Path, version: &str)
 }
 
 /// The scripts `wp_enqueue_script( 'wp-mediaelement' )` brings to the footer.
-fn mediaelement_scripts(site: &Site, wp_root: &std::path::Path, includes_url: &str, version: &str, vimeo: bool) -> String {
+fn mediaelement_scripts(site: &Site, wp_root: &std::path::Path, includes_url: &str, version: &str, vimeo: bool, wp_mediaelement: bool) -> String {
     // The strings of `mejsL10n` are read from WordPress's own script-loader and translated.
     let mut strings = serde_json::Map::new();
     if let Some(php) = read(&wp_root.join("wp-includes").join("script-loader.php"))
@@ -651,7 +651,9 @@ fn mediaelement_scripts(site: &Site, wp_root: &std::path::Path, includes_url: &s
     out.push_str(&format!("<script id=\"mediaelement-core-js\" src=\"{includes_url}/js/mediaelement/mediaelement-and-player.min.js?ver=4.2.17\"></script>\n"));
     out.push_str(&format!("<script id=\"mediaelement-migrate-js\" src=\"{includes_url}/js/mediaelement/mediaelement-migrate.min.js?ver={version}\"></script>\n"));
     out.push_str(&format!("<script id=\"mediaelement-js-extra\">\nvar _wpmejsSettings = {settings};\n//# sourceURL=mediaelement-js-extra\n</script>\n"));
-    out.push_str(&format!("<script id=\"wp-mediaelement-js\" src=\"{includes_url}/js/mediaelement/wp-mediaelement.min.js?ver={version}\"></script>\n"));
+    if wp_mediaelement {
+        out.push_str(&format!("<script id=\"wp-mediaelement-js\" src=\"{includes_url}/js/mediaelement/wp-mediaelement.min.js?ver={version}\"></script>\n"));
+    }
     if vimeo {
         out.push_str(&format!("<script id=\"mediaelement-vimeo-js\" src=\"{includes_url}/js/mediaelement/renderers/vimeo.min.js?ver=4.2.17\"></script>\n"));
     }
@@ -928,12 +930,13 @@ pub async fn render_document_with(theme: &Theme, site: &Site, query: &QueryResul
     }
     let plugin_footer = site.plugins.wp_footer(site, &looped).await?;
     let lightbox = if state.lightbox_overlay { rustpress_blocks::dynamic::lightbox::overlay(site, theme) } else { String::new() };
-    let mut footer_scripts = format!("{speculation}{}{plugin_footer}{module_scripts}{}{lightbox}", rustpress_blocks::duotone::footer_svgs(&state.duotone), state.interactivity.data_script().unwrap_or_default());
+    let playlist_templates = if state.playlist { rustpress_blocks::shortcodes::playlist_templates(site) } else { String::new() };
+    let mut footer_scripts = format!("{playlist_templates}{speculation}{}{plugin_footer}{module_scripts}{}{lightbox}", rustpress_blocks::duotone::footer_svgs(&state.duotone), state.interactivity.data_script().unwrap_or_default());
     // MediaElement: jQuery in the head, the player scripts in the footer. The scripts plugins enqueue for the head
     // follow, after their dependencies.
     let mut printer = crate::plugin_assets::ScriptPrinter::new(&includes_url, "3.7.1", "3.4.1").with_packages(&theme.wp_root, site);
     let mut head_scripts = String::new();
-    if state.mediaelement {
+    if state.mediaelement || state.playlist {
         head_scripts.push_str(&printer.core("jquery"));
     }
     head_scripts.push_str(&printer.scripts(&plugin_assets.scripts, false));
@@ -941,8 +944,17 @@ pub async fn render_document_with(theme: &Theme, site: &Site, query: &QueryResul
     if toolbar_on {
         footer_scripts.push_str(&format!("<script id=\"hoverintent-js-js\" src=\"{includes_url}/js/hoverintent-js.min.js?ver=2.2.1\"></script>\n<script id=\"admin-bar-js\" src=\"{includes_url}/js/admin-bar.min.js?ver={version}\"></script>\n"));
     }
-    if state.mediaelement {
-        footer_scripts.push_str(&mediaelement_scripts(site, wp_root, &includes_url, &version, state.vimeo));
+    // `wp-playlist` needs `wp-util`, `backbone` and `mediaelement`, but not `wp-mediaelement`.
+    if state.playlist {
+        footer_scripts.push_str(&printer.core("wp-util"));
+        footer_scripts.push_str(&printer.core("backbone"));
+    }
+    if state.mediaelement || state.playlist {
+        footer_scripts.push_str(&mediaelement_scripts(site, wp_root, &includes_url, &version, state.vimeo, state.mediaelement));
+    }
+    if state.playlist {
+        printer.mark_printed(&["mediaelement", "mediaelement-core", "mediaelement-migrate"]);
+        footer_scripts.push_str(&printer.core("wp-playlist"));
     }
     if state.scripts.iter().any(|s| s == "comment-reply") {
         footer_scripts.push_str(&format!("<script async data-wp-strategy=\"async\" fetchpriority=\"low\" id=\"comment-reply-js\" src=\"{includes_url}/js/comment-reply.min.js?ver={version}\"></script>\n"));
