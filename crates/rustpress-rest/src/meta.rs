@@ -573,8 +573,23 @@ impl Rest<'_> {
                 }
                 (out, total)
             }
-            // The post formats a theme supports; block themes have none.
-            _ => (Vec::new(), 0),
+            // `WP_REST_Post_Format_Search_Handler`: the formats that have a term, in the order of `get_post_format_strings()`.
+            _ => {
+                const FORMATS: [(&str, &str); 10] = [("standard", "Standard"), ("aside", "Aside"), ("chat", "Chat"), ("gallery", "Gallery"), ("link", "Link"), ("image", "Image"), ("quote", "Quote"), ("status", "Status"), ("video", "Video"), ("audio", "Audio")];
+                let needle = search.as_ref().map(|s| s.to_lowercase());
+                let mut found = Vec::new();
+                for (slug, label) in FORMATS {
+                    let title = self.site.trx(label, "Post format");
+                    if needle.as_ref().is_some_and(|n| !slug.contains(n.as_str()) && !title.to_lowercase().contains(n.as_str())) {
+                        continue;
+                    }
+                    if let Some(term) = self.site.db.term_by_slug("post_format", &format!("post-format-{slug}")).await? {
+                        found.push(json!({ "id": slug, "title": title, "url": self.site.term_link(&term).await?, "type": "post-format", "_links": { "collection": [{ "href": self.rest_url("wp/v2/search") }] } }));
+                    }
+                }
+                let total = found.len() as u64;
+                (found.into_iter().skip(((page - 1).saturating_mul(per_page)) as usize).take(per_page as usize).collect(), total)
+            }
         };
         let max_pages = total.div_ceil(per_page);
         if page > max_pages && total > 0 {

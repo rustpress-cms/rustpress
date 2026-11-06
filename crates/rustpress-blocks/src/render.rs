@@ -19,7 +19,7 @@ pub const MAX_RENDER_DEPTH: u32 = 64;
 
 /// Blocks that render their inner blocks themselves (`skip_inner_blocks`).
 fn skips_inner_blocks(name: &str) -> bool {
-    matches!(name, "core/post-template" | "core/comment-template" | "core/comments" | "core/term-template" | "core/navigation" | "core/navigation-link")
+    matches!(name, "core/post-template" | "core/comment-template" | "core/comments" | "core/term-template" | "core/navigation" | "core/navigation-link" | "core/navigation-submenu")
 }
 
 /// Everything a dynamic block's render callback receives.

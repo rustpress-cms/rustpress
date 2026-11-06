@@ -620,15 +620,8 @@ fn page_list_colors(_attrs: &Map<String, Value>, context: &Map<String, Value>) -
 
 pub(super) async fn navigation_link(bc: &BlockCtx<'_>) -> Result<String> {
     let attrs = &bc.attrs;
-    // `block_core_shared_navigation_item_should_render`
-    let has_id = attrs.get("id").is_some_and(|v| v.is_number());
-    let is_post_type = str_attr(attrs, "kind") == Some("post-type") || matches!(str_attr(attrs, "type"), Some("post" | "page"));
-    if is_post_type && has_id {
-        let id = attrs.get("id").and_then(Value::as_u64).unwrap_or(0);
-        let published = bc.env.site.db.post(id).await?.is_some_and(|p| p.post_status == "publish");
-        if !published {
-            return Ok(String::new());
-        }
+    if !item_should_render(bc).await? {
+        return Ok(String::new());
     }
     let label = str_attr(attrs, "label").unwrap_or("");
     if label.is_empty() {
@@ -669,6 +662,152 @@ pub(super) async fn navigation_link(bc: &BlockCtx<'_>) -> Result<String> {
     }
     if has_submenu {
         html.push_str(&format!("<ul class=\"wp-block-navigation__submenu-container\">{inner_html}</ul>"));
+    }
+    html.push_str("</li>");
+    Ok(html)
+}
+
+/// `block_core_shared_navigation_item_should_render()`.
+async fn item_should_render(bc: &BlockCtx<'_>) -> Result<bool> {
+    let attrs = &bc.attrs;
+    let id = attrs.get("id").and_then(|v| v.as_u64().or_else(|| v.as_str().and_then(|s| s.parse().ok())));
+    let is_post_type = str_attr(attrs, "kind") == Some("post-type") || matches!(str_attr(attrs, "type"), Some("post" | "page"));
+    Ok(match id {
+        Some(id) if is_post_type => bc.env.site.db.post(id).await?.is_some_and(|p| p.post_status == "publish"),
+        _ => true,
+    })
+}
+
+/// `render_block_core_navigation_submenu()`.
+pub(super) async fn navigation_submenu(bc: &BlockCtx<'_>) -> Result<String> {
+    if !item_should_render(bc).await? {
+        return Ok(String::new());
+    }
+    let attrs = &bc.attrs;
+    let Some(raw_label) = str_attr(attrs, "label").filter(|l| !l.is_empty() && *l != "0") else { return Ok(String::new()) };
+    let mut inner_html = String::new();
+    for inner in &bc.block.inner_blocks {
+        inner_html.push_str(&bc.env.render_block(inner, bc.available, Some(bc.block)).await?);
+    }
+    let has_submenu = !inner_html.trim().is_empty();
+
+    // `! empty( get_queried_object()->$kind )`: a post has a `post_type`, a term a `taxonomy`.
+    let kind = str_attr(attrs, "kind").filter(|k| !k.is_empty()).unwrap_or("post-type").replace('-', "_");
+    let query = bc.env.query;
+    let id = attrs.get("id").and_then(|v| v.as_u64().or_else(|| v.as_str().and_then(|s| s.parse().ok()))).unwrap_or(0);
+    let mut is_active = id != 0
+        && id == query.queried_object_id()
+        && match &query.queried {
+            rustpress_core::Queried::Post(_) => kind == "post_type",
+            rustpress_core::Queried::Term(_) => kind == "taxonomy",
+            _ => false,
+        };
+    if let (true, rustpress_core::Queried::PostType(post_type), Some(url)) = (query.flags.is_post_type_archive, &query.queried, str_attr(attrs, "url")) {
+        is_active = is_active || bc.env.site.post_type_archive_link(post_type).as_deref() == Some(url);
+    }
+
+    let show_indicators = bc.context.get("showSubmenuIcon").is_some_and(|v| !crate::style_engine::is_empty(v));
+    let visibility = submenu_visibility(&bc.context.values);
+    let open_on_click = visibility == "click";
+    let mut classes = vec!["wp-block-navigation-item"];
+    if has_submenu {
+        classes.push("has-child");
+    }
+    if open_on_click {
+        classes.push("open-on-click");
+    }
+    if visibility == "hover" && show_indicators {
+        classes.push("open-on-hover-click");
+    }
+    if visibility == "always" {
+        classes.push("open-always");
+    }
+    if is_active {
+        classes.push("current-menu-item");
+    }
+    // `$block->block_type->supports['color'] = true` below stays on the registered block type for the rest of the request.
+    let colored_type = bc.block_type.as_deref().map(|block_type| block_type.with_color_support());
+    let earlier_submenu = bc.env.with_state(|s| s.submenu_colors);
+    let wrapper = if earlier_submenu {
+        crate::supports::wrapper_attributes_with(colored_type.as_ref(), &bc.raw_attrs, &[("class", classes.join(" "))], Some(bc.env.theme.global_settings()))
+    } else {
+        bc.wrapper_attributes(&[("class", classes.join(" "))])
+    };
+
+    let label = kses_post(raw_label);
+    let aria_label = rustpress_core::i18n::sprintf(&bc.env.site.tr("%s submenu"), &[strip_tags(&label).trim()]);
+    let mut html = format!("<li {wrapper}>");
+    if open_on_click {
+        html.push_str(&format!(
+            "<button aria-label=\"{}\" class=\"wp-block-navigation-item__content wp-block-navigation-submenu__toggle\" aria-expanded=\"false\"><span class=\"wp-block-navigation-item__label\">{label}</span>{}</button>",
+            esc_attr(&aria_label),
+            description(attrs)
+        ));
+        if has_submenu {
+            html.push_str(&format!("<span class=\"wp-block-navigation__submenu-icon\">{SUBMENU_ICON}</span>"));
+        }
+    } else {
+        html.push_str("<a class=\"wp-block-navigation-item__content\"");
+        if let Some(url) = str_attr(attrs, "url").filter(|u| !u.is_empty() && *u != "0") {
+            html.push_str(&format!(" href=\"{}\"", esc_url(url)));
+        }
+        if is_active {
+            html.push_str(" aria-current=\"page\"");
+        }
+        if attrs.get("opensInNewTab").and_then(Value::as_bool) == Some(true) {
+            html.push_str(" target=\"_blank\"  ");
+        }
+        if let Some(rel) = str_attr(attrs, "rel") {
+            html.push_str(&format!(" rel=\"{}\"", esc_attr(rel)));
+        } else if attrs.get("nofollow").is_some_and(|v| !crate::style_engine::is_empty(v)) {
+            html.push_str(" rel=\"nofollow\"");
+        }
+        if let Some(title) = str_attr(attrs, "title") {
+            html.push_str(&format!(" title=\"{}\"", esc_attr(title)));
+        }
+        html.push_str(&format!("><span class=\"wp-block-navigation-item__label\">{label}</span>{}</a>", description(attrs)));
+        if show_indicators && has_submenu {
+            html.push_str(&format!(
+                "<button aria-label=\"{}\" class=\"wp-block-navigation__submenu-icon wp-block-navigation-submenu__toggle\" aria-expanded=\"false\">{SUBMENU_ICON}</button>",
+                esc_attr(&aria_label)
+            ));
+        }
+    }
+
+    if has_submenu {
+        // Some attributes come from the parent block; `wp_apply_colors_support()` with `color` turned on.
+        let context = &bc.context;
+        let color = |preset_key: &str, attribute: &str, custom_key: &str, custom_name: &str| -> Option<String> {
+            let preset = context.get(preset_key).and_then(Value::as_str).or_else(|| str_attr(attrs, attribute));
+            let custom = context.get(custom_key).and_then(Value::as_str).or_else(|| attrs.get("style").and_then(|s| s.get("color")).and_then(|c| c.get(custom_name)).and_then(Value::as_str));
+            preset.map(|preset| format!("var:preset|color|{preset}")).or_else(|| custom.map(str::to_owned))
+        };
+        let mut colors = Map::new();
+        if let Some(text) = color("overlayTextColor", "textColor", "customOverlayTextColor", "text") {
+            colors.insert("text".to_owned(), Value::String(text));
+        }
+        if let Some(background) = color("overlayBackgroundColor", "backgroundColor", "customOverlayBackgroundColor", "background") {
+            colors.insert("background".to_owned(), Value::String(background));
+        }
+        let styles = crate::style_engine::get_styles(&serde_json::json!({ "color": colors }), true);
+        let mut container_class = "wp-block-navigation__submenu-container".to_owned();
+        if !styles.classnames.is_empty() {
+            container_class.push(' ');
+            container_class.push_str(&styles.classnames);
+        }
+        if inner_html.find("current-menu-item").is_some_and(|at| at != 0) {
+            let mut from = 0;
+            while let Some(tag) = crate::html::tags(&html, from).into_iter().find(|t| !t.is_closer && t.attr("class").is_some_and(|c| c.split_ascii_whitespace().any(|x| x == "wp-block-navigation-item"))) {
+                let mut editor = crate::html::TagEditor::from_tag(&html, tag);
+                editor.add_class("current-menu-ancestor");
+                let (start, _, text) = editor.tag_replacement();
+                from = start + text.len();
+                html = editor.finish();
+            }
+        }
+        bc.env.with_state(|s| s.submenu_colors = true);
+        let list_wrapper = crate::supports::wrapper_attributes_with(colored_type.as_ref(), &bc.raw_attrs, &[("class", container_class), ("style", styles.css)], Some(bc.env.theme.global_settings()));
+        html.push_str(&format!("<ul {list_wrapper}>{inner_html}</ul>"));
     }
     html.push_str("</li>");
     Ok(html)

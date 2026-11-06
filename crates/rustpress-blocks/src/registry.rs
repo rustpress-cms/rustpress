@@ -26,6 +26,15 @@ pub struct BlockType {
 
 impl BlockType {
     /// `block_has_support( $block_type, $feature, $default )`.
+    /// The block type with `supports['color'] = true`.
+    pub fn with_color_support(&self) -> Self {
+        let mut block_type = self.clone();
+        if let Value::Object(supports) = &mut block_type.supports {
+            supports.insert("color".to_owned(), Value::Bool(true));
+        }
+        block_type
+    }
+
     pub fn has_support(&self, path: &[&str], default: bool) -> bool {
         match self.support(path) {
             Some(Value::Bool(true)) => true,
