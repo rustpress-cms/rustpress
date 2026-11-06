@@ -45,8 +45,9 @@ The reference stack, the tools and the working rules are in [AGENTS.md](AGENTS.m
 
 - **Website** – equal to WordPress for the bundled block themes Twenty Twenty-Five, -Four, -Three and -Two (about 780
   URLs each: pages, patterns, feeds, sitemaps, REST, files; 0 unexpected differences), across eight permalink
-  structures and a matrix of settings, and in de_DE, ru_RU, ar and ja. Twenty Seventeen on the maintainer's real site:
-  539 URLs, 0 unexpected differences (2026-11-06). Covered: the main query and template hierarchy, canonical redirects, custom
+  structures and a matrix of settings, and in de_DE, ru_RU, ar and ja. Twenty Seventeen on a copy of the maintainer's real site,
+  0 unexpected differences (2026-11-06): 322 URLs with its plain permalinks, all 105 HTML pages identical; 539 URLs with
+  `/%postname%/`. Covered: the main query and template hierarchy, canonical redirects, custom
   post types and taxonomies (from the stored rules and the literal `register_*()` calls of plugins and themes),
   shortcodes, embeds/oEmbed, the dynamic blocks including Interactivity, the comment form and submitting comments,
   previews and private content for signed-in users, the admin bar.
@@ -699,8 +700,10 @@ at first (the permalink structure was not put back, the language pack had not be
 
 ### The real site in `rustpress-compat`, `core/navigation-submenu` (2026-11-06)
 
-The compat run of the real site crawled 539 URLs instead of the 318 of 2026-10-25 and found 15 differences that had
-nothing to do with Twenty Seventeen's templates:
+A compat run of the copy of the real site found 15 differences that had nothing to do with Twenty Seventeen's templates.
+It ran with `/%postname%/`, which a run of `dev/seventeen-compare.py` had left in the copy before the script saved that
+option; the site itself uses plain permalinks, and that is why there were 539 URLs instead of 322. The differences are
+real all the same, on any site with those addresses:
 
 - **`core/navigation-submenu` was not ported at all:** in a block theme a submenu vanished from the navigation, without any
   entry in the plan. Now `navigation_submenu()`: `block_core_shared_navigation_item_should_render()`, click, hover and
@@ -714,5 +717,5 @@ nothing to do with Twenty Seventeen's templates:
 - **REST:** the search `type=post-format`; `media_type` goes through `get_allowed_mime_types()`, so a visitor's list has no
   SVG files, and it is an array in the `Link` header.
 
-Compared in `dev/block-states-compare.py` (a page with submenus) and `rustpress-compat` against the copy of the real site:
-539 URLs, 0 unexpected differences; Twenty Twenty-Five: 921 URLs, 0 unexpected differences.
+Compared in `dev/block-states-compare.py` (a page with submenus) and `rustpress-compat`: the copy of the real site with
+plain permalinks 322 URLs and with `/%postname%/` 539 URLs, Twenty Twenty-Five 921 URLs, 0 unexpected differences in each.
