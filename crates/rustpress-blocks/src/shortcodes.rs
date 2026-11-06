@@ -177,6 +177,41 @@ pub async fn attachment_link_html(env: &Env<'_>, attachment: &Post, size: &str, 
 }
 
 /// `gallery_shortcode()` for a theme with HTML5 galleries.
+/// `get_post_galleries( $post )`: the galleries of the shortcodes, then those of the blocks.
+pub async fn post_galleries(env: &Env<'_>, post: &Arc<Post>) -> Result<Vec<String>> {
+    let content = &post.post_content;
+    let has_block = content.contains("<!-- wp:gallery");
+    let mut galleries = Vec::new();
+    let registered = env.site.shortcode_tags();
+    let mut at = 0;
+    while let Some(found) = shortcodes::find(content, at, &registered) {
+        at = found.end;
+        if found.name == "gallery" {
+            let mut atts = shortcodes::parse_atts(&found.atts);
+            // The gallery of the post, unless the shortcode names another one.
+            if atts.get("id").is_none() {
+                atts.set("id", &post.id.to_string());
+            }
+            galleries.push(gallery_shortcode(env, Some(post), atts).await?);
+        }
+    }
+    if has_block {
+        let mut queue: std::collections::VecDeque<crate::parser::Block> = crate::parser::parse_blocks(content).into();
+        while let Some(block) = queue.pop_front() {
+            match block.name.as_deref() {
+                None => {}
+                Some("core/gallery") if block.inner_blocks.is_empty() => galleries.push(block.inner_html.clone()),
+                Some("core/gallery") => {
+                    let images: Vec<&str> = block.inner_blocks.iter().map(|b| b.inner_html.as_str()).collect();
+                    galleries.push(format!("<figure>{}</figure>", images.join(" ")));
+                }
+                Some(_) => queue.extend(block.inner_blocks),
+            }
+        }
+    }
+    Ok(galleries)
+}
+
 /// `wp_get_attachment_image_src( $id, $size )` as JSON.
 async fn image_source(env: &Env<'_>, id: u64, size: &str) -> Result<Option<serde_json::Value>> {
     let Some(attachment) = env.site.db.post(id).await? else { return Ok(None) };
@@ -255,9 +290,11 @@ async fn playlist_shortcode(env: &Env<'_>, post: Option<&Arc<Post>>, mut atts: A
         return Ok(output);
     }
 
-    // `$content_width` is not set for block themes.
-    let (theme_width, default_height) = (640_u64, 360_u64);
-    let mut theme_height = default_height;
+    // Default padding and border of the wrapper: 22 pixels.
+    let content_width = env.with_state(|s| s.content_width);
+    let default_height = 360_u64;
+    let theme_width = if content_width == 0 { 640 } else { content_width.saturating_sub(22) };
+    let mut theme_height = if content_width == 0 { default_height } else { (default_height as f64 * theme_width as f64 / 640.0).round() as u64 };
     let mut tracks = Vec::new();
     for attachment in &attachments {
         let (meta, attached) = images::load_metadata(site, attachment).await?;

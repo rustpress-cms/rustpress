@@ -302,7 +302,7 @@ struct Sheet {
 
 /// The right-to-left variant of a stylesheet (`style.min.css` -> `style-rtl.min.css`): its file and URL,
 /// if the language is right-to-left and the file exists.
-fn rtl_variant(rtl: bool, path: &std::path::Path, url: &str) -> Option<(std::path::PathBuf, String)> {
+pub(crate) fn rtl_variant(rtl: bool, path: &std::path::Path, url: &str) -> Option<(std::path::PathBuf, String)> {
     if !rtl {
         return None;
     }
@@ -444,12 +444,13 @@ fn font_faces_of(theme: &Theme, families: &[Value]) -> String {
     if css.is_empty() { String::new() } else { format!("<style class=\"wp-fonts-local\">\n{css}</style>\n") }
 }
 
-pub(crate) async fn discovery_links(site: &Site, q: &QueryResult, version: &str, cpage_override: u64, rel_canonical: bool) -> Result<String> {
+pub(crate) async fn discovery_links(site: &Site, q: &QueryResult, version: &str, cpage_override: u64, rel_canonical: bool, locale_stylesheet: &str) -> Result<String> {
     let mut out = format!("<link rel=\"https://api.w.org/\" href=\"{}\" />", esc_url(&site.rest_url("/")));
     if let Some(route) = crate::head::queried_rest_route(site, q) {
         out.push_str(&format!("<link rel=\"alternate\" title=\"JSON\" type=\"application/json\" href=\"{}\" />", esc_url(&site.rest_url(&route))));
     }
     out.push_str(&format!("<link rel=\"EditURI\" type=\"application/rsd+xml\" title=\"RSD\" href=\"{}\" />\n", esc_url(&site.site_url("xmlrpc.php?rsd"))));
+    out.push_str(locale_stylesheet);
     out.push_str(&format!("<meta name=\"generator\" content=\"WordPress {version}\" />\n"));
     if q.flags.is_singular()
         && let Queried::Post(_) = &q.queried {
@@ -463,6 +464,26 @@ pub(crate) async fn discovery_links(site: &Site, q: &QueryResult, version: &str,
             }
         }
     Ok(out)
+}
+
+/// `locale_stylesheet()`: `<locale>.css` of the theme, or its `rtl.css` for a language that runs from right to left.
+pub(crate) fn locale_stylesheet(theme: &Theme, site: &Site) -> String {
+    let dir = theme.stylesheet_dir();
+    let locale = site.locale();
+    let file = if rustpress_core::files::is_file(&dir.join(format!("{locale}.css"))) {
+        format!("{locale}.css")
+    } else if site.is_rtl() && rustpress_core::files::is_file(&dir.join("rtl.css")) {
+        "rtl.css".to_owned()
+    } else {
+        return String::new();
+    };
+    format!("<link rel=\"stylesheet\" href=\"{}/{file}\" media=\"screen\" />", theme.stylesheet_directory_uri())
+}
+
+/// The styles of the toolbar: `dashicons`, `admin-bar` and the bump of `_admin_bar_bump_cb()`.
+pub(crate) fn toolbar_styles(includes_url: &str, version: &str, rtl: bool) -> String {
+    let bar = if rtl { "-rtl" } else { "" };
+    format!("<link rel='stylesheet' id='dashicons-css' href='{includes_url}/css/dashicons.min.css?ver={version}' media='all' />\n<link rel='stylesheet' id='admin-bar{bar}-css' href='{includes_url}/css/admin-bar{bar}.min.css?ver={version}' media='all' />\n<style id=\"admin-bar-inline-css\">\n\n\t\t@media screen {{ html {{ margin-top: 32px !important; }} }}\n\t\t@media screen and ( max-width: 782px ) {{ html {{ margin-top: 46px !important; }} }}\n\t\n@media print {{ #wpadminbar {{ display:none; }} }}\n/*# sourceURL=admin-bar-inline-css */\n</style>\n")
 }
 
 /// `wp_get_canonical_url()` of the queried post: a later page of the post or of its comments is
@@ -561,7 +582,7 @@ fn url_path(url: &str) -> String {
 }
 
 /// `wp_print_speculation_rules()`: prefetch for same-site links, with WordPress' exclusions.
-fn speculation_rules(site: &Site, theme: &Theme) -> String {
+pub(crate) fn speculation_rules(site: &Site, theme: &Theme) -> String {
     // Only with pretty permalinks, and never for logged-in users (there are none here).
     if site.settings.permalink_structure.is_empty() {
         return String::new();
@@ -631,7 +652,7 @@ pub(crate) fn emoji_detection_script(site: &Site, wp_root: &Path, version: &str)
 }
 
 /// The scripts `wp_enqueue_script( 'wp-mediaelement' )` brings to the footer.
-fn mediaelement_scripts(site: &Site, wp_root: &std::path::Path, includes_url: &str, version: &str, vimeo: bool, wp_mediaelement: bool) -> String {
+pub(crate) fn mediaelement_scripts(site: &Site, wp_root: &std::path::Path, includes_url: &str, version: &str, vimeo: bool, wp_mediaelement: bool) -> String {
     // The strings of `mejsL10n` are read from WordPress's own script-loader and translated.
     let mut strings = serde_json::Map::new();
     if let Some(php) = read(&wp_root.join("wp-includes").join("script-loader.php"))
@@ -671,7 +692,7 @@ pub async fn render_document_with(theme: &Theme, site: &Site, query: &QueryResul
         return crate::embed::render(theme, site, query, registry).await;
     }
     if crate::classic::is_ported(theme) {
-        return crate::classic::render_document(theme, site, query, registry).await;
+        return crate::classic::render_document(theme, site, query, registry, extras).await;
     }
     let started = std::time::Instant::now();
     let rendered = render_body(theme, site, query, registry).await?;
@@ -802,7 +823,7 @@ pub async fn render_document_with(theme: &Theme, site: &Site, query: &QueryResul
     styles.push_str("<style id=\"wp-img-auto-sizes-contain-inline-css\">\nimg:is([sizes=auto i],[sizes^=\"auto,\" i]){contain-intrinsic-size:3000px 1500px}\n/*# sourceURL=wp-img-auto-sizes-contain-inline-css */\n</style>\n");
     let toolbar_on = query.viewer.as_ref().is_some_and(|v| v.show_admin_bar);
     if toolbar_on {
-        styles.push_str(&format!("<link rel='stylesheet' id='dashicons-css' href='{includes_url}/css/dashicons.min.css?ver={version}' media='all' />\n<link rel='stylesheet' id='admin-bar-css' href='{includes_url}/css/admin-bar.min.css?ver={version}' media='all' />\n<style id=\"admin-bar-inline-css\">\n\n\t\t@media screen {{ html {{ margin-top: 32px !important; }} }}\n\t\t@media screen and ( max-width: 782px ) {{ html {{ margin-top: 46px !important; }} }}\n\t\n@media print {{ #wpadminbar {{ display:none; }} }}\n/*# sourceURL=admin-bar-inline-css */\n</style>\n"));
+        styles.push_str(&toolbar_styles(&includes_url, &version, rtl));
     }
     for sheet in &sheets {
         match (&sheet.inline, &sheet.file) {
@@ -984,7 +1005,7 @@ pub async fn render_document_with(theme: &Theme, site: &Site, query: &QueryResul
         esc_html(&title),
         crate::head::feed_links(site, query).await?,
         oembed_links(site, query).await?,
-        discovery_links(site, query, &version, state.cpage_override, !plugin_head.removed.contains(&"rel_canonical")).await?
+        discovery_links(site, query, &version, state.cpage_override, !plugin_head.removed.contains(&"rel_canonical"), &locale_stylesheet(theme, site)).await?
             // A ported block theme's `wp_head` actions of priority 10 come after core's (`rel_canonical`, the shortlink).
             + &theme.block_theme_port().map(|port| port.wp_head(query)).unwrap_or_default(),
     );

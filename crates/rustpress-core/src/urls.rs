@@ -268,7 +268,7 @@ impl Site {
     pub async fn page_link(&self, page: &Post) -> Result<String> {
         use crate::settings::ShowOnFront;
         if self.settings.show_on_front == ShowOnFront::Page && self.settings.page_on_front == page.id {
-            return Ok(self.user_trailingslashit(&self.home_url("")));
+            return Ok(self.home_url("/"));
         }
         if self.settings.permalink_structure.is_empty() || matches!(page.post_status.as_str(), "draft" | "pending" | "auto-draft") {
             return Ok(self.home_url(&format!("?page_id={}", page.id)));

@@ -85,8 +85,9 @@ The reference stack, the tools and the working rules are in [AGENTS.md](AGENTS.m
 - `core/rss` (network).
 - Block hooks (`hooked_block_types`): no module registers hooked blocks yet, so `apply_block_hooks_to_content()` only
   normalizes.
-- Twenty Seventeen: post formats with their own templates, the `front-page.php` panels, the color scheme `custom` and
-  the header text color, the social menu, `wp_link_pages()`, the theme's `rtl.css`. More classic themes.
+- Twenty Seventeen: a page with `<!--more-->` in the audio and video formats is compared without it; the site icon in the
+  toolbar of the administration (`render_admin()`); `$content_width` for `[gallery]`, embeds and images. More classic
+  themes.
 - The `functions.php` of themes: only literal calls are read.
 - More third-party block themes. Frost 1.1 and Ollie 1.6.6 are equal (compat runs of 2026-11-05 against WordPress
   7.1.4) except the environment differences Twenty Twenty-Five shows as well (posts with the same date). A block
@@ -667,3 +668,31 @@ because `if ( $atts['images'] )` looks at the string. `wp_validate_boolean()` wa
 as well: only `false`, `0` and an empty value are false. `$content_width` is not used, block themes
 do not set it, so Twenty Seventeen differs in the width of a playlist; a page with both `[audio]` and `[playlist]` may
 print the scripts in another order. Compared in `dev/media-blocks-compare.py`.
+
+### Twenty Seventeen completed (2026-11-06)
+
+Compared on the copy of the real site (`dev/up-soli.sh`, port 8081) with `dev/serve-soli.ps1` and
+`dev/seventeen-compare.py`: 47 pages, as a visitor and signed in. The script makes its posts in `soli_ref` and restores
+options and theme mods afterwards. It prints a count for each scenario; it showed three scenarios that compared nothing
+at first (the permalink structure was not put back, the language pack had not been installed).
+
+- **Post formats:** `template-parts/post/content-audio.php`, `-video`, `-image`, `-gallery` in `content_part()`:
+  `get_media_embedded_in_content()`, `get_post_gallery()` (`post_galleries()` for shortcodes and blocks), the media count
+  of every `get_the_post_thumbnail()` in a condition.
+- **`wp_link_pages()`**, and `get_the_content()` now gets the page of the request; `?page=2` showed page 1 until now.
+  `post_pages()` follows `WP_Query::generate_postdata()`, including the block delimiters of `core/nextpage`.
+- **`front-page.php`:** `content-front-page.php`, the four panels, the blog panel with its three recent posts. Quirk: its
+  `wp_reset_postdata()` leaves the post of the page for `the_ID()` in the closing comment.
+- **Colors:** `twentyseventeen_colors_css_wrap()` with the CSS from `inc/color-patterns.php`, `twentyseventeen_header_style()`.
+- **Social menu:** `twentyseventeen_nav_menu_social_icons()`.
+- **`$content_width`:** `twentyseventeen_content_width()`; `[video]` and `[playlist]` use it now.
+- **`rtl.css`:** `locale_stylesheet()`, for block themes as well. The block styles of a right-to-left site are the
+  `-rtl` files, the common stylesheet stays, and the `sourceURL` comment keeps naming the left-to-right file.
+- **Late styles:** `wp_hoist_late_printed_styles()` moves what the content enqueues in front of `</head>`, with one more
+  line break. This explains where MediaElement's styles and the block supports go on classic themes.
+- **Signed in:** the toolbar on classic themes (its styles, scripts, the support script, Customize, Widgets, Menus,
+  Header), `twentyseventeen_edit_link()`, the entry footer for who may edit, `wp_register()` and `wp_loginout()` in the
+  Meta widget. The links of the logo menu are translated (`de.wordpress.org`); that was wrong in the block themes, too.
+- **Core:** `get_page_link()` of the front page is `home_url( '/' )`; plain permalinks lost the slash, in canonical links
+  and oEmbed discovery as well. The speculation rules are printed on classic themes, too.
+- `customize.php` itself stays open; the toolbar links to it as WordPress does.

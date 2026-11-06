@@ -196,8 +196,14 @@ pub fn video(env: &Env<'_>, post_id: u64, atts: &Atts, content: &str) -> Option<
         src = add_query_arg(&format!("https://{host}/{path}"), "loop", loop_value);
     }
     let number = |name: &str, default: u64| attr_value(atts, name, "").trim().parse::<u64>().unwrap_or(default);
-    let width = number("width", 640);
-    let height = number("height", 360);
+    let mut width = number("width", 640);
+    let mut height = number("height", 360);
+    // The video is bigger than the theme.
+    let content_width = env.with_state(|s| s.content_width);
+    if content_width != 0 && width > content_width {
+        height = (height as f64 * content_width as f64 / width as f64).round() as u64;
+        width = content_width;
+    }
     let poster = attr_value(atts, "poster", "");
     let pairs = [
         ("class", attr_value(atts, "class", "wp-video-shortcode").to_owned()),
