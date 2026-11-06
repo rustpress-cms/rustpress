@@ -114,9 +114,17 @@ fn row(ctx: &Ctx<'_>, plugin: &PluginInfo, info: &RowInfo<'_>) -> String {
     let mut links: Vec<(String, String)> = Vec::new();
     if active {
         links.push(("deactivate".into(), format!("<a href=\"plugins.php?action=deactivate&amp;plugin={file_q}&amp;plugin_status={status}&amp;paged=1&amp;{s_arg}&amp;_wpnonce={deactivate_nonce}\" id=\"deactivate-{slug}\" aria-label=\"{}\">{}</a>", esc_attr(&rustpress_core::i18n::sprintf(&tr("Deactivate %s"), &[&plugin.name])), tr("Deactivate"))));
-        // `plugin_action_links_{$plugin_file}` of the plugin itself: its links come first, keyed by number.
-        let own = ctx.site().plugins.plugin_action_links(ctx.site(), &plugin.file, Vec::new());
-        links.splice(0..0, own.into_iter().enumerate().map(|(i, link)| (i.to_string(), link)));
+        // `plugin_action_links` of the plugin itself: the links of WordPress keep their keys, the plugin's are keyed
+        // by number (`$links[] = ...`, `array_merge()`), wherever it puts them.
+        let core: Vec<(String, String)> = std::mem::take(&mut links);
+        let mut number = 0;
+        for link in ctx.site().plugins.plugin_action_links(ctx.site(), &plugin.file, core.iter().map(|(_, link)| link.clone()).collect()) {
+            let key = core.iter().find(|(_, html)| *html == link).map(|(key, _)| key.clone()).unwrap_or_else(|| {
+                number += 1;
+                (number - 1).to_string()
+            });
+            links.push((key, link));
+        }
     } else {
         links.push(("activate".into(), format!("<a href=\"plugins.php?action=activate&amp;plugin={file_q}&amp;plugin_status={status}&amp;paged=1&amp;{s_arg}&amp;_wpnonce={activate_nonce}\" id=\"activate-{slug}\" class=\"edit\" aria-label=\"{}\">{}</a>", esc_attr(&rustpress_core::i18n::sprintf(&tr("Activate %s"), &[&plugin.name])), tr("Activate"))));
         links.push(("delete".into(), format!("<a href=\"plugins.php?action=delete-selected&amp;checked%5B0%5D={file_q}&amp;plugin_status={status}&amp;paged=1&amp;{s_arg}&amp;_wpnonce={bulk_nonce}\" id=\"delete-{slug}\" class=\"delete\" aria-label=\"{}\">{}</a>", esc_attr(&rustpress_core::i18n::sprintf(&tr("Delete %s"), &[&plugin.name])), tr("Delete"))));

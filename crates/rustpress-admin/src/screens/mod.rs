@@ -715,7 +715,7 @@ pub async fn render(ctx: &Ctx<'_>, screen: &Screen, content: &str, assets: &Asse
         loader,
         user: &ctx.user,
         menu: &menu,
-        bar: BarContext { updates: updates.total(), pending_comments: pending, logout_nonce: ctx.create_nonce("log-out"), view_item: None, view_archive: false, command_palette: true },
+        bar: BarContext { updates: updates.total(), pending_comments: pending, logout_nonce: ctx.create_nonce("log-out"), view_item: None, view_archive: false, view_preview: None, command_palette: true },
         stylesheet: env.site.settings.stylesheet.clone(),
         cookie_path: paths(env.site).cookie,
         now: env.now,
@@ -743,6 +743,11 @@ pub async fn render(ctx: &Ctx<'_>, screen: &Screen, content: &str, assets: &Asse
         String::new()
     });
     assets.plugin_body_classes = env.site.plugins.admin_body_class(&plugin_ctx);
+    assets.plugin_print_styles = env.site.plugins.admin_print_styles(&plugin_ctx);
+    assets.plugin_admin_head = env.site.plugins.admin_head(&plugin_ctx).await.unwrap_or_else(|e| {
+        tracing::error!(error = %e, "plugin admin_head failed");
+        String::new()
+    });
     // The stylesheets of the plugins: one WordPress registers joins the styles of the screen; a plugin's own comes after
     // its dependencies among the plugins' stylesheets, those of priority 10 before the emoji styles, later ones after.
     let mut printed: Vec<String> = Vec::new();

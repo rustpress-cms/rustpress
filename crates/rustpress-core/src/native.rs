@@ -320,8 +320,8 @@ pub trait ActivePlugin: Send + Sync {
     }
 
     /// `post_row_actions` (`page_row_actions` for hierarchical types): the actions of a row as `(class, link)`.
-    fn post_row_actions(&self, _ctx: &AdminContext<'_>, _post: &Post, _hierarchical: bool, actions: Vec<(String, String)>) -> Vec<(String, String)> {
-        actions
+    fn post_row_actions<'a>(&'a self, _ctx: &'a AdminContext<'a>, _post: &'a Post, _hierarchical: bool, actions: Vec<(String, String)>) -> BoxFuture<'a, Result<Vec<(String, String)>>> {
+        Box::pin(async move { Ok(actions) })
     }
 
     /// `bulk_actions-{$screen_id}`: `(value, label)`.
@@ -335,8 +335,8 @@ pub trait ActivePlugin: Send + Sync {
     }
 
     /// `display_post_states`: the states after a row's title as `(key, HTML)`.
-    fn display_post_states(&self, _ctx: &AdminContext<'_>, _post: &Post, states: Vec<(String, String)>) -> Vec<(String, String)> {
-        states
+    fn display_post_states<'a>(&'a self, _ctx: &'a AdminContext<'a>, _post: &'a Post, states: Vec<(String, String)>) -> BoxFuture<'a, Result<Vec<(String, String)>>> {
+        Box::pin(async move { Ok(states) })
     }
 
     /// `$post_type_object->labels->not_found` as the plugin changes it for the list of `ctx` (HTML).
@@ -443,6 +443,60 @@ pub trait ActivePlugin: Send + Sync {
     /// `admin_enqueue_scripts`: styles and scripts of the administration.
     fn admin_enqueue(&self, _ctx: &AdminContext<'_>, _assets: &mut Assets) {}
 
+    /// `admin_print_styles`: what the plugin prints before WordPress prints the styles of the screen (priority 20).
+    fn admin_print_styles(&self, _ctx: &AdminContext<'_>) -> String {
+        String::new()
+    }
+
+    /// `use_block_editor_for_post_type`: whether the block editor edits posts of `post_type` (`true` when WordPress
+    /// would use it).
+    fn use_block_editor_for_post_type(&self, _site: &Site, _post_type: &str, use_block_editor: bool) -> bool {
+        use_block_editor
+    }
+
+    /// `use_block_editor_for_post`: whether the block editor edits `post`.
+    fn use_block_editor_for_post<'a>(&'a self, _ctx: &'a AdminContext<'a>, _post: &'a Post, use_block_editor: bool) -> BoxFuture<'a, Result<bool>> {
+        Box::pin(async move { Ok(use_block_editor) })
+    }
+
+    /// `add_settings_field()` for the default section of a settings screen of WordPress (`writing`): the rows
+    /// `do_settings_fields( $page, 'default' )` prints, as `(title, HTML of the field)`.
+    fn settings_fields<'a>(&'a self, _ctx: &'a AdminContext<'a>, _page: &'a str) -> BoxFuture<'a, Result<Vec<(String, String)>>> {
+        Box::pin(async { Ok(Vec::new()) })
+    }
+
+    /// `get_edit_post_link`: the address of a post's edit screen as WordPress builds it (`&amp;` in the `display`
+    /// context).
+    fn get_edit_post_link<'a>(&'a self, _ctx: &'a AdminContext<'a>, _post_id: u64, link: String) -> BoxFuture<'a, Result<String>> {
+        Box::pin(async move { Ok(link) })
+    }
+
+    /// `redirect_post_location`: where `post.php` sends the browser after saving a post.
+    fn redirect_post_location<'a>(&'a self, _ctx: &'a AdminContext<'a>, location: String) -> BoxFuture<'a, Result<String>> {
+        Box::pin(async move { Ok(location) })
+    }
+
+    /// `edit_form_top`: printed at the top of the classic edit form, after its hidden fields.
+    fn edit_form_top<'a>(&'a self, _ctx: &'a AdminContext<'a>, _post: &'a Post) -> BoxFuture<'a, Result<String>> {
+        Box::pin(async { Ok(String::new()) })
+    }
+
+    /// `block_editor_settings_all` with the edited post as the context, for what a plugin does there besides
+    /// changing the settings (which no module does yet).
+    fn block_editor_settings<'a>(&'a self, _ctx: &'a AdminContext<'a>, _post: &'a Post) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async { Ok(()) })
+    }
+
+    /// `admin_head-{$hook_suffix}` and `admin_head` (before the colors of the scheme): printed in the head.
+    fn admin_head<'a>(&'a self, _ctx: &'a AdminContext<'a>) -> BoxFuture<'a, Result<String>> {
+        Box::pin(async { Ok(String::new()) })
+    }
+
+    /// `profile_personal_options`: printed after the personal options of the own profile.
+    fn profile_personal_options<'a>(&'a self, _ctx: &'a AdminContext<'a>, _user_id: u64) -> BoxFuture<'a, Result<String>> {
+        Box::pin(async { Ok(String::new()) })
+    }
+
     /// `admin_notices`: printed above the content of every screen.
     fn admin_notices<'a>(&'a self, _ctx: &'a AdminContext<'a>) -> BoxFuture<'a, Result<String>> {
         Box::pin(async { Ok(String::new()) })
@@ -460,7 +514,8 @@ pub trait ActivePlugin: Send + Sync {
         Box::pin(async { Ok(None) })
     }
 
-    /// `plugin_action_links_{$plugin_file}`: the links below the plugin's name in the list of plugins.
+    /// `plugin_action_links_{$plugin_file}` (or `plugin_action_links` for its own file): the links below the plugin's name
+    /// in the list of plugins, starting with those of WordPress (Deactivate).
     fn plugin_action_links(&self, _site: &Site, links: Vec<String>) -> Vec<String> {
         links
     }
@@ -970,6 +1025,8 @@ pub struct PostMetaBoxes {
     pub hidden_editor: Option<HiddenEditor>,
     /// `wp_enqueue_media()` while the boxes are printed, as for [`MetaBoxes::media`].
     pub media: bool,
+    /// `WP_Privacy_Policy_Content::notice()` moves from `admin_notices` to `edit_form_after_title` (Classic Editor).
+    pub privacy_notice_after_title: bool,
 }
 
 /// What happened to a post in [`ActivePlugin::post_trash_change`].
@@ -1614,6 +1671,84 @@ impl Plugins {
         Ok(out)
     }
 
+    /// What the plugins print on `admin_print_styles`.
+    pub fn admin_print_styles(&self, ctx: &AdminContext<'_>) -> String {
+        self.hooks().map(|plugin| plugin.admin_print_styles(ctx)).collect()
+    }
+
+    /// `use_block_editor_for_post_type` of the plugins.
+    pub fn use_block_editor_for_post_type(&self, site: &Site, post_type: &str, use_block_editor: bool) -> bool {
+        self.hooks().fold(use_block_editor, |value, plugin| plugin.use_block_editor_for_post_type(site, post_type, value))
+    }
+
+    /// `use_block_editor_for_post` of the plugins.
+    pub async fn use_block_editor_for_post(&self, ctx: &AdminContext<'_>, post: &Post, mut use_block_editor: bool) -> Result<bool> {
+        for plugin in self.hooks() {
+            use_block_editor = plugin.use_block_editor_for_post(ctx, post, use_block_editor).await?;
+        }
+        Ok(use_block_editor)
+    }
+
+    /// The fields the plugins add to the default section of the settings screen `page`.
+    pub async fn settings_fields(&self, ctx: &AdminContext<'_>, page: &str) -> Result<Vec<(String, String)>> {
+        let mut fields = Vec::new();
+        for plugin in self.hooks() {
+            fields.extend(plugin.settings_fields(ctx, page).await?);
+        }
+        Ok(fields)
+    }
+
+    /// `get_edit_post_link` of the plugins.
+    pub async fn get_edit_post_link(&self, ctx: &AdminContext<'_>, post_id: u64, mut link: String) -> Result<String> {
+        for plugin in self.hooks() {
+            link = plugin.get_edit_post_link(ctx, post_id, link).await?;
+        }
+        Ok(link)
+    }
+
+    /// `redirect_post_location` of the plugins.
+    pub async fn redirect_post_location(&self, ctx: &AdminContext<'_>, mut location: String) -> Result<String> {
+        for plugin in self.hooks() {
+            location = plugin.redirect_post_location(ctx, location).await?;
+        }
+        Ok(location)
+    }
+
+    /// What the plugins print on `edit_form_top`.
+    pub async fn edit_form_top(&self, ctx: &AdminContext<'_>, post: &Post) -> Result<String> {
+        let mut out = String::new();
+        for plugin in self.hooks() {
+            out.push_str(&plugin.edit_form_top(ctx, post).await?);
+        }
+        Ok(out)
+    }
+
+    /// `block_editor_settings_all` of the plugins.
+    pub async fn block_editor_settings(&self, ctx: &AdminContext<'_>, post: &Post) -> Result<()> {
+        for plugin in self.hooks() {
+            plugin.block_editor_settings(ctx, post).await?;
+        }
+        Ok(())
+    }
+
+    /// What the plugins print on `admin_head`.
+    pub async fn admin_head(&self, ctx: &AdminContext<'_>) -> Result<String> {
+        let mut out = String::new();
+        for plugin in self.hooks() {
+            out.push_str(&plugin.admin_head(ctx).await?);
+        }
+        Ok(out)
+    }
+
+    /// What the plugins print on `profile_personal_options`.
+    pub async fn profile_personal_options(&self, ctx: &AdminContext<'_>, user_id: u64) -> Result<String> {
+        let mut out = String::new();
+        for plugin in self.hooks() {
+            out.push_str(&plugin.profile_personal_options(ctx, user_id).await?);
+        }
+        Ok(out)
+    }
+
     /// `plugin_action_links_{$file}` of the plugin `file`.
     pub fn plugin_action_links(&self, site: &Site, file: &str, links: Vec<String>) -> Vec<String> {
         match self.active.iter().find(|(p, _)| p.file() == file) {
@@ -1985,8 +2120,11 @@ impl Plugins {
     }
 
     /// The row actions after the plugins.
-    pub fn post_row_actions(&self, ctx: &AdminContext<'_>, post: &Post, hierarchical: bool, actions: Vec<(String, String)>) -> Vec<(String, String)> {
-        self.hooks().fold(actions, |actions, plugin| plugin.post_row_actions(ctx, post, hierarchical, actions))
+    pub async fn post_row_actions(&self, ctx: &AdminContext<'_>, post: &Post, hierarchical: bool, mut actions: Vec<(String, String)>) -> Result<Vec<(String, String)>> {
+        for plugin in self.hooks() {
+            actions = plugin.post_row_actions(ctx, post, hierarchical, actions).await?;
+        }
+        Ok(actions)
     }
 
     /// The bulk actions after the plugins.
@@ -2000,8 +2138,11 @@ impl Plugins {
     }
 
     /// The post states after the plugins.
-    pub fn display_post_states(&self, ctx: &AdminContext<'_>, post: &Post, states: Vec<(String, String)>) -> Vec<(String, String)> {
-        self.hooks().fold(states, |states, plugin| plugin.display_post_states(ctx, post, states))
+    pub async fn display_post_states(&self, ctx: &AdminContext<'_>, post: &Post, mut states: Vec<(String, String)>) -> Result<Vec<(String, String)>> {
+        for plugin in self.hooks() {
+            states = plugin.display_post_states(ctx, post, states).await?;
+        }
+        Ok(states)
     }
 
     /// The `not_found` label of the first plugin that changes it.
@@ -2088,6 +2229,7 @@ impl Plugins {
             out.hidden_fields.extend(boxes.hidden_fields);
             out.hidden_editor = out.hidden_editor.or(boxes.hidden_editor);
             out.media |= boxes.media;
+            out.privacy_notice_after_title |= boxes.privacy_notice_after_title;
         }
         Ok(out)
     }

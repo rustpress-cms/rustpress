@@ -265,6 +265,19 @@ async fn form_on(ctx: &Ctx<'_>, user: &User, own: bool, errors: &[String], file:
         language_select(ctx, &locale, true, true)
     ));
 
+    // `profile_personal_options` of the own profile, before the line break that follows the table.
+    if own && !ctx.site().plugins.is_empty() {
+        let parts = ctx.plugin_parts();
+        let plugin_ctx = ctx.plugin_context(&parts, file);
+        let personal = ctx.site().plugins.profile_personal_options(&plugin_ctx, id).await.unwrap_or_else(|e| {
+            tracing::error!(error = %e, "plugin profile_personal_options failed");
+            String::new()
+        });
+        if !personal.is_empty() && h.ends_with('\n') {
+            h.insert_str(h.len() - 1, &personal);
+        }
+    }
+
     // Name
     h.push_str(&format!("\t\t\t\t<h2>{}</h2>\n\n\t\t\t\t<table class=\"form-table\" role=\"presentation\">\n", tr("Name")));
     h.push_str(&format!(

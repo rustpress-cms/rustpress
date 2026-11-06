@@ -33,10 +33,6 @@ fn sticky_ids(ctx: &Ctx<'_>) -> Vec<u64> {
     }
 }
 
-/// `get_edit_post_link( $id, 'url' )`: raw `&`.
-fn edit_link(ctx: &Ctx<'_>, id: u64) -> String {
-    ctx.admin_url(&format!("post.php?post={id}&action=edit"))
-}
 
 /// `labels->edit_item` and `labels->add_new_item`: those of the registration, else the defaults of posts or, for a
 /// hierarchical type, pages (`_get_custom_object_labels()`).
@@ -56,6 +52,9 @@ fn labels(ctx: &Ctx<'_>, info: &TypeInfo) -> (String, String) {
 
 /// `touch_time()` for the publish box.
 fn touch_time(ctx: &Ctx<'_>, post: &Post, edit: bool) -> String {
+    // A draft or pending post without a GMT date floats: its fields show the current time.
+    let floating = matches!(post.post_status.as_str(), "draft" | "pending") && (post.post_date_gmt.is_empty() || post.post_date_gmt == "0000-00-00 00:00:00");
+    let edit = edit && !floating;
     let now_local = ctx.site().date("Y-m-d H:i:s", ctx.env.now);
     let date = if edit && post.post_date != "0000-00-00 00:00:00" && !post.post_date.is_empty() { post.post_date.clone() } else { now_local };
     timestamp_fields(ctx, &date)
@@ -900,6 +899,16 @@ async fn form(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, is_new: bool) -> Admi
         ctx.create_nonce("meta-box-order"),
         ctx.create_nonce("closedpostboxes")
     ));
+    // `edit_form_top`.
+    if !site.plugins.is_empty() {
+        let parts = ctx.plugin_parts();
+        let mut plugin_ctx = ctx.plugin_context(&parts, if is_new { "post-new.php" } else { "post.php" });
+        plugin_ctx.edited_post = Some(post);
+        h.push_str(&site.plugins.edit_form_top(&plugin_ctx, post).await.unwrap_or_else(|e| {
+            tracing::error!(error = %e, "plugin edit_form_top failed");
+            String::new()
+        }));
+    }
     let screen_id = info.name.clone();
     let columns = super::common::layout_columns(ctx, &screen_id, 2).await;
     h.push_str(&format!("\n<div id=\"poststuff\">\n<div id=\"post-body\" class=\"metabox-holder columns-{}\">\n<div id=\"post-body-content\">\n\n", if columns == 1 { 1 } else { 2 }));
@@ -915,6 +924,17 @@ async fn form(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, is_new: bool) -> Admi
         })
     };
     boxes.retain(|b| !plugin_boxes.removed.contains(&b.id));
+    // `WP_Privacy_Policy_Content::notice()`: the edit screen of the privacy policy page points to the guide.
+    let privacy_notice = (ctx.can("manage_privacy_options") && site.options.u64("wp_page_for_privacy_policy", 0) == post.id && post.id != 0).then(|| {
+        let message = format!(
+            "{} <a href=\"{}\" target=\"_blank\">{} <span class=\"screen-reader-text\">{}</span></a>",
+            tr("Need help putting together your new Privacy Policy page? Check out the guide for recommendations on what content to include, along with policies suggested by your plugins and theme."),
+            esc_url(&ctx.admin_url("options-privacy.php?tab=policyguide")),
+            tr("View Privacy Policy Guide."),
+            tr("(opens in a new tab)")
+        );
+        notices::notice(&message, "warning", false, "", &["inline", "wp-pp-notice"], true).trim_end_matches('\n').to_owned()
+    });
     boxes.extend(plugin_boxes.boxes.iter().cloned().map(super::meta_boxes::MetaBox::from_plugin));
     let state = super::meta_boxes::BoxState::load(ctx, &screen_id, &info.name).await;
     if supports("title") {
@@ -932,18 +952,9 @@ async fn form(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, is_new: bool) -> Admi
         if slug_box {
             h.push_str("\t<div id=\"edit-slug-box\" class=\"hide-if-no-js\">\n\t\t\t");
         }
-        if slug_box && post.post_status != "auto-draft" && !post.post_name.is_empty() && !site.options.string("permalink_structure", "").is_empty() {
-            let link = site.permalink(post).await.unwrap_or_default();
-            let name = &post.post_name;
-            let shown = link.replacen(&format!("/{name}/"), &format!("/<span id=\"editable-post-name\">{}</span>/", esc_html(name)), 1);
-            h.push_str(&format!(
-                "<strong>{}</strong>\n<span id=\"sample-permalink\"><a href=\"{}\">{shown}</a></span>\n&lrm;<span id=\"edit-slug-buttons\"><button type=\"button\" class=\"edit-slug button button-small hide-if-no-js\" aria-label=\"{}\">{}</button></span>\n<span id=\"editable-post-name-full\">{}</span>\n",
-                tr("Permalink:"),
-                esc_url(&link),
-                esc_attr(&tr("Edit permalink")),
-                tr("Edit"),
-                esc_html(name)
-            ));
+        if slug_box && post.post_status != "auto-draft" {
+            let content = ctx.env.writer.map(|writer| crate::content::Content { site, db, writer, user: &ctx.user, now: ctx.env.now });
+            h.push_str(&super::common::sample_permalink_html(site, content.as_ref(), ctx.can("manage_options"), post, None, None, &tr).await);
         }
         if slug_box {
             h.push_str("\t</div>\n\t\t\t");
@@ -951,14 +962,11 @@ async fn form(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, is_new: bool) -> Admi
         h.push_str(&format!("</div>\n\t<input type=\"hidden\" id=\"samplepermalinknonce\" name=\"samplepermalinknonce\" value=\"{}\" /></div><!-- /titlediv -->\n", ctx.create_nonce("samplepermalink")));
     }
     // `edit_form_after_title`: after the indentation of the `<?php` that follows the title.
-    let after_title: String = plugin_boxes
-        .after_title
-        .iter()
-        .map(|part| match part {
-            rustpress_core::native::FormPart::Html(html) => html.clone(),
-            rustpress_core::native::FormPart::MetaBoxes(context) => super::meta_boxes::do_meta_boxes(ctx, &boxes, context, &state),
-        })
-        .collect();
+    let mut after_title: String = privacy_notice.as_ref().filter(|_| plugin_boxes.privacy_notice_after_title).cloned().unwrap_or_default();
+    after_title.extend(plugin_boxes.after_title.iter().map(|part| match part {
+        rustpress_core::native::FormPart::Html(html) => html.clone(),
+        rustpress_core::native::FormPart::MetaBoxes(context) => super::meta_boxes::do_meta_boxes(ctx, &boxes, context, &state),
+    }));
     let mut editor_indented = true;
     if !after_title.is_empty() {
         if h.ends_with("<!-- /titlediv -->\n") {
@@ -1115,7 +1123,9 @@ async fn form(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, is_new: bool) -> Admi
         },
         ..Default::default()
     };
-    let screen = Screen { file: file.into(), parent_file, submenu_file: Some(submenu_file), post_type: info.name.clone(), title: window_title, help: Some(help), view_item, options: Some(options), edited_post: Some(post.clone()), ..Default::default() };
+    let view_preview = (view_item.is_some() && post.post_status == "draft").then_some(post.id);
+    let view_item = view_item.map(|(label, url)| if view_preview.is_some() { (label, super::common::preview_url(&url)) } else { (label, url) });
+    let screen = Screen { file: file.into(), parent_file, submenu_file: Some(submenu_file), post_type: info.name.clone(), title: window_title, help: Some(help), view_item, view_preview, options: Some(options), edited_post: Some(post.clone()), ..Default::default() };
     // The order of the enqueues: post.php/post-new.php (autosave, the comment scripts), edit-form-advanced.php (post,
     // editor-expand, thickbox and the media library for featured images), then what `_WP_Editors::enqueue_scripts()`
     // adds when the footer is printed.
@@ -1167,6 +1177,7 @@ async fn form(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, is_new: bool) -> Admi
         // `wp_page_reload_on_back_button_js()` on `admin_print_scripts-post.php`.
         // `wp_default_packages_inline_scripts()`: the classic block keeps the old editor object.
         inline: if editor_scripts.iter().any(|s| s == "wp-tinymce") { vec![("editor".into(), "window.wp.oldEditor = window.wp.editor;".into(), "after".into())] } else { Vec::new() },
+        notices: privacy_notice.filter(|_| !plugin_boxes.privacy_notice_after_title).unwrap_or_default(),
         head_early: "\t<script>\n\t\tif ( typeof performance !== 'undefined' && performance.navigation && performance.navigation.type === 2 ) {\n\t\t\tdocument.location.reload( true );\n\t\t}\n\t</script>\n\t".into(),
         ..Default::default()
     };
@@ -1240,7 +1251,7 @@ pub async fn post_new(ctx: &Ctx<'_>) -> AdminResponse {
     let Ok(Some(post)) = ctx.env.db.post(id).await else {
         return die(ctx.env, 500, "WordPress &rsaquo; Error", "<p>The new post could not be read.</p>");
     };
-    if super::block_editor::uses_block_editor(ctx, &post) {
+    if super::block_editor::uses_block_editor(ctx, &post).await {
         return super::block_editor::render_editor(ctx, &post, &info).await;
     }
     form(ctx, &post, &info, true).await
@@ -1309,7 +1320,7 @@ pub async fn post_php(ctx: &Ctx<'_>) -> AdminResponse {
             if post.post_status == "trash" {
                 return die(ctx.env, 409, "WordPress &rsaquo; Error", &format!("<p>{}</p>", tr("You cannot edit this item because it is in the Trash. Please restore it and try again.")));
             }
-            if super::block_editor::uses_block_editor(ctx, &post) {
+            if super::block_editor::uses_block_editor(ctx, &post).await {
                 return super::block_editor::render_editor(ctx, &post, &info).await;
             }
             form(ctx, &post, &info, false).await
@@ -1610,5 +1621,16 @@ async fn edit_post(ctx: &Ctx<'_>, post_id: u64) -> AdminResponse {
     } else {
         4
     };
-    redirect(&add_query_arg(&edit_link(ctx, post_id), "message", &message.to_string()))
+    let location = add_query_arg(&super::common::edit_post_link(ctx, post_id, false).await, "message", &message.to_string());
+    if ctx.site().plugins.is_empty() {
+        return redirect(&location);
+    }
+    // `redirect_post_location`.
+    let parts = ctx.plugin_parts();
+    let plugin_ctx = ctx.plugin_context(&parts, "post.php");
+    let location = ctx.site().plugins.redirect_post_location(&plugin_ctx, location.clone()).await.unwrap_or_else(|e| {
+        tracing::error!(error = %e, "plugin redirect_post_location failed");
+        location
+    });
+    redirect(&location)
 }

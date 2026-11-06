@@ -53,18 +53,36 @@ fn statics() -> Value {
     serde_json::from_str(STATIC).unwrap_or(Value::Null)
 }
 
-/// `use_block_editor_for_post()`: the post type shows in the REST API and has an editor.
-pub fn uses_block_editor(ctx: &Ctx<'_>, post: &Post) -> bool {
-    if ctx.request.get("classic-editor").is_some() || ctx.request.get("rp-classic").is_some() {
+/// `use_block_editor_for_post_type()`: the post type shows in the REST API and has an editor, and no plugin says
+/// otherwise. `rp-classic` stands for the must-use plugin `dev/mu-plugins/rustpress-classic-editor.php` of the
+/// reference, which compares the classic form.
+pub fn uses_block_editor_for_post_type(ctx: &Ctx<'_>, post_type: &str) -> bool {
+    if ctx.request.get("rp-classic").is_some() {
         return false;
     }
+    let supported = match post_type {
+        "post" | "page" => true,
+        other => ctx.site().types.post_type(other).is_some_and(|t| t.show_in_rest && t.supports("editor")),
+    };
+    supported && ctx.site().plugins.use_block_editor_for_post_type(ctx.site(), post_type, true)
+}
+
+/// `use_block_editor_for_post()`.
+pub async fn uses_block_editor(ctx: &Ctx<'_>, post: &Post) -> bool {
     if post.post_status == "trash" {
         return false;
     }
-    match post.post_type.as_str() {
-        "post" | "page" => true,
-        other => ctx.site().types.post_type(other).is_some_and(|t| t.show_in_rest && t.supports("editor")),
+    let value = uses_block_editor_for_post_type(ctx, &post.post_type);
+    if ctx.request.get("rp-classic").is_some() || ctx.site().plugins.is_empty() {
+        return value;
     }
+    let parts = ctx.plugin_parts();
+    let mut plugin_ctx = ctx.plugin_context(&parts, "post.php");
+    plugin_ctx.edited_post = Some(post);
+    ctx.site().plugins.use_block_editor_for_post(&plugin_ctx, post, value).await.unwrap_or_else(|e| {
+        eprintln!("use_block_editor_for_post: {e}");
+        value
+    })
 }
 
 /// The answer of one REST request, in the shape of the preloading middleware.
@@ -644,7 +662,12 @@ pub async fn render_editor(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo) -> Admin
     {
         let parts = ctx.plugin_parts();
         let hook = if is_new { "post-new.php" } else { "post.php" };
-        let plugin_ctx = ctx.plugin_context(&parts, hook);
+        let mut plugin_ctx = ctx.plugin_context(&parts, hook);
+        // The global `$post` of the editor.
+        plugin_ctx.edited_post = Some(post);
+        plugin_ctx.block_editor = true;
+        // `block_editor_settings_all` with the post as the context.
+        site.plugins.block_editor_settings(&plugin_ctx, post).await.unwrap_or_else(|e| tracing::error!(error = %e, "plugin block_editor_settings failed"));
         for script in site.plugins.block_editor_assets(&plugin_ctx).scripts {
             // `get_import_map()` walks the queue from its end: a last script that needs `wp-edit-post` brings the
             // module dependencies of the editor (the router) before those of the block library.
@@ -692,18 +715,34 @@ pub async fn render_editor(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo) -> Admin
     );
     shared_inline(ctx, &mut assets, &preloaded, EditorPage::Post).await;
     assets.inline.push(("wp-edit-post".into(), init, "after".into()));
+    // `WP_Privacy_Policy_Content::notice()` on `admin_notices`: the block editor shows it as a warning of its own.
+    if ctx.can("manage_privacy_options") && site.options.u64("wp_page_for_privacy_policy", 0) == post.id && post.id != 0 {
+        let action = json!({"url": esc_url(&ctx.admin_url("options-privacy.php?tab=policyguide")), "label": tr("View Privacy Policy Guide.")});
+        let action = rustpress_blocks::php_json::encode_with(&action, rustpress_blocks::php_json::Flags { unescaped_slashes: true, unescaped_unicode: false }).replace('<', "\\u003C").replace('>', "\\u003E");
+        let message = tr("Need help putting together your new Privacy Policy page? Check out the guide for recommendations on what content to include, along with policies suggested by your plugins and theme.");
+        assets.inline.push(("wp-notices".into(), format!("wp.data.dispatch( \"core/notices\" ).createWarningNotice( \"{message}\", {{ actions: [ {action} ], isDismissible: false }} )"), "after".into()));
+    }
     assets.inline.push(("wp-editor".into(), format!("var _wpMetaBoxUrl = {};", json!(format!("{}?post={}&action=edit&meta-box-loader=1&meta-box-loader-nonce={}", ctx.admin_url("post.php"), post.id, ctx.create_nonce("meta-box-loader")))), "before".into()));
 
-    let classic_link = esc_url(&ctx.admin_url(&format!("update.php?action=install-plugin&plugin=classic-editor&_wpnonce={}", ctx.create_nonce("install-plugin_classic-editor")))).replace("&#038;", "&amp;");
+    // An installed Classic Editor gets a link to activate it, otherwise one to install it.
+    let wp_root = ctx.env.loader.includes.parent().unwrap_or(&ctx.env.loader.includes);
+    let installed = wp_root.join("wp-content/plugins/classic-editor/classic-editor.php").is_file();
+    let classic_link = if installed {
+        format!("plugins.php?action=activate&amp;plugin=classic-editor%2Fclassic-editor.php&amp;_wpnonce={}", ctx.create_nonce("activate-plugin_classic-editor/classic-editor.php"))
+    } else {
+        esc_url(&ctx.admin_url(&format!("update.php?action=install-plugin&plugin=classic-editor&_wpnonce={}", ctx.create_nonce("install-plugin_classic-editor")))).replace("&#038;", "&amp;")
+    };
     let content = format!(
         "
-<div class=\"block-editor\">\n\t<h1 class=\"screen-reader-text hide-if-no-js\">{heading}</h1>\n\t<div id=\"editor\" class=\"block-editor__container hide-if-no-js\"></div>\n\t<div id=\"metaboxes\" class=\"hidden\">\n\t\t\t<form class=\"metabox-base-form\">\n\t{nonce_field}\t<input type=\"hidden\" id=\"user-id\" name=\"user_ID\" value=\"{user}\" />\n\t<input type=\"hidden\" id=\"hiddenaction\" name=\"action\" value=\"editpost\" />\n\t<input type=\"hidden\" id=\"originalaction\" name=\"originalaction\" value=\"editpost\" />\n\t<input type=\"hidden\" id=\"post_type\" name=\"post_type\" value=\"{pt}\" />\n\t<input type=\"hidden\" id=\"original_post_status\" name=\"original_post_status\" value=\"{status}\" />\n\t<input type=\"hidden\" id=\"referredby\" name=\"referredby\" value=\"\" />\n\n\t<input type=\"hidden\" name=\"_wp_original_http_referer\" value=\"\" />{auto_draft}<input type='hidden' id='post_ID' name='post_ID' value='{id}' /><input type=\"hidden\" id=\"meta-box-order-nonce\" name=\"meta-box-order-nonce\" value=\"{order_nonce}\" /><input type=\"hidden\" id=\"closedpostboxesnonce\" name=\"closedpostboxesnonce\" value=\"{closed_nonce}\" /><input type=\"hidden\" id=\"samplepermalinknonce\" name=\"samplepermalinknonce\" value=\"{sample_nonce}\" />{hidden_fields}\t</form>\n\t<form id=\"toggle-custom-fields-form\" method=\"post\" action=\"{post_php}\">\n\t\t<input type=\"hidden\" id=\"toggle-custom-fields-nonce\" name=\"toggle-custom-fields-nonce\" value=\"{toggle_nonce}\" /><input type=\"hidden\" name=\"_wp_http_referer\" value=\"{referer}\" />\t\t<input type=\"hidden\" name=\"action\" value=\"toggle-custom-fields\" />\n\t</form>\n\t\t\t<form class=\"metabox-location-side\" onsubmit=\"return false;\">\n\t\t\t<div id=\"poststuff\" class=\"sidebar-open\">\n\t\t\t\t<div id=\"postbox-container-2\" class=\"postbox-container\">\n\t\t\t\t\t{side}\t\t\t\t</div>\n\t\t\t</div>\n\t\t</form>\n\t\t\t<form class=\"metabox-location-normal\" onsubmit=\"return false;\">\n\t\t\t<div id=\"poststuff\" class=\"sidebar-open\">\n\t\t\t\t<div id=\"postbox-container-2\" class=\"postbox-container\">\n\t\t\t\t\t{normal}\t\t\t\t</div>\n\t\t\t</div>\n\t\t</form>\n\t\t\t<form class=\"metabox-location-advanced\" onsubmit=\"return false;\">\n\t\t\t<div id=\"poststuff\" class=\"sidebar-open\">\n\t\t\t\t<div id=\"postbox-container-2\" class=\"postbox-container\">\n\t\t\t\t\t{advanced}\t\t\t\t</div>\n\t\t\t</div>\n\t\t</form>\n\t\t\t</div>\n\n\t\t<div class=\"wrap hide-if-js block-editor-no-js\">\n\t\t<h1 class=\"wp-heading-inline\">{heading}</h1>\n\t\t<div class=\"notice notice-error\"><p>{no_js}</p></div>\t</div>\n</div>\n",
+<div class=\"block-editor\">\n\t<h1 class=\"screen-reader-text hide-if-no-js\">{heading}</h1>\n\t<div id=\"editor\" class=\"block-editor__container hide-if-no-js\"></div>\n\t<div id=\"metaboxes\" class=\"hidden\">\n\t\t\t<form class=\"metabox-base-form\">\n\t{nonce_field}\t<input type=\"hidden\" id=\"user-id\" name=\"user_ID\" value=\"{user}\" />\n\t<input type=\"hidden\" id=\"hiddenaction\" name=\"action\" value=\"editpost\" />\n\t<input type=\"hidden\" id=\"originalaction\" name=\"originalaction\" value=\"editpost\" />\n\t<input type=\"hidden\" id=\"post_type\" name=\"post_type\" value=\"{pt}\" />\n\t<input type=\"hidden\" id=\"original_post_status\" name=\"original_post_status\" value=\"{status}\" />\n\t<input type=\"hidden\" id=\"referredby\" name=\"referredby\" value=\"\" />\n\n\t{original_referer}{auto_draft}<input type='hidden' id='post_ID' name='post_ID' value='{id}' /><input type=\"hidden\" id=\"meta-box-order-nonce\" name=\"meta-box-order-nonce\" value=\"{order_nonce}\" /><input type=\"hidden\" id=\"closedpostboxesnonce\" name=\"closedpostboxesnonce\" value=\"{closed_nonce}\" /><input type=\"hidden\" id=\"samplepermalinknonce\" name=\"samplepermalinknonce\" value=\"{sample_nonce}\" />{hidden_fields}\t</form>\n\t<form id=\"toggle-custom-fields-form\" method=\"post\" action=\"{post_php}\">\n\t\t<input type=\"hidden\" id=\"toggle-custom-fields-nonce\" name=\"toggle-custom-fields-nonce\" value=\"{toggle_nonce}\" /><input type=\"hidden\" name=\"_wp_http_referer\" value=\"{referer}\" />\t\t<input type=\"hidden\" name=\"action\" value=\"toggle-custom-fields\" />\n\t</form>\n\t\t\t<form class=\"metabox-location-side\" onsubmit=\"return false;\">\n\t\t\t<div id=\"poststuff\" class=\"sidebar-open\">\n\t\t\t\t<div id=\"postbox-container-2\" class=\"postbox-container\">\n\t\t\t\t\t{side}\t\t\t\t</div>\n\t\t\t</div>\n\t\t</form>\n\t\t\t<form class=\"metabox-location-normal\" onsubmit=\"return false;\">\n\t\t\t<div id=\"poststuff\" class=\"sidebar-open\">\n\t\t\t\t<div id=\"postbox-container-2\" class=\"postbox-container\">\n\t\t\t\t\t{normal}\t\t\t\t</div>\n\t\t\t</div>\n\t\t</form>\n\t\t\t<form class=\"metabox-location-advanced\" onsubmit=\"return false;\">\n\t\t\t<div id=\"poststuff\" class=\"sidebar-open\">\n\t\t\t\t<div id=\"postbox-container-2\" class=\"postbox-container\">\n\t\t\t\t\t{advanced}\t\t\t\t</div>\n\t\t\t</div>\n\t\t</form>\n\t\t\t</div>\n\n\t\t<div class=\"wrap hide-if-js block-editor-no-js\">\n\t\t<h1 class=\"wp-heading-inline\">{heading}</h1>\n\t\t<div class=\"notice notice-error\"><p>{no_js}</p></div>\t</div>\n</div>\n",
         heading = esc_html(&heading),
         nonce_field = ctx.nonce_field(&format!("update-post_{}", post.id)),
         user = ctx.user.id,
         pt = esc_attr(&post.post_type),
         status = esc_attr(&post.post_status),
         id = post.id,
+        // `wp_original_referer_field()`, except for drafts.
+        original_referer = if post.post_status == "draft" { "" } else { "<input type=\"hidden\" name=\"_wp_original_http_referer\" value=\"\" />" },
         auto_draft = if is_new { "<input type='hidden' id='auto_draft' name='auto_draft' value='1' />" } else { "" },
         order_nonce = ctx.create_nonce("meta-box-order"),
         closed_nonce = ctx.create_nonce("closedpostboxes"),
@@ -714,10 +753,20 @@ pub async fn render_editor(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo) -> Admin
         toggle_nonce = ctx.create_nonce("toggle-custom-fields"),
         post_php = esc_url(&ctx.admin_url("post.php")),
         referer = super::referer_field_value(&ctx.request.request_uri),
-        no_js = sprintf(&tr("The block editor requires JavaScript. Please enable JavaScript in your browser settings, or install the <a href=\"%s\">Classic Editor plugin</a>."), &[&classic_link]),
+        no_js = sprintf(
+            &tr(if installed {
+                "The block editor requires JavaScript. Please enable JavaScript in your browser settings, or activate the <a href=\"%s\">Classic Editor plugin</a>."
+            } else {
+                "The block editor requires JavaScript. Please enable JavaScript in your browser settings, or install the <a href=\"%s\">Classic Editor plugin</a>."
+            }),
+            &[&classic_link]
+        ),
     );
     let title = if is_new { heading.clone() } else { sprintf(&tr("Edit %s &#8220;%s&#8221;"), &[&info.singular, &esc_html(&post.post_title)]) };
     let view = if post.post_status == "auto-draft" { None } else { site.permalink(post).await.ok().map(|url| (sprintf(&tr("View %s"), &[&info.singular]), url)) };
+    // `wp_admin_bar_edit_menu()`: a draft has its preview instead.
+    let view_preview = (view.is_some() && post.post_status == "draft").then_some(post.id);
+    let view = view.map(|(label, url)| if view_preview.is_some() { (label, super::common::preview_url(&url)) } else { (label, url) });
     let screen = Screen {
         file: if is_new { "post-new.php".into() } else { "post.php".into() },
         parent_file: if post.post_type == "post" { "edit.php".into() } else { format!("edit.php?post_type={}", post.post_type) },
@@ -731,6 +780,7 @@ pub async fn render_editor(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo) -> Admin
         title,
         help: Some(crate::chrome::Help::default()),
         view_item: view,
+        view_preview,
         fullscreen: true,
         body_classes: vec!["block-editor-page".into(), "wp-embed-responsive".into()],
         edited_post: Some(post.clone()),

@@ -48,6 +48,10 @@ impl Rest<'_> {
                 if option == "WPLANG" && raw == "en_US" {
                     return json!("");
                 }
+                // The `default` of `register_setting( 'general', 'WPLANG' )` when the option is missing.
+                if option == "WPLANG" && self.site.options.get("WPLANG").is_none() {
+                    return json!("en_US");
+                }
                 json!(raw)
             }
             Kind::Int => json!(raw.trim().parse::<i64>().unwrap_or(0)),

@@ -207,7 +207,7 @@ async fn recent_posts(ctx: &Ctx<'_>, status: &str, order: Order, title: &str, id
         } else {
             site.date_utc(&tr("M jS"), shifted)
         };
-        let link = if ctx.can("edit_posts") { esc_url(&ctx.admin_url(&format!("post.php?post={}&action=edit", post.id))).replace("&#038;", "&amp;") } else { esc_url(&site.permalink(post).await.unwrap_or_default()) };
+        let link = if ctx.can("edit_posts") { super::common::edit_post_link(ctx, post.id, true).await } else { esc_url(&site.permalink(post).await.unwrap_or_default()) };
         let title = draft_or_title(ctx, post);
         let when = sprintf(&site.trx("%1$s, %2$s", "dashboard"), &[&date, &post_time(ctx, post, &time_format)]);
         out.push_str(&format!("<li><span>{when}</span> <a href=\"{link}\" aria-label=\"{}\">{title}</a></li>", esc_attr(&sprintf(&tr("Edit &#8220;%s&#8221;"), &[&title]))));
@@ -477,7 +477,7 @@ async fn recent_drafts(ctx: &Ctx<'_>) -> String {
     let length: usize = site.trx("10", "draft_length").trim().parse().unwrap_or(10);
     for draft in drafts.iter().take(3) {
         let title = draft_or_title(ctx, draft);
-        let url = esc_url(&ctx.admin_url(&format!("post.php?post={}&action=edit", draft.id)));
+        let url = esc_url(&super::common::edit_post_link(ctx, draft.id, false).await);
         let ts = site.timezone.local_timestamp(&draft.post_date).unwrap_or(0);
         out.push_str(&format!(
             "<li>\n<div class=\"draft-title\"><a href=\"{url}\" aria-label=\"{}\">{title}</a><time datetime=\"{}\">{}</time></div>",
@@ -813,7 +813,7 @@ pub async fn quickdraft_save(ctx: &Ctx<'_>) -> AdminResponse {
         return html(quick_press(ctx, Some((&tr("Unable to submit this form, please refresh and try again."), "error"))).await);
     };
     // The content of a block editor post is wrapped in a paragraph block.
-    let content = if !content.is_empty() && !content.contains("<!-- wp:paragraph -->") && super::block_editor::uses_block_editor(ctx, &post) { format!("<!-- wp:paragraph -->{}<!-- /wp:paragraph -->", content.replace("\r\n", "<br />").replace(['\r', '\n'], "<br />")) } else { content };
+    let content = if !content.is_empty() && !content.contains("<!-- wp:paragraph -->") && super::block_editor::uses_block_editor_for_post_type(ctx, &post.post_type) { format!("<!-- wp:paragraph -->{}<!-- /wp:paragraph -->", content.replace("\r\n", "<br />").replace(['\r', '\n'], "<br />")) } else { content };
     let saver = crate::content::Content { site: ctx.env.site, db: ctx.env.db, writer, user: &ctx.user, now: ctx.env.now };
     let data = crate::content::PostData { id: Some(post.id), post_title: Some(title), post_content: Some(content), post_status: Some("draft".into()), ..Default::default() };
     if let Err(e) = saver.insert_post(&data).await {

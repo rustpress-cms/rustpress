@@ -18,6 +18,8 @@ pub struct BarContext {
     pub view_item: Option<(String, String)>,
     /// The entry is the archive of a post type (`View Posts`), not the view of one item.
     pub view_archive: bool,
+    /// The item is a draft: the entry is its preview (`preview`, opened in the window `wp-preview-{ID}`).
+    pub view_preview: Option<u64>,
     /// The screen loads the command palette (`wp-core-commands` is enqueued).
     pub command_palette: bool,
 }
@@ -171,7 +173,10 @@ pub fn render_admin(site: &Site, user: &CurrentUser, ctx: &BarContext) -> String
     }
 
     if let Some((label, url)) = &ctx.view_item {
-        top.push(item(if ctx.view_archive { "archive" } else { "view" }, "", &link(&esc_url(url), &esc_html(label), false)));
+        match ctx.view_preview {
+            Some(id) => top.push(item("preview", "", &format!("<a class='ab-item' role=\"menuitem\" href='{}' target='wp-preview-{id}'>{}</a>", esc_url(url), esc_html(label)))),
+            None => top.push(item(if ctx.view_archive { "archive" } else { "view" }, "", &link(&esc_url(url), &esc_html(label), false))),
+        }
     }
 
     // My account

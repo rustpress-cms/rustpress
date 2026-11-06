@@ -73,6 +73,7 @@ The reference stack, the tools and the working rules are in [AGENTS.md](AGENTS.m
   - Advanced Custom Fields 6.8.10 – post types and taxonomies, values in REST and the shortcode, fields on every edit
     screen and in the comment form with saving, the lists, the editors of field groups, post types and taxonomies with
     their Ajax, the tools (export as JSON and PHP, import), the options pages preview.
+  - Classic Editor 1.7.0 – complete except the frontend toolbar link (see below).
 - **Following WordPress** – `WORDPRESS_VERSION` is the target; a daily workflow opens an issue per release with the
   report of `dev/wp-diff.sh`; `dev/wp-bump.sh` moves the reference. 7.1.4 was followed (issue #9).
 - **Review** – the security and robustness findings of the review of 2026-10-26 (A1, A2) are fixed except S12; the
@@ -669,6 +670,44 @@ because `if ( $atts['images'] )` looks at the string. `wp_validate_boolean()` wa
 as well: only `false`, `0` and an empty value are false. `$content_width` is not used, block themes
 do not set it, so Twenty Seventeen differs in the width of a playlist; a page with both `[audio]` and `[playlist]` may
 print the scripts in another order. Compared in `dev/media-blocks-compare.py`.
+
+### Classic Editor 1.7.0 (2026-11-06)
+
+`crates/rustpress-plugins/src/classic_editor/`: the settings on "Settings > Writing" (registered, sanitized like
+`validate_option_editor()`/`validate_option_allow_users()`), the "Settings" link on `plugins.php`, the two style fixes
+of the edit screen, and with "users may switch" `choose_editor()` (the remembered editor, `has_blocks()`, the user's
+default), the `classic-editor` argument of edit links and of `redirect_post()`, the post states and two edit links in
+the lists, the "Editor" box and the hidden field of the classic form, the link in the block editor
+(`classicEditorPluginL10n`), remembering the editor in the post meta and the per-user default on the profile. The
+plugin file has CRLF line ends, so everything it prints outside PHP keeps them.
+
+New hooks in `native.rs`: `admin_print_styles`, `use_block_editor_for_post_type`, `use_block_editor_for_post`,
+`settings_fields` (`add_settings_field()` of a core page), `get_edit_post_link`, `redirect_post_location`,
+`edit_form_top`, `block_editor_settings` (`block_editor_settings_all`, for its side effects), `admin_head`,
+`profile_personal_options`; `post_row_actions` and `display_post_states` are async; `PostMetaBoxes` can move the
+privacy policy notice under the title (`privacy_notice_after_title`). Fixed on the way (also without the plugin):
+`get_sample_permalink_html()` is complete and shared by the edit screen and the Ajax action (drafts link to the
+preview, long names are abridged, plain permalinks), drafts get the "Preview" node in the toolbar, the privacy policy
+page shows `WP_Privacy_Policy_Content::notice()` (classic: inline under the title or in the notices; block editor:
+`createWarningNotice`), the date fields of a draft without a GMT date show the current time, the block editor's
+no-JS message links to activating Classic Editor when it is installed and leaves out `_wp_original_http_referer` for
+drafts, `plugin_action_links` gets WordPress's links first, the edit links of every screen go through
+`get_edit_post_link`, the admin REST preloads have `status-sticky` for sticky posts, and the REST settings give
+`en_US` for a missing `WPLANG`.
+
+Compared in all three modes (classic for everyone, block for everyone, users may switch with either default):
+`options-writing.php` (with saving), `plugins.php`, `post.php` of posts, a page and the draft privacy policy page,
+`post-new.php`, `edit.php` of posts and pages, the dashboard, `profile.php`/`user-edit.php` (with saving),
+`upload.php`, the stored meta and the redirect after saving – equal except nonces, time and the template part order.
+Not ported: the network settings (no multisite) and the activation hook (it never runs, the plugin registers it on
+`plugins_loaded`). Open: the "Edit Post" link of the toolbar on the website does not get `&classic-editor` when users
+may switch (the toolbar of the website has no `AdminContext`).
+
+The goldens of the main query and of REST compare lists with equal dates (the seeded posts share seconds), and
+MariaDB orders such ties by its sampled index statistics: after many rows are added and removed, or after
+`ANALYZE TABLE`, WordPress itself lists them in another order (`/tag/alpha+beta/`, `/wp/v2/posts?include=7,5,6`, at
+times category archives). This is the environment difference noted for the themes above, not a regression; reseed the
+reference when it shows up.
 
 ### Twenty Seventeen completed (2026-11-06)
 

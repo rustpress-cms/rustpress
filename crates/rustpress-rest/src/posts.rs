@@ -428,6 +428,10 @@ impl Rest<'_> {
             if self.admin && classes.get(1) == Some(&post.post_type) {
                 classes.remove(1);
             }
+            // Sticky posts are `status-sticky` there.
+            if self.admin && self.site.settings.sticky_posts.contains(&post.id) && let Some(at) = classes.iter().position(|c| c == "hentry") {
+                classes.insert(at, "status-sticky".into());
+            }
             data.insert("class_list".into(), Value::from(classes));
         }
 
