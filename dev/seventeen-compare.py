@@ -214,7 +214,7 @@ def scenarios(made):
         ('pretty-paged', f'/rpts-paged/', 'page-links'),
         ('pretty-paged-2', f'/rpts-paged/2/', 'page-links'),
     ]
-    yield 'panels', {'panel_1': panel1, 'panel_2': panel2, 'panel_3': blog, 'panel_4': 0}, {'show_on_front': 'page', 'page_on_front': front, 'page_for_posts': blog, 'permalink_structure': ''}, [
+    yield 'panels', {'panel_1': panel1, 'panel_2': panel2, 'panel_3': blog, 'panel_4': 0}, {'show_on_front': 'page', 'page_on_front': front, 'page_for_posts': blog, 'permalink_structure': made['options']['permalink_structure']}, [
         ('front', '/', 'twentyseventeen-panel'),
         ('front-page-2', '/?page=2', 'twentyseventeen-panel'),
         ('blog', '/?page_id=' + str(blog), 'entry-title'),
