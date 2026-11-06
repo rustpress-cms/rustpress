@@ -286,6 +286,8 @@ impl Content<'_> {
         let (post_title, post_content, post_excerpt) = if self.can("unfiltered_html") {
             (post_title, post_content, post_excerpt)
         } else {
+            // `edit_css` maps to `unfiltered_html`; `wp_strip_custom_css_from_blocks()` runs before kses.
+            let post_content = rustpress_blocks::custom_css::strip_custom_css(&post_content);
             (kses_post(&post_title).replace('<', "&lt;").replace('>', "&gt;").replace("&amp;lt;", "&lt;"), kses_post(&post_content), kses_post(&post_excerpt))
         };
         let post_title = if self.can("unfiltered_html") { post_title.trim().to_owned() } else { rustpress_core::formatting::strip_tags(&post_title).trim().to_owned() };

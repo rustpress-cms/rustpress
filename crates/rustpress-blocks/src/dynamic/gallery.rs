@@ -45,51 +45,6 @@ fn gallery_column_gap(gap: Option<&Value>) -> String {
     if column == "0" { "0px".to_owned() } else { column }
 }
 
-/// `get_viewport_breakpoint_value_in_pixels()`: `None` for anything but a length in `px`, `em` or `rem`.
-fn breakpoint_pixels(value: &str) -> Option<f64> {
-    let value = value.trim();
-    let (number, factor) = match (value.strip_suffix("rem"), value.strip_suffix("em"), value.strip_suffix("px")) {
-        (Some(number), _, _) => (number, 16.0),
-        (_, Some(number), _) => (number, 16.0),
-        (_, _, Some(number)) => (number, 1.0),
-        _ => return None,
-    };
-    let valid = match number.split_once('.') {
-        Some((whole, fraction)) => whole.bytes().all(|b| b.is_ascii_digit()) && !fraction.is_empty() && fraction.bytes().all(|b| b.is_ascii_digit()),
-        None => !number.is_empty() && number.bytes().all(|b| b.is_ascii_digit()),
-    };
-    valid.then(|| number.parse::<f64>().unwrap_or(0.0) * factor)
-}
-
-/// `WP_Theme_JSON::sanitize_viewport_settings()`: the mobile and the tablet breakpoint.
-fn viewport_breakpoints(settings: Option<&Value>) -> (Option<String>, Option<String>) {
-    let defaults = (Some("480px".to_owned()), Some("782px".to_owned()));
-    let Some(settings) = settings.and_then(Value::as_object) else { return defaults };
-    let read = |key: &str| settings.get(key).and_then(Value::as_str).and_then(|value| Some((value.trim().to_owned(), breakpoint_pixels(value)?)));
-    match (read("mobile"), read("tablet")) {
-        (None, None) => defaults,
-        (Some((mobile, _)), None) => (Some(mobile), None),
-        (None, Some((tablet, _))) => (None, Some(tablet)),
-        (Some((mobile, low)), Some((tablet, high))) => (Some(mobile), (low < high).then_some(tablet)),
-    }
-}
-
-/// `WP_Theme_JSON::get_viewport_media_queries()`.
-fn viewport_media_queries(settings: Option<&Value>) -> Vec<(&'static str, String)> {
-    let (mobile, tablet) = viewport_breakpoints(settings);
-    let mut queries = Vec::new();
-    if let Some(mobile) = &mobile {
-        queries.push(("@mobile", format!("@media (width <= {mobile})")));
-    }
-    if let Some(tablet) = &tablet {
-        queries.push(("@tablet", match &mobile {
-            Some(mobile) => format!("@media ({mobile} < width <= {tablet})"),
-            None => format!("@media (width <= {tablet})"),
-        }));
-    }
-    queries
-}
-
 /// `block_core_gallery_resolve_dynamic_source()`.
 async fn resolve_dynamic_source(bc: &BlockCtx<'_>, source: &Value) -> Result<Vec<u64>> {
     if source.get("source").and_then(Value::as_str) != Some("core/attached-media") {
@@ -232,7 +187,7 @@ fn gap_styles(bc: &BlockCtx<'_>, unique: &str) {
     let selector = format!(".wp-block-gallery.{unique}");
     let property = "--wp--style--unstable-gallery-gap".to_owned();
     let mut rules = vec![(gap, None)];
-    for (breakpoint, query) in viewport_media_queries(bc.env.theme.global_settings().get("viewport")) {
+    for (breakpoint, query) in crate::states::viewport_media_queries(bc.env.theme.global_settings().get("viewport"), false) {
         let viewport_gap = match (style.get(breakpoint).and_then(spacing_gap), globals.get(breakpoint).and_then(spacing_gap)) {
             (Some(gap), _) => gap,
             (None, Some(gap)) if own_gap.is_none() => gap,
@@ -334,17 +289,6 @@ mod tests {
         // Anything with characters that could break out of the declaration is replaced.
         assert_eq!(gallery_column_gap(Some(&json!("1em;color:red}"))), GALLERY_FALLBACK_GAP);
         assert_eq!(gallery_column_gap(Some(&json!("calc(1em)"))), GALLERY_FALLBACK_GAP);
-    }
-
-    #[test]
-    fn viewport_breakpoints_follow_the_settings() {
-        let defaults = viewport_media_queries(None);
-        assert_eq!(defaults[0], ("@mobile", "@media (width <= 480px)".to_owned()));
-        assert_eq!(defaults[1], ("@tablet", "@media (480px < width <= 782px)".to_owned()));
-        assert_eq!(viewport_media_queries(Some(&json!({"tablet": " 50em "}))), vec![("@tablet", "@media (width <= 50em)".to_owned())]);
-        // A tablet width below the mobile one is dropped.
-        assert_eq!(viewport_media_queries(Some(&json!({"mobile": "800px", "tablet": "700px"}))), vec![("@mobile", "@media (width <= 800px)".to_owned())]);
-        assert_eq!(viewport_media_queries(Some(&json!({"mobile": "wide"}))), defaults);
     }
 
     #[test]

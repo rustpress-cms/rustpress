@@ -130,6 +130,7 @@ impl<'a> Env<'a> {
             if let Some(bt) = &block_type {
                 crate::elements::prepare_block_data(self, bt, &mut raw_attrs);
                 crate::variations::prepare_block_data(self, bt, &mut raw_attrs);
+                crate::custom_css::prepare_block_data(self, bt, block, parent_layout.as_ref(), &mut raw_attrs);
             }
             let prepared = match &block_type {
                 Some(bt) => bt.prepare_attributes(&raw_attrs),
@@ -219,6 +220,9 @@ impl<'a> Env<'a> {
                 content = crate::dimensions::render_dimensions_support(bt, &raw_attrs, content);
                 content = crate::duotone::render_duotone_support(self, bt, name, &raw_attrs, content);
                 content = crate::variations::render_class_name(&raw_attrs, content);
+                content = crate::states::render_visibility_support(self, bt, &raw_attrs, content);
+                content = crate::custom_css::render_class_name(&raw_attrs, content);
+                content = crate::states::render_states_support(self, bt, &raw_attrs, content);
             }
             content = dynamic::name_filter(name, &raw_attrs, content);
             if name == "core/image" && self.with_state(|s| s.image_lightbox) {

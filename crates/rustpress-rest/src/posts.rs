@@ -341,7 +341,14 @@ impl Rest<'_> {
         // Embedded items are not filtered by the `_fields` of the request around them.
         let wanted = |field: &str| context == "embed" || self.field_included(field);
         if has("editor") && wanted("content") {
-            let content = if hidden { String::new() } else { the_content(&env, &shared, &post.post_content).await? };
+            let mut content = if hidden { String::new() } else { the_content(&env, &shared, &post.post_content).await? };
+            // `insert_hooked_blocks_into_rest_response()` renders what it wrote again.
+            if let Some(raw) = self.hooked_raw_content(post, kind, context)
+                && !content.is_empty()
+                && content != "0"
+            {
+                content = the_content(&env, &shared, &raw).await?;
+            }
             data.insert("content".into(), json!({"rendered": content, "protected": protected}));
         }
         if has("excerpt") && wanted("excerpt") {
@@ -446,7 +453,7 @@ impl Rest<'_> {
                     let rendered = content.remove("rendered").unwrap_or(Value::Null);
                     let protected = content.remove("protected").unwrap_or(Value::Bool(false));
                     *content = Map::new();
-                    content.insert("raw".into(), Value::from(post.post_content.clone()));
+                    content.insert("raw".into(), Value::from(self.hooked_raw_content(post, kind, context).unwrap_or_else(|| post.post_content.clone())));
                     content.insert("rendered".into(), rendered);
                     content.insert("protected".into(), protected);
                     content.insert("block_version".into(), Value::from(i32::from(rustpress_blocks::content::has_blocks(&post.post_content))));
@@ -454,6 +461,14 @@ impl Rest<'_> {
             }
         }
         Ok(Value::Object(data))
+    }
+
+    /// `content.raw` as `insert_hooked_blocks_into_rest_response()` leaves it, for the responses that have one.
+    pub(crate) fn hooked_raw_content(&self, post: &Post, kind: Kind<'_>, context: &str) -> Option<String> {
+        let has_raw = context == "edit" || (context == "embed" && post.post_type == "wp_navigation");
+        let content_like = matches!(kind.name(), "post" | "page" | "wp_block" | "wp_navigation");
+        let filled = !post.post_content.is_empty() && post.post_content != "0";
+        (has_raw && content_like && filled).then(|| rustpress_blocks::serializer::apply_block_hooks_to_content(&post.post_content, &post.post_type, &self.theme.stylesheet))
     }
 
     /// `prepare_links()`.

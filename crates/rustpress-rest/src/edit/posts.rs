@@ -179,7 +179,8 @@ impl Rest<'_> {
                     "content" if has("editor") => {
                         let rendered = value.get("rendered").cloned().unwrap_or(Value::Null);
                         let protected = value.get("protected").cloned().unwrap_or(Value::Bool(false));
-                        out.insert("content".into(), json!({"raw": post.post_content, "rendered": rendered, "protected": protected, "block_version": i32::from(rustpress_blocks::content::has_blocks(&post.post_content))}));
+                        let raw = self.hooked_raw_content(post, kind, context).unwrap_or_else(|| post.post_content.clone());
+                        out.insert("content".into(), json!({"raw": raw, "rendered": rendered, "protected": protected, "block_version": i32::from(rustpress_blocks::content::has_blocks(&post.post_content))}));
                     }
                     "excerpt" if has("excerpt") => {
                         let rendered = value.get("rendered").cloned().unwrap_or(Value::Null);
