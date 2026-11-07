@@ -135,22 +135,25 @@ fn is_frontpage(ctx: &Ctx<'_>) -> bool {
 }
 
 async fn has_header_image(ctx: &Ctx<'_>) -> bool {
-    header_image_url(ctx).is_some()
+    header_image(ctx).await.0.is_some()
 }
 
 /// `get_header_image()`: the theme mod, else the theme's default image, in the scheme of the request
-/// (`set_url_scheme()`; `is_ssl()` shows in the scheme of `siteurl`).
-fn header_image_url(ctx: &Ctx<'_>) -> Option<String> {
-    let url = match ctx.mod_str("header_image") {
-        Some(url) => url,
-        None => format!("{}/assets/images/header.jpg", ctx.theme.template_directory_uri()),
+/// (`set_url_scheme()`; `is_ssl()` shows in the scheme of `siteurl`). For a random header also what
+/// `_get_random_header_data()` picked, which `get_custom_header()` returns then.
+async fn header_image(ctx: &Ctx<'_>) -> (Option<String>, Option<super::custom_header::RandomHeader>) {
+    use super::custom_header as header;
+    let uri = ctx.theme.template_directory_uri();
+    let Some(support) = header::support(&ctx.theme.template, &uri) else { return (None, None) };
+    let defaults = header::default_headers(ctx.site, &ctx.theme.template, &uri);
+    let uploaded = if ctx.mod_str("header_image").as_deref() == Some("random-uploaded-image") {
+        header::uploaded_header_images(ctx.site, &ctx.site.settings.stylesheet).await.unwrap_or_default()
+    } else {
+        Vec::new()
     };
-    if url == "remove-header" || url.is_empty() {
-        return None;
-    }
-    let scheme = if ctx.site.settings.siteurl.starts_with("https://") { "https" } else { "http" };
-    let rest = url.strip_prefix("http://").or_else(|| url.strip_prefix("https://")).or_else(|| url.strip_prefix("//"));
-    Some(rest.map_or(url.clone(), |rest| format!("{scheme}://{rest}")))
+    let random = header::random_header(&ctx.mods, &support, &defaults, &uploaded).filter(|pick| header::is_random_header_image("any", &ctx.mods, &support, Some(pick)));
+    let url = header::header_image(ctx.site, &ctx.mods, &support, random.as_ref()).filter(|url| !url.is_empty());
+    (url, random)
 }
 
 /// A property of a `stdClass` stored in a theme mod.
@@ -173,11 +176,21 @@ async fn is_multi_author(site: &Site) -> Result<bool> {
 
 /// `the_custom_header_markup()`.
 async fn custom_header_markup(ctx: &Ctx<'_>) -> Result<String> {
-    let Some(url) = header_image_url(ctx) else { return Ok(String::new()) };
+    let (url, random) = header_image(ctx).await;
+    let Some(url) = url else { return Ok(String::new()) };
     let data = ctx.mods.get("header_image_data");
-    let width = data.and_then(|d| object_prop(d, "width")).and_then(Value::as_i64).unwrap_or(0).max(0) as u64;
-    let height = data.and_then(|d| object_prop(d, "height")).and_then(Value::as_i64).unwrap_or(0).max(0) as u64;
-    let attachment = data.and_then(|d| object_prop(d, "attachment_id")).and_then(Value::as_i64).unwrap_or(0).max(0) as u64;
+    let (mut width, mut height, mut attachment) = (
+        data.and_then(|d| object_prop(d, "width")).and_then(Value::as_i64).unwrap_or(0).max(0) as u64,
+        data.and_then(|d| object_prop(d, "height")).and_then(Value::as_i64).unwrap_or(0).max(0) as u64,
+        data.and_then(|d| object_prop(d, "attachment_id")).and_then(Value::as_i64).unwrap_or(0).max(0) as u64,
+    );
+    if let Some(random) = &random {
+        // `get_custom_header()` returns the random pick, with the size of the theme where it has none.
+        let size = |value: &Option<Value>, default: u64| value.as_ref().and_then(Value::as_i64).map_or(default, |n| n.unsigned_abs());
+        let support = super::custom_header::support(&ctx.theme.template, &ctx.theme.template_directory_uri());
+        let (theme_width, theme_height) = support.map_or((0, 0), |s| (s.width, s.height));
+        (width, height, attachment) = (size(&random.width, theme_width), size(&random.height, theme_height), random.attachment_id);
+    }
     let mut alt = String::new();
     let mut attrs: Vec<(String, String)> = vec![("src".into(), url.clone()), ("width".into(), width.to_string()), ("height".into(), height.to_string())];
     let mut srcset = None;

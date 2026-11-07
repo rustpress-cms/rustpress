@@ -367,6 +367,8 @@ pub fn generate_image_metadata_with(options: &rustpress_core::options::Options, 
     }
     let full = uploads.join(relative);
     let mut decoded = open_image(&full).ok()?;
+    let locale = options.get("WPLANG").filter(|l| !l.is_empty()).unwrap_or("en_US").to_owned();
+    let alt = std::fs::read(&full).map(|bytes| image_alttext(&bytes, &locale)).unwrap_or_default();
     let (mut width, mut height) = (decoded.width(), decoded.height());
     let mut relative = relative.to_owned();
     let mut original_image: Option<String> = None;
@@ -429,6 +431,7 @@ pub fn generate_image_metadata_with(options: &rustpress_core::options::Options, 
         entry("title", s("")),
         entry("orientation", s("0")),
         entry("keywords", Value::Array(Vec::new())),
+        entry("alt", s(&alt)),
     ]);
     let filesize = std::fs::metadata(&full).map(|m| m.len() as i64).unwrap_or(0);
     let mut items = vec![entry("width", Value::Int(i64::from(width))), entry("height", Value::Int(i64::from(height))), entry("file", s(&relative)), entry("filesize", Value::Int(filesize)), entry("sizes", Value::Array(sizes)), entry("image_meta", image_meta)];
@@ -464,9 +467,53 @@ pub fn generate_sizes(options: &rustpress_core::options::Options, full: &Path, m
     Some((width, height, sizes))
 }
 
+/// `wp_get_image_alttext()`: the `Iptc4xmpCore:AltTextAccessibility` of the XMP packet, in the language of the site, else in
+/// its first two letters, else `x-default`. WordPress asks DOMXPath; this reads the elements with their usual prefixes.
+pub fn image_alttext(bytes: &[u8], locale: &str) -> String {
+    let find = |needle: &[u8], from: usize| bytes[from..].windows(needle.len()).position(|w| w == needle).map(|i| i + from);
+    let (Some(start), Some(end)) = (find(b"<x:xmpmeta", 0), find(b"</x:xmpmeta>", 0)) else { return String::new() };
+    if end < start {
+        return String::new();
+    }
+    let xmp = String::from_utf8_lossy(&bytes[start..end + 12]).into_owned();
+    let Some(open) = xmp.find("<Iptc4xmpCore:AltTextAccessibility") else { return String::new() };
+    let Some(close) = xmp[open..].find("</Iptc4xmpCore:AltTextAccessibility>") else { return String::new() };
+    let node = &xmp[open..open + close];
+    let item = |lang: &str| -> String {
+        let mut rest = node;
+        while let Some(at) = rest.find("<rdf:li") {
+            let tag_end = rest[at..].find('>').map_or(rest.len(), |i| at + i);
+            let tag = &rest[at..tag_end];
+            let text_end = rest[tag_end..].find("</rdf:li>").map_or(rest.len(), |i| tag_end + i);
+            if tag.contains(&format!("xml:lang=\"{lang}\"")) || tag.contains(&format!("xml:lang='{lang}'")) {
+                let text = &rest[(tag_end + 1).min(text_end)..text_end];
+                return text.replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"").replace("&apos;", "'").replace("&amp;", "&");
+            }
+            rest = &rest[text_end..];
+        }
+        String::new()
+    };
+    let exact = item(locale);
+    if !exact.is_empty() {
+        return exact;
+    }
+    let short = item(locale.get(..2).unwrap_or(locale));
+    if !short.is_empty() {
+        return short;
+    }
+    item("x-default")
+}
+
 /// `WP_Image_Editor_GD::crop()` and `save()` as `wp_crop_image()` uses them: the part `(x, y, width, height)` of the
 /// image at `src`, scaled to `dst_w` x `dst_h`, saved next to it as `cropped-<name>`. Returns the path.
 pub fn crop_image(src: &Path, x: u32, y: u32, w: u32, h: u32, dst_w: u32, dst_h: u32, mime: &str) -> Result<PathBuf, UploadError> {
+    let name = src.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    crop_image_as(src, x, y, w, h, dst_w, dst_h, mime, &format!("cropped-{name}"))
+}
+
+/// [crop_image] with the name of the new file (`$dst_file` of `wp_crop_image()`), made unique in the folder.
+#[allow(clippy::too_many_arguments)]
+pub fn crop_image_as(src: &Path, x: u32, y: u32, w: u32, h: u32, dst_w: u32, dst_h: u32, mime: &str, target_name: &str) -> Result<PathBuf, UploadError> {
     let decoded = open_image(src).map_err(|e| UploadError(e.to_string()))?;
     let (w, h) = (w.min(decoded.width().saturating_sub(x)), h.min(decoded.height().saturating_sub(y)));
     if w == 0 || h == 0 {
@@ -475,8 +522,7 @@ pub fn crop_image(src: &Path, x: u32, y: u32, w: u32, h: u32, dst_w: u32, dst_h:
     let (dst_w, dst_h) = (if dst_w == 0 { w } else { dst_w }, if dst_h == 0 { h } else { dst_h });
     let cropped = decoded.crop_imm(x, y, w, h).resize_exact(dst_w, dst_h, image::imageops::FilterType::Lanczos3);
     let dir = src.parent().ok_or_else(|| UploadError("no directory".into()))?;
-    let name = src.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-    let target = dir.join(unique_filename(dir, &format!("cropped-{name}")));
+    let target = dir.join(unique_filename(dir, target_name));
     save_image(&cropped, &target, mime)?;
     Ok(target)
 }
@@ -490,13 +536,21 @@ pub fn upload_subdir(content: &Content<'_>) -> String {
     }
 }
 
-/// Stores the file and makes the attachment: `media_handle_upload()`. Returns the attachment ID.
-pub async fn handle_upload(content: &Content<'_>, uploads: &Path, file: UploadedFile, post_parent: u64) -> Result<u64, UploadError> {
+/// A file `wp_handle_upload()` stored.
+#[derive(Debug, Clone)]
+pub struct StoredUpload {
+    /// The path below the uploads, `2026/11/name.jpg`.
+    pub relative: String,
+    pub url: String,
+    pub mime: String,
+    pub path: PathBuf,
+}
+
+/// `wp_handle_upload()`: checks the file and stores it in `subdir` of the uploads with a unique name.
+pub fn store_upload(content: &Content<'_>, uploads: &Path, file: &mut UploadedFile, subdir: &str) -> Result<StoredUpload, UploadError> {
     let tr = |t: &str| content.site.tr(t);
     let site = content.site;
     // `wp_handle_upload_prefilter` of the plugins comes before every check.
-    let mut file = file;
-    let original_name = file.name.clone();
     let can = |capability: &str| content.user.can(capability);
     let uploader = rustpress_core::native::Uploader { site, roles: &content.user.roles, can: &can, rest: file.rest, media_form_nonce: file.media_form_nonce };
     site.plugins.upload_prefilter(&uploader, &mut file.name, &mut file.bytes).map_err(UploadError)?;
@@ -512,13 +566,7 @@ pub async fn handle_upload(content: &Content<'_>, uploads: &Path, file: Uploaded
         Some(checked) => checked,
         None => site.plugins.accept_filetype(&name, &mimes).ok_or_else(refused)?,
     };
-    // `media_handle_upload()`: a file goes in the folder of the post it is attached to; pages do not backdate it.
-    let parent = if post_parent > 0 { content.db.post(post_parent).await.ok().flatten() } else { None };
-    let subdir = match parent.filter(|post| post.post_type != "page" && post.post_date.get(..4).is_some_and(|year| year.parse::<u32>().is_ok_and(|year| year > 0))) {
-        Some(post) if content.site.options.get("uploads_use_yearmonth_folders") == Some("1") => format!("{}/{}", &post.post_date[..4], &post.post_date[5..7]),
-        _ => upload_subdir(content),
-    };
-    let dir: PathBuf = if subdir.is_empty() { uploads.to_path_buf() } else { uploads.join(&subdir) };
+    let dir: PathBuf = if subdir.is_empty() { uploads.to_path_buf() } else { uploads.join(subdir) };
     std::fs::create_dir_all(&dir).map_err(|e| UploadError(e.to_string()))?;
     let unique = unique_filename(&dir, &name);
     let target = dir.join(&unique);
@@ -526,6 +574,21 @@ pub async fn handle_upload(content: &Content<'_>, uploads: &Path, file: Uploaded
     let relative = if subdir.is_empty() { unique.clone() } else { format!("{subdir}/{unique}") };
     let base_url = rustpress_blocks::images::upload_baseurl(content.site);
     let url = format!("{}/{relative}", base_url.trim_end_matches('/'));
+    Ok(StoredUpload { relative, url, mime, path: target })
+}
+
+/// Stores the file and makes the attachment: `media_handle_upload()`. Returns the attachment ID.
+pub async fn handle_upload(content: &Content<'_>, uploads: &Path, file: UploadedFile, post_parent: u64) -> Result<u64, UploadError> {
+    let site = content.site;
+    let mut file = file;
+    let original_name = file.name.clone();
+    // `media_handle_upload()`: a file goes in the folder of the post it is attached to; pages do not backdate it.
+    let parent = if post_parent > 0 { content.db.post(post_parent).await.ok().flatten() } else { None };
+    let subdir = match parent.filter(|post| post.post_type != "page" && post.post_date.get(..4).is_some_and(|year| year.parse::<u32>().is_ok_and(|year| year > 0))) {
+        Some(post) if content.site.options.get("uploads_use_yearmonth_folders") == Some("1") => format!("{}/{}", &post.post_date[..4], &post.post_date[5..7]),
+        _ => upload_subdir(content),
+    };
+    let StoredUpload { relative, url, mime, path: target } = store_upload(content, uploads, &mut file, &subdir)?;
     // `sanitize_text_field( wp_basename( $name, ".$ext" ) )` of the name as it was sent, not of the file.
     let title = {
         let base = original_name.rsplit(['/', '\\']).next().unwrap_or_default();
@@ -608,6 +671,14 @@ mod upload_tests {
 
     fn allowed(ext: &str) -> bool {
         check_filetype(&format!("x.{ext}")).is_some()
+    }
+
+    #[test]
+    fn the_alt_text_comes_from_the_xmp_packet() {
+        let xmp = br#"....<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF><rdf:Description><Iptc4xmpCore:AltTextAccessibility><rdf:Alt><rdf:li xml:lang="x-default">A &amp; B</rdf:li><rdf:li xml:lang="de">Ein Bild</rdf:li></rdf:Alt></Iptc4xmpCore:AltTextAccessibility></rdf:Description></rdf:RDF></x:xmpmeta>...."#;
+        assert_eq!(image_alttext(xmp, "de_DE"), "Ein Bild");
+        assert_eq!(image_alttext(xmp, "en_US"), "A & B");
+        assert_eq!(image_alttext(b"no packet", "en_US"), "");
     }
 
     #[test]

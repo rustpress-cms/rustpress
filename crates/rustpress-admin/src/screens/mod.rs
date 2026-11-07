@@ -23,6 +23,7 @@ mod ajax_misc;
 mod ajax_privacy;
 pub mod ajax_terms;
 mod bare_pages;
+mod custom_header;
 mod file_editor;
 mod privacy_requests;
 mod site_health_info;
@@ -396,6 +397,13 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse
             return die(env, 403, "WordPress &rsaquo; Error", &ctx.tr("Sorry, you are not allowed to access this page."));
         }
         return plugin_page(&ctx, plugin, &page).await;
+    }
+    // `Custom_Image_Header::init()` adds the page with `add_theme_page()`.
+    if request.file == "themes.php" && request.get("page") == Some("custom-header") && custom_header::available(&ctx) {
+        if !ctx.can("edit_theme_options") {
+            return die(env, 403, "WordPress &rsaquo; Error", &ctx.tr("Sorry, you are not allowed to access this page."));
+        }
+        return custom_header::page(&ctx).await;
     }
     let mut response = match request.file.as_str() {
         "" | "index.php" => dashboard::page(&ctx).await,
@@ -799,10 +807,12 @@ pub async fn render(ctx: &Ctx<'_>, screen: &Screen, content: &str, assets: &Asse
     });
     assets.plugin_body_classes = env.site.plugins.admin_body_class(&plugin_ctx);
     assets.plugin_print_styles = env.site.plugins.admin_print_styles(&plugin_ctx);
-    assets.plugin_admin_head = env.site.plugins.admin_head(&plugin_ctx).await.unwrap_or_else(|e| {
+    // What the screen printed on `admin_head-{$hook_suffix}` comes first.
+    let plugin_head = env.site.plugins.admin_head(&plugin_ctx).await.unwrap_or_else(|e| {
         tracing::error!(error = %e, "plugin admin_head failed");
         String::new()
     });
+    assets.plugin_admin_head.push_str(&plugin_head);
     // The stylesheets of the plugins: one WordPress registers joins the styles of the screen; a plugin's own comes after
     // its dependencies among the plugins' stylesheets, those of priority 10 before the emoji styles, later ones after.
     let mut printed: Vec<String> = Vec::new();
