@@ -16,6 +16,7 @@ pub mod kses;
 mod kses_post_table;
 pub mod safe_css;
 pub mod i18n;
+pub mod image_sizes;
 pub mod locale;
 pub mod native;
 pub mod options;

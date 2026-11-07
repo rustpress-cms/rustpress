@@ -333,17 +333,20 @@ pub fn save_image(image: &image::DynamicImage, path: &Path, mime: &str) -> Resul
     result.map_err(|e| UploadError(e.to_string()))
 }
 
-/// The sizes of the site: `(name, width, height, crop)`.
+/// The sizes of the site, `wp_get_registered_image_subsizes()`: `(name, width, height, crop)`. Those of the theme come last.
 pub fn registered_sizes(options: &rustpress_core::options::Options) -> Vec<(String, u32, u32, bool)> {
     let number = |name: &str, default: u64| options.u64(name, default) as u32;
-    vec![
+    let theme = rustpress_core::image_sizes::of_theme(options.get("stylesheet").unwrap_or_default());
+    let mut sizes = vec![
         ("thumbnail".into(), number("thumbnail_size_w", 150), number("thumbnail_size_h", 150), options.get("thumbnail_crop").is_some_and(|v| !v.is_empty() && v != "0")),
         ("medium".into(), number("medium_size_w", 300), number("medium_size_h", 300), false),
         ("medium_large".into(), number("medium_large_size_w", 768), number("medium_large_size_h", 0), false),
         ("large".into(), number("large_size_w", 1024), number("large_size_h", 1024), false),
         ("1536x1536".into(), 1536, 1536, false),
         ("2048x2048".into(), 2048, 2048, false),
-    ]
+    ];
+    sizes.extend(theme.iter().map(|(name, width, height, crop)| ((*name).to_owned(), *width, *height, *crop)));
+    sizes
 }
 
 /// The metadata of an uploaded image: sizes written next to the file. Returns `(metadata, final relative path)`.
@@ -390,8 +393,11 @@ pub fn generate_image_metadata_with(options: &rustpress_core::options::Options, 
     };
     let mut sizes: Vec<(Key, Value)> = Vec::new();
     let mut made: Vec<(u32, u32)> = Vec::new();
-    let site_sizes = if registered { registered_sizes(options) } else { Vec::new() };
-    for (name, dest_w, dest_h, crop) in site_sizes.into_iter().chain(extra.iter().cloned()) {
+    let mut new_sizes = if registered { registered_sizes(options) } else { Vec::new() };
+    new_sizes.extend(extra.iter().cloned());
+    // `_wp_make_subsizes()` makes the most useful ones first, which is the order of the metadata.
+    new_sizes.sort_by_key(|(name, ..)| ["medium", "large", "thumbnail", "medium_large"].iter().position(|first| first == name).unwrap_or(4));
+    for (name, dest_w, dest_h, crop) in new_sizes {
         let Some((sx, sy, cw, ch, nw, nh)) = resize_dimensions(width, height, dest_w, dest_h, crop) else { continue };
         if made.contains(&(nw, nh)) && name != "thumbnail" {
             // Same dimensions as a size already written: WordPress reuses the file.
@@ -568,6 +574,37 @@ pub async fn handle_upload(content: &Content<'_>, uploads: &Path, file: Uploaded
 #[cfg(test)]
 mod upload_tests {
     use super::*;
+
+    /// What the reference made of a 2400x1600 image with Twenty Seventeen active, in its order.
+    #[test]
+    fn the_sizes_of_the_theme_are_made_after_those_of_the_site() {
+        let options = rustpress_core::options::Options::from_pairs([("stylesheet", "twentyseventeen"), ("thumbnail_crop", "1")]);
+        let dir = std::env::temp_dir().join(format!("rustpress-sizes-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        image::RgbImage::new(2400, 1600).save(dir.join("photo.jpg")).unwrap();
+        let (metadata, ..) = generate_image_metadata(&options, &dir, "photo.jpg", "image/jpeg").unwrap();
+        let sizes = metadata.get("sizes").unwrap();
+        let Value::Array(sizes) = sizes else { panic!("sizes") };
+        let made: Vec<(String, i64, i64)> = sizes
+            .iter()
+            .map(|(key, size)| {
+                let Key::Str(name) = key else { panic!("key") };
+                (String::from_utf8_lossy(name).into_owned(), size.get("width").and_then(Value::as_i64).unwrap(), size.get("height").and_then(Value::as_i64).unwrap())
+            })
+            .collect();
+        std::fs::remove_dir_all(&dir).unwrap();
+        let expected = [
+            ("medium", 300, 200),
+            ("large", 1024, 683),
+            ("thumbnail", 150, 150),
+            ("medium_large", 768, 512),
+            ("1536x1536", 1536, 1024),
+            ("2048x2048", 2048, 1365),
+            ("twentyseventeen-featured-image", 2000, 1200),
+            ("twentyseventeen-thumbnail-avatar", 100, 100),
+        ];
+        assert_eq!(made, expected.map(|(name, width, height)| (name.to_owned(), width, height)));
+    }
 
     fn allowed(ext: &str) -> bool {
         check_filetype(&format!("x.{ext}")).is_some()

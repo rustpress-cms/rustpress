@@ -529,8 +529,7 @@ impl Rest<'_> {
             }
             "rss" => return self.rss_process(new),
             _ => {
-                let mut sizes: Vec<String> = rustpress_content::media::registered_sizes(&self.site.options).into_iter().map(|(name, ..)| name).collect();
-                sizes.extend(rustpress_theme::classic::image_size_names(&self.theme.stylesheet).iter().map(|name| (*name).to_owned()));
+                let sizes: Vec<String> = rustpress_content::media::registered_sizes(&self.site.options).into_iter().map(|(name, ..)| name).collect();
                 for (field, kind) in media_schema(base) {
                     let Some(value) = new.get(field) else { continue };
                     if let Some(value) = media_value(kind, value, &sizes) {

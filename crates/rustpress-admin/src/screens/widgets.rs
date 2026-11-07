@@ -77,7 +77,6 @@ fn enqueue_media_widget(ctx: &Ctx<'_>, assets: &mut Assets, base: &str, handle: 
     if let Some(sizes) = schema.get_mut("size").and_then(|size| size.get_mut("enum")) {
         // `get_intermediate_image_sizes()` and the two of the widget.
         let mut names: Vec<String> = rustpress_content::media::registered_sizes(&ctx.site().options).into_iter().map(|(name, ..)| name).collect();
-        names.extend(rustpress_theme::classic::image_size_names(&ctx.env.theme.stylesheet).iter().map(|name| (*name).to_owned()));
         names.extend(["full".to_owned(), "custom".to_owned()]);
         *sizes = json!(names);
     }
