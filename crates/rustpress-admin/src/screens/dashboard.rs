@@ -498,7 +498,8 @@ async fn recent_drafts(ctx: &Ctx<'_>) -> String {
 /// `wp_dashboard_events_news()`.
 fn events_news(ctx: &Ctx<'_>) -> String {
     let admin = ctx.admin_url("");
-    translate(ctx, include_str!("dashboard_primary.tpl")).replace("{{admin}}", &admin)
+    let news = esc_url(&ctx.site().trx("https://wordpress.org/news/", "Events and News dashboard widget"));
+    translate(ctx, include_str!("dashboard_primary.tpl")).replace("{{admin}}", &admin).replace("{{news}}", &news)
 }
 
 /// `wp_print_community_events_templates()`.
@@ -533,11 +534,43 @@ async fn welcome_panel(ctx: &Ctx<'_>) -> String {
     let tr = |s: &str| ctx.tr(s);
     let version = ctx.env.loader.version.split('-').next().unwrap_or_default().to_owned();
     let svg = ctx.env.loader.includes.parent().and_then(|root| rustpress_core::files::read(&root.join("wp-admin").join("images").join("dashboard-background.svg")).map(|svg| svg.to_string())).unwrap_or_default();
+    let admin = ctx.admin_url("");
+    // The two columns that depend on the theme; the Customizer needs the capability.
+    let (customize_column, styles_column) = if ctx.env.block_theme {
+        (
+            format!(
+                "<h3>{}</h3>\n\t\t\t\t<p>{}</p>\n\t\t\t\t<a href=\"{admin}site-editor.php\">{}</a>\n",
+                tr("Customize your entire site with block themes"),
+                tr("Design everything on your site &#8212; from the header down to the footer, all using blocks and patterns."),
+                tr("Open site editor")
+            ),
+            format!(
+                "<h3>{}</h3>\n\t\t\t\t<p>{}</p>\n\t\t\t\t<a href=\"{admin}site-editor.php?p=%2Fstyles\">{}</a>\n",
+                tr("Switch up your site&#8217;s look & feel with Styles"),
+                tr("Tweak your site, or give it a whole new look! Get creative &#8212; how about a new color palette or font?"),
+                tr("Edit styles")
+            ),
+        )
+    } else {
+        let customize = if ctx.can("customize") { format!("\t\t\t\t\t\t\t\t\t<a class=\"load-customize hide-if-no-customize\" href=\"{}\">{}</a>\n\t\t\t\t", esc_url(&ctx.admin_url("customize.php")), tr("Open the Customizer")) } else { "\t\t\t\t".to_owned() };
+        (
+            format!("<h3>{}</h3>\n\t\t\t\t<p>{}</p>\n{customize}", tr("Start Customizing"), tr("Configure your site&#8217;s logo, header, menus, and more in the Customizer.")),
+            format!(
+                "<h3>{}</h3>\n\t\t\t\t<p>{}</p>\n\t\t\t\t<a href=\"{}\">{}</a>\n",
+                tr("Discover a new way to build your site."),
+                tr("There is a new kind of WordPress theme, called a block theme, that lets you build the site you&#8217;ve always wanted &#8212; with blocks and styles."),
+                esc_url(&tr("https://wordpress.org/documentation/article/block-themes/")),
+                tr("Learn about block themes")
+            ),
+        )
+    };
     let body = translate(ctx, include_str!("dashboard_welcome.tpl"))
         .replace("{{background_svg}}", &svg)
         .replace("{{admin}}", &ctx.admin_url(""))
         .replace("{{welcome_nonce}}", &ctx.create_nonce("welcome-panel-nonce"))
-        .replace("Learn more about the %s version.", &sprintf(&tr("Learn more about the %s version."), &[&esc_html(&version)]));
+        .replace("{{learn_more}}", &sprintf(&tr("Learn more about the %s version."), &[&esc_html(&version)]))
+        .replace("{{customize_column}}", &customize_column)
+        .replace("{{styles_column}}", &styles_column);
     let option: i64 = ctx.env.db.user_meta(ctx.user.id, "show_welcome_panel").await.ok().flatten().and_then(|v| v.parse().ok()).unwrap_or(0);
     let hide = !welcome_shown(ctx, option);
     format!("\t<div id=\"welcome-panel\" class=\"welcome-panel{}\">\n{body}", if hide { " hidden" } else { "" })

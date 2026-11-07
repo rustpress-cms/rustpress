@@ -36,6 +36,6 @@
 		<a href="https://central.wordcamp.org/schedule/" target="_blank">@@WordCamps@@ <span class="screen-reader-text"> @@(opens in a new tab)@@</span><span aria-hidden="true" class="dashicons dashicons-external"></span></a>
 		|
 
-		<a href="https://wordpress.org/news/" target="_blank">@@News@@ <span class="screen-reader-text"> @@(opens in a new tab)@@</span><span aria-hidden="true" class="dashicons dashicons-external"></span></a>	</p>
+		<a href="{{news}}" target="_blank">@@News@@ <span class="screen-reader-text"> @@(opens in a new tab)@@</span><span aria-hidden="true" class="dashicons dashicons-external"></span></a>	</p>
 
 	

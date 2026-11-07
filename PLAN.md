@@ -936,3 +936,14 @@ The templates are marked the same way (`dev/bake-marks.py --templates`): the rev
 screen, the image editor and the quick edit. `translate_html()` is gone. The marks plugin stays in `dev/mu-plugins/` now; it does
 nothing without its header. The application passwords of a site without HTTPS lacked a tab run at their end.
 
+The rest of the German sweep:
+
+- **`wp_welcome_panel()`** has other columns on a classic theme, and the news link of the dashboard is translated.
+- **`theme-editor.php`, `plugin-editor.php`:** on a classic theme the menu opens at Appearance and Plugins.
+- **`list_translation_updates()`** says `Your translations are all up to date.` on a translated site.
+- **`pagegen_timestamp`** of `edit-comments.php` is the time in GMT; it was the local time.
+- **`options-reading.php`:** `&mdash; Select &mdash;` is one message, like the moderation text of `options-discussion.php`, which has its address in the message.
+- **`wp_die()`** of a post in the Trash has no paragraph.
+
+Left as they are, on the copy of the real site: `plugin-editor.php` lists files as `opendir()` gives them, RustPress sorts them, and the meta box of `nav-menus.php` differs for two posts with the same title, probably from the order MariaDB gives equal titles (the query was not looked at). `edit-comments.php` differs in the e-mail addresses `antispambot()` obfuscates at random.
+

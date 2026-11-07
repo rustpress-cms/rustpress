@@ -33,7 +33,9 @@ pub fn antispambot(email: &str) -> String {
 
 fn avatar(ctx: &Ctx<'_>, email: &str, size: u64) -> String {
     let url = |s: u64| esc_url(&rustpress_blocks::content::avatar_url(&ctx.site().options, email, s));
-    format!("<img alt='' src='{}' srcset='{} 2x' class='avatar avatar-{size} photo' height='{size}' width='{size}' loading='lazy' decoding='async'/>", url(size), url(size * 2))
+    // `get_avatar()`: no address, no avatar of its own.
+    let default = if email.is_empty() { " avatar-default" } else { "" };
+    format!("<img alt='' src='{}' srcset='{} 2x' class='avatar avatar-{size} photo{default}' height='{size}' width='{size}' loading='lazy' decoding='async'/>", url(size), url(size * 2))
 }
 
 /// `get_comment_link()` with the right `comment-page-N`.
@@ -275,7 +277,7 @@ pub async fn row_html_in(ctx: &Ctx<'_>, comment: &Comment, index: usize, current
             let edit = if ctx.can("edit_posts") { format!("<a href='{}' class='comments-edit-item-link'>{}</a>", super::common::edit_post_link(ctx, post.id, true).await, esc_html(&title)) } else { esc_html(&title) };
             let view = site.permalink(post).await.unwrap_or_default();
             let (approved, pending) = counts.get(&post.id).copied().unwrap_or((0, 0));
-            format!("<div class=\"response-links\">{edit}<a href='{}' class='comments-view-item-link'>{}</a>{} </div>", esc_url(&view), tr("View Post"), count_bubble(ctx, post.id, approved, pending))
+            format!("<div class=\"response-links\">{edit}<a href='{}' class='comments-view-item-link'>{}</a>{} </div>", esc_url(&view), if post.post_type == "page" { tr("View Page") } else { tr("View Post") }, count_bubble(ctx, post.id, approved, pending))
         }
         None => String::new(),
     };
@@ -676,7 +678,8 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
             String::new()
         },
         esc_attr(&status_param),
-        site.date("Y-m-d H:i:s", ctx.env.now),
+        // `current_time( 'mysql', true )`.
+        chrono::DateTime::from_timestamp(ctx.env.now, 0).map(|time| time.format("%Y-%m-%d %H:%M:%S").to_string()).unwrap_or_default(),
         format!("{}\n\t\t", table_html.trim_end_matches(['\n', '\t']))
     ));
     h.push_str("</div>
