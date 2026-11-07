@@ -1,6 +1,9 @@
 //! The RustPress HTTP server: static assets plus WordPress routing on top of
 //! the read-only database.
 
+// The future of `admin_page()` holds every screen; its layout needs more than the 128 levels of the default.
+#![recursion_limit = "256"]
+
 pub mod admin;
 pub mod app;
 pub mod cgi;

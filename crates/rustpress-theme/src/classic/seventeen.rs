@@ -28,7 +28,7 @@ use crate::global_styles::GlobalStyles;
 
 const THEME: &str = "twentyseventeen";
 
-fn sidebar(id: &'static str) -> Sidebar {
+fn sidebar(id: &'static str) -> Sidebar<'static> {
     Sidebar { id, before_widget: "<section id=\"%1$s\" class=\"widget %2$s\">", after_widget: "</section>", before_title: "<h2 class=\"widget-title\">", after_title: "</h2>" }
 }
 
@@ -52,6 +52,11 @@ pub fn registered_sidebars(site: &Site) -> Vec<widgets::RegisteredSidebar> {
             }
         })
         .collect()
+}
+
+/// `get_search_form()` for a widget rendered outside of a page of the theme.
+pub fn widget_search_form(site: &Site, q: &rustpress_core::QueryResult, env: &rustpress_blocks::Env<'_>) -> String {
+    search_form_markup(site, q, env)
 }
 
 /// `dynamic_sidebar()` for one of the theme's sidebars.
@@ -262,6 +267,7 @@ async fn top_menu(ctx: &Ctx<'_>) -> Result<Option<String>> {
         if item.classes.iter().any(|c| c == "menu-item-has-children" || c == "page_item_has_children") { format!("{title}{}", svg("angle-down", false)) } else { title.to_owned() }
     };
     let link_hook = |link: String, _item: &MenuItem, _depth: usize| link;
+    args.use_ids_once(&ctx.env, &menu.items);
     Ok(Some(menu::wp_nav_menu(ctx.site, &menu, &menu.items, &args, &title_hook, &link_hook)))
 }
 
@@ -711,6 +717,7 @@ async fn social_navigation(ctx: &Ctx<'_>) -> Result<String> {
         Some((_, icon)) => link.replace(&link_after, &format!("</span>{}", svg(icon, false))),
         None => link,
     };
+    args.use_ids_once(&ctx.env, &social.items);
     let html = menu::wp_nav_menu(ctx.site, &social, &social.items, &args, &title_hook, &link_hook);
     Ok(format!("\t\t\t\t\t<nav class=\"social-navigation\" aria-label=\"{}\">\n\t\t\t\t\t\t{html}\t\t\t\t\t</nav><!-- .social-navigation -->\n\t\t\t\t\t", esc_attr(&t(ctx, "Footer Social Links Menu"))))
 }
@@ -797,15 +804,20 @@ async fn get_sidebar(ctx: &Ctx<'_>) -> Result<String> {
 
 /// `get_search_form()` with the theme's `searchform.php`.
 fn search_form(ctx: &Ctx<'_>) -> String {
-    let unique = ctx.env.with_state(|s| s.unique_id("search-form-"));
-    let query = esc_attr(ctx.q.vars.get("s").unwrap_or(""));
+    search_form_markup(ctx.site, ctx.q, &ctx.env)
+}
+
+fn search_form_markup(site: &Site, q: &rustpress_core::QueryResult, env: &rustpress_blocks::Env<'_>) -> String {
+    let tx = |text: &str, context: &str| site.i18n().pgettext(THEME, context, text);
+    let unique = env.with_state(|s| s.unique_id("search-form-"));
+    let query = esc_attr(q.vars.get("s").unwrap_or(""));
     format!(
         "\n\n<form role=\"search\" method=\"get\" class=\"search-form\" action=\"{}\">\n\t<label for=\"{unique}\">\n\t\t<span class=\"screen-reader-text\">\n\t\t\t{}\t\t</span>\n\t</label>\n\t<input type=\"search\" id=\"{unique}\" class=\"search-field\" placeholder=\"{}\" value=\"{query}\" name=\"s\" />\n\t<button type=\"submit\" class=\"search-submit\">{}<span class=\"screen-reader-text\">\n\t\t{}\t</span></button>\n</form>\n",
-        esc_url(&ctx.site.home_url("/")),
-        tx(ctx, "Search for:", "label"),
-        esc_attr(&tx(ctx, "Search &hellip;", "placeholder")),
+        esc_url(&site.home_url("/")),
+        tx("Search for:", "label"),
+        esc_attr(&tx("Search &hellip;", "placeholder")),
         svg("search", false),
-        tx(ctx, "Search", "submit button"),
+        tx("Search", "submit button"),
     )
 }
 
@@ -1221,7 +1233,7 @@ async fn head(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State, registry: &Re
         out.push_str("<style>.recentcomments a{display:inline !important;padding:0 !important;margin:0 !important;}</style>");
     }
     out.push_str(&header_style(ctx));
-    out.push_str(&site_icon(ctx).await?);
+    out.push_str(&super::wp_site_icon(ctx.site).await?);
     if let Some(css) = custom_css(ctx).await? {
         out.push_str(&format!("<style id=\"wp-custom-css\">\n{css}\n</style>\n"));
     }
@@ -1241,48 +1253,10 @@ async fn head(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State, registry: &Re
     Ok(out)
 }
 
-/// `wp_site_icon()`.
-async fn site_icon(ctx: &Ctx<'_>) -> Result<String> {
-    let id = ctx.site.options.u64("site_icon", 0);
-    if id == 0 {
-        return Ok(String::new());
-    }
-    let Some(post) = ctx.site.db.post(id).await? else { return Ok(String::new()) };
-    let (meta, _) = images::load_metadata(ctx.site, &post).await?;
-    let Some(meta) = meta else { return Ok(String::new()) };
-    let Some(file) = meta.file() else { return Ok(String::new()) };
-    let dir = file.rsplit_once('/').map_or("", |(d, _)| d);
-    let base = images::upload_baseurl(ctx.site);
-    let sized = |size: u64| -> Option<String> {
-        let name = meta.sizes()?.values().find_map(|s| (s.get("width").and_then(Value2::as_u64) == Some(size) && s.get("height").and_then(Value2::as_u64) == Some(size)).then(|| s.get("file").and_then(Value2::as_str).map(str::to_owned)).flatten())?;
-        Some(if dir.is_empty() { format!("{base}/{name}") } else { format!("{base}/{dir}/{name}") })
-    };
-    let mut out = String::new();
-    for (rel, size) in [("icon", 32u64), ("icon", 192), ("apple-touch-icon", 180)] {
-        if let Some(url) = sized(size) {
-            if rel == "icon" {
-                out.push_str(&format!("<link rel=\"icon\" href=\"{}\" sizes=\"{size}x{size}\" />\n", esc_url(&url)));
-            } else {
-                out.push_str(&format!("<link rel=\"apple-touch-icon\" href=\"{}\" />\n", esc_url(&url)));
-            }
-        }
-    }
-    if let Some(url) = sized(270) {
-        out.push_str(&format!("<meta name=\"msapplication-TileImage\" content=\"{}\" />\n", esc_url(&url)));
-    }
-    Ok(out)
-}
-
-use serde_json::Value as Value2;
-
 /// `wp_get_custom_css()`.
 async fn custom_css(ctx: &Ctx<'_>) -> Result<Option<String>> {
-    let Some(id) = ctx.mods.get("custom_css_post_id").and_then(Value::as_i64).filter(|id| *id > 0) else { return Ok(None) };
-    let Some(post) = ctx.site.db.post(id as u64).await? else { return Ok(None) };
-    if post.post_type != "custom_css" || post.post_status != "publish" {
-        return Ok(None);
-    }
-    let css = post.post_content.trim().to_owned();
+    let css = super::wp_get_custom_css(ctx.site, &ctx.mods).await?;
+    let css = css.trim().to_owned();
     Ok(if css.is_empty() { None } else { Some(css) })
 }
 
@@ -1374,6 +1348,27 @@ pub(super) async fn add_body_classes(ctx: &Ctx<'_>, classes: &mut Vec<String>) -
     };
     classes.push(format!("colors-{scheme}"));
     Ok(())
+}
+
+/// `WP_REST_Widget_Types_Controller::render_legacy_widget_preview_iframe()`.
+pub async fn legacy_widget_preview(ctx: &Ctx<'_>, registry: &Registry, id_base: &str, instance: Option<&Value>) -> Result<String> {
+    let site = ctx.site;
+    let mut classes = body_classes(ctx.theme, site, ctx.q).await?;
+    add_body_classes(ctx, &mut classes).await?;
+    // `render_block_core_legacy_widget()`: without a signed instance the widget has empty settings.
+    let empty = Value::Array(Vec::new());
+    let search = || search_form_markup(site, ctx.q, &ctx.env);
+    let services = widgets::Services { site, q: ctx.q, env: &ctx.env, stylesheet: &ctx.theme.stylesheet, request_uri: "", search_form: &search };
+    let widget = widgets::the_widget(&services, id_base, instance.unwrap_or(&empty)).await?;
+    let state = ctx.env.take_state();
+    let head_html = head(ctx, &state, registry).await?;
+    let footer_html = wp_footer(ctx, &state).await?;
+    Ok(format!(
+        "\t\t<!doctype html>\n\t\t<html {}lang=\"{}\">\n\t\t<head>\n\t\t\t<meta charset=\"UTF-8\" />\n\t\t\t<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />\n\t\t\t<link rel=\"profile\" href=\"https://gmpg.org/xfn/11\" />\n\t\t\t{head_html}\t\t\t<style>\n\t\t\t\t/* Reset theme styles */\n\t\t\t\thtml, body, #page, #content {{\n\t\t\t\t\tpadding: 0 !important;\n\t\t\t\t\tmargin: 0 !important;\n\t\t\t\t}}\n\t\t\t</style>\n\t\t</head>\n\t\t<body class=\"{}\">\n\t\t<div id=\"page\" class=\"site\">\n\t\t\t<div id=\"content\" class=\"site-content\">\n\t\t\t\t{widget}\t\t\t</div><!-- #content -->\n\t\t</div><!-- #page -->\n\t\t{footer_html}\t\t</body>\n\t\t</html>\n\t\t",
+        if site.is_rtl() { "dir=\"rtl\" " } else { "" },
+        esc_attr(&site.language_tag()),
+        esc_attr(&classes.join(" ")),
+    ))
 }
 
 pub async fn render(ctx: &Ctx<'_>, registry: &Registry, extras: &crate::document::Extras) -> Result<Document> {

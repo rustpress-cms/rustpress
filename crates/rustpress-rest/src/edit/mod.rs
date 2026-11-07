@@ -25,7 +25,9 @@ mod terms;
 mod types;
 mod users;
 mod view_config;
+mod widget_classes;
 mod widgets;
+mod batch;
 
 use std::path::PathBuf;
 
@@ -38,6 +40,7 @@ use crate::params::Params;
 use crate::{Outcome, Rest, Result};
 
 /// The signed-in user of a request.
+#[derive(Clone)]
 pub struct Access<'a> {
     pub user: CurrentUser,
     /// The application password the request was authenticated with.
@@ -240,6 +243,10 @@ impl Rest<'_> {
         } else if route.trim_start_matches('/').starts_with("wp/v2/sidebars/") {
             // A sidebar cannot be deleted.
             "GET, POST, PUT, PATCH".to_owned()
+        } else if route.trim_matches('/') == "wp/v2/widgets" {
+            "GET, POST".to_owned()
+        } else if route.trim_matches('/') == "batch/v1" || (route.trim_start_matches('/').starts_with("wp/v2/widget-types/") && (route.ends_with("/encode") || route.ends_with("/render"))) {
+            "POST".to_owned()
         } else {
             "GET, POST, PUT, PATCH, DELETE".to_owned()
         }
@@ -319,7 +326,8 @@ impl Rest<'_> {
             ["wp-block-editor", "v1", "navigation-fallback"] if get => self.navigation_fallback(&args).await.map(Some),
             ["wp", "v2", "block-types"] | ["wp", "v2", "block-types", _] | ["wp", "v2", "block-types", _, _] if get => self.block_types_route(&segments, &args).await.map(Some),
             ["wp", "v2", "block-types", _, _, _, ..] if get => Ok(Some(Err(RestError::new("rest_no_route", "No route was found matching the URL and request method.", 404)))),
-            ["wp", "v2", "sidebars" | "widgets" | "widget-types", ..] if get => match self.widgets_route(&segments, &method, &args).await? {
+            ["batch", "v1"] if method == "POST" => self.batch(&args, params).await.map(Some),
+            ["wp", "v2", "sidebars" | "widgets" | "widget-types", ..] => match self.widgets_route(&segments, &method, &args).await? {
                 Some(outcome) => Ok(Some(outcome)),
                 None => self.editor_route(&segments, &method, &args, params).await,
             },

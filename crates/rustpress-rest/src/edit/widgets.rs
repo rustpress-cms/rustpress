@@ -1,6 +1,7 @@
 //! `wp/v2/sidebars`, `wp/v2/widgets` and `wp/v2/widget-types` (`WP_REST_Sidebars_Controller`,
-//! `WP_REST_Widgets_Controller`, `WP_REST_Widget_Types_Controller`): reading. Like WordPress, every read first runs
-//! `retrieve_widgets()`, which maps the widgets of sidebars the theme does not have and stores the result.
+//! `WP_REST_Widgets_Controller`, `WP_REST_Widget_Types_Controller`). Like WordPress, every read first runs
+//! `retrieve_widgets()`, which maps the widgets of sidebars the theme does not have and stores the result. The options
+//! are read from the table: the requests of a batch see what the ones before them saved.
 
 use base64::Engine;
 use rustpress_phpser::{Key, Value as Php};
@@ -8,6 +9,7 @@ use rustpress_theme::classic::widgets::{self as theme_widgets, RegisteredSidebar
 use serde_json::{Map, Value, json};
 
 use super::Args;
+use super::widget_classes::{array_key, json_to_php, parse_str, string};
 use crate::error::RestError;
 use crate::util::Links;
 use crate::{Outcome, Resp, Rest, Result};
@@ -88,7 +90,7 @@ impl Sidebars {
     }
 
     /// `$array[ $name ] = $ids`: replaces in place or appends.
-    fn set(&mut self, name: &str, ids: Option<Ids>) {
+    pub(crate) fn set(&mut self, name: &str, ids: Option<Ids>) {
         match self.0.iter_mut().find(|(n, _)| n == name) {
             Some(slot) => slot.1 = ids,
             None => self.0.push((name.to_owned(), ids)),
@@ -102,6 +104,32 @@ impl Sidebars {
     /// The ids of a sidebar; a value that is not an array has none.
     fn ids(&self, name: &str) -> Vec<String> {
         self.get(name).and_then(Option::as_ref).map(|ids| ids.iter().map(|(_, id)| id.clone()).collect()).unwrap_or_default()
+    }
+
+    /// `$array[ $name ][] = $id`.
+    fn append(&mut self, name: &str, id: &str) {
+        if !matches!(self.get(name), Some(Some(_))) {
+            self.set(name, Some(Vec::new()));
+        }
+        if let Some((_, Some(ids))) = self.0.iter_mut().find(|(n, _)| n == name) {
+            let next = ids.iter().map(|(k, _)| *k + 1).max().unwrap_or(0);
+            ids.push((next, id.to_owned()));
+        }
+    }
+
+    /// `wp_assign_widget_to_sidebar()`: an empty sidebar takes the widget out of all of them.
+    fn assign(&mut self, widget_id: &str, sidebar_id: &str) {
+        for (name, ids) in &mut self.0 {
+            if name != sidebar_id
+                && let Some(ids) = ids
+                && let Some(at) = ids.iter().position(|(_, id)| id == widget_id)
+            {
+                ids.remove(at);
+            }
+        }
+        if !sidebar_id.is_empty() && sidebar_id != "0" {
+            self.append(sidebar_id, widget_id);
+        }
     }
 
     /// `wp_find_widgets_sidebar()`.
@@ -275,11 +303,26 @@ struct WidgetState {
     /// `$wp_registered_widgets`: widget id -> (id base, number).
     widgets: Vec<(String, &'static str, i64)>,
     sidebars_widgets: Sidebars,
+    /// `WP_Widget::get_settings()` of each type.
+    settings: Vec<(&'static str, Vec<(Key, Php)>)>,
+    /// The widget `save_widget()` registered with `_register_one( $number )`, even without settings.
+    saved: Option<String>,
 }
 
 impl WidgetState {
     fn is_registered(&self, widget_id: &str) -> bool {
         self.widgets.iter().any(|(id, ..)| id == widget_id)
+    }
+
+    fn instances(&self, id_base: &str) -> &[(Key, Php)] {
+        self.settings.iter().find(|(base, _)| *base == id_base).map_or(&[], |(_, entries)| entries.as_slice())
+    }
+
+    /// `next_widget_id_number()`. The pattern has no start: it matches the end of any widget id.
+    fn next_number(&self, id_base: &str) -> i64 {
+        let suffix = format!("{id_base}-");
+        let highest = self.widgets.iter().filter_map(|(id, ..)| id.rsplit_once('-').filter(|(base, n)| format!("{base}-").ends_with(&suffix) && !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))?.1.parse::<i64>().ok()).max();
+        highest.unwrap_or(1).max(1) + 1
     }
 
     /// `wp_get_sidebar()`.
@@ -295,55 +338,116 @@ impl WidgetState {
     }
 }
 
-impl Rest<'_> {
-    /// `WP_Widget::get_settings()` of a widget type.
-    fn widget_settings(&self, id_base: &str) -> Vec<(i64, Php)> {
-        let Some(Php::Array(entries)) = self.site.options.value(&format!("widget_{id_base}")) else { return Vec::new() };
-        entries
-            .into_iter()
-            .filter_map(|(key, value)| match key {
-                Key::Int(n) => Some((n, value)),
-                _ => None,
-            })
-            .collect()
-    }
+/// The controllers that keep a `$widgets_retrieved` of their own.
+#[derive(Clone, Copy)]
+enum Controller {
+    Sidebars = 0,
+    Widgets = 1,
+}
 
-    /// Registers the widgets and runs `retrieve_widgets()`, storing its result like WordPress does.
-    async fn widget_state(&self) -> Result<WidgetState> {
-        let sidebars = theme_widgets::registered_sidebars(self.theme, self.site);
+/// `wp_parse_widget_id()`.
+fn parse_widget_id(id: &str) -> (&str, Option<&str>) {
+    match id.rsplit_once('-') {
+        Some((base, number)) if !base.is_empty() && !number.is_empty() && number.bytes().all(|b| b.is_ascii_digit()) => (base, Some(number)),
+        _ => (id, None),
+    }
+}
+
+impl Rest<'_> {
+    /// Registers the widgets and reads `wp_get_sidebars_widgets()`, without `retrieve_widgets()`.
+    async fn widget_registry(&self) -> Result<WidgetState> {
+        let mut names: Vec<String> = WIDGET_TYPES.iter().map(|(id_base, ..)| format!("widget_{id_base}")).collect();
+        names.push("sidebars_widgets".to_owned());
+        let rows = self.site.db.options_named(&names.iter().map(String::as_str).collect::<Vec<_>>()).await?;
+        let option = |name: &str| rows.iter().find(|(n, _)| n == name).map(|(_, value)| rustpress_core::options::maybe_unserialize(value));
+        let mut settings = Vec::new();
         let mut widgets = Vec::new();
         for (id_base, ..) in WIDGET_TYPES {
-            let numbers: Vec<i64> = self.widget_settings(id_base).into_iter().map(|(n, _)| n).collect();
+            // `get_settings()` leaves out `_multiwidget` and `__i__`.
+            let entries: Vec<(Key, Php)> = match option(&format!("widget_{id_base}")) {
+                Some(Php::Array(entries)) => entries.into_iter().filter(|(key, _)| !matches!(key, Key::Str(k) if k == b"_multiwidget" || k == b"__i__")).collect(),
+                _ => Vec::new(),
+            };
+            let numbers: Vec<i64> = entries.iter().filter_map(|(key, _)| if let Key::Int(n) = key { Some(*n) } else { None }).collect();
             // A type without instances is registered once, with a generic template.
             for n in if numbers.is_empty() { vec![1] } else { numbers } {
                 widgets.push((format!("{id_base}-{n}"), id_base, n));
             }
+            settings.push((id_base, entries));
         }
-        let option = self.site.options.value("sidebars_widgets");
-        let mut current = Sidebars::from_php(option.as_ref());
-        current.remove("array_version");
+        let mut sidebars_widgets = Sidebars::from_php(option("sidebars_widgets").as_ref());
+        sidebars_widgets.remove("array_version");
+        Ok(WidgetState { sidebars: theme_widgets::registered_sidebars(self.theme, self.site), widgets, sidebars_widgets, settings, saved: None })
+    }
+
+    /// `wp_set_sidebars_widgets()`.
+    async fn store_sidebars(&self, sidebars: &Sidebars) -> Result<()> {
+        let mut value = sidebars.to_php();
+        if let Php::Array(entries) = &mut value {
+            entries.push((Key::Str(b"array_version".to_vec()), Php::Int(3)));
+        }
+        let serialized = String::from_utf8_lossy(&rustpress_phpser::serialize(&value)).into_owned();
+        if let Some(Ok(writer)) = self.access.as_ref().map(|_| self.writer()) {
+            writer.update_option("sidebars_widgets", &serialized).await?;
+        }
+        Ok(())
+    }
+
+    /// `WP_Widget::save_settings()`.
+    async fn store_widget_settings(&self, id_base: &str, entries: Vec<(Key, Php)>) -> Result<()> {
+        let mut entries = entries;
+        entries.push((Key::Str(b"_multiwidget".to_vec()), Php::Int(1)));
+        let serialized = String::from_utf8_lossy(&rustpress_phpser::serialize(&Php::Array(entries))).into_owned();
+        if let Some(Ok(writer)) = self.access.as_ref().map(|_| self.writer()) {
+            writer.update_option(&format!("widget_{id_base}"), &serialized).await?;
+        }
+        Ok(())
+    }
+
+    /// Registers the widgets and runs `retrieve_widgets()` when the controller has not done so in this request,
+    /// storing its result like WordPress does.
+    async fn widget_state(&self, controller: Controller) -> Result<WidgetState> {
+        let mut state = self.widget_registry().await?;
+        let current = std::mem::take(&mut state.sidebars_widgets);
+        self.retrieve(&mut state, current, controller).await?;
+        Ok(state)
+    }
+
+    /// `rest_send_allow_header()` asks the permission of each method of the route, and the check of the `GET` method runs
+    /// `retrieve_widgets()`: on the global `$sidebars_widgets`, which holds what `wp_get_sidebars_widgets()` read last. After
+    /// a widget was created that is the state before it, so the widget counts as lost and moves to the inactive ones.
+    async fn retrieve_after_dispatch(&self, controller: Controller, global: Sidebars, saved: Option<(String, &'static str, i64)>) -> Result<()> {
+        if self.widgets_retrieved[controller as usize].load(std::sync::atomic::Ordering::SeqCst) {
+            return Ok(());
+        }
+        let mut state = self.widget_registry().await?;
+        if let Some(widget) = saved
+            && !state.is_registered(&widget.0)
+        {
+            state.widgets.push(widget);
+        }
+        self.retrieve(&mut state, global, controller).await
+    }
+
+    async fn retrieve(&self, state: &mut WidgetState, current: Sidebars, controller: Controller) -> Result<()> {
+        if self.widgets_retrieved[controller as usize].swap(true, std::sync::atomic::Ordering::SeqCst) {
+            state.sidebars_widgets = current;
+            return Ok(());
+        }
         let mods = rustpress_theme::classic::menu::theme_mod(self.site, &self.theme.stylesheet);
         let theme_mod = mods.get("sidebars_widgets");
         let theme_mod_is_array = theme_mod.is_some_and(|m| m.as_array().is_some());
         let previous = theme_mod.and_then(|m| m.get("data")).filter(|d| d.as_array().is_some()).map(|d| Sidebars::from_php(Some(d)));
-        let registered: Vec<String> = sidebars.iter().map(|s| s.id.clone()).collect();
-        let widget_ids: Vec<String> = widgets.iter().map(|(id, ..)| id.clone()).collect();
-        let sidebars_widgets = match retrieve_widgets(&current, theme_mod_is_array, previous.as_ref(), &registered, &widget_ids) {
+        let registered: Vec<String> = state.sidebars.iter().map(|s| s.id.clone()).collect();
+        let widget_ids: Vec<String> = state.widgets.iter().map(|(id, ..)| id.clone()).collect();
+        state.sidebars_widgets = match retrieve_widgets(&current, theme_mod_is_array, previous.as_ref(), &registered, &widget_ids) {
             Some(stored) => {
-                // `wp_set_sidebars_widgets()`.
-                let mut value = stored.to_php();
-                if let Php::Array(entries) = &mut value {
-                    entries.push((Key::Str(b"array_version".to_vec()), Php::Int(3)));
-                }
-                let serialized = String::from_utf8_lossy(&rustpress_phpser::serialize(&value)).into_owned();
-                if let Some(Ok(writer)) = self.access.as_ref().map(|_| self.writer()) {
-                    writer.update_option("sidebars_widgets", &serialized).await?;
-                }
+                self.store_sidebars(&stored).await?;
                 stored
             }
             None => current,
         };
-        Ok(WidgetState { sidebars, widgets, sidebars_widgets })
+        Ok(())
     }
 
     fn widgets_denied(&self) -> RestError {
@@ -356,10 +460,10 @@ impl Rest<'_> {
 
     /// The routes below `wp/v2/sidebars`, `wp/v2/widgets` and `wp/v2/widget-types`.
     pub(crate) async fn widgets_route(&self, segments: &[&str], method: &str, args: &Args) -> Result<Option<Outcome>> {
-        if method != "GET" {
-            return Ok(None);
-        }
         let manage = self.can("edit_theme_options");
+        if method != "GET" {
+            return self.widgets_write(segments, method, args, manage).await;
+        }
         let outcome = match segments {
             ["wp", "v2", "widget-types"] | ["wp", "v2", "widget-types", _] => {
                 if !manage {
@@ -383,7 +487,7 @@ impl Rest<'_> {
                 }
             }
             ["wp", "v2", "sidebars"] => {
-                let state = self.widget_state().await?;
+                let state = self.widget_state(Controller::Sidebars).await?;
                 let readable = |id: &str| manage || state.show_in_rest(id);
                 if !manage && !state.sidebars_widgets.0.iter().any(|(id, _)| state.sidebar(id, "").is_some() && state.show_in_rest(id)) {
                     return Ok(Some(Err(self.widgets_denied())));
@@ -395,7 +499,7 @@ impl Rest<'_> {
                 Ok(resp)
             }
             ["wp", "v2", "sidebars", id] => {
-                let state = self.widget_state().await?;
+                let state = self.widget_state(Controller::Sidebars).await?;
                 let inactive = self.site.tr("Inactive widgets");
                 let sidebar = state.sidebar(id, &inactive);
                 if !manage && !sidebar.as_ref().is_some_and(|s| s.show_in_rest) {
@@ -411,7 +515,7 @@ impl Rest<'_> {
                 }
             }
             ["wp", "v2", "widgets"] => {
-                let state = self.widget_state().await?;
+                let state = self.widget_state(Controller::Widgets).await?;
                 let wanted = args.str("sidebar");
                 let allowed = manage || wanted.as_deref().is_some_and(|s| state.show_in_rest(s)) || state.sidebars_widgets.0.iter().any(|(id, _)| state.show_in_rest(id));
                 if !allowed {
@@ -424,7 +528,7 @@ impl Rest<'_> {
                         continue;
                     }
                     for (_, widget_id) in ids.iter().flatten() {
-                        if let Some(item) = self.prepare_widget(&state, widget_id, sidebar_id, &context) {
+                        if let Some(item) = self.prepare_widget(&state, widget_id, sidebar_id, &context).await? {
                             items.push(item);
                         }
                     }
@@ -434,14 +538,14 @@ impl Rest<'_> {
                 Ok(resp)
             }
             ["wp", "v2", "widgets", id] => {
-                let state = self.widget_state().await?;
+                let state = self.widget_state(Controller::Widgets).await?;
                 let sidebar_id = state.sidebars_widgets.find(id).map(str::to_owned);
                 if !manage && !sidebar_id.as_deref().is_some_and(|s| state.show_in_rest(s)) {
                     return Ok(Some(Err(self.widgets_denied())));
                 }
                 match sidebar_id {
                     None => Err(RestError::new("rest_widget_not_found", "No widget was found with that id.", 404)),
-                    Some(sidebar_id) => match self.prepare_widget(&state, id, &sidebar_id, &Self::context(args)) {
+                    Some(sidebar_id) => match self.prepare_widget(&state, id, &sidebar_id, &Self::context(args)).await? {
                         Some(item) => {
                             let mut resp = Resp::item(item);
                             resp.allow = Some("GET, POST, PUT, PATCH, DELETE".to_owned());
@@ -456,6 +560,373 @@ impl Rest<'_> {
         Ok(Some(outcome))
     }
 
+    /// The routes that change something.
+    async fn widgets_write(&self, segments: &[&str], method: &str, args: &Args, manage: bool) -> Result<Option<Outcome>> {
+        let edit = matches!(method, "POST" | "PUT" | "PATCH");
+        let outcome = match segments {
+            ["wp", "v2", "widget-types", id, action @ ("encode" | "render")] if method == "POST" => {
+                if !manage {
+                    return Ok(Some(Err(self.widgets_denied())));
+                }
+                // `get_item_permissions_check()` looks the type up.
+                if !WIDGET_TYPES.iter().any(|(base, ..)| base == id) {
+                    return Ok(Some(Err(RestError::new("rest_widget_type_invalid", "Invalid widget type.", 404))));
+                }
+                match *action {
+                    "encode" => self.encode_form_data(id, args).await?,
+                    _ => self.render_preview(id, args).await?,
+                }
+            }
+            ["wp", "v2", "sidebars", id] if edit => {
+                if !manage {
+                    return Ok(Some(Err(self.widgets_denied())));
+                }
+                self.update_sidebar(id, args).await?
+            }
+            ["wp", "v2", "widgets"] if method == "POST" => {
+                if !manage {
+                    return Ok(Some(Err(self.widgets_denied())));
+                }
+                self.create_widget(args).await?
+            }
+            ["wp", "v2", "widgets", id] if edit => {
+                if !manage {
+                    return Ok(Some(Err(self.widgets_denied())));
+                }
+                self.update_widget(id, args).await?
+            }
+            ["wp", "v2", "widgets", id] if method == "DELETE" => {
+                if !manage {
+                    return Ok(Some(Err(self.widgets_denied())));
+                }
+                self.delete_widget(id, args).await?
+            }
+            _ => return Ok(None),
+        };
+        Ok(Some(outcome))
+    }
+
+    /// `WP_REST_Sidebars_Controller::update_item()`.
+    async fn update_sidebar(&self, id: &str, args: &Args) -> Result<Outcome> {
+        let mut state = self.widget_registry().await?;
+        if let Some(Value::Array(list)) = args.get("widgets") {
+            let requested: Vec<String> = list.iter().filter_map(|v| v.as_str().map(str::to_owned).or_else(|| v.as_i64().map(|n| n.to_string()))).collect();
+            for (sidebar_id, widgets) in state.sidebars_widgets.0.clone() {
+                for (key, widget_id) in widgets.iter().flatten() {
+                    // The widgets named leave any other sidebar, and those left out go to the inactive ones.
+                    if sidebar_id != id
+                        && requested.contains(widget_id)
+                        && let Some((_, Some(ids))) = state.sidebars_widgets.0.iter_mut().find(|(name, _)| *name == sidebar_id)
+                    {
+                        ids.retain(|(k, _)| k != key);
+                    }
+                    if sidebar_id == id && !requested.contains(widget_id) {
+                        state.sidebars_widgets.append("wp_inactive_widgets", widget_id);
+                    }
+                }
+            }
+            state.sidebars_widgets.set(id, Some(requested.into_iter().enumerate().map(|(i, widget_id)| (i as i64, widget_id)).collect()));
+            self.store_sidebars(&state.sidebars_widgets).await?;
+        }
+        let inactive = self.site.tr("Inactive widgets");
+        let Some(sidebar) = state.sidebar(id, &inactive) else { return Ok(Err(RestError::new("rest_sidebar_not_found", "No sidebar exists with that id.", 404))) };
+        let mut resp = Resp::item(self.prepare_sidebar(&state, &sidebar, "edit"));
+        resp.allow = Some("GET, POST, PUT, PATCH".to_owned());
+        self.retrieve_after_dispatch(Controller::Sidebars, state.sidebars_widgets, None).await?;
+        Ok(Ok(resp))
+    }
+
+    /// `WP_REST_Widgets_Controller::create_item()`.
+    async fn create_widget(&self, args: &Args) -> Result<Outcome> {
+        let mut state = self.widget_registry().await?;
+        let sidebar_id = args.str("sidebar").unwrap_or_else(|| "wp_inactive_widgets".to_owned());
+        let widget_id = match self.save_widget(&mut state, args, args.str("id").as_deref(), Some(&sidebar_id)).await? {
+            Ok(widget_id) => widget_id,
+            Err(error) => {
+                self.retrieve_after_dispatch(Controller::Widgets, state.sidebars_widgets, None).await?;
+                return Ok(Err(error));
+            }
+        };
+        let global = state.sidebars_widgets.clone();
+        state.sidebars_widgets.assign(&widget_id, &sidebar_id);
+        self.store_sidebars(&state.sidebars_widgets).await?;
+        let prepared = self.prepare_widget(&state, &widget_id, &sidebar_id, "edit").await?;
+        let saved = state.widgets.iter().find(|(id, ..)| *id == widget_id).cloned();
+        self.retrieve_after_dispatch(Controller::Widgets, global, saved).await?;
+        match prepared {
+            Some(item) => {
+                let mut resp = Resp::item(item);
+                resp.status = Some(201);
+                resp.allow = Some("GET, POST".to_owned());
+                Ok(Ok(resp))
+            }
+            None => Ok(Err(RestError::new("rest_invalid_widget", "The requested widget is invalid.", 500))),
+        }
+    }
+
+    /// `WP_REST_Widgets_Controller::update_item()`.
+    async fn update_widget(&self, id: &str, args: &Args) -> Result<Outcome> {
+        let mut state = self.widget_state(Controller::Widgets).await?;
+        let mut sidebar_id = state.sidebars_widgets.find(id).map(str::to_owned);
+        let known = WIDGET_TYPES.iter().any(|(base, ..)| *base == parse_widget_id(id).0);
+        if sidebar_id.is_none() && known {
+            return Ok(Err(RestError::new("rest_widget_not_found", "No widget was found with that id.", 404)));
+        }
+        if args.has("instance") || args.has("form_data") {
+            let id_owned = args.str("id").unwrap_or_else(|| id.to_owned());
+            if let Err(error) = self.save_widget(&mut state, args, Some(&id_owned), sidebar_id.as_deref()).await? {
+                return Ok(Err(error));
+            }
+        }
+        if args.has("sidebar") {
+            let wanted = args.str("sidebar").unwrap_or_default();
+            if sidebar_id.as_deref() != Some(wanted.as_str()) {
+                state.sidebars_widgets.assign(id, &wanted);
+                self.store_sidebars(&state.sidebars_widgets).await?;
+                sidebar_id = Some(wanted);
+            }
+        }
+        let prepared = match &sidebar_id {
+            Some(sidebar_id) => self.prepare_widget(&state, id, sidebar_id, "edit").await?,
+            None => None,
+        };
+        match prepared {
+            Some(item) => {
+                let mut resp = Resp::item(item);
+                resp.allow = Some("GET, POST, PUT, PATCH, DELETE".to_owned());
+                Ok(Ok(resp))
+            }
+            None => Ok(Err(RestError::new("rest_invalid_widget", "The requested widget is invalid.", 500))),
+        }
+    }
+
+    /// `WP_REST_Widgets_Controller::delete_item()`.
+    async fn delete_widget(&self, id: &str, args: &Args) -> Result<Outcome> {
+        let mut state = self.widget_state(Controller::Widgets).await?;
+        let Some(sidebar_id) = state.sidebars_widgets.find(id).map(str::to_owned) else {
+            return Ok(Err(RestError::new("rest_widget_not_found", "No widget was found with that id.", 404)));
+        };
+        let data = if args.bool("force").unwrap_or(false) {
+            let Some(previous) = self.prepare_widget(&state, id, &sidebar_id, "edit").await? else {
+                return Ok(Err(RestError::new("rest_invalid_widget", "The requested widget is invalid.", 500)));
+            };
+            let (id_base, number) = parse_widget_id(id);
+            // `update_callback()` with `delete_widget`.
+            if let Some(base) = WIDGET_TYPES.iter().map(|(base, ..)| *base).find(|base| *base == id_base) {
+                let mut entries = state.instances(base).to_vec();
+                if let Some(number) = number {
+                    let key = array_key(number);
+                    entries.retain(|(k, _)| *k != key);
+                }
+                self.store_widget_settings(base, entries).await?;
+            }
+            state.sidebars_widgets.assign(id, "");
+            self.store_sidebars(&state.sidebars_widgets).await?;
+            // The links stay on the response, outside of its data.
+            let mut previous = previous;
+            let links = previous.as_object_mut().and_then(|item| item.shift_remove("_links")).unwrap_or(Value::Null);
+            json!({"deleted": true, "previous": previous, "_links": links})
+        } else {
+            state.sidebars_widgets.assign(id, "wp_inactive_widgets");
+            self.store_sidebars(&state.sidebars_widgets).await?;
+            match self.prepare_widget(&state, id, "wp_inactive_widgets", "edit").await? {
+                Some(item) => item,
+                None => return Ok(Err(RestError::new("rest_invalid_widget", "The requested widget is invalid.", 500))),
+            }
+        };
+        let mut resp = Resp::item(data);
+        resp.allow = Some("GET, POST, PUT, PATCH, DELETE".to_owned());
+        Ok(Ok(resp))
+    }
+
+    /// `wp_hash()` of a serialized instance.
+    fn instance_hash(&self, serialized: &[u8]) -> String {
+        let text = String::from_utf8_lossy(serialized).into_owned();
+        self.access.as_ref().and_then(|a| a.salts).and_then(|s| s.hash(&text, "auth")).unwrap_or_default()
+    }
+
+    /// The instance of `{ "encoded": ..., "hash": ... }`, when its hash is right.
+    fn signed_instance(&self, value: &Value) -> Option<Php> {
+        let encoded = value.get("encoded")?.as_str()?;
+        let hash = value.get("hash")?.as_str()?;
+        let serialized = base64::engine::general_purpose::STANDARD.decode(encoded).unwrap_or_default();
+        if self.instance_hash(&serialized) != hash {
+            return None;
+        }
+        Some(rustpress_phpser::unserialize(&serialized).unwrap_or(Php::Bool(false)))
+    }
+
+    /// `WP_REST_Widgets_Controller::save_widget()`.
+    async fn save_widget(&self, state: &mut WidgetState, args: &Args, id: Option<&str>, sidebar_id: Option<&str>) -> Result<std::result::Result<String, RestError>> {
+        let invalid = |message: &str| Ok(Err(RestError::new("rest_invalid_widget", message, 400)));
+        let wanted_base = args.str("id_base").filter(|base| !base.is_empty() && base != "0");
+        let (widget_id, id_base, number) = match (id, wanted_base) {
+            (Some(id), _) => {
+                let (base, number) = parse_widget_id(id);
+                (id.to_owned(), base.to_owned(), number.map(str::to_owned))
+            }
+            (None, Some(base)) => {
+                let known = WIDGET_TYPES.iter().any(|(id_base, ..)| *id_base == base);
+                let number = known.then(|| state.next_number(&base));
+                (number.map_or_else(|| base.clone(), |n| format!("{base}-{n}")), base, number.map(|n| n.to_string()))
+            }
+            (None, None) => return invalid("Widget type (id_base) is required."),
+        };
+        let Some(base) = WIDGET_TYPES.iter().map(|(base, ..)| *base).find(|base| *base == id_base) else {
+            return invalid("The provided widget type (id_base) cannot be updated.");
+        };
+        // What `$_POST` holds while `update_callback()` runs.
+        let mut form = Php::Array(Vec::new());
+        match (args.get("instance").filter(|v| !v.is_null()), args.str("form_data")) {
+            (Some(instance), _) => {
+                let new = if let Some(raw) = instance.get("raw").filter(|v| !v.is_null()) {
+                    json_to_php(raw)
+                } else if instance.get("encoded").is_some_and(|v| !v.is_null()) && instance.get("hash").is_some_and(|v| !v.is_null()) {
+                    match self.signed_instance(instance) {
+                        Some(new) => new,
+                        None => return invalid("The provided instance is malformed."),
+                    }
+                } else {
+                    return invalid("The provided instance is invalid. Must contain raw OR encoded and hash.");
+                };
+                let key = array_key(number.as_deref().unwrap_or(""));
+                if let Php::Array(items) = &mut form {
+                    items.push((Key::Str(format!("widget-{base}").into_bytes()), Php::Array(vec![(key, new)])));
+                    items.push((Key::Str(b"sidebar".to_vec()), sidebar_id.map_or(Php::Null, |s| Php::Str(s.as_bytes().to_vec()))));
+                }
+            }
+            (None, Some(data)) => form = parse_str(&data),
+            (None, None) => {}
+        }
+        // `WP_Widget::update_callback()`.
+        let submitted: Option<Vec<(Key, Php)>> = match form.get(&format!("widget-{base}")) {
+            Some(Php::Array(items)) => Some(items.clone()),
+            _ if string(form.get("id_base")) == base => {
+                let multi = string(form.get("multi_number")).parse::<i64>().unwrap_or(0);
+                let number = if multi != 0 { multi } else { string(form.get("widget_number")).parse::<i64>().unwrap_or(0) };
+                Some(vec![(Key::Int(number), Php::Array(Vec::new()))])
+            }
+            _ => None,
+        };
+        if let Some(submitted) = submitted {
+            let mut entries = state.instances(base).to_vec();
+            if let Some((number, new)) = submitted.into_iter().next() {
+                let old = entries.iter().find(|(key, _)| *key == number).map_or_else(|| Php::Array(Vec::new()), |(_, value)| value.clone());
+                let instance = self.widget_update(base, &new, &old);
+                match entries.iter_mut().find(|(key, _)| *key == number) {
+                    Some(slot) => slot.1 = instance,
+                    None => entries.push((number, instance)),
+                }
+            }
+            self.store_widget_settings(base, entries).await?;
+        }
+        // The sidebars stay as the caller has them; it stores them.
+        let sidebars = std::mem::take(&mut state.sidebars_widgets);
+        *state = self.widget_registry().await?;
+        state.sidebars_widgets = sidebars;
+        // `_set( $number )` and `_register_one( $number )`.
+        if !state.is_registered(&widget_id)
+            && let Some(number) = number.and_then(|n| n.parse().ok())
+        {
+            state.widgets.push((widget_id.clone(), base, number));
+        }
+        state.saved = Some(widget_id.clone());
+        Ok(Ok(widget_id))
+    }
+
+    /// `WP_REST_Widget_Types_Controller::render()`.
+    async fn render_preview(&self, id: &str, args: &Args) -> Result<Outcome> {
+        let signed = args.get("instance").filter(|v| v.get("encoded").is_some_and(|e| !e.is_null()) && v.get("hash").is_some_and(|h| !h.is_null()));
+        let instance = signed.and_then(|signed| self.signed_instance(signed));
+        // `render_block_core_legacy_widget()` shows nothing for an instance that is not signed right.
+        let id = if signed.is_some() && instance.is_none() { "" } else { id };
+        let preview = if rustpress_theme::classic::is_ported(self.theme) { rustpress_theme::classic::legacy_widget_preview(self.theme, self.site, &self.blank, self.registry, id, instance.as_ref()).await? } else { String::new() };
+        let mut resp = Resp::item(json!({"preview": preview}));
+        resp.allow = Some("POST".to_owned());
+        Ok(Ok(resp))
+    }
+
+    /// `WP_REST_Widget_Types_Controller::encode_form_data()`.
+    async fn encode_form_data(&self, id: &str, args: &Args) -> Result<Outcome> {
+        let Some(base) = WIDGET_TYPES.iter().map(|(base, ..)| *base).find(|base| base == &id) else {
+            return Ok(Err(RestError::new("rest_invalid_widget", "Cannot preview a widget that does not extend WP_Widget.", 400)));
+        };
+        let number = args.str("number").and_then(|n| n.trim().parse::<i64>().ok()).unwrap_or(-1).to_string();
+        let mut instance = Php::Array(Vec::new());
+        if let Some(signed) = args.get("instance").filter(|v| v.get("encoded").is_some_and(|e| !e.is_null()) && v.get("hash").is_some_and(|h| !h.is_null())) {
+            match self.signed_instance(signed) {
+                Some(value) => instance = value,
+                None => return Ok(Err(RestError::new("rest_invalid_widget", "The provided instance is malformed.", 400))),
+            }
+        }
+        if let Some(data) = args.str("form_data") {
+            let form = parse_str(&data);
+            if let Some(Php::Array(items)) = form.get(&format!("widget-{id}"))
+                && let Some((_, new)) = items.first()
+            {
+                instance = self.widget_update(base, new, &instance);
+            }
+        }
+        let serialized = rustpress_phpser::serialize(&instance);
+        let form = self.widget_form(base, &number, &instance, self.rich_text().await).await;
+        let preview = self.widget_preview(base, &instance).await?;
+        let mut encoded = Map::new();
+        encoded.insert("encoded".into(), json!(base64::engine::general_purpose::STANDARD.encode(&serialized)));
+        encoded.insert("hash".into(), json!(self.instance_hash(&serialized)));
+        encoded.insert("raw".into(), Self::raw_instance(&instance));
+        let mut data = Map::new();
+        data.insert("form".into(), json!(php_trim(&form)));
+        data.insert("preview".into(), json!(php_trim(&preview)));
+        data.insert("instance".into(), Value::Object(encoded));
+        let mut resp = Resp::item(Value::Object(data));
+        resp.allow = Some("POST".to_owned());
+        Ok(Ok(resp))
+    }
+
+    /// `empty( $instance ) ? new stdClass() : $instance`.
+    fn raw_instance(instance: &Php) -> Value {
+        let empty = match instance {
+            Php::Null => true,
+            Php::Array(items) => items.is_empty(),
+            Php::Bool(b) => !b,
+            Php::Int(n) => *n == 0,
+            Php::Str(s) => s.is_empty() || s == b"0",
+            _ => false,
+        };
+        if empty { rustpress_blocks::php_json::empty_object() } else { rustpress_core::options::php_to_json(instance) }
+    }
+
+    /// `user_can_richedit()`.
+    async fn rich_text(&self) -> bool {
+        let Some(user) = self.user() else { return false };
+        let setting = self.site.db.user_meta(user.id, "rich_editing").await.ok().flatten();
+        setting.as_deref() == Some("true") && self.request.as_ref().and_then(|r| r.user_agent.as_deref()).is_some_and(rustpress_core::formatting::browser_can_richedit)
+    }
+
+    /// `WP_REST_Widget_Types_Controller::get_widget_preview()`.
+    async fn widget_preview(&self, base: &str, instance: &Php) -> Result<String> {
+        if !rustpress_theme::classic::is_ported(self.theme) {
+            return Ok(String::new());
+        }
+        let env = crate::util::env(self);
+        let search = || rustpress_theme::classic::seventeen::widget_search_form(self.site, &self.blank, &env);
+        let services = theme_widgets::Services { site: self.site, q: &self.blank, env: &env, stylesheet: &self.theme.stylesheet, request_uri: "", search_form: &search };
+        Ok(theme_widgets::the_widget(&services, base, instance).await?)
+    }
+
+    /// `wp_render_widget()` in a sidebar of a theme that is ported.
+    async fn render_widget(&self, state: &WidgetState, widget_id: &str, sidebar_id: &str, id_base: &str, instance: &Php) -> Result<String> {
+        let Some(sidebar) = state.sidebars.iter().find(|s| s.id == sidebar_id) else { return Ok(String::new()) };
+        if !rustpress_theme::classic::is_ported(self.theme) || !matches!(instance, Php::Array(_)) {
+            return Ok(String::new());
+        }
+        let wrap = theme_widgets::Sidebar { id: &sidebar.id, before_widget: &sidebar.before_widget, after_widget: &sidebar.after_widget, before_title: &sidebar.before_title, after_title: &sidebar.after_title };
+        let env = crate::util::env(self);
+        let search = || rustpress_theme::classic::seventeen::widget_search_form(self.site, &self.blank, &env);
+        let services = theme_widgets::Services { site: self.site, q: &self.blank, env: &env, stylesheet: &self.theme.stylesheet, request_uri: "", search_form: &search };
+        Ok(theme_widgets::render_widget(&services, &wrap, widget_id, id_base, instance).await?)
+    }
+
     /// `WP_REST_Widget_Types_Controller::get_widgets()`, sorted by id, each prepared for the response.
     fn widget_types(&self, _context: &str) -> Vec<(String, Value)> {
         let mut types: Vec<_> = WIDGET_TYPES.iter().collect();
@@ -468,7 +939,7 @@ impl Rest<'_> {
                 links.push_raw("self", json!({"href": self.rest_url(&format!("wp/v2/widget-types/{id}")), "targetHints": {"allow": ["GET"]}}));
                 let item = json!({
                     "id": id,
-                    "name": rustpress_core::formatting::html_entity_decode(&self.site.tr(name)),
+                    "name": rustpress_core::formatting::html_entity_decode(&if *id == "search" { self.site.trx(name, "Search widget") } else { self.site.tr(name) }),
                     "description": rustpress_core::formatting::html_entity_decode(&self.site.tr(description)),
                     "is_multi": true,
                     "classname": classname,
@@ -489,7 +960,7 @@ impl Rest<'_> {
         links.add("collection", Vec::new(), self.rest_url("wp/v2/sidebars"));
         let allow: &[&str] = if self.can("edit_theme_options") { &["GET", "POST", "PUT", "PATCH"] } else { &["GET"] };
         links.push_raw("self", json!({"href": self.rest_url(&format!("wp/v2/sidebars/{}", sidebar.id)), "targetHints": {"allow": allow}}));
-        links.push_raw("wp:widget", json!({"embeddable": true, "href": format!("{}?sidebar={}", self.rest_url("wp/v2/widgets"), rustpress_core::canonical::php_urlencode(&sidebar.id))}));
+        links.push_raw("wp:widget", json!({"embeddable": true, "href": rustpress_core::urls::add_query_arg(&self.rest_url("wp/v2/widgets"), "sidebar", &sidebar.id)}));
         let mut item = Map::new();
         item.insert("id".into(), json!(sidebar.id));
         item.insert("name".into(), json!(sidebar.name));
@@ -506,30 +977,24 @@ impl Rest<'_> {
     }
 
     /// `WP_REST_Widgets_Controller::prepare_item_for_response()`; `None` for a widget that is not registered.
-    fn prepare_widget(&self, state: &WidgetState, widget_id: &str, sidebar_id: &str, context: &str) -> Option<Value> {
-        let (_, id_base, number) = state.widgets.iter().find(|(id, ..)| id == widget_id)?;
+    async fn prepare_widget(&self, state: &WidgetState, widget_id: &str, sidebar_id: &str, context: &str) -> Result<Option<Value>> {
+        let Some((_, id_base, number)) = state.widgets.iter().find(|(id, ..)| id == widget_id) else { return Ok(None) };
+        let stored = state.instances(id_base).iter().find(|(key, _)| *key == Key::Int(*number)).map(|(_, value)| value.clone());
+        let instance = stored.clone().unwrap_or(Php::Null);
         let mut item = Map::new();
         item.insert("id".into(), json!(widget_id));
         item.insert("id_base".into(), json!(id_base));
         item.insert("sidebar".into(), json!(sidebar_id));
-        // `wp_render_widget()` renders only in a registered sidebar; a block theme has none.
-        item.insert("rendered".into(), json!(""));
+        let rendered = if sidebar_id == "wp_inactive_widgets" { String::new() } else { self.render_widget(state, widget_id, sidebar_id, id_base, &instance).await? };
+        item.insert("rendered".into(), json!(php_trim(&rendered)));
         if context == "edit" {
-            let instance = self.widget_settings(id_base).into_iter().find(|(n, _)| n == number).map_or(Php::Null, |(_, v)| v);
-            item.insert("rendered_form".into(), self.widget_form(id_base, *number, &instance).map_or(Value::Null, Value::String));
+            // A type without instances shows the form with a number to fill in later.
+            let shown = if stored.is_some() || state.saved.as_deref() == Some(widget_id) { number.to_string() } else { "__i__".to_owned() };
+            let empty = Php::Array(Vec::new());
+            let form = self.widget_form(id_base, &shown, stored.as_ref().unwrap_or(&empty), self.rich_text().await).await;
+            item.insert("rendered_form".into(), json!(php_trim(&form)));
             let serialized = rustpress_phpser::serialize(&instance);
-            let text = String::from_utf8_lossy(&serialized).into_owned();
-            let hash = self.access.as_ref().and_then(|a| a.salts).and_then(|s| s.hash(&text, "auth")).unwrap_or_default();
-            let empty = match &instance {
-                Php::Null => true,
-                Php::Array(items) => items.is_empty(),
-                Php::Bool(b) => !b,
-                Php::Int(n) => *n == 0,
-                Php::Str(s) => s.is_empty() || s == b"0",
-                _ => false,
-            };
-            let raw = if empty { Value::Object(Map::new()) } else { rustpress_core::options::php_to_json(&instance) };
-            item.insert("instance".into(), json!({"encoded": base64::engine::general_purpose::STANDARD.encode(&serialized), "hash": hash, "raw": raw}));
+            item.insert("instance".into(), json!({"encoded": base64::engine::general_purpose::STANDARD.encode(&serialized), "hash": self.instance_hash(&serialized), "raw": Self::raw_instance(&instance)}));
         }
         let mut links = Links::new();
         links.push_raw("self", json!({"href": self.rest_url(&format!("wp/v2/widgets/{widget_id}")), "targetHints": {"allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]}}));
@@ -537,26 +1002,13 @@ impl Rest<'_> {
         links.embeddable("about", self.rest_url(&format!("wp/v2/widget-types/{id_base}")));
         links.add("wp:sidebar", Vec::new(), self.rest_url(&format!("wp/v2/sidebars/{sidebar_id}/")));
         item.insert("_links".into(), links.finish());
-        Some(Value::Object(item))
+        Ok(Some(Value::Object(item)))
     }
+}
 
-    /// `wp_render_widget_control()`: the form of a widget. Only the block widget's form is ported.
-    fn widget_form(&self, id_base: &str, number: i64, instance: &Php) -> Option<String> {
-        match id_base {
-            "block" => {
-                let content = match instance.get("content") {
-                    Some(Php::Str(s)) => String::from_utf8_lossy(s).into_owned(),
-                    _ => String::new(),
-                };
-                Some(format!(
-                    "<p>\n\t\t\t<label for=\"widget-block-{number}-content\">\n\t\t\t\t{}\t\t\t</label>\n\t\t\t<textarea id=\"widget-block-{number}-content\" name=\"widget-block[{number}][content]\" rows=\"6\" cols=\"50\" class=\"widefat code\">{}</textarea>\n\t\t</p>",
-                    self.site.tr("Block HTML:"),
-                    rustpress_content::sanitize::esc_textarea(&content)
-                ))
-            }
-            _ => None,
-        }
-    }
+/// `trim()`.
+fn php_trim(text: &str) -> &str {
+    text.trim_matches([' ', '\t', '\n', '\r', '\0', '\u{b}'])
 }
 
 #[cfg(test)]

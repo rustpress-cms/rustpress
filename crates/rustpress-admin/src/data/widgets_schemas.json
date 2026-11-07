@@ -1,0 +1,253 @@
+{
+ "media_audio": {
+  "preload": {
+   "type": "string",
+   "default": "none",
+   "enum": [
+    "none",
+    "auto",
+    "metadata"
+   ]
+  },
+  "loop": {
+   "type": "boolean",
+   "default": false
+  },
+  "mp3": {
+   "type": "string",
+   "default": "",
+   "format": "uri"
+  },
+  "ogg": {
+   "type": "string",
+   "default": "",
+   "format": "uri"
+  },
+  "flac": {
+   "type": "string",
+   "default": "",
+   "format": "uri"
+  },
+  "m4a": {
+   "type": "string",
+   "default": "",
+   "format": "uri"
+  },
+  "wav": {
+   "type": "string",
+   "default": "",
+   "format": "uri"
+  },
+  "attachment_id": {
+   "type": "integer",
+   "default": 0,
+   "minimum": 0,
+   "media_prop": "id"
+  },
+  "url": {
+   "type": "string",
+   "default": "",
+   "format": "uri"
+  },
+  "title": {
+   "type": "string",
+   "default": "",
+   "should_preview_update": false
+  }
+ },
+ "media_image": {
+  "size": {
+   "type": "string",
+   "default": "medium",
+   "enum": []
+  },
+  "width": {
+   "type": "integer",
+   "default": 0,
+   "minimum": 0
+  },
+  "height": {
+   "type": "integer",
+   "default": 0,
+   "minimum": 0
+  },
+  "caption": {
+   "type": "string",
+   "default": "",
+   "should_preview_update": false
+  },
+  "alt": {
+   "type": "string",
+   "default": ""
+  },
+  "link_type": {
+   "type": "string",
+   "default": "custom",
+   "enum": [
+    "none",
+    "file",
+    "post",
+    "custom"
+   ],
+   "media_prop": "link",
+   "should_preview_update": true
+  },
+  "link_url": {
+   "type": "string",
+   "default": "",
+   "format": "uri",
+   "media_prop": "linkUrl",
+   "should_preview_update": true
+  },
+  "image_classes": {
+   "type": "string",
+   "default": "",
+   "media_prop": "extraClasses",
+   "should_preview_update": false
+  },
+  "link_classes": {
+   "type": "string",
+   "default": "",
+   "media_prop": "linkClassName",
+   "should_preview_update": false
+  },
+  "link_rel": {
+   "type": "string",
+   "default": "",
+   "media_prop": "linkRel",
+   "should_preview_update": false
+  },
+  "link_target_blank": {
+   "type": "boolean",
+   "default": false,
+   "media_prop": "linkTargetBlank",
+   "should_preview_update": false
+  },
+  "image_title": {
+   "type": "string",
+   "default": "",
+   "media_prop": "title",
+   "should_preview_update": false
+  },
+  "attachment_id": {
+   "type": "integer",
+   "default": 0,
+   "minimum": 0,
+   "media_prop": "id"
+  },
+  "url": {
+   "type": "string",
+   "default": "",
+   "format": "uri"
+  },
+  "title": {
+   "type": "string",
+   "default": "",
+   "should_preview_update": false
+  }
+ },
+ "media_gallery": {
+  "title": {
+   "type": "string",
+   "default": "",
+   "should_preview_update": false
+  },
+  "ids": {
+   "type": "array",
+   "default": [],
+   "items": {
+    "type": "integer"
+   }
+  },
+  "columns": {
+   "type": "integer",
+   "default": 3,
+   "minimum": 1
+  },
+  "size": {
+   "type": "string",
+   "default": "thumbnail",
+   "enum": []
+  },
+  "link_type": {
+   "type": "string",
+   "default": "post",
+   "enum": [
+    "post",
+    "file",
+    "none"
+   ],
+   "media_prop": "link",
+   "should_preview_update": false
+  },
+  "orderby_random": {
+   "type": "boolean",
+   "default": false,
+   "media_prop": "_orderbyRandom",
+   "should_preview_update": false
+  }
+ },
+ "media_video": {
+  "preload": {
+   "type": "string",
+   "default": "metadata",
+   "enum": [
+    "none",
+    "auto",
+    "metadata"
+   ],
+   "should_preview_update": false
+  },
+  "loop": {
+   "type": "boolean",
+   "default": false,
+   "should_preview_update": false
+  },
+  "content": {
+   "type": "string",
+   "default": "",
+   "should_preview_update": false
+  },
+  "mp4": {
+   "type": "string",
+   "default": "",
+   "format": "uri"
+  },
+  "m4v": {
+   "type": "string",
+   "default": "",
+   "format": "uri"
+  },
+  "webm": {
+   "type": "string",
+   "default": "",
+   "format": "uri"
+  },
+  "ogv": {
+   "type": "string",
+   "default": "",
+   "format": "uri"
+  },
+  "flv": {
+   "type": "string",
+   "default": "",
+   "format": "uri"
+  },
+  "attachment_id": {
+   "type": "integer",
+   "default": 0,
+   "minimum": 0,
+   "media_prop": "id"
+  },
+  "url": {
+   "type": "string",
+   "default": "",
+   "format": "uri"
+  },
+  "title": {
+   "type": "string",
+   "default": "",
+   "should_preview_update": false
+  }
+ }
+}

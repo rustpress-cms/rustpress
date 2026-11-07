@@ -14,6 +14,17 @@ macro_rules! re {
 
 // ---------------------------------------------------------------- escaping
 
+/// The browser part of `user_can_richedit()`.
+pub fn browser_can_richedit(agent: &str) -> bool {
+    let mobile = ["Mobile", "Android", "Silk/", "Kindle", "BlackBerry", "Opera Mini", "Opera Mobi"].iter().any(|m| agent.contains(m));
+    let ie = agent.contains("MSIE") || agent.contains("Trident/");
+    let safari = agent.contains("Safari") && !agent.contains("Chrome") && !agent.contains("Chromium");
+    if safari {
+        return !mobile || agent.split("AppleWebKit/").nth(1).and_then(|r| r.split('.').next()).and_then(|v| v.parse::<u32>().ok()).is_some_and(|v| v >= 534);
+    }
+    !ie && (agent.contains("Gecko") || agent.contains("Chrome") || agent.contains("Edg/") || (agent.contains("Opera") && !mobile))
+}
+
 /// `sanitize_html_class()`: percent-encoded octets and everything but `[A-Za-z0-9_-]` go.
 pub fn sanitize_html_class(class: &str) -> String {
     let bytes = class.as_bytes();

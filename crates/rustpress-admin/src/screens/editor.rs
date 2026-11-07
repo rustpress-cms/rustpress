@@ -28,14 +28,7 @@ pub(crate) fn can_richedit(ctx: &Ctx<'_>, rich_editing: Option<&str>) -> bool {
     if rich_editing != Some("true") {
         return false;
     }
-    let agent = ctx.request.user_agent.as_deref().unwrap_or_default();
-    let mobile = ["Mobile", "Android", "Silk/", "Kindle", "BlackBerry", "Opera Mini", "Opera Mobi"].iter().any(|m| agent.contains(m));
-    let ie = agent.contains("MSIE") || agent.contains("Trident/");
-    let safari = agent.contains("Safari") && !agent.contains("Chrome") && !agent.contains("Chromium");
-    if safari {
-        return !mobile || agent.split("AppleWebKit/").nth(1).and_then(|r| r.split('.').next()).and_then(|v| v.parse::<u32>().ok()).is_some_and(|v| v >= 534);
-    }
-    !ie && (agent.contains("Gecko") || agent.contains("Chrome") || agent.contains("Edg/") || (agent.contains("Opera") && !mobile))
+    rustpress_core::formatting::browser_can_richedit(ctx.request.user_agent.as_deref().unwrap_or_default())
 }
 
 /// `get_user_setting( 'editor' )` from the `wp-settings-{id}` cookie.

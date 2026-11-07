@@ -129,7 +129,7 @@ pub async fn enqueue(ctx: &Ctx<'_>, assets: &mut Assets, post_id: u64) {
         .into_iter()
         .map(|(year, month)| {
             let ts = chrono::NaiveDate::from_ymd_opt(year, month as u32, 1).and_then(|d| d.and_hms_opt(0, 0, 0)).map_or(0, |d| d.and_utc().timestamp());
-            json!({"year": year.to_string(), "month": format!("{month:02}"), "text": rustpress_core::i18n::sprintf(&ctx.tr("%1$s %2$d"), &[&site.locale_data().month[(month as usize).saturating_sub(1).min(11)], &year.to_string()]), "_": ts})
+            json!({"year": year.to_string(), "month": month.to_string(), "text": rustpress_core::i18n::sprintf(&ctx.tr("%1$s %2$d"), &[&site.locale_data().month[(month as usize).saturating_sub(1).min(11)], &year.to_string()]), "_": ts})
         })
         .map(|mut m| {
             m.as_object_mut().map(|o| o.remove("_"));
@@ -152,10 +152,10 @@ pub async fn enqueue(ctx: &Ctx<'_>, assets: &mut Assets, post_id: u64) {
         "defaultProps": {"link": site.options.string("image_default_link_type", "none"), "align": site.options.string("image_default_align", ""), "size": site.options.string("image_default_size", "")},
         // The playlist filters default to showing both.
         "attachmentCounts": {"audio": 1, "video": 1},
-        "oEmbedProxyUrl": site.site_url("wp-json/oembed/1.0/proxy"),
+        "oEmbedProxyUrl": site.rest_url("oembed/1.0/proxy"),
         "embedExts": baked.get("embed_exts").cloned().unwrap_or(Json::Null),
         "embedMimes": baked.get("embed_mimes").cloned().unwrap_or(Json::Null),
-        "contentWidth": Json::Null,
+        "contentWidth": rustpress_theme::classic::content_width(&ctx.env.theme.stylesheet),
         "months": months,
         "mediaTrash": 0,
         "infiniteScrolling": 1,
@@ -176,7 +176,7 @@ pub async fn enqueue(ctx: &Ctx<'_>, assets: &mut Assets, post_id: u64) {
         "wp-api-fetch".into(),
         format!(
             "wp.apiFetch.use( wp.apiFetch.createRootURLMiddleware( {} ) );\nwp.apiFetch.nonceMiddleware = wp.apiFetch.createNonceMiddleware( {} );\nwp.apiFetch.use( wp.apiFetch.nonceMiddleware );\nwp.apiFetch.use( wp.apiFetch.mediaUploadMiddleware );\nwp.apiFetch.nonceEndpoint = {};",
-            json!(site.site_url("wp-json/")),
+            json!(site.rest_url("/")),
             json!(ctx.create_nonce("wp_rest")),
             json!(site.site_url("wp-admin/admin-ajax.php?action=rest-nonce"))
         ),
@@ -194,5 +194,11 @@ pub fn templates(ctx: &Ctx<'_>) -> String {
     if !super::client_side_media_processing(ctx) {
         templates = templates.replace("<audio crossorigin=\"anonymous\" ", "<audio ").replace("<video crossorigin=\"anonymous\" ", "<video ");
     }
+    let site = ctx.site();
+    if site.options.get("wp_attachment_pages_enabled") == Some("1") {
+        templates = templates.replace(">View media file</a>", &format!(">{}</a>", ctx.tr("View attachment page")));
+    }
+    let name = site.settings.blogname.replace('\\', "\\\\").replace('\'', "\\'");
+    templates = templates.replace("<# print( 'RustPress Test' ) #>", &format!("<# print( '{name}' ) #>"));
     format!("\n{}\n\t", templates.replace("http://localhost:8080/wp-admin/", &ctx.admin_url("")))
 }

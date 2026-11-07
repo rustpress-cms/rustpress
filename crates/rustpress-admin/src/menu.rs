@@ -212,7 +212,8 @@ impl AdminMenu {
             menu.add_sub("themes.php", sub(10, &tr("Menus"), "edit_theme_options", "nav-menus.php"));
             let header = format!("{customize}&autofocus%5Bcontrol%5D=header_image");
             menu.add_sub("themes.php", hidden(sub(15, &site.trx("Header", "custom image header"), appearance, &rustpress_core::formatting::esc_url(&header))));
-            menu.add_sub("themes.php", sub(16, &site.trx("Header", "custom image header"), "edit_theme_options", "themes.php?page=custom-header"));
+            // `Custom_Image_Header::init()` adds it with `add_theme_page()`.
+            menu.add_sub("themes.php", SubItem { href: Some("themes.php?page=custom-header".to_owned()), page_url: Some("themes.php?page=custom-header".to_owned()), ..sub(16, &site.trx("Header", "custom image header"), "edit_theme_options", "custom-header") });
             menu.add_sub("themes.php", sub(17, &tr("Theme File Editor"), "edit_themes", "theme-editor.php"));
         } else {
             menu.add_sub("themes.php", sub(9, &tr("Fonts"), "edit_theme_options", "font-library.php"));
