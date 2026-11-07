@@ -7,7 +7,7 @@ else counts as unexpected.
 
 | Reports | Reference | Run |
 |---|---|---|
-| `twentytwentyfive.md`, `twentytwentyfour.md`, `twentytwentythree.md`, `twentytwentytwo.md` | WordPress 7.1.4 | 2026-10-30, the current state |
+| `twentytwentyfive.md`, `twentytwentyfour.md`, `twentytwentythree.md`, `twentytwentytwo.md` | WordPress 7.1.4 | 2026-11-07 (Twenty Twenty-Five), 2026-10-30 (the others) |
 | `*-ar.md`, `*-de_DE.md`, `*-ja.md`, `*-ru_RU.md` (site languages) | WordPress 7.1.3 | 2026-10-25 |
 | `twentytwentyfive-perma-*.md` (permalink structures), `twentytwentyfive-settings-*.md` (reading and discussion settings) | WordPress 7.1.3 | 2026-10-25 |
 | `release-twentytwentyfive.md` (the release build) | WordPress 7.1.3 | 2026-10-24 |

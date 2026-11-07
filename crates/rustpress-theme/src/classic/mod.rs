@@ -4,6 +4,7 @@
 //! served from its directory unchanged.
 
 pub mod comments;
+mod media_widgets;
 pub mod menu;
 pub mod seventeen;
 pub mod tags;

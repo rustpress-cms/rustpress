@@ -199,7 +199,7 @@ pub fn video(env: &Env<'_>, post_id: u64, atts: &Atts, content: &str) -> Option<
     let mut width = number("width", 640);
     let mut height = number("height", 360);
     // The video is bigger than the theme.
-    let content_width = env.with_state(|s| s.content_width);
+    let content_width = env.content_width();
     if content_width != 0 && width > content_width {
         height = (height as f64 * content_width as f64 / width as f64).round() as u64;
         width = content_width;

@@ -85,7 +85,7 @@ async fn render_dynamic_image(bc: &BlockCtx<'_>, id: u64, context: &Context) -> 
     if has_ratio {
         img_attrs.push(("style".to_owned(), AttrValue::Text(safecss_filter_attr(&format!("aspect-ratio:{ratio};object-fit:cover;")))));
     }
-    let mut markup = images::get_attachment_image(env, id, &size, &ImageArgs { attrs: img_attrs, post_thumbnail: false, thumbnail_of: None, dimensions: None }).await?;
+    let mut markup = images::get_attachment_image(env, id, &size, &ImageArgs { attrs: img_attrs, post_thumbnail: false, thumbnail_of: None, dimensions: None, requested: None }).await?;
     if markup.is_empty() {
         return Ok(String::new());
     }

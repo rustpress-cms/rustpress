@@ -356,6 +356,10 @@ impl ThemeAccess for Theme {
         crate::classic::image_size(&self.template, name)
     }
 
+    fn content_width(&self) -> u64 {
+        crate::classic::content_width(&self.template).unwrap_or(0)
+    }
+
     fn filter_calculated_sizes(&self, site: &Site, query: &rustpress_core::QueryResult, sizes: Option<String>, width: u64) -> Option<String> {
         if crate::classic::is_ported(self) { crate::classic::seventeen::calculated_sizes(site, query, &self.stylesheet, sizes, width) } else { sizes }
     }

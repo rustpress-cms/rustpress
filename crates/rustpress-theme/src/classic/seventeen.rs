@@ -218,7 +218,7 @@ async fn custom_logo(ctx: &Ctx<'_>) -> Result<String> {
     if alt_meta.is_empty() || alt_meta == "0" {
         attrs.push(("alt".into(), AttrValue::Text(ctx.site.settings.blogname.clone())));
     }
-    let image = images::get_attachment_image(&ctx.env, id, "full", &ImageArgs { attrs, post_thumbnail: false, thumbnail_of: None, dimensions: None }).await?;
+    let image = images::get_attachment_image(&ctx.env, id, "full", &ImageArgs { attrs, post_thumbnail: false, thumbnail_of: None, dimensions: None, requested: None }).await?;
     let q = ctx.q;
     let current = !q.flags.is_paged && (q.flags.is_front_page || (q.flags.is_home && ctx.site.settings.page_for_posts != q.queried_object_id()));
     let aria = if current { " aria-current=\"page\"" } else { "" };

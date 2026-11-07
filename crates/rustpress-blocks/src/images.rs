@@ -115,17 +115,21 @@ pub fn constrain_dimensions(width: u64, height: u64, max_width: u64, max_height:
 }
 
 /// `image_constrain_size_for_editor()` for a named size in the front end.
-fn constrain_size_for_display(site: &Site, theme: &dyn crate::env::ThemeAccess, width: u64, height: u64, size: &str) -> (u64, u64) {
-    let option = |name: &str| site.options.u64(name, 0);
+fn constrain_size_for_display(env: &Env<'_>, width: u64, height: u64, size: &str) -> (u64, u64) {
+    let option = |name: &str| env.site.options.u64(name, 0);
+    let content_width = env.content_width();
+    let narrow = |max_width: u64| if content_width > 0 { content_width.min(max_width) } else { max_width };
     let (max_width, max_height) = match size {
         "thumb" | "thumbnail" => {
             let (w, h) = (option("thumbnail_size_w"), option("thumbnail_size_h"));
             if w == 0 && h == 0 { (128, 96) } else { (w, h) }
         }
         "medium" => (option("medium_size_w"), option("medium_size_h")),
-        "medium_large" => (option("medium_large_size_w"), option("medium_large_size_h")),
-        "large" => (option("large_size_w"), option("large_size_h")),
-        other => theme.image_size(other).unwrap_or((width, height)),
+        "medium_large" => (narrow(option("medium_large_size_w")), option("medium_large_size_h")),
+        "large" => (narrow(option("large_size_w")), option("large_size_h")),
+        "1536x1536" => (1536, 1536),
+        "2048x2048" => (2048, 2048),
+        other => env.theme.image_size(other).unwrap_or((width, height)),
     };
     constrain_dimensions(width, height, max_width, max_height)
 }
@@ -404,6 +408,14 @@ fn maybe_add_fetchpriority_high(env: &Env<'_>, out: &mut Vec<(String, String)>, 
 }
 
 impl Env<'_> {
+    /// `$content_width`: what the page changed it to, else what the theme set.
+    pub fn content_width(&self) -> u64 {
+        match self.with_state(|s| s.content_width) {
+            0 => self.theme.content_width(),
+            width => width,
+        }
+    }
+
     /// Runs `f` as part of a running `the_content` filter (`doing_filter( 'the_content' )`).
     pub fn in_content_filter<R>(&self, f: impl FnOnce() -> R) -> R {
         self.with_state(|s| s.media.content_depth += 1);
@@ -434,6 +446,8 @@ pub struct ImageArgs {
     pub thumbnail_of: Option<u64>,
     /// The `wp_get_attachment_image_src` filter replacing width and height.
     pub dimensions: Option<(u64, u64)>,
+    /// `$size` as `array( $width, $height )`. The `size` argument is then what the classes print, `WIDTHxHEIGHT`.
+    pub requested: Option<(u64, u64)>,
 }
 
 /// `wp_get_attachment_image( $id, $size, false, $attr )` for an image attachment with known metadata.
@@ -441,9 +455,15 @@ pub fn attachment_image(env: &Env<'_>, meta: Option<&Metadata>, attached_file: &
     let site = env.site;
     let full_url = attachment_url(site, attached_file);
     let (src, mut width, mut height) = match meta {
+        Some(meta) if args.requested.is_some() => {
+            let (max_width, max_height) = args.requested.unwrap_or_default();
+            let (url, w, h) = intermediate_size(&full_url, meta, max_width, max_height).unwrap_or_else(|| (full_url.clone(), meta.width(), meta.height()));
+            let (w, h) = constrain_dimensions(w, h, max_width, max_height);
+            (url, w, h)
+        }
         Some(meta) => {
             let down = image_downsize(&full_url, meta, size);
-            let (w, h) = constrain_size_for_display(site, env.theme, down.width, down.height, size);
+            let (w, h) = constrain_size_for_display(env, down.width, down.height, size);
             (down.url, w, h)
         }
         None => (full_url, 0, 0),

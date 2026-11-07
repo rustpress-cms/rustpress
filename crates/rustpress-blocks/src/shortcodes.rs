@@ -83,7 +83,7 @@ async fn do_shortcode_tag(env: &Env<'_>, post: Option<&Arc<Post>>, text: &str, m
 }
 
 /// `img_caption_shortcode()` for a theme with HTML5 captions.
-async fn img_caption_shortcode(env: &Env<'_>, post: Option<&Arc<Post>>, mut atts: Atts, content: &str) -> Result<String> {
+pub async fn img_caption_shortcode(env: &Env<'_>, post: Option<&Arc<Post>>, mut atts: Atts, content: &str) -> Result<String> {
     let mut content = content.to_owned();
     // New-style shortcode with the caption inside the shortcode with the link and image tags.
     if atts.get("caption").is_none() {
@@ -291,7 +291,7 @@ async fn playlist_shortcode(env: &Env<'_>, post: Option<&Arc<Post>>, mut atts: A
     }
 
     // Default padding and border of the wrapper: 22 pixels.
-    let content_width = env.with_state(|s| s.content_width);
+    let content_width = env.content_width();
     let default_height = 360_u64;
     let theme_width = if content_width == 0 { 640 } else { content_width.saturating_sub(22) };
     let mut theme_height = if content_width == 0 { default_height } else { (default_height as f64 * theme_width as f64 / 640.0).round() as u64 };
@@ -379,7 +379,7 @@ pub fn playlist_templates(site: &rustpress_core::Site) -> String {
     format!("{templates}\t")
 }
 
-async fn gallery_shortcode(env: &Env<'_>, post: Option<&Arc<Post>>, mut atts: Atts) -> Result<String> {
+pub async fn gallery_shortcode(env: &Env<'_>, post: Option<&Arc<Post>>, mut atts: Atts) -> Result<String> {
     let site = env.site;
     let instance = env.with_state(|s| {
         s.gallery_instances += 1;
