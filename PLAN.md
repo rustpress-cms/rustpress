@@ -929,3 +929,7 @@ Faults this found:
 - **`export.php`** listed post types of rows no plugin registers.
 - A plain `%%` in a message, and an ampersand that `esc_html()` encoded (`Food &amp; Drink`).
 
+`plugins.php` follows `wp_plugin_update_rows()`: the rows of the transient `update_plugins`, the view `Update Available`, the
+class `update`, `wp_get_auto_update_message()` in the row and the bulk actions of the views of automatic updates. An update is
+never incompatible, since RustPress has no PHP version; the texts for that case are not ported. The views take their text
+from `_n()` with the count: `Auto-updates Disabled` has a plural in German.

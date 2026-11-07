@@ -3,6 +3,7 @@
 
 use rustpress_core::OrLog;
 use rustpress_core::formatting::{esc_attr, esc_html, esc_url};
+use rustpress_core::i18n::sprintf;
 
 use super::notices::notice;
 use super::{AdminResponse, Ctx, die, redirect, render};
@@ -89,6 +90,34 @@ struct RowInfo<'a> {
     /// The slug WordPress.org knows the plugin by (from the transient `update_plugins`).
     api_slug: Option<&'a str>,
     uninstallable: bool,
+    /// The update of the plugin, for a user who may update, and `wp_get_auto_update_message()`.
+    update: Option<&'a crate::updates::PluginUpdate>,
+    auto_update_message: &'a str,
+}
+
+/// `wp_plugin_update_row()`. RustPress has no PHP version a plugin could ask for, so an update is never incompatible, and no
+/// module uses `in_plugin_update_message-{$file}`. `{{colspan}}` is `get_column_count()`.
+fn update_row(ctx: &Ctx<'_>, plugin: &PluginInfo, update: &crate::updates::PluginUpdate, active: bool) -> String {
+    let tr = |s: &str| ctx.tr(s);
+    let name = plugins::kses_description(&plugin.name);
+    let slug = &update.slug;
+    let details = ctx.admin_url(&format!("plugin-install.php?tab=plugin-information&plugin={slug}&section=changelog&TB_iframe=true&width=600&height=800"));
+    let details_attributes = format!("class=\"thickbox open-plugin-details-modal\" aria-label=\"{}\"", esc_attr(&sprintf(&tr("View %1$s version %2$s details"), &[&name, &update.new_version])));
+    let version = esc_attr(&update.new_version);
+    let message = if update.package.is_empty() {
+        sprintf(&tr("There is a new version of %1$s available. <a href=\"%2$s\" %3$s>View version %4$s details</a>. <em>Automatic update is unavailable for this plugin.</em>"), &[&name, &esc_url(&details), &details_attributes, &version])
+    } else {
+        let url = format!("{}&_wpnonce={}", ctx.admin_url(&format!("update.php?action=upgrade-plugin&plugin={}", rustpress_core::canonical::php_urlencode(&plugin.file))), ctx.create_nonce(&format!("upgrade-plugin_{}", plugin.file)));
+        let update_attributes = format!("class=\"update-link\" aria-label=\"{}\"", esc_attr(&sprintf(&ctx.site().trx("Update %s now", "plugin"), &[&name])));
+        sprintf(&tr("There is a new version of %1$s available. <a href=\"%2$s\" %3$s>View version %4$s details</a> or <a href=\"%5$s\" %6$s>update now</a>."), &[&name, &esc_url(&details), &details_attributes, &version, &esc_html(&url), &update_attributes])
+    };
+    format!(
+        "<tr class=\"plugin-update-tr{}\" id=\"{}\" data-slug=\"{}\" data-plugin=\"{}\"><td colspan=\"{{{{colspan}}}}\" class=\"plugin-update colspanchange\"><div class=\"update-message notice inline notice-warning notice-alt\"><p>{message}</p></div></td></tr>",
+        if active { " active" } else { "" },
+        esc_attr(&format!("{slug}-update")),
+        esc_attr(slug),
+        esc_attr(&plugin.file),
+    )
 }
 
 /// One row of the list.
@@ -104,7 +133,8 @@ fn row(ctx: &Ctx<'_>, plugin: &PluginInfo, info: &RowInfo<'_>) -> String {
     // `$plugin_data['slug'] ?? sanitize_title( $plugin_data['Name'] )`.
     let slug = info.api_slug.map_or_else(|| rustpress_core::slug::sanitize_title(&plugin.name), str::to_owned);
     let state = if active { "active" } else { "inactive" };
-    let class = if info.uninstallable { format!("{state} is-uninstallable") } else { state.to_owned() };
+    let state = if info.update.is_some() { format!("{state} update") } else { state.to_owned() };
+    let class = if info.uninstallable { format!("{state} is-uninstallable") } else { state.clone() };
     let file_q = urlenc(&plugin.file);
     let checkbox = format!("checkbox_{}", md5_hex(&plugin.file));
     let activate_nonce = ctx.create_nonce(&format!("activate-plugin_{}", plugin.file));
@@ -158,8 +188,14 @@ fn row(ctx: &Ctx<'_>, plugin: &PluginInfo, info: &RowInfo<'_>) -> String {
     } else {
         format!("<a href=\"plugins.php?action=enable-auto-update&amp;plugin={file_q}&amp;paged=1&amp;plugin_status={status}&amp;_wpnonce={updates_nonce}\" class=\"toggle-auto-update aria-button-if-js\" data-wp-action=\"enable\"><span class=\"dashicons dashicons-update spin hidden\" aria-hidden=\"true\"></span><span class=\"label\">{}</span></a><div class=\"notice notice-error notice-alt inline hidden\"><p></p></div>", tr("Enable auto-updates"))
     };
+    // `wp_get_auto_update_message()` in a row with an update, hidden while the automatic updates are off.
+    let auto = match info.update {
+        Some(_) => auto.replacen("<div class=\"notice notice-error", &format!("<div class=\"auto-update-time{}\">{}</div><div class=\"notice notice-error", if auto_update { "" } else { " hidden" }, info.auto_update_message), 1),
+        None => auto,
+    };
+    let after = info.update.map_or_else(String::new, |update| update_row(ctx, plugin, update, active));
     format!(
-        "<tr class=\"{class}\" data-slug=\"{slug}\" data-plugin=\"{}\"><td class='check-column'><label class=\"label-covers-full-cell\" for=\"{checkbox}\"><span class=\"screen-reader-text\">{}</span></label><input type=\"checkbox\" name=\"checked[]\" value=\"{}\" id=\"{checkbox}\" /></td><th scope='row' class='plugin-title column-primary' aria-label='{}'><strong>{name}</strong><div class=\"row-actions visible\">{actions}</div><button type=\"button\" class=\"toggle-row\"><span class=\"screen-reader-text\">{}</span></button></th><td class='column-description desc'>\n\t\t\t\t\t\t<div class='plugin-description'><p>{description}</p></div>\n\t\t\t\t\t\t<div class='{class} second plugin-version-author-uri'>{}</div></td><td class='column-auto-updates'>{auto}</td></tr>",
+        "<tr class=\"{class}\" data-slug=\"{slug}\" data-plugin=\"{}\"><td class='check-column'><label class=\"label-covers-full-cell\" for=\"{checkbox}\"><span class=\"screen-reader-text\">{}</span></label><input type=\"checkbox\" name=\"checked[]\" value=\"{}\" id=\"{checkbox}\" /></td><th scope='row' class='plugin-title column-primary' aria-label='{}'><strong>{name}</strong><div class=\"row-actions visible\">{actions}</div><button type=\"button\" class=\"toggle-row\"><span class=\"screen-reader-text\">{}</span></button></th><td class='column-description desc'>\n\t\t\t\t\t\t<div class='plugin-description'><p>{description}</p></div>\n\t\t\t\t\t\t<div class='{class} second plugin-version-author-uri'>{}</div></td><td class='column-auto-updates'>{auto}</td></tr>{after}",
         esc_attr(&plugin.file),
         rustpress_core::i18n::sprintf(&tr("Select %s"), &[&plugin.name]),
         esc_attr(&plugin.file),
@@ -450,7 +486,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     }
 
     let searching = request.request("s").is_some_and(|s| !s.trim().is_empty());
-    let status = ["all", "active", "inactive", "recently_activated", "mustuse", "auto-update-enabled", "auto-update-disabled"].iter().find(|s| request.get("plugin_status") == Some(**s)).copied().unwrap_or("all");
+    let status = ["all", "active", "inactive", "recently_activated", "upgrade", "mustuse", "auto-update-enabled", "auto-update-disabled"].iter().find(|s| request.get("plugin_status") == Some(**s)).copied().unwrap_or("all");
     // Deactivations older than a week are forgotten.
     let stored_recent = recently_activated(ctx).await;
     let recent: Vec<(String, i64)> = stored_recent.iter().filter(|(_, time)| time + 7 * 86_400 >= ctx.env.now).cloned().collect();
@@ -461,29 +497,37 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     let mu = plugins::must_use(&root);
     let auto = auto_updates(ctx);
     let is_active = |p: &PluginInfo| active.contains(&p.file);
+    // `$plugins['upgrade']`: for those who may update.
+    let upgrades = if ctx.can("update_plugins") { crate::updates::plugin_update_list(ctx.site()).await } else { Vec::new() };
+    let upgrade_of = |p: &PluginInfo| upgrades.iter().find(|(file, _)| *file == p.file).map(|(_, update)| update);
     let counts = [
         ("all", installed.len()),
         ("active", installed.iter().filter(|p| is_active(p)).count()),
         ("inactive", installed.iter().filter(|p| !is_active(p)).count()),
         ("recently_activated", installed.iter().filter(|p| !is_active(p) && is_recent(p)).count()),
+        ("upgrade", installed.iter().filter(|p| upgrade_of(p).is_some()).count()),
         ("mustuse", mu.len()),
         ("auto-update-enabled", installed.iter().filter(|p| auto.contains(&p.file)).count()),
         ("auto-update-disabled", installed.iter().filter(|p| !auto.contains(&p.file)).count()),
     ];
+    let requested = status;
     // A list with no plugins in it is the list of all plugins (`$plugins[ $status ]` is empty).
     let status = if status != "all" && counts.iter().find(|(name, _)| *name == status).map_or(0, |(_, n)| *n) == 0 { "all" } else { status };
     // `$status = 'search'` for a search; no view is the current one then.
     let status = if searching { "search" } else { status };
     // The text of `_n()` up to its count.
-    let cut = |text: &str| text.split(" <span").next().unwrap_or_default().to_owned();
-    let label = |s: &str| match s {
-        "all" => tr("All"),
-        "active" => cut(&tr("Active <span class=\"count\">(%s)</span>")),
-        "inactive" => cut(&tr("Inactive <span class=\"count\">(%s)</span>")),
-        "recently_activated" => cut(&tr("Recently Active <span class=\"count\">(%s)</span>")),
-        "mustuse" => cut(&tr("Must-Use <span class=\"count\">(%s)</span>")),
-        "auto-update-enabled" => cut(&tr("Auto-updates Enabled <span class=\"count\">(%s)</span>")),
-        _ => cut(&tr("Auto-updates Disabled <span class=\"count\">(%s)</span>")),
+    let label = |s: &str, count: usize| {
+        let text = match s {
+            "all" => return ctx.site().trnx("All <span class=\"count\">(%s)</span>", "All <span class=\"count\">(%s)</span>", count as i64, "plugins").split(" <span").next().unwrap_or_default().to_owned(),
+            "active" => "Active <span class=\"count\">(%s)</span>",
+            "inactive" => "Inactive <span class=\"count\">(%s)</span>",
+            "recently_activated" => "Recently Active <span class=\"count\">(%s)</span>",
+            "upgrade" => "Update Available <span class=\"count\">(%s)</span>",
+            "mustuse" => "Must-Use <span class=\"count\">(%s)</span>",
+            "auto-update-enabled" => "Auto-updates Enabled <span class=\"count\">(%s)</span>",
+            _ => "Auto-updates Disabled <span class=\"count\">(%s)</span>",
+        };
+        ctx.site().trn(text, text, count as i64).split(" <span").next().unwrap_or_default().to_owned()
     };
     let site = ctx.site();
     let mut views = Vec::new();
@@ -493,7 +537,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
             continue;
         }
         let current = if name == status { " class=\"current\" aria-current=\"page\"" } else { "" };
-        views.push(format!("\t<li class='{name}'><a href=\"plugins.php?plugin_status={name}\"{current}>{} <span class=\"count\">({})</span></a>", label(name), site.number_i18n(count as u64)));
+        views.push(format!("\t<li class='{name}'><a href=\"plugins.php?plugin_status={name}\"{current}>{} <span class=\"count\">({})</span></a>", label(name, count), site.number_i18n(count as u64)));
     }
     let last = views.len();
     let views_html = format!("<h2 class='screen-reader-text'>{}</h2><ul class='subsubsub'>\n{}</ul>", tr("Filter plugins list"), views.iter().enumerate().map(|(i, v)| format!("{v}{}\n", if i + 1 == last { "</li>" } else { " |</li>" })).collect::<String>());
@@ -505,6 +549,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
             "active" => is_active(p),
             "inactive" => !is_active(p),
             "recently_activated" => !is_active(p) && is_recent(p),
+            "upgrade" => upgrade_of(p).is_some(),
             "auto-update-enabled" => auto.contains(&p.file),
             "auto-update-disabled" => !auto.contains(&p.file),
             _ => true,
@@ -520,10 +565,17 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         }
     } else {
         let slugs = crate::updates::plugin_slugs(site).await;
+        let auto_update_message = crate::updates::auto_update_message(ctx).await;
+        let mut row_status = status;
         for p in &list {
             let api_slug = slugs.iter().find(|(file, _)| *file == p.file).map(|(_, slug)| slug.as_str());
-            let info = RowInfo { active: is_active(p), auto_update: auto.contains(&p.file), status, api_slug, uninstallable: is_uninstallable(ctx, &root, &p.file) };
+            let info = RowInfo { active: is_active(p), auto_update: auto.contains(&p.file), status: row_status, api_slug, uninstallable: is_uninstallable(ctx, &root, &p.file), update: upgrade_of(p), auto_update_message: &auto_update_message };
             rows.push_str(&row(ctx, p, &info));
+            // `wp_plugin_update_row()` makes a new list table, whose constructor sets the global `$status` from the request:
+            // the rows after the first update link the view that was asked for.
+            if info.update.is_some() {
+                row_status = requested;
+            }
         }
     }
     if rows.is_empty() {
@@ -548,6 +600,8 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         let options: String = [("activate-selected", "Activate"), ("deactivate-selected", "Deactivate"), ("update-selected", "Update"), ("delete-selected", "Delete"), ("enable-auto-update-selected", "Enable Auto-updates"), ("disable-auto-update-selected", "Disable Auto-updates")]
             .iter()
             .filter(|(v, _)| !(status == "inactive" && *v == "deactivate-selected") && !(status == "active" && *v == "activate-selected"))
+            .filter(|(v, _)| !(status == "auto-update-enabled" && *v == "enable-auto-update-selected") && !(status == "auto-update-disabled" && *v == "disable-auto-update-selected"))
+            .filter(|(v, _)| !(*v == "delete-selected" && (status == "active" || !ctx.can("delete_plugins"))) && !(*v == "update-selected" && !ctx.can("update_plugins")))
             .map(|(v, l)| format!("\t<option value=\"{v}\">{}</option>\n", tr(l)))
             .collect();
         format!(
@@ -576,6 +630,8 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     }
     let screen_options = crate::chrome::ScreenOptions { columns: option_columns, per_page: Some(("plugins_per_page".into(), super::common::items_per_page(ctx, "plugins_per_page", 999).await)), ..Default::default() };
     let rows = rows.replace("<td class='column-description desc'>", &format!("<td class='column-description desc{}'>", is_hidden("description"))).replace("<td class='column-auto-updates'>", &format!("<td class='column-auto-updates{}'>", is_hidden("auto-updates")));
+    let column_count = 4 - ["description", "auto-updates"].iter().filter(|column| !is_hidden(column).is_empty()).count();
+    let rows = rows.replace("{{colspan}}", &column_count.to_string());
     let checkbox_head = |id: &str, tfoot: bool| {
         if must_use {
             return format!("<td  {} class='manage-column column-cb check-column'  ></td>", if tfoot { String::new() } else { "id='cb'".to_owned() });
@@ -631,7 +687,6 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     let content = format!("{heading}{views_html}\n{search_form}{table}\n{tail}");
     let screen = Screen { file: "plugins.php".into(), parent_file: "plugins.php".into(), submenu_file: Some("plugins.php".into()), title: tr("Plugins"), help: Some(baked.help), options: Some(screen_options), ..Default::default() };
     // `_wpUpdatesItemCounts`: the plugin files of every view and the update counts.
-    let upgrades = crate::updates::plugin_updates(site).await;
     let files = |filter: &dyn Fn(&PluginInfo) -> bool| serde_json::Value::from(installed.iter().filter(|p| filter(p)).map(|p| p.file.clone()).collect::<Vec<_>>());
     let item_counts = serde_json::json!({
         "plugins": {
@@ -640,7 +695,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
             "active": files(&|p| is_active(p)),
             "inactive": files(&|p| !is_active(p)),
             "recently_activated": files(&|p| !is_active(p) && is_recent(p)),
-            "upgrade": files(&|p| upgrades.contains(&p.file)),
+            "upgrade": files(&|p| upgrade_of(p).is_some()),
             "mustuse": mu.iter().map(|p| p.file.clone()).collect::<Vec<_>>(),
             "dropins": [],
             "paused": [],
