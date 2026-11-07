@@ -112,7 +112,6 @@ The reference stack, the tools and the working rules are in [AGENTS.md](AGENTS.m
 - Widgets: what the media widgets and the RSS widget print (front and `rendered`; their forms and `update()` are done),
   the feed check of `wp_widget_rss_process()`, the old format of `wp_convert_widget_settings()`, `alt_option_name`,
   `wp-compression-test` (the page prints the script while `can_compress_scripts` is not stored, nothing answers it).
-- `generate_image_metadata()` does not make the sizes a theme registers (`twentyseventeen-featured-image`).
 - The preview of a widget (`widget-types/<id>/render`): its head lacks the styles of all blocks, which `wp_head()` prints when
   no page was rendered before it. `dev/widgets-compare.py` compares it from the `body` on.
 - `parse-media-shortcode` with a preview (the scripts of `wp-mediaelement`/`wp-playlist`).
@@ -946,4 +945,9 @@ The rest of the German sweep:
 - **`wp_die()`** of a post in the Trash has no paragraph.
 
 Left as they are, on the copy of the real site: `plugin-editor.php` lists files as `opendir()` gives them, RustPress sorts them, and the meta box of `nav-menus.php` differs for two posts with the same title, probably from the order MariaDB gives equal titles (the query was not looked at). `edit-comments.php` differs in the e-mail addresses `antispambot()` obfuscates at random.
+
+`registered_sizes()` has the sizes of a ported theme now (`rustpress_core::image_sizes`), so uploads make them and everything
+that lists sizes shows them. `_wp_make_subsizes()` makes `medium`, `large`, `thumbnail` and `medium_large` first, which is the
+order of the stored metadata. The result is checked against what the reference made of a 2400x1600 image, in a unit test: on
+Windows RustPress cannot write into the uploads of the copy, so an upload could not be compared on both sides.
 

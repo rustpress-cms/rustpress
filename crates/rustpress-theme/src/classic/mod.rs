@@ -82,20 +82,13 @@ pub fn content_width(theme: &str) -> Option<u64> {
 }
 
 /// The names of the sizes a ported theme registers with `add_image_size()`, in its order.
-pub fn image_size_names(theme: &str) -> &'static [&'static str] {
-    match theme {
-        "twentyseventeen" => &["twentyseventeen-featured-image", "twentyseventeen-thumbnail-avatar"],
-        _ => &[],
-    }
+pub fn image_size_names(theme: &str) -> Vec<&'static str> {
+    rustpress_core::image_sizes::of_theme(theme).iter().map(|(name, ..)| *name).collect()
 }
 
 /// The sizes a ported theme registers with `add_image_size()`.
 pub fn image_size(theme: &str, name: &str) -> Option<(u64, u64)> {
-    match (theme, name) {
-        ("twentyseventeen", "twentyseventeen-featured-image") => Some((2000, 1200)),
-        ("twentyseventeen", "twentyseventeen-thumbnail-avatar") => Some((100, 100)),
-        _ => None,
-    }
+    rustpress_core::image_sizes::of_theme(theme).iter().find(|(size, ..)| *size == name).map(|(_, width, height, _)| (u64::from(*width), u64::from(*height)))
 }
 
 /// Everything a classic template needs.
