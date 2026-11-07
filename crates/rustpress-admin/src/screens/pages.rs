@@ -1,5 +1,5 @@
 //! Screens whose markup is baked from the reference WordPress (`dev/bake-pages.py`): the content
-//! and the help tabs come from `data/pages/<screen>.json`, the text is translated node by node.
+//! and the help tabs come from `data/pages/<screen>.json`, their texts are marked (`dev/bake-marks.py`).
 
 use serde_json::Value;
 
@@ -34,66 +34,6 @@ fn source(name: &str) -> &'static str {
         "update-core" => include_str!("../data/pages/update-core.json"),
         _ => "{}",
     }
-}
-
-/// Translates the text nodes of `html` (the message IDs are the English texts WordPress uses) and the
-/// parts between `@@` markers, which may contain markup. Scripts and styles stay as they are.
-pub fn translate_html(ctx: &Ctx<'_>, html: &str) -> String {
-    let mut out = String::with_capacity(html.len());
-    let mut rest = html;
-    while !rest.is_empty() {
-        if let Some(after) = rest.strip_prefix('<') {
-            // A tag; raw text elements run up to their end tag.
-            let end = after.find('>').map_or(rest.len(), |i| i + 2);
-            let tag = &rest[..end];
-            out.push_str(tag);
-            rest = &rest[end..];
-            let lower = tag.to_ascii_lowercase();
-            // Underscore templates are translated, code is not.
-            let template = lower.contains("text/html") || lower.contains("text/template");
-            for raw in ["script", "style", "textarea"] {
-                if !template && lower.starts_with(&format!("<{raw}")) && !lower.ends_with("/>") {
-                    let close = format!("</{raw}");
-                    let at = rest.to_ascii_lowercase().find(&close).unwrap_or(rest.len());
-                    out.push_str(&rest[..at]);
-                    rest = &rest[at..];
-                    break;
-                }
-            }
-            continue;
-        }
-        let end = rest.find('<').unwrap_or(rest.len());
-        let text = &rest[..end];
-        rest = &rest[end..];
-        out.push_str(&translate_text(ctx, text));
-    }
-    translate_marked(ctx, &out)
-}
-
-/// One text node: the whitespace around stays, the words between are looked up.
-fn translate_text(ctx: &Ctx<'_>, text: &str) -> String {
-    let core = text.trim();
-    if core.is_empty() || !core.chars().any(char::is_alphabetic) || core.starts_with("{{") {
-        return text.to_owned();
-    }
-    let start = text.len() - text.trim_start().len();
-    let end = text.trim_end().len();
-    format!("{}{}{}", &text[..start], ctx.tr(core), &text[end..])
-}
-
-/// `@@Text with <b>markup</b>@@`.
-fn translate_marked(ctx: &Ctx<'_>, text: &str) -> String {
-    let mut out = String::new();
-    let mut rest = text;
-    while let Some(start) = rest.find("@@") {
-        out.push_str(&rest[..start]);
-        let after = &rest[start + 2..];
-        let Some(end) = after.find("@@") else { break };
-        out.push_str(&ctx.tr(&after[..end]));
-        rest = &after[end + 2..];
-    }
-    out.push_str(rest);
-    out
 }
 
 /// The help and the (translated) content of a baked screen; `{{site}}` is the address of the site.

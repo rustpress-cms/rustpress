@@ -182,6 +182,14 @@ fn encode(image: &DynamicImage, mime: &str) -> Option<(Vec<u8>, &'static str)> {
     Some((out, content_type))
 }
 
+/// `wp_image_editor( $post_id )` on the screen of the attachment.
+pub(super) async fn opened(ctx: &Ctx<'_>, id: u64) -> String {
+    match load(ctx.env, id).await {
+        Some(state) => editor_html(ctx, &state, None).await,
+        None => String::new(),
+    }
+}
+
 /// `wp_image_editor()`.
 async fn editor_html(ctx: &Ctx<'_>, state: &State, note: Option<(bool, String)>) -> String {
     let Some(meta) = &state.meta else { return ctx.tr("Image data does not exist. Please re-upload the image.") };
@@ -201,9 +209,9 @@ async fn editor_html(ctx: &Ctx<'_>, state: &State, note: Option<(bool, String)>)
         Some((false, message)) => format!("<div class='notice notice-success' role='alert'><p>{message}</p></div>"),
         None => String::new(),
     };
-    let restore = if can_restore { super::pages::translate_html(ctx, RESTORE) } else { String::new() };
+    let restore = if can_restore { super::template_text::translate(ctx.site(), RESTORE) } else { String::new() };
     let rand = rand::random_range(1..99999u32);
-    super::pages::translate_html(ctx, EDITOR)
+    super::template_text::translate(ctx.site(), EDITOR)
         .replace("{{RESTORE}}", &restore)
         .replace("{{NOTE}}", &note_html)
         .replace("{{NONCE}}", &nonce)

@@ -18,7 +18,8 @@ if wp config has AUTOMATIC_UPDATER_DISABLED --type=constant 2>/dev/null; then
 fi
 podman exec -u 0 rustpress-wp mkdir -p /var/www/html/wp-content/mu-plugins
 podman cp mu-plugins/rustpress-no-auto-updates.php rustpress-wp:/var/www/html/wp-content/mu-plugins/
-podman exec -u 0 rustpress-wp chown www-data:www-data /var/www/html/wp-content/mu-plugins/rustpress-no-auto-updates.php
+podman cp mu-plugins/rustpress-mark-texts.php rustpress-wp:/var/www/html/wp-content/mu-plugins/
+podman exec -u 0 rustpress-wp chown www-data:www-data /var/www/html/wp-content/mu-plugins/rustpress-no-auto-updates.php /var/www/html/wp-content/mu-plugins/rustpress-mark-texts.php
 have=$(wp core version)
 if [[ $have != "$want" ]]; then
   echo "reference WordPress $have -> $want"

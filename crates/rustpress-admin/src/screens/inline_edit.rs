@@ -272,7 +272,7 @@ pub async fn inline_edit(ctx: &Ctx<'_>, info: &TypeInfo, first: Option<&Post>, c
 
     // The template with the words translated; the markers are kept apart from the text for that.
     let marked = FORM.replace("\r\n", "\n").replace("{{", "\u{E000}").replace("}}", "\u{E001}");
-    let translated = super::pages::translate_html(ctx, &marked);
+    let translated = super::template_text::translate(ctx.site(), &marked);
     let (loop_start, loop_end) = ("\u{E000}LOOP\u{E001}", "\u{E000}ENDLOOP\u{E001}");
     let (head, rest) = translated.split_once(loop_start).unwrap_or((&translated, ""));
     let (body, foot) = rest.split_once(loop_end).unwrap_or((rest, ""));

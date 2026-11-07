@@ -22,25 +22,11 @@ fn esc_textarea(text: &str) -> String {
     super::post_edit::esc_textarea_pub(text)
 }
 
-/// `get_sample_permalink_html()`: the link with the editable part of the slug; an unattached file has a plain link.
+/// `get_sample_permalink_html()`, whose label stands in the template.
 async fn sample_permalink(ctx: &Ctx<'_>, post: &Post) -> String {
-    let permalink = ctx.site().permalink(post).await.unwrap_or_default();
-    if post.post_parent == 0 {
-        return format!("<a id=\"sample-permalink\" href=\"{}\">{}</a>", esc_url(&permalink), esc_html(&permalink));
-    }
-    let shown = match permalink.rfind(&format!("/{}/", post.post_name)) {
-        Some(at) if !post.post_name.is_empty() => format!("{}/<span id=\"editable-post-name\">{}</span>/{}", &permalink[..at], esc_html(&post.post_name), &permalink[at + post.post_name.len() + 2..]),
-        _ => esc_html(&permalink),
-    };
-    format!(
-        "<span id=\"sample-permalink\"><a href=\"{}\">{shown}</a></span>
-&lrm;<span id=\"edit-slug-buttons\"><button type=\"button\" class=\"edit-slug button button-small hide-if-no-js\" aria-label=\"{}\">{}</button></span>
-<span id=\"editable-post-name-full\">{}</span>",
-        esc_url(&permalink),
-        esc_attr(&ctx.tr("Edit permalink")),
-        ctx.tr("Edit"),
-        esc_html(&post.post_name)
-    )
+    let tr = |s: &str| ctx.tr(s);
+    let html = super::common::sample_permalink_html(ctx.site(), None, ctx.can("manage_options"), post, None, None, &tr).await;
+    html.split_once('\n').map_or(html.as_str(), |(_, rest)| rest).trim_end_matches('\n').to_owned()
 }
 
 async fn authors(ctx: &Ctx<'_>, selected: u64) -> String {
@@ -87,9 +73,13 @@ pub async fn form(ctx: &Ctx<'_>, post: &Post) -> AdminResponse {
     } else {
         String::new()
     };
+    // `edit_form_image_editor()`: `image-editor` in the address opens the editor.
+    let open = ctx.request.get("image-editor").is_some();
+    let (open_style, not_open_style) = if open { (" style=\"display:none\"", "") } else { ("", " style=\"display:none\"") };
+    let open_editor = if open && image { super::image_edit::opened(ctx, id).await } else { String::new() };
     let holder = if image {
         format!(
-            "\t\t\t<div class=\"imgedit-response\" id=\"imgedit-response-{id}\"></div>\n\n\t\t<div class=\"wp_attachment_image wp-clearfix\" id=\"media-head-{id}\">\n\t\t\t<p id=\"thumbnail-head-{id}\"><img class=\"thumbnail\" src=\"{}\" style=\"max-width:100%\" alt=\"\" /></p>\n\t\t\t<p>{edit_button}</p>\n\t\t</div>\n\t\t<div style=\"display:none\" class=\"image-editor\" id=\"image-editor-{id}\">\n\t\t\t\t</div>\n",
+            "\t\t\t<div class=\"imgedit-response\" id=\"imgedit-response-{id}\"></div>\n\n\t\t<div{open_style} class=\"wp_attachment_image wp-clearfix\" id=\"media-head-{id}\">\n\t\t\t<p id=\"thumbnail-head-{id}\"><img class=\"thumbnail\" src=\"{}\" style=\"max-width:100%\" alt=\"\" /></p>\n\t\t\t<p>{edit_button}</p>\n\t\t</div>\n\t\t<div{not_open_style} class=\"image-editor\" id=\"image-editor-{id}\">\n\t\t{open_editor}\t\t</div>\n",
             esc_url(&thumb_url)
         )
     } else if kind == "audio" {
@@ -175,7 +165,7 @@ pub async fn form(ctx: &Ctx<'_>, post: &Post) -> AdminResponse {
         _ => String::new(),
     };
 
-    let html = super::pages::translate_html(ctx, TPL)
+    let html = super::template_text::translate(ctx.site(), TPL)
         .replace("{{HOLDER}}", &holder)
         .replace("{{ALT_BLOCK}}", &alt_block)
         .replace("{{CAPTION_LABEL}}", &if image { tr("Image Caption") } else { tr("Short Description") })
@@ -243,7 +233,7 @@ pub async fn form(ctx: &Ctx<'_>, post: &Post) -> AdminResponse {
         title if !title.is_empty() => sprintf(&tr("%1$s &#8220;%2$s&#8221;"), &[&tr("Edit Media"), &title]),
         _ => tr("Edit Media"),
     };
-    let screen = Screen { file: "post.php".into(), parent_file: "upload.php".into(), submenu_file: Some("upload.php".into()), post_type: "attachment".into(), title: window_title, help: Some(baked.help), view_item: Some((tr("View Media File"), site.permalink(post).await.unwrap_or_default())), options: Some(options), edited_post: Some(post.clone()), ..Default::default() };
+    let screen = Screen { file: "post.php".into(), parent_file: "upload.php".into(), submenu_file: Some("upload.php".into()), post_type: "attachment".into(), title: window_title, help: Some(baked.help), view_item: Some((if site.options.get("wp_attachment_pages_enabled") == Some("1") { tr("View Attachment Page") } else { tr("View Media File") }, site.permalink(post).await.unwrap_or_default())), options: Some(options), edited_post: Some(post.clone()), ..Default::default() };
     let scripts: Vec<String> = ["admin-comments", "suggest", "post", "image-edit"].into_iter().map(String::from).collect();
     // `array_keys( $shortcode_tags )`: WordPress's, then the plugins'.
     let mut shortcodes: Vec<String> = ["wp_caption", "caption", "gallery", "playlist", "audio", "video", "embed"].iter().map(|s| (*s).to_owned()).collect();

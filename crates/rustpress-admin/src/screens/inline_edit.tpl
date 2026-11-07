@@ -16,13 +16,13 @@
 
 					{{else}}
 						<label>
-							<span class="title">Title</span>
+							<span class="title">⟦r¦¦Title⟧</span>
 							<span class="input-text-wrap"><input type="text" name="post_title" class="ptitle" value="" /></span>
 						</label>
 
 						{{if VIEWABLE}}
 							<label>
-								<span class="title">Slug</span>
+								<span class="title">⟦r¦¦Slug⟧</span>
 								<span class="input-text-wrap"><input type="text" name="post_name" value="" autocomplete="off" spellcheck="false" /></span>
 							</label>
 
@@ -30,7 +30,7 @@
 					{{end}}
 				{{end}}
 				{{if QUICK}}					<fieldset class="inline-edit-date">
-						<legend><span class="title">Date</span></legend>
+						<legend><span class="title">⟦r¦¦Date⟧</span></legend>
 						{{DATE}}					</fieldset>
 					<br class="clear" />
 				{{end}}
@@ -38,15 +38,15 @@
 				{{if QUICK_PUBLISH}}
 					<div class="inline-edit-group wp-clearfix">
 						<label class="alignleft">
-							<span class="title">Password</span>
+							<span class="title">⟦r¦¦Password⟧</span>
 							<span class="input-text-wrap"><input type="text" name="post_password" class="inline-edit-password-input ltr" value="" /></span>
 						</label>
 
 						<span class="alignleft inline-edit-or">
-							&ndash;OR&ndash;						</span>
+							⟦r¦¦&ndash;OR&ndash;⟧						</span>
 						<label class="alignleft inline-edit-private">
 							<input type="checkbox" name="keep_private" value="private" />
-							<span class="checkbox-title">Private</span>
+							<span class="checkbox-title">⟦r¦¦Private⟧</span>
 						</label>
 					</div>
 
@@ -76,13 +76,13 @@
 				{{if PAGE_ATTR}}
 					{{if HIERARCHICAL}}
 						<label>
-							<span class="title">Parent</span>
+							<span class="title">⟦r¦¦Parent⟧</span>
 							{{PARENT}}						</label>
 
 					{{end}}
 					{{if QUICK}}
 						<label>
-							<span class="title">Order</span>
+							<span class="title">⟦r¦¦Order⟧</span>
 							<span class="input-text-wrap"><input type="text" name="menu_order" class="inline-edit-menu-order-input" value="{{MENU_ORDER}}" /></span>
 						</label>
 
@@ -90,9 +90,9 @@
 				{{end}}
 				{{if HAS_TEMPLATES}}
 					<label>
-						<span class="title">Template</span>
+						<span class="title">⟦r¦¦Template⟧</span>
 						<select name="page_template">
-							{{if BULK}}							<option value="-1">&mdash; No Change &mdash;</option>
+							{{if BULK}}							<option value="-1">⟦r¦¦&mdash; No Change &mdash;⟧</option>
 							{{end}}														<option value="default">{{DEFAULT_TEMPLATE}}</option>
 							{{TEMPLATES}}						</select>
 					</label>
@@ -116,22 +116,22 @@
 
 						{{if COMMENTS}}
 							<label class="alignleft">
-								<span class="title">Comments</span>
+								<span class="title">⟦r¦¦Comments⟧</span>
 								<select name="comment_status">
-									<option value="">&mdash; No Change &mdash;</option>
-									<option value="open">Allow</option>
-									<option value="closed">Do not allow</option>
+									<option value="">⟦r¦¦&mdash; No Change &mdash;⟧</option>
+									<option value="open">⟦r¦¦Allow⟧</option>
+									<option value="closed">⟦r¦¦Do not allow⟧</option>
 								</select>
 							</label>
 
 						{{end}}
 						{{if TRACKBACKS}}
 							<label class="alignright">
-								<span class="title">Pings</span>
+								<span class="title">⟦r¦¦Pings⟧</span>
 								<select name="ping_status">
-									<option value="">&mdash; No Change &mdash;</option>
-									<option value="open">Allow</option>
-									<option value="closed">Do not allow</option>
+									<option value="">⟦r¦¦&mdash; No Change &mdash;⟧</option>
+									<option value="open">⟦r¦¦Allow⟧</option>
+									<option value="closed">⟦r¦¦Do not allow⟧</option>
 								</select>
 							</label>
 
@@ -144,14 +144,14 @@
 						{{if COMMENTS}}
 							<label class="alignleft">
 								<input type="checkbox" name="comment_status" value="open" />
-								<span class="checkbox-title">Allow Comments</span>
+								<span class="checkbox-title">⟦r¦¦Allow Comments⟧</span>
 							</label>
 
 						{{end}}
 						{{if TRACKBACKS}}
 							<label class="alignleft">
 								<input type="checkbox" name="ping_status" value="open" />
-								<span class="checkbox-title">Allow Pings</span>
+								<span class="checkbox-title">⟦r¦¦Allow Pings⟧</span>
 							</label>
 
 						{{end}}
@@ -162,7 +162,7 @@
 					<div class="inline-edit-group wp-clearfix">
 
 						<label class="inline-edit-status alignleft">
-							<span class="title">Status</span>
+							<span class="title">⟦r¦¦Status⟧</span>
 							<select name="_status">
 								{{each STATUS}}									<option value="{{VALUE}}">{{TEXT}}</option>
 									{{end}}							</select>
@@ -171,18 +171,18 @@
 						{{if STICKY}}
 							{{if BULK}}
 								<label class="alignright">
-									<span class="title">Sticky</span>
+									<span class="title">⟦r¦¦Sticky⟧</span>
 									<select name="sticky">
-										<option value="-1">&mdash; No Change &mdash;</option>
-										<option value="sticky">Sticky</option>
-										<option value="unsticky">Not Sticky</option>
+										<option value="-1">⟦r¦¦&mdash; No Change &mdash;⟧</option>
+										<option value="sticky">⟦r¦¦Sticky⟧</option>
+										<option value="unsticky">⟦r¦¦Not Sticky⟧</option>
 									</select>
 								</label>
 
 							{{else}}
 								<label class="alignleft">
 									<input type="checkbox" name="sticky" value="sticky" />
-									<span class="checkbox-title">Make this post sticky</span>
+									<span class="checkbox-title">⟦r¦¦Make this post sticky⟧</span>
 								</label>
 
 							{{end}}
@@ -193,7 +193,7 @@
 					<label class="alignleft">
 						<span class="title">{{FORMAT}}</span>
 						<select name="post_format">
-							<option value="-1">&mdash; No Change &mdash;</option>
+							<option value="-1">⟦r¦¦&mdash; No Change &mdash;⟧</option>
 							<option value="0">{{STANDARD}}</option>
 															{{each FORMAT_LIST}}									<option value="{{VALUE}}">{{TEXT}}</option>
 								{{end}}													</select>
@@ -205,9 +205,9 @@
 
 			
 			<div class="submit inline-edit-save">
-				{{if QUICK}}					{{NONCE_FIELD}}					<button type="button" class="button button-primary save">Update</button>
+				{{if QUICK}}					{{NONCE_FIELD}}					<button type="button" class="button button-primary save">⟦a¦¦Update⟧</button>
 				{{else}}					{{SUBMIT}}				{{end}}
-				<button type="button" class="button cancel">Cancel</button>
+				<button type="button" class="button cancel">⟦r¦¦Cancel⟧</button>
 
 				{{if QUICK}}					<span class="spinner"></span>
 				{{end}}

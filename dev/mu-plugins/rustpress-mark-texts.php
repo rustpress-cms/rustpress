@@ -1,7 +1,7 @@
 <?php
 /**
- * Must-use plugin for one run of dev/bake-marks.py: with the header `X-Rustpress-Marks`, a page of the reference comes with
- * every translatable text marked, so that the bake knows which message each text was.
+ * For dev/bake-marks.py: with the header `X-Rustpress-Marks`, a page of the reference comes with every translatable text
+ * marked, so that the bake knows which message each text was. Without the header it does nothing.
  *
  * A text is `\u{E001}` kind `\u{E003}` context `\u{E003}` text `\u{E002}`. The kind says how WordPress escaped it: `r`aw, `h`tml,
  * `a`ttribute. A plural has the kind `n`, `N` or `A` and carries singular, plural and number in the context, split by

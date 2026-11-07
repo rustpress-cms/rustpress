@@ -137,7 +137,7 @@ pub struct ScreenOptions {
 }
 
 /// `WP_Screen::render_screen_meta()`: the help, the screen options and the buttons that open them.
-fn screen_meta_with(help: Option<&Help>, options: Option<&ScreenOptions>, tr: &dyn Fn(&str) -> String, tr_x: &dyn Fn(&str, &str) -> String, nonce: &str) -> String {
+fn screen_meta_with(site: &rustpress_core::Site, help: Option<&Help>, options: Option<&ScreenOptions>, tr: &dyn Fn(&str) -> String, tr_x: &dyn Fn(&str, &str) -> String, nonce: &str) -> String {
     let empty = Help::default();
     let help = help.unwrap_or(&empty);
     let full = screen_meta(help, &tr("Help"));
@@ -193,7 +193,7 @@ fn screen_meta_with(help: Option<&Help>, options: Option<&ScreenOptions>, tr: &d
         if let Some((max, current)) = options.layout_columns {
             out.push_str(&format!("\t\t<fieldset class='columns-prefs'>\n\t\t<legend class=\"screen-layout\">{}</legend>\n\t\t", tr("Layout")));
             for i in 1..=max {
-                let label = if i == 1 { tr("%s column") } else { tr("%s columns") };
+                let label = site.trn("%s column", "%s columns", i as i64);
                 out.push_str(&format!(
                     "\t\t\t<label class=\"columns-prefs-{i}\">\n\t\t\t<input type='radio' name='screen_columns' value='{i}' {} />\n\t\t\t{}\t\t\t</label>\n\t\t",
                     if current == i { " checked='checked'" } else { "" },
@@ -1054,7 +1054,7 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
         (help, Some(options)) => {
             let nonce = env.loader.nonce.as_ref().map(|n| n("screen-options-nonce")).unwrap_or_default();
             let tr_x = |text: &str, context: &str| env.site.trx(text, context);
-            let mut meta = screen_meta_with(help.as_ref(), Some(options), &tr, &tr_x, &nonce);
+            let mut meta = screen_meta_with(site, help.as_ref(), Some(options), &tr, &tr_x, &nonce);
             if screen.content_inline && meta.ends_with("\t\t\n") {
                 meta.pop();
             }

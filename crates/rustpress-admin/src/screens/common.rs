@@ -357,8 +357,10 @@ pub async fn sample_permalink_html(site: &rustpress_core::Site, content: Option<
     let decode = |text: &str| String::from_utf8_lossy(&rustpress_core::rewrite::urldecode(text.as_bytes())).into_owned();
     let name = sample.post_name.clone();
     let permalink = site.permalink(&sample).await.unwrap_or_default();
-    // `%postname%`/`%pagename%`: the address has the slug as its last segment.
-    let pretty = !site.options.string("permalink_structure", "").is_empty() && !permalink.contains('?') && !name.is_empty() && permalink.contains(&format!("/{name}/"));
+    // `%postname%`/`%pagename%`: the address has the slug as its last segment. `get_attachment_link()` leaves it out of a file
+    // that is not attached to anything.
+    let unattached = post.post_type == "attachment" && post.post_parent == 0;
+    let pretty = !unattached && !site.options.string("permalink_structure", "").is_empty() && !permalink.contains('?') && !name.is_empty() && permalink.contains(&format!("/{name}/"));
     let (view_link, target) = if post.post_status == "draft" || post.post_name.is_empty() {
         (preview_url(&site.permalink(post).await.unwrap_or_default()), format!(" target='wp-preview-{}'", post.id))
     } else if post.post_status == "publish" || post.post_type == "attachment" {
