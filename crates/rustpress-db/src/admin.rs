@@ -101,6 +101,17 @@ impl Db {
         let sql = format!("SELECT meta_value FROM {} WHERE post_id = ? AND meta_key = ? ORDER BY meta_id LIMIT 1", self.prefix.table("postmeta"));
         Ok(sqlx::query_scalar::<_, Option<String>>(AssertSqlSafe(sql)).bind(post_id).bind(key).fetch_optional(&self.pool).await?.flatten())
     }
+    /// `get_uploaded_header_images()`: the attachments whose `_wp_attachment_is_custom_header` is the stylesheet
+    /// (`orderby => none`: MariaDB gives them by ID).
+    pub async fn custom_header_attachments(&self, stylesheet: &str) -> Result<Vec<u64>> {
+        let sql = format!(
+            "SELECT p.ID FROM {} p INNER JOIN {} m ON p.ID = m.post_id WHERE m.meta_key = '_wp_attachment_is_custom_header' AND m.meta_value = ? AND p.post_type = 'attachment' AND p.post_status = 'inherit' GROUP BY p.ID",
+            self.prefix.table("posts"),
+            self.prefix.table("postmeta")
+        );
+        Ok(sqlx::query_scalar(AssertSqlSafe(sql)).bind(stylesheet).fetch_all(&self.pool).await?)
+    }
+
     /// The images attached to a post as `[gallery]` without `ids` takes them (`menu_order ASC, ID ASC`).
     pub async fn attachment_children(&self, post_id: u64) -> Result<Vec<u64>> {
         let sql = format!("SELECT ID FROM {} WHERE post_parent = ? AND post_type = 'attachment' AND post_status = 'inherit' AND post_mime_type LIKE 'image/%' ORDER BY menu_order ASC, ID ASC", self.prefix.table("posts"));

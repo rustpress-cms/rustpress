@@ -137,7 +137,7 @@ fn serialize_errors(errors: &[SettingsError]) -> String {
 }
 
 /// `wp_nonce_ays()`: the page for a missing or stale nonce.
-fn nonce_ays(ctx: &Ctx<'_>) -> AdminResponse {
+pub(super) fn nonce_ays(ctx: &Ctx<'_>) -> AdminResponse {
     let mut html = ctx.tr("The link you followed has expired.");
     if let Some(referer) = referer(ctx) {
         html.push_str(&format!("</p><p><a href=\"{}\">{}</a>", rustpress_core::formatting::esc_url(&referer), ctx.tr("Please try again.")));

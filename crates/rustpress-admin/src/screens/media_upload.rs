@@ -29,7 +29,7 @@ const GALLERY: &str = include_str!("../data/media_upload_gallery.tpl");
 const PRELOAD_SCRIPT: &str = "\t<script>\n\tjQuery(function($){\n\t\tvar preloaded = $(\".media-item.preloaded\");\n\t\tif ( preloaded.length > 0 ) {\n\t\t\tpreloaded.each(function(){prepareMediaItem({id:this.id.replace(/[^0-9]/g, '')},'');});\n\t\t}\n\t\tupdateMediaForm();\n\t});\n\t</script>\n";
 
 /// `(int) $value`.
-fn php_int(value: &str) -> i64 {
+pub(super) fn php_int(value: &str) -> i64 {
     let value = value.trim_start_matches([' ', '\t', '\n', '\r', '\x0b', '\x0c']);
     let (negative, digits) = match value.strip_prefix('-') {
         Some(rest) => (true, rest),

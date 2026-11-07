@@ -108,7 +108,7 @@ The reference stack, the tools and the working rules are in [AGENTS.md](AGENTS.m
   `site-health.php` that are about PHP (RustPress has none) and the `Info` tab, which reports its own environment.
 
 **Sign-in, administration, REST**
-- `customize.php`. For classic themes: `themes.php?page=custom-header` is in the menu without a screen behind it.
+- `customize.php`, and with it the Ajax actions of its header control (`custom-header-crop`, `-add`, `-remove`).
 - Widgets: what the RSS widget prints (front and `rendered`; it needs `fetch_feed()`), the video widget with an address
   that `wp_oembed_get()` would ask a provider or the site itself about (RustPress prints nothing, as WordPress does for an
   address without a provider), the feed check of `wp_widget_rss_process()`, the old format of `wp_convert_widget_settings()`, `alt_option_name`,
@@ -967,4 +967,32 @@ page as well (`ThemeAccess::content_width()`), so REST and feeds use 525 with Tw
 
 Compared with `dev/media-widgets-compare.py` on the copy of the real site: 36 instances, each on the front page, a single
 post and a 404 page and in REST: 193 of 193 equal. `dev/widgets-compare.py` compares the media widgets now as well.
+
+### The header screen of classic themes (2026-11-07)
+
+`themes.php?page=custom-header`, `Custom_Image_Header` in `rustpress-admin/src/screens/custom_header.rs`, for a ported theme
+that supports `custom-header` (`rustpress-theme/src/classic/custom_header.rs` holds what Twenty Seventeen passes to
+`add_theme_support()` and `register_default_headers()`, and the functions of `theme.php` that read it: `get_header_image()`,
+`get_custom_header()`, `get_uploaded_header_images()`, `is_random_header_image()`, `display_header_text()`).
+
+- **Step 1:** the preview, uploading, the uploaded and default images, removing and restoring, the header text and its color;
+  `take_action()` with its quirks: the color loses everything but hex digits and is kept with 3 or 6 of them, a form without
+  the checkbox hides the text, an unknown choice changes nothing, and a failed nonce dies after the head printed its scripts
+  (status 200, the head and then the page of `wp_die()`).
+- **Step 2:** an image from the library (`?file=`) or an upload (`wp_handle_upload()` without metadata, context
+  `custom-header`); an image wider than the theme allows gets a `midsize-` copy, and the page prints the sizes as PHP prints
+  floats. A `wp_die()` there comes after the header: no document of its own.
+- **Step 3:** the crop with `get_header_dimensions()`, skipping it, the copy of a library image, the new attachment with
+  `attachment_parent`, `_wp_attachment_is_custom_header` and the header data as a `stdClass`; the uploaded original is
+  deleted as WordPress deletes it.
+- **Random headers:** `_get_random_header_data()` picks once per request; the website takes the pick as well now, where it
+  printed `random-uploaded-image` as the address of the image.
+- **`wp_read_image_metadata()`** of WordPress 7.1 has `alt`, the alternative text of the XMP packet
+  (`wp_get_image_alttext()`): every upload lacked the key. RustPress reads the elements with their usual prefixes; WordPress
+  asks DOMXPath, so a packet with other prefixes would differ.
+
+Compared with `dev/custom-header-compare.py` on the copy of the real site: 16 forms of step 1 and 6 flows of uploading,
+choosing from the library, cropping and skipping, by the answers, the stored theme mods, the attachments with their meta and
+the files. RustPress has to write into the folder of the month of the copy's uploads for that (`podman unshare chmod o+w`).
+The pixels of what was cropped and the file sizes are not compared; the random pick is masked.
 
