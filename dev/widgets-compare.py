@@ -101,9 +101,9 @@ def norm(text, port):
     text = text.replace(f'localhost:{port}', 'localhost:PORT')
     # The head of the preview of a widget lacks the styles of all blocks (PLAN.md).
     text = re.sub(r'"preview":"\\t\\t<!doctype.*?<body', '"preview":"<body', text, flags=re.S)
-    # What the media and RSS widgets print is open in PLAN.md.
-    text = re.sub(r'"id":"(media_\w+|rss)-(\d+)","id_base":"(\w+)","sidebar":"([\w-]+)","rendered":"(?:[^"\\]|\\.)*"', r'"id":"\1-\2","id_base":"\3","sidebar":"\4","rendered":""', text)
-    text = re.sub(r'"preview":"(?:[^"\\]|\\.)*"', '"preview":""', text) if 'media_' in text or 'widget-rss' in text else text
+    # What the RSS widget prints is open in PLAN.md.
+    text = re.sub(r'"id":"(rss)-(\d+)","id_base":"(\w+)","sidebar":"([\w-]+)","rendered":"(?:[^"\\]|\\.)*"', r'"id":"\1-\2","id_base":"\3","sidebar":"\4","rendered":""', text)
+    text = re.sub(r'"preview":"(?:[^"\\]|\\.)*"', '"preview":""', text) if 'widget-rss' in text else text
     text = re.sub(r'\b[0-9a-f]{10}\b', 'NONCE', text)
     text = re.sub(r'_wpnonce%3D[0-9a-f]{10}', '_wpnonce%3DNONCE', text)
     return text

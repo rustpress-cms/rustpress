@@ -88,7 +88,7 @@ The reference stack, the tools and the working rules are in [AGENTS.md](AGENTS.m
 - Block hooks (`hooked_block_types`): no module registers hooked blocks yet, so `apply_block_hooks_to_content()` only
   normalizes.
 - Twenty Seventeen: a page with `<!--more-->` in the audio and video formats is compared without it; `$content_width` for
-  `[gallery]`, embeds and images. More classic themes.
+  embeds (they need the network) and the `edit` context of the administration. More classic themes.
 - The `functions.php` of themes: only literal calls are read.
 - More third-party block themes. Frost 1.1 and Ollie 1.6.6 are equal (compat runs of 2026-11-05 against WordPress
   7.1.4) except the environment differences Twenty Twenty-Five shows as well (posts with the same date). A block
@@ -109,8 +109,9 @@ The reference stack, the tools and the working rules are in [AGENTS.md](AGENTS.m
 
 **Sign-in, administration, REST**
 - `customize.php`. For classic themes: `themes.php?page=custom-header` is in the menu without a screen behind it.
-- Widgets: what the media widgets and the RSS widget print (front and `rendered`; their forms and `update()` are done),
-  the feed check of `wp_widget_rss_process()`, the old format of `wp_convert_widget_settings()`, `alt_option_name`,
+- Widgets: what the RSS widget prints (front and `rendered`; it needs `fetch_feed()`), the video widget with an address
+  that `wp_oembed_get()` would ask a provider or the site itself about (RustPress prints nothing, as WordPress does for an
+  address without a provider), the feed check of `wp_widget_rss_process()`, the old format of `wp_convert_widget_settings()`, `alt_option_name`,
   `wp-compression-test` (the page prints the script while `can_compress_scripts` is not stored, nothing answers it).
 - The preview of a widget (`widget-types/<id>/render`): its head lacks the styles of all blocks, which `wp_head()` prints when
   no page was rendered before it. `dev/widgets-compare.py` compares it from the `body` on.
@@ -950,4 +951,20 @@ Left as they are, on the copy of the real site: `plugin-editor.php` lists files 
 that lists sizes shows them. `_wp_make_subsizes()` makes `medium`, `large`, `thumbnail` and `medium_large` first, which is the
 order of the stored metadata. The result is checked against what the reference made of a 2400x1600 image, in a unit test: on
 Windows RustPress cannot write into the uploads of the copy, so an upload could not be compared on both sides.
+
+### The media widgets (2026-11-07)
+
+`classic/media_widgets.rs`: `WP_Widget_Media::widget()` and the `render_media()` of the image, audio, video and gallery
+widgets, on the website and in the `rendered` of `wp/v2/widgets`. They use the ports of `wp_get_attachment_image()`,
+`img_caption_shortcode()`, `wp_audio_shortcode()`, `wp_video_shortcode()` and `gallery_shortcode()`. `wp_get_attachment_image()`
+takes a size as `array( $width, $height )` now (`ImageArgs::requested`), which the image widget uses for custom sizes.
+Quirks kept: a stored `caption` of `null` takes the excerpt of the attachment, `'0'` hides the title, the caption and the
+link, and the `id` of the audio and video players is that of the last post of the loop.
+
+`$content_width` limits `large` and `medium_large` images, which it did nowhere before. A theme's value is known outside a
+page as well (`ThemeAccess::content_width()`), so REST and feeds use 525 with Twenty Seventeen, as WordPress does once
+`after_setup_theme` ran.
+
+Compared with `dev/media-widgets-compare.py` on the copy of the real site: 36 instances, each on the front page, a single
+post and a 404 page and in REST: 193 of 193 equal. `dev/widgets-compare.py` compares the media widgets now as well.
 

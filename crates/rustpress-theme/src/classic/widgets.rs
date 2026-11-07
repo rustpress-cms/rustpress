@@ -118,7 +118,7 @@ fn instance(site: &Site, base: &str, number: u64) -> Option<Value> {
     })
 }
 
-fn setting_str(instance: &Value, key: &str) -> String {
+pub(super) fn setting_str(instance: &Value, key: &str) -> String {
     match instance.get(key) {
         Some(Value::Str(s)) => String::from_utf8_lossy(s).into_owned(),
         Some(Value::Int(i)) => i.to_string(),
@@ -126,16 +126,16 @@ fn setting_str(instance: &Value, key: &str) -> String {
     }
 }
 
-fn setting_int(instance: &Value, key: &str) -> i64 {
+pub(super) fn setting_int(instance: &Value, key: &str) -> i64 {
     instance.get(key).and_then(Value::as_i64).unwrap_or(0)
 }
 
-fn setting_flag(instance: &Value, key: &str) -> bool {
+pub(super) fn setting_flag(instance: &Value, key: &str) -> bool {
     instance.get(key).is_some_and(|v| matches!(v, Value::Bool(true)) || v.as_i64().is_some_and(|n| n != 0))
 }
 
 /// The title of a widget as printed: `widget_title` runs `wptexturize()`, `convert_chars()` and `esc_html()`.
-fn widget_title(site: &Site, instance: &Value, default: Option<&str>) -> (String, String) {
+pub(super) fn widget_title(site: &Site, instance: &Value, default: Option<&str>) -> (String, String) {
     let title = setting_str(instance, "title");
     let default_title = default.map(|d| site.tr(d)).unwrap_or_default();
     let shown = if title.is_empty() { default_title.clone() } else { title };
@@ -182,6 +182,7 @@ async fn display(s: &Services<'_>, sidebar: &Sidebar<'_>, mut before: String, ba
         "archives" => Some(archives(s, sidebar, &before, number, settings).await?),
         "calendar" => Some(calendar_widget(s, sidebar, &before, settings).await?),
         "categories" => Some(categories(s, sidebar, &before, number, settings).await?),
+        "media_image" | "media_audio" | "media_video" | "media_gallery" => super::media_widgets::display(s, sidebar, &before, base, settings).await?,
         "block" => {
             let content = setting_str(settings, "content");
             let blocks = rustpress_blocks::parser::parse_blocks(&content);
@@ -205,7 +206,7 @@ async fn display(s: &Services<'_>, sidebar: &Sidebar<'_>, mut before: String, ba
     Ok(body.unwrap_or_default())
 }
 
-fn heading(sidebar: &Sidebar<'_>, title: &str) -> String {
+pub(super) fn heading(sidebar: &Sidebar<'_>, title: &str) -> String {
     if title.is_empty() { String::new() } else { format!("{}{title}{}", sidebar.before_title, sidebar.after_title) }
 }
 

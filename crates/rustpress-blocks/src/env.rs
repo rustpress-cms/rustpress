@@ -54,6 +54,10 @@ pub trait ThemeAccess: Send + Sync {
     fn image_size(&self, _name: &str) -> Option<(u64, u64)> {
         None
     }
+    /// `$content_width` as a classic theme sets it on `after_setup_theme`; 0 when it does not.
+    fn content_width(&self) -> u64 {
+        0
+    }
     /// The `render_block_{$name}` filters of the theme's `functions.php`, after core's `render_block` filters.
     fn render_block_filter(&self, _name: &str, content: String) -> String {
         content
@@ -193,7 +197,7 @@ pub struct State {
     pub audio_instances: u64,
     pub video_instances: u64,
     pub mediaelement: bool,
-    /// `$content_width` of a classic theme; 0 when it is not set.
+    /// `$content_width` as the page of a classic theme changed it on `template_redirect`; 0 when it did not run.
     pub content_width: u64,
     /// `wp_playlist_scripts()` ran.
     pub playlist: bool,
