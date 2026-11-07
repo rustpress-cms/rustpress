@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """`wp-admin/widgets.php` of Twenty Seventeen and the routes behind it on the copy of a real site (dev/up-soli.sh, :8081)
 and RustPress (dev/serve-soli.ps1, :3002): the same requests run on each side from the same state, and every answer and
-the stored options are compared. The page is compared whole in English and from its data in the language of the site.
+the stored options are compared. The page is compared whole, in the language of the site and in English.
 
     python dev/widgets-compare.py [--show N] [--only <part of a step>]"""
 import base64
@@ -260,38 +260,11 @@ def compare(name, responses, states, show):
     return same
 
 
-def page_data(text):
-    """The answers and the settings the editor starts with."""
-    out = {}
-    for name, marker in (('preload', 'createPreloadingMiddleware( '), ('settings', 'wp.editWidgets.initialize( "widgets-editor", ')):
-        at = text.find(marker)
-        out[name] = json.JSONDecoder().raw_decode(text[at + len(marker):])[0] if at >= 0 else None
-    return out
-
-
-def body_part(text):
-    at = text.find('<body')
-    return text[at:text.find('<div id="wpfooter"')]
-
-
-def compare_page(whole, show):
+def compare_page(name, show):
     # A change of the language empties the update transients, and the next page of the reference fills them after its menu.
     Side(REFERENCE).client.request('/wp-admin/widgets.php')
     pages = [Side(port).client.request('/wp-admin/widgets.php') for port in (REFERENCE, RUSTPRESS)]
-    a, b = norm(pages[0][2], REFERENCE), norm(pages[1][2], RUSTPRESS)
-    if whole:
-        return compare('the page in English', pages, ('', ''), show)
-    ok = True
-    for name, x, y in (('body', body_part(a), body_part(b)), ('preload', page_data(a)['preload'], page_data(b)['preload']), ('settings', page_data(a)['settings'], page_data(b)['settings'])):
-        same = x == y
-        print(f"{'equal' if same else 'DIFF '} the page, {name}")
-        if not same:
-            ok = False
-            x, y = json.dumps(x, ensure_ascii=False), json.dumps(y, ensure_ascii=False)
-            at = next((i for i, (p, q) in enumerate(zip(x, y)) if p != q), 0)
-            print('    R', repr(x[max(0, at - 120):at + 240]))
-            print('    O', repr(y[max(0, at - 120):at + 240]))
-    return ok
+    return compare(name, pages, ('', ''), show)
 
 
 def main():
@@ -333,11 +306,11 @@ def main():
             failed += 1
         php(RESET)
         total += 1
-        if not compare_page(False, show):
+        if not compare_page(f'the page in {lang}', show):
             failed += 1
         set_language('')
         total += 1
-        if not compare_page(True, show):
+        if not compare_page('the page in English', show):
             failed += 1
         if lang:
             set_language(lang)

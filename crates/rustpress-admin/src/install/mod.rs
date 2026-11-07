@@ -131,6 +131,7 @@ impl InstallEnv {
             separate_block_assets: false,
             compressed_tinymce: false,
             nonce: None,
+            messages: None,
         }
     }
 

@@ -116,6 +116,7 @@ impl AdminParts {
             separate_block_assets: false,
             compressed_tinymce: false,
             nonce: None,
+            messages: None,
         };
         let languages = installed_languages(config, site).await;
         let privacy_policy = privacy_policy(site).await;

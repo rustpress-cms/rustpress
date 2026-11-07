@@ -27,7 +27,17 @@ fn views_strings(ctx: &Ctx<'_>) -> Map<String, Json> {
     let mut out = Map::new();
     if let Some(Json::Object(views)) = bake().get("views") {
         for (key, value) in views {
-            out.insert(key.clone(), value.as_str().map_or_else(|| value.clone(), |text| Json::String(ctx.tr(text))));
+            // `wp_localize_script()` decoded the arrow; the message has its entity.
+            let translated = |text: &str| match (key.as_str(), text.strip_prefix('\u{2190}')) {
+                (_, Some(rest)) => rustpress_core::formatting::html_entity_decode(&ctx.tr(&format!("&#8592;{rest}"))),
+                ("unattached" | "mine", _) => ctx.site().trx(text, "media items"),
+                ("trash", _) => ctx.site().trx(text, "noun"),
+                ("setFeaturedImageTitle" | "setFeaturedImage", _) => ctx.site().trx(text, "post"),
+                // The ellipsis is an entity in the message, too.
+                _ if text.contains('\u{2026}') => rustpress_core::formatting::html_entity_decode(&ctx.tr(&text.replace('\u{2026}', "&hellip;"))),
+                _ => ctx.tr(text),
+            };
+            out.insert(key.clone(), value.as_str().map_or_else(|| value.clone(), |text| Json::String(translated(text))));
         }
     }
     out
@@ -188,17 +198,19 @@ pub async fn enqueue(ctx: &Ctx<'_>, assets: &mut Assets, post_id: u64) {
 /// `wp_print_media_templates()`.
 pub fn templates(ctx: &Ctx<'_>) -> String {
     // The templates were taken from the reference; its address is replaced by the site's.
-    // `wp_print_media_templates()` leaves an empty line between two templates.
-    let mut templates = TEMPLATES.replace("</script>\n\t\t<script type=\"text/html\"", "</script>\n\n\t\t<script type=\"text/html\"");
+    let mut templates = TEMPLATES.to_owned();
     // The baked templates have the `crossorigin` WordPress gives audio and video under cross-origin isolation only.
     if !super::client_side_media_processing(ctx) {
         templates = templates.replace("<audio crossorigin=\"anonymous\" ", "<audio ").replace("<video crossorigin=\"anonymous\" ", "<video ");
     }
     let site = ctx.site();
     if site.options.get("wp_attachment_pages_enabled") == Some("1") {
-        templates = templates.replace(">View media file</a>", &format!(">{}</a>", ctx.tr("View attachment page")));
+        templates = templates.replace("¦¦View media file⟧", "¦¦View attachment page⟧");
     }
+    // `size_format( $max_upload_size )`.
+    let size = format!("{} MB", max_upload() / (1024 * 1024));
+    templates = templates.replace("⟪%s¦2 ⟦h¦unit symbol¦MB⟧⟫", &format!("⟪%s¦{size}⟫"));
     let name = site.settings.blogname.replace('\\', "\\\\").replace('\'', "\\'");
     templates = templates.replace("<# print( 'RustPress Test' ) #>", &format!("<# print( '{name}' ) #>"));
-    format!("\n{}\n\t", templates.replace("http://localhost:8080/wp-admin/", &ctx.admin_url("")))
+    super::template_text::translate(site, &templates.replace("http://localhost:8080/wp-admin/", &ctx.admin_url("")))
 }
