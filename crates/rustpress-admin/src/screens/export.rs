@@ -20,7 +20,9 @@ fn cdata(text: &str) -> String {
 /// The exportable post types that exist in the database, in the order of the type column.
 async fn exportable_types(ctx: &Ctx<'_>) -> Vec<String> {
     let mut types = ctx.env.db.used_post_types().await.unwrap_or_default();
-    types.retain(|t| !NOT_EXPORTABLE.contains(&t.as_str()));
+    // `get_post_types()` knows the registered ones only; old rows of a removed plugin stay out.
+    let site = ctx.site();
+    types.retain(|t| !NOT_EXPORTABLE.contains(&t.as_str()) && (site.types.post_type(t).is_some() || site.types.rewrite_post_types().iter().any(|r| &r.name == t)));
     types.sort();
     types
 }

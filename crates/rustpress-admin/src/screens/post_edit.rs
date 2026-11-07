@@ -839,7 +839,7 @@ async fn form(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, is_new: bool) -> Admi
     let (edit_title, add_title) = labels(ctx, info);
     let title = if is_new { add_title.clone() } else { edit_title };
     // `admin-header.php` names the post in the window title.
-    let window_title = match rustpress_blocks::content::the_title_for(site, post) {
+    let window_title = match rustpress_blocks::content::the_title_in_admin(site, post) {
         post_title if !is_new && !post_title.is_empty() => rustpress_core::i18n::sprintf(&tr("%1$s &#8220;%2$s&#8221;"), &[&title, &post_title]),
         _ => title.clone(),
     };

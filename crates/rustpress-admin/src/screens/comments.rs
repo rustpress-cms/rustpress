@@ -271,7 +271,7 @@ pub async fn row_html_in(ctx: &Ctx<'_>, comment: &Comment, index: usize, current
     );
     let response = match &post {
         Some(post) => {
-            let title = rustpress_blocks::content::the_title_for(site, post);
+            let title = rustpress_blocks::content::the_title_in_admin(site, post);
             let edit = if ctx.can("edit_posts") { format!("<a href='{}' class='comments-edit-item-link'>{}</a>", super::common::edit_post_link(ctx, post.id, true).await, esc_html(&title)) } else { esc_html(&title) };
             let view = site.permalink(post).await.unwrap_or_default();
             let (approved, pending) = counts.get(&post.id).copied().unwrap_or((0, 0));
@@ -602,7 +602,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
             let moderated = ctx.env.db.count_comments_for_post_with_status(post_id, "0").await.unwrap_or(0);
             let post_title = match ctx.env.db.post(post_id).await.ok().flatten() {
                 Some(post) => {
-                    let name = rustpress_blocks::content::the_title_for(site, &post);
+                    let name = rustpress_blocks::content::the_title_in_admin(site, &post);
                     let name = if post.post_title.is_empty() { tr("(no title)") } else { name };
                     let chars: Vec<char> = name.chars().collect();
                     if chars.len() > 50 { format!("{}&hellip;", chars[..50].iter().collect::<String>().trim_end()) } else { name }
@@ -628,7 +628,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
             let post = db.post(id).await.ok().flatten();
             let name = match &post {
                 Some(post) => {
-                    let name = rustpress_blocks::content::the_title_for(site, post);
+                    let name = rustpress_blocks::content::the_title_in_admin(site, post);
                     let name = if post.post_title.is_empty() { tr("(no title)") } else { name };
                     let chars: Vec<char> = name.chars().collect();
                     if chars.len() > 50 { format!("{}&hellip;", chars[..50].iter().collect::<String>().trim_end()) } else { name }
@@ -1017,7 +1017,7 @@ async fn edit_form(ctx: &Ctx<'_>, comment: &Comment) -> AdminResponse {
     let comment_time = rustpress_core::datetime::SiteTimezone::gmt_timestamp(&comment.comment_date_gmt).unwrap_or(0);
     let submitted = sprintf(&tr("Submitted on: %s"), &[&format!("<b>{}</b>", site.date(&format!("{} {}", ctx.site().trx("M j, Y", "publish box date format"), tr("\\a\\t H:i")).replace("\\a\\t", "\\a\\t"), comment_time))]);
     let response_to = match &post {
-        Some(post) => format!("{} <b><a href='{}'>{}</a></b>", format!("{}:", tr("In response to")), esc_url(&super::common::edit_post_link(ctx, post.id, false).await), esc_html(&rustpress_blocks::content::the_title_for(site, post))),
+        Some(post) => format!("{} <b><a href='{}'>{}</a></b>", format!("{}:", tr("In response to")), esc_url(&super::common::edit_post_link(ctx, post.id, false).await), esc_html(&rustpress_blocks::content::the_title_in_admin(site, post))),
         None => String::new(),
     };
     let parent_row = {

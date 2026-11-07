@@ -168,7 +168,7 @@ async fn revisions_for_js(ctx: &Ctx<'_>, post: &Post, selected: u64, from: Optio
         let stamp = modified_gmt;
         data.push(json!({
             "id": revision.id,
-            "title": rustpress_blocks::content::the_title_for(site, post),
+            "title": rustpress_blocks::content::the_title_in_admin(site, post),
             "author": authors[&key].clone(),
             "date": site.date(&tr("M j, Y @ H:i"), stamp),
             "dateShort": site.date(&site.trx("j M Y @ H:i", "revision date short format"), stamp),
@@ -264,7 +264,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     let tr = |s: &str| ctx.tr(s);
     let edit = edit_link(ctx, &post).await;
     let shown_title = {
-        let title = rustpress_blocks::content::the_title_for(env.site, &post);
+        let title = rustpress_blocks::content::the_title_in_admin(env.site, &post);
         if post.post_title.is_empty() { tr("(no title)") } else { title }
     };
     let post_title = format!("<a href=\"{}\">{}</a>", esc_url(&edit), esc_html(&shown_title));

@@ -102,12 +102,12 @@ The reference stack, the tools and the working rules are in [AGENTS.md](AGENTS.m
   translator; all calls already go through `Site::tr`.
 - JavaScript translations on the front end (Interactivity texts), hot reload of language packs, variants such as
   `de_DE_formal`, a command `rustpress i18n install <locale>`.
-- Screens of a translated site. The texts the code asks for are right now, also the contexts (`_x()`). What is left is baked
-  in English: `data/pages/*.json` (`tools.php`, `import.php`, parts of `plugin-install.php`), the templates of `themes.php`
-  and `theme-install.php`, `about.php`, `credits.php`, `freedoms.php`, the help of `plugins.php` and `themes.php`,
-  `options-general.php` (`wp_timezone_choice()` with `continents-cities`), `options-privacy.php`, `site-health.php`,
-  `revision_templates.html` and the templates of application passwords. `dev/nav-menus-compare.py` still compares from the
-  `body` on.
+- Screens of a translated site. The baked pages are marked now (see "Texts of the baked pages"); `.tpl` files that are not
+  marked yet go through `translate_html()` node by node: `revision_templates.html`, the templates of application passwords,
+  `attachment_edit.tpl`, `image_editor.tpl`, `inline_edit.tpl`. `dev/nav-menus-compare.py` still compares from the `body` on.
+- Not equal on the copy of the real site: `credits.php` (what `wp_credits()` gets from api.wordpress.org depends on the
+  language, the bake is the English answer), `plugin-install.php` (RustPress asks api.wordpress.org nothing), the tests of
+  `site-health.php` that are about PHP (RustPress has none) and the `Info` tab, which reports its own environment.
 
 **Sign-in, administration, REST**
 - `customize.php`. For classic themes: `themes.php?page=custom-header` is in the menu without a screen behind it.
@@ -304,7 +304,7 @@ The front-end comparison is largely exhausted (remaining list above). The next b
 **State of the administration, continued (2026-10-25, later session)** – done and compared with the reference WordPress (`dev/admin-compare.sh`, the rest are random values/dates):
 - Settings (General, Writing, Reading, Discussion, Media, Privacy including the policy guide), categories/tags (pages and Ajax), users (list, profile, create/change/delete), comments (list, editing, moderation, Ajax), media (grid/list, upload with image sizes, modal data), the dashboard with all widgets (Site Health notice, At a Glance, Activity, Quick Draft, Welcome), tools, the import list, export (WXR byte-identical except for the order of the posts), themes (list, details data, activation), plugins (list, must-use, activating/deactivating as `active_plugins`).
 - Write REST for signed-in users (`rustpress-rest/src/edit/*`), block editor (`block_editor.rs`: editor settings identical to the reference except `maxUploadFileSize`, post lock, heartbeat, persisted preferences, template choice), saving from the editor checked.
-- Tools: `dev/bake-pages.py` (static parts of administration pages from the oracle into `crates/rustpress-admin/src/data/pages/*.json`, then placeholders by hand), `dev/bake-editor.py`, `dev/editor_diff.py` (editor bootstrap), `RUSTPRESS_SITE_URL` (like `WP_HOME`/`WP_SITEURL`).
+- Tools: `dev/bake-pages.py` (static parts of administration pages from the oracle into `crates/rustpress-admin/src/data/pages/*.json`, then placeholders by hand, then `dev/bake-marks.py` for the texts), `dev/bake-editor.py`, `dev/editor_diff.py` (editor bootstrap), `RUSTPRESS_SITE_URL` (like `WP_HOME`/`WP_SITEURL`).
 - Open: site editor (`site-editor.php`, REST for templates/parts/navigation/fonts), permalinks (`options-permalink.php`, needs `WP_Rewrite`), attachment editing (`post.php` for media), `site-health.php`, `update-core.php`, `theme-install.php`/`plugin-install.php` (network), menus/widgets (not needed for block themes), application passwords, quick edit in the post list (`inline_*` data), `edit.php` details, language packs of the administration.
 
 **State of the administration, third continuation (2026-10-25)** – also compared with the reference WordPress:
@@ -899,4 +899,33 @@ The sweep also found faults that are not about language:
 - **`_draft_or_post_title()`** runs `get_the_title()`: titles in the lists had no `wptexturize()`.
 - **`formats_dropdown()`** was missing, and the quick edit offered all formats instead of those of the theme.
 - `trim()` of PHP leaves a no-break space alone; Rust's removes it from the quick edit data.
+
+Texts of the baked pages. A page baked in English could only be translated node by node, and most sentences have links in
+them, so the whole of `about.php`, `themes.php` and many others stayed English. `dev/bake-marks.py` now asks the reference
+for each page with `dev/mark-texts.php` as a temporary must-use plugin: with a header, every `__()`, `_x()` and `_n()` comes
+back marked with its message, context, plural and the values of its format, and the kind of escaping it got. The marks are
+laid over the baked page, what the hand put in stays (`{{nonce:...}}`, `{{cards}}`), and a mark only lands where its text
+stands. `screens/template_text.rs` prints the result, so a sentence is translated as WordPress translates it.
+
+Things to know about the marks:
+
+- They start at `init`, after `WP_Locale`, which needs its formats unmarked. The labels of post statuses are covered.
+- Sorting by a translated name changes in the marked page, `import.php` shows that. The overlay does not depend on the order.
+- An address must pass `esc_url()`: it carries its message in a fragment (`#rustpress-text-...`) that the bake turns into a mark.
+
+German and English are equal on `tools.php`, `import.php`, `export.php`, `themes.php`, `theme-install.php`, `about.php`,
+`freedoms.php`, `privacy.php`, `contribute.php`, `options-privacy.php` and its guide, `options-general.php`, `update-core.php`.
+
+Faults this found:
+
+- **Headers of themes and plugins** were not translated. `I18n::header()` reads the language of an extension when
+  `WP_Theme::display()` or `_get_plugin_data_markup_translate()` would, active or not.
+- **`wp_timezone_choice()`** has `continents-cities-<locale>.mo` and sorts by the translated names.
+- **Theme cards of classic themes** linked the site editor instead of `customize.php`.
+- **`$current_theme_actions`** was baked with the buttons of a block theme.
+- **`options-privacy.php?tab=policyguide`** includes the guide and stays that page; it redirected.
+- **`update-core.php`:** `md5( $plugin_file )` for the checkbox, `Hide this update` and the hint of a localized version, the
+  `T` of the time format after a no-break space, the title of the update counts.
+- **`export.php`** listed post types of rows no plugin registers.
+- A plain `%%` in a message, and an ampersand that `esc_html()` encoded (`Food &amp; Drink`).
 

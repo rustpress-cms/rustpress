@@ -29,6 +29,8 @@ pub struct PluginInfo {
     pub author_uri: String,
     pub version: String,
     pub text_domain: String,
+    /// `Domain Path`.
+    pub domain_path: String,
     pub requires_wp: String,
     pub requires_php: String,
     /// `Network: true`.
@@ -140,6 +142,7 @@ fn read_plugin(path: &Path, file: String) -> Option<PluginInfo> {
         author_uri: file_header(&head, "Author URI"),
         version: file_header(&head, "Version"),
         text_domain,
+        domain_path: file_header(&head, "Domain Path"),
         requires_wp: file_header(&head, "Requires at least"),
         requires_php: file_header(&head, "Requires PHP"),
         network: file_header(&head, "Network").eq_ignore_ascii_case("true"),

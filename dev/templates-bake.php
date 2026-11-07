@@ -19,7 +19,7 @@ wp_set_current_user( 1 );
 $mark = static function ( $text, $context = '' ) {
 	// `esc_url()` would drop the marks of a translated address.
 	if ( str_starts_with( $text, 'http' ) ) {
-		return $text;
+		return "$text#rustpress-text-" . strtr( base64_encode( "$context\u{E003}$text" ), '+/=', '-_.' );
 	}
 	$format = preg_replace( '/%(\d+\$)?[sd]/', "\u{E004}%$0\u{E006}$0\u{E005}", $text );
 	return "\u{E001}r\u{E003}$context\u{E003}$format\u{E002}";

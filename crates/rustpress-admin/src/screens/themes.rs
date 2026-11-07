@@ -17,8 +17,8 @@ fn wp_root(ctx: &Ctx<'_>) -> Option<std::path::PathBuf> {
 }
 
 /// The tags with the labels WordPress gives the known ones.
-fn tags_text(theme: &ThemeInfo) -> String {
-    theme.tags.iter().map(|t| themes::feature_label(t).map_or_else(|| t.clone(), str::to_owned)).collect::<Vec<_>>().join(", ")
+fn tags_text(ctx: &Ctx<'_>, theme: &ThemeInfo) -> String {
+    theme.tags.iter().map(|t| themes::feature_label(t).map_or_else(|| t.clone(), |label| ctx.tr(label))).collect::<Vec<_>>().join(", ")
 }
 
 /// The theme the way `wp_prepare_themes_for_js()` describes it.
@@ -35,13 +35,7 @@ fn theme_json(ctx: &Ctx<'_>, theme: &ThemeInfo, active: &str, parent_name: Optio
     actions.insert("activate".into(), json!(nonce_url("activate", &format!("switch-theme_{}", theme.stylesheet))));
     actions.insert(
         "customize".into(),
-        json!(if theme.block_theme {
-            let back = rustpress_core::canonical::rawurlencode(&ctx.request.request_uri);
-            let path = if is_active { format!("site-editor.php?return={back}") } else { format!("site-editor.php?wp_theme_preview={}&return={back}", theme.stylesheet) };
-            esc_url(&ctx.admin_url(&path))
-        } else {
-            String::new()
-        }),
+        json!(customize_url(ctx, theme, is_active)),
     );
     actions.insert("delete".into(), json!(nonce_url("delete", &format!("delete-theme_{}", theme.stylesheet))));
     actions.insert("autoupdate".into(), json!(nonce_url("enable-auto-update", "updates")));
@@ -76,7 +70,7 @@ fn theme_json(ctx: &Ctx<'_>, theme: &ThemeInfo, active: &str, parent_name: Optio
     out.insert("description".into(), json!(wptexturize(&theme.description)));
     out.insert("author".into(), json!(wptexturize(&theme.author)));
     out.insert("authorAndUri".into(), json!(author_and_uri));
-    out.insert("tags".into(), json!(tags_text(theme)));
+    out.insert("tags".into(), json!(tags_text(ctx, theme)));
     out.insert("version".into(), json!(theme.version));
     out.insert("compatibleWP".into(), json!(true));
     out.insert("compatiblePHP".into(), json!(true));
@@ -92,22 +86,60 @@ fn theme_json(ctx: &Ctx<'_>, theme: &ThemeInfo, active: &str, parent_name: Optio
     Value::Object(out)
 }
 
+/// Where the theme is customized or previewed: the site editor of a block theme, `wp_customize_url()` of a classic one.
+fn customize_url(ctx: &Ctx<'_>, theme: &ThemeInfo, active: bool) -> String {
+    let back = rustpress_core::canonical::rawurlencode(&ctx.request.request_uri);
+    let path = match (theme.block_theme, active) {
+        (true, true) => format!("site-editor.php?return={back}"),
+        (true, false) => format!("site-editor.php?wp_theme_preview={}&return={back}", theme.stylesheet),
+        (false, _) => format!("customize.php?theme={}&return={back}", theme.stylesheet),
+    };
+    esc_url(&ctx.admin_url(&path))
+}
+
+/// `WP_Theme::display()`: the headers a theme's language pack translates.
+pub(super) fn translated(ctx: &Ctx<'_>, theme: &ThemeInfo) -> ThemeInfo {
+    let i18n = ctx.site().i18n();
+    let own = theme.dir.join("languages").join(format!("{}.mo", i18n.locale));
+    let header = |text: &str| i18n.header("themes", &theme.text_domain, &own, text);
+    ThemeInfo { name: header(&theme.name), theme_uri: header(&theme.theme_uri), description: header(&theme.description), author: header(&theme.author), author_uri: header(&theme.author_uri), ..theme.clone() }
+}
+
+/// `$current_theme_actions`: the rest of the Appearance menu, as buttons of the active theme.
+async fn current_theme_actions(ctx: &Ctx<'_>) -> String {
+    let menu = super::admin_menu(ctx).await;
+    let Some((_, items)) = menu.submenu.iter().find(|(parent, _)| parent == "themes.php") else { return String::new() };
+    let mut actions = Vec::new();
+    for item in items {
+        if ["themes.php", "theme-editor.php", "site-editor.php", "edit.php?post_type=wp_navigation"].contains(&item.slug.as_str()) || item.slug.starts_with("customize.php") || item.slug.is_empty() {
+            continue;
+        }
+        if ctx.can("customize") {
+            match item.slug.as_str() {
+                "custom-header" => actions.push(format!("<a class='button button-compact hide-if-no-customize' href='customize.php?autofocus[control]=header_image'>{}</a>", item.title)),
+                "custom-background" => actions.push(format!("<a class='button button-compact hide-if-no-customize' href='customize.php?autofocus[control]=background_image'>{}</a>", item.title)),
+                _ => {}
+            }
+        }
+        // The pages of `wp-admin` are files.
+        let file = item.slug.split('?').next().unwrap_or_default();
+        let href = if file.ends_with(".php") { item.slug.clone() } else { format!("themes.php?page={}", item.slug) };
+        actions.push(format!("<a class='button button-compact' href='{href}'>{}</a>", item.title));
+    }
+    actions.join(" ")
+}
+
 /// One card of the server-side list.
 fn card(ctx: &Ctx<'_>, theme: &ThemeInfo, active: bool, update: bool) -> String {
     let template = if active { CARD_ACTIVE } else { CARD };
     let site = ctx.site().settings.siteurl.trim_end_matches('/').to_owned();
     let nonce = ctx.create_nonce(&format!("switch-theme_{}", theme.stylesheet));
-    let notice = if update { format!("\t<div class=\"notice notice-warning notice-alt inline update-message\"><p>{} <button class=\"button-link\" type=\"button\">{}</button></p></div>\t", ctx.tr("New version available."), ctx.tr("Update now")) } else { String::new() };
-    let mut html = template.replace("\r\n", "\n").replace("{{return}}", &rustpress_core::canonical::rawurlencode(&ctx.request.request_uri));
+    let notice = if update { format!("\t<div class=\"notice notice-warning notice-alt inline update-message\"><p>{}</p></div>\t", ctx.tr("New version available. <button class=\"button-link\" type=\"button\">Update now</button>")) } else { String::new() };
+    let mut html = template.replace("\r\n", "\n").replace("{{customize}}", &customize_url(ctx, theme, active));
     for (needle, value) in [("{{id}}", theme.stylesheet.as_str()), ("{{name}}", &esc_html(&wptexturize(&theme.name))), ("{{version}}", &theme.version), ("{{author}}", &wptexturize(&theme.author)), ("{{nonce}}", &nonce), ("{{update_notice}}", &notice), ("{{site}}", &site)] {
         html = html.replace(needle, value);
     }
-    // The few texts of the card.
-    for text in ["Theme Details", "Customize", "Activate", "Live Preview", "Active:"] {
-        html = html.replace(&format!(">{text}<"), &format!(">{}<", ctx.tr(text)));
-    }
-    html = html.replace("By ", &format!("{} ", ctx.tr("By %s").replace("%s", "").trim()));
-    html
+    super::template_text::translate(ctx.site(), &html)
 }
 
 /// `switch_theme()`.
@@ -206,7 +238,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     }
 
     let site = ctx.site();
-    let installed = themes::installed(&root);
+    let installed: Vec<ThemeInfo> = themes::installed(&root).iter().map(|t| translated(ctx, t)).collect();
     let active = site.settings.stylesheet.clone();
     let updates = crate::updates::theme_updates(site).await;
     // The active theme comes first, the others by name.
@@ -253,6 +285,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         .content
         .replace("{{cards}}", &cards)
         .replace("{{count}}", &count)
+        .replace("{{current_theme_actions}}", &current_theme_actions(ctx).await)
         .replace("{{notices}}", &notices)
         .replace("{{auto_update_message}}", &crate::updates::auto_update_message(ctx).await);
     if searching {
