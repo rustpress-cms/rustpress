@@ -1318,7 +1318,7 @@ pub async fn post_php(ctx: &Ctx<'_>) -> AdminResponse {
                 return die(ctx.env, 403, "WordPress &rsaquo; Error", &format!("<p>{}</p>", tr("Sorry, you are not allowed to edit this item.")));
             }
             if post.post_status == "trash" {
-                return die(ctx.env, 409, "WordPress &rsaquo; Error", &format!("<p>{}</p>", tr("You cannot edit this item because it is in the Trash. Please restore it and try again.")));
+                return die(ctx.env, 409, "WordPress &rsaquo; Error", &tr("You cannot edit this item because it is in the Trash. Please restore it and try again."));
             }
             if super::block_editor::uses_block_editor(ctx, &post).await {
                 return super::block_editor::render_editor(ctx, &post, &info).await;

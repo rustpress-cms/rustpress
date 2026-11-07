@@ -282,10 +282,13 @@ async fn theme_section(ctx: &Ctx<'_>) -> String {
 
 /// `list_translation_updates()`.
 fn translation_section(ctx: &Ctx<'_>, any: bool) -> String {
-    if !any {
-        return String::new();
-    }
     let tr = |s: &str| ctx.tr(s);
+    if !any {
+        if ctx.site().locale() == "en_US" {
+            return String::new();
+        }
+        return format!("<h2>{}</h2><p>{}</p>", tr("Translations"), tr("Your translations are all up to date."));
+    }
     format!(
         "\t<h2>{}</h2>\n\t<form method=\"post\" action=\"update-core.php?action=do-translation-upgrade\" name=\"upgrade-translations\" class=\"upgrade\">\n\t\t<p>{}</p>\n\t\t{}\t\t<p><input class=\"button\" type=\"submit\" value=\"{}\" name=\"upgrade\" /></p>\n\t</form>\n\t",
         tr("Translations"),

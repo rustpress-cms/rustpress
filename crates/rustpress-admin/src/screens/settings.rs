@@ -142,7 +142,7 @@ pub async fn reading(ctx: &Ctx<'_>) -> AdminResponse {
     h.push_str(&settings_errors(ctx).await);
     h.push_str(&format!("<form method=\"post\" action=\"options.php\">\n{}\n<table class=\"form-table\" role=\"presentation\">\n", ctx.settings_fields("reading")));
     let on_front = site.options.string("show_on_front", "posts");
-    let none = format!("&mdash; {} &mdash;", tr("Select"));
+    let none = tr("&mdash; Select &mdash;");
     let front = dropdown_pages(ctx, "page_on_front", "page_on_front", site.options.u64("page_on_front", 0), Some(&none)).await;
     let posts = dropdown_pages(ctx, "page_for_posts", "page_for_posts", site.options.u64("page_for_posts", 0), Some(&none)).await;
     h.push_str(&format!(
@@ -341,7 +341,7 @@ pub async fn discussion(ctx: &Ctx<'_>) -> AdminResponse {
         l1 = tr("Number of links to allow in a comment before holding for moderation:"),
         l2 = tr("(A common characteristic of comment spam is a large number of hyperlinks.)"),
         links = form_option(ctx, "comment_max_links"),
-        k1 = sprintf(&tr("When a comment contains any of these words in its content, author name, URL, email, IP address, or browser&#8217;s user agent string, it will be held in the <a href=\"%s\">moderation queue</a>. One word or IP address per line. It will match inside words, so &#8220;press&#8221; will match &#8220;WordPress&#8221;."), &["edit-comments.php?comment_status=moderated"]),
+        k1 = tr("When a comment contains any of these words in its content, author name, URL, email, IP address, or browser&#8217;s user agent string, it will be held in the <a href=\"edit-comments.php?comment_status=moderated\">moderation queue</a>. One word or IP address per line. It will match inside words, so &#8220;press&#8221; will match &#8220;WordPress&#8221;."),
         mod_keys = esc_html(&o("moderation_keys"))
     ));
     h.push_str(&format!(
