@@ -30,6 +30,7 @@ fn loader_env(site: &Site, wp_root: &Path) -> LoaderEnv {
         separate_block_assets: true,
         compressed_tinymce: false,
         nonce: None,
+        messages: None,
     }
 }
 

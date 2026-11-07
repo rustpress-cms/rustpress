@@ -16,6 +16,9 @@ use super::styles::Styles;
 /// `wp_create_nonce()` for the current user.
 pub type NonceFn = std::sync::Arc<dyn Fn(&str) -> String + Send + Sync>;
 
+/// `__()` and `_x()` of the site's language.
+pub type MessageFn = std::sync::Arc<dyn Fn(&str, Option<&str>) -> String + Send + Sync>;
+
 /// What the registration code asks the site about.
 #[derive(Clone)]
 pub struct LoaderEnv {
@@ -33,6 +36,24 @@ pub struct LoaderEnv {
     pub compressed_tinymce: bool,
     /// `wp_create_nonce()` for the current user; without one nonces are empty.
     pub nonce: Option<NonceFn>,
+    /// The texts of the localized scripts, with the locale they are in. Without it they stay in English.
+    pub messages: Option<(String, MessageFn)>,
+}
+
+impl LoaderEnv {
+    /// The same for the language of `site`.
+    pub fn in_language_of(&self, site: &rustpress_core::Site) -> Self {
+        let locale = site.locale();
+        if locale == "en_US" {
+            return self.clone();
+        }
+        let i18n = site.i18n();
+        let messages: MessageFn = std::sync::Arc::new(move |text, context| match context {
+            Some(context) => i18n.pgettext("default", context, text),
+            None => i18n.gettext("default", text),
+        });
+        Self { messages: Some((locale, messages)), ..self.clone() }
+    }
 }
 
 /// Lit -> JSON the way PHP arrays encode: a list when the keys are 0..n, else an object.
@@ -234,18 +255,27 @@ fn extra_of(lit: &Lit) -> Option<Extra> {
 }
 
 /// Runs the registration calls of one function body.
+/// A reader of the registration code, which translates what the site's language has.
+fn parser<'a>(body: &'a str, at: usize, vars: &'a Vars, env: &'a LoaderEnv) -> Parser<'a> {
+    let reader = Parser::new(body, at, vars);
+    match &env.messages {
+        Some((_, messages)) => reader.with_translator(&**messages),
+        None => reader,
+    }
+}
+
 fn run_body(body: &str, vars: &mut Vars, env: &LoaderEnv, mut target: Target<'_>) {
     let hooks = hooks(env);
     for (_, statement) in statements(body) {
         match statement {
             Statement::Assign(name, at) => {
-                let value = Parser::new(body, at, vars).with_hooks(&hooks).expr();
+                let value = parser(body, at, vars, env).with_hooks(&hooks).expr();
                 if value != Lit::Unknown {
                     vars.insert(name, value);
                 }
             }
             Statement::Call { method, args_at, .. } => {
-                let args = Parser::new(body, args_at, vars).with_hooks(&hooks).call_args();
+                let args = parser(body, args_at, vars, env).with_hooks(&hooks).call_args();
                 let Some(handle) = args.first().and_then(Lit::as_str).map(str::to_owned) else { continue };
                 match (&mut target, method.as_str()) {
                     (Target::Scripts(s), "add") => {
@@ -318,10 +348,10 @@ fn base_vars() -> Vars {
 
 /// The registries built from `script-loader.php`, per configuration. Interpreting the PHP took a large part of
 /// every page of the administration; the nonces of the user are put in afterwards (see [`with_nonces`]).
-type RegistryKey = (PathBuf, String, String, String, bool, bool, bool);
+type RegistryKey = (PathBuf, String, String, String, bool, bool, bool, String);
 
 fn registry_key(env: &LoaderEnv) -> RegistryKey {
-    (env.includes.clone(), env.site_url.clone(), env.content_url.clone(), env.version.clone(), env.rtl, env.separate_block_assets, env.compressed_tinymce)
+    (env.includes.clone(), env.site_url.clone(), env.content_url.clone(), env.version.clone(), env.rtl, env.separate_block_assets, env.compressed_tinymce, env.messages.as_ref().map_or_else(String::new, |(locale, _)| locale.clone()))
 }
 
 const NONCE_MARK: char = '\u{1}';
@@ -432,7 +462,7 @@ fn register_vendor(scripts: &mut Scripts, php: &str, env: &LoaderEnv) {
     for (name, at) in [("vendor_scripts", body.find("$vendor_scripts = ")), ("vendor_scripts_versions", body.find("$vendor_scripts_versions = "))] {
         if let Some(at) = at {
             let start = at + body[at..].find('=').map_or(0, |e| e + 1);
-            tables.insert(name.to_owned(), Parser::new(body, start, &vars).with_hooks(&hooks).expr());
+            tables.insert(name.to_owned(), parser(body, start, &vars, env).with_hooks(&hooks).expr());
         }
     }
     let (Some(Lit::Array(deps)), Some(versions)) = (tables.get("vendor_scripts"), tables.get("vendor_scripts_versions")) else { return };

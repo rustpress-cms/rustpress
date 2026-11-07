@@ -321,6 +321,54 @@ async fn post_content_block_attributes(ctx: &Ctx<'_>, post: &Post) -> Option<Val
     Some(if block.attrs.is_empty() { json!([]) } else { Value::Object(block.attrs.clone()) })
 }
 
+/// `translate_settings_using_i18n_schema()` of `block-i18n.json`: the texts of the block types.
+fn translate_block_definitions(ctx: &Ctx<'_>, definitions: &mut Value) {
+    let site = ctx.site();
+    let text = |value: &mut Value, context: &str| {
+        if let Some(text) = value.as_str().filter(|text| !text.is_empty()) {
+            *value = json!(site.trx(text, context));
+        }
+    };
+    // `build_template_part_block_area_variations()` takes the texts of `get_allowed_block_template_part_areas()`.
+    for variation in definitions.get_mut("core/template-part").and_then(|block| block.get_mut("variations")).and_then(Value::as_array_mut).into_iter().flatten() {
+        if !variation.get("name").and_then(Value::as_str).is_some_and(|name| name.starts_with("area_")) {
+            continue;
+        }
+        if let Some(title) = variation.get("title").and_then(Value::as_str) {
+            variation["title"] = json!(site.trx(title, "template part area"));
+        }
+        if let Some(description) = variation.get("description").and_then(Value::as_str) {
+            variation["description"] = json!(site.tr(description));
+        }
+    }
+    // `widget-group` has no text domain in its `block.json`.
+    for (_, block) in definitions.as_object_mut().into_iter().flatten().filter(|(name, _)| name.as_str() != "core/widget-group") {
+        for (key, context) in [("title", "block title"), ("description", "block description")] {
+            if let Some(value) = block.get_mut(key) {
+                text(value, context);
+            }
+        }
+        for keyword in block.get_mut("keywords").and_then(Value::as_array_mut).into_iter().flatten() {
+            text(keyword, "block keyword");
+        }
+        for style in block.get_mut("styles").and_then(Value::as_array_mut).into_iter().flatten() {
+            if let Some(label) = style.get_mut("label") {
+                text(label, "block style label");
+            }
+        }
+        for variation in block.get_mut("variations").and_then(Value::as_array_mut).into_iter().flatten().filter(|variation| !variation.get("name").and_then(Value::as_str).is_some_and(|name| name.starts_with("area_"))) {
+            for (key, context) in [("title", "block variation title"), ("description", "block variation description")] {
+                if let Some(value) = variation.get_mut(key) {
+                    text(value, context);
+                }
+            }
+            for keyword in variation.get_mut("keywords").and_then(Value::as_array_mut).into_iter().flatten() {
+                text(keyword, "block variation keyword");
+            }
+        }
+    }
+}
+
 /// `get_default_block_categories()`.
 fn block_categories(ctx: &Ctx<'_>) -> Value {
     let mut categories = statics().get("blockCategories").cloned().unwrap_or(Value::Null);
@@ -733,6 +781,7 @@ pub(super) async fn shared_inline(ctx: &Ctx<'_>, assets: &mut Assets, preloaded:
         "before".into(),
     ));
     let mut definitions = statics().get("blockDefinitions").cloned().unwrap_or(Value::Null);
+    translate_block_definitions(ctx, &mut definitions);
     // The variations that follow the post types and taxonomies of this site.
     let rest = rustpress_rest::Rest::new(site, ctx.env.theme, ctx.env.registry);
     for (block, variations) in rest.type_variations() {

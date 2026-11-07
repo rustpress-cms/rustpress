@@ -729,7 +729,8 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
     let request_frame = screen.frame == Some(FrameKind::Request);
 
     // Styles of the head.
-    let mut styles = default_styles(&env.loader);
+    let loader = env.loader.in_language_of(env.site);
+    let mut styles = default_styles(&loader);
     if !request_frame {
         styles.add_inline_style("admin-bar", "@media print { #wpadminbar { display:none; } }");
     }
@@ -797,7 +798,7 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
     let colors = format!("<link rel='stylesheet' id='colors-css' href='{}/wp-admin/css/colors/modern/colors.min.css?ver={version}' media='all' />\n", env.loader.site_url);
 
     // Scripts of the head (`utils` with `userSettings`).
-    let mut scripts = default_scripts(&env.loader);
+    let mut scripts = default_scripts(&loader);
     if let Some(crate::deps::Extra::Text(data)) = scripts.deps.get_data("wp-api-request", "data").cloned()
         && !assets.rest_root.is_empty()
     {
@@ -909,6 +910,19 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
     }
     for handle in &assets.late_scripts {
         scripts.enqueue(handle);
+    }
+    // `load_script_textdomain()` for the scripts of WordPress.
+    if env.site.locale() != "en_US" {
+        let languages = env.loader.includes.parent().unwrap_or(&env.loader.includes).join("wp-content").join("languages");
+        let locale = env.site.locale();
+        let sources: std::collections::HashMap<String, String> = scripts.deps.registered().iter().filter_map(|dep| Some((dep.handle.clone(), dep.src.clone()?))).collect();
+        scripts.set_translation_loader(Box::new(move |handle, domain, _path| {
+            let relative = sources.get(handle)?.strip_prefix('/')?;
+            // The files are named after the script that is not minified.
+            let relative = relative.strip_suffix(".min.js").map_or_else(|| relative.to_owned(), |base| format!("{base}.js"));
+            let base = if domain == "default" { locale.clone() } else { format!("{domain}-{locale}") };
+            rustpress_core::files::read(&languages.join(format!("{base}-{:x}.json", md5::compute(relative.as_bytes())))).map(|text| text.to_string())
+        }));
     }
     let head_scripts = scripts.print_head_scripts(true);
     // What the page enqueues after the head is printed comes with the footer.

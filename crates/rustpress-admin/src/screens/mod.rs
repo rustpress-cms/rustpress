@@ -61,6 +61,7 @@ mod update_core;
 pub mod themes;
 pub mod user_edit;
 pub mod users;
+mod template_text;
 mod widgets;
 pub mod meta_boxes;
 pub mod timezones;

@@ -100,10 +100,12 @@ The reference stack, the tools and the working rules are in [AGENTS.md](AGENTS.m
 **Languages**
 - A language per request (the user's language, Polylang/WPML): an `I18nRegistry` from which each request gets its
   translator; all calls already go through `Site::tr`.
-- JavaScript translations of core scripts (Interactivity texts, and in the administration of a translated site the
-  `*-js-translations` of the head, `wpAjax` and the like, seen on the copy of the real site in German), the Underscore
-  templates baked in English (`media_templates.html`, `widgets_templates.html`, so the media modal is English on a German
-  site), hot reload of language packs, variants such as `de_DE_formal`, a command `rustpress i18n install <locale>`.
+- JavaScript translations on the front end (Interactivity texts), hot reload of language packs, variants such as
+  `de_DE_formal`, a command `rustpress i18n install <locale>`.
+- Screens of a translated site: their heads are right, but most lists and forms still have English texts (a wrong context,
+  an entity in the message, help tabs). Seen in a sweep of 25 screens on the German copy; `upload.php`, `options-media.php`
+  and `widgets.php` are equal. `dev/nav-menus-compare.py` still compares from the `body` on, and `revision_templates.html`
+  and the templates of application passwords are baked in English.
 
 **Sign-in, administration, REST**
 - `customize.php`. For classic themes: `themes.php?page=custom-header` is in the menu without a screen behind it.
@@ -865,5 +867,19 @@ What the comparison found elsewhere, on classic themes or translated sites:
 
 Compared in `dev/widgets-compare.py`: 101 requests on the copy of the real site from the same state, with the same answers,
 headers and stored options: every core widget created, encoded and previewed, updating, moving, deleting, ordering a sidebar,
-four batches, an editor and a visitor. The page is equal byte for byte in English, and in German in its body and in the
-data the editor starts with. What the media and RSS widgets print is masked (see the Open list).
+four batches, an editor and a visitor. The page is equal byte for byte in English and in German. What the media and RSS widgets print is masked
+(see the Open list).
+
+### Translations of the administration (2026-11-07)
+
+On a translated site the screens now print what WordPress prints:
+
+- **`load_script_textdomain()`** for the scripts of WordPress: `<locale>-<md5 of the script>.json`, the `*-js-translations`
+  before each script. The block editors, the media modal and the rest of the JavaScript were English.
+- **`wp_default_scripts()`:** the texts of localized scripts come from the language pack (`LoaderEnv::in_language_of()`); the
+  registry is kept per language.
+- **Templates:** `dev/templates-bake.py` asks WordPress for the Underscore templates with a `gettext` filter that marks each
+  text, how it was escaped and the values of its format; `screens/template_text.rs` prints them in the language of the site.
+  An address is not marked, because `esc_url()` would drop the marks; the notices of `wp_admin_notice()` need one repair.
+- **Block types:** the texts of `block-i18n.json`. `core/widget-group` stays English: its `block.json` has no text domain.
+- `weekday_abbrev` has no context, `month_abbrev` has one.

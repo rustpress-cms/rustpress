@@ -74,7 +74,7 @@ impl LocaleData {
         Self {
             weekday: WEEKDAYS.map(&tr),
             weekday_initial: std::array::from_fn(|i| trx(&WEEKDAYS[i][..1], &format!("{} initial", WEEKDAYS[i]))),
-            weekday_abbrev: std::array::from_fn(|i| trx(WEEKDAY_ABBREVIATIONS[i], &format!("{} abbreviation", WEEKDAYS[i]))),
+            weekday_abbrev: std::array::from_fn(|i| tr(WEEKDAY_ABBREVIATIONS[i])),
             month: MONTHS.map(&tr),
             month_genitive: MONTHS.map(|m| trx(m, "genitive")),
             month_abbrev: std::array::from_fn(|i| trx(MONTH_ABBREVIATIONS[i], &format!("{} abbreviation", MONTHS[i]))),

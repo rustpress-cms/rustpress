@@ -119,7 +119,7 @@ fn help(ctx: &Ctx<'_>, syntax_highlighting: bool) -> Help {
 /// `render_control_template_scripts()` of the media, text and custom HTML widgets, as a user who dismissed some pointers
 /// sees them.
 fn control_templates(ctx: &Ctx<'_>, dismissed: &str) -> String {
-    let mut out = TEMPLATES.replace("@ADMIN@", &ctx.admin_url("")).replace("@SITE@", ctx.site().settings.siteurl.trim_end_matches('/'));
+    let mut out = TEMPLATES.replace("http://localhost:8080/wp-admin/", &ctx.admin_url("")).replace("http://localhost:8080", ctx.site().settings.siteurl.trim_end_matches('/'));
     // The block of a pointer ends where the block after it starts.
     let dismissed: Vec<&str> = dismissed.split(',').collect();
     for (pointer, class) in [("text_widget_custom_html", "custom-html-widget-pointer"), ("text_widget_paste_html", "paste-html-pointer")] {
@@ -131,7 +131,7 @@ fn control_templates(ctx: &Ctx<'_>, dismissed: &str) -> String {
         let Some(end) = out[at..].find("<div class=\"wp-pointer-arrow-inner\"></div>\n\t\t\t\t\t</div>\n\t\t\t\t</div>\n").map(|i| at + i + "<div class=\"wp-pointer-arrow-inner\"></div>\n\t\t\t\t\t</div>\n\t\t\t\t</div>\n".len()) else { continue };
         out.replace_range(start..end, "");
     }
-    out
+    super::template_text::translate(ctx.site(), &out)
 }
 
 pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
@@ -216,8 +216,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     assets.footer = super::editor::default_editor_scripts(ctx, super::editor::can_richedit(ctx, rich_editing.as_deref()));
     let dismissed = env.db.user_meta(ctx.user.id, "dismissed_wp_pointers").await.ok().flatten().unwrap_or_default();
     // The output before ends with the indentation of its closing `<?php`, and so do the templates.
-    assets.footer.push_str(control_templates(ctx, &dismissed).strip_prefix("\t\t").unwrap_or_default());
-    assets.footer.push_str("\t\t");
+    assets.footer.push_str(&control_templates(ctx, &dismissed));
 
     // An installed Classic Widgets gets a link to activate it, otherwise one to install it.
     let wp_root = env.loader.includes.parent().unwrap_or(&env.loader.includes);
