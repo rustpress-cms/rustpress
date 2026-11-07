@@ -145,7 +145,9 @@ async fn revisions_for_js(ctx: &Ctx<'_>, post: &Post, selected: u64, from: Optio
             let (name, email) = user.map(|u| (u.display_name.clone(), u.user_email.clone())).unwrap_or_default();
             let avatar = if show_avatars {
                 let url = |s: u64| esc_url(&rustpress_blocks::content::avatar_url(&site.options, &email, s));
-                format!("<img alt='' src='{}' srcset='{} 2x' class='avatar avatar-32 photo' height='32' width='32' loading='lazy' decoding='async'/>", url(32), url(64))
+                // `get_avatar()`: no address, no avatar of its own.
+                let default = if email.is_empty() { " avatar-default" } else { "" };
+                format!("<img alt='' src='{}' srcset='{} 2x' class='avatar avatar-32 photo{default}' height='32' width='32' loading='lazy' decoding='async'/>", url(32), url(64))
             } else {
                 String::new()
             };
@@ -177,6 +179,23 @@ async fn revisions_for_js(ctx: &Ctx<'_>, post: &Post, selected: u64, from: Optio
             "current": current,
             "restoreUrl": restore_url,
         }));
+    }
+    // With one revision the initial one is missing, as for an autosave opened from the editor: the post stands in for it.
+    if let [only] = data.as_slice() {
+        let modified_gmt = rustpress_core::datetime::SiteTimezone::gmt_timestamp(&post.post_modified_gmt).unwrap_or(0);
+        let author = only["author"].clone();
+        data.push(json!({
+            "id": post.id,
+            "title": rustpress_blocks::content::the_title_in_admin(site, post),
+            "author": author,
+            "date": site.date(&tr("M j, Y @ H:i"), modified_gmt),
+            "dateShort": site.date(&site.trx("j M @ H:i", "revision date short format"), modified_gmt),
+            "timeAgo": sprintf(&tr("%s ago"), &[&super::media_lib::human_time_diff(ctx, modified_gmt, now)]),
+            "autosave": false,
+            "current": true,
+            "restoreUrl": false,
+        }));
+        current_index = Some(1);
     }
     // No revision is marked current: take the newest one that is not an autosave.
     if current_index.is_none()
@@ -270,7 +289,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     let post_title = format!("<a href=\"{}\">{}</a>", esc_url(&edit), esc_html(&shown_title));
     let h1 = sprintf(&tr("Compare Revisions of &#8220;%s&#8221;"), &[&post_title]);
     let return_to_post = format!("<a href=\"{}\">{}</a>", esc_url(&edit), tr("&larr; Go to editor"));
-    let templates = super::pages::translate_html(ctx, TEMPLATES);
+    let templates = super::template_text::translate(ctx.site(), TEMPLATES.strip_suffix('\n').unwrap_or(TEMPLATES));
     let content = format!("<div class=\"wrap\">\n\t<h1 class=\"long-header\">{h1}</h1>\n\t{return_to_post}</div>\n{templates}");
 
     let (parent_file, submenu) = if post.post_type == "post" { ("edit.php".to_owned(), "edit.php".to_owned()) } else { (format!("edit.php?post_type={}", post.post_type), format!("edit.php?post_type={}", post.post_type)) };

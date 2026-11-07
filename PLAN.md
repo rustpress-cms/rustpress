@@ -102,9 +102,7 @@ The reference stack, the tools and the working rules are in [AGENTS.md](AGENTS.m
   translator; all calls already go through `Site::tr`.
 - JavaScript translations on the front end (Interactivity texts), hot reload of language packs, variants such as
   `de_DE_formal`, a command `rustpress i18n install <locale>`.
-- Screens of a translated site. The baked pages are marked now (see "Texts of the baked pages"); `.tpl` files that are not
-  marked yet go through `translate_html()` node by node: `revision_templates.html`, the templates of application passwords,
-  `attachment_edit.tpl`, `image_editor.tpl`, `inline_edit.tpl`. `dev/nav-menus-compare.py` still compares from the `body` on.
+- Screens of a translated site: `dev/nav-menus-compare.py` still compares from the `body` on.
 - Not equal on the copy of the real site: `credits.php` (what `wp_credits()` gets from api.wordpress.org depends on the
   language, the bake is the English answer), `plugin-install.php` (RustPress asks api.wordpress.org nothing), the tests of
   `site-health.php` that are about PHP (RustPress has none) and the `Info` tab, which reports its own environment.
@@ -933,3 +931,8 @@ Faults this found:
 class `update`, `wp_get_auto_update_message()` in the row and the bulk actions of the views of automatic updates. An update is
 never incompatible, since RustPress has no PHP version; the texts for that case are not ported. The views take their text
 from `_n()` with the count: `Auto-updates Disabled` has a plural in German.
+
+The templates are marked the same way (`dev/bake-marks.py --templates`): the revisions, application passwords, the attachment
+screen, the image editor and the quick edit. `translate_html()` is gone. The marks plugin stays in `dev/mu-plugins/` now; it does
+nothing without its header. The application passwords of a site without HTTPS lacked a tab run at their end.
+

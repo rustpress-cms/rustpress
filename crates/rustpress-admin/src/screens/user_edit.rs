@@ -452,10 +452,10 @@ async fn form_on(ctx: &Ctx<'_>, user: &User, own: bool, errors: &[String], file:
     let app_available = app_passwords && ctx.site().app_passwords_available();
     if app_available {
         let rows = app_password_rows(ctx, id).await;
-        h.push_str(&super::pages::translate_html(ctx, APP_PASSWORDS_SECTION).replace("{{ROWS}}", &rows));
+        h.push_str(&super::template_text::translate(ctx.site(), APP_PASSWORDS_SECTION).replace("{{ROWS}}", &rows));
     } else if app_passwords {
         h.push_str(&format!(
-            "\t\t\t\t\t\t\t\t\t\t\t<div class=\"application-passwords hide-if-no-js\" id=\"application-passwords-section\">\n\t\t\t\t\t\t\t<h2>{}</h2>\n\t\t\t\t\t\t\t<p>{}</p>\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<p>{}</p>\n\t\t\t\t\t\t\t\t<p>\n\t\t\t\t\t\t\t\t\t{}\t\t\t\t\t\t\t\t</p>\n\t\t\t\t\t\t\t\t\t\t\t\t\t</div>\n\t\t\t\t\t\n\t\t\t\t\t\n\t\t\t\t\t\n\t\t\t\t\n",
+            "\t\t\t\t\t\t\t\t\t\t\t<div class=\"application-passwords hide-if-no-js\" id=\"application-passwords-section\">\n\t\t\t\t\t\t\t<h2>{}</h2>\n\t\t\t\t\t\t\t<p>{}</p>\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<p>{}</p>\n\t\t\t\t\t\t\t\t<p>\n\t\t\t\t\t\t\t\t\t{}\t\t\t\t\t\t\t\t</p>\n\t\t\t\t\t\t\t\t\t\t\t\t\t</div>\n\t\t\t\t\t\n\t\t\t\t\t\n\t\t\t\t\t\n\t\t\t\t\n\t\t\t\t",
             tr("Application Passwords"),
             tr("Application passwords allow authentication via non-interactive systems, such as XML-RPC or the REST API, without providing your actual password. Application passwords can be easily revoked. They cannot be used for traditional logins to your website."),
             tr("The application password feature requires HTTPS, which is not enabled on this site."),
@@ -473,7 +473,7 @@ async fn form_on(ctx: &Ctx<'_>, user: &User, own: bool, errors: &[String], file:
     if app_available {
         // The file ends with a line break of its own; the page ends right after the last template.
         let templates = APP_PASSWORDS_TEMPLATES.strip_suffix('\n').unwrap_or(APP_PASSWORDS_TEMPLATES);
-        h.push_str(&super::pages::translate_html(ctx, templates).replace("{{SITE}}", ctx.site().settings.siteurl.trim_end_matches('/')));
+        h.push_str(&super::template_text::translate(ctx.site(), templates).replace("{{SITE}}", ctx.site().settings.siteurl.trim_end_matches('/')));
     }
     let (parent_file, submenu_file) = if ctx.can("list_users") { ("users.php", if own { "profile.php" } else { "users.php" }) } else { ("profile.php", "profile.php") };
     let view_item = (!own || file == "user-edit.php").then(|| {

@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
-"""Marks the texts of the baked pages in `crates/rustpress-admin/src/data/pages/*.json`: asks the reference (dev/up.sh) for
-each page with its texts marked (`dev/mark-texts.php`), lays the marks over the baked page and writes it back. What was
-put in for the request by hand (`{{nonce:...}}`, `{{cards}}`) stays where it is. `screens/template_text.rs` prints the
-result in the language of the site.
+"""Marks the texts of the baked pages in `crates/rustpress-admin/src/data/pages/*.json` and of the templates in `TEMPLATES`:
+asks the reference (dev/up.sh) for each page with its texts marked (`dev/mu-plugins/rustpress-mark-texts.php`), lays the
+marks over the baked page and writes it back. What was put in for the request by hand (`{{nonce:...}}`, `{{cards}}`) stays
+where it is. `screens/template_text.rs` prints the result in the language of the site.
 
     python dev/bake-marks.py tools=tools.php import=import.php
+    python dev/bake-marks.py --templates revision=853 attachment=300
 
 Without arguments it marks all pages of `PAGES`. A mark that does not fit the baked page is reported and left out. The
-texts of a baked page are English until they are marked."""
+texts of a baked page are English until they are marked. `--templates` needs a revision and an image of the reference.
+A page of the reference does not show everything of a template: the marks of `image_editor_restore.tpl` and a few others
+are written by hand, so look at the diff after a run."""
 import base64
 import difflib
 import importlib.util
@@ -19,7 +22,8 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.join(HERE, '..', 'crates', 'rustpress-admin', 'src', 'data', 'pages')
-PLUGIN = '/var/www/html/wp-content/mu-plugins/zz-rustpress-marks.php'
+DATA = os.path.join(ROOT, '..')
+SCREENS = os.path.join(DATA, '..', 'screens')
 PAGES = {
     'tools': 'tools.php',
     'import': 'import.php',
@@ -38,7 +42,19 @@ PAGES = {
     'privacy': 'privacy.php',
     'contribute': 'contribute.php',
     'update-core': 'update-core.php',
+    'attachment-edit': 'post.php?post=300&action=edit',
 }
+
+# The file of a template and the pages it was made from.
+TEMPLATES = [
+    (os.path.join(DATA, 'revision_templates.html'), 'revision.php?revision={revision}'),
+    (os.path.join(DATA, 'app_passwords_section.tpl'), 'profile.php'),
+    (os.path.join(DATA, 'app_passwords_templates.tpl'), 'profile.php'),
+    (os.path.join(DATA, 'attachment_edit.tpl'), 'post.php?post={attachment}&action=edit'),
+    (os.path.join(DATA, 'image_editor.tpl'), 'post.php?post={attachment}&action=edit&image-editor'),
+    # The form differs between posts and pages; the template has the fields of both.
+    (os.path.join(SCREENS, 'inline_edit.tpl'), 'edit.php', 'edit.php?post_type=page'),
+]
 
 spec = importlib.util.spec_from_file_location('bake', os.path.join(HERE, 'bake-pages.py'))
 bake = importlib.util.module_from_spec(spec)
@@ -61,7 +77,7 @@ def fetch(page):
 
 
 def addresses(marked):
-    """The addresses that went through `__()` get their marks: `mark-texts.php` could only hang the message on them."""
+    """The addresses that went through `__()` get their marks: `rustpress-mark-texts.php` could only hang the message on them."""
 
     def mark(match):
         url = match.group(1)
@@ -116,10 +132,19 @@ def tokens(text):
     return re.findall(r'\w+|\W', text)
 
 
-def overlay(marked, target):
+def overlay(marked, target, crop=False):
     """`target` with the marks of `marked`, which is the same page but for what the hand changed. The second value counts
     the marks that had no place."""
     plain, points = spans(marked)
+    # A template is a small part of its page.
+    if crop:
+        lines = [line.strip() for line in target.split('\n') if line.strip() and '{{' not in line and '⟦' not in line and len(line.strip()) > 12]
+        first = plain.find(lines[0]) if lines else -1
+        last = plain.rfind(lines[-1]) if lines else -1
+        if first >= 0 and last >= first:
+            first, last = max(0, first - 400), last + len(lines[-1]) + 400
+            plain = plain[first:last]
+            points = [[p[0], p[1] - first, p[2] - first, *p[3:]] for p in points if p[2] is not None and p[1] >= first and p[2] <= last]
     a, b = tokens(plain), tokens(target)
     offsets_a = [0]
     for t in a:
@@ -219,34 +244,47 @@ def unmarked(text):
     return text.replace('⟧', '').replace('⟫', '')
 
 
+def templates(ids):
+    """Marks the templates of `TEMPLATES`."""
+    site = f'http://localhost:{bake.PORT}'
+    for path, *pages in TEMPLATES:
+        parts = [fetch(page.format(**ids)).replace(site, '{{site}}') for page in pages]
+        # Of several pages only the form counts, or the text between them would be part of the template.
+        html = parts[0] if len(parts) == 1 else ''.join(re.search(r'<table style="display: none">.*?</table>', part, re.S).group(0) for part in parts)
+        with open(path, encoding='utf-8', newline='') as f:
+            target = f.read().replace('\r\n', '\n')
+        marked, missed = overlay(html, unmarked(target), crop=True)
+        with open(path, 'w', encoding='utf-8', newline='') as f:
+            f.write(readable(marked))
+        print(os.path.basename(path), readable(marked).count('⟦'), 'marks,', missed, 'without a place')
+
+
 def main():
     site = f'http://localhost:{bake.PORT}'
+    if sys.argv[1:2] == ['--templates']:
+        templates(dict(arg.split('=', 1) for arg in sys.argv[2:]))
+        return
     pages = dict(arg.split('=', 1) for arg in sys.argv[1:]) or PAGES
-    source = subprocess.run(['wsl', 'wslpath', '-a', os.path.join(HERE, 'mark-texts.php').replace('\\', '/')], capture_output=True, text=True).stdout.strip()
-    subprocess.run(['wsl', 'bash', '-c', f"podman cp '{source}' rustpress-wp:{PLUGIN}"], check=True)
-    try:
-        for name, page in pages.items():
-            path = os.path.join(ROOT, name + '.json')
-            data = json.load(open(path, encoding='utf-8'))
-            html = fetch(page)
-            help_ = bake.help_of(html)
-            content = bake.content_of(html).replace(site, '{{site}}')
-            data['content'], missed = overlay(content, unmarked(data['content']))
-            tabs = {tab['id']: tab for tab in help_['tabs']}
-            for tab in data['help']['tabs']:
-                marked = tabs.get(tab['id'])
-                if marked is None:
-                    continue
-                for key in ('title', 'content'):
-                    tab[key], more = overlay(marked[key].replace(site, '{{site}}'), unmarked(tab[key]))
-                    missed += more
-            data['help']['sidebar'], more = overlay(help_['sidebar'].replace(site, '{{site}}'), unmarked(data['help']['sidebar']))
-            missed += more
-            with open(path, 'w', encoding='utf-8', newline='\n') as f:
-                json.dump(json.loads(readable(json.dumps(data, ensure_ascii=False))), f, ensure_ascii=False, indent=1)
-            print(name, readable(data['content']).count('⟦'), 'marks,', missed, 'without a place')
-    finally:
-        subprocess.run(['wsl', 'bash', '-c', f'podman exec rustpress-wp rm -f {PLUGIN}'])
+    for name, page in pages.items():
+        path = os.path.join(ROOT, name + '.json')
+        data = json.load(open(path, encoding='utf-8'))
+        html = fetch(page)
+        help_ = bake.help_of(html)
+        content = bake.content_of(html).replace(site, '{{site}}')
+        data['content'], missed = overlay(content, unmarked(data['content']))
+        tabs = {tab['id']: tab for tab in help_['tabs']}
+        for tab in data['help']['tabs']:
+            marked = tabs.get(tab['id'])
+            if marked is None:
+                continue
+            for key in ('title', 'content'):
+                tab[key], more = overlay(marked[key].replace(site, '{{site}}'), unmarked(tab[key]))
+                missed += more
+        data['help']['sidebar'], more = overlay(help_['sidebar'].replace(site, '{{site}}'), unmarked(data['help']['sidebar']))
+        missed += more
+        with open(path, 'w', encoding='utf-8', newline='\n') as f:
+            json.dump(json.loads(readable(json.dumps(data, ensure_ascii=False))), f, ensure_ascii=False, indent=1)
+        print(name, readable(data['content']).count('⟦'), 'marks,', missed, 'without a place')
 
 
 if __name__ == '__main__':
