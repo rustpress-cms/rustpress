@@ -495,7 +495,7 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUs
             if action != "query-themes" && !nonce_ok(request.request("_ajax_nonce").or(request.request("_wpnonce")).unwrap_or_default(), "updates") {
                 return text(403, "-1");
             }
-            let message = tr("An unexpected error occurred. Something may be wrong with WordPress.org or this server&#8217;s configuration. If you continue to have problems, please try the <a href=\"https://wordpress.org/support/forums/\">support forums</a>.");
+            let message = rustpress_core::i18n::sprintf(&tr("An unexpected error occurred. Something may be wrong with WordPress.org or this server&#8217;s configuration. If you continue to have problems, please try the <a href=\"%s\">support forums</a>."), &[&tr("https://wordpress.org/support/forums/")]);
             json(200, &json!({"success": false, "data": {"slug": param("slug"), "errorCode": "plugins_api_failed", "errorMessage": message, "error": message}}))
         }
         // Multisite only: single sites answer -1.

@@ -357,7 +357,7 @@ fn edit_help(ctx: &Ctx<'_>, info: &TypeInfo) -> Help {
             publish.push_str(&format!("<li>{}</li>", tr("<strong>Format</strong> &mdash; Post Formats designate how your theme will display a specific post. For example, you could have a <em>standard</em> blog post with a title and paragraphs, or a short <em>aside</em> that omits the title and contains a short text blurb. Your theme could enable all or some of 10 possible formats. <a href=\"https://developer.wordpress.org/advanced-administration/wordpress/post-formats/#supported-formats\">Learn more about each post format</a>.")));
         }
         if ctx.env.block_theme || ctx.env.theme.adds_theme_support("post-thumbnails") {
-            publish.push_str(&format!("<li>{}</li>", rustpress_core::i18n::sprintf(&tr("<strong>%s</strong> &mdash; This allows you to associate an image with your post without inserting it. This is usually useful only if your theme makes use of the image as a post thumbnail on the home page, a custom header, etc."), &[&esc_html(&tr("Featured image"))])));
+            publish.push_str(&format!("<li>{}</li>", rustpress_core::i18n::sprintf(&tr("<strong>%s</strong> &mdash; This allows you to associate an image with your post without inserting it. This is usually useful only if your theme makes use of the image as a post thumbnail on the home page, a custom header, etc."), &[&esc_html(&ctx.site().trx("Featured image", "post"))])));
         }
         publish.push_str("</ul>");
         tabs.push(HelpTab { id: "publish-box".into(), title: tr("Publish Settings"), content: publish });
@@ -430,7 +430,7 @@ async fn register_meta_boxes(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, is_new
     if supports("thumbnail") && (ctx.env.block_theme || ctx.env.theme.adds_theme_support("post-thumbnails")) && ctx.can("upload_files") {
         let thumbnail = db.post_meta_value(post.id, "_thumbnail_id").await.ok().flatten().and_then(|v| v.parse::<u64>().ok()).unwrap_or(0);
         let image = if thumbnail != 0 { super::meta_boxes::post_thumbnail_image(ctx, thumbnail).await } else { None };
-        boxes.push(MetaBox::new("postimagediv", &esc_html(&tr("Featured image")), "side", "low", post_thumbnail_html(ctx, post.id, thumbnail, image.as_deref())));
+        boxes.push(MetaBox::new("postimagediv", &esc_html(&ctx.site().trx("Featured image", "post")), "side", "low", post_thumbnail_html(ctx, post.id, thumbnail, image.as_deref())));
     }
     if supports("excerpt") {
         boxes.push(MetaBox::new("postexcerpt", &tr("Excerpt"), "normal", "core", excerpt_box(ctx, post)));

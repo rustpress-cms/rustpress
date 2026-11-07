@@ -97,7 +97,8 @@ impl Db {
             self.term_from(),
             self.prefix.table("term_relationships"),
         ));
-        sql.push_list(missing.iter().copied()).push(") ORDER BY tr.object_id, tr.term_order, t.term_id");
+        // `update_object_term_cache()` asks `wp_get_object_terms()` with `orderby => name`.
+        sql.push_list(missing.iter().copied()).push(") ORDER BY tr.object_id, t.name, t.term_id");
         let rows: Vec<PostTerm> = sql.fetch_all(&self.pool).await?;
         let _ = PRIMED_TERMS.try_with(|cache| {
             let mut cache = cache.borrow_mut();
@@ -139,7 +140,7 @@ impl Db {
         if let Some(taxonomy) = taxonomy {
             sql.push(" AND tt.taxonomy = ").push_bind(taxonomy);
         }
-        sql.push(" ORDER BY tr.term_order, t.term_id");
+        sql.push(" ORDER BY t.name, t.term_id");
         sql.fetch_all(&self.pool).await
     }
 

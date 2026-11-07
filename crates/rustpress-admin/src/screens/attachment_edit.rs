@@ -147,7 +147,7 @@ pub async fn form(ctx: &Ctx<'_>, post: &Post) -> AdminResponse {
     };
 
     let timestamp = site.timezone.local_timestamp(&post.post_date).unwrap_or(0);
-    let uploaded = sprintf(&tr("%1$s at %2$s"), &[&site.date(&tr("M j, Y"), timestamp), &site.date(&tr("H:i"), timestamp)]);
+    let uploaded = sprintf(&tr("%1$s at %2$s"), &[&site.date(&ctx.site().trx("M j, Y", "publish box date format"), timestamp), &site.date(&ctx.site().trx("H:i", "publish box time format"), timestamp)]);
     let uploaded_by = match db.user(post.post_author).await.ok().flatten() {
         Some(user) => {
             let name = if user.display_name.is_empty() { user.user_login.clone() } else { user.display_name.clone() };

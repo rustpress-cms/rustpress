@@ -328,9 +328,9 @@ pub fn post_thumbnail_html(ctx: &Ctx<'_>, post_id: u64, thumbnail_id: u64, image
             "{}<p class=\"hide-if-no-js howto\" id=\"set-post-thumbnail-desc\">{}</p><p class=\"hide-if-no-js\"><a href=\"#\" id=\"remove-post-thumbnail\" role=\"button\">{}</a></p>",
             link(" aria-describedby=\"set-post-thumbnail-desc\"", image),
             tr("Click the image to edit or update"),
-            esc_html(&tr("Remove featured image"))
+            esc_html(&ctx.site().trx("Remove featured image", "post"))
         ),
-        None => link("", &esc_html(&tr("Set featured image"))),
+        None => link("", &esc_html(&ctx.site().trx("Set featured image", "post"))),
     };
     content.push_str(&format!("<input type=\"hidden\" id=\"_thumbnail_id\" name=\"_thumbnail_id\" value=\"{}\" />", if thumbnail_id != 0 { thumbnail_id.to_string() } else { "-1".to_owned() }));
     content

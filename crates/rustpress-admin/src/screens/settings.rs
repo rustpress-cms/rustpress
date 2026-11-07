@@ -334,7 +334,6 @@ pub async fn discussion(ctx: &Ctx<'_>) -> AdminResponse {
         l1 = tr("Comment must be manually approved"),
         l2 = tr("Comment author must have a previously approved comment")
     ));
-    let keys_text = tr("When a comment contains any of these words in its content, author name, URL, email, IP address, or browser&#8217;s user agent string, it will be %s. One word or IP address per line. It will match inside words, so &#8220;press&#8221; will match &#8220;WordPress&#8221;.");
     h.push_str(&format!(
         "<tr>\n<th scope=\"row\">{t}</th>\n<td>{legend}<p><label for=\"comment_max_links\">{l1}</label>\n<input name=\"comment_max_links\" type=\"number\" step=\"1\" min=\"0\" id=\"comment_max_links\" value=\"{links}\" class=\"small-text\" aria-describedby=\"comment_links_moderation_desc\" />\n<span id=\"comment_links_moderation_desc\">{l2}</span>\n</p>\n\n<p><label for=\"moderation_keys\">{k1}</label></p>\n<p>\n<textarea name=\"moderation_keys\" rows=\"10\" cols=\"50\" id=\"moderation_keys\" class=\"large-text code\">{mod_keys}</textarea>\n</p>\n</fieldset></td>\n</tr>\n",
         t = tr("Comment Moderation"),
@@ -342,14 +341,14 @@ pub async fn discussion(ctx: &Ctx<'_>) -> AdminResponse {
         l1 = tr("Number of links to allow in a comment before holding for moderation:"),
         l2 = tr("(A common characteristic of comment spam is a large number of hyperlinks.)"),
         links = form_option(ctx, "comment_max_links"),
-        k1 = sprintf(&keys_text, &[&sprintf(&tr("held in the <a href=\"%s\">moderation queue</a>"), &["edit-comments.php?comment_status=moderated"]).to_string()]),
+        k1 = sprintf(&tr("When a comment contains any of these words in its content, author name, URL, email, IP address, or browser&#8217;s user agent string, it will be held in the <a href=\"%s\">moderation queue</a>. One word or IP address per line. It will match inside words, so &#8220;press&#8221; will match &#8220;WordPress&#8221;."), &["edit-comments.php?comment_status=moderated"]),
         mod_keys = esc_html(&o("moderation_keys"))
     ));
     h.push_str(&format!(
         "<tr>\n<th scope=\"row\">{t}</th>\n<td>{legend}<p><label for=\"disallowed_keys\">{k}</label></p>\n<p>\n<textarea name=\"disallowed_keys\" rows=\"10\" cols=\"50\" id=\"disallowed_keys\" class=\"large-text code\">{keys}</textarea>\n</p>\n</fieldset></td>\n</tr>\n</table>\n\n",
         t = tr("Disallowed Comment Keys"),
         legend = legend(&tr("Disallowed Comment Keys")),
-        k = sprintf(&keys_text, &[&tr("put in the Trash")]),
+        k = tr("When a comment contains any of these words in its content, author name, URL, email, IP address, or browser&#8217;s user agent string, it will be put in the Trash. One word or IP address per line. It will match inside words, so &#8220;press&#8221; will match &#8220;WordPress&#8221;."),
         keys = esc_html(&o("disallowed_keys"))
     ));
     // Avatars.

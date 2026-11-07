@@ -374,7 +374,7 @@ async fn recent_comments(ctx: &Ctx<'_>) -> String {
         };
         let mut links = vec![
             link("all", &tr("All"), "all", counts.all, ""),
-            link("mine", &tr("Mine"), "mine", mine, &format!("&user_id={}", ctx.user.id)),
+            link("mine", ctx.site().trnx("Mine <span class=\"count\">(%s)</span>", "Mine <span class=\"count\">(%s)</span>", mine as i64, "comments").split(" <span").next().unwrap_or_default(), "mine", mine, &format!("&user_id={}", ctx.user.id)),
             link("moderated", &tr("Pending"), "pending", counts.moderated, ""),
             link("approved", &tr("Approved"), "approved", counts.approved, ""),
             link("spam", &tr("Spam"), "spam", counts.spam, ""),

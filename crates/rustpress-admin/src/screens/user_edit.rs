@@ -72,7 +72,7 @@ fn color_picker(ctx: &Ctx<'_>, current: &str) -> String {
             if is_current { " selected" } else { " " },
             checked(is_current),
             esc_attr(&icon_json),
-            tr(name)
+            ctx.site().trx(name, "admin color scheme")
         ));
         for shade in shades {
             out.push_str(&format!("\t\t\t\t\t\t\t\t\t<div class=\"color-palette-shade\" style=\"background-color: {shade}\">&nbsp;</div>\n\t"));
@@ -241,11 +241,11 @@ async fn form_on(ctx: &Ctx<'_>, user: &User, own: bool, errors: &[String], file:
     }
     h.push_str(&format!("\n\t\t\t\t\t\t\t\t\t\t<tr class=\"user-admin-color-wrap\">\n\t\t\t\t\t\t<th scope=\"row\">{}</th>\n\t\t\t\t\t\t<td>\n{}\t\t\t\t\t\t\t</td>\n\t\t\t\t\t</tr>\n\t\t\t\t\t\n", tr("Administration Color Scheme"), color_picker(ctx, &admin_color)));
     h.push_str(&format!(
-        "\t\t\t\t\t\t\t\t\t\t<tr class=\"user-comment-shortcuts-wrap\">\n\t\t\t\t\t\t<th scope=\"row\">{}</th>\n\t\t\t\t\t\t<td>\n\t\t\t\t\t\t\t<label for=\"comment_shortcuts\">\n\t\t\t\t\t\t\t\t<input type=\"checkbox\" name=\"comment_shortcuts\" id=\"comment_shortcuts\" value=\"true\" {} />\n\t\t\t\t\t\t\t\t{}\t\t\t\t\t\t\t</label>\n\t\t\t\t\t\t\t<a href=\"https://wordpress.org/documentation/article/keyboard-shortcuts-classic-editor/#keyboard-shortcuts-for-comments\">{}</a>\t\t\t\t\t\t</td>\n\t\t\t\t\t</tr>\n\t\t\t\t\t\n",
+        "\t\t\t\t\t\t\t\t\t\t<tr class=\"user-comment-shortcuts-wrap\">\n\t\t\t\t\t\t<th scope=\"row\">{}</th>\n\t\t\t\t\t\t<td>\n\t\t\t\t\t\t\t<label for=\"comment_shortcuts\">\n\t\t\t\t\t\t\t\t<input type=\"checkbox\" name=\"comment_shortcuts\" id=\"comment_shortcuts\" value=\"true\" {} />\n\t\t\t\t\t\t\t\t{}\t\t\t\t\t\t\t</label>\n\t\t\t\t\t\t\t{}\t\t\t\t\t\t</td>\n\t\t\t\t\t</tr>\n\t\t\t\t\t\n",
         tr("Keyboard Shortcuts"),
         checked(comment_shortcuts == "true").trim_start(),
         tr("Enable keyboard shortcuts for comment moderation."),
-        tr("Documentation on Keyboard Shortcuts")
+        tr("<a href=\"https://wordpress.org/documentation/article/keyboard-shortcuts-classic-editor/#keyboard-shortcuts-for-comments\">Documentation on Keyboard Shortcuts</a>")
     ));
     h.push_str(&format!(
         "\t\t\t\t\t<tr class=\"show-admin-bar user-admin-bar-front-wrap\">\n\t\t\t\t\t\t<th scope=\"row\">{}</th>\n\t\t\t\t\t\t<td>\n\t\t\t\t\t\t\t<label for=\"admin_bar_front\">\n\t\t\t\t\t\t\t\t<input name=\"admin_bar_front\" type=\"checkbox\" id=\"admin_bar_front\" value=\"1\"{} />\n\t\t\t\t\t\t\t\t{}\t\t\t\t\t\t\t</label><br />\n\t\t\t\t\t\t</td>\n\t\t\t\t\t</tr>\n\n",
@@ -387,7 +387,7 @@ async fn form_on(ctx: &Ctx<'_>, user: &User, own: bool, errors: &[String], file:
         "\t\t\t\t\t\t\t\t\t\t\t<tr class=\"user-profile-picture\">\n\t\t\t\t\t\t\t<th>{}</th>\n\t\t\t\t\t\t\t<td>\n\t\t\t\t\t\t\t\t{}\t\t\t\t\t\t\t\t<p class=\"description\">\n\t\t\t\t\t\t\t\t\t{}\t\t\t\t\t\t\t\t</p>\n\t\t\t\t\t\t\t</td>\n\t\t\t\t\t\t</tr>\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t</table>\n\n",
         tr("Profile Picture"),
         avatar(ctx, &user.user_email, 96),
-        if own { tr("<a href=\"https://gravatar.com/\">You can change your profile picture on Gravatar</a>.") } else { String::new() }
+        if own { rustpress_core::i18n::sprintf(&tr("<a href=\"%s\">You can change your profile picture on Gravatar</a>."), &[&tr("https://gravatar.com/")]) } else { String::new() }
     ));
 
     // Account management

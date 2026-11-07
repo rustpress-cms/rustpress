@@ -808,7 +808,7 @@ async fn media_item(ctx: &Ctx<'_>, page: &Request, post: &Post, tab: Option<&str
     {
         let featured = db.post_meta(calling).await.unwrap_or_default().into_iter().find(|m| m.meta_key.as_deref() == Some("_thumbnail_id")).and_then(|m| m.meta_value).map_or(0, |v| php_int(&v));
         if featured != id as i64 {
-            let label = site.types.admin_post_types().into_iter().find(|t| t.name == calling_post.post_type).and_then(|t| t.label("use_featured_image")).unwrap_or_else(|| tr("Use as featured image"));
+            let label = site.types.admin_post_types().into_iter().find(|t| t.name == calling_post.post_type).and_then(|t| t.label("use_featured_image")).unwrap_or_else(|| ctx.site().trx("Use as featured image", "post"));
             thumbnail = format!("<a class='wp-post-thumbnail' id='wp-post-thumbnail-{id}' href='#' onclick='WPSetAsThumbnail(\"{id}\", \"{}\");return false;'>{}</a>", ctx.create_nonce(&format!("set_post_thumbnail-{calling}")), esc_html(&label));
         }
     }

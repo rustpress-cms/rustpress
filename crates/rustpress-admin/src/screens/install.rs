@@ -41,7 +41,7 @@ pub async fn plugin_install(ctx: &Ctx<'_>) -> AdminResponse {
         let a = content.find("<div class=\"upload-plugin\">").unwrap_or(0);
         let b = content.find("\t\n\t<span class=\"spinner\"></span>").unwrap_or(content.len());
         let upload = content[a..b].trim_end().to_owned();
-        let tabs = [("featured", tr("Featured")), ("popular", tr("Popular")), ("recommended", tr("Recommended")), ("favorites", tr("Favorites"))];
+        let tabs = [("featured", ctx.site().trx("Featured", "Plugin Installer")), ("popular", ctx.site().trx("Popular", "Plugin Installer")), ("recommended", ctx.site().trx("Recommended", "Plugin Installer")), ("favorites", ctx.site().trx("Favorites", "Plugin Installer"))];
         let links: String = tabs
             .iter()
             .map(|(name, label)| format!("\t<li class='plugin-install-{name}'><a href=\"{}\"{}>{label}</a>{}</li>\n", ctx.admin_url(&format!("plugin-install.php?tab={name}")), if *name == tab { " class=\"current\" aria-current=\"page\"" } else { "" }, if *name == "favorites" { "" } else { " " }))
