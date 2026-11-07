@@ -72,12 +72,16 @@ pub struct Hooks {
 /// Translates a message id, with the context of `_x()` when there is one.
 pub type Translator<'a> = &'a dyn Fn(&str, Option<&str>) -> String;
 
+/// `_n( $single, $plural, $number )`.
+pub type PluralTranslator<'a> = &'a dyn Fn(&str, &str, i64) -> String;
+
 pub struct Parser<'a> {
     text: &'a str,
     pub at: usize,
     pub vars: &'a Vars,
     hooks: Option<&'a Hooks>,
     translator: Option<Translator<'a>>,
+    plural: Option<PluralTranslator<'a>>,
     /// Inside the middle part of `? :`, where a `:` ends the expression.
     colon_stops: u32,
 }
@@ -87,12 +91,18 @@ const TRANSLATION: [&str; 7] = ["__", "_x", "esc_html__", "esc_attr__", "esc_htm
 
 impl<'a> Parser<'a> {
     pub fn new(text: &'a str, at: usize, vars: &'a Vars) -> Self {
-        Self { text, at, vars, hooks: None, translator: None, colon_stops: 0 }
+        Self { text, at, vars, hooks: None, translator: None, plural: None, colon_stops: 0 }
     }
 
     /// A parser whose translation calls return the translation instead of the message id.
     pub fn with_translator(mut self, translator: Translator<'a>) -> Self {
         self.translator = Some(translator);
+        self
+    }
+
+    /// A parser whose `_n()` calls return the translation of the form for their number.
+    pub fn with_plural_translator(mut self, translator: PluralTranslator<'a>) -> Self {
+        self.plural = Some(translator);
         self
     }
 
@@ -318,6 +328,16 @@ impl<'a> Parser<'a> {
                 return self.array_items(')');
             }
             _ => {}
+        }
+        if is_call && word == "_n" {
+            self.at += 1;
+            let args = self.call_args();
+            let (Some(single), Some(plural), Some(Lit::Int(number))) = (args.first().and_then(Lit::as_str), args.get(1).and_then(Lit::as_str), args.get(2)) else { return Lit::Unknown };
+            return Lit::Str(match self.plural {
+                Some(translate) => translate(single, plural, *number),
+                None if *number == 1 => single.to_owned(),
+                None => plural.to_owned(),
+            });
         }
         if is_call && TRANSLATION.contains(&word) {
             self.at += 1;

@@ -24,6 +24,7 @@ mod ajax_privacy;
 pub mod ajax_terms;
 mod bare_pages;
 mod custom_header;
+mod customize;
 mod file_editor;
 mod privacy_requests;
 mod site_health_info;
@@ -469,7 +470,15 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse
         "widgets.php" => die(env, 500, "WordPress &rsaquo; Error", &ctx.tr("The theme you are currently using is not widget-aware, meaning that it has no sidebars that you are able to change. For information on making your theme widget-aware, please <a href=\"https://developer.wordpress.org/themes/functionality/widgets/\">follow these instructions</a>.")),
         "link-manager.php" | "link-add.php" | "link.php" if !(ctx.user.can_manage_links_if_enabled() && ctx.can("install_plugins")) => die(env, 500, "WordPress &rsaquo; Error", &ctx.tr("Sorry, you are not allowed to edit the links for this site.")),
         "network.php" if !ctx.can("setup_network") => die_message(env, 500, &ctx.tr("Sorry, you are not allowed to manage options for this site.")),
-        "customize.php" if !ctx.can("edit_theme_options") => higher_permission(&ctx, "Sorry, you are not allowed to customize this site.", 403),
+        // `WP_Customize_Manager::setup_theme()` dies before the translations are loaded.
+        "customize.php" if !ctx.can("edit_theme_options") => AdminResponse {
+            status: 403,
+            headers: page_headers(),
+            cookies: Vec::new(),
+            body: crate::die::page_before_translations(env.site, "WordPress &rsaquo; Error", "<h1>You need a higher level of permission.</h1><p>Sorry, you are not allowed to customize this site.</p>"),
+            bytes: Vec::new(),
+        },
+        "customize.php" => customize::page(&ctx).await,
         "press-this.php" if !ctx.can("edit_posts") => die(env, 403, &ctx.tr("You need a higher level of permission."), &ctx.tr("Sorry, you are not allowed to create posts as this user.")),
         "press-this.php" if !ctx.can("activate_plugins") => die(env, 200, &ctx.tr("Installation Required"), &ctx.tr("Press This is not available. Please contact your site administrator.")),
         "link-manager.php" | "link-add.php" | "link.php" => {

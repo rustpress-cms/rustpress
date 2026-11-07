@@ -27,6 +27,7 @@ mod users;
 mod view_config;
 mod widget_classes;
 mod widgets;
+pub use widgets::WIDGET_TYPES;
 mod batch;
 
 use std::path::PathBuf;

@@ -395,6 +395,8 @@ pub struct Assets {
     pub editor_modules: bool,
     /// The site editor enqueues the router before the math module.
     pub route_first: bool,
+    /// The command palette was enqueued before the editor: the router, which it needs, leads the import map.
+    pub route_at_start: bool,
     /// The post editor prints no emoji detection script.
     pub no_emoji: bool,
     /// The update screens print neither the heartbeat nor the session check (`wp_auth_check_load()`).
@@ -442,7 +444,36 @@ pub struct Assets {
     pub plugin_print_styles: String,
     /// What the plugins print on `admin_head-{$hook_suffix}` and `admin_head`: after the scripts of the head.
     pub plugin_admin_head: String,
+    /// The page is `wp-admin/customize.php`, a document of its own.
+    pub customize: Option<Box<CustomizeParts>>,
 }
+
+/// What `wp-admin/customize.php` prints of its own; the scripts and styles come from the [`Assets`] around it.
+#[derive(Debug, Clone, Default)]
+pub struct CustomizeParts {
+    /// The text of `<title>`, escaped.
+    pub title: String,
+    pub body_class: String,
+    /// From `<div class="wp-full-overlay expanded">` to the frame of the preview and the indentation after it.
+    pub body: String,
+    /// The templates of the panels, sections and controls (`customize_controls_print_footer_scripts` at priority 1).
+    pub templates: String,
+    /// What the footer prints after the templates, up to `customize_pane_settings()`. Without [`Self::admin_hooks`]
+    /// it holds [`CUSTOMIZE_FOOTER_SCRIPTS`] where `_wp_footer_scripts()` prints.
+    pub footer: String,
+    /// The widgets fire the actions of the administration (`admin_print_styles`, `admin_print_scripts`,
+    /// `admin_print_footer_scripts`): the head gets their styles, and the footer scripts, the script modules and the
+    /// emoji come right after the templates.
+    pub admin_hooks: bool,
+}
+
+/// Where `_wp_footer_scripts()` prints in [`CustomizeParts::footer`] when no widget fired `admin_print_footer_scripts`.
+pub const CUSTOMIZE_FOOTER_SCRIPTS: &str = "\u{0}footer-scripts\u{0}";
+
+/// The places in [`Assets::scripts`] of the Customizer where the scripts the plugins enqueue on `admin_enqueue_scripts`
+/// go, and where those of their `enqueue_block_editor_assets` go.
+pub const CUSTOMIZE_PLUGIN_SCRIPTS: &str = "@plugins";
+pub const CUSTOMIZE_EDITOR_PLUGIN_SCRIPTS: &str = "@editor-plugins";
 
 /// A page that `@wordpress/boot` renders, with the routes `wp-includes/build/routes/registry.php` lists for it.
 #[derive(Debug, Clone, Default)]
@@ -582,19 +613,30 @@ fn module_version(includes: &std::path::Path, path: &str) -> String {
     asset.split("'version' => '").nth(1).and_then(|rest| rest.split('\'').next()).unwrap_or_default().to_owned()
 }
 
+/// Where the router of the block editor comes in the import map: the module order follows the scripts that need them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RoutePlace {
+    /// Before the math module (the site editor).
+    BeforeMath,
+    /// Last.
+    End,
+    /// First: the command palette was enqueued before the editor (the Customizer).
+    Start,
+}
+
 /// `WP_Script_Modules::print_import_map()` and `print_enqueued_script_modules()`.
-fn script_modules(env: &ChromeEnv<'_>, editor: bool, route_first: bool, boot: Option<&Boot>) -> String {
+fn script_modules(env: &ChromeEnv<'_>, editor: bool, route: RoutePlace, boot: Option<&Boot>) -> String {
     let root = env.loader.site_url.trim_end_matches('/').to_owned();
     let includes = &env.loader.includes;
     let url = |path: &str| format!("{root}/wp-includes/js/dist/script-modules/{path}.min.js?ver={}", module_version(includes, path));
     let mut imports = vec![("@wordpress/video-conversion/worker".to_owned(), url("video-conversion/worker")), ("@wordpress/vips/worker".to_owned(), url("vips/worker"))];
     if editor {
         imports.push(("@wordpress/latex-to-mathml".to_owned(), url("latex-to-mathml/index")));
-        let route = ("@wordpress/route".to_owned(), url("route/index"));
-        if route_first {
-            imports.insert(imports.len() - 1, route);
-        } else {
-            imports.push(route);
+        let entry = ("@wordpress/route".to_owned(), url("route/index"));
+        match route {
+            RoutePlace::BeforeMath => imports.insert(imports.len() - 1, entry),
+            RoutePlace::End => imports.push(entry),
+            RoutePlace::Start => imports.insert(0, entry),
         }
     }
     // The modules of a boot page: the router first, the routes after the boot module, then what boot depends on.
@@ -707,7 +749,7 @@ fn frame_page(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
     if !assets.no_auth_check {
         out.push_str(&auth_check_html(env, assets));
     }
-    out.push_str(&script_modules(env, assets.editor_modules, assets.route_first, assets.boot.as_ref()));
+    out.push_str(&script_modules(env, assets.editor_modules, if assets.route_first { RoutePlace::BeforeMath } else { RoutePlace::End }, assets.boot.as_ref()));
     out.push_str(page.footer_styles);
     out.push_str(page.footer_scripts);
     out.push_str(&emoji_scripts(env, assets.no_emoji));
@@ -715,7 +757,186 @@ fn frame_page(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
     out
 }
 
+/// `wp-admin/customize.php`: `$wp_scripts` starts empty there, so only what the Customizer enqueues is printed, in the order
+/// [`Assets::scripts`] gives; the stylesheets keep what was enqueued before.
+fn customize_document(env: &ChromeEnv<'_>, assets: &Assets, parts: &CustomizeParts) -> String {
+    let site = env.site;
+    let loader = env.loader.in_language_of(env.site);
+    let mut styles = default_styles(&loader);
+    for (handle, code) in &assets.inline_styles {
+        if !styles.is_registered(handle) {
+            styles.add(handle, None, &[], crate::deps::Ver::None, None);
+        }
+        styles.add_inline_style(handle, code);
+    }
+    if assets.classic_editor_styles {
+        styles.deps.add_dep("wp-edit-blocks", "wp-editor-classic-layout-styles");
+    }
+    for handle in assets.styles.iter().chain(&assets.plugin_core_styles) {
+        styles.enqueue(handle);
+    }
+    let mut admin_styles = styles.print_admin_styles(true);
+    // `colors` follows the concatenated stylesheets; the inline styles of `admin_enqueue_scripts`, the plugins' and the
+    // emoji styles come before those of the block editor, the theme's after the custom properties.
+    let colors = format!("<link rel='stylesheet' id='colors-css' href='{}/wp-admin/css/colors/modern/colors.min.css?ver={}' media='all' />\n", env.loader.site_url, env.loader.version);
+    let head_styles = match env.head_styles.split_once("<style id=\"wp-emoji-styles-inline-css\">") {
+        Some((before, after)) if !assets.plugin_styles.is_empty() => format!("{before}{}<style id=\"wp-emoji-styles-inline-css\">{after}", assets.plugin_styles),
+        _ => env.head_styles.clone(),
+    };
+    let first_line = admin_styles.find('\n').map_or(0, |at| at + 1);
+    admin_styles.insert_str(first_line, &colors);
+    let editor_marker = "<style id=\"global-styles-css-custom-properties-inline-css\">";
+    let head_styles = if parts.admin_hooks { head_styles } else { String::new() };
+    match admin_styles.find(editor_marker) {
+        Some(at) => {
+            let end = admin_styles[at..].find("</style>\n").map_or(admin_styles.len(), |end| at + end + "</style>\n".len());
+            admin_styles.insert_str(end, &assets.theme_styles);
+            admin_styles.insert_str(at, &head_styles);
+        }
+        None => {
+            admin_styles.push_str(&head_styles);
+            admin_styles.push_str(&assets.theme_styles);
+        }
+    }
+
+    let mut scripts = default_scripts(&loader);
+    if let Some(crate::deps::Extra::Text(data)) = scripts.deps.get_data("wp-api-request", "data").cloned()
+        && !assets.rest_root.is_empty()
+    {
+        let root = serde_json::to_string(&assets.rest_root).unwrap_or_default();
+        let data = data.replace(&serde_json::to_string(&format!("{}/wp-json/", env.loader.site_url)).unwrap_or_default(), &root);
+        scripts.deps.set_data("wp-api-request", "data", crate::deps::Extra::Text(data));
+    }
+    if assets.scripts.iter().any(|h| h == "wp-block-styles") {
+        scripts.add("wp-block-styles", None, &["wp-blocks"], crate::deps::Ver::Default, Some(crate::deps::Arg::Int(1)));
+    }
+    scripts.relocalize(
+        "utils",
+        "userSettings",
+        &serde_json::json!({"url": env.cookie_path, "uid": env.user.id, "time": env.now, "secure": if env.secure { "1" } else { "" }}),
+    );
+    // `wp_heartbeat_settings()` with `WP_Customize_Manager::add_customize_screen_to_heartbeat_settings()`.
+    let mut heartbeat = serde_json::Map::new();
+    if let Some(nonce) = env.loader.nonce.as_ref() {
+        heartbeat.insert("nonce".into(), serde_json::Value::String(nonce("heartbeat-nonce")));
+    }
+    heartbeat.insert("screenId".into(), serde_json::Value::String("customize".into()));
+    scripts.relocalize("heartbeat", "heartbeatSettings", &serde_json::Value::Object(heartbeat));
+    for script in assets.plugin_page_scripts.iter().chain(&assets.plugin_scripts) {
+        if script.src.is_empty() {
+            continue;
+        }
+        let deps: Vec<&str> = script.deps.iter().map(String::as_str).collect();
+        let ver = script.ver.clone().map_or(crate::deps::Ver::None, crate::deps::Ver::Value);
+        scripts.add(&script.handle, Some(&script.src), &deps, ver, script.in_footer.then_some(crate::deps::Arg::Int(1)));
+        if let Some(extra) = &script.extra {
+            scripts.append_data(&script.handle, extra);
+        }
+        for code in &script.before {
+            scripts.add_inline_script(&script.handle, code, "before");
+        }
+        for code in &script.after {
+            scripts.add_inline_script(&script.handle, code, "after");
+        }
+    }
+    for (handle, object, data) in &assets.localize {
+        scripts.localize_over(handle, object, data);
+    }
+    for (handle, code) in &assets.raw_data {
+        scripts.append_data(handle, code);
+    }
+    for (handle, code, position) in &assets.inline {
+        scripts.add_inline_script(handle, code, position);
+    }
+    if assets.scripts.iter().any(|h| h == "wp-core-commands") {
+        scripts.add_inline_script("wp-core-commands", &command_palette_call(env), "after");
+    }
+    for handle in &assets.scripts {
+        // Where the plugins enqueue: on `admin_enqueue_scripts` and on `enqueue_block_editor_assets`.
+        let plugins = match handle.as_str() {
+            CUSTOMIZE_PLUGIN_SCRIPTS => Some(&assets.plugin_scripts),
+            CUSTOMIZE_EDITOR_PLUGIN_SCRIPTS => Some(&assets.plugin_page_scripts),
+            _ => None,
+        };
+        match plugins {
+            Some(list) => {
+                for script in list.iter().filter(|s| !s.registered_only) {
+                    scripts.enqueue(&script.handle);
+                }
+            }
+            None => scripts.enqueue(handle),
+        }
+    }
+    script_translations(env, &mut scripts);
+    let head_scripts = scripts.print_head_scripts(true);
+    for handle in &assets.post_header_styles {
+        styles.enqueue(handle);
+    }
+    let footer_styles = styles.print_admin_styles(true);
+    for handle in &assets.post_header_scripts {
+        scripts.enqueue(handle);
+    }
+    let footer_scripts = scripts.print_footer_scripts(true);
+
+    let rtl = site.is_rtl();
+    let language = if rtl { format!("dir=\"rtl\" lang=\"{}\"", esc_attr(&site.language_tag())) } else { format!("lang=\"{}\"", esc_attr(&site.language_tag())) };
+    let ajax = esc_url(&site.site_url("wp-admin/admin-ajax.php"));
+    let ajax_path = ajax.strip_prefix(&env.loader.site_url).unwrap_or(&ajax).to_owned();
+    let mut out = format!(
+        "<!DOCTYPE html>\n<html class=\"\"\n\t{language}>\n<head>\n<meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\" />\n\t<title>{}</title>\n\n<script>\nvar ajaxurl = {},\n\tpagenow = 'customize';\n</script>\n\n",
+        parts.title,
+        rustpress_blocks::php_json::encode_with(&serde_json::Value::from(ajax_path), rustpress_blocks::php_json::Flags { unescaped_slashes: true, unescaped_unicode: false })
+    );
+    // `admin_print_styles` of the plugins, which only the widgets fire; `customize.php` has no `admin_head`.
+    if parts.admin_hooks {
+        out.push_str(&assets.plugin_print_styles);
+    }
+    out.push_str(&admin_styles);
+    out.push_str(&assets.head_early);
+    // `wp_site_icon()` in the Customizer: the default icon, so that the preview can replace it.
+    if assets.site_icon.is_empty() {
+        out.push_str("<link rel=\"icon\" href=\"/favicon.ico\" sizes=\"32x32\" />\n");
+    } else {
+        out.push_str(&assets.site_icon);
+    }
+    out.push_str(&head_scripts);
+    out.push_str("<meta name=\"viewport\" content=\"width=device-width,initial-scale=1.0\"></head>\n");
+    out.push_str(&format!("<body class=\"{}\">\n", esc_attr(&parts.body_class)));
+    out.push_str(&parts.body);
+    out.push_str(&parts.templates);
+    if parts.admin_hooks {
+        out.push_str(&script_modules(env, assets.editor_modules, if assets.route_at_start { RoutePlace::Start } else if assets.route_first { RoutePlace::BeforeMath } else { RoutePlace::End }, None));
+        out.push_str(&footer_styles);
+        out.push_str(&footer_scripts);
+        out.push_str(&emoji_scripts(env, assets.no_emoji));
+        out.push_str(&parts.footer);
+    } else {
+        out.push_str(&parts.footer.replace(CUSTOMIZE_FOOTER_SCRIPTS, &format!("{footer_styles}{footer_scripts}")));
+    }
+    out.push_str("</div>\n</body>\n</html>\n");
+    out
+}
+
+/// `load_script_textdomain()` for the scripts of WordPress.
+fn script_translations(env: &ChromeEnv<'_>, scripts: &mut crate::scripts::Scripts) {
+    if env.site.locale() != "en_US" {
+        let languages = env.loader.includes.parent().unwrap_or(&env.loader.includes).join("wp-content").join("languages");
+        let locale = env.site.locale();
+        let sources: std::collections::HashMap<String, String> = scripts.deps.registered().iter().filter_map(|dep| Some((dep.handle.clone(), dep.src.clone()?))).collect();
+        scripts.set_translation_loader(Box::new(move |handle, domain, _path| {
+            let relative = sources.get(handle)?.strip_prefix('/')?;
+            // The files are named after the script that is not minified.
+            let relative = relative.strip_suffix(".min.js").map_or_else(|| relative.to_owned(), |base| format!("{base}.js"));
+            let base = if domain == "default" { locale.clone() } else { format!("{domain}-{locale}") };
+            rustpress_core::files::read(&languages.join(format!("{base}-{:x}.json", md5::compute(relative.as_bytes())))).map(|text| text.to_string())
+        }));
+    }
+}
+
 pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Assets) -> String {
+    if let Some(parts) = &assets.customize {
+        return customize_document(env, assets, parts);
+    }
     let site = env.site;
     let tr = |s: &str| site.tr(s);
     let version = env.loader.version.clone();
@@ -911,19 +1132,7 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
     for handle in &assets.late_scripts {
         scripts.enqueue(handle);
     }
-    // `load_script_textdomain()` for the scripts of WordPress.
-    if env.site.locale() != "en_US" {
-        let languages = env.loader.includes.parent().unwrap_or(&env.loader.includes).join("wp-content").join("languages");
-        let locale = env.site.locale();
-        let sources: std::collections::HashMap<String, String> = scripts.deps.registered().iter().filter_map(|dep| Some((dep.handle.clone(), dep.src.clone()?))).collect();
-        scripts.set_translation_loader(Box::new(move |handle, domain, _path| {
-            let relative = sources.get(handle)?.strip_prefix('/')?;
-            // The files are named after the script that is not minified.
-            let relative = relative.strip_suffix(".min.js").map_or_else(|| relative.to_owned(), |base| format!("{base}.js"));
-            let base = if domain == "default" { locale.clone() } else { format!("{domain}-{locale}") };
-            rustpress_core::files::read(&languages.join(format!("{base}-{:x}.json", md5::compute(relative.as_bytes())))).map(|text| text.to_string())
-        }));
-    }
+    script_translations(env, &mut scripts);
     let head_scripts = scripts.print_head_scripts(true);
     // What the page enqueues after the head is printed comes with the footer.
     for handle in &assets.post_header_styles {
@@ -1096,7 +1305,7 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
     if !assets.no_auth_check {
         out.push_str(&auth_check_html(env, assets));
     }
-    let modules = script_modules(env, assets.editor_modules, assets.route_first, assets.boot.as_ref());
+    let modules = script_modules(env, assets.editor_modules, if assets.route_first { RoutePlace::BeforeMath } else { RoutePlace::End }, assets.boot.as_ref());
     // `print_a11y_script_module_html()`: the live regions, when `@wordpress/a11y` is in the import map.
     let a11y = modules.contains("\"@wordpress/a11y\":");
     out.push_str(&modules);

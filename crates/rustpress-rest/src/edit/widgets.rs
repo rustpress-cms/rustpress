@@ -15,7 +15,7 @@ use crate::util::Links;
 use crate::{Outcome, Resp, Rest, Result};
 
 /// The core widgets in the order `wp_widgets_init()` registers them: id base, name, description, class name.
-pub(crate) const WIDGET_TYPES: [(&str, &str, &str, &str); 18] = [
+pub const WIDGET_TYPES: [(&str, &str, &str, &str); 18] = [
     ("pages", "Pages", "A list of your site&#8217;s Pages.", "widget_pages"),
     ("calendar", "Calendar", "A calendar of your site’s posts.", "widget_calendar"),
     ("archives", "Archives", "A monthly archive of your site&#8217;s Posts.", "widget_archive"),

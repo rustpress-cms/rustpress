@@ -20,6 +20,8 @@ pub struct Support {
     pub default_text_color: String,
     pub random_default: bool,
     pub max_width: u64,
+    /// `video`: the header can show a video, and the Customizer calls it header media.
+    pub video: bool,
 }
 
 /// `add_theme_support( 'custom-header', ... )` of the theme; `template_uri` is `get_template_directory_uri()`.
@@ -37,6 +39,7 @@ pub fn support(template: &str, template_uri: &str) -> Option<Support> {
             default_text_color: String::new(),
             random_default: false,
             max_width: 0,
+            video: true,
         }),
         _ => None,
     }

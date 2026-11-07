@@ -1632,6 +1632,7 @@ dependencies = [
 name = "rustpress-admin"
 version = "0.2.0"
 dependencies = [
+ "base64 0.22.1",
  "chrono",
  "chrono-tz",
  "futures",

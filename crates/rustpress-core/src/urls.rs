@@ -505,7 +505,15 @@ fn rebuild_query(url: &str, key: &str, value: Option<&str>) -> String {
         (None, Some(v)) => pairs.push((key.to_owned(), v.to_owned())),
         (None, None) => {}
     }
-    let query = pairs.iter().map(|(k, v)| if v.is_empty() { k.clone() } else { format!("{k}={v}") }).collect::<Vec<_>>().join("&");
+    // `build_query()` writes the keys of a nested argument with encoded brackets.
+    let query = pairs
+        .iter()
+        .map(|(k, v)| {
+            let k = k.replace('[', "%5B").replace(']', "%5D");
+            if v.is_empty() { k } else { format!("{k}={v}") }
+        })
+        .collect::<Vec<_>>()
+        .join("&");
     let mut out = if query.is_empty() { path.to_owned() } else { format!("{path}?{query}") };
     if let Some(f) = fragment {
         out.push('#');
@@ -566,6 +574,8 @@ mod tests {
         assert_eq!(add_query_arg("http://a/?p=1", "p", "2"), "http://a/?p=2");
         assert_eq!(add_query_arg("http://a/", "p", "2"), "http://a/?p=2");
         assert_eq!(add_query_arg("http://a/#top", "p", "2"), "http://a/?p=2#top");
+        // The brackets of a nested argument come back encoded.
+        assert_eq!(add_query_arg("/a.php?autofocus%5Bsection%5D=x", "b", "1"), "/a.php?autofocus%5Bsection%5D=x&b=1");
         assert_eq!(remove_query_arg("http://a/?paged=2&x=1", "paged"), "http://a/?x=1");
         assert_eq!(remove_query_arg("http://a/?paged=2", "paged"), "http://a/");
         assert_eq!(remove_query_arg("http://a/", "paged"), "http://a/");

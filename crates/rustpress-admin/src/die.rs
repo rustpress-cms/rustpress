@@ -26,10 +26,19 @@ pub fn page_with_back_link(site: &Site, title: &str, message: &str, back_link: &
     page_full(site, title, message, back_link, &robots(site))
 }
 
+/// The page of a `wp_die()` before `load_default_textdomain()`: the texts are English, and the language of the page is
+/// the locale (`html_lang_attribute` has no translation yet).
+pub fn page_before_translations(site: &Site, title: &str, message: &str) -> String {
+    page_lang(site, title, message, "", &robots(site), &site.locale().replace('_', "-"))
+}
+
 fn page_full(site: &Site, title: &str, message: &str, after: &str, robots: &str) -> String {
+    page_lang(site, title, message, after, robots, &site.language_tag())
+}
+
+fn page_lang(site: &Site, title: &str, message: &str, after: &str, robots: &str, lang: &str) -> String {
     let rtl = site.is_rtl();
-    let lang = site.language_tag();
-    let lang_attrs = if rtl { format!("dir=\"rtl\" lang=\"{}\"", esc_attr(&lang)) } else { format!("lang=\"{}\"", esc_attr(&lang)) };
+    let lang_attrs = if rtl { format!("dir=\"rtl\" lang=\"{}\"", esc_attr(lang)) } else { format!("lang=\"{}\"", esc_attr(lang)) };
     format!(
         "<!DOCTYPE html>\n<html {lang_attrs}>\n<head>\n\t<meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\" />\n\t<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n\t\t<meta name='robots' content='{robots}' />\n\t<title>{title}</title>\n\t<style>\n{STYLE}</style>\n</head>\n<body id=\"error-page\">\n\t<div class=\"wp-die-message\">{message}</div>{after}</body>\n</html>\n\t"
     )

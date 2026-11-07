@@ -19,6 +19,9 @@ pub type NonceFn = std::sync::Arc<dyn Fn(&str) -> String + Send + Sync>;
 /// `__()` and `_x()` of the site's language.
 pub type MessageFn = std::sync::Arc<dyn Fn(&str, Option<&str>) -> String + Send + Sync>;
 
+/// `_n()` of the site's language.
+pub type PluralFn = std::sync::Arc<dyn Fn(&str, &str, i64) -> String + Send + Sync>;
+
 /// What the registration code asks the site about.
 #[derive(Clone)]
 pub struct LoaderEnv {
@@ -37,7 +40,7 @@ pub struct LoaderEnv {
     /// `wp_create_nonce()` for the current user; without one nonces are empty.
     pub nonce: Option<NonceFn>,
     /// The texts of the localized scripts, with the locale they are in. Without it they stay in English.
-    pub messages: Option<(String, MessageFn)>,
+    pub messages: Option<(String, MessageFn, PluralFn)>,
 }
 
 impl LoaderEnv {
@@ -48,11 +51,13 @@ impl LoaderEnv {
             return self.clone();
         }
         let i18n = site.i18n();
+        let plural_i18n = i18n.clone();
         let messages: MessageFn = std::sync::Arc::new(move |text, context| match context {
             Some(context) => i18n.pgettext("default", context, text),
             None => i18n.gettext("default", text),
         });
-        Self { messages: Some((locale, messages)), ..self.clone() }
+        let plurals: PluralFn = std::sync::Arc::new(move |single, plural, number| plural_i18n.ngettext("default", single, plural, number));
+        Self { messages: Some((locale, messages, plurals)), ..self.clone() }
     }
 }
 
@@ -196,6 +201,7 @@ fn hooks(env: &LoaderEnv) -> Hooks {
         move |_| Some(Lit::Str(format!("{site}/wp-json/")))
     }));
     h.functions.insert("sanitize_url".into(), Box::new(|args| args.first().cloned()));
+    h.functions.insert("esc_url".into(), Box::new(|args| args.first().and_then(Lit::as_str).map(|url| Lit::Str(rustpress_core::formatting::esc_url(url)))));
     h.functions.insert("content_url".into(), Box::new({
         let content = content.clone();
         move |args| Some(Lit::Str(format!("{content}/{}", args.first().and_then(Lit::as_str).unwrap_or_default().trim_start_matches('/'))))
@@ -259,7 +265,7 @@ fn extra_of(lit: &Lit) -> Option<Extra> {
 fn parser<'a>(body: &'a str, at: usize, vars: &'a Vars, env: &'a LoaderEnv) -> Parser<'a> {
     let reader = Parser::new(body, at, vars);
     match &env.messages {
-        Some((_, messages)) => reader.with_translator(&**messages),
+        Some((_, messages, plurals)) => reader.with_translator(&**messages).with_plural_translator(&**plurals),
         None => reader,
     }
 }
@@ -351,7 +357,7 @@ fn base_vars() -> Vars {
 type RegistryKey = (PathBuf, String, String, String, bool, bool, bool, String);
 
 fn registry_key(env: &LoaderEnv) -> RegistryKey {
-    (env.includes.clone(), env.site_url.clone(), env.content_url.clone(), env.version.clone(), env.rtl, env.separate_block_assets, env.compressed_tinymce, env.messages.as_ref().map_or_else(String::new, |(locale, _)| locale.clone()))
+    (env.includes.clone(), env.site_url.clone(), env.content_url.clone(), env.version.clone(), env.rtl, env.separate_block_assets, env.compressed_tinymce, env.messages.as_ref().map_or_else(String::new, |(locale, ..)| locale.clone()))
 }
 
 const NONCE_MARK: char = '\u{1}';
