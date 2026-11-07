@@ -1,0 +1,334 @@
+				<script type="text/html" id="tmpl-widget-media-media_audio-control">
+			<# var elementIdPrefix = 'el' + String( Math.random() ) + '_' #>
+			<p>
+				<label for="{{ elementIdPrefix }}title">Title:</label>
+				<input id="{{ elementIdPrefix }}title" type="text" class="widefat title">
+			</p>
+			<div class="media-widget-preview media_audio">
+				<div class="attachment-media-view">
+					<button type="button" class="select-media button-add-media not-selected">
+						Add Audio					</button>
+				</div>
+			</div>
+			<p class="media-widget-buttons">
+				<button type="button" class="button edit-media selected">
+					Edit Audio				</button>
+							<button type="button" class="button change-media select-media selected">
+					Replace Audio				</button>
+						</p>
+			<div class="media-widget-fields">
+			</div>
+		</script>
+				<script type="text/html" id="tmpl-wp-media-widget-audio-preview">
+			<# if ( data.error && 'missing_attachment' === data.error ) { #>
+				<div class="notice notice-error notice-alt notice-missing-attachment"><p>That audio file cannot be found. Check your <a href="@ADMIN@upload.php">media library</a> and make sure it was not deleted.</p></div>			<# } else if ( data.error ) { #>
+				<div class="notice notice-error notice-alt"><p>Unable to preview media due to an unknown error.</p></div>			<# } else if ( data.model && data.model.src ) { #>
+				<audio style="visibility: hidden"
+	controls
+	class="wp-audio-shortcode"
+	width="{{ _.isUndefined( data.model.width ) ? 400 : data.model.width }}"
+	preload="{{ _.isUndefined( data.model.preload ) ? 'none' : data.model.preload }}"
+	<#
+		if ( ! _.isUndefined( data.model.autoplay ) && data.model.autoplay ) {
+		#> autoplay<#
+	}
+		if ( ! _.isUndefined( data.model.loop ) && data.model.loop ) {
+		#> loop<#
+	}
+	#>
+>
+	<# if ( ! _.isEmpty( data.model.src ) ) { #>
+	<source src="{{ data.model.src }}" type="{{ wp.media.view.settings.embedMimes[ data.model.src.split('.').pop() ] }}" />
+	<# } #>
+
+		<# if ( ! _.isEmpty( data.model.mp3 ) ) { #>
+	<source src="{{ data.model.mp3 }}" type="{{ wp.media.view.settings.embedMimes[ 'mp3' ] }}" />
+	<# } #>
+			<# if ( ! _.isEmpty( data.model.ogg ) ) { #>
+	<source src="{{ data.model.ogg }}" type="{{ wp.media.view.settings.embedMimes[ 'ogg' ] }}" />
+	<# } #>
+			<# if ( ! _.isEmpty( data.model.flac ) ) { #>
+	<source src="{{ data.model.flac }}" type="{{ wp.media.view.settings.embedMimes[ 'flac' ] }}" />
+	<# } #>
+			<# if ( ! _.isEmpty( data.model.m4a ) ) { #>
+	<source src="{{ data.model.m4a }}" type="{{ wp.media.view.settings.embedMimes[ 'm4a' ] }}" />
+	<# } #>
+			<# if ( ! _.isEmpty( data.model.wav ) ) { #>
+	<source src="{{ data.model.wav }}" type="{{ wp.media.view.settings.embedMimes[ 'wav' ] }}" />
+	<# } #>
+		</audio>
+				<# } #>
+		</script>
+				<script type="text/html" id="tmpl-widget-media-media_image-control">
+			<# var elementIdPrefix = 'el' + String( Math.random() ) + '_' #>
+			<p>
+				<label for="{{ elementIdPrefix }}title">Title:</label>
+				<input id="{{ elementIdPrefix }}title" type="text" class="widefat title">
+			</p>
+			<div class="media-widget-preview media_image">
+				<div class="attachment-media-view">
+					<button type="button" class="select-media button-add-media not-selected">
+						Add Image					</button>
+				</div>
+			</div>
+			<p class="media-widget-buttons">
+				<button type="button" class="button edit-media selected">
+					Edit Image				</button>
+							<button type="button" class="button change-media select-media selected">
+					Replace Image				</button>
+						</p>
+			<div class="media-widget-fields">
+			</div>
+		</script>
+				<script type="text/html" id="tmpl-wp-media-widget-image-fields">
+			<# var elementIdPrefix = 'el' + String( Math.random() ) + '_'; #>
+			<# if ( data.url ) { #>
+			<p class="media-widget-image-link">
+				<label for="{{ elementIdPrefix }}linkUrl">Link to:</label>
+				<input id="{{ elementIdPrefix }}linkUrl" type="text" class="widefat link" value="{{ data.link_url }}" placeholder="https://" pattern="((\w+:)?\/\/\w.*|\w+:(?!\/\/$)|\/|\?|#).*">
+			</p>
+			<# } #>
+		</script>
+		<script type="text/html" id="tmpl-wp-media-widget-image-preview">
+			<# if ( data.error && 'missing_attachment' === data.error ) { #>
+				<div class="notice notice-error notice-alt notice-missing-attachment"><p>That image cannot be found. Check your <a href="@ADMIN@upload.php">media library</a> and make sure it was not deleted.</p></div>			<# } else if ( data.error ) { #>
+				<div class="notice notice-error notice-alt"><p>Unable to preview media due to an unknown error.</p></div>			<# } else if ( data.url ) { #>
+				<img class="attachment-thumb" src="{{ data.url }}" draggable="false" alt="{{ data.alt }}"
+					<# if ( ! data.alt && data.currentFilename ) { #>
+						aria-label="
+						The current image has no alternative text. The file name is: {{ data.currentFilename }}						"
+					<# } #>
+				/>
+			<# } #>
+		</script>
+				<script type="text/html" id="tmpl-widget-media-media_gallery-control">
+			<# var elementIdPrefix = 'el' + String( Math.random() ) + '_' #>
+			<p>
+				<label for="{{ elementIdPrefix }}title">Title:</label>
+				<input id="{{ elementIdPrefix }}title" type="text" class="widefat title">
+			</p>
+			<div class="media-widget-preview media_gallery">
+				<div class="attachment-media-view">
+					<button type="button" class="select-media button-add-media not-selected">
+						Add Images					</button>
+				</div>
+			</div>
+			<p class="media-widget-buttons">
+				<button type="button" class="button edit-media selected">
+					Edit Gallery				</button>
+						</p>
+			<div class="media-widget-fields">
+			</div>
+		</script>
+				<script type="text/html" id="tmpl-wp-media-widget-gallery-preview">
+			<#
+			var ids = _.filter( data.ids, function( id ) {
+				return ( id in data.attachments );
+			} );
+			#>
+			<# if ( ids.length ) { #>
+				<ul class="gallery media-widget-gallery-preview" role="list">
+					<# _.each( ids, function( id, index ) { #>
+						<# var attachment = data.attachments[ id ]; #>
+						<# if ( index < 6 ) { #>
+							<li class="gallery-item">
+								<div class="gallery-icon">
+									<img alt="{{ attachment.alt }}"
+										<# if ( index === 5 && data.ids.length > 6 ) { #> aria-hidden="true" <# } #>
+										<# if ( attachment.sizes.thumbnail ) { #>
+											src="{{ attachment.sizes.thumbnail.url }}" width="{{ attachment.sizes.thumbnail.width }}" height="{{ attachment.sizes.thumbnail.height }}"
+										<# } else { #>
+											src="{{ attachment.url }}"
+										<# } #>
+										<# if ( ! attachment.alt && attachment.filename ) { #>
+											aria-label="
+											The current image has no alternative text. The file name is: {{ attachment.filename }}											"
+										<# } #>
+									/>
+									<# if ( index === 5 && data.ids.length > 6 ) { #>
+									<div class="gallery-icon-placeholder">
+										<p class="gallery-icon-placeholder-text" aria-label="
+										Additional images added to this gallery: {{ data.ids.length - 5 }}										">+{{ data.ids.length - 5 }}</p>
+									</div>
+									<# } #>
+								</div>
+							</li>
+						<# } #>
+					<# } ); #>
+				</ul>
+			<# } else { #>
+				<div class="attachment-media-view">
+					<button type="button" class="placeholder button-add-media">Add Images</button>
+				</div>
+			<# } #>
+		</script>
+				<script type="text/html" id="tmpl-widget-media-media_video-control">
+			<# var elementIdPrefix = 'el' + String( Math.random() ) + '_' #>
+			<p>
+				<label for="{{ elementIdPrefix }}title">Title:</label>
+				<input id="{{ elementIdPrefix }}title" type="text" class="widefat title">
+			</p>
+			<div class="media-widget-preview media_video">
+				<div class="attachment-media-view">
+					<button type="button" class="select-media button-add-media not-selected">
+						Add Video					</button>
+				</div>
+			</div>
+			<p class="media-widget-buttons">
+				<button type="button" class="button edit-media selected">
+					Edit Video				</button>
+							<button type="button" class="button change-media select-media selected">
+					Replace Video				</button>
+						</p>
+			<div class="media-widget-fields">
+			</div>
+		</script>
+				<script type="text/html" id="tmpl-wp-media-widget-video-preview">
+			<# if ( data.error && 'missing_attachment' === data.error ) { #>
+				<div class="notice notice-error notice-alt notice-missing-attachment"><p>That video cannot be found. Check your <a href="@ADMIN@upload.php">media library</a> and make sure it was not deleted.</p></div>			<# } else if ( data.error && 'unsupported_file_type' === data.error ) { #>
+				<div class="notice notice-error notice-alt notice-missing-attachment"><p>Sorry, the video at the supplied URL cannot be loaded. Please check that the URL is for a supported video file (<code>.mp4</code>, <code>.m4v</code>, <code>.webm</code>, <code>.ogv</code>, <code>.flv</code>) or stream (e.g. YouTube and Vimeo).</p></div>			<# } else if ( data.error ) { #>
+				<div class="notice notice-error notice-alt"><p>Unable to preview media due to an unknown error.</p></div>			<# } else if ( data.is_oembed && data.model.poster ) { #>
+				<a href="{{ data.model.src }}" target="_blank" class="media-widget-video-link">
+					<img src="{{ data.model.poster }}" />
+				</a>
+			<# } else if ( data.is_oembed ) { #>
+				<a href="{{ data.model.src }}" target="_blank" class="media-widget-video-link no-poster">
+					<span class="dashicons dashicons-format-video"></span>
+				</a>
+			<# } else if ( data.model.src ) { #>
+				<#  var w_rule = '', classes = [],
+		w, h, settings = wp.media.view.settings,
+		isYouTube = isVimeo = false;
+
+	if ( ! _.isEmpty( data.model.src ) ) {
+		isYouTube = data.model.src.match(/youtube|youtu\.be/);
+		isVimeo = -1 !== data.model.src.indexOf('vimeo');
+	}
+
+	if ( settings.contentWidth && data.model.width >= settings.contentWidth ) {
+		w = settings.contentWidth;
+	} else {
+		w = data.model.width;
+	}
+
+	if ( w !== data.model.width ) {
+		h = Math.ceil( ( data.model.height * w ) / data.model.width );
+	} else {
+		h = data.model.height;
+	}
+
+	if ( w ) {
+		w_rule = 'width: ' + w + 'px; ';
+	}
+
+	if ( isYouTube ) {
+		classes.push( 'youtube-video' );
+	}
+
+	if ( isVimeo ) {
+		classes.push( 'vimeo-video' );
+	}
+
+#>
+<div style="{{ w_rule }}" class="wp-video">
+<video controls
+	class="wp-video-shortcode {{ classes.join( ' ' ) }}"
+	<# if ( w ) { #>width="{{ w }}"<# } #>
+	<# if ( h ) { #>height="{{ h }}"<# } #>
+			<#
+		if ( ! _.isUndefined( data.model.poster ) && data.model.poster ) {
+			#> poster="{{ data.model.poster }}"<#
+		} #>
+			preload			="{{ _.isUndefined( data.model.preload ) ? 'metadata' : data.model.preload }}"
+				<#
+		if ( ! _.isUndefined( data.model.autoplay ) && data.model.autoplay ) {
+		#> autoplay<#
+	}
+		if ( ! _.isUndefined( data.model.loop ) && data.model.loop ) {
+		#> loop<#
+	}
+	#>
+>
+	<# if ( ! _.isEmpty( data.model.src ) ) {
+		if ( isYouTube ) { #>
+		<source src="{{ data.model.src }}" type="video/youtube" />
+		<# } else if ( isVimeo ) { #>
+		<source src="{{ data.model.src }}" type="video/vimeo" />
+		<# } else { #>
+		<source src="{{ data.model.src }}" type="{{ settings.embedMimes[ data.model.src.split('.').pop() ] }}" />
+		<# }
+	} #>
+
+		<# if ( data.model.mp4 ) { #>
+	<source src="{{ data.model.mp4 }}" type="{{ settings.embedMimes[ 'mp4' ] }}" />
+	<# } #>
+		<# if ( data.model.m4v ) { #>
+	<source src="{{ data.model.m4v }}" type="{{ settings.embedMimes[ 'm4v' ] }}" />
+	<# } #>
+		<# if ( data.model.webm ) { #>
+	<source src="{{ data.model.webm }}" type="{{ settings.embedMimes[ 'webm' ] }}" />
+	<# } #>
+		<# if ( data.model.ogv ) { #>
+	<source src="{{ data.model.ogv }}" type="{{ settings.embedMimes[ 'ogv' ] }}" />
+	<# } #>
+		<# if ( data.model.flv ) { #>
+	<source src="{{ data.model.flv }}" type="{{ settings.embedMimes[ 'flv' ] }}" />
+	<# } #>
+		{{{ data.model.content }}}
+</video>
+</div>
+				<# } #>
+		</script>
+				<script type="text/html" id="tmpl-widget-text-control-fields">
+			<# var elementIdPrefix = 'el' + String( Math.random() ).replace( /\D/g, '' ) + '_' #>
+			<p>
+				<label for="{{ elementIdPrefix }}title">Title:</label>
+				<input id="{{ elementIdPrefix }}title" type="text" class="widefat title">
+			</p>
+
+							<div hidden class="wp-pointer custom-html-widget-pointer wp-pointer-top">
+					<div class="wp-pointer-content">
+						<h3>New Custom HTML Widget</h3>
+													<p>Did you know there is a &#8220;Custom HTML&#8221; widget now? You can find it by scanning the list of available widgets on this screen. Check it out to add some custom code to your site!</p>
+												<div class="wp-pointer-buttons">
+							<a class="close" href="#">Dismiss</a>
+						</div>
+					</div>
+					<div class="wp-pointer-arrow">
+						<div class="wp-pointer-arrow-inner"></div>
+					</div>
+				</div>
+			
+							<div hidden class="wp-pointer paste-html-pointer wp-pointer-top">
+					<div class="wp-pointer-content">
+						<h3>Did you just paste HTML?</h3>
+						<p>Hey there, looks like you just pasted HTML into the &#8220;Visual&#8221; tab of the Text widget. You may want to paste your code into the &#8220;Code&#8221; tab instead. Alternately, try out the new &#8220;Custom HTML&#8221; widget!</p>
+						<div class="wp-pointer-buttons">
+							<a class="close" href="#">Dismiss</a>
+						</div>
+					</div>
+					<div class="wp-pointer-arrow">
+						<div class="wp-pointer-arrow-inner"></div>
+					</div>
+				</div>
+			
+			<p>
+				<label for="{{ elementIdPrefix }}text" class="screen-reader-text">Content:</label>
+				<textarea id="{{ elementIdPrefix }}text" class="widefat text wp-editor-area" style="height: 200px" rows="16" cols="20"></textarea>
+			</p>
+		</script>
+				<script type="text/html" id="tmpl-widget-custom-html-control-fields">
+			<# var elementIdPrefix = 'el' + String( Math.random() ).replace( /\D/g, '' ) + '_' #>
+			<p>
+				<label for="{{ elementIdPrefix }}title">Title:</label>
+				<input id="{{ elementIdPrefix }}title" type="text" class="widefat title">
+			</p>
+
+			<p>
+				<label for="{{ elementIdPrefix }}content" id="{{ elementIdPrefix }}content-label">Content:</label>
+				<textarea id="{{ elementIdPrefix }}content" class="widefat code content" rows="16" cols="20"></textarea>
+			</p>
+
+			
+			<div class="code-editor-error-container"></div>
+		</script>

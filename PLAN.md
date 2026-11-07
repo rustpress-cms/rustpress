@@ -52,7 +52,7 @@ The reference stack, the tools and the working rules are in [AGENTS.md](AGENTS.m
   shortcodes, embeds/oEmbed, the dynamic blocks including Interactivity, the comment form and submitting comments,
   previews and private content for signed-in users, the admin bar.
 - **REST API** – read and write: posts, pages, media, terms, users, comments and notes, settings, templates and the site
-  editor's routes, widgets (reading), block types, fonts, application passwords, Site Health, abilities, the full index;
+  editor's routes, widgets and `batch/v1`, block types, fonts, application passwords, Site Health, abilities, the full index;
   `OPTIONS` with the schemas. Compared with `dev/rest-sweep.py` and the write compare scripts.
 - **Sign-in and users** – `wp-login.php` complete (sign-in/out, lost password, reset, registration, admin e-mail check,
   `postpass`, interim login), sessions, nonces and capabilities as in WordPress, application passwords, e-mail.
@@ -101,15 +101,18 @@ The reference stack, the tools and the working rules are in [AGENTS.md](AGENTS.m
 - A language per request (the user's language, Polylang/WPML): an `I18nRegistry` from which each request gets its
   translator; all calls already go through `Site::tr`.
 - JavaScript translations of core scripts (Interactivity texts, and in the administration of a translated site the
-  `*-js-translations` of the head, `wpAjax` and the like, seen on the copy of the real site in German; the title of a page
-  there also has `&#8211;` where the frame prints `&#8212;`), hot reload of language packs, variants such as
-  `de_DE_formal`, a command `rustpress i18n install <locale>`.
+  `*-js-translations` of the head, `wpAjax` and the like, seen on the copy of the real site in German), the Underscore
+  templates baked in English (`media_templates.html`, `widgets_templates.html`, so the media modal is English on a German
+  site), hot reload of language packs, variants such as `de_DE_formal`, a command `rustpress i18n install <locale>`.
 
 **Sign-in, administration, REST**
-- `customize.php`. For classic themes: `widgets.php` still answers with the error of a block theme, and
-  `themes.php?page=custom-header` is in the menu without a screen behind it.
-- Widgets: writing widgets and sidebars, the forms of classic widgets, `widget-types/<id>/encode|render`, `rendered`
-  of registered sidebars.
+- `customize.php`. For classic themes: `themes.php?page=custom-header` is in the menu without a screen behind it.
+- Widgets: what the media widgets and the RSS widget print (front and `rendered`; their forms and `update()` are done),
+  the feed check of `wp_widget_rss_process()`, the old format of `wp_convert_widget_settings()`, `alt_option_name`,
+  `wp-compression-test` (the page prints the script while `can_compress_scripts` is not stored, nothing answers it).
+- `generate_image_metadata()` does not make the sizes a theme registers (`twentyseventeen-featured-image`).
+- The preview of a widget (`widget-types/<id>/render`): its head lacks the styles of all blocks, which `wp_head()` prints when
+  no page was rendered before it. `dev/widgets-compare.py` compares it from the `body` on.
 - `parse-media-shortcode` with a preview (the scripts of `wp-mediaelement`/`wp-playlist`).
 - `wp/v2/block-patterns/patterns`: four remote patterns keep a second space before `/>` that the reference does not have
   (cause not looked at; seen in `dev/rest-sweep.py`).
@@ -821,3 +824,46 @@ Compared in `dev/nav-menus-compare.py`: 32 steps on the copy of the real site in
 state, so both have the same IDs: the page from the body on, its headers and all rows of menus, items, locations and user
 meta after each step, with the site's own menu of 14 items. The head of the page is not compared there, see Languages.
 
+### `widgets.php` (2026-11-07)
+
+The block editor of the widget areas of a classic theme, in `rustpress-admin/src/screens/widgets.rs`. A block theme keeps the
+error WordPress gives it. Behind it, in `rustpress-rest/src/edit/`:
+
+- `widgets.rs`: writing widgets and sidebars, `widget-types/<id>/encode` and `render`, `rendered` and `rendered_form`.
+- `widget_classes.rs`: `form()` and `update()` of the 18 core widgets, and `wp_parse_str()`.
+- `batch.rs`: `batch/v1`, which the editor saves with. `allow_batch` is posts of any type, terms, users and widgets.
+
+The options are read from the table on these routes: the requests of a batch see what the ones before them saved.
+
+**A quirk that is part of the behaviour:** `rest_send_allow_header()` runs the permission check of the `GET` handler after the
+answer is made, and that check runs `retrieve_widgets()` once per controller and request, on the global `$sidebars_widgets`.
+After `POST /wp/v2/widgets` the global is the state before the new widget, which counts as lost: the widget ends up among
+the inactive ones although the answer names its sidebar. `update_item()` of the sidebars reads the option again before that
+point, so it keeps its changes. `retrieve_after_dispatch()` follows this, and the requests of a batch share the flags, so
+only the first new widget of a batch moves.
+
+What the comparison found elsewhere, on classic themes or translated sites:
+
+- **`get_block_editor_settings()`** was made for block themes. For a theme without `theme.json`: the theme supports
+  (`lineHeight`, `units`, `padding`, no default shadow presets), the base layout instead of the block rules, the second
+  editor style of Twenty Seventeen, the assets of the editor iframe (`common`, `forms`, the reset styles, the classic layout,
+  `wp-block-library-theme`, `classic-theme-styles`), `twentyseventeen_block_editor_styles()`, and the template part
+  variations without the parts of a theme. All editors use this: the settings of `post-new.php` of Twenty Seventeen are
+  equal, too.
+- **Translated sites:** the block categories, image sizes, template part areas and the names of all presets of WordPress
+  (`theme-i18n.json`, with `%sX-Small` for the spacing sizes), the descriptions and link titles of `OPTIONS` answers, the
+  title of a page and the link of the footer.
+- **The Customizer's CSS** goes to the editors (`wp_get_custom_css()`).
+- **Plain permalinks:** `wpApiSettings.root`, the root of `wp.apiFetch` and the oEmbed proxy pointed to `/wp-json/`.
+- **`head` of all screens:** `wp_site_icon()`, and `compression_test()` while `can_compress_scripts` is not stored.
+- **`wp_enqueue_media()`:** `contentWidth`, the site name and "View attachment page" in the templates, months without a zero.
+- **`_nav_menu_item_id_use_once()`:** the `id` of a menu item is printed once per request, whichever menu comes first; the
+  widget always left them out.
+- **Widgets on the front end:** titles are escaped (`widget_title`), the drop-downs of Categories and Archives, tag counts and
+  the taxonomy of the Tag Cloud, the date of Recent Posts, `menu_order, post_title` of Pages, Custom HTML.
+- `themes.php?page=custom-header` is a page of the theme: `custom-header` is its slug, which the command palette shows.
+
+Compared in `dev/widgets-compare.py`: 101 requests on the copy of the real site from the same state, with the same answers,
+headers and stored options: every core widget created, encoded and previewed, updating, moving, deleting, ordering a sidebar,
+four batches, an editor and a visitor. The page is equal byte for byte in English, and in German in its body and in the
+data the editor starts with. What the media and RSS widgets print is masked (see the Open list).

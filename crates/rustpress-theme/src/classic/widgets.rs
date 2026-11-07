@@ -11,12 +11,12 @@ use crate::Result;
 
 /// How a theme registered a sidebar (`register_sidebar()`).
 #[derive(Debug, Clone)]
-pub struct Sidebar {
-    pub id: &'static str,
-    pub before_widget: &'static str,
-    pub after_widget: &'static str,
-    pub before_title: &'static str,
-    pub after_title: &'static str,
+pub struct Sidebar<'a> {
+    pub id: &'a str,
+    pub before_widget: &'a str,
+    pub after_widget: &'a str,
+    pub before_title: &'a str,
+    pub after_title: &'a str,
 }
 
 /// What the widgets need from the page and the theme.
@@ -134,63 +134,78 @@ fn setting_flag(instance: &Value, key: &str) -> bool {
     instance.get(key).is_some_and(|v| matches!(v, Value::Bool(true)) || v.as_i64().is_some_and(|n| n != 0))
 }
 
-/// The title of a widget as printed: `widget_title` filters (none that change plain text).
+/// The title of a widget as printed: `widget_title` runs `wptexturize()`, `convert_chars()` and `esc_html()`.
 fn widget_title(site: &Site, instance: &Value, default: Option<&str>) -> (String, String) {
     let title = setting_str(instance, "title");
     let default_title = default.map(|d| site.tr(d)).unwrap_or_default();
     let shown = if title.is_empty() { default_title.clone() } else { title };
-    (shown, default_title)
+    (rustpress_core::formatting::esc_html(&site.texturize(&shown)), default_title)
 }
 
 /// `dynamic_sidebar()`: the widgets of a sidebar, wrapped the way the theme registered it.
-pub async fn dynamic_sidebar(s: &Services<'_>, sidebar: &Sidebar) -> Result<String> {
+pub async fn dynamic_sidebar(s: &Services<'_>, sidebar: &Sidebar<'_>) -> Result<String> {
     let mut out = String::new();
-    let mut calendars = 0u32;
     let Some((_, ids)) = sidebars_widgets(s.site).into_iter().find(|(name, _)| name == sidebar.id) else { return Ok(out) };
     for id in ids {
         let Some((base, number)) = split_id(&id) else { continue };
         let Some(settings) = instance(s.site, base, number) else { continue };
-        let mut before = sidebar.before_widget.replacen("%1$s", &id, 1).replacen("%2$s", &classname(base), 1);
-        let body = match base {
-            "recent-posts" => recent_posts(s, sidebar, &before, &settings).await?,
-            "search" => Some(search(s, sidebar, &before, &settings)),
-            "meta" => Some(meta(s, sidebar, &before, &settings)),
-            "text" => Some(text(s, sidebar, &before, &settings)),
-            "nav_menu" => nav_menu(s, sidebar, &before, &settings).await?,
-            "recent-comments" => Some(recent_comments(s, sidebar, &before, &settings).await?),
-            "pages" => Some(pages(s, sidebar, &before, &settings).await?),
-            "tag_cloud" => Some(tag_cloud(s, sidebar, &before, &settings).await?),
-            "archives" => Some(archives(s, sidebar, &before, &settings).await?),
-            "calendar" => Some(calendar_widget(s, sidebar, &before, &settings, &mut calendars).await?),
-            "categories" => Some(categories(s, sidebar, &before, &settings).await?),
-            "block" => {
-                let content = setting_str(&settings, "content");
-                let blocks = rustpress_blocks::parser::parse_blocks(&content);
-                let class = match blocks.first().and_then(|b| b.name.as_deref()) {
-                    Some("core/paragraph") => "widget_block widget_text",
-                    Some("core/calendar") => "widget_block widget_calendar",
-                    Some("core/search") => "widget_block widget_search",
-                    Some("core/html") => "widget_block widget_custom_html",
-                    Some("core/archives") => "widget_block widget_archive",
-                    Some("core/latest-posts") => "widget_block widget_recent_entries",
-                    Some("core/latest-comments") => "widget_block widget_recent_comments",
-                    Some("core/tag-cloud") => "widget_block widget_tag_cloud",
-                    _ => "widget_block",
-                };
-                before = before.replace("widget_block", class);
-                let rendered = s.env.render_markup(&content, &s.env.root_context()).await?;
-                Some(format!("{before}{rendered}{}", sidebar.after_widget))
-            }
-            _ => None,
-        };
-        if let Some(body) = body {
-            out.push_str(&body);
-        }
+        out.push_str(&render_widget(s, sidebar, &id, base, &settings).await?);
     }
     Ok(out)
 }
 
-fn heading(sidebar: &Sidebar, title: &str) -> String {
+/// `wp_render_widget()`: one widget with the settings the caller holds.
+pub async fn render_widget(s: &Services<'_>, sidebar: &Sidebar<'_>, id: &str, base: &str, settings: &Value) -> Result<String> {
+    let before = sidebar.before_widget.replacen("%1$s", id, 1).replacen("%2$s", &classname(base), 1);
+    display(s, sidebar, before, base, id.rsplit('-').next().unwrap_or_default(), settings).await
+}
+
+/// `the_widget()` with its default wrapper: the preview of a widget that is being edited.
+pub async fn the_widget(s: &Services<'_>, base: &str, settings: &Value) -> Result<String> {
+    let sidebar = Sidebar { id: "", before_widget: "<div class=\"widget %s\">", after_widget: "</div>", before_title: "<h2 class=\"widgettitle\">", after_title: "</h2>" };
+    let before = sidebar.before_widget.replacen("%s", &classname(base), 1);
+    display(s, &sidebar, before, base, "-1", settings).await
+}
+
+/// `WP_Widget::widget()` of the core widgets.
+async fn display(s: &Services<'_>, sidebar: &Sidebar<'_>, mut before: String, base: &str, number: &str, settings: &Value) -> Result<String> {
+    let body = match base {
+        "recent-posts" => recent_posts(s, sidebar, &before, settings).await?,
+        "search" => Some(search(s, sidebar, &before, settings)),
+        "meta" => Some(meta(s, sidebar, &before, settings)),
+        "text" => Some(text(s, sidebar, &before, settings)),
+        "custom_html" => Some(custom_html(s, sidebar, &before, settings)),
+        "nav_menu" => nav_menu(s, sidebar, &before, settings).await?,
+        "recent-comments" => Some(recent_comments(s, sidebar, &before, settings).await?),
+        "pages" => Some(pages(s, sidebar, &before, settings).await?),
+        "tag_cloud" => tag_cloud(s, sidebar, &before, settings).await?,
+        "archives" => Some(archives(s, sidebar, &before, number, settings).await?),
+        "calendar" => Some(calendar_widget(s, sidebar, &before, settings).await?),
+        "categories" => Some(categories(s, sidebar, &before, number, settings).await?),
+        "block" => {
+            let content = setting_str(settings, "content");
+            let blocks = rustpress_blocks::parser::parse_blocks(&content);
+            let class = match blocks.first().and_then(|b| b.name.as_deref()) {
+                Some("core/paragraph") => "widget_block widget_text",
+                Some("core/calendar") => "widget_block widget_calendar",
+                Some("core/search") => "widget_block widget_search",
+                Some("core/html") => "widget_block widget_custom_html",
+                Some("core/archives") => "widget_block widget_archive",
+                Some("core/latest-posts") => "widget_block widget_recent_entries",
+                Some("core/latest-comments") => "widget_block widget_recent_comments",
+                Some("core/tag-cloud") => "widget_block widget_tag_cloud",
+                _ => "widget_block",
+            };
+            before = before.replace("widget_block", class);
+            let rendered = s.env.render_markup(&content, &s.env.root_context()).await?;
+            Some(format!("{before}{rendered}{}", sidebar.after_widget))
+        }
+        _ => None,
+    };
+    Ok(body.unwrap_or_default())
+}
+
+fn heading(sidebar: &Sidebar<'_>, title: &str) -> String {
     if title.is_empty() { String::new() } else { format!("{}{title}{}", sidebar.before_title, sidebar.after_title) }
 }
 
@@ -201,7 +216,7 @@ fn nav_open(title: &str, default_title: &str) -> String {
 }
 
 /// `WP_Widget_Recent_Posts::widget()`.
-async fn recent_posts(s: &Services<'_>, sidebar: &Sidebar, before: &str, settings: &Value) -> Result<Option<String>> {
+async fn recent_posts(s: &Services<'_>, sidebar: &Sidebar<'_>, before: &str, settings: &Value) -> Result<Option<String>> {
     let site = s.site;
     let (title, default_title) = widget_title(site, settings, Some("Recent Posts"));
     let number = match setting_int(settings, "number") {
@@ -225,7 +240,7 @@ async fn recent_posts(s: &Services<'_>, sidebar: &Sidebar, before: &str, setting
         let current = if queried_id == post.id { " aria-current=\"page\"" } else { "" };
         let date = if show_date {
             let ts = site.timezone.local_timestamp(&post.post_date).unwrap_or(0);
-            format!("\t<span class=\"post-date\">{}</span>\n\t\t\t\t\t", site.date(&site.options.string("date_format", "F j, Y"), ts))
+            format!("\t\t\t\t\t\t<span class=\"post-date\">{}</span>\n\t\t\t\t\t", site.date(&site.options.string("date_format", "F j, Y"), ts))
         } else {
             String::new()
         };
@@ -239,13 +254,13 @@ async fn recent_posts(s: &Services<'_>, sidebar: &Sidebar, before: &str, setting
 }
 
 /// `WP_Widget_Search::widget()`.
-fn search(s: &Services<'_>, sidebar: &Sidebar, before: &str, settings: &Value) -> String {
+fn search(s: &Services<'_>, sidebar: &Sidebar<'_>, before: &str, settings: &Value) -> String {
     let (title, _) = widget_title(s.site, settings, None);
     format!("{before}{}{}{}", heading(sidebar, &title), (s.search_form)(), sidebar.after_widget)
 }
 
 /// `WP_Widget_Meta::widget()`.
-fn meta(s: &Services<'_>, sidebar: &Sidebar, before: &str, settings: &Value) -> String {
+fn meta(s: &Services<'_>, sidebar: &Sidebar<'_>, before: &str, settings: &Value) -> String {
     let site = s.site;
     let (title, default_title) = widget_title(site, settings, Some("Meta"));
     let pretty = site.uses_pretty_permalinks();
@@ -278,7 +293,7 @@ fn meta(s: &Services<'_>, sidebar: &Sidebar, before: &str, settings: &Value) -> 
 }
 
 /// `WP_Widget_Text::widget()`.
-fn text(s: &Services<'_>, sidebar: &Sidebar, before: &str, settings: &Value) -> String {
+fn text(s: &Services<'_>, sidebar: &Sidebar<'_>, before: &str, settings: &Value) -> String {
     let site = s.site;
     let (title, _) = widget_title(site, settings, None);
     let raw = setting_str(settings, "text");
@@ -293,8 +308,17 @@ fn text(s: &Services<'_>, sidebar: &Sidebar, before: &str, settings: &Value) -> 
     format!("{before}{}\t\t\t<div class=\"textwidget\">{content}</div>\n\t\t{}", heading(sidebar, &title), sidebar.after_widget)
 }
 
+/// `WP_Widget_Custom_HTML::widget()`.
+fn custom_html(s: &Services<'_>, sidebar: &Sidebar<'_>, before: &str, settings: &Value) -> String {
+    let (title, _) = widget_title(s.site, settings, None);
+    let content = setting_str(settings, "content");
+    // The class of the Text widget goes in front of the classes, for themes that style it.
+    let before = before.replacen(" class=\"", " class=\"widget_text ", 1);
+    format!("{before}{}<div class=\"textwidget custom-html-widget\">{content}</div>{}", heading(sidebar, &title), sidebar.after_widget)
+}
+
 /// `WP_Nav_Menu_Widget::widget()`.
-async fn nav_menu(s: &Services<'_>, sidebar: &Sidebar, before: &str, settings: &Value) -> Result<Option<String>> {
+async fn nav_menu(s: &Services<'_>, sidebar: &Sidebar<'_>, before: &str, settings: &Value) -> Result<Option<String>> {
     let site = s.site;
     let id = setting_int(settings, "nav_menu");
     if id <= 0 {
@@ -305,7 +329,7 @@ async fn nav_menu(s: &Services<'_>, sidebar: &Sidebar, before: &str, settings: &
     menu::classes_by_context(site, s.q, s.request_uri, &mut menu.items).await?;
     let mut args = NavArgs::new("");
     args.container = Some(("nav".into(), Some(strip_tags(&title).trim().to_owned())));
-    args.item_ids = false;
+    args.use_ids_once(s.env, &menu.items);
     let title_hook = |t: &str, _: &menu::MenuItem, _: usize| t.to_owned();
     let link_hook = |l: String, _: &menu::MenuItem, _: usize| l;
     let html = menu::wp_nav_menu(site, &menu, &menu.items, &args, &title_hook, &link_hook);
@@ -313,7 +337,7 @@ async fn nav_menu(s: &Services<'_>, sidebar: &Sidebar, before: &str, settings: &
 }
 
 /// `WP_Widget_Recent_Comments::widget()`.
-async fn recent_comments(s: &Services<'_>, sidebar: &Sidebar, before: &str, settings: &Value) -> Result<String> {
+async fn recent_comments(s: &Services<'_>, sidebar: &Sidebar<'_>, before: &str, settings: &Value) -> Result<String> {
     let site = s.site;
     let (title, default_title) = widget_title(site, settings, Some("Recent Comments"));
     let number = match setting_int(settings, "number") {
@@ -335,17 +359,17 @@ async fn recent_comments(s: &Services<'_>, sidebar: &Sidebar, before: &str, sett
 }
 
 /// `WP_Widget_Pages::widget()` with `wp_list_pages()`.
-async fn pages(s: &Services<'_>, sidebar: &Sidebar, before: &str, settings: &Value) -> Result<String> {
+async fn pages(s: &Services<'_>, sidebar: &Sidebar<'_>, before: &str, settings: &Value) -> Result<String> {
     let site = s.site;
     let (title, default_title) = widget_title(site, settings, Some("Pages"));
     let exclude: Vec<u64> = setting_str(settings, "exclude").split(',').filter_map(|i| i.trim().parse().ok()).collect();
     let sort = setting_str(settings, "sortby");
-    let order_by = match sort.as_str() {
-        "menu_order" => OrderBy::MenuOrder,
-        "ID" => OrderBy::Id,
-        _ => OrderBy::Title,
-    };
+    let order_by = if sort == "ID" { OrderBy::Id } else { OrderBy::Title };
     let mut all = site.db.posts(&PostQuery { post_types: vec!["page".into()], order_by, order: Order::Asc, ..PostQuery::default() }).await?;
+    // `menu_order, post_title`, also without a setting.
+    if sort.is_empty() || sort == "menu_order" {
+        all.sort_by_key(|p| p.menu_order);
+    }
     all.retain(|p| !exclude.contains(&p.id));
     let queried = match &s.q.queried {
         Queried::Post(p) if s.q.flags.is_page || s.q.flags.is_posts_page => Some(p.as_ref().clone()),
@@ -418,52 +442,109 @@ async fn pages(s: &Services<'_>, sidebar: &Sidebar, before: &str, settings: &Val
 }
 
 /// `WP_Widget_Tag_Cloud::widget()` with the theme's arguments (one size, a list).
-async fn tag_cloud(s: &Services<'_>, sidebar: &Sidebar, before: &str, settings: &Value) -> Result<String> {
+async fn tag_cloud(s: &Services<'_>, sidebar: &Sidebar<'_>, before: &str, settings: &Value) -> Result<Option<String>> {
     let site = s.site;
-    let taxonomy = match setting_str(settings, "taxonomy").as_str() {
-        "" => "post_tag".to_owned(),
-        other => other.to_owned(),
+    // `_get_current_taxonomy()`.
+    let wanted = setting_str(settings, "taxonomy");
+    let taxonomy = if !wanted.is_empty() && matches!(wanted.as_str(), "category" | "post_tag" | "link_category") || site.types.taxonomy(&wanted).is_some() { wanted } else { "post_tag".to_owned() };
+    let default = match taxonomy.as_str() {
+        "post_tag" => site.tr("Tags"),
+        "link_category" => site.tr("Link Categories"),
+        other => site.taxonomy_label(other),
     };
-    // Other taxonomies would use their registered label, which needs a plugin; only tags exist here.
-    let default = site.tr("Tags");
-    let (title, default_title) = {
-        let t = setting_str(settings, "title");
-        (if t.is_empty() { default.clone() } else { t }, default)
-    };
+    let title = setting_str(settings, "title");
+    let title = rustpress_core::formatting::esc_html(&site.texturize(if title.is_empty() { &default } else { &title }));
     // `twentyseventeen_widget_tag_cloud_args()`
-    let args = general::TagCloud { taxonomy, smallest: 1.0, largest: 1.0, unit: "em".into(), list: true, ..general::TagCloud::new() };
+    let args = general::TagCloud { taxonomy, smallest: 1.0, largest: 1.0, unit: "em".into(), list: true, show_count: setting_flag(settings, "count"), ..general::TagCloud::new() };
     let cloud = general::wp_tag_cloud(s.env, &args).await?;
-    let cloud = if cloud.is_empty() { cloud } else { format!("<div class=\"tagcloud\">{cloud}</div>\n") };
-    Ok(format!("{before}{}{}{cloud}</nav>{}", heading(sidebar, &title), nav_open(&title, &default_title), sidebar.after_widget))
+    if cloud.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(format!("{before}{}{}<div class=\"tagcloud\">{cloud}</div>\n</nav>{}", heading(sidebar, &title), nav_open(&title, &default), sidebar.after_widget)))
 }
 
 /// `WP_Widget_Archives::widget()` as a list of months.
-async fn archives(s: &Services<'_>, sidebar: &Sidebar, before: &str, settings: &Value) -> Result<String> {
+async fn archives(s: &Services<'_>, sidebar: &Sidebar<'_>, before: &str, number: &str, settings: &Value) -> Result<String> {
     let site = s.site;
     let (title, default_title) = widget_title(site, settings, Some("Archives"));
+    if setting_flag(settings, "dropdown") {
+        let id = format!("archives-dropdown-{number}");
+        let args = general::Archives { format: "option".into(), show_post_count: setting_flag(settings, "count"), ..general::Archives::new() };
+        let items = general::wp_get_archives(s.env, &args).await?;
+        let script = dropdown_script(ARCHIVES_SCRIPT, &id, "WP_Widget_Archives%3A%3Awidget");
+        return Ok(format!(
+            "{before}{}\t\t<label class=\"screen-reader-text\" for=\"{id}\">{title}</label>\n\t\t<select id=\"{id}\" name=\"archive-dropdown\">\n\t\t\t\n\t\t\t<option value=\"\">{}</option>\n\t\t\t{items}\n\t\t</select>\n\n\t\t\t{script}{}",
+            heading(sidebar, &title),
+            esc_attr(&site.tr("Select Month")),
+            sidebar.after_widget
+        ));
+    }
     let args = general::Archives { show_post_count: setting_flag(settings, "count"), ..general::Archives::new() };
     let items = general::wp_get_archives(s.env, &args).await?;
     Ok(format!("{before}{}{}\n\t\t\t<ul>\n\t\t\t\t{items}\t\t\t</ul>\n\n\t\t\t</nav>{}", heading(sidebar, &title), nav_open(&title, &default_title), sidebar.after_widget))
 }
 
 /// `WP_Widget_Categories::widget()` as a (hierarchical) list.
-async fn categories(s: &Services<'_>, sidebar: &Sidebar, before: &str, settings: &Value) -> Result<String> {
+async fn categories(s: &Services<'_>, sidebar: &Sidebar<'_>, before: &str, number: &str, settings: &Value) -> Result<String> {
     let site = s.site;
     let (title, default_title) = widget_title(site, settings, Some("Categories"));
     let mut args = general::ListCategories::new(s.env, "category");
     args.show_count = setting_flag(settings, "count");
     args.terms.hierarchical = setting_flag(settings, "hierarchical");
+    if setting_flag(settings, "dropdown") {
+        let first = s.env.with_state(|state| !std::mem::replace(&mut state.categories_dropdown, true));
+        let id = if first { "cat".to_owned() } else { format!("categories-dropdown-{number}") };
+        let dropdown = general::DropdownCategories {
+            terms: args.terms.clone(),
+            show_count: args.show_count,
+            depth: 0,
+            show_option_none: site.tr("Select Category"),
+            show_option_all: String::new(),
+            option_none_value: "-1".into(),
+            name: "cat".into(),
+            id: id.clone(),
+            class: "postform".into(),
+            value_field_slug: false,
+            selected: "0".into(),
+            hide_if_empty: false,
+            required: false,
+        };
+        let select = general::wp_dropdown_categories(s.env, &dropdown).await?;
+        let script = dropdown_script(CATEGORIES_SCRIPT, &id, "WP_Widget_Categories%3A%3Awidget");
+        return Ok(format!(
+            "{before}{}<form action=\"{}\" method=\"get\"><label class=\"screen-reader-text\" for=\"{}\">{title}</label>{select}</form>{script}{}",
+            heading(sidebar, &title),
+            esc_url(&site.home_url("")),
+            esc_attr(&id),
+            sidebar.after_widget
+        ));
+    }
     args.title_li = String::new();
     let list = general::wp_list_categories(s.env, &args).await?;
     Ok(format!("{before}{}{}\n\t\t\t<ul>\n\t\t\t\t{list}\t\t\t</ul>\n\n\t\t\t</nav>{}", heading(sidebar, &title), nav_open(&title, &default_title), sidebar.after_widget))
 }
 
+/// The scripts of the two widgets with a drop-down: both follow the selection, but not after the Escape key.
+const SCRIPT_END: &str = "\tfunction onKeyUp( event ) {\n\t\tif ( 'Escape' === event.key ) {\n\t\t\tdropdown.dataset.lastkey = 'escape';\n\t\t} else {\n\t\t\tdelete dropdown.dataset.lastkey;\n\t\t}\n\t}\n\tfunction onClick() {\n\t\tdelete dropdown.dataset.lastkey;\n\t}\n\tdropdown.addEventListener( 'keyup', onKeyUp );\n\tdropdown.addEventListener( 'click', onClick );\n\tdropdown.addEventListener( 'change', onSelectChange );\n";
+const CATEGORIES_SCRIPT: &str = "\t\t\tif ( dropdown.value && parseInt( dropdown.value ) > 0 && dropdown instanceof HTMLSelectElement ) {\n\t\t\t\tdropdown.parentElement.submit();\n\t\t\t}\n";
+const ARCHIVES_SCRIPT: &str = "\t\t\tif ( dropdown.value ) {\n\t\t\t\tdocument.location.href = dropdown.value;\n\t\t\t}\n";
+
+fn dropdown_script(action: &str, id: &str, source: &str) -> String {
+    format!(
+        "<script>\n( ( dropdownId ) => {{\n\tconst dropdown = document.getElementById( dropdownId );\n\tfunction onSelectChange() {{\n\t\tsetTimeout( () => {{\n\t\t\tif ( 'escape' === dropdown.dataset.lastkey ) {{\n\t\t\t\treturn;\n\t\t\t}}\n{action}\t\t}}, 250 );\n\t}}\n{SCRIPT_END}}})( \"{id}\" );\n\n//# sourceURL={source}\n</script>\n"
+    )
+}
+
 /// `WP_Widget_Calendar::widget()` with `get_calendar()`.
-async fn calendar_widget(s: &Services<'_>, sidebar: &Sidebar, before: &str, settings: &Value, instances: &mut u32) -> Result<String> {
+async fn calendar_widget(s: &Services<'_>, sidebar: &Sidebar<'_>, before: &str, settings: &Value) -> Result<String> {
     let site = s.site;
     let (title, _) = widget_title(site, settings, None);
-    let wrap = if *instances == 0 { "<div id=\"calendar_wrap\" class=\"calendar_wrap\">" } else { "<div class=\"calendar_wrap\">" };
-    *instances += 1;
+    // `WP_Widget_Calendar::$instance` counts for the whole request.
+    let first = s.env.with_state(|state| {
+        state.calendars += 1;
+        state.calendars == 1
+    });
+    let wrap = if first { "<div id=\"calendar_wrap\" class=\"calendar_wrap\">" } else { "<div class=\"calendar_wrap\">" };
     let calendar = general::get_calendar(s.env, true, None).await?;
     Ok(format!("{before}{}{wrap}{calendar}</div>{}", heading(sidebar, &title), sidebar.after_widget))
 }

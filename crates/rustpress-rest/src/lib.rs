@@ -119,11 +119,13 @@ pub struct Rest<'a> {
     pub(crate) route: std::sync::Mutex<(String, String)>,
     /// The routes dispatched before this one in the same process, embedded ones included.
     pub(crate) earlier_routes: std::sync::Mutex<Vec<String>>,
+    /// `$widgets_retrieved` of the sidebars and of the widgets controller: the requests of a batch share them.
+    pub(crate) widgets_retrieved: std::sync::Arc<[std::sync::atomic::AtomicBool; 2]>,
 }
 
 impl<'a> Rest<'a> {
     pub fn new(site: &'a Site, theme: &'a Theme, registry: &'a Registry) -> Self {
-        Self { site, theme, registry, blank: QueryResult::blank(), state: Default::default(), access: None, request: None, patterns: Default::default(), host: String::new(), remote_patterns: Default::default(), admin: false, mailer: None, route: Default::default(), earlier_routes: Default::default() }
+        Self { site, theme, registry, blank: QueryResult::blank(), state: Default::default(), access: None, request: None, patterns: Default::default(), host: String::new(), remote_patterns: Default::default(), admin: false, mailer: None, route: Default::default(), earlier_routes: Default::default(), widgets_retrieved: Default::default() }
     }
 
     /// The host of the request: client-side media processing is on for `localhost` and for HTTPS.
@@ -173,7 +175,7 @@ impl<'a> Rest<'a> {
             blank.raw_query = if query.is_empty() { format!("rest_route={route}") } else { format!("rest_route={route}&{query}") };
         }
         blank.http_host = Some(self.host.clone()).filter(|h| !h.is_empty());
-        let scoped = Rest { site: self.site, theme: self.theme, registry: self.registry, blank, state: Default::default(), access: None, request: None, patterns: Default::default(), host: self.host.clone(), remote_patterns: Default::default(), admin: self.admin, mailer: self.mailer.clone(), route: std::sync::Mutex::new((route.to_owned(), query.to_owned())), earlier_routes: std::sync::Mutex::new(self.earlier_routes.lock().unwrap_or_else(|e| e.into_inner()).clone()) };
+        let scoped = Rest { site: self.site, theme: self.theme, registry: self.registry, blank, state: Default::default(), access: None, request: None, patterns: Default::default(), host: self.host.clone(), remote_patterns: Default::default(), admin: self.admin, mailer: self.mailer.clone(), route: std::sync::Mutex::new((route.to_owned(), query.to_owned())), earlier_routes: std::sync::Mutex::new(self.earlier_routes.lock().unwrap_or_else(|e| e.into_inner()).clone()), widgets_retrieved: self.widgets_retrieved.clone() };
         // The terms of the posts of a list are read once for the request (`update_object_term_cache()`).
         rustpress_db::Db::with_term_cache(scoped.handle_request(route, query)).await
     }
@@ -198,7 +200,7 @@ impl<'a> Rest<'a> {
             let viewer = rustpress_core::Viewer::new(user.id, move |capability| user.can(capability));
             blank.viewer = Some(viewer.with_identity(&login, &name, &email, false, move |action| nonce.as_ref().map(|n| n(action)).unwrap_or_default()));
         }
-        let scoped = Rest { site: self.site, theme: self.theme, registry: self.registry, blank, state: Default::default(), access, request: Some(request), patterns: Default::default(), host: self.host.clone(), remote_patterns: Default::default(), admin: self.admin, mailer: self.mailer.clone(), route: std::sync::Mutex::new((route.to_owned(), query.to_owned())), earlier_routes: std::sync::Mutex::new(self.earlier_routes.lock().unwrap_or_else(|e| e.into_inner()).clone()) };
+        let scoped = Rest { site: self.site, theme: self.theme, registry: self.registry, blank, state: Default::default(), access, request: Some(request), patterns: Default::default(), host: self.host.clone(), remote_patterns: Default::default(), admin: self.admin, mailer: self.mailer.clone(), route: std::sync::Mutex::new((route.to_owned(), query.to_owned())), earlier_routes: std::sync::Mutex::new(self.earlier_routes.lock().unwrap_or_else(|e| e.into_inner()).clone()), widgets_retrieved: self.widgets_retrieved.clone() };
         // The terms of the posts of a list are read once for the request (`update_object_term_cache()`).
         rustpress_db::Db::with_term_cache(scoped.handle_request(route, query)).await
     }
@@ -719,10 +721,12 @@ impl<'a> Rest<'a> {
         }
         let methods = entry.get("methods").and_then(Value::as_array).map(|m| m.iter().filter_map(Value::as_str).map(str::to_owned).collect()).unwrap_or_default();
         let mut data = Value::Object(data);
+        self.add_theme_image_sizes(route, &mut data);
         self.add_plugin_taxonomies(route, &mut data);
         self.add_registered_post_types(&mut data);
         self.add_registered_meta(route, &mut data);
         self.add_plugin_statuses(&mut data);
+        self.translate_schema(&mut data);
         Some((data, methods))
     }
 
@@ -855,6 +859,35 @@ impl<'a> Rest<'a> {
 
     /// The meta keys plugins registered for the post type of a route go into the `meta` of its schema and arguments
     /// (`WP_REST_Meta_Fields::get_field_schema()`).
+    /// The texts of a schema are `__()` calls in WordPress: the descriptions and the titles of its links.
+    fn translate_schema(&self, value: &mut Value) {
+        match value {
+            Value::Object(map) => {
+                for (key, item) in map.iter_mut() {
+                    match item {
+                        Value::String(text) if key == "description" || key == "title" => *text = self.site.tr(text),
+                        other => self.translate_schema(other),
+                    }
+                }
+            }
+            Value::Array(items) => items.iter_mut().for_each(|item| self.translate_schema(item)),
+            _ => {}
+        }
+    }
+
+    /// `get_intermediate_image_sizes()` in the schema of attachments: the sizes of the theme come last.
+    fn add_theme_image_sizes(&self, route: &str, data: &mut Value) {
+        if !route.starts_with("/wp/v2/media") {
+            return;
+        }
+        let sizes = data.get_mut("schema").and_then(|s| s.get_mut("properties")).and_then(|p| p.get_mut("image_quality")).and_then(|q| q.get_mut("properties")).and_then(|p| p.get_mut("sizes")).and_then(|s| s.get_mut("properties")).and_then(Value::as_object_mut);
+        if let Some(sizes) = sizes {
+            for name in rustpress_theme::classic::image_size_names(&self.theme.stylesheet) {
+                sizes.insert((*name).to_owned(), serde_json::json!({"type": "integer", "minimum": 1, "maximum": 100}));
+            }
+        }
+    }
+
     fn add_registered_meta(&self, route: &str, data: &mut Value) {
         let Some(base) = route.strip_prefix("/wp/v2/").map(|r| r.split('/').next().unwrap_or_default()) else { return };
         let post_type = match base {

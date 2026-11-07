@@ -366,6 +366,18 @@ pub struct Assets {
     pub post_header_styles: Vec<String>,
     /// Printed in the head after the scripts (`admin_head`).
     pub head: String,
+    /// `wp_site_icon()`.
+    pub site_icon: String,
+    /// `compression_test()`, printed while `can_compress_scripts` is not stored.
+    pub compression_test: String,
+    /// `get_rest_url()`: the script loader starts from the address with pretty links.
+    pub rest_root: String,
+    /// The theme has no `theme.json`: `wp-edit-blocks` needs the layout styles of classic themes.
+    pub classic_editor_styles: bool,
+    /// Stylesheets enqueued on `enqueue_block_assets`: after those of every screen, before the commands.
+    pub late_styles: Vec<String>,
+    /// Stylesheets the theme enqueues for the block editor: after the styles of the screen, before the colors.
+    pub theme_styles: String,
     /// Printed after the scripts of the footer (`admin_print_footer_scripts`, late).
     pub footer: String,
     /// Printed right after the scripts of the footer, before the emoji script (`admin_print_footer_scripts` of a page).
@@ -713,7 +725,7 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
     let submenu_file = screen.submenu_file.clone().or_else(|| Some(screen.file.clone()));
     let blog_name = site.options.string("blogname", "");
     let admin_title = if blog_name.is_empty() { rustpress_core::formatting::wptexturize(&site.options.string("siteurl", "")) } else { rustpress_core::formatting::wptexturize(&blog_name) };
-    let title = format!("{} &lsaquo; {} &#8212; WordPress", esc_html(&screen.title), esc_html(&admin_title).replace('\'', "&#039;"));
+    let title = rustpress_core::i18n::sprintf(&tr("%1$s &lsaquo; %2$s &#8212; WordPress"), &[&esc_html(&screen.title), &esc_html(&admin_title).replace('\'', "&#039;")]);
     let request_frame = screen.frame == Some(FrameKind::Request);
 
     // Styles of the head.
@@ -736,6 +748,9 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
             styles.enqueue(handle);
         }
     }
+    if assets.classic_editor_styles {
+        styles.deps.add_dep("wp-edit-blocks", "wp-editor-classic-layout-styles");
+    }
     for handle in [
         "dashicons", "admin-bar", "common", "forms", "admin-menu", "dashboard", "list-tables", "edit", "revisions", "media", "themes", "about", "nav-menus", "wp-pointer", "widgets", "site-icon", "l10n", "wp-base-styles", "wp-tooltip", "buttons",
         "wp-auth-check", "wp-theme", "wp-components", "wp-commands",
@@ -750,6 +765,11 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
         }
         if handle == "admin-bar" && request_frame {
             continue;
+        }
+        if handle == "wp-commands" {
+            for late in &assets.late_styles {
+                styles.enqueue(late);
+            }
         }
         styles.enqueue(handle);
     }
@@ -778,6 +798,13 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
 
     // Scripts of the head (`utils` with `userSettings`).
     let mut scripts = default_scripts(&env.loader);
+    if let Some(crate::deps::Extra::Text(data)) = scripts.deps.get_data("wp-api-request", "data").cloned()
+        && !assets.rest_root.is_empty()
+    {
+        let root = serde_json::to_string(&assets.rest_root).unwrap_or_default();
+        let data = data.replace(&serde_json::to_string(&format!("{}/wp-json/", env.loader.site_url)).unwrap_or_default(), &root);
+        scripts.deps.set_data("wp-api-request", "data", crate::deps::Extra::Text(data));
+    }
     // `enqueue_editor_block_styles_assets()` registers a script without a file for the styles of the blocks.
     if assets.scripts.iter().chain(&assets.early_scripts).any(|h| h == "wp-block-styles") {
         scripts.add("wp-block-styles", None, &["wp-blocks"], crate::deps::Ver::Default, Some(crate::deps::Arg::Int(1)));
@@ -961,6 +988,7 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
     ));
     out.push_str(&assets.plugin_print_styles);
     out.push_str(&admin_styles);
+    out.push_str(&assets.theme_styles);
     out.push_str(&colors);
     let head_styles = match env.head_styles.split_once("<style id=\"wp-emoji-styles-inline-css\">") {
         Some((before, after)) if !assets.plugin_styles.is_empty() => format!("{before}{}<style id=\"wp-emoji-styles-inline-css\">{after}", assets.plugin_styles),
@@ -977,8 +1005,9 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
     out.push_str(&assets.plugin_admin_head);
     out.push_str("<script>var _wpColorScheme = {\"icons\":{\"base\":\"#f3f1f1\",\"focus\":\"#fff\",\"current\":\"#fff\"}};</script>\n");
     out.push_str(&format!(
-        "\t<link id=\"wp-admin-canonical\" rel=\"canonical\" href=\"{}\" />\n\t<script>\n\t\tif ( window.history.replaceState ) {{\n\t\t\twindow.history.replaceState( null, null, document.getElementById( 'wp-admin-canonical' ).href + window.location.hash );\n\t\t}}\n\t</script>\n\t<meta name=\"viewport\" content=\"width=device-width,initial-scale=1.0\">",
-        esc_url(&canonical)
+        "\t<link id=\"wp-admin-canonical\" rel=\"canonical\" href=\"{}\" />\n\t<script>\n\t\tif ( window.history.replaceState ) {{\n\t\t\twindow.history.replaceState( null, null, document.getElementById( 'wp-admin-canonical' ).href + window.location.hash );\n\t\t}}\n\t</script>\n\t{}<meta name=\"viewport\" content=\"width=device-width,initial-scale=1.0\">",
+        esc_url(&canonical),
+        assets.site_icon
     ));
     out.push_str(&assets.head);
     // The scripts of `admin_head` end with the indentation of their closing `<?php`.
@@ -1019,6 +1048,9 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
         }
         (Some(help), None) => {
             let mut meta = screen_meta(help, &tr("Help"));
+            if !help.tabs.is_empty() && help.sidebar.is_empty() {
+                meta = meta.replacen("id=\"contextual-help-wrap\" class=\"hidden\"", "id=\"contextual-help-wrap\" class=\"hidden no-sidebar\"", 1);
+            }
             if screen.content_inline && meta.ends_with("\t\t\n") {
                 meta.pop();
             }
@@ -1041,7 +1073,7 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
     out.push_str("\n<div class=\"clear\"></div></div><!-- wpbody-content -->\n<div class=\"clear\"></div></div><!-- wpbody -->\n<div class=\"clear\"></div></div><!-- wpcontent -->\n\n");
     out.push_str(&format!(
         "<div id=\"wpfooter\" role=\"contentinfo\">\n\t\t<p id=\"footer-left\" class=\"alignleft\">\n\t\t{}\t</p>\n\t<p id=\"footer-upgrade\" class=\"alignright\">\n\t\t{}\t</p>\n\t<div class=\"clear\"></div>\n</div>\n",
-        assets.footer_text.clone().unwrap_or_else(|| format!("<span id=\"footer-thankyou\">{}</span>", rustpress_core::i18n::sprintf(&tr("Thank you for creating with <a href=\"%s\">WordPress</a>."), &["https://wordpress.org/"]))),
+        assets.footer_text.clone().unwrap_or_else(|| format!("<span id=\"footer-thankyou\">{}</span>", rustpress_core::i18n::sprintf(&tr("Thank you for creating with <a href=\"%s\">WordPress</a>."), &[&tr("https://wordpress.org/")]))),
         assets.update_footer.clone().unwrap_or_else(|| rustpress_core::i18n::sprintf(&tr("Version %s"), &[&version]))
     ));
     out.push_str(&assets.footer_first);
@@ -1066,6 +1098,10 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
         ));
     }
     out.push_str(&assets.footer);
+    if !assets.compression_test.is_empty() {
+        out.push_str(&assets.compression_test);
+        out.push('\t');
+    }
     out.push_str("\n<div class=\"clear\"></div></div><!-- wpwrap -->\n<script>if(typeof wpOnload==='function')wpOnload();</script>\n</body>\n</html>\n");
     out
 }

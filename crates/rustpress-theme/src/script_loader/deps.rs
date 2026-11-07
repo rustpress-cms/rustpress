@@ -138,6 +138,20 @@ impl Dependencies {
     }
 
     /// `add_data()`, with the checks of `WP_Scripts::add_data()`.
+    /// Replaces a value of `extra`, where `add_data()` would add to it.
+    pub fn set_data(&mut self, handle: &str, key: &str, value: Extra) {
+        if let Some(found) = self.get_mut(handle) {
+            found.extra.insert(key.to_owned(), value);
+        }
+    }
+
+    /// One more dependency for a registered handle.
+    pub fn add_dep(&mut self, handle: &str, dep: &str) {
+        if let Some(found) = self.get_mut(handle) {
+            found.deps.push(dep.to_owned());
+        }
+    }
+
     pub fn add_data(&mut self, handle: &str, key: &str, value: Extra) -> bool {
         let kind = self.kind;
         let Some(dep) = self.get_mut(handle) else { return false };

@@ -375,13 +375,22 @@ pub struct NavArgs {
     pub link_after: String,
     /// The container element (`div` by default) and, for `nav`, its `aria-label`.
     pub container: Option<(String, Option<String>)>,
-    /// Whether the items get an `id="menu-item-N"` (the nav menu widget removes them).
-    pub item_ids: bool,
+    /// The items that printed their `id="menu-item-N"` earlier in the request (`_nav_menu_item_id_use_once()`).
+    pub used_ids: std::collections::HashSet<u64>,
 }
 
 impl NavArgs {
     pub fn new(location: &str) -> Self {
-        Self { theme_location: location.to_owned(), menu_id: String::new(), menu_class: "menu".into(), depth: 0, link_before: String::new(), link_after: String::new(), container: Some(("div".into(), None)), item_ids: true }
+        Self { theme_location: location.to_owned(), menu_id: String::new(), menu_class: "menu".into(), depth: 0, link_before: String::new(), link_after: String::new(), container: Some(("div".into(), None)), used_ids: Default::default() }
+    }
+
+    /// `_nav_menu_item_id_use_once()`: takes the ids used so far, and marks the ones of this menu.
+    pub fn use_ids_once(&mut self, env: &rustpress_blocks::Env<'_>, items: &[MenuItem]) {
+        self.used_ids = env.with_state(|state| {
+            let used = state.nav_menu_item_ids.clone();
+            state.nav_menu_item_ids.extend(items.iter().map(|item| item.id));
+            used
+        });
     }
 }
 
@@ -440,7 +449,7 @@ fn walk(
         let indent = "\t".repeat(depth);
         let mut classes: Vec<String> = item.classes.iter().filter(|c| !c.is_empty()).cloned().collect();
         classes.push(format!("menu-item-{}", item.id));
-        if args.item_ids {
+        if !args.used_ids.contains(&item.id) {
             out.push_str(&format!("{indent}<li id=\"menu-item-{}\" class=\"{}\">", item.id, esc_attr(&classes.join(" "))));
         } else {
             out.push_str(&format!("{indent}<li class=\"{}\">", esc_attr(&classes.join(" "))));

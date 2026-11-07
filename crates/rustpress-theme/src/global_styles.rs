@@ -228,6 +228,39 @@ impl<'a> GlobalStyles<'a> {
         (variables, presets, sheet)
     }
 
+    /// `wp_get_global_stylesheet( array( 'styles' ) )` for a theme without `theme.json`.
+    pub fn classic_styles(&self) -> String {
+        let settings = self.settings();
+        let styles = self.json.styles();
+        let mut sheet = String::from(":where(body) { margin: 0; }");
+        sheet.push_str(":where(.is-layout-flex){gap: 0.5em;}:where(.is-layout-grid){gap: 0.5em;}");
+        sheet.push_str("body .is-layout-flex{display: flex;}.is-layout-flex{flex-wrap: wrap;align-items: center;}.is-layout-flex > :is(*, div){margin: 0;}");
+        sheet.push_str("body .is-layout-grid{display: grid;}.is-layout-grid > :is(*, div){margin: 0;}");
+        sheet.push_str(&self.root_styles(&settings, &styles));
+        // Blocks with a default block gap of their own get layout rules for it, in the order of
+        // `get_blocks_metadata()`: before the pull quote, whose rule comes from `theme.json`.
+        let mut gaps = String::new();
+        for short in ["gallery", "latest-posts", "post-template", "term-template", "columns"] {
+            let Some(block) = self.registry.get(&format!("core/{short}")) else { continue };
+            if let Some(gap) = block.supports.get("spacing").and_then(|s| s.get("blockGap")).and_then(|g| g.get("__experimentalDefault")).and_then(Value::as_str) {
+                gaps.push_str(&format!(":where(.wp-block-{short}.is-layout-flex){{gap: {gap};}}:where(.wp-block-{short}.is-layout-grid){{gap: {gap};}}"));
+            }
+        }
+        let blocks: String = self.block_chunks(&settings, &styles, None).concat();
+        match blocks.find(":root :where(.wp-block-pullquote)") {
+            Some(at) => {
+                sheet.push_str(&blocks[..at]);
+                sheet.push_str(&gaps);
+                sheet.push_str(&blocks[at..]);
+            }
+            None => {
+                sheet.push_str(&blocks);
+                sheet.push_str(&gaps);
+            }
+        }
+        sheet
+    }
+
     /// `wp_get_global_stylesheet()` for a theme without `theme.json`: the variables, the layout
     /// rules WordPress needs without block gap support, the root styles of the core defaults and
     /// the preset classes, then the chunks of the blocks on the page.

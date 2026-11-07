@@ -495,7 +495,7 @@ fn esc_textarea(text: &str) -> String {
 }
 
 /// `wp_get_code_editor_settings()` for a file.
-fn code_editor_settings(ctx: &Ctx<'_>, file: &str) -> serde_json::Value {
+pub(super) fn code_editor_settings(ctx: &Ctx<'_>, file: &str) -> serde_json::Value {
     use serde_json::{Map, Value as Json, json};
     let site = ctx.site();
     let mut codemirror = json!({

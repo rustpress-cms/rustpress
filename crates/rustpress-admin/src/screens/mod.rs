@@ -61,6 +61,7 @@ mod update_core;
 pub mod themes;
 pub mod user_edit;
 pub mod users;
+mod widgets;
 pub mod meta_boxes;
 pub mod timezones;
 
@@ -346,7 +347,7 @@ fn auth_redirect(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse {
 
 /// `wp_die()` for the administration area.
 pub fn die(env: &AdminEnv<'_>, status: u16, title: &str, message: &str) -> AdminResponse {
-    AdminResponse { status, headers: page_headers(), cookies: Vec::new(), body: crate::die::page(env.site, title, message), bytes: Vec::new() }
+    AdminResponse { status, headers: page_headers(), cookies: Vec::new(), body: crate::die::page(env.site, &env.site.tr(title), message), bytes: Vec::new() }
 }
 
 /// Handles a request to a file in `wp-admin`.
@@ -452,7 +453,10 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse
         "media.php" => bare_pages::media(&ctx.admin_url("")),
         // The screens of themes that are not block themes.
         "nav-menus.php" => nav_menus::nav_menus(&ctx).await,
+        // The menu of a classic theme has the page, and `wp-admin/includes/menu.php` stops who may not use it.
+        "widgets.php" if !env.block_theme && !ctx.can("edit_theme_options") => access_denied(&ctx),
         "widgets.php" if !ctx.can("edit_theme_options") => higher_permission(&ctx, "Sorry, you are not allowed to edit theme options on this site.", 403),
+        "widgets.php" if !env.block_theme => widgets::page(&ctx).await,
         "widgets.php" => die(env, 500, "WordPress &rsaquo; Error", &ctx.tr("The theme you are currently using is not widget-aware, meaning that it has no sidebars that you are able to change. For information on making your theme widget-aware, please <a href=\"https://developer.wordpress.org/themes/functionality/widgets/\">follow these instructions</a>.")),
         "link-manager.php" | "link-add.php" | "link.php" if !(ctx.user.can_manage_links_if_enabled() && ctx.can("install_plugins")) => die(env, 500, "WordPress &rsaquo; Error", &ctx.tr("Sorry, you are not allowed to edit the links for this site.")),
         "network.php" if !ctx.can("setup_network") => die_message(env, 500, &ctx.tr("Sorry, you are not allowed to manage options for this site.")),
@@ -759,6 +763,11 @@ pub async fn render(ctx: &Ctx<'_>, screen: &Screen, content: &str, assets: &Asse
     };
     // What the command palette's scripts need on every screen: the fetch layer, the data and preferences persistence.
     let mut assets = assets.clone();
+    assets.site_icon = rustpress_theme::classic::wp_site_icon(env.site).await.unwrap_or_default();
+    assets.rest_root = env.site.rest_url("/");
+    if env.db.option("can_compress_scripts").await.ok().flatten().is_none() {
+        assets.compression_test = include_str!("../data/compression_test.html").replace("@NONCE@", &ctx.create_nonce("update_can_compress_scripts"));
+    }
     // `wp_dequeue_script()` of the plugins.
     for handle in &plugin_assets.dequeue {
         for list in [&mut assets.scripts, &mut assets.early_scripts, &mut assets.late_scripts, &mut assets.post_header_scripts] {
@@ -863,7 +872,7 @@ pub async fn render(ctx: &Ctx<'_>, screen: &Screen, content: &str, assets: &Asse
             "wp-api-fetch".into(),
             format!(
                 "wp.apiFetch.use( wp.apiFetch.createRootURLMiddleware( {} ) );\nwp.apiFetch.nonceMiddleware = wp.apiFetch.createNonceMiddleware( {} );\nwp.apiFetch.use( wp.apiFetch.nonceMiddleware );\nwp.apiFetch.use( wp.apiFetch.mediaUploadMiddleware );\nwp.apiFetch.nonceEndpoint = {};",
-                serde_json::json!(env.site.site_url("wp-json/")),
+                serde_json::json!(env.site.rest_url("/")),
                 serde_json::json!(nonce),
                 serde_json::json!(env.site.site_url("wp-admin/admin-ajax.php?action=rest-nonce"))
             ),
