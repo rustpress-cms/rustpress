@@ -5,6 +5,7 @@
 
     python dev/templates-bake.py"""
 import base64
+import importlib.util
 import json
 import os
 import subprocess
@@ -17,10 +18,10 @@ def wsl_path(path):
     return subprocess.run(['wsl', 'wslpath', '-a', path.replace('\\', '/')], capture_output=True, text=True).stdout.strip()
 
 
-def readable(text):
-    for raw, shown in (('\ue001', '⟦'), ('\ue002', '⟧'), ('\ue003', '¦'), ('\ue004', '⟪'), ('\ue005', '⟫'), ('\ue006', '¦')):
-        text = text.replace(raw, shown)
-    return text
+spec = importlib.util.spec_from_file_location('marks', os.path.join(HERE, 'bake-marks.py'))
+marks = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(marks)
+readable = lambda text: marks.readable(marks.addresses(text))
 
 
 script = f"podman cp '{wsl_path(os.path.join(HERE, 'templates-bake.php'))}' rustpress-wp:/tmp/rp-bake.php >/dev/null && podman exec rustpress-wp php -d display_errors=0 /tmp/rp-bake.php"

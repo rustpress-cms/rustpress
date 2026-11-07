@@ -239,7 +239,7 @@ pub async fn form(ctx: &Ctx<'_>, post: &Post) -> AdminResponse {
     };
     let baked = super::pages::load(ctx, "attachment-edit");
     // `admin-header.php` names the attachment in the window title.
-    let window_title = match rustpress_blocks::content::the_title_for(site, post) {
+    let window_title = match rustpress_blocks::content::the_title_in_admin(site, post) {
         title if !title.is_empty() => sprintf(&tr("%1$s &#8220;%2$s&#8221;"), &[&tr("Edit Media"), &title]),
         _ => tr("Edit Media"),
     };

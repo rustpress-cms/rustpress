@@ -175,7 +175,7 @@ fn post_time(ctx: &Ctx<'_>, post: &Post, format: &str) -> String {
 
 /// `_draft_or_post_title()`, escaped.
 fn draft_or_title(ctx: &Ctx<'_>, post: &Post) -> String {
-    let title = rustpress_blocks::content::the_title_for(ctx.site(), post);
+    let title = rustpress_blocks::content::the_title_in_admin(ctx.site(), post);
     if title.is_empty() { esc_html(&ctx.tr("(no title)")) } else { esc_html(&title) }
 }
 

@@ -394,6 +394,16 @@ pub(super) async fn activate_one(ctx: &Ctx<'_>, file: &str) -> Result<(), String
     Ok(())
 }
 
+/// The translating part of `_get_plugin_data_markup_translate()`.
+pub(super) fn translated(ctx: &Ctx<'_>, root: &std::path::Path, plugin: &PluginInfo) -> PluginInfo {
+    let i18n = ctx.site().i18n();
+    let folder = plugin.file.rsplit_once('/').map_or("", |(folder, _)| folder);
+    let own = root.join("wp-content").join("plugins").join(folder).join(plugin.domain_path.trim_matches('/')).join(format!("{}-{}.mo", plugin.text_domain, i18n.locale));
+    // Hello Dolly is translated with WordPress.
+    let header = |text: &str| if plugin.text_domain.is_empty() && plugin.file == "hello.php" { i18n.gettext("default", text) } else { i18n.header("plugins", &plugin.text_domain, &own, text) };
+    PluginInfo { name: header(&plugin.name), plugin_uri: header(&plugin.plugin_uri), description: header(&plugin.description), author: header(&plugin.author), author_uri: header(&plugin.author_uri), version: header(&plugin.version), ..plugin.clone() }
+}
+
 pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     let tr = |s: &str| ctx.tr(s);
     let request = ctx.request;
@@ -401,7 +411,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         return die(ctx.env, 403, "WordPress &rsaquo; Error", &format!("<h1>{}</h1><p>{}</p>", tr("You need a higher level of permission."), tr("Sorry, you are not allowed to manage plugins for this site.")));
     }
     let Some(root) = ctx.env.loader.includes.parent().map(std::path::Path::to_path_buf) else { return die(ctx.env, 500, "WordPress &rsaquo; Error", "<p>The WordPress files are not available.</p>") };
-    let installed = plugins::installed(&root);
+    let installed: Vec<PluginInfo> = plugins::installed(&root).iter().map(|p| translated(ctx, &root, p)).collect();
     let mut active = active_plugins(ctx);
     let mut notices = String::new();
     // "Clear List" of the recently active plugins; the page shows right after.

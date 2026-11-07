@@ -96,55 +96,18 @@ fn translate_marked(ctx: &Ctx<'_>, text: &str) -> String {
     out
 }
 
-/// A paragraph of the help: `<p>...</p>` pieces are translated as a whole.
-fn translate_help(ctx: &Ctx<'_>, html: &str) -> String {
-    let mut out = String::new();
-    let mut rest = html;
-    while let Some(start) = rest.find("<p>") {
-        out.push_str(&rest[..start]);
-        let after = &rest[start + 3..];
-        let Some(end) = after.find("</p>") else { break };
-        out.push_str("<p>");
-        out.push_str(&ctx.tr(&after[..end]));
-        out.push_str("</p>");
-        rest = &after[end + 4..];
-    }
-    out.push_str(rest);
-    out
-}
-
-/// `<p><strong>For more information:</strong></p>` and the links: each paragraph is one message.
-fn translate_sidebar(ctx: &Ctx<'_>, html: &str) -> String {
-    let mut out = String::new();
-    let mut rest = html;
-    while let Some(start) = rest.find("<p>") {
-        out.push_str(&rest[..start]);
-        let after = &rest[start + 3..];
-        let Some(end) = after.find("</p>") else { break };
-        let inner = &after[..end];
-        out.push_str("<p>");
-        match inner.strip_prefix("<strong>").and_then(|i| i.strip_suffix("</strong>")) {
-            Some(label) => out.push_str(&format!("<strong>{}</strong>", ctx.tr(label))),
-            None => out.push_str(&ctx.tr(inner)),
-        }
-        out.push_str("</p>");
-        rest = &after[end + 4..];
-    }
-    out.push_str(rest);
-    out
-}
-
 /// The help and the (translated) content of a baked screen; `{{site}}` is the address of the site.
 pub fn load(ctx: &Ctx<'_>, name: &str) -> Baked {
     let data: Value = serde_json::from_str(source(name)).unwrap_or(Value::Null);
     let text = |v: &Value| v.as_str().unwrap_or_default().to_owned();
+    let translate = |v: &Value| super::template_text::translate(ctx.site(), &text(v));
     let tabs = data["help"]["tabs"]
         .as_array()
-        .map(|tabs| tabs.iter().map(|t| HelpTab { id: text(&t["id"]), title: ctx.tr(&text(&t["title"])), content: translate_help(ctx, &text(&t["content"])) }).collect())
+        .map(|tabs| tabs.iter().map(|t| HelpTab { id: text(&t["id"]), title: translate(&t["title"]), content: translate(&t["content"]) }).collect())
         .unwrap_or_default();
-    let help = Help { tabs, sidebar: translate_sidebar(ctx, &text(&data["help"]["sidebar"])) };
+    let help = Help { tabs, sidebar: translate(&data["help"]["sidebar"]) };
     let site = ctx.site().settings.siteurl.trim_end_matches('/').to_owned();
-    let mut content = translate_html(ctx, &text(&data["content"])).replace("{{site}}", &site);
+    let mut content = translate(&data["content"]).replace("{{site}}", &site);
     // `{{nonce:action}}`
     while let Some(start) = content.find("{{nonce:") {
         let Some(end) = content[start..].find("}}") else { break };
@@ -193,18 +156,21 @@ pub async fn import(ctx: &Ctx<'_>) -> AdminResponse {
 
 /// `about.php`, `credits.php`, `freedoms.php` and `contribute.php`: the pages about the release.
 pub async fn about(ctx: &Ctx<'_>, file: &str) -> AdminResponse {
+    if file == "about.php" {
+        // `_x( 'About', 'page title' )`, and an empty line between the footer and the strings it keeps for translators.
+        let baked = load(ctx, "about");
+        let screen = Screen { file: file.to_owned(), parent_file: file.to_owned(), submenu_file: Some(file.to_owned()), title: ctx.site().trx("About", "page title"), help: Some(baked.help), ..Default::default() };
+        let mut response = render(ctx, &screen, &baked.content, &Assets::default()).await;
+        response.body.push('\n');
+        return response;
+    }
     let (name, title) = match file {
         "credits.php" => ("credits", "Credits"),
         "freedoms.php" => ("freedoms", "Freedoms"),
         "contribute.php" => ("contribute", "Get Involved"),
-        "privacy.php" => ("privacy", "Privacy"),
-        _ => ("about", "About"),
+        _ => ("privacy", "Privacy"),
     };
     let mut response = simple(ctx, file, name, title, file, Assets::default()).await;
-    // `about.php` has an empty line between the footer and the strings it keeps for translators.
-    if file == "about.php" {
-        response.body.push('\n');
-    }
     // `freedoms.php`: the directories of WordPress.org for whoever cannot manage plugins or themes here.
     if file == "freedoms.php" {
         for (screen, cap, directory) in [("plugins.php", "activate_plugins", "https://wordpress.org/plugins/"), ("themes.php", "switch_themes", "https://wordpress.org/themes/")] {

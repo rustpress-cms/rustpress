@@ -126,7 +126,12 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         return die(ctx.env, 500, &tr("Cannot Authorize Application"), &format!("{} {}", tr("The Authorize Application request is not allowed."), problems.join(" ")));
     }
     if !site.app_passwords_available() {
-        return die(ctx.env, 501, &tr("Cannot Authorize Application"), &tr("Application passwords are not available."));
+        // `wp_die()` with `link_url` and `link_text`.
+        let back = reject_url.as_ref().map_or_else(|| ctx.admin_url(""), |url| add_query_arg(url, "error", "disabled"));
+        let back_link = format!("\n<p><a href='{}'>{}</a></p>", esc_url(&back), tr("Go Back"));
+        let mut response = die(ctx.env, 501, &tr("Cannot Authorize Application"), &tr("Application passwords are not available."));
+        response.body = crate::die::page_with_back_link(ctx.site(), &ctx.site().tr("Cannot Authorize Application"), &tr("Application passwords are not available."), &back_link);
+        return response;
     }
 
     let mut h = String::from("<div class=\"wrap\">\n\t<h1>");

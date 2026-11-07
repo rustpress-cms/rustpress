@@ -190,7 +190,7 @@ async fn formats_dropdown(ctx: &Ctx<'_>) -> String {
 /// `_draft_or_post_title()`.
 fn draft_or_title(ctx: &Ctx<'_>, post: &Post) -> String {
     // `get_the_title()`: an empty one stays empty.
-    let title = rustpress_blocks::content::the_title_for(ctx.site(), post);
+    let title = rustpress_blocks::content::the_title_in_admin(ctx.site(), post);
     if title.is_empty() { ctx.tr("(no title)") } else { esc_html(&title) }
 }
 

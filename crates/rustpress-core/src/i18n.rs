@@ -237,6 +237,9 @@ pub struct I18n {
     domains: HashMap<String, Arc<Catalog>>,
     /// `admin-{locale}.mo`, which `load_default_textdomain()` adds to `default` when `is_admin()`.
     admin: Option<Arc<Catalog>>,
+    /// `wp-content/languages`, and the catalogs read for `I18n::header()`.
+    languages: std::path::PathBuf,
+    headers: std::sync::Mutex<HashMap<String, Option<Arc<Catalog>>>>,
     data: std::sync::OnceLock<crate::locale::LocaleData>,
     texturize: std::sync::OnceLock<crate::formatting::Texturize>,
 }
@@ -244,11 +247,11 @@ pub struct I18n {
 impl I18n {
     /// Loads the core catalog, the one of the administration and those of `themes` (`(slug, directory)`) for `locale`.
     pub fn load(wp_root: &Path, locale: &str, themes: &[(String, std::path::PathBuf)]) -> Self {
-        let mut i18n = Self { locale: locale.to_owned(), domains: HashMap::new(), admin: None, data: std::sync::OnceLock::new(), texturize: std::sync::OnceLock::new() };
+        let languages = wp_root.join("wp-content").join("languages");
+        let mut i18n = Self { locale: locale.to_owned(), languages: languages.clone(), ..Self::default() };
         if locale.is_empty() || locale == "en_US" || locale.contains(['/', '\\', '.']) {
             return i18n;
         }
-        let languages = wp_root.join("wp-content").join("languages");
         let read = |path: std::path::PathBuf| crate::files::read_bytes(&path).and_then(|b| Catalog::parse(&b));
         if let Some(core) = read(languages.join(format!("{locale}.mo"))) {
             i18n.domains.insert("default".to_owned(), Arc::new(core));
@@ -273,6 +276,21 @@ impl I18n {
         if let Some(catalog) = crate::files::read_bytes(&path).and_then(|b| Catalog::parse(&b)) {
             self.domains.insert(domain.to_owned(), Arc::new(catalog));
         }
+    }
+
+    /// `translate()` of a header of a theme or plugin, which `WP_Theme::display()` and `_get_plugin_data_markup_translate()`
+    /// load the language of first, whether the extension is active or not. `kind` is the folder of the language packs
+    /// (`themes`, `plugins`, `.` for `continents-cities`), which win over `own`, the file the extension brings along.
+    pub fn header(&self, kind: &str, domain: &str, own: &Path, text: &str) -> String {
+        if text.is_empty() || domain.is_empty() || self.locale.is_empty() || self.locale == "en_US" || domain.contains(['/', '\\', '.']) {
+            return text.to_owned();
+        }
+        let mut headers = self.headers.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let catalog = headers.entry(format!("{kind}/{domain}")).or_insert_with(|| {
+            let read = |path: &Path| crate::files::read_bytes(path).and_then(|b| Catalog::parse(&b));
+            read(&self.languages.join(kind).join(format!("{domain}-{}.mo", self.locale))).or_else(|| read(own)).map(Arc::new)
+        });
+        catalog.as_ref().and_then(|catalog| catalog.get(None, text)).map_or_else(|| text.to_owned(), str::to_owned)
     }
 
     /// The rules of `wptexturize()` with this language's quotes and dashes, built once.

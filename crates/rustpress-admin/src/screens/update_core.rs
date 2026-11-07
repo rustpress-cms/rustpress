@@ -61,7 +61,19 @@ fn list_core_update(ctx: &Ctx<'_>, update: &Value, version: &str) -> String {
     }
     let mut out = format!("<p>{message}</p><form method=\"post\" action=\"{}\" name=\"upgrade\" class=\"upgrade\">{}", esc_url(action), nonce_fields(ctx));
     out.push_str(&format!("<p><input name=\"version\" value=\"{}\" type=\"hidden\" /><input name=\"locale\" value=\"{}\" type=\"hidden\" />", esc_attr(&current), esc_attr(&locale)));
-    out.push_str(&format!("<input type=\"submit\" name=\"upgrade\" id=\"upgrade\" class=\"button\" value=\"{}\"  /></p>", esc_attr(&submit)));
+    out.push_str(&format!("<input type=\"submit\" name=\"upgrade\" id=\"upgrade\" class=\"button\" value=\"{}\"  />", esc_attr(&submit)));
+    if locale != "en_US" {
+        let dismissed = matches!(field(update, "dismissed"), Some(Value::Bool(true)));
+        let (name, label) = if dismissed { ("undismiss", tr("Bring back this update")) } else { ("dismiss", tr("Hide this update")) };
+        out.push_str(&format!("<input type=\"submit\" name=\"{name}\" id=\"{name}\" class=\"button\" value=\"{}\"  />", esc_attr(&label)));
+    }
+    out.push_str("</p>");
+    if locale != "en_US" {
+        out.push_str(&format!("<p class=\"hint\">{}</p>", tr("This localized version contains both the translation and various other localization fixes.")));
+    } else if site_locale != "en_US" && text(field(update, "packages").unwrap_or(update), "partial").is_empty() && text(update, "partial_version") == version {
+        // Partial builds don't need language-specific warnings.
+        out.push_str(&format!("<p class=\"hint\">{}</p>", sprintf(&tr("You are about to install WordPress %s <strong>in English (US)</strong>. There is a chance this update will break your translation. You may prefer to wait for the localized version to be released."), &[if response == "development" { "" } else { &current }])));
+    }
     out.push_str("</form>");
     out
 }
@@ -186,7 +198,8 @@ async fn plugin_section(ctx: &Ctx<'_>, version: &str) -> String {
     if entries.is_empty() {
         return format!("<h2>{}</h2><p>{}</p>", tr("Plugins"), tr("Your plugins are all up to date."));
     }
-    let installed = crate::plugins::installed(&wp_root(ctx));
+    let root = wp_root(ctx);
+    let installed: Vec<_> = crate::plugins::installed(&root).iter().map(|p| super::plugins::translated(ctx, &root, p)).collect();
     let current_version = version.split('-').next().unwrap_or(version).to_owned();
     let mut rows = String::new();
     for (file, update) in &entries {
@@ -206,16 +219,16 @@ async fn plugin_section(ctx: &Ctx<'_>, version: &str) -> String {
             sprintf(&tr("View version %s details."), &[&new_version])
         );
         let notice = field(update, "upgrade_notice").and_then(Value::as_str).map(|n| format!("<br />{}", rustpress_core::formatting::strip_tags(n))).unwrap_or_default();
-        let checkbox_id = format!("checkbox_{}", crate::deps::md5_hex(&name));
+        let checkbox_id = format!("checkbox_{}", crate::deps::md5_hex(file));
         rows.push_str(&format!(
-            "\t<tr>\n\t\t<td class=\"check-column\">\n\t\t\t\t\t\t\t<input type=\"checkbox\" name=\"checked[]\" id=\"{checkbox_id}\" value=\"{}\" />\n\t\t\t\t<label for=\"{checkbox_id}\">\n\t\t\t\t\t<span class=\"screen-reader-text\">\n\t\t\t\t\t{}\t\t\t\t\t</span>\n\t\t\t\t</label>\n\t\t\t\t\t</td>\n\t\t<td class=\"plugin-title\"><p>\n\t\t\t{icon}\n\t\t\t<strong>{name}</strong>\n\t\t\t{} {details}<br />{compat}{notice}\t\t</p></td>\n\t</tr>\n\t\t\t",
+            "\t<tr>\n\t\t<td class=\"check-column\">\n\t\t\t\t\t\t\t<input type=\"checkbox\" name=\"checked[]\" id=\"{checkbox_id}\" value=\"{}\" />\n\t\t\t\t<label for=\"{checkbox_id}\">\n\t\t\t\t\t<span class=\"screen-reader-text\">\n\t\t\t\t\t{}\t\t\t\t\t</span>\n\t\t\t\t</label>\n\t\t\t\t\t</td>\n\t\t<td class=\"plugin-title\"><p>\n\t\t\t{icon}\t\t\t<strong>{name}</strong>\n\t\t\t{} {details}<br />{compat}{notice}\t\t</p></td>\n\t</tr>\n\t\t\t",
             esc_attr(file),
             sprintf(&tr("Select %s"), &[&name]),
             sprintf(&tr("You have version %1$s installed. Update to %2$s."), &[&installed_version, &new_version])
         ));
     }
     format!(
-        "<h2>\n\t{} <span class=\"count\">({})</span></h2>\n<p>{}</p>\n<form method=\"post\" action=\"update-core.php?action=do-plugin-upgrade\" name=\"upgrade-plugins\" class=\"upgrade\">\n\t{}<p><input id=\"upgrade-plugins\" class=\"button\" type=\"submit\" value=\"{}\" name=\"upgrade\" /></p>\n<table class=\"widefat updates-table\" id=\"update-plugins-table\">\n\t<thead>\n\t<tr>\n\t\t<td class=\"manage-column check-column\"><input type=\"checkbox\" id=\"plugins-select-all\" /></td>\n\t\t<td class=\"manage-column\"><label for=\"plugins-select-all\">{}</label></td>\n\t</tr>\n\t</thead>\n\n\t<tbody class=\"plugins\">\n{rows}\t</tbody>\n\n\t<tfoot>\n\t<tr>\n\t\t<td class=\"manage-column check-column\"><input type=\"checkbox\" id=\"plugins-select-all-2\" /></td>\n\t\t<td class=\"manage-column\"><label for=\"plugins-select-all-2\">{}</label></td>\n\t</tr>\n\t</tfoot>\n</table>\n<p><input id=\"upgrade-plugins-2\" class=\"button\" type=\"submit\" value=\"{}\" name=\"upgrade\" /></p>\n</form>\n",
+        "<h2>\n\t{} <span class=\"count\">({})</span></h2>\n<p>{}</p>\n<form method=\"post\" action=\"update-core.php?action=do-plugin-upgrade\" name=\"upgrade-plugins\" class=\"upgrade\">\n\t{}<p><input id=\"upgrade-plugins\" class=\"button\" type=\"submit\" value=\"{}\" name=\"upgrade\" /></p>\n<table class=\"widefat updates-table\" id=\"update-plugins-table\">\n\t<thead>\n\t<tr>\n\t\t<td class=\"manage-column check-column\"><input type=\"checkbox\" id=\"plugins-select-all\" /></td>\n\t\t<td class=\"manage-column\"><label for=\"plugins-select-all\">{}</label></td>\n\t</tr>\n\t</thead>\n\n\t<tbody class=\"plugins\">\n\t{rows}\t</tbody>\n\n\t<tfoot>\n\t<tr>\n\t\t<td class=\"manage-column check-column\"><input type=\"checkbox\" id=\"plugins-select-all-2\" /></td>\n\t\t<td class=\"manage-column\"><label for=\"plugins-select-all-2\">{}</label></td>\n\t</tr>\n\t</tfoot>\n</table>\n<p><input id=\"upgrade-plugins-2\" class=\"button\" type=\"submit\" value=\"{}\" name=\"upgrade\" /></p>\n</form>\n\t",
         tr("Plugins"),
         entries.len(),
         tr("The following plugins have new versions available. Check the ones you want to update and then click &#8220;Update Plugins&#8221;."),
@@ -231,7 +244,8 @@ async fn plugin_section(ctx: &Ctx<'_>, version: &str) -> String {
 async fn theme_section(ctx: &Ctx<'_>) -> String {
     let tr = |s: &str| ctx.tr(s);
     let updates = crate::updates::theme_updates(ctx.site()).await;
-    let installed = crate::themes::installed(&wp_root(ctx));
+    let raw = crate::themes::installed(&wp_root(ctx));
+    let installed: Vec<_> = raw.iter().map(|t| super::themes::translated(ctx, t)).collect();
     let mut entries: Vec<(&crate::themes::ThemeInfo, &crate::updates::ThemeUpdate)> = installed.iter().filter_map(|t| updates.get(&t.stylesheet).map(|u| (t, u))).collect();
     entries.sort_by_key(|(t, _)| t.name.to_lowercase());
     if entries.is_empty() {
@@ -240,10 +254,12 @@ async fn theme_section(ctx: &Ctx<'_>) -> String {
     let siteurl = ctx.site().settings.siteurl.trim_end_matches('/').to_owned();
     let mut rows = String::new();
     for (theme, update) in &entries {
-        let checkbox_id = format!("checkbox_{}", crate::deps::md5_hex(&theme.name));
+        // `$theme->get( 'Name' )`: the name as the theme has it.
+        let raw_name = raw.iter().find(|t| t.stylesheet == theme.stylesheet).map_or(theme.name.as_str(), |t| t.name.as_str());
+        let checkbox_id = format!("checkbox_{}", crate::deps::md5_hex(raw_name));
         let screenshot = theme.screenshot.as_ref().map(|file| format!("\t\t\t<img src=\"{siteurl}/wp-content/themes/{}/{file}?ver={}\" width=\"85\" height=\"64\" class=\"updates-table-screenshot\" alt=\"\" />\n", theme.stylesheet, theme.version)).unwrap_or_default();
         rows.push_str(&format!(
-            "\t\t<tr>\n\t\t<td class=\"check-column\">\n\t\t\t\t\t\t\t<input type=\"checkbox\" name=\"checked[]\" id=\"{checkbox_id}\" value=\"{}\" />\n\t\t\t\t<label for=\"{checkbox_id}\">\n\t\t\t\t\t<span class=\"screen-reader-text\">\n\t\t\t\t\t{}\t\t\t\t\t</span>\n\t\t\t\t</label>\n\t\t\t\t\t</td>\n\t\t<td class=\"plugin-title\"><p>\n{screenshot}\t\t\t<strong>{}</strong>\n\t\t\t{} \t\t</p></td>\n\t</tr>\n\t\t\t",
+            "\t<tr>\n\t\t<td class=\"check-column\">\n\t\t\t\t\t\t\t<input type=\"checkbox\" name=\"checked[]\" id=\"{checkbox_id}\" value=\"{}\" />\n\t\t\t\t<label for=\"{checkbox_id}\">\n\t\t\t\t\t<span class=\"screen-reader-text\">\n\t\t\t\t\t{}\t\t\t\t\t</span>\n\t\t\t\t</label>\n\t\t\t\t\t</td>\n\t\t<td class=\"plugin-title\"><p>\n{screenshot}\t\t\t<strong>{}</strong>\n\t\t\t{} \t\t</p></td>\n\t</tr>\n\t\t\t",
             esc_attr(&theme.stylesheet),
             sprintf(&tr("Select %s"), &[&theme.name]),
             esc_html(&theme.name),
@@ -251,7 +267,7 @@ async fn theme_section(ctx: &Ctx<'_>) -> String {
         ));
     }
     format!(
-        "<h2>\n\t{} <span class=\"count\">({})</span></h2>\n<p>{}</p>\n<p>\n\t{}</p>\n<form method=\"post\" action=\"update-core.php?action=do-theme-upgrade\" name=\"upgrade-themes\" class=\"upgrade\">\n\t{}<p><input id=\"upgrade-themes\" class=\"button\" type=\"submit\" value=\"{}\" name=\"upgrade\" /></p>\n<table class=\"widefat updates-table\" id=\"update-themes-table\">\n\t<thead>\n\t<tr>\n\t\t<td class=\"manage-column check-column\"><input type=\"checkbox\" id=\"themes-select-all\" /></td>\n\t\t<td class=\"manage-column\"><label for=\"themes-select-all\">{}</label></td>\n\t</tr>\n\t</thead>\n\n\t<tbody class=\"plugins\">\n{rows}\t</tbody>\n\n\t<tfoot>\n\t<tr>\n\t\t<td class=\"manage-column check-column\"><input type=\"checkbox\" id=\"themes-select-all-2\" /></td>\n\t\t<td class=\"manage-column\"><label for=\"themes-select-all-2\">{}</label></td>\n\t</tr>\n\t</tfoot>\n</table>\n<p><input id=\"upgrade-themes-2\" class=\"button\" type=\"submit\" value=\"{}\" name=\"upgrade\" /></p>\n</form>\n",
+        "<h2>\n\t{} <span class=\"count\">({})</span></h2>\n<p>{}</p>\n<p>\n\t{}</p>\n<form method=\"post\" action=\"update-core.php?action=do-theme-upgrade\" name=\"upgrade-themes\" class=\"upgrade\">\n\t{}<p><input id=\"upgrade-themes\" class=\"button\" type=\"submit\" value=\"{}\" name=\"upgrade\" /></p>\n<table class=\"widefat updates-table\" id=\"update-themes-table\">\n\t<thead>\n\t<tr>\n\t\t<td class=\"manage-column check-column\"><input type=\"checkbox\" id=\"themes-select-all\" /></td>\n\t\t<td class=\"manage-column\"><label for=\"themes-select-all\">{}</label></td>\n\t</tr>\n\t</thead>\n\n\t<tbody class=\"plugins\">\n\t{rows}\t</tbody>\n\n\t<tfoot>\n\t<tr>\n\t\t<td class=\"manage-column check-column\"><input type=\"checkbox\" id=\"themes-select-all-2\" /></td>\n\t\t<td class=\"manage-column\"><label for=\"themes-select-all-2\">{}</label></td>\n\t</tr>\n\t</tfoot>\n</table>\n<p><input id=\"upgrade-themes-2\" class=\"button\" type=\"submit\" value=\"{}\" name=\"upgrade\" /></p>\n</form>\n\t",
         tr("Themes"),
         entries.len(),
         tr("The following themes have new versions available. Check the ones you want to update and then click &#8220;Update Themes&#8221;."),
@@ -271,7 +287,7 @@ fn translation_section(ctx: &Ctx<'_>, any: bool) -> String {
     }
     let tr = |s: &str| ctx.tr(s);
     format!(
-        "\t\t<h2>{}</h2>\n\t<form method=\"post\" action=\"update-core.php?action=do-translation-upgrade\" name=\"upgrade-translations\" class=\"upgrade\">\n\t\t<p>{}</p>\n\t\t{}\t\t<p><input class=\"button\" type=\"submit\" value=\"{}\" name=\"upgrade\" /></p>\n\t</form>\n",
+        "\t<h2>{}</h2>\n\t<form method=\"post\" action=\"update-core.php?action=do-translation-upgrade\" name=\"upgrade-translations\" class=\"upgrade\">\n\t\t<p>{}</p>\n\t\t{}\t\t<p><input class=\"button\" type=\"submit\" value=\"{}\" name=\"upgrade\" /></p>\n\t</form>\n\t",
         tr("Translations"),
         tr("New translations are available."),
         nonce_fields(ctx),
@@ -283,10 +299,12 @@ fn translation_section(ctx: &Ctx<'_>, any: bool) -> String {
 fn time_with_zone(ctx: &Ctx<'_>, timestamp: i64) -> String {
     let site = ctx.site();
     let format = tr_format(ctx);
-    if site.options.string("timezone_string", "").is_empty() {
+    if site.options.string("timezone_string", "").is_empty()
+        && let Some(format) = format.strip_suffix('T')
+    {
         let offset = site.options.string("gmt_offset", "0").parse::<f64>().unwrap_or(0.0);
         let zone = format!("GMT{}", rustpress_core::datetime::offset_string((offset * 3600.0) as i32, false));
-        return format!("{} {zone}", site.date(&format.replace(" T", ""), timestamp));
+        return format!("{}{zone}", site.date(format, timestamp));
     }
     site.date(&format, timestamp)
 }
@@ -368,7 +386,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     };
     let translations = has_translations(ctx, "update_core").await || has_translations(ctx, "update_plugins").await || has_translations(ctx, "update_themes").await;
     let content = format!(
-        "\t<div class=\"wrap\">\n\t<h1>{}</h1>\n\t<p>{}</p>\n\n\t{}<h2 class=\"wp-current-version\">{}</h2>{last}\n{}\n\t{}{}{}{}\n\t</div>\n",
+        "\t<div class=\"wrap\">\n\t<h1>{}</h1>\n\t<p>{}</p>\n\n\t{}<h2 class=\"wp-current-version\">{}</h2>{last}\n{}\n\t{}{}{}{}</div>",
         tr("WordPress Updates"),
         tr("Updates may take several minutes to complete. If there is no feedback after 5 minutes, or if there are errors please refer to the Help section above."),
         upgrade_error_notice(ctx, upgrade_error).await,
@@ -379,9 +397,16 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         theme_section(ctx).await,
         translation_section(ctx, translations)
     );
-    let screen = Screen { file: "update-core.php".into(), content_inline: true, parent_file: "index.php".into(), submenu_file: Some("update-core.php".into()), title: tr("WordPress Updates"), help: Some(super::pages::load(ctx, "update-core").help), ..Default::default() };
+    // `$updates_howto`.
+    let mut help = super::pages::load(ctx, "update-core").help;
+    if ctx.site().locale() != "en_US"
+        && let Some(tab) = help.tabs.iter_mut().find(|tab| tab.id == "how-to-update")
+    {
+        tab.content.push_str(&format!("<p>{}</p>", tr("<strong>Translations</strong> &mdash; The files translating WordPress into your language are updated for you whenever any other updates occur. But if these files are out of date, you can <strong>click the &#8220;Update Translations&#8221;</strong> button.")));
+    }
+    let screen = Screen { file: "update-core.php".into(), content_inline: true, parent_file: "index.php".into(), submenu_file: Some("update-core.php".into()), title: tr("WordPress Updates"), help: Some(help), ..Default::default() };
     let counts = crate::updates::counts(site).await;
-    let totals = serde_json::json!({"counts": {"plugins": counts.plugins, "themes": counts.themes, "wordpress": counts.wordpress, "translations": counts.translations, "total": counts.total()}, "title": ""});
+    let totals = crate::updates::update_data(ctx.site(), counts);
     let assets = Assets {
         scripts: vec!["plugin-install".into(), "updates".into(), "thickbox".into()],
         styles: vec!["plugin-install".into(), "thickbox".into()],

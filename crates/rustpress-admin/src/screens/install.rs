@@ -94,7 +94,7 @@ pub async fn theme_install(ctx: &Ctx<'_>) -> AdminResponse {
             "search": tr("Search Themes"),
             "upload": tr("Upload Theme"),
             "back": tr("Back"),
-            "error": tr("An unexpected error occurred. Something may be wrong with WordPress.org or this server&#8217;s configuration. If you continue to have problems, please try the <a href=\"https://wordpress.org/support/forums/\">support forums</a>."),
+            "error": rustpress_core::i18n::sprintf(&tr("An unexpected error occurred. Something may be wrong with WordPress.org or this server&#8217;s configuration. If you continue to have problems, please try the <a href=\"%s\">support forums</a>."), &[&tr("https://wordpress.org/support/forums/")]),
             "tryAgain": tr("Try Again"),
             "themesFound": tr("Number of Themes found: %d"),
             "noThemesFound": tr("No themes found. Try a different search."),

@@ -702,13 +702,25 @@ fn first_media_button_id(body: String) -> String {
     format!("{head}{}", tail.replace(ID, " class=\"button insert-media add_media\""))
 }
 
+/// The menu of the signed-in user.
+async fn admin_menu(ctx: &Ctx<'_>) -> AdminMenu {
+    let updates = crate::updates::counts(ctx.env.site).await;
+    let pending = ctx.env.db.count_comments_with_status("0").await.unwrap_or(0);
+    menu_with(ctx, &updates, pending)
+}
+
+fn menu_with(ctx: &Ctx<'_>, updates: &crate::updates::UpdateCounts, pending: u64) -> AdminMenu {
+    let env = ctx.env;
+    let menu_context = MenuContext { request_uri: ctx.request.request_uri.clone(), block_theme: env.block_theme, pending_comments: pending, updates: (updates.total(), updates.plugins, updates.themes), site_title: env.site.settings.blogname.clone() };
+    AdminMenu::core(env.site, &ctx.user, &menu_context).with_plugin_pages(&env.site.plugins.admin_pages(env.site)).prepare(&ctx.user)
+}
+
 /// The frame around `content` for the signed-in user.
 pub async fn render(ctx: &Ctx<'_>, screen: &Screen, content: &str, assets: &Assets) -> AdminResponse {
     let env = ctx.env;
     let updates = crate::updates::counts(env.site).await;
     let pending = env.db.count_comments_with_status("0").await.unwrap_or(0);
-    let menu_context = MenuContext { request_uri: ctx.request.request_uri.clone(), block_theme: env.block_theme, pending_comments: pending, updates: (updates.total(), updates.plugins, updates.themes), site_title: env.site.settings.blogname.clone() };
-    let menu = AdminMenu::core(env.site, &ctx.user, &menu_context).with_plugin_pages(&env.site.plugins.admin_pages(env.site)).prepare(&ctx.user);
+    let menu = menu_with(ctx, &updates, pending);
     // `admin_enqueue_scripts` and `admin_notices` of the plugins.
     let hook_suffix = screen.hook_suffix.clone().unwrap_or_else(|| screen.file.clone());
     let parts = ctx.plugin_parts();

@@ -44,11 +44,13 @@ pub async fn guide(ctx: &Ctx<'_>) -> AdminResponse {
     if !ctx.can("manage_privacy_options") {
         return super::common::die_plain(ctx, "Sorry, you are not allowed to manage privacy options on this site.");
     }
+    // `options-privacy.php?tab=policyguide` includes the file and stays that page.
+    let through_settings = ctx.request.file == "options-privacy.php";
     let baked = super::pages::load(ctx, "privacy-policy-guide");
     let screen = Screen {
-        file: "privacy-policy-guide.php".into(),
-        parent_file: "privacy-policy-guide.php".into(),
-        submenu_file: None,
+        file: if through_settings { "options-privacy.php" } else { "privacy-policy-guide.php" }.into(),
+        parent_file: if through_settings { "options-general.php" } else { "privacy-policy-guide.php" }.into(),
+        submenu_file: through_settings.then(|| "options-privacy.php".to_owned()),
         title: ctx.tr("Privacy Policy Guide"),
         help: Some(baked.help),
         early_classes: vec!["privacy-settings ".into()],
@@ -66,7 +68,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     let assets = Assets { scripts: vec!["privacy-tools".into()], ..Default::default() };
     let screen = |title: &str, help: crate::chrome::Help| Screen { file: "options-privacy.php".into(), content_inline: true, parent_file: "options-general.php".into(), submenu_file: Some("options-privacy.php".into()), title: tr(title), help: Some(help), early_classes: vec!["privacy-settings ".into()], ..Default::default() };
     if ctx.request.get("tab") == Some("policyguide") {
-        return redirect(&ctx.admin_url("privacy-policy-guide.php"));
+        return guide(ctx).await;
     }
 
     let request = ctx.request;
@@ -138,7 +140,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     let referer = esc_url(&request.request_uri);
     let row = if has_pages {
         let label = if exists { tr("Change your Privacy Policy page") } else { tr("Select a Privacy Policy page") };
-        ROW.replace("{{change_label}}", &label).replace("{{dropdown}}", &pages_dropdown(ctx, page_id).await).replace("{{nonce:set-privacy-page}}", &ctx.create_nonce("set-privacy-page")).replace("{{referer}}", &referer)
+        ROW.replace("{{change_label}}", &label).replace("Use This Page", &tr("Use This Page")).replace("{{dropdown}}", &pages_dropdown(ctx, page_id).await).replace("{{nonce:set-privacy-page}}", &ctx.create_nonce("set-privacy-page")).replace("{{referer}}", &referer)
     } else {
         String::new()
     };

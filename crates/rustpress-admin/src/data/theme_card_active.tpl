@@ -4,20 +4,20 @@
 		</div>
 	
 		{{update_notice}}<button type="button" class="more-details" id="{{id}}-action"
-		aria-label="View Theme Details for {{name}}"
-	>Theme Details</button>
+		aria-label="⟦a¦theme¦View Theme Details for ⟪%s¦{{name}}⟫⟧"
+	>⟦r¦¦Theme Details⟧</button>
 	<div class="theme-author">
-		By {{author}}	</div>
+		⟦r¦¦By ⟪%s¦{{author}}⟫⟧	</div>
 
 	<div class="theme-id-container">
 					<h2 class="theme-name" id="{{id}}-name">
-				<span>Active:</span> {{name}}			</h2>
+				<span>⟦r¦theme¦Active:⟧</span> {{name}}			</h2>
 		
 		<div class="theme-actions">
 									<a class="button button-compact button-primary customize load-customize hide-if-no-customize"
-					href="{{site}}/wp-admin/site-editor.php?return={{return}}"
-					aria-label="Customize {{name}}"
-				>Customize</a>
+					href="{{customize}}"
+					aria-label="⟦a¦theme¦Customize ⟪%s¦{{name}}⟫⟧"
+				>⟦r¦¦Customize⟧</a>
 					
 		</div>
 	</div>
