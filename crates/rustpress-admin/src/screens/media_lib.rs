@@ -235,9 +235,9 @@ async fn list_mode(ctx: &Ctx<'_>, title: String) -> AdminResponse {
     let last_item = items.last().cloned();
     let mut columns = vec![
         Column::new("cb", ""),
-        Column::new("title", &tr("File")).sortable("title", false, Some(&tr("File")), None),
+        Column::new("title", &ctx.site().trx("File", "column name")).sortable("title", false, Some(&ctx.site().trx("File", "column name")), None),
         Column::new("author", &tr("Author")).sortable("author", false, Some(&tr("Author")), None),
-        Column::new("parent", &tr("Uploaded to")).sortable("parent", false, Some(&tr("Uploaded to")), None),
+        Column::new("parent", &ctx.site().trx("Uploaded to", "column name")).sortable("parent", false, Some(&ctx.site().trx("Uploaded to", "column name")), None),
         Column::new("date", &tr("Date")).sortable("date", true, Some(&tr("Date")), Some("desc")),
     ];
     if detached {
@@ -421,17 +421,17 @@ async fn row(ctx: &Ctx<'_>, post: &Post, detached: bool) -> String {
     let state = if site.options.u64("site_logo", 0) == post.id { format!(" &mdash; <span class='post-state'>{}</span>", tr("Logo")) } else { String::new() };
     let mut actions: Vec<(String, String)> = Vec::new();
     if can_edit {
-        actions.push(("edit".into(), format!("<a href=\"{}\" aria-label=\"{}\">{}</a>", esc_url(&edit_url), esc_attr(&sprintf(&tr("Edit %s"), &[&quote])), tr("Edit"))));
+        actions.push(("edit".into(), format!("<a href=\"{}\" aria-label=\"{}\">{}</a>", esc_url(&edit_url), esc_attr(&sprintf(&tr("Edit &#8220;%s&#8221;"), &[&title])), tr("Edit"))));
     }
     if can_delete {
-        actions.push(("delete".into(), format!("<a href=\"post.php?action=delete&#038;post={}&#038;_wpnonce={}\" class=\"submitdelete aria-button-if-js\" onclick='return showNotice.warn();' aria-label=\"{}\">{}</a>", post.id, ctx.create_nonce(&format!("delete-post_{}", post.id)), esc_attr(&sprintf(&tr("Delete %s permanently"), &[&quote])), tr("Delete Permanently"))));
+        actions.push(("delete".into(), format!("<a href=\"post.php?action=delete&#038;post={}&#038;_wpnonce={}\" class=\"submitdelete aria-button-if-js\" onclick='return showNotice.warn();' aria-label=\"{}\">{}</a>", post.id, ctx.create_nonce(&format!("delete-post_{}", post.id)), esc_attr(&sprintf(&tr("Delete &#8220;%s&#8221; permanently"), &[&title])), tr("Delete Permanently"))));
     }
     let permalink = site.permalink(post).await.unwrap_or_default();
     actions.push(("view".into(), format!("<a href=\"{}\" aria-label=\"{}\" rel=\"bookmark\">{}</a>", esc_url(&permalink), esc_attr(&sprintf(&tr("View %s"), &[&quote])), tr("View"))));
-    actions.push(("copy".into(), format!("<span class=\"copy-to-clipboard-container\"><button type=\"button\" class=\"button-link copy-attachment-url media-library\" data-clipboard-text=\"{}\" aria-label=\"{}\">{}</button><span class=\"success hidden\" aria-hidden=\"true\">{}</span></span>", esc_attr(&url), esc_attr(&sprintf(&tr("Copy %s URL to clipboard"), &[&quote])), tr("Copy URL"), tr("Copied!"))));
-    actions.push(("download".into(), format!("<a href=\"{}\" aria-label=\"{}\" download>{}</a>", esc_url(&url), esc_attr(&sprintf(&tr("Download %s"), &[&quote])), tr("Download file"))));
+    actions.push(("copy".into(), format!("<span class=\"copy-to-clipboard-container\"><button type=\"button\" class=\"button-link copy-attachment-url media-library\" data-clipboard-text=\"{}\" aria-label=\"{}\">{}</button><span class=\"success hidden\" aria-hidden=\"true\">{}</span></span>", esc_attr(&url), esc_attr(&sprintf(&tr("Copy &#8220;%s&#8221; URL to clipboard"), &[&title])), tr("Copy URL"), tr("Copied!"))));
+    actions.push(("download".into(), format!("<a href=\"{}\" aria-label=\"{}\" download>{}</a>", esc_url(&url), esc_attr(&sprintf(&tr("Download &#8220;%s&#8221;"), &[&title])), tr("Download file"))));
     if detached && can_edit {
-        actions.push(("attach".into(), format!("<a href=\"#the-list\" onclick=\"findPosts.open( 'media[]', '{}' ); return false;\" class=\"hide-if-no-js aria-button-if-js\" aria-label=\"{}\">{}</a>", post.id, esc_attr(&sprintf(&tr("Attach %s to existing content"), &[&quote])), tr("Attach"))));
+        actions.push(("attach".into(), format!("<a href=\"#the-list\" onclick=\"findPosts.open( 'media[]', '{}' ); return false;\" class=\"hide-if-no-js aria-button-if-js\" aria-label=\"{}\">{}</a>", post.id, esc_attr(&sprintf(&tr("Attach &#8220;%s&#8221; to existing content"), &[&title])), tr("Attach"))));
     }
     let author = match db.user(post.post_author).await.ok().flatten() {
         Some(user) => format!("<a href=\"{}\">{}</a>", esc_url(&format!("upload.php?author={}", user.id)), esc_html(&user.display_name)),
@@ -450,7 +450,7 @@ async fn row(ctx: &Ctx<'_>, post: &Post, detached: bool) -> String {
             };
             format!("{heading}{detach}")
         }
-        None if can_edit => format!("{}\t\t\t<br /><a href=\"#the-list\" onclick=\"findPosts.open( 'media[]', '{}' ); return false;\" class=\"hide-if-no-js aria-button-if-js\" aria-label=\"{}\">{}</a>", tr("(Unattached)"), post.id, esc_attr(&sprintf(&tr("Attach %s to existing content"), &[&quote])), tr("Attach")),
+        None if can_edit => format!("{}\t\t\t<br /><a href=\"#the-list\" onclick=\"findPosts.open( 'media[]', '{}' ); return false;\" class=\"hide-if-no-js aria-button-if-js\" aria-label=\"{}\">{}</a>", tr("(Unattached)"), post.id, esc_attr(&sprintf(&tr("Attach &#8220;%s&#8221; to existing content"), &[&title])), tr("Attach")),
         None => format!("{}\t\t\t", tr("(Unattached)")),
     };
     let timestamp = rustpress_core::datetime::SiteTimezone::gmt_timestamp(&post.post_date_gmt).unwrap_or(0);
@@ -465,14 +465,14 @@ async fn row(ctx: &Ctx<'_>, post: &Post, detached: bool) -> String {
         } else {
             String::new()
         },
-        file = tr("File"),
+        file = ctx.site().trx("File", "column name"),
         // `get_primary_column_aria_label()`.
         label = esc_attr(&rustpress_core::formatting::wp_strip_all_tags(&rustpress_core::formatting::html_entity_decode(&esc_html(&title)))),
         filename_label = tr("File name:"),
         filename = esc_html(attached.rsplit('/').next().unwrap_or_default()),
         actions = row_actions(site, &actions).trim_start_matches("").to_owned(),
         author_label = tr("Author"),
-        parent_cell = if detached { String::new() } else { format!("<td class='parent column-parent' data-colname=\"{}\">{parent}</td>", tr("Uploaded to")) },
+        parent_cell = if detached { String::new() } else { format!("<td class='parent column-parent' data-colname=\"{}\">{parent}</td>", ctx.site().trx("Uploaded to", "column name")) },
         date_label = tr("Date"),
     )
 }
@@ -567,12 +567,12 @@ pub async fn media_new(ctx: &Ctx<'_>) -> AdminResponse {
     h.push_str(&format!(
         "\t<div id=\"plupload-upload-ui\" class=\"hide-if-no-js\">\n\t\t<div id=\"drag-drop-area\">\n\t\t<div class=\"drag-drop-inside\">\n\t\t<p class=\"drag-drop-info\">{drop}</p>\n\t\t<p>{or}</p>\n\t\t<p class=\"drag-drop-buttons\"><input id=\"plupload-browse-button\" type=\"button\" value=\"{select}\" class=\"button\" /></p>\n\t\t</div>\n\t</div>\n\t\t<p class=\"upload-flash-bypass\">\n\t{bypass}\t</p>\n\t\t</div>\n\n\t<div id=\"html-upload-ui\" class=\"hide-if-js\">\n\t\t<p id=\"async-upload-wrap\">\n\t\t<label class=\"screen-reader-text\" for=\"async-upload\">\n\t\t\t{upload}\t\t</label>\n\t\t<input type=\"file\" name=\"async-upload\" id=\"async-upload\" />\n\t\t<input type=\"submit\" name=\"html-upload\" id=\"html-upload\" class=\"button button-primary\" value=\"{upload}\"  />\t\t<a href=\"#\" onclick=\"try{{top.tb_remove();}}catch(e){{}}; return false;\">{cancel}</a>\n\t</p>\n\t<div class=\"clear\"></div>\n\t\t<p class=\"upload-html-bypass hide-if-no-js\">\n\t{html_bypass}\t</p>\n\t\t</div>\n\n<p class=\"max-upload-size\">\n\t{max}</p>\n\t\n\t<script>\n\tvar post_id = 0, shortform = 3;\n\t</script>\n\t<input type=\"hidden\" name=\"post_id\" id=\"post_id\" value=\"0\" />\n\t{nonce_field}\t<div id=\"media-items\" class=\"hide-if-no-js\"></div>\n\t</form>\n</div>\n\n",
         drop = tr("Drop files to upload"),
-        or = tr("or"),
+        or = ctx.site().trx("or", "Uploader: Drop files here - or - Select Files"),
         select = tr("Select Files"),
-        bypass = sprintf(&tr("You are using the multi-file uploader. Problems? Try the <button type=\"button\" class=\"button-link\">browser uploader</button> instead."), &[]),
-        upload = tr("Upload"),
+        bypass = sprintf(&sprintf(&tr("You are using the multi-file uploader. Problems? Try the <button %s>browser uploader</button> instead."), &["type=\"button\" class=\"button-link\""]), &[]),
+        upload = ctx.site().trx("Upload", "verb"),
         cancel = tr("Cancel"),
-        html_bypass = tr("You are using the browser&#8217;s built-in file uploader. The WordPress uploader includes multiple file selection and drag and drop capability. <button type=\"button\" class=\"button-link\">Switch to the multi-file uploader</button>."),
+        html_bypass = sprintf(&tr("You are using the browser&#8217;s built-in file uploader. The WordPress uploader includes multiple file selection and drag and drop capability. <button %s>Switch to the multi-file uploader</button>."), &["type=\"button\" class=\"button-link\""]),
         max = sprintf(&tr("Maximum upload file size: %s."), &[&super::ajax_media::size_format(super::media_ui::max_upload())]),
         nonce_field = format!("<input type=\"hidden\" id=\"_wpnonce\" name=\"_wpnonce\" value=\"{nonce}\" /><input type=\"hidden\" name=\"_wp_http_referer\" value=\"{}\" />", super::referer_field_value(&request.request_uri)),
     ));

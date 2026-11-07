@@ -189,10 +189,10 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     let role_options = |suffix: &str| -> String {
         let options: Vec<String> = all_roles.iter().rev().map(|(slug, name)| format!("\t<option value='{}'>{}</option>", esc_attr(slug), site.trx(name, "User role"))).collect();
         format!(
-            "\t<div class=\"alignleft actions\">\n\t\t\t\t<label class=\"screen-reader-text\" for=\"new_role{suffix}\">\n\t\t\t{change}\t\t</label>\n\t\t<select name=\"new_role{suffix}\" id=\"new_role{suffix}\">\n\t\t\t<option value=\"\">{change}</option>\n\t\t\t\n{options}\t\t\t<option value=\"none\">&mdash; {none} &mdash;</option>\n\t\t</select>\n\t\t\t<input type=\"submit\" name=\"changeit{suffix}\" id=\"changeit{suffix}\" class=\"button\" value=\"{btn}\"  />\t\t</div>\n\t\t",
+            "\t<div class=\"alignleft actions\">\n\t\t\t\t<label class=\"screen-reader-text\" for=\"new_role{suffix}\">\n\t\t\t{change}\t\t</label>\n\t\t<select name=\"new_role{suffix}\" id=\"new_role{suffix}\">\n\t\t\t<option value=\"\">{change}</option>\n\t\t\t\n{options}\t\t\t<option value=\"none\">{none}</option>\n\t\t</select>\n\t\t\t<input type=\"submit\" name=\"changeit{suffix}\" id=\"changeit{suffix}\" class=\"button\" value=\"{btn}\"  />\t\t</div>\n\t\t",
             options = options.join("\n"),
             change = tr("Change role to&hellip;"),
-            none = tr("No role for this site"),
+            none = tr("&mdash; No role for this site &mdash;"),
             btn = tr("Change")
         )
     };
@@ -238,7 +238,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     h.push_str(&format!(
         "\t\t<form method=\"get\">\n\n\t\t{}<p class=\"search-box\">\n\t<label class=\"screen-reader-text\" for=\"user-search-input\">{}</label>\n\t<input type=\"search\" id=\"user-search-input\" name=\"s\" value=\"{}\" />\n\t\t<input type=\"submit\" id=\"search-submit\" class=\"button button-compact\" value=\"{}\"  /></p>\n\t\t\n{}\t\t{}\n\t\t</form>\n\n\t\t<div class=\"clear\"></div>\n\t\t</div><!-- .wrap -->\n\t\t",
         sort_inputs,
-        tr("Search Users:"),
+        format!("{}:", tr("Search Users")),
         esc_attr(&search),
         esc_attr(&tr("Search Users")),
         if role.is_empty() { "\t\t\n".to_owned() } else { format!("\t\t\t\t\t<input type=\"hidden\" name=\"role\" value=\"{}\" />\n", esc_attr(&role)) },
@@ -325,7 +325,7 @@ async fn row(ctx: &Ctx<'_>, user: &User, posts: u64, _role_count: &[(String, u64
     if user.id != ctx.user.id && can_edit {
         actions.push(("resetpassword".into(), format!("<a class='resetpassword' href='users.php?action=resetpassword&amp;users={}&amp;_wpnonce={nonce}'>{}</a>", user.id, tr("Send password reset"))));
     }
-    let name_cell = if full_name.is_empty() { format!("<span aria-hidden=\"true\">&#8212;</span><span class=\"screen-reader-text\">{}</span>", tr("Unknown")) } else { esc_html(&full_name) };
+    let name_cell = if full_name.is_empty() { format!("<span aria-hidden=\"true\">&#8212;</span><span class=\"screen-reader-text\">{}</span>", ctx.site().trx("Unknown", "name")) } else { esc_html(&full_name) };
     let posts_cell = if posts > 0 {
         format!("<a href=\"edit.php?author={}\" class=\"edit\"><span aria-hidden=\"true\">{posts}</span><span class=\"screen-reader-text\">{}</span></a>", user.id, sprintf(&site.trn("%s post by this author", "%s posts by this author", posts as i64), &[&site.number_i18n(posts)]))
     } else {

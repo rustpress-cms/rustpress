@@ -68,6 +68,14 @@ pub async fn wp_get_custom_css(site: &Site, mods: &Value) -> Result<String> {
     Ok(post.post_content)
 }
 
+/// `get_theme_support( 'post-formats' )`, in the order of the theme.
+pub fn post_formats(theme: &str) -> &'static [&'static str] {
+    match theme {
+        "twentyseventeen" => &["aside", "image", "video", "quote", "link", "gallery", "audio"],
+        _ => &["aside", "audio", "chat", "gallery", "image", "link", "quote", "status", "video"],
+    }
+}
+
 /// `$content_width` a ported theme sets on `after_setup_theme`.
 pub fn content_width(theme: &str) -> Option<u64> {
     (theme == "twentyseventeen").then_some(525)

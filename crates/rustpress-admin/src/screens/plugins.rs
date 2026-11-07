@@ -113,7 +113,7 @@ fn row(ctx: &Ctx<'_>, plugin: &PluginInfo, info: &RowInfo<'_>) -> String {
     let updates_nonce = ctx.create_nonce("updates");
     let mut links: Vec<(String, String)> = Vec::new();
     if active {
-        links.push(("deactivate".into(), format!("<a href=\"plugins.php?action=deactivate&amp;plugin={file_q}&amp;plugin_status={status}&amp;paged=1&amp;{s_arg}&amp;_wpnonce={deactivate_nonce}\" id=\"deactivate-{slug}\" aria-label=\"{}\">{}</a>", esc_attr(&rustpress_core::i18n::sprintf(&tr("Deactivate %s"), &[&plugin.name])), tr("Deactivate"))));
+        links.push(("deactivate".into(), format!("<a href=\"plugins.php?action=deactivate&amp;plugin={file_q}&amp;plugin_status={status}&amp;paged=1&amp;{s_arg}&amp;_wpnonce={deactivate_nonce}\" id=\"deactivate-{slug}\" aria-label=\"{}\">{}</a>", esc_attr(&rustpress_core::i18n::sprintf(&ctx.site().trx("Deactivate %s", "plugin"), &[&plugin.name])), tr("Deactivate"))));
         // `plugin_action_links` of the plugin itself: the links of WordPress keep their keys, the plugin's are keyed
         // by number (`$links[] = ...`, `array_merge()`), wherever it puts them.
         let core: Vec<(String, String)> = std::mem::take(&mut links);
@@ -126,8 +126,8 @@ fn row(ctx: &Ctx<'_>, plugin: &PluginInfo, info: &RowInfo<'_>) -> String {
             links.push((key, link));
         }
     } else {
-        links.push(("activate".into(), format!("<a href=\"plugins.php?action=activate&amp;plugin={file_q}&amp;plugin_status={status}&amp;paged=1&amp;{s_arg}&amp;_wpnonce={activate_nonce}\" id=\"activate-{slug}\" class=\"edit\" aria-label=\"{}\">{}</a>", esc_attr(&rustpress_core::i18n::sprintf(&tr("Activate %s"), &[&plugin.name])), tr("Activate"))));
-        links.push(("delete".into(), format!("<a href=\"plugins.php?action=delete-selected&amp;checked%5B0%5D={file_q}&amp;plugin_status={status}&amp;paged=1&amp;{s_arg}&amp;_wpnonce={bulk_nonce}\" id=\"delete-{slug}\" class=\"delete\" aria-label=\"{}\">{}</a>", esc_attr(&rustpress_core::i18n::sprintf(&tr("Delete %s"), &[&plugin.name])), tr("Delete"))));
+        links.push(("activate".into(), format!("<a href=\"plugins.php?action=activate&amp;plugin={file_q}&amp;plugin_status={status}&amp;paged=1&amp;{s_arg}&amp;_wpnonce={activate_nonce}\" id=\"activate-{slug}\" class=\"edit\" aria-label=\"{}\">{}</a>", esc_attr(&rustpress_core::i18n::sprintf(&ctx.site().trx("Activate %s", "plugin"), &[&plugin.name])), tr("Activate"))));
+        links.push(("delete".into(), format!("<a href=\"plugins.php?action=delete-selected&amp;checked%5B0%5D={file_q}&amp;plugin_status={status}&amp;paged=1&amp;{s_arg}&amp;_wpnonce={bulk_nonce}\" id=\"delete-{slug}\" class=\"delete\" aria-label=\"{}\">{}</a>", esc_attr(&rustpress_core::i18n::sprintf(&ctx.site().trx("Delete %s", "plugin"), &[&plugin.name])), tr("Delete"))));
     }
     // `WP_List_Table::row_actions()`.
     let count = links.len();
@@ -464,14 +464,16 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     let status = if status != "all" && counts.iter().find(|(name, _)| *name == status).map_or(0, |(_, n)| *n) == 0 { "all" } else { status };
     // `$status = 'search'` for a search; no view is the current one then.
     let status = if searching { "search" } else { status };
+    // The text of `_n()` up to its count.
+    let cut = |text: &str| text.split(" <span").next().unwrap_or_default().to_owned();
     let label = |s: &str| match s {
         "all" => tr("All"),
-        "active" => tr("Active"),
-        "inactive" => tr("Inactive"),
-        "recently_activated" => tr("Recently Active"),
-        "mustuse" => tr("Must-Use"),
-        "auto-update-enabled" => tr("Auto-updates Enabled"),
-        _ => tr("Auto-updates Disabled"),
+        "active" => cut(&tr("Active <span class=\"count\">(%s)</span>")),
+        "inactive" => cut(&tr("Inactive <span class=\"count\">(%s)</span>")),
+        "recently_activated" => cut(&tr("Recently Active <span class=\"count\">(%s)</span>")),
+        "mustuse" => cut(&tr("Must-Use <span class=\"count\">(%s)</span>")),
+        "auto-update-enabled" => cut(&tr("Auto-updates Enabled <span class=\"count\">(%s)</span>")),
+        _ => cut(&tr("Auto-updates Disabled <span class=\"count\">(%s)</span>")),
     };
     let site = ctx.site();
     let mut views = Vec::new();
@@ -522,12 +524,12 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     let pagination_top = format!(
         "<div class='tablenav-pages one-page'><span class=\"displaying-num\">{count_text}</span>\n<span class='pagination-links'><span class=\"tablenav-pages-navspan button disabled\" aria-hidden=\"true\">&laquo;</span>\n<span class=\"tablenav-pages-navspan button disabled\" aria-hidden=\"true\">&lsaquo;</span>\n<span class=\"paging-input\"><label for=\"current-page-selector\" class=\"screen-reader-text\">{}</label><input class='current-page' id='current-page-selector' type='text'\n\t\t\t\t\tname='paged' value='1' size='1' aria-describedby='table-paging' /><span class='tablenav-paging-text'> {} <span class='total-pages'>1</span></span></span>\n<span class=\"tablenav-pages-navspan button disabled\" aria-hidden=\"true\">&rsaquo;</span>\n<span class=\"tablenav-pages-navspan button disabled\" aria-hidden=\"true\">&raquo;</span></span></div>",
         tr("Current Page"),
-        rustpress_core::i18n::sprintf(&tr("of %s"), &[""]).trim_end()
-    ).replace(" of  <span", " of <span");
+        ctx.site().trx("%1$s of %2$s", "paging").replace("%1$s", "").replace("%2$s", "").trim().to_owned()
+    );
     let pagination_bottom = format!(
         "<div class='tablenav-pages one-page'><span class=\"displaying-num\">{count_text}</span>\n<span class='pagination-links'><span class=\"tablenav-pages-navspan button disabled\" aria-hidden=\"true\">&laquo;</span>\n<span class=\"tablenav-pages-navspan button disabled\" aria-hidden=\"true\">&lsaquo;</span>\n<span class=\"screen-reader-text\">{}</span><span id=\"table-paging\" class=\"paging-input\"><span class=\"tablenav-paging-text\">1 {} <span class='total-pages'>1</span></span></span>\n<span class=\"tablenav-pages-navspan button disabled\" aria-hidden=\"true\">&rsaquo;</span>\n<span class=\"tablenav-pages-navspan button disabled\" aria-hidden=\"true\">&raquo;</span></span></div>",
         tr("Current Page"),
-        rustpress_core::i18n::sprintf(&tr("of %s"), &[""]).trim().to_owned()
+        ctx.site().trx("%1$s of %2$s", "paging").replace("%1$s", "").replace("%2$s", "").trim().to_owned()
     );
     let bulk = |which: &str, name: &str| {
         if must_use {

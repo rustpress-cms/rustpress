@@ -102,10 +102,12 @@ The reference stack, the tools and the working rules are in [AGENTS.md](AGENTS.m
   translator; all calls already go through `Site::tr`.
 - JavaScript translations on the front end (Interactivity texts), hot reload of language packs, variants such as
   `de_DE_formal`, a command `rustpress i18n install <locale>`.
-- Screens of a translated site: their heads are right, but most lists and forms still have English texts (a wrong context,
-  an entity in the message, help tabs). Seen in a sweep of 25 screens on the German copy; `upload.php`, `options-media.php`
-  and `widgets.php` are equal. `dev/nav-menus-compare.py` still compares from the `body` on, and `revision_templates.html`
-  and the templates of application passwords are baked in English.
+- Screens of a translated site. The texts the code asks for are right now, also the contexts (`_x()`). What is left is baked
+  in English: `data/pages/*.json` (`tools.php`, `import.php`, parts of `plugin-install.php`), the templates of `themes.php`
+  and `theme-install.php`, `about.php`, `credits.php`, `freedoms.php`, the help of `plugins.php` and `themes.php`,
+  `options-general.php` (`wp_timezone_choice()` with `continents-cities`), `options-privacy.php`, `site-health.php`,
+  `revision_templates.html` and the templates of application passwords. `dev/nav-menus-compare.py` still compares from the
+  `body` on.
 
 **Sign-in, administration, REST**
 - `customize.php`. For classic themes: `themes.php?page=custom-header` is in the menu without a screen behind it.
@@ -883,3 +885,18 @@ On a translated site the screens now print what WordPress prints:
   An address is not marked, because `esc_url()` would drop the marks; the notices of `wp_admin_notice()` need one repair.
 - **Block types:** the texts of `block-i18n.json`. `core/widget-group` stays English: its `block.json` has no text domain.
 - `weekday_abbrev` has no context, `month_abbrev` has one.
+
+Texts of the screens, from a sweep of 34 German screens against the copy, and from a scan of every text the code translates
+against the language packs: a message id must exist as it stands, and many exist only with a context (`Mine`, `Reply`,
+`Count`, `File`, the color schemes). Labels with quotes are one message (`Edit &#8220;%s&#8221;`), and views take their text
+from `_n()` up to the count.
+
+The sweep also found faults that are not about language:
+
+- **`update_object_term_cache()`** orders by `name`: the terms of a post came in the order of `term_order`, in the lists, in
+  `post_class()` and in the quick edit data.
+- **Comment dates** in the list were read from the GMT date, which is wrong on a site that is not in UTC.
+- **`_draft_or_post_title()`** runs `get_the_title()`: titles in the lists had no `wptexturize()`.
+- **`formats_dropdown()`** was missing, and the quick edit offered all formats instead of those of the theme.
+- `trim()` of PHP leaves a no-break space alone; Rust's removes it from the quick edit data.
+

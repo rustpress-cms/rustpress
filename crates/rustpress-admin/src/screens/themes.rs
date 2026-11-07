@@ -60,7 +60,7 @@ fn theme_json(ctx: &Ctx<'_>, theme: &ThemeInfo, active: &str, parent_name: Optio
                         &format!("class=\"thickbox open-plugin-details-modal\" aria-label=\"{}\"", rustpress_core::formatting::esc_attr(&rustpress_core::i18n::sprintf(&tr("View %1$s version %2$s details"), &[&theme.name, &u.new_version]))),
                         &u.new_version,
                         &nonce_url("upgrade-theme", "upgrade-theme_x").replace("themes.php?action=upgrade-theme&amp;stylesheet=", "update.php?action=upgrade-theme&amp;theme=").replace(&ctx.create_nonce("upgrade-theme_x"), &ctx.create_nonce(&format!("upgrade-theme_{}", theme.stylesheet))),
-                        &format!("aria-label=\"{}\" id=\"update-theme\" data-slug=\"{}\"", rustpress_core::formatting::esc_attr(&rustpress_core::i18n::sprintf(&tr("Update %s now"), &[&theme.name])), theme.stylesheet),
+                        &format!("aria-label=\"{}\" id=\"update-theme\" data-slug=\"{}\"", rustpress_core::formatting::esc_attr(&rustpress_core::i18n::sprintf(&ctx.site().trx("Update %s now", "theme"), &[&theme.name])), theme.stylesheet),
                     ]
                 )
             );

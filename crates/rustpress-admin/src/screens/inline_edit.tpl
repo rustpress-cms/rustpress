@@ -191,7 +191,7 @@
 
 				{{if FORMATS}}					
 					<label class="alignleft">
-						<span class="title">Format</span>
+						<span class="title">{{FORMAT}}</span>
 						<select name="post_format">
 							<option value="-1">&mdash; No Change &mdash;</option>
 							<option value="0">{{STANDARD}}</option>

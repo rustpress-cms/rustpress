@@ -105,8 +105,9 @@ fn term_edit_url(ctx: &Ctx<'_>, info: &TaxInfo, term: &Term, referer: &str) -> S
     url
 }
 
-fn quote(text: &str) -> String {
-    format!("&#8220;{}&#8221;", esc_html(text))
+/// `editable_slug` decodes a slug.
+fn editable_slug(slug: &str) -> String {
+    String::from_utf8_lossy(&rustpress_core::rewrite::urldecode(slug.as_bytes())).into_owned()
 }
 
 /// One `<tr>` of the term list.
@@ -126,18 +127,18 @@ async fn row(ctx: &Ctx<'_>, info: &TaxInfo, term: &Term, level: usize, pad_level
     let title = if can_edit { format!("<a class=\"row-title\" href=\"{}\">{pad}{}</a>", esc_url(&edit_url), esc_html(&name)) } else { format!("{pad}{}", esc_html(&name)) };
     let mut actions: Vec<(String, String)> = Vec::new();
     if can_edit {
-        actions.push(("edit".into(), format!("<a href=\"{}\" aria-label=\"{}\">{}</a>", esc_url(&edit_url), esc_attr(&sprintf(&tr("Edit %s"), &[&quote(&name)])), tr("Edit"))));
+        actions.push(("edit".into(), format!("<a href=\"{}\" aria-label=\"{}\">{}</a>", esc_url(&edit_url), esc_attr(&sprintf(&tr("Edit &#8220;%s&#8221;"), &[&name])), tr("Edit"))));
         actions.push((
             "inline hide-if-no-js".into(),
-            format!("<button type=\"button\" class=\"button-link editinline\" aria-label=\"{}\" aria-expanded=\"false\">{}</button>", esc_attr(&sprintf(&tr("Quick edit %s inline"), &[&quote(&name)])), tr("Quick&nbsp;Edit")),
+            format!("<button type=\"button\" class=\"button-link editinline\" aria-label=\"{}\" aria-expanded=\"false\">{}</button>", esc_attr(&sprintf(&tr("Quick edit &#8220;%s&#8221; inline"), &[&name])), tr("Quick&nbsp;Edit")),
         ));
         if !default {
             let url = format!("edit-tags.php?action=delete&amp;taxonomy={}&amp;tag_ID={}&amp;_wpnonce={}", info.name, term.term_id, ctx.create_nonce(&format!("delete-tag_{}", term.term_id)));
-            actions.push(("delete".into(), format!("<a href=\"{url}\" class=\"delete-tag aria-button-if-js\" aria-label=\"{}\">{}</a>", esc_attr(&sprintf(&tr("Delete %s"), &[&quote(&name)])), tr("Delete"))));
+            actions.push(("delete".into(), format!("<a href=\"{url}\" class=\"delete-tag aria-button-if-js\" aria-label=\"{}\">{}</a>", esc_attr(&sprintf(&tr("Delete &#8220;%s&#8221;"), &[&name])), tr("Delete"))));
         }
     }
     if let Ok(link) = site.term_link(term).await {
-        actions.push(("view".into(), format!("<a href=\"{}\" aria-label=\"{}\">{}</a>", esc_url(&link), esc_attr(&sprintf(&tr("View %s archive"), &[&quote(&name)])), tr("View"))));
+        actions.push(("view".into(), format!("<a href=\"{}\" aria-label=\"{}\">{}</a>", esc_url(&link), esc_attr(&sprintf(&tr("View &#8220;%s&#8221; archive"), &[&name])), tr("View"))));
     }
     let description = if term.description.is_empty() { format!("<span aria-hidden=\"true\">&#8212;</span><span class=\"screen-reader-text\">{}</span>", tr("No description")) } else { term.description.clone() };
     let count_url = match &info.query_var {
@@ -153,12 +154,12 @@ async fn row(ctx: &Ctx<'_>, info: &TaxInfo, term: &Term, level: usize, pad_level
         n = tr("Name"),
         label = esc_attr(&name),
         ename = esc_textarea(&name),
-        eslug = esc_textarea(&term.slug),
+        eslug = esc_textarea(&editable_slug(&term.slug)),
         parent = term.parent,
         actions = row_actions(site, &actions),
         d = tr("Description"),
         s = tr("Slug"),
-        c = tr("Count"),
+        c = ctx.site().trx("Count", "Number/count of items"),
     )
 }
 
@@ -422,7 +423,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         Column::new("name", &tr("Name")).sortable("name", false, Some(&tr("Name")), Some("asc")),
         Column::new("description", &tr("Description")).sortable("description", false, Some(&tr("Description")), None),
         Column::new("slug", &tr("Slug")).sortable("slug", false, Some(&tr("Slug")), None),
-        Column::new("posts", &tr("Count")).sortable("count", false, Some(&tr("Count")), None),
+        Column::new("posts", &ctx.site().trx("Count", "Number/count of items")).sortable("count", false, Some(&ctx.site().trx("Count", "Number/count of items")), None),
     ];
     let screen_options = super::common::list_screen_options(ctx, &format!("edit-{}", info.name), &mut columns, (&per_page_option, per_page), None).await;
     let mut table = Table {
@@ -446,15 +447,15 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         table.bulk_actions.clear();
     }
     let caption = if hierarchical_view {
-        if desc { tr("Table ordered hierarchically. Descending.") } else { tr("Table ordered hierarchically. Ascending.") }
+        format!("{} {}", tr("Table ordered hierarchically."), if desc { tr("Descending.") } else { tr("Ascending.") })
     } else {
         let by = match orderby.as_str() {
-            "slug" => tr("Slug"),
-            "description" => tr("Description"),
-            "count" => tr("Posts Count"),
-            _ => tr("Name"),
+            "slug" => tr("Table ordered by Slug."),
+            "description" => tr("Table ordered by Description."),
+            "count" => tr("Table ordered by Posts Count."),
+            _ => tr("Table ordered by Name."),
         };
-        sprintf(&if desc { tr("Table ordered by %s. Descending.") } else { tr("Table ordered by %s. Ascending.") }, &[&by])
+        format!("{by} {}", if desc { tr("Descending.") } else { tr("Ascending.") })
     };
     let nonce_field = format!("<input type=\"hidden\" name=\"taxonomy\" value=\"{}\" />\n<input type=\"hidden\" name=\"post_type\" value=\"{}\" />\n\n{}", info.name, info.post_type, ctx.nonce_field("bulk-tags"));
     let table_html = table.display(&nonce_field, "", "", &caption, &rows, &info.labels.items_list);
@@ -642,7 +643,7 @@ pub async fn edit_page(ctx: &Ctx<'_>) -> AdminResponse {
     h.push_str(&format!(
         "\t\t<tr class=\"form-field term-slug-wrap\">\n\t\t\t<th scope=\"row\"><label for=\"slug\">{}</label></th>\n\t\t\t\t\t\t<td><input name=\"slug\" id=\"slug\" type=\"text\" value=\"{}\" size=\"40\" aria-describedby=\"slug-description\" />\n\t\t\t<p class=\"description\" id=\"slug-description\">{}</p></td>\n\t\t</tr>\n",
         tr("Slug"),
-        esc_attr(&term.slug),
+        esc_attr(&editable_slug(&term.slug)),
         tr("The &#8220;slug&#8221; is the URL-friendly version of the name. It is usually all lowercase and contains only letters, numbers, and hyphens.")
     ));
     if info.hierarchical {

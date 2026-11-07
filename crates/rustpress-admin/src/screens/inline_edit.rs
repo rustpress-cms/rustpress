@@ -322,6 +322,7 @@ pub async fn inline_edit(ctx: &Ctx<'_>, info: &TypeInfo, first: Option<&Post>, c
         scope.var("DEFAULT_TEMPLATE", esc_html(&ctx.tr("Default template")));
         scope.var("TEMPLATES", template_options.clone());
         scope.var("STANDARD", esc_html(&ctx.site().trx("Standard", "Post format")));
+        scope.var("FORMAT", ctx.site().trx("Format", "post format"));
         scope.var("NONCE_FIELD", format!("<input type=\"hidden\" id=\"_inline_edit\" name=\"_inline_edit\" value=\"{}\" />", ctx.create_nonce("inlineeditnonce")));
         scope.var("SUBMIT", format!("<input type=\"submit\" name=\"bulk_edit\" id=\"bulk_edit\" class=\"button button-primary\" value=\"{}\"  />", esc_attr(&ctx.tr("Update"))));
         scope.var("M", mode);
@@ -378,12 +379,13 @@ pub async fn inline_edit(ctx: &Ctx<'_>, info: &TypeInfo, first: Option<&Post>, c
         // The formats of the theme, by name.
         scope.lists.insert(
             "FORMAT_LIST",
-            ["aside", "audio", "chat", "gallery", "image", "link", "quote", "status", "video"]
-                .into_iter()
+            rustpress_theme::classic::post_formats(&ctx.env.theme.stylesheet)
+                .iter()
+                .copied()
                 .map(|format| {
                     let mut item = Scope::default();
                     item.var("VALUE", esc_attr(format));
-                    item.var("TEXT", esc_html(&ctx.tr(&format!("{}{}", format[..1].to_uppercase(), &format[1..]))));
+                    item.var("TEXT", esc_html(&ctx.site().trx(&format!("{}{}", format[..1].to_uppercase(), &format[1..]), "Post format")));
                     item
                 })
                 .collect(),

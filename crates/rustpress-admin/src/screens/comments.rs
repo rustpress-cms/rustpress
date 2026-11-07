@@ -205,14 +205,14 @@ pub async fn row_html_in(ctx: &Ctx<'_>, comment: &Comment, index: usize, current
         // Reply and quick edit are hidden without JavaScript unless the row came through Ajax.
         let js_only = if doing_ajax { "" } else { " hide-if-no-js" };
         if status != "spam" && status != "trash" {
-            push(&format!("reply{js_only}"), format!("<button type=\"button\" data-comment-id=\"{id}\" data-post-id=\"{post_id}\" data-action=\"replyto\" class=\"vim-r comment-inline button-link\" aria-expanded=\"false\" aria-label=\"{}\">{}</button>", tr("Reply to this comment"), tr("Reply")));
+            push(&format!("reply{js_only}"), format!("<button type=\"button\" data-comment-id=\"{id}\" data-post-id=\"{post_id}\" data-action=\"replyto\" class=\"vim-r comment-inline button-link\" aria-expanded=\"false\" aria-label=\"{}\">{}</button>", tr("Reply to this comment"), ctx.site().trx("Reply", "verb")));
             push(&format!("quickedit{js_only}"), format!("<button type=\"button\" data-comment-id=\"{id}\" data-post-id=\"{post_id}\" data-action=\"edit\" class=\"vim-q comment-inline button-link\" aria-expanded=\"false\" aria-label=\"{}\">{}</button>", tr("Quick edit this comment inline"), tr("Quick&nbsp;Edit")));
             push("edit", format!("<a href=\"comment.php?action=editcomment&amp;c={id}\" aria-label=\"{}\">{}</a>", tr("Edit this comment"), tr("Edit")));
         }
         if status != "spam" {
             push("spam", format!("<a href=\"{}\" data-wp-lists=\"delete:the-comment-list:comment-{id}::spam=1\" class=\"vim-s vim-destructive aria-button-if-js\" aria-label=\"{}\">{}</a>", url("spamcomment", &del_nonce), tr("Mark this comment as spam"), tr("Spam")));
         } else {
-            push(&format!("unspam {}", if trash_meta_approved { "approve" } else { "unapprove" }), format!("<a href=\"{}\" data-wp-lists=\"delete:the-comment-list:comment-{id}:66cc66:unspam=1\" class=\"vim-z vim-destructive aria-button-if-js\" aria-label=\"{}\">{}</a>", url("unspamcomment", &del_nonce), tr("Restore this comment from the spam"), tr("Not Spam")));
+            push(&format!("unspam {}", if trash_meta_approved { "approve" } else { "unapprove" }), format!("<a href=\"{}\" data-wp-lists=\"delete:the-comment-list:comment-{id}:66cc66:unspam=1\" class=\"vim-z vim-destructive aria-button-if-js\" aria-label=\"{}\">{}</a>", url("unspamcomment", &del_nonce), tr("Restore this comment from the spam"), ctx.site().trx("Not Spam", "comment")));
         }
         if status == "trash" {
             push(&format!("untrash {}", if trash_meta_approved { "approve" } else { "unapprove" }), format!("<a href=\"{}\" data-wp-lists=\"delete:the-comment-list:comment-{id}:66cc66:untrash=1\" class=\"vim-z vim-destructive aria-button-if-js\" aria-label=\"{}\">{}</a>", url("untrashcomment", &del_nonce), tr("Restore this comment from the Trash"), tr("Restore")));
@@ -281,7 +281,9 @@ pub async fn row_html_in(ctx: &Ctx<'_>, comment: &Comment, index: usize, current
     };
     let response_cell = if ctx.request.get("p").and_then(|p| p.parse::<u64>().ok()).is_some_and(|p| p > 0) { String::new() } else { format!("<td class='response column-response' data-colname=\"{}\">{response}</td>", tr("In response to")) };
     let link = comment_link(ctx, comment).await;
-    let time = sprintf(&tr("%1$s at %2$s"), &[&site.date(&tr("Y/m/d"), rustpress_core::datetime::SiteTimezone::gmt_timestamp(&comment.comment_date_gmt).unwrap_or(0)), &site.date(&tr("g:i a"), rustpress_core::datetime::SiteTimezone::gmt_timestamp(&comment.comment_date_gmt).unwrap_or(0))]);
+    // `get_comment_date()` reads the local date of the comment.
+    let comment_time = site.timezone.local_timestamp(&comment.comment_date).unwrap_or(0);
+    let time = sprintf(&tr("%1$s at %2$s"), &[&site.date(&tr("Y/m/d"), comment_time), &site.date(&tr("g:i a"), comment_time)]);
     if post_box {
         return format!(
             "<tr id='comment-{id}' class='{kind}{by_user} {alt} {thread_alt} depth-1 {status}'><td class='author column-author' data-colname=\"{}\">{author}</td><th class='comment column-comment has-row-actions column-primary' data-colname=\"{}\" scope=\"row\"><div class=\"comment-author\">{author}</div>{reply_to}{text}{inline}{actions_html}</th></tr>\n",
@@ -491,7 +493,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         (status.to_owned(), view_link(&url, &text, status_param == status))
     };
     links.push(link_for("all", &tr("All"), "all", counts.all, ""));
-    links.push(link_for("mine", &tr("Mine"), "mine", mine, &format!("&user_id={}", ctx.user.id)));
+    links.push(link_for("mine", ctx.site().trnx("Mine <span class=\"count\">(%s)</span>", "Mine <span class=\"count\">(%s)</span>", mine as i64, "comments").split(" <span").next().unwrap_or_default(), "mine", mine, &format!("&user_id={}", ctx.user.id)));
     links.push(link_for("moderated", &tr("Pending"), "pending", counts.moderated, ""));
     links.push(link_for("approved", &tr("Approved"), "approved", counts.approved, ""));
     links.push(link_for("spam", &tr("Spam"), "spam", counts.spam, ""));
@@ -520,7 +522,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         Column::new("cb", ""),
         Column::new("author", &tr("Author")).sortable("comment_author", false, Some(&tr("Author")), None),
         Column::new("comment", &tr("Comment")),
-        Column::new("response", &tr("In response to")).sortable("comment_post_ID", false, Some(&tr("In Response To")), None),
+        Column::new("response", &tr("In response to")).sortable("comment_post_ID", false, Some(&ctx.site().trx("In Response To", "column name")), None),
         Column::new("date", &tr("Submitted on")).sortable("comment_date", false, None, None),
     ];
     // The comments of one post do not name the post.
@@ -528,11 +530,11 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     let mode = super::common::request_list_mode(ctx).await;
     let screen_options = super::common::list_screen_options(ctx, "edit-comments", &mut columns, ("edit_comments_per_page", per_page), Some(mode.clone())).await;
     let bulk_actions: Vec<(String, String)> = match status_param.as_str() {
-        "spam" => vec![("unspam".into(), tr("Not Spam")), ("delete".into(), tr("Delete permanently"))],
+        "spam" => vec![("unspam".into(), ctx.site().trx("Not Spam", "comment")), ("delete".into(), tr("Delete permanently"))],
         "trash" => vec![("untrash".into(), tr("Restore")), ("delete".into(), tr("Delete permanently"))],
-        "moderated" => vec![("approve".into(), tr("Approve")), ("spam".into(), tr("Mark as spam")), ("trash".into(), tr("Move to Trash"))],
-        "approved" => vec![("unapprove".into(), tr("Unapprove")), ("spam".into(), tr("Mark as spam")), ("trash".into(), tr("Move to Trash"))],
-        _ => vec![("unapprove".into(), tr("Unapprove")), ("approve".into(), tr("Approve")), ("spam".into(), tr("Mark as spam")), ("trash".into(), tr("Move to Trash"))],
+        "moderated" => vec![("approve".into(), tr("Approve")), ("spam".into(), ctx.site().trx("Mark as spam", "comment")), ("trash".into(), tr("Move to Trash"))],
+        "approved" => vec![("unapprove".into(), tr("Unapprove")), ("spam".into(), ctx.site().trx("Mark as spam", "comment")), ("trash".into(), tr("Move to Trash"))],
+        _ => vec![("unapprove".into(), tr("Unapprove")), ("approve".into(), tr("Approve")), ("spam".into(), ctx.site().trx("Mark as spam", "comment")), ("trash".into(), tr("Move to Trash"))],
     };
     let table = Table {
         site,
@@ -669,7 +671,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
             if let Some(order) = request.request("order").filter(|v| !v.is_empty()) {
                 sort.push_str(&format!("<input type=\"hidden\" name=\"order\" value=\"{}\" />", esc_attr(order)));
             }
-            format!("{sort}<p class=\"search-box\">\n\t<label class=\"screen-reader-text\" for=\"comment-search-input\">{}</label>\n\t<input type=\"search\" id=\"comment-search-input\" name=\"s\" value=\"{}\" />\n\t\t<input type=\"submit\" id=\"search-submit\" class=\"button button-compact\" value=\"{}\"  /></p>\n\t\t", tr("Search Comments:"), esc_attr(&search), esc_attr(&tr("Search Comments")))
+            format!("{sort}<p class=\"search-box\">\n\t<label class=\"screen-reader-text\" for=\"comment-search-input\">{}</label>\n\t<input type=\"search\" id=\"comment-search-input\" name=\"s\" value=\"{}\" />\n\t\t<input type=\"submit\" id=\"search-submit\" class=\"button button-compact\" value=\"{}\"  /></p>\n\t\t", format!("{}:", tr("Search Comments")), esc_attr(&search), esc_attr(&tr("Search Comments")))
         } else {
             String::new()
         },
@@ -1013,9 +1015,9 @@ async fn edit_form(ctx: &Ctx<'_>, comment: &Comment) -> AdminResponse {
     };
     let radio = |value: &str, label: String| format!("<label><input type=\"radio\"{} name=\"comment_status\" value=\"{value}\" />{label}</label>", if comment.comment_approved == value { " checked='checked'" } else { "" });
     let comment_time = rustpress_core::datetime::SiteTimezone::gmt_timestamp(&comment.comment_date_gmt).unwrap_or(0);
-    let submitted = sprintf(&tr("Submitted on: %s"), &[&format!("<b>{}</b>", site.date(&format!("{} {}", tr("M j, Y"), tr("\\a\\t H:i")).replace("\\a\\t", "\\a\\t"), comment_time))]);
+    let submitted = sprintf(&tr("Submitted on: %s"), &[&format!("<b>{}</b>", site.date(&format!("{} {}", ctx.site().trx("M j, Y", "publish box date format"), tr("\\a\\t H:i")).replace("\\a\\t", "\\a\\t"), comment_time))]);
     let response_to = match &post {
-        Some(post) => format!("{} <b><a href='{}'>{}</a></b>", tr("In response to:"), esc_url(&super::common::edit_post_link(ctx, post.id, false).await), esc_html(&rustpress_blocks::content::the_title_for(site, post))),
+        Some(post) => format!("{} <b><a href='{}'>{}</a></b>", format!("{}:", tr("In response to")), esc_url(&super::common::edit_post_link(ctx, post.id, false).await), esc_html(&rustpress_blocks::content::the_title_for(site, post))),
         None => String::new(),
     };
     let parent_row = {

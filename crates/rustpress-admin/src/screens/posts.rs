@@ -159,9 +159,39 @@ fn post_class(post: &Post, categories: &[rustpress_db::Term], tags: &[rustpress_
     classes.join(" ")
 }
 
+/// `WP_Posts_List_Table::formats_dropdown()`.
+async fn formats_dropdown(ctx: &Ctx<'_>) -> String {
+    let site = ctx.site();
+    let used: Vec<rustpress_db::Term> = site.db.terms("post_format").await.unwrap_or_default().into_iter().filter(|term| term.count > 0).collect();
+    if used.is_empty() {
+        return String::new();
+    }
+    let shown = ctx.request.get("post_format").unwrap_or_default();
+    let selected = |value: &str| if shown == value { " selected='selected'" } else { "" };
+    let mut out = format!(
+        "\t\t<label for=\"filter-by-format\" class=\"screen-reader-text\">\n\t\t\t{}\t\t</label>\n\t\t<select name=\"post_format\" id=\"filter-by-format\">\n\t\t\t<option{} value=\"\">{}</option>\n\t\t\t",
+        ctx.tr("Filter by post format"),
+        selected(""),
+        ctx.tr("All formats")
+    );
+    for term in &used {
+        let slug = term.slug.strip_prefix("post-format-").unwrap_or(&term.slug);
+        if slug == "standard" {
+            continue;
+        }
+        // `get_post_format_string()`.
+        let name = site.trx(&format!("{}{}", slug[..1].to_uppercase(), &slug[1..]), "Post format");
+        out.push_str(&format!("\t\t\t\t<option{} value=\"{}\">{}</option>\n\t\t\t\t", selected(slug), esc_attr(slug), esc_html(&name)));
+    }
+    out.push_str("\t\t</select>\n\t\t");
+    out
+}
+
 /// `_draft_or_post_title()`.
 fn draft_or_title(ctx: &Ctx<'_>, post: &Post) -> String {
-    if post.post_title.is_empty() { ctx.tr("(no title)") } else { esc_html(&post.post_title) }
+    // `get_the_title()`: an empty one stays empty.
+    let title = rustpress_blocks::content::the_title_for(ctx.site(), post);
+    if title.is_empty() { ctx.tr("(no title)") } else { esc_html(&title) }
 }
 
 fn sticky_ids(ctx: &Ctx<'_>) -> Vec<u64> {
@@ -719,6 +749,9 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         if taxonomies.iter().any(|(n, _)| n == "category") {
             filters.push_str(&categories_dropdown(ctx, cat).await);
         }
+        if info.name == "post" && !is_trash {
+            filters.push_str(&formats_dropdown(ctx).await);
+        }
         let mut out = String::from("		<div class=\"alignleft actions\">
 		");
         if !filters.is_empty() {
@@ -1116,7 +1149,8 @@ async fn inline_data(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, taxonomies: &[
     let slug = String::from_utf8_lossy(&rustpress_core::rewrite::urldecode(post.post_name.as_bytes())).into_owned();
     let mut out = format!(
         "\n<div class=\"hidden\" id=\"inline_{id}\">\n\t<div class=\"post_title\">{}</div>\n\t<div class=\"post_name\">{}</div>\n\t<div class=\"post_author\">{}</div>\n\t<div class=\"comment_status\">{}</div>\n\t<div class=\"ping_status\">{}</div>\n\t<div class=\"_status\">{}</div>\n\t<div class=\"jj\">{}</div>\n\t<div class=\"mm\">{}</div>\n\t<div class=\"aa\">{}</div>\n\t<div class=\"hh\">{}</div>\n\t<div class=\"mn\">{}</div>\n\t<div class=\"ss\">{}</div>\n\t<div class=\"post_password\">{}</div>",
-        esc_textarea(post.post_title.trim()),
+        // `trim()` leaves a no-break space alone.
+        esc_textarea(post.post_title.trim_matches([' ', '\t', '\n', '\r', '\0', '\u{b}'])),
         esc_textarea(&slug),
         post.post_author,
         esc_html(&post.comment_status),
@@ -1397,7 +1431,7 @@ fn list_help(ctx: &Ctx<'_>, info: &TypeInfo) -> Option<Help> {
                 tab("bulk-actions", "Bulk actions", format!(
                     "<p>{}</p><p>{}</p>",
                     tr("You can also edit or move multiple posts to the Trash at once. Select the posts you want to act on using the checkboxes, then select the action you want to take from the Bulk actions menu and click Apply."),
-                    rustpress_core::i18n::sprintf(&tr("When using Bulk Edit, you can change the metadata (categories, author, etc.) for all selected posts at once. To remove a post from the grouping, just click the %s button next to its name in the Bulk Edit area that appears."), &[&format!("<span class=\"dashicons dashicons-dismiss\" aria-hidden=\"true\" style=\"font-size: 16px; width: 16px; vertical-align: middle;\"></span><span class=\"screen-reader-text\">{}</span>", tr("remove"))])
+                    rustpress_core::i18n::sprintf(&tr("When using Bulk Edit, you can change the metadata (categories, author, etc.) for all selected posts at once. To remove a post from the grouping, just click the %s<span class=\"screen-reader-text\">remove</span> button next to its name in the Bulk Edit area that appears."), &["<span class=\"dashicons dashicons-dismiss\" aria-hidden=\"true\" style=\"font-size: 16px; width: 16px; vertical-align: middle;\"></span>"])
                 )),
             ],
             sidebar: sidebar("<a href=\"https://wordpress.org/documentation/article/posts-screen/\">Documentation on Managing Posts</a>"),
