@@ -69,6 +69,52 @@ fn orientation(width: u64, height: u64) -> &'static str {
     if height > width { "portrait" } else { "landscape" }
 }
 
+/// `get_media_states()` of an attachment.
+pub async fn media_states(ctx: &Ctx<'_>, post: &Post) -> Vec<String> {
+    use rustpress_theme::classic::custom_header as header;
+    let site = ctx.site();
+    let theme = ctx.env.theme;
+    let mut states: Vec<String> = Vec::new();
+    let stylesheet = &site.settings.stylesheet;
+    let mods = rustpress_theme::classic::menu::theme_mod(site, stylesheet);
+    let template_uri = rustpress_blocks::env::ThemeAccess::template_directory_uri(theme);
+    if let Some(support) = header::support(&theme.template, &template_uri).filter(|_| !ctx.env.block_theme) {
+        let meta_header = ctx.env.db.post_meta_value(post.id, "_wp_attachment_is_custom_header").await.ok().flatten().unwrap_or_default();
+        let attachment_url = || async { ctx.env.db.post_meta_value(post.id, "_wp_attached_file").await.ok().flatten().filter(|file| !file.is_empty()).map_or_else(|| post.guid.clone(), |file| rustpress_blocks::images::attachment_url(site, &file)) };
+        if header::is_random_header_image("any", &mods, &support, None) {
+            let ids: Vec<u64> = header::uploaded_header_images(site, stylesheet).await.unwrap_or_default().iter().map(|u| u.attachment_id).collect();
+            if meta_header == *stylesheet && ids.contains(&post.id) {
+                states.push(ctx.tr("Header Image"));
+            }
+        } else {
+            let current = header::header_image(site, &mods, &support, None);
+            let url = attachment_url().await;
+            if !meta_header.is_empty() && meta_header == *stylesheet && current.as_deref() != Some(url.as_str()) {
+                states.push(ctx.tr("Header Image"));
+            }
+            if current.as_deref().is_some_and(|current| !current.is_empty() && current == url) {
+                states.push(ctx.tr("Current Header Image"));
+            }
+        }
+        let video = |name: &str| header::mod_value(&mods, name).is_some_and(|v| !matches!(v, rustpress_phpser::Value::Str(s) if s.is_empty()) && !matches!(v, rustpress_phpser::Value::Int(0) | rustpress_phpser::Value::Bool(false)));
+        if support.video && (video("header_video") || video("external_header_video")) && header::mod_value(&mods, "header_video").and_then(rustpress_phpser::Value::as_i64) == Some(post.id as i64) {
+            states.push(ctx.tr("Current Header Video"));
+        }
+    }
+    if site.options.u64("site_icon", 0) == post.id {
+        states.push(ctx.tr("Site Icon"));
+    }
+    // `get_theme_mod( 'custom_logo' )`, which the `site_logo` option overrides (`_override_custom_logo_theme_mod()`).
+    let logo = match site.options.get("site_logo") {
+        Some(value) => value.trim().parse::<u64>().unwrap_or(0),
+        None => header::mod_value(&mods, "custom_logo").and_then(rustpress_phpser::Value::as_i64).map_or(0, |id| id.max(0) as u64),
+    };
+    if logo == post.id {
+        states.push(ctx.tr("Logo"));
+    }
+    states
+}
+
 /// `wp_prepare_attachment_for_js()`.
 pub async fn attachment_js(ctx: &Ctx<'_>, post: &Post) -> Option<Json> {
     attachment_js_with(ctx, post, &[]).await
@@ -117,7 +163,8 @@ pub async fn attachment_js_with(ctx: &Ctx<'_>, post: &Post, extra_sizes: &[Strin
     response.insert("subtype".into(), json!(subtype));
     response.insert("icon".into(), json!(format!("{}/wp-includes/images/media/{}", site.settings.siteurl.trim_end_matches('/'), mime_icon(&post.post_mime_type))));
     let date_ts = rustpress_core::datetime::SiteTimezone::gmt_timestamp(&post.post_date_gmt).unwrap_or(0);
-    response.insert("dateFormatted".into(), json!(site.date(&site.options.string("date_format", "F j, Y"), date_ts)));
+    // `mysql2date( __( 'F j, Y' ), $attachment->post_date )`.
+    response.insert("dateFormatted".into(), json!(site.date(&ctx.tr("F j, Y"), date_ts)));
     let mut nonces = json!({"update": false, "delete": false, "edit": false});
     if can_edit {
         nonces["update"] = json!(nonce("update-post"));
@@ -164,8 +211,11 @@ pub async fn attachment_js_with(ctx: &Ctx<'_>, post: &Post, extra_sizes: &[Strin
         let uploads = uploads_dir(ctx.env);
         std::fs::metadata(uploads.join(&attached)).map(|m| m.len()).unwrap_or(0)
     });
-    response.insert("filesizeInBytes".into(), json!(filesize));
-    response.insert("filesizeHumanReadable".into(), json!(size_format(filesize)));
+    // Without a size in the metadata and without the file there is none.
+    if filesize > 0 {
+        response.insert("filesizeInBytes".into(), json!(filesize));
+        response.insert("filesizeHumanReadable".into(), json!(size_format(filesize)));
+    }
     response.insert("context".into(), json!(meta("_wp_attachment_context").unwrap_or_default()));
     if kind == "image" {
         if let Some(m) = &metadata {
@@ -226,14 +276,7 @@ pub async fn attachment_js_with(ctx: &Ctx<'_>, post: &Post, extra_sizes: &[Strin
     }
     // `get_compat_media_markup( $id, [ 'in_modal' => true ] )`; `media_meta` stays empty.
     response.insert("compat".into(), json!({"item": super::media_ui::compat_media_markup(ctx, post, true).await, "meta": ""}));
-    // `get_media_states()`
-    let mut states: Vec<String> = Vec::new();
-    if site.options.u64("site_icon", 0) == post.id {
-        states.push(ctx.tr("Site Icon"));
-    }
-    if site.options.u64("site_logo", 0) == post.id {
-        states.push(ctx.tr("Logo"));
-    }
+    let states = media_states(ctx, post).await;
     if !states.is_empty() {
         response.insert("mediaStates".into(), json!(states.join(", ")));
     }

@@ -1,0 +1,28 @@
+	<script id="tmpl-wp-updates-admin-notice" type="text/html">
+		<div <# if ( data.id ) { #>id="{{ data.id }}"<# } #> class="notice {{ data.className }}"><p>{{{ data.message }}}</p></div>
+	</script>
+	<script id="tmpl-wp-bulk-updates-admin-notice" type="text/html">
+		<div id="{{ data.id }}" class="{{ data.className }} notice <# if ( data.errorMessage ) { #>notice-error<# } else { #>notice-success<# } #>">
+			<p>
+				<# if ( data.successMessage ) { #>
+					{{{ data.successMessage }}}
+				<# } #>
+				<# if ( data.errorMessage ) { #>
+					<button class="button-link bulk-action-errors-collapsed" aria-expanded="false">
+						{{{ data.errorMessage }}}
+						<span class="screen-reader-text">
+							⟦r¦¦Show more details⟧						</span>
+						<span class="toggle-indicator" aria-hidden="true"></span>
+					</button>
+				<# } #>
+			</p>
+			<# if ( data.errorMessages ) { #>
+				<ul class="bulk-action-errors hidden">
+					<# _.each( data.errorMessages, function( errorMessage ) { #>
+						<li>{{ errorMessage }}</li>
+					<# } ); #>
+				</ul>
+			<# } #>
+		</div>
+	</script>
+	

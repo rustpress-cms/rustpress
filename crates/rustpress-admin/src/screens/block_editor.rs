@@ -454,7 +454,10 @@ fn classic_features(ctx: &Ctx<'_>, features: &mut Value) {
 pub(super) enum SettingsFor {
     Post,
     Site,
+    /// `widgets.php`, which passes the theme styles among its own settings.
     Widgets,
+    /// The Customizer, which passes only the legacy widget settings.
+    CustomizeWidgets,
 }
 
 pub(super) async fn editor_settings(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, kind: SettingsFor) -> Value {
@@ -507,10 +510,13 @@ pub(super) async fn editor_settings(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo,
     settings.insert("enableCustomSpacing".into(), json!(true));
     settings.insert("enableCustomUnits".into(), json!(["%", "px", "em", "rem", "vh", "vw"]));
     let site_mode = kind == SettingsFor::Site;
-    if kind == SettingsFor::Widgets {
-        // `get_legacy_widget_block_editor_settings()`, then the theme styles the screen passes.
+    let widgets = matches!(kind, SettingsFor::Widgets | SettingsFor::CustomizeWidgets);
+    if widgets {
+        // `get_legacy_widget_block_editor_settings()`, then the theme styles `widgets.php` passes.
         settings.insert("widgetTypesToHideFromLegacyWidgetBlock".into(), json!(["pages", "calendar", "archives", "media_audio", "media_image", "media_gallery", "media_video", "search", "text", "categories", "recent-posts", "recent-comments", "rss", "tag_cloud", "custom_html", "block"]));
-        settings.insert("styles".into(), Value::Null);
+        if kind == SettingsFor::Widgets {
+            settings.insert("styles".into(), Value::Null);
+        }
     } else if site_mode {
         // `site-editor.php`
         settings.insert("siteUrl".into(), json!(site.settings.siteurl));
@@ -526,7 +532,7 @@ pub(super) async fn editor_settings(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo,
     } else {
         post_settings(ctx, post, &mut settings).await;
     }
-    if kind != SettingsFor::Widgets {
+    if !widgets {
         // `wp_theme_has_theme_json()`, and `current_theme_supports( 'block-templates' )`.
         settings.insert("supportsLayout".into(), json!(env.block_theme));
         settings.insert("__experimentalAdditionalBlockPatterns".into(), json!([]));
@@ -669,7 +675,7 @@ pub(super) async fn editor_settings(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo,
         settings.insert("postContentAttributes".into(), attributes);
     }
     // `current_user_can( 'edit_block_binding', $block_editor_context )`: the widgets editor has no post.
-    settings.insert("canUpdateBlockBindings".into(), json!(kind != SettingsFor::Widgets));
+    settings.insert("canUpdateBlockBindings".into(), json!(!widgets));
     settings.insert("canEditCSS".into(), json!((ctx.can("edit_css") || ctx.can("unfiltered_html"))));
     let _ = info;
     Value::Object(settings)

@@ -72,7 +72,7 @@ fn media_l10n(ctx: &Ctx<'_>, base: &str) -> Value {
 }
 
 /// `enqueue_admin_scripts()` of a media widget.
-fn enqueue_media_widget(ctx: &Ctx<'_>, assets: &mut Assets, base: &str, handle: &str, mime: &str) {
+pub(super) fn enqueue_media_widget(ctx: &Ctx<'_>, assets: &mut Assets, base: &str, handle: &str, mime: &str) {
     let mut schema: Value = serde_json::from_str(SCHEMAS).ok().and_then(|mut all: Value| all.get_mut(base).map(Value::take)).unwrap_or(Value::Null);
     if let Some(sizes) = schema.get_mut("size").and_then(|size| size.get_mut("enum")) {
         // `get_intermediate_image_sizes()` and the two of the widget.
@@ -117,8 +117,15 @@ fn help(ctx: &Ctx<'_>, syntax_highlighting: bool) -> Help {
 
 /// `render_control_template_scripts()` of the media, text and custom HTML widgets, as a user who dismissed some pointers
 /// sees them.
-fn control_templates(ctx: &Ctx<'_>, dismissed: &str) -> String {
+pub(super) fn control_templates(ctx: &Ctx<'_>, dismissed: &str, customize_preview: bool) -> String {
     let mut out = TEMPLATES.replace("http://localhost:8080/wp-admin/", &ctx.admin_url("")).replace("http://localhost:8080", ctx.site().settings.siteurl.trim_end_matches('/'));
+    // `is_customize_preview()`: the pointer of the text widget points to the button of the Customizer.
+    if customize_preview {
+        out = out.replace(
+            "⟦r¦¦Did you know there is a &#8220;Custom HTML&#8221; widget now? You can find it by scanning the list of available widgets on this screen. Check it out to add some custom code to your site!⟧",
+            "⟦r¦¦Did you know there is a &#8220;Custom HTML&#8221; widget now? You can find it by pressing the &#8220;<a class=\"add-widget\" href=\"#\">Add a Widget</a>&#8221; button and searching for &#8220;HTML&#8221;. Check it out to add some custom code to your site!⟧",
+        );
+    }
     // The block of a pointer ends where the block after it starts.
     let dismissed: Vec<&str> = dismissed.split(',').collect();
     for (pointer, class) in [("text_widget_custom_html", "custom-html-widget-pointer"), ("text_widget_paste_html", "paste-html-pointer")] {
@@ -131,6 +138,39 @@ fn control_templates(ctx: &Ctx<'_>, dismissed: &str) -> String {
         out.replace_range(start..end, "");
     }
     super::template_text::translate(ctx.site(), &out)
+}
+
+/// What the widgets enqueue on `admin_print_scripts-widgets.php`: the media widgets, the text widget with
+/// `wp_enqueue_editor()` and the custom HTML widget with its code editor. Returns whether the user highlights syntax.
+pub(super) async fn admin_scripts(ctx: &Ctx<'_>, assets: &mut Assets) -> bool {
+    // `wp_enqueue_editor()`.
+    assets.late_scripts.extend(["quicktags", "wplink", "jquery-ui-autocomplete", "thickbox", "media-upload", "media-widgets"].map(str::to_owned));
+    enqueue_media_widget(ctx, assets, "media_audio", "media-audio-widget", "audio");
+    enqueue_media_widget(ctx, assets, "media_image", "media-image-widget", "image");
+    enqueue_media_widget(ctx, assets, "media_gallery", "media-gallery-widget", "image");
+    enqueue_media_widget(ctx, assets, "media_video", "media-video-widget", "video");
+    assets.late_scripts.push("text-widgets".into());
+    assets.inline.push(("text-widgets".into(), "wp.textWidgets.idBases.push( \"text\" );".into(), "after".into()));
+    assets.inline.push(("text-widgets".into(), "wp.textWidgets.init();".into(), "after".into()));
+    // `WP_Widget_Custom_HTML::enqueue_admin_scripts()`.
+    let syntax_highlighting = ctx.env.db.user_meta(ctx.user.id, "syntax_highlighting").await.ok().flatten().as_deref() != Some("false");
+    let code = if syntax_highlighting {
+        let mut code = super::file_editor::code_editor_settings(ctx, "widget.html");
+        code["codemirror"]["indentUnit"] = json!(2);
+        code["codemirror"]["tabSize"] = json!(2);
+        assets.late_scripts.extend(["code-editor".to_owned(), "htmlhint".to_owned(), "csslint".to_owned(), "custom-html-widgets".to_owned()]);
+        assets.inline.push(("code-editor".into(), format!("jQuery.extend( wp.codeEditor.defaultSettings, {} );", inline_json(&code)), "after".into()));
+        code
+    } else {
+        assets.late_scripts.push("custom-html-widgets".into());
+        json!({"disabled": true})
+    };
+    assets.inline.push(("custom-html-widgets".into(), "wp.customHtmlWidgets.idBases.push( \"custom_html\" );".into(), "after".into()));
+    assets.inline.push(("custom-html-widgets".into(), format!("wp.customHtmlWidgets.init( {} );", inline_json(&code)), "after".into()));
+    let error_notice = |n: i64| ctx.site().trn("There is %d error which must be fixed before you can save.", "There are %d errors which must be fixed before you can save.", n);
+    assets.inline.push(("custom-html-widgets".into(), format!("jQuery.extend( wp.customHtmlWidgets.l10n, {} );", inline_json(&json!({"errorNotice": {"singular": error_notice(1), "plural": error_notice(2)}}))), "after".into()));
+
+    syntax_highlighting
 }
 
 pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
@@ -164,33 +204,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     assets.scripts.retain(|script| !media.contains(script));
     assets.scripts.push("media-views".into());
     assets.late_scripts.extend(media);
-    // `wp_enqueue_editor()`.
-    assets.late_scripts.extend(["quicktags", "wplink", "jquery-ui-autocomplete", "thickbox", "media-upload", "media-widgets"].map(str::to_owned));
-    enqueue_media_widget(ctx, &mut assets, "media_audio", "media-audio-widget", "audio");
-    enqueue_media_widget(ctx, &mut assets, "media_image", "media-image-widget", "image");
-    enqueue_media_widget(ctx, &mut assets, "media_gallery", "media-gallery-widget", "image");
-    enqueue_media_widget(ctx, &mut assets, "media_video", "media-video-widget", "video");
-    assets.late_scripts.push("text-widgets".into());
-    assets.inline.push(("text-widgets".into(), "wp.textWidgets.idBases.push( \"text\" );".into(), "after".into()));
-    assets.inline.push(("text-widgets".into(), "wp.textWidgets.init();".into(), "after".into()));
-    // `WP_Widget_Custom_HTML::enqueue_admin_scripts()`.
-    let syntax_highlighting = env.db.user_meta(ctx.user.id, "syntax_highlighting").await.ok().flatten().as_deref() != Some("false");
-    let code = if syntax_highlighting {
-        let mut code = super::file_editor::code_editor_settings(ctx, "widget.html");
-        code["codemirror"]["indentUnit"] = json!(2);
-        code["codemirror"]["tabSize"] = json!(2);
-        assets.late_scripts.extend(["code-editor".to_owned(), "htmlhint".to_owned(), "csslint".to_owned(), "custom-html-widgets".to_owned()]);
-        assets.inline.push(("code-editor".into(), format!("jQuery.extend( wp.codeEditor.defaultSettings, {} );", inline_json(&code)), "after".into()));
-        code
-    } else {
-        assets.late_scripts.push("custom-html-widgets".into());
-        json!({"disabled": true})
-    };
-    assets.inline.push(("custom-html-widgets".into(), "wp.customHtmlWidgets.idBases.push( \"custom_html\" );".into(), "after".into()));
-    assets.inline.push(("custom-html-widgets".into(), format!("wp.customHtmlWidgets.init( {} );", inline_json(&code)), "after".into()));
-    let error_notice = |n: i64| ctx.site().trn("There is %d error which must be fixed before you can save.", "There are %d errors which must be fixed before you can save.", n);
-    assets.inline.push(("custom-html-widgets".into(), format!("jQuery.extend( wp.customHtmlWidgets.l10n, {} );", inline_json(&json!({"errorNotice": {"singular": error_notice(1), "plural": error_notice(2)}}))), "after".into()));
-
+    let syntax_highlighting = admin_scripts(ctx, &mut assets).await;
     // `enqueue_block_editor_assets` of the plugins.
     {
         let parts = ctx.plugin_parts();
@@ -215,7 +229,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     assets.footer = super::editor::default_editor_scripts(ctx, super::editor::can_richedit(ctx, rich_editing.as_deref()));
     let dismissed = env.db.user_meta(ctx.user.id, "dismissed_wp_pointers").await.ok().flatten().unwrap_or_default();
     // The output before ends with the indentation of its closing `<?php`, and so do the templates.
-    assets.footer.push_str(&control_templates(ctx, &dismissed));
+    assets.footer.push_str(&control_templates(ctx, &dismissed, false));
 
     // An installed Classic Widgets gets a link to activate it, otherwise one to install it.
     let wp_root = env.loader.includes.parent().unwrap_or(&env.loader.includes);

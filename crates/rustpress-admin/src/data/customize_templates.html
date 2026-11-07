@@ -1,0 +1,1307 @@
+		<script type="text/html" id="tmpl-customize-panel-default-content">
+					<li class="panel-meta customize-info accordion-section <# if ( ! data.description ) { #> cannot-expand<# } #>">
+			<button class="customize-panel-back" tabindex="-1"><span class="screen-reader-text">
+				⟦r¦¦Back⟧			</span></button>
+			<div class="accordion-section-title">
+				<span class="preview-notice">
+				⟦r¦¦You are customizing ⟪%s¦<strong class="panel-title">{{ data.title }}</strong>⟫⟧				</span>
+				<# if ( data.description ) { #>
+					<button type="button" class="customize-help-toggle dashicons dashicons-editor-help" aria-expanded="false"><span class="screen-reader-text">
+						⟦r¦¦Help⟧					</span></button>
+				<# } #>
+			</div>
+			<# if ( data.description ) { #>
+				<div class="description customize-panel-description">
+					{{{ data.description }}}
+				</div>
+			<# } #>
+
+			<div class="customize-control-notifications-container"></div>
+		</li>
+				</script>
+		<script type="text/html" id="tmpl-customize-panel-default">
+					<li id="accordion-panel-{{ data.id }}" class="accordion-section control-section control-panel control-panel-{{ data.type }}">
+			<h3 class="accordion-section-title">
+				<button type="button" class="accordion-trigger" aria-expanded="false" aria-controls="{{ data.id }}-content">
+					{{ data.title }}
+				</button>
+			</h3>
+			<ul class="accordion-sub-container control-panel-content" id="{{ data.id }}-content"></ul>
+		</li>
+				</script>
+				<script type="text/html" id="tmpl-customize-panel-themes-content">
+					<li class="panel-meta customize-info accordion-section <# if ( ! data.description ) { #> cannot-expand<# } #>">
+			<button class="customize-panel-back" tabindex="-1" type="button"><span class="screen-reader-text">
+				⟦r¦¦Back⟧			</span></button>
+			<div class="accordion-section-title">
+				<span class="preview-notice">
+					⟦r¦¦You are browsing ⟪%s¦<strong class="panel-title">⟦r¦¦Themes⟧</strong>⟫⟧				</span>
+									<# if ( data.description ) { #>
+						<button class="customize-help-toggle dashicons dashicons-editor-help" type="button" aria-expanded="false"><span class="screen-reader-text">
+							⟦r¦¦Help⟧						</span></button>
+					<# } #>
+							</div>
+							<# if ( data.description ) { #>
+					<div class="description customize-panel-description">
+						{{{ data.description }}}
+					</div>
+				<# } #>
+			
+			<div class="customize-control-notifications-container"></div>
+		</li>
+		<li class="customize-themes-full-container-container">
+			<div class="customize-themes-full-container">
+				<div class="customize-themes-notifications"></div>
+			</div>
+		</li>
+				</script>
+		<script type="text/html" id="tmpl-customize-panel-themes">
+					<li id="accordion-section-{{ data.id }}" class="accordion-section control-panel-themes">
+			<h3 class="accordion-section-title">
+				<span class="customize-action">⟦r¦¦Active theme⟧</span> {{ data.title }}									<button type="button" class="button change-theme" aria-label="⟦a¦¦Change theme⟧">⟦r¦theme¦Change⟧</button>
+							</h3>
+			<ul class="accordion-sub-container control-panel-content"></ul>
+		</li>
+				</script>
+				<script type="text/html" id="tmpl-customize-panel-nav_menus-content">
+					<li class="panel-meta customize-info accordion-section <# if ( ! data.description ) { #> cannot-expand<# } #>">
+			<button type="button" class="customize-panel-back" tabindex="-1">
+				<span class="screen-reader-text">
+					⟦r¦¦Back⟧				</span>
+			</button>
+			<div class="accordion-section-title">
+				<span class="preview-notice">
+					⟦r¦¦You are customizing ⟪%s¦<strong class="panel-title">{{ data.title }}</strong>⟫⟧				</span>
+				<button type="button" class="customize-help-toggle dashicons dashicons-editor-help" aria-expanded="false">
+					<span class="screen-reader-text">
+						⟦r¦¦Help⟧					</span>
+				</button>
+				<button type="button" class="customize-screen-options-toggle" aria-expanded="false">
+					<span class="screen-reader-text">
+						⟦r¦¦Menu Options⟧					</span>
+				</button>
+			</div>
+			<# if ( data.description ) { #>
+			<div class="description customize-panel-description">{{{ data.description }}}</div>
+			<# } #>
+			<div id="screen-options-wrap">
+				
+{{screen_options}}			</div>
+		</li>
+				<li class="customize-control-title customize-section-title-nav_menus-heading">⟦r¦¦Menus⟧</li>
+				</script>
+		<script type="text/html" id="tmpl-customize-panel-nav_menus">
+					<li id="accordion-panel-{{ data.id }}" class="accordion-section control-section control-panel control-panel-{{ data.type }}">
+			<h3 class="accordion-section-title">
+				<button type="button" class="accordion-trigger" aria-expanded="false" aria-controls="{{ data.id }}-content">
+					{{ data.title }}
+				</button>
+			</h3>
+			<ul class="accordion-sub-container control-panel-content" id="{{ data.id }}-content"></ul>
+		</li>
+				</script>
+				<script type="text/html" id="tmpl-customize-section-default">
+					<li id="accordion-section-{{ data.id }}" class="accordion-section control-section control-section-{{ data.type }}">
+			<h3 class="accordion-section-title">
+				<button type="button" class="accordion-trigger" aria-expanded="false" aria-controls="{{ data.id }}-content">
+					{{ data.title }}
+				</button>
+			</h3>
+			<ul class="accordion-section-content" id="{{ data.id }}-content">
+				<li class="customize-section-description-container section-meta <# if ( data.description_hidden ) { #>customize-info<# } #>">
+					<div class="customize-section-title">
+						<button class="customize-section-back" tabindex="-1">
+							<span class="screen-reader-text">
+								⟦r¦¦Back⟧							</span>
+						</button>
+						<h3>
+							<span class="customize-action">
+								{{{ data.customizeAction }}}
+							</span>
+							{{ data.title }}
+						</h3>
+						<# if ( data.description && data.description_hidden ) { #>
+							<button type="button" class="customize-help-toggle dashicons dashicons-editor-help" aria-expanded="false"><span class="screen-reader-text">
+								⟦r¦¦Help⟧							</span></button>
+							<div class="description customize-section-description">
+								{{{ data.description }}}
+							</div>
+						<# } #>
+
+						<div class="customize-control-notifications-container"></div>
+					</div>
+
+					<# if ( data.description && ! data.description_hidden ) { #>
+						<div class="description customize-section-description">
+							{{{ data.description }}}
+						</div>
+					<# } #>
+				</li>
+			</ul>
+		</li>
+				</script>
+				<script type="text/html" id="tmpl-customize-section-sidebar">
+					<li id="accordion-section-{{ data.id }}" class="accordion-section control-section control-section-{{ data.type }}">
+			<h3 class="accordion-section-title">
+				<button type="button" class="accordion-trigger" aria-expanded="false" aria-controls="{{ data.id }}-content">
+					{{ data.title }}
+				</button>
+			</h3>
+			<ul class="accordion-section-content" id="{{ data.id }}-content">
+				<li class="customize-section-description-container section-meta <# if ( data.description_hidden ) { #>customize-info<# } #>">
+					<div class="customize-section-title">
+						<button class="customize-section-back" tabindex="-1">
+							<span class="screen-reader-text">
+								⟦r¦¦Back⟧							</span>
+						</button>
+						<h3>
+							<span class="customize-action">
+								{{{ data.customizeAction }}}
+							</span>
+							{{ data.title }}
+						</h3>
+						<# if ( data.description && data.description_hidden ) { #>
+							<button type="button" class="customize-help-toggle dashicons dashicons-editor-help" aria-expanded="false"><span class="screen-reader-text">
+								⟦r¦¦Help⟧							</span></button>
+							<div class="description customize-section-description">
+								{{{ data.description }}}
+							</div>
+						<# } #>
+
+						<div class="customize-control-notifications-container"></div>
+					</div>
+
+					<# if ( data.description && ! data.description_hidden ) { #>
+						<div class="description customize-section-description">
+							{{{ data.description }}}
+						</div>
+					<# } #>
+				</li>
+			</ul>
+		</li>
+				</script>
+				<script type="text/html" id="tmpl-customize-section-themes">
+					<li id="accordion-section-{{ data.id }}" class="theme-section">
+			<button type="button" class="customize-themes-section-title themes-section-{{ data.id }}">{{ data.title }}</button>
+									<div class="customize-themes-section themes-section-{{ data.id }} control-section-content themes-php">
+				<div class="theme-overlay" tabindex="0" role="dialog" aria-label="⟦a¦¦Theme Details⟧"></div>
+				<div class="theme-browser rendered">
+					<div class="customize-preview-header themes-filter-bar">
+								<button type="button" class="button button-primary customize-section-back customize-themes-mobile-back">⟦r¦¦Go to theme sources⟧</button>
+		<# if ( 'wporg' === data.action ) { #>
+			<div class="themes-filter-container">
+				<label for="wp-filter-search-input-{{ data.id }}">⟦r¦¦Search themes⟧</label>
+				<div class="search-form-input">
+					<input type="search" id="wp-filter-search-input-{{ data.id }}" aria-describedby="{{ data.id }}-live-search-desc" class="wp-filter-search">
+					<div class="search-icon" aria-hidden="true"></div>
+					<span id="{{ data.id }}-live-search-desc" class="screen-reader-text">
+						⟦r¦¦The search results will be updated as you type.⟧					</span>
+				</div>
+			</div>
+		<# } else { #>
+			<div class="themes-filter-container">
+				<label for="{{ data.id }}-themes-filter">⟦r¦¦Search themes⟧</label>
+				<div class="search-form-input">
+					<input type="search" id="{{ data.id }}-themes-filter" aria-describedby="{{ data.id }}-live-search-desc" class="wp-filter-search wp-filter-search-themes" />
+					<div class="search-icon" aria-hidden="true"></div>
+					<span id="{{ data.id }}-live-search-desc" class="screen-reader-text">
+						⟦r¦¦The search results will be updated as you type.⟧					</span>
+				</div>
+			</div>
+		<# } #>
+		<div class="filter-themes-wrapper">
+			<# if ( 'wporg' === data.action ) { #>
+			<button type="button" class="button feature-filter-toggle">
+				<span class="filter-count-0">⟦r¦¦Filter themes⟧</span><span class="filter-count-filters">
+					⟦r¦¦Filter themes (⟪%s¦<span class="theme-filter-count">0</span>⟫)⟧				</span>
+			</button>
+			<# } #>
+			<div class="filter-themes-count">
+				<span class="themes-displayed">
+					⟦r¦¦⟪%s¦<span class="theme-count">0</span>⟫ themes⟧				</span>
+			</div>
+		</div>
+							</div>
+							<# if ( 'wporg' === data.action ) { #>
+			<div class="filter-drawer filter-details">
+									<fieldset class="filter-group">
+						<legend>⟦h¦¦Subject⟧</legend>
+						<div class="filter-group-feature">
+															<input type="checkbox" id="filter-id-blog" value="blog" />
+								<label for="filter-id-blog">⟦h¦¦Blog⟧</label>
+															<input type="checkbox" id="filter-id-e-commerce" value="e-commerce" />
+								<label for="filter-id-e-commerce">⟦h¦¦E-Commerce⟧</label>
+															<input type="checkbox" id="filter-id-education" value="education" />
+								<label for="filter-id-education">⟦h¦¦Education⟧</label>
+															<input type="checkbox" id="filter-id-entertainment" value="entertainment" />
+								<label for="filter-id-entertainment">⟦h¦¦Entertainment⟧</label>
+															<input type="checkbox" id="filter-id-food-and-drink" value="food-and-drink" />
+								<label for="filter-id-food-and-drink">⟦h¦¦Food &amp; Drink⟧</label>
+															<input type="checkbox" id="filter-id-holiday" value="holiday" />
+								<label for="filter-id-holiday">⟦h¦¦Holiday⟧</label>
+															<input type="checkbox" id="filter-id-news" value="news" />
+								<label for="filter-id-news">⟦h¦¦News⟧</label>
+															<input type="checkbox" id="filter-id-photography" value="photography" />
+								<label for="filter-id-photography">⟦h¦¦Photography⟧</label>
+															<input type="checkbox" id="filter-id-portfolio" value="portfolio" />
+								<label for="filter-id-portfolio">⟦h¦¦Portfolio⟧</label>
+													</div>
+					</fieldset>
+									<fieldset class="filter-group">
+						<legend>⟦h¦¦Features⟧</legend>
+						<div class="filter-group-feature">
+															<input type="checkbox" id="filter-id-accessibility-ready" value="accessibility-ready" />
+								<label for="filter-id-accessibility-ready">⟦h¦¦Accessibility Ready⟧</label>
+															<input type="checkbox" id="filter-id-block-patterns" value="block-patterns" />
+								<label for="filter-id-block-patterns">⟦h¦¦Block Editor Patterns⟧</label>
+															<input type="checkbox" id="filter-id-block-styles" value="block-styles" />
+								<label for="filter-id-block-styles">⟦h¦¦Block Editor Styles⟧</label>
+															<input type="checkbox" id="filter-id-custom-background" value="custom-background" />
+								<label for="filter-id-custom-background">⟦h¦¦Custom Background⟧</label>
+															<input type="checkbox" id="filter-id-custom-colors" value="custom-colors" />
+								<label for="filter-id-custom-colors">⟦h¦¦Custom Colors⟧</label>
+															<input type="checkbox" id="filter-id-custom-header" value="custom-header" />
+								<label for="filter-id-custom-header">⟦h¦¦Custom Header⟧</label>
+															<input type="checkbox" id="filter-id-custom-logo" value="custom-logo" />
+								<label for="filter-id-custom-logo">⟦h¦¦Custom Logo⟧</label>
+															<input type="checkbox" id="filter-id-editor-style" value="editor-style" />
+								<label for="filter-id-editor-style">⟦h¦¦Editor Style⟧</label>
+															<input type="checkbox" id="filter-id-featured-image-header" value="featured-image-header" />
+								<label for="filter-id-featured-image-header">⟦h¦¦Featured Image Header⟧</label>
+															<input type="checkbox" id="filter-id-featured-images" value="featured-images" />
+								<label for="filter-id-featured-images">⟦h¦¦Featured Images⟧</label>
+															<input type="checkbox" id="filter-id-footer-widgets" value="footer-widgets" />
+								<label for="filter-id-footer-widgets">⟦h¦¦Footer Widgets⟧</label>
+															<input type="checkbox" id="filter-id-full-site-editing" value="full-site-editing" />
+								<label for="filter-id-full-site-editing">⟦h¦¦Site Editor⟧</label>
+															<input type="checkbox" id="filter-id-full-width-template" value="full-width-template" />
+								<label for="filter-id-full-width-template">⟦h¦¦Full Width Template⟧</label>
+															<input type="checkbox" id="filter-id-post-formats" value="post-formats" />
+								<label for="filter-id-post-formats">⟦h¦¦Post Formats⟧</label>
+															<input type="checkbox" id="filter-id-sticky-post" value="sticky-post" />
+								<label for="filter-id-sticky-post">⟦h¦¦Sticky Post⟧</label>
+															<input type="checkbox" id="filter-id-style-variations" value="style-variations" />
+								<label for="filter-id-style-variations">⟦h¦¦Style Variations⟧</label>
+															<input type="checkbox" id="filter-id-template-editing" value="template-editing" />
+								<label for="filter-id-template-editing">⟦h¦¦Template Editing⟧</label>
+															<input type="checkbox" id="filter-id-theme-options" value="theme-options" />
+								<label for="filter-id-theme-options">⟦h¦¦Theme Options⟧</label>
+													</div>
+					</fieldset>
+									<fieldset class="filter-group">
+						<legend>⟦h¦¦Layout⟧</legend>
+						<div class="filter-group-feature">
+															<input type="checkbox" id="filter-id-grid-layout" value="grid-layout" />
+								<label for="filter-id-grid-layout">⟦h¦¦Grid Layout⟧</label>
+															<input type="checkbox" id="filter-id-one-column" value="one-column" />
+								<label for="filter-id-one-column">⟦h¦¦One Column⟧</label>
+															<input type="checkbox" id="filter-id-two-columns" value="two-columns" />
+								<label for="filter-id-two-columns">⟦h¦¦Two Columns⟧</label>
+															<input type="checkbox" id="filter-id-three-columns" value="three-columns" />
+								<label for="filter-id-three-columns">⟦h¦¦Three Columns⟧</label>
+															<input type="checkbox" id="filter-id-four-columns" value="four-columns" />
+								<label for="filter-id-four-columns">⟦h¦¦Four Columns⟧</label>
+															<input type="checkbox" id="filter-id-left-sidebar" value="left-sidebar" />
+								<label for="filter-id-left-sidebar">⟦h¦¦Left Sidebar⟧</label>
+															<input type="checkbox" id="filter-id-right-sidebar" value="right-sidebar" />
+								<label for="filter-id-right-sidebar">⟦h¦¦Right Sidebar⟧</label>
+															<input type="checkbox" id="filter-id-wide-blocks" value="wide-blocks" />
+								<label for="filter-id-wide-blocks">⟦h¦¦Wide Blocks⟧</label>
+													</div>
+					</fieldset>
+							</div>
+		<# } #>
+							<div class="error unexpected-error" style="display: none; ">
+						<p>
+							⟦r¦¦An unexpected error occurred. Something may be wrong with WordPress.org or this server&#8217;s configuration. If you continue to have problems, please try the <a href="⟪%s¦⟦r¦¦https://wordpress.org/support/forums/⟧⟫">support forums</a>.⟧						</p>
+					</div>
+					<ul class="themes">
+					</ul>
+					<p class="no-themes">⟦r¦¦No themes found. Try a different search.⟧</p>
+					<p class="no-themes-local">
+						⟦r¦¦No themes found. Try a different search, or ⟪%s¦<button type="button" class="button-link search-dotorg-themes">⟦r¦¦Search WordPress.org themes⟧</button>⟫.⟧					</p>
+					<p class="spinner"></p>
+				</div>
+			</div>
+		</li>
+				</script>
+				<script type="text/html" id="tmpl-customize-control-color-content">
+					<#
+		var defaultValue = '#RRGGBB',
+			defaultValueAttr = '',
+			inputId = _.uniqueId( 'customize-color-control-input-' ),
+			isHueSlider = data.mode === 'hue';
+
+		if ( data.defaultValue && _.isString( data.defaultValue ) && ! isHueSlider ) {
+			if ( '#' !== data.defaultValue.substring( 0, 1 ) ) {
+				defaultValue = '#' + data.defaultValue;
+			} else {
+				defaultValue = data.defaultValue;
+			}
+			defaultValueAttr = ' data-default-color=' + defaultValue; // Quotes added automatically.
+		}
+		#>
+		<# if ( data.label ) { #>
+			<span class="customize-control-title">{{{ data.label }}}</span>
+		<# } #>
+		<# if ( data.description ) { #>
+			<span class="description customize-control-description">{{{ data.description }}}</span>
+		<# } #>
+		<div class="customize-control-content">
+			<label for="{{ inputId }}"><span class="screen-reader-text">{{{ data.label }}}</span></label>
+			<# if ( isHueSlider ) { #>
+				<input id="{{ inputId }}" class="color-picker-hue" type="number" min="1" max="359" data-type="hue" />
+			<# } else { #>
+				<input id="{{ inputId }}" class="color-picker-hex" type="text" maxlength="7" placeholder="{{ defaultValue }}" {{ defaultValueAttr }} />
+			<# } #>
+		</div>
+				</script>
+				<script type="text/html" id="tmpl-customize-control-media-content">
+					<#
+		var descriptionId = _.uniqueId( 'customize-media-control-description-' );
+		var describedByAttr = data.description ? ' aria-describedby="' + descriptionId + '" ' : '';
+		#>
+		<# if ( data.label ) { #>
+			<span class="customize-control-title">{{ data.label }}</span>
+		<# } #>
+		<div class="customize-control-notifications-container"></div>
+		<# if ( data.description ) { #>
+			<span id="{{ descriptionId }}" class="description customize-control-description">{{{ data.description }}}</span>
+		<# } #>
+
+		<# if ( data.attachment && data.attachment.id ) { #>
+			<div class="attachment-media-view attachment-media-view-{{ data.attachment.type }} {{ data.attachment.orientation }}">
+				<div class="thumbnail thumbnail-{{ data.attachment.type }}">
+					<# if ( 'image' === data.attachment.type && data.attachment.sizes && data.attachment.sizes.medium ) { #>
+						<img class="attachment-thumb" src="{{ data.attachment.sizes.medium.url }}" draggable="false" alt="" />
+					<# } else if ( 'image' === data.attachment.type && data.attachment.sizes && data.attachment.sizes.full ) { #>
+						<img class="attachment-thumb" src="{{ data.attachment.sizes.full.url }}" draggable="false" alt="" />
+					<# } else if ( 'audio' === data.attachment.type ) { #>
+						<# if ( data.attachment.image && data.attachment.image.src && data.attachment.image.src !== data.attachment.icon ) { #>
+							<img src="{{ data.attachment.image.src }}" class="thumbnail" draggable="false" alt="" />
+						<# } else { #>
+							<img src="{{ data.attachment.icon }}" class="attachment-thumb type-icon" draggable="false" alt="" />
+						<# } #>
+						<p class="attachment-meta attachment-meta-title">&#8220;{{ data.attachment.title }}&#8221;</p>
+						<# if ( data.attachment.album || data.attachment.meta.album ) { #>
+						<p class="attachment-meta"><em>{{ data.attachment.album || data.attachment.meta.album }}</em></p>
+						<# } #>
+						<# if ( data.attachment.artist || data.attachment.meta.artist ) { #>
+						<p class="attachment-meta">{{ data.attachment.artist || data.attachment.meta.artist }}</p>
+						<# } #>
+						<audio style="visibility: hidden" controls class="wp-audio-shortcode" width="100%" preload="none">
+							<source type="{{ data.attachment.mime }}" src="{{ data.attachment.url }}" />
+						</audio>
+					<# } else if ( 'video' === data.attachment.type ) { #>
+						<div class="wp-media-wrapper wp-video">
+							<video controls="controls" class="wp-video-shortcode" preload="metadata"
+								<# if ( data.attachment.image && data.attachment.image.src !== data.attachment.icon ) { #>poster="{{ data.attachment.image.src }}"<# } #>>
+								<source type="{{ data.attachment.mime }}" src="{{ data.attachment.url }}" />
+							</video>
+						</div>
+					<# } else { #>
+						<img class="attachment-thumb type-icon icon" src="{{ data.attachment.icon }}" draggable="false" alt="" />
+						<p class="attachment-title">{{ data.attachment.title }}</p>
+					<# } #>
+				</div>
+				<div class="actions">
+					<# if ( data.canUpload ) { #>
+					<button type="button" class="button remove-button">{{ data.button_labels.remove }}</button>
+					<button type="button" class="button upload-button control-focus" {{{ describedByAttr }}}>{{ data.button_labels.change }}</button>
+					<# } #>
+				</div>
+			</div>
+		<# } else { #>
+			<div class="attachment-media-view">
+				<# if ( data.canUpload ) { #>
+					<button type="button" class="upload-button button" {{{ describedByAttr }}}>{{ data.button_labels.select }}</button>
+				<# } #>
+				<div class="actions">
+					<# if ( data.defaultAttachment ) { #>
+						<button type="button" class="button default-button">{{ data.button_labels['default'] }}</button>
+					<# } #>
+				</div>
+			</div>
+		<# } #>
+				</script>
+				<script type="text/html" id="tmpl-customize-control-upload-content">
+					<#
+		var descriptionId = _.uniqueId( 'customize-media-control-description-' );
+		var describedByAttr = data.description ? ' aria-describedby="' + descriptionId + '" ' : '';
+		#>
+		<# if ( data.label ) { #>
+			<span class="customize-control-title">{{ data.label }}</span>
+		<# } #>
+		<div class="customize-control-notifications-container"></div>
+		<# if ( data.description ) { #>
+			<span id="{{ descriptionId }}" class="description customize-control-description">{{{ data.description }}}</span>
+		<# } #>
+
+		<# if ( data.attachment && data.attachment.id ) { #>
+			<div class="attachment-media-view attachment-media-view-{{ data.attachment.type }} {{ data.attachment.orientation }}">
+				<div class="thumbnail thumbnail-{{ data.attachment.type }}">
+					<# if ( 'image' === data.attachment.type && data.attachment.sizes && data.attachment.sizes.medium ) { #>
+						<img class="attachment-thumb" src="{{ data.attachment.sizes.medium.url }}" draggable="false" alt="" />
+					<# } else if ( 'image' === data.attachment.type && data.attachment.sizes && data.attachment.sizes.full ) { #>
+						<img class="attachment-thumb" src="{{ data.attachment.sizes.full.url }}" draggable="false" alt="" />
+					<# } else if ( 'audio' === data.attachment.type ) { #>
+						<# if ( data.attachment.image && data.attachment.image.src && data.attachment.image.src !== data.attachment.icon ) { #>
+							<img src="{{ data.attachment.image.src }}" class="thumbnail" draggable="false" alt="" />
+						<# } else { #>
+							<img src="{{ data.attachment.icon }}" class="attachment-thumb type-icon" draggable="false" alt="" />
+						<# } #>
+						<p class="attachment-meta attachment-meta-title">&#8220;{{ data.attachment.title }}&#8221;</p>
+						<# if ( data.attachment.album || data.attachment.meta.album ) { #>
+						<p class="attachment-meta"><em>{{ data.attachment.album || data.attachment.meta.album }}</em></p>
+						<# } #>
+						<# if ( data.attachment.artist || data.attachment.meta.artist ) { #>
+						<p class="attachment-meta">{{ data.attachment.artist || data.attachment.meta.artist }}</p>
+						<# } #>
+						<audio style="visibility: hidden" controls class="wp-audio-shortcode" width="100%" preload="none">
+							<source type="{{ data.attachment.mime }}" src="{{ data.attachment.url }}" />
+						</audio>
+					<# } else if ( 'video' === data.attachment.type ) { #>
+						<div class="wp-media-wrapper wp-video">
+							<video controls="controls" class="wp-video-shortcode" preload="metadata"
+								<# if ( data.attachment.image && data.attachment.image.src !== data.attachment.icon ) { #>poster="{{ data.attachment.image.src }}"<# } #>>
+								<source type="{{ data.attachment.mime }}" src="{{ data.attachment.url }}" />
+							</video>
+						</div>
+					<# } else { #>
+						<img class="attachment-thumb type-icon icon" src="{{ data.attachment.icon }}" draggable="false" alt="" />
+						<p class="attachment-title">{{ data.attachment.title }}</p>
+					<# } #>
+				</div>
+				<div class="actions">
+					<# if ( data.canUpload ) { #>
+					<button type="button" class="button remove-button">{{ data.button_labels.remove }}</button>
+					<button type="button" class="button upload-button control-focus" {{{ describedByAttr }}}>{{ data.button_labels.change }}</button>
+					<# } #>
+				</div>
+			</div>
+		<# } else { #>
+			<div class="attachment-media-view">
+				<# if ( data.canUpload ) { #>
+					<button type="button" class="upload-button button" {{{ describedByAttr }}}>{{ data.button_labels.select }}</button>
+				<# } #>
+				<div class="actions">
+					<# if ( data.defaultAttachment ) { #>
+						<button type="button" class="button default-button">{{ data.button_labels['default'] }}</button>
+					<# } #>
+				</div>
+			</div>
+		<# } #>
+				</script>
+				<script type="text/html" id="tmpl-customize-control-image-content">
+					<#
+		var descriptionId = _.uniqueId( 'customize-media-control-description-' );
+		var describedByAttr = data.description ? ' aria-describedby="' + descriptionId + '" ' : '';
+		#>
+		<# if ( data.label ) { #>
+			<span class="customize-control-title">{{ data.label }}</span>
+		<# } #>
+		<div class="customize-control-notifications-container"></div>
+		<# if ( data.description ) { #>
+			<span id="{{ descriptionId }}" class="description customize-control-description">{{{ data.description }}}</span>
+		<# } #>
+
+		<# if ( data.attachment && data.attachment.id ) { #>
+			<div class="attachment-media-view attachment-media-view-{{ data.attachment.type }} {{ data.attachment.orientation }}">
+				<div class="thumbnail thumbnail-{{ data.attachment.type }}">
+					<# if ( 'image' === data.attachment.type && data.attachment.sizes && data.attachment.sizes.medium ) { #>
+						<img class="attachment-thumb" src="{{ data.attachment.sizes.medium.url }}" draggable="false" alt="" />
+					<# } else if ( 'image' === data.attachment.type && data.attachment.sizes && data.attachment.sizes.full ) { #>
+						<img class="attachment-thumb" src="{{ data.attachment.sizes.full.url }}" draggable="false" alt="" />
+					<# } else if ( 'audio' === data.attachment.type ) { #>
+						<# if ( data.attachment.image && data.attachment.image.src && data.attachment.image.src !== data.attachment.icon ) { #>
+							<img src="{{ data.attachment.image.src }}" class="thumbnail" draggable="false" alt="" />
+						<# } else { #>
+							<img src="{{ data.attachment.icon }}" class="attachment-thumb type-icon" draggable="false" alt="" />
+						<# } #>
+						<p class="attachment-meta attachment-meta-title">&#8220;{{ data.attachment.title }}&#8221;</p>
+						<# if ( data.attachment.album || data.attachment.meta.album ) { #>
+						<p class="attachment-meta"><em>{{ data.attachment.album || data.attachment.meta.album }}</em></p>
+						<# } #>
+						<# if ( data.attachment.artist || data.attachment.meta.artist ) { #>
+						<p class="attachment-meta">{{ data.attachment.artist || data.attachment.meta.artist }}</p>
+						<# } #>
+						<audio style="visibility: hidden" controls class="wp-audio-shortcode" width="100%" preload="none">
+							<source type="{{ data.attachment.mime }}" src="{{ data.attachment.url }}" />
+						</audio>
+					<# } else if ( 'video' === data.attachment.type ) { #>
+						<div class="wp-media-wrapper wp-video">
+							<video controls="controls" class="wp-video-shortcode" preload="metadata"
+								<# if ( data.attachment.image && data.attachment.image.src !== data.attachment.icon ) { #>poster="{{ data.attachment.image.src }}"<# } #>>
+								<source type="{{ data.attachment.mime }}" src="{{ data.attachment.url }}" />
+							</video>
+						</div>
+					<# } else { #>
+						<img class="attachment-thumb type-icon icon" src="{{ data.attachment.icon }}" draggable="false" alt="" />
+						<p class="attachment-title">{{ data.attachment.title }}</p>
+					<# } #>
+				</div>
+				<div class="actions">
+					<# if ( data.canUpload ) { #>
+					<button type="button" class="button remove-button">{{ data.button_labels.remove }}</button>
+					<button type="button" class="button upload-button control-focus" {{{ describedByAttr }}}>{{ data.button_labels.change }}</button>
+					<# } #>
+				</div>
+			</div>
+		<# } else { #>
+			<div class="attachment-media-view">
+				<# if ( data.canUpload ) { #>
+					<button type="button" class="upload-button button" {{{ describedByAttr }}}>{{ data.button_labels.select }}</button>
+				<# } #>
+				<div class="actions">
+					<# if ( data.defaultAttachment ) { #>
+						<button type="button" class="button default-button">{{ data.button_labels['default'] }}</button>
+					<# } #>
+				</div>
+			</div>
+		<# } #>
+				</script>
+				<script type="text/html" id="tmpl-customize-control-background-content">
+					<#
+		var descriptionId = _.uniqueId( 'customize-media-control-description-' );
+		var describedByAttr = data.description ? ' aria-describedby="' + descriptionId + '" ' : '';
+		#>
+		<# if ( data.label ) { #>
+			<span class="customize-control-title">{{ data.label }}</span>
+		<# } #>
+		<div class="customize-control-notifications-container"></div>
+		<# if ( data.description ) { #>
+			<span id="{{ descriptionId }}" class="description customize-control-description">{{{ data.description }}}</span>
+		<# } #>
+
+		<# if ( data.attachment && data.attachment.id ) { #>
+			<div class="attachment-media-view attachment-media-view-{{ data.attachment.type }} {{ data.attachment.orientation }}">
+				<div class="thumbnail thumbnail-{{ data.attachment.type }}">
+					<# if ( 'image' === data.attachment.type && data.attachment.sizes && data.attachment.sizes.medium ) { #>
+						<img class="attachment-thumb" src="{{ data.attachment.sizes.medium.url }}" draggable="false" alt="" />
+					<# } else if ( 'image' === data.attachment.type && data.attachment.sizes && data.attachment.sizes.full ) { #>
+						<img class="attachment-thumb" src="{{ data.attachment.sizes.full.url }}" draggable="false" alt="" />
+					<# } else if ( 'audio' === data.attachment.type ) { #>
+						<# if ( data.attachment.image && data.attachment.image.src && data.attachment.image.src !== data.attachment.icon ) { #>
+							<img src="{{ data.attachment.image.src }}" class="thumbnail" draggable="false" alt="" />
+						<# } else { #>
+							<img src="{{ data.attachment.icon }}" class="attachment-thumb type-icon" draggable="false" alt="" />
+						<# } #>
+						<p class="attachment-meta attachment-meta-title">&#8220;{{ data.attachment.title }}&#8221;</p>
+						<# if ( data.attachment.album || data.attachment.meta.album ) { #>
+						<p class="attachment-meta"><em>{{ data.attachment.album || data.attachment.meta.album }}</em></p>
+						<# } #>
+						<# if ( data.attachment.artist || data.attachment.meta.artist ) { #>
+						<p class="attachment-meta">{{ data.attachment.artist || data.attachment.meta.artist }}</p>
+						<# } #>
+						<audio style="visibility: hidden" controls class="wp-audio-shortcode" width="100%" preload="none">
+							<source type="{{ data.attachment.mime }}" src="{{ data.attachment.url }}" />
+						</audio>
+					<# } else if ( 'video' === data.attachment.type ) { #>
+						<div class="wp-media-wrapper wp-video">
+							<video controls="controls" class="wp-video-shortcode" preload="metadata"
+								<# if ( data.attachment.image && data.attachment.image.src !== data.attachment.icon ) { #>poster="{{ data.attachment.image.src }}"<# } #>>
+								<source type="{{ data.attachment.mime }}" src="{{ data.attachment.url }}" />
+							</video>
+						</div>
+					<# } else { #>
+						<img class="attachment-thumb type-icon icon" src="{{ data.attachment.icon }}" draggable="false" alt="" />
+						<p class="attachment-title">{{ data.attachment.title }}</p>
+					<# } #>
+				</div>
+				<div class="actions">
+					<# if ( data.canUpload ) { #>
+					<button type="button" class="button remove-button">{{ data.button_labels.remove }}</button>
+					<button type="button" class="button upload-button control-focus" {{{ describedByAttr }}}>{{ data.button_labels.change }}</button>
+					<# } #>
+				</div>
+			</div>
+		<# } else { #>
+			<div class="attachment-media-view">
+				<# if ( data.canUpload ) { #>
+					<button type="button" class="upload-button button" {{{ describedByAttr }}}>{{ data.button_labels.select }}</button>
+				<# } #>
+				<div class="actions">
+					<# if ( data.defaultAttachment ) { #>
+						<button type="button" class="button default-button">{{ data.button_labels['default'] }}</button>
+					<# } #>
+				</div>
+			</div>
+		<# } #>
+				</script>
+				<script type="text/html" id="tmpl-customize-control-background_position-content">
+					<# if ( data.label ) { #>
+			<span class="customize-control-title">{{{ data.label }}}</span>
+		<# } #>
+		<# if ( data.description ) { #>
+			<span class="description customize-control-description">{{{ data.description }}}</span>
+		<# } #>
+		<div class="customize-control-content">
+			<fieldset>
+				<legend class="screen-reader-text"><span>
+					⟦r¦¦Image Position⟧				</span></legend>
+				<div class="background-position-control">
+									<div class="button-group">
+											<label>
+							<input class="ui-helper-hidden-accessible" name="background-position" type="radio" value="left top">
+							<span class="button display-options position"><span class="dashicons dashicons-arrow-left-alt" aria-hidden="true"></span></span>
+							<span class="screen-reader-text">⟦r¦¦Top Left⟧</span>
+						</label>
+											<label>
+							<input class="ui-helper-hidden-accessible" name="background-position" type="radio" value="center top">
+							<span class="button display-options position"><span class="dashicons dashicons-arrow-up-alt" aria-hidden="true"></span></span>
+							<span class="screen-reader-text">⟦r¦¦Top⟧</span>
+						</label>
+											<label>
+							<input class="ui-helper-hidden-accessible" name="background-position" type="radio" value="right top">
+							<span class="button display-options position"><span class="dashicons dashicons-arrow-right-alt" aria-hidden="true"></span></span>
+							<span class="screen-reader-text">⟦r¦¦Top Right⟧</span>
+						</label>
+										</div>
+									<div class="button-group">
+											<label>
+							<input class="ui-helper-hidden-accessible" name="background-position" type="radio" value="left center">
+							<span class="button display-options position"><span class="dashicons dashicons-arrow-left-alt" aria-hidden="true"></span></span>
+							<span class="screen-reader-text">⟦r¦¦Left⟧</span>
+						</label>
+											<label>
+							<input class="ui-helper-hidden-accessible" name="background-position" type="radio" value="center center">
+							<span class="button display-options position"><span class="background-position-center-icon" aria-hidden="true"></span></span>
+							<span class="screen-reader-text">⟦r¦¦Center⟧</span>
+						</label>
+											<label>
+							<input class="ui-helper-hidden-accessible" name="background-position" type="radio" value="right center">
+							<span class="button display-options position"><span class="dashicons dashicons-arrow-right-alt" aria-hidden="true"></span></span>
+							<span class="screen-reader-text">⟦r¦¦Right⟧</span>
+						</label>
+										</div>
+									<div class="button-group">
+											<label>
+							<input class="ui-helper-hidden-accessible" name="background-position" type="radio" value="left bottom">
+							<span class="button display-options position"><span class="dashicons dashicons-arrow-left-alt" aria-hidden="true"></span></span>
+							<span class="screen-reader-text">⟦r¦¦Bottom Left⟧</span>
+						</label>
+											<label>
+							<input class="ui-helper-hidden-accessible" name="background-position" type="radio" value="center bottom">
+							<span class="button display-options position"><span class="dashicons dashicons-arrow-down-alt" aria-hidden="true"></span></span>
+							<span class="screen-reader-text">⟦r¦¦Bottom⟧</span>
+						</label>
+											<label>
+							<input class="ui-helper-hidden-accessible" name="background-position" type="radio" value="right bottom">
+							<span class="button display-options position"><span class="dashicons dashicons-arrow-right-alt" aria-hidden="true"></span></span>
+							<span class="screen-reader-text">⟦r¦¦Bottom Right⟧</span>
+						</label>
+										</div>
+								</div>
+			</fieldset>
+		</div>
+				</script>
+				<script type="text/html" id="tmpl-customize-control-cropped_image-content">
+					<#
+		var descriptionId = _.uniqueId( 'customize-media-control-description-' );
+		var describedByAttr = data.description ? ' aria-describedby="' + descriptionId + '" ' : '';
+		#>
+		<# if ( data.label ) { #>
+			<span class="customize-control-title">{{ data.label }}</span>
+		<# } #>
+		<div class="customize-control-notifications-container"></div>
+		<# if ( data.description ) { #>
+			<span id="{{ descriptionId }}" class="description customize-control-description">{{{ data.description }}}</span>
+		<# } #>
+
+		<# if ( data.attachment && data.attachment.id ) { #>
+			<div class="attachment-media-view attachment-media-view-{{ data.attachment.type }} {{ data.attachment.orientation }}">
+				<div class="thumbnail thumbnail-{{ data.attachment.type }}">
+					<# if ( 'image' === data.attachment.type && data.attachment.sizes && data.attachment.sizes.medium ) { #>
+						<img class="attachment-thumb" src="{{ data.attachment.sizes.medium.url }}" draggable="false" alt="" />
+					<# } else if ( 'image' === data.attachment.type && data.attachment.sizes && data.attachment.sizes.full ) { #>
+						<img class="attachment-thumb" src="{{ data.attachment.sizes.full.url }}" draggable="false" alt="" />
+					<# } else if ( 'audio' === data.attachment.type ) { #>
+						<# if ( data.attachment.image && data.attachment.image.src && data.attachment.image.src !== data.attachment.icon ) { #>
+							<img src="{{ data.attachment.image.src }}" class="thumbnail" draggable="false" alt="" />
+						<# } else { #>
+							<img src="{{ data.attachment.icon }}" class="attachment-thumb type-icon" draggable="false" alt="" />
+						<# } #>
+						<p class="attachment-meta attachment-meta-title">&#8220;{{ data.attachment.title }}&#8221;</p>
+						<# if ( data.attachment.album || data.attachment.meta.album ) { #>
+						<p class="attachment-meta"><em>{{ data.attachment.album || data.attachment.meta.album }}</em></p>
+						<# } #>
+						<# if ( data.attachment.artist || data.attachment.meta.artist ) { #>
+						<p class="attachment-meta">{{ data.attachment.artist || data.attachment.meta.artist }}</p>
+						<# } #>
+						<audio style="visibility: hidden" controls class="wp-audio-shortcode" width="100%" preload="none">
+							<source type="{{ data.attachment.mime }}" src="{{ data.attachment.url }}" />
+						</audio>
+					<# } else if ( 'video' === data.attachment.type ) { #>
+						<div class="wp-media-wrapper wp-video">
+							<video controls="controls" class="wp-video-shortcode" preload="metadata"
+								<# if ( data.attachment.image && data.attachment.image.src !== data.attachment.icon ) { #>poster="{{ data.attachment.image.src }}"<# } #>>
+								<source type="{{ data.attachment.mime }}" src="{{ data.attachment.url }}" />
+							</video>
+						</div>
+					<# } else { #>
+						<img class="attachment-thumb type-icon icon" src="{{ data.attachment.icon }}" draggable="false" alt="" />
+						<p class="attachment-title">{{ data.attachment.title }}</p>
+					<# } #>
+				</div>
+				<div class="actions">
+					<# if ( data.canUpload ) { #>
+					<button type="button" class="button remove-button">{{ data.button_labels.remove }}</button>
+					<button type="button" class="button upload-button control-focus" {{{ describedByAttr }}}>{{ data.button_labels.change }}</button>
+					<# } #>
+				</div>
+			</div>
+		<# } else { #>
+			<div class="attachment-media-view">
+				<# if ( data.canUpload ) { #>
+					<button type="button" class="upload-button button" {{{ describedByAttr }}}>{{ data.button_labels.select }}</button>
+				<# } #>
+				<div class="actions">
+					<# if ( data.defaultAttachment ) { #>
+						<button type="button" class="button default-button">{{ data.button_labels['default'] }}</button>
+					<# } #>
+				</div>
+			</div>
+		<# } #>
+				</script>
+				<script type="text/html" id="tmpl-customize-control-site_icon-content">
+					<# if ( data.label ) { #>
+			<span class="customize-control-title">{{ data.label }}</span>
+		<# } #>
+
+		<# if ( data.attachment && data.attachment.id ) { #>
+			<div class="attachment-media-view">
+				<# if ( data.attachment.sizes ) { #>
+					<style>
+						:root{
+							--site-icon-url: url( '{{ data.attachment.sizes.full ? data.attachment.sizes.full.url : data.attachment.url }}' );
+						}
+					</style>
+					<div class="site-icon-preview customizer">
+						<div class="direction-wrap">
+							<img src="{{ data.attachment.sizes.full ? data.attachment.sizes.full.url : data.attachment.url }}" class="app-icon-preview" alt="{{
+								data.attachment.alt ?
+									wp.i18n.sprintf(
+										⟦j¦¦App icon preview: Current image: ⟪%%s¦%s⟫⟧										,
+										data.attachment.alt
+									) :
+									wp.i18n.sprintf(
+										⟦j¦¦App icon preview: The current image has no alternative text. The file name is: ⟪%%s¦%s⟫⟧										,
+										data.attachment.filename
+									)
+							}}" />
+							<div class="site-icon-preview-browser">
+								<svg role="img" aria-hidden="true" fill="none" xmlns="http://www.w3.org/2000/svg" class="browser-buttons"><path fill-rule="evenodd" clip-rule="evenodd" d="M0 20a6 6 0 1 1 12 0 6 6 0 0 1-12 0Zm18 0a6 6 0 1 1 12 0 6 6 0 0 1-12 0Zm24-6a6 6 0 1 0 0 12 6 6 0 0 0 0-12Z" /></svg>
+								<div class="site-icon-preview-tab">
+									<img src="{{ data.attachment.sizes.full ? data.attachment.sizes.full.url : data.attachment.url }}" class="browser-icon-preview" alt="{{
+										data.attachment.alt ?
+											wp.i18n.sprintf(
+												⟦j¦¦Browser icon preview: Current image: ⟪%%s¦%s⟫⟧												,
+												data.attachment.alt
+											) :
+											wp.i18n.sprintf(
+												⟦j¦¦Browser icon preview: The current image has no alternative text. The file name is: ⟪%%s¦%s⟫⟧												,
+												data.attachment.filename
+											)
+									}}" />
+									<div class="site-icon-preview-site-title" aria-hidden="true"><# print( '{{blogname_js}}' ) #></div>
+										<svg role="img" aria-hidden="true" fill="none" xmlns="http://www.w3.org/2000/svg" class="close-button">
+											<path d="M12 13.0607L15.7123 16.773L16.773 15.7123L13.0607 12L16.773 8.28772L15.7123 7.22706L12 10.9394L8.28771 7.22705L7.22705 8.28771L10.9394 12L7.22706 15.7123L8.28772 16.773L12 13.0607Z" />
+										</svg>
+									</div>
+								</div>
+							</div>
+						</div>
+					</div>
+				<# } #>
+				<div class="actions">
+					<# if ( data.canUpload ) { #>
+						<button type="button" class="button remove-button">⟦r¦¦Remove⟧</button>
+						<button type="button" class="button upload-button">⟦r¦¦Change image⟧</button>
+					<# } #>
+				</div>
+			</div>
+		<# } else { #>
+			<div class="attachment-media-view">
+				<# if ( data.canUpload ) { #>
+					<button type="button" class="upload-button button">⟦r¦¦Select Site Icon⟧</button>
+				<# } #>
+				<div class="actions">
+					<# if ( data.defaultAttachment ) { #>
+						<button type="button" class="button default-button">⟦r¦¦Default⟧</button>
+					<# } #>
+				</div>
+			</div>
+		<# } #>
+		<# if ( data.description ) { #>
+			<span class="description customize-control-description">{{{ data.description }}}</span>
+		<# } #>
+				</script>
+				<script type="text/html" id="tmpl-customize-control-theme-content">
+					<# if ( data.theme.active ) { #>
+			<div class="theme active" tabindex="0" aria-describedby="{{ data.section }}-{{ data.theme.id }}-action">
+		<# } else { #>
+			<div class="theme" tabindex="0" aria-describedby="{{ data.section }}-{{ data.theme.id }}-action">
+		<# } #>
+
+			<# if ( data.theme.screenshot && data.theme.screenshot[0] ) { #>
+				<div class="theme-screenshot">
+					<img data-src="{{ data.theme.screenshot[0] }}?ver={{ data.theme.version }}" alt="" />
+				</div>
+			<# } else { #>
+				<div class="theme-screenshot blank"></div>
+			<# } #>
+
+			<span class="more-details theme-details" id="{{ data.section }}-{{ data.theme.id }}-action" aria-label="⟦a¦¦Details for theme: ⟪%s¦{{ data.theme.name }}⟫⟧">⟦r¦¦Theme Details⟧</span>
+
+			<div class="theme-author">
+			⟦r¦theme author¦By ⟪%s¦{{ data.theme.author }}⟫⟧			</div>
+
+			<# if ( 'installed' === data.theme.type && data.theme.hasUpdate ) { #>
+				<# if ( data.theme.updateResponse.compatibleWP && data.theme.updateResponse.compatiblePHP ) { #>
+					<div class="update-message notice inline notice-warning notice-alt" data-slug="{{ data.theme.id }}">
+						<p>
+							⟦r¦¦New version available. ⟪%s¦<button class="button-link update-theme" type="button">⟦r¦¦Update now⟧</button>⟫⟧						</p>
+					</div>
+				<# } else { #>
+					<div class="update-message notice inline notice-error notice-alt" data-slug="{{ data.theme.id }}">
+						<p>
+							<# if ( ! data.theme.updateResponse.compatibleWP && ! data.theme.updateResponse.compatiblePHP ) { #>
+								⟦r¦¦There is a new version of ⟪%s¦{{{ data.theme.name }}}⟫ available, but it does not work with your versions of WordPress and PHP.⟧ ⟦r¦¦<a href="⟪%1$s¦{{admin}}update-core.php⟫">Please update WordPress</a>, and then <a href="⟪%2$s¦⟦r¦localized PHP upgrade information page¦https://wordpress.org/support/update-php/⟧⟫">learn more about updating PHP</a>.⟧							<# } else if ( ! data.theme.updateResponse.compatibleWP ) { #>
+								⟦r¦¦There is a new version of ⟪%s¦{{{ data.theme.name }}}⟫ available, but it does not work with your version of WordPress.⟧ ⟦r¦¦<a href="⟪%s¦{{admin}}update-core.php⟫">Please update WordPress</a>.⟧							<# } else if ( ! data.theme.updateResponse.compatiblePHP ) { #>
+								⟦r¦¦There is a new version of ⟪%s¦{{{ data.theme.name }}}⟫ available, but it does not work with your version of PHP.⟧ ⟦r¦¦<a href="⟪%s¦⟦r¦localized PHP upgrade information page¦https://wordpress.org/support/update-php/⟧⟫">Learn more about updating PHP</a>.⟧							<# } #>
+						</p>
+					</div>
+				<# } #>
+			<# } #>
+
+			<# if ( ! data.theme.compatibleWP || ! data.theme.compatiblePHP ) { #>
+				<div class="notice notice-error notice-alt"><p>
+					<# if ( ! data.theme.compatibleWP && ! data.theme.compatiblePHP ) { #>
+						⟦r¦¦This theme does not work with your versions of WordPress and PHP.⟧ ⟦r¦¦<a href="⟪%1$s¦{{admin}}update-core.php⟫">Please update WordPress</a>, and then <a href="⟪%2$s¦⟦r¦localized PHP upgrade information page¦https://wordpress.org/support/update-php/⟧⟫">learn more about updating PHP</a>.⟧					<# } else if ( ! data.theme.compatibleWP ) { #>
+						⟦r¦¦This theme does not work with your version of WordPress.⟧ ⟦r¦¦<a href="⟪%s¦{{admin}}update-core.php⟫">Please update WordPress</a>.⟧					<# } else if ( ! data.theme.compatiblePHP ) { #>
+						⟦r¦¦This theme does not work with your version of PHP.⟧ ⟦r¦¦<a href="⟪%s¦⟦r¦localized PHP upgrade information page¦https://wordpress.org/support/update-php/⟧⟫">Learn more about updating PHP</a>.⟧					<# } #>
+				</p></div>
+			<# } #>
+
+			<# if ( data.theme.active ) { #>
+				<div class="theme-id-container">
+					<h3 class="theme-name" id="{{ data.section }}-{{ data.theme.id }}-name">
+						<span>⟦r¦theme¦Previewing:⟧</span> {{ data.theme.name }}
+					</h3>
+					<div class="theme-actions">
+						<button type="button" class="button button-primary customize-theme" aria-label="⟦a¦¦Customize theme: ⟪%s¦{{ data.theme.name }}⟫⟧">⟦r¦¦Customize⟧</button>
+					</div>
+				</div>
+				<div class="notice notice-success notice-alt"><p>⟦r¦theme¦Installed⟧</p></div>			<# } else if ( 'installed' === data.theme.type ) { #>
+				<# if ( data.theme.blockTheme ) { #>
+					<div class="theme-id-container">
+						<h3 class="theme-name" id="{{ data.section }}-{{ data.theme.id }}-name">{{ data.theme.name }}</h3>
+						<div class="theme-actions">
+							<# if ( data.theme.actions.activate ) { #>
+																<a href="{{{ data.theme.actions.activate }}}" class="button button-primary activate" aria-label="⟦a¦theme¦Activate ⟪%s¦{{ data.name }}⟫⟧">⟦r¦¦Activate⟧</a>
+							<# } #>
+						</div>
+					</div>
+										<# if ( data.theme.actions.activate ) { #>
+											<# } #>
+
+					<div class="notice notice-error notice-alt"><p>⟦r¦¦This theme doesn't support Customizer.⟧ ⟦r¦¦However, you can still <a href="⟪%s¦{{{ data.theme.actions.activate }}}⟫">activate this theme</a>, and use the Site Editor to customize it.⟧</p></div>				<# } else { #>
+					<div class="theme-id-container">
+						<h3 class="theme-name" id="{{ data.section }}-{{ data.theme.id }}-name">{{ data.theme.name }}</h3>
+						<div class="theme-actions">
+							<# if ( data.theme.compatibleWP && data.theme.compatiblePHP ) { #>
+								<button type="button" class="button button-primary preview-theme" aria-label="⟦a¦¦Live preview theme: ⟪%s¦{{ data.theme.name }}⟫⟧" data-slug="{{ data.theme.id }}">⟦r¦¦Live Preview⟧</button>
+							<# } else { #>
+								<button type="button" class="button button-primary disabled" aria-label="⟦a¦¦Live preview theme: ⟪%s¦{{ data.theme.name }}⟫⟧">⟦r¦¦Live Preview⟧</button>
+							<# } #>
+						</div>
+					</div>
+					<div class="notice notice-success notice-alt"><p>⟦r¦theme¦Installed⟧</p></div>				<# } #>
+			<# } else { #>
+				<div class="theme-id-container">
+					<h3 class="theme-name" id="{{ data.section }}-{{ data.theme.id }}-name">{{ data.theme.name }}</h3>
+					<div class="theme-actions">
+						<# if ( data.theme.compatibleWP && data.theme.compatiblePHP ) { #>
+							<button type="button" class="button button-primary theme-install preview" aria-label="⟦a¦¦Install and preview theme: ⟪%s¦{{ data.theme.name }}⟫⟧" data-slug="{{ data.theme.id }}" data-name="{{ data.theme.name }}">⟦r¦¦Install &amp; Preview⟧</button>
+						<# } else { #>
+							<button type="button" class="button button-primary disabled" aria-label="⟦a¦¦Install and preview theme: ⟪%s¦{{ data.theme.name }}⟫⟧" disabled>⟦r¦¦Install &amp; Preview⟧</button>
+						<# } #>
+					</div>
+				</div>
+			<# } #>
+		</div>
+				</script>
+				<script type="text/html" id="tmpl-customize-control-code_editor-content">
+					<# var elementIdPrefix = 'el' + String( Math.random() ); #>
+		<# if ( data.label ) { #>
+			<label for="{{ elementIdPrefix }}_editor" class="customize-control-title">
+				{{ data.label }}
+			</label>
+		<# } #>
+		<# if ( data.description ) { #>
+			<span class="description customize-control-description">{{{ data.description }}}</span>
+		<# } #>
+		<div class="customize-control-notifications-container"></div>
+		<textarea id="{{ elementIdPrefix }}_editor"
+			<# _.each( _.extend( { 'class': 'code' }, data.input_attrs ), function( value, key ) { #>
+				{{{ key }}}="{{ value }}"
+			<# }); #>
+			></textarea>
+				</script>
+				<script type="text/html" id="tmpl-customize-control-date_time-content">{{date_time}}</script>
+				<script type="text/html" id="tmpl-customize-control-nav_menu-content">
+					<p class="new-menu-item-invitation">
+			⟦r¦¦Time to add some links! Click &#8220;⟪%s¦⟦r¦¦Add Items⟧⟫&#8221; to start putting pages, categories, and custom links in your menu. Add as many things as you would like.⟧		</p>
+		<div class="customize-control-nav_menu-buttons">
+			<button type="button" class="button add-new-menu-item" aria-label="⟦a¦¦Add or remove menu items⟧" aria-expanded="false" aria-controls="available-menu-items">
+				⟦r¦¦Add Items⟧			</button>
+			<button type="button" class="button-link reorder-toggle" aria-label="⟦a¦¦Reorder menu items⟧" aria-describedby="reorder-items-desc-{{ data.menu_id }}">
+				<span class="reorder">⟦r¦¦Reorder⟧</span>
+				<span class="reorder-done">⟦r¦¦Done⟧</span>
+			</button>
+		</div>
+		<p class="screen-reader-text" id="reorder-items-desc-{{ data.menu_id }}">
+			⟦r¦¦When in reorder mode, additional controls to reorder menu items will be available in the items list above.⟧		</p>
+				</script>
+				<script type="text/html" id="tmpl-customize-control-nav_menu_name-content">
+					<label>
+			<# if ( data.label ) { #>
+				<span class="customize-control-title">{{ data.label }}</span>
+			<# } #>
+			<input type="text" class="menu-name-field live-update-section-title"
+				<# if ( data.description ) { #>
+					aria-describedby="{{ data.section }}-description"
+				<# } #>
+				/>
+		</label>
+		<# if ( data.description ) { #>
+			<p id="{{ data.section }}-description">{{ data.description }}</p>
+		<# } #>
+				</script>
+				<script type="text/html" id="tmpl-customize-control-nav_menu_locations-content">{{menu_locations}}</script>
+				<script type="text/html" id="tmpl-customize-control-nav_menu_auto_add-content">
+					<# var elementId = _.uniqueId( 'customize-nav-menu-auto-add-control-' ); #>
+		<span class="customize-control-title">⟦r¦¦Menu Options⟧</span>
+		<span class="customize-inside-control-row">
+			<input id="{{ elementId }}" type="checkbox" class="auto_add" />
+			<label for="{{ elementId }}">
+				⟦r¦¦Automatically add new top-level pages to this menu⟧			</label>
+		</span>
+				</script>
+				<script type="text/html" id="tmpl-customize-control-nav_menu_item-content">
+					<div class="menu-item-bar">
+			<div class="menu-item-handle">
+				<span class="item-type" aria-hidden="true">{{ data.item_type_label }}</span>
+				<span class="item-title" aria-hidden="true">
+					<span class="spinner"></span>
+					<span class="menu-item-title<# if ( ! data.title && ! data.original_title ) { #> no-title<# } #>">{{ data.title || data.original_title || wp.customize.Menus.data.l10n.untitled }}</span>
+					<# if ( 0 === data.depth ) { #>
+						<span class="is-submenu" style="display: none;">⟦r¦¦sub item⟧</span>
+					<# } else { #>
+						<span class="is-submenu">⟦r¦¦sub item⟧</span>
+					<# } #>
+				</span>
+				<span class="item-controls">
+					<button type="button" class="button-link item-edit" aria-expanded="false"><span class="screen-reader-text">
+					<# if ( 0 === data.depth ) { #>
+						⟦r¦¦Edit ⟪%1$s¦{{ data.title || data.original_title || wp.customize.Menus.data.l10n.untitled }}⟫ (⟪%2$s¦{{ data.item_type_label }}⟫, ⟪%3$d¦0⟫ of ⟪%4$d¦0⟫)⟧					<# } else if ( 1 === data.depth ) { #>
+						⟦r¦¦Edit ⟪%1$s¦{{ data.title || data.original_title || wp.customize.Menus.data.l10n.untitled }}⟫ (⟪%2$s¦{{ data.item_type_label }}⟫, sub-item ⟪%3$d¦0⟫ of ⟪%4$d¦0⟫ under ⟪%5$s¦⟫)⟧					<# } else { #>
+						⟦r¦¦Edit ⟪%1$s¦{{ data.title || data.original_title || wp.customize.Menus.data.l10n.untitled }}⟫ (⟪%2$s¦{{ data.item_type_label }}⟫, sub-item ⟪%3$d¦0⟫ of ⟪%4$d¦0⟫ under ⟪%5$s¦⟫, level ⟪%6$s¦{{data.depth}}⟫)⟧					<# } #>
+					</span><span class="toggle-indicator" aria-hidden="true"></span></button>
+					<button type="button" class="button-link item-delete submitdelete deletion"><span class="screen-reader-text">
+					⟦r¦¦Remove Menu Item: ⟪%1$s¦{{ data.title || data.original_title || wp.customize.Menus.data.l10n.untitled }}⟫ (⟪%2$s¦{{ data.item_type_label }}⟫)⟧					</span></button>
+				</span>
+			</div>
+		</div>
+
+		<div class="menu-item-settings" id="menu-item-settings-{{ data.menu_item_id }}">
+			<# if ( 'custom' === data.item_type ) { #>
+			<p class="field-url description description-thin">
+				<label for="edit-menu-item-url-{{ data.menu_item_id }}">
+					⟦r¦¦URL⟧<br />
+					<input class="widefat code edit-menu-item-url" type="text" id="edit-menu-item-url-{{ data.menu_item_id }}" name="menu-item-url" />
+				</label>
+			</p>
+		<# } #>
+			<p class="description description-thin">
+				<label for="edit-menu-item-title-{{ data.menu_item_id }}">
+					⟦r¦¦Navigation Label⟧<br />
+					<input type="text" id="edit-menu-item-title-{{ data.menu_item_id }}" placeholder="{{ data.original_title }}" class="widefat edit-menu-item-title" name="menu-item-title" />
+				</label>
+			</p>
+			<p class="field-link-target description description-thin">
+				<label for="edit-menu-item-target-{{ data.menu_item_id }}">
+					<input type="checkbox" id="edit-menu-item-target-{{ data.menu_item_id }}" class="edit-menu-item-target" value="_blank" name="menu-item-target" />
+					⟦r¦¦Open link in a new tab⟧				</label>
+			</p>
+			<p class="field-title-attribute field-attr-title description description-thin">
+				<label for="edit-menu-item-attr-title-{{ data.menu_item_id }}">
+					⟦r¦¦Title Attribute⟧<br />
+					<input type="text" id="edit-menu-item-attr-title-{{ data.menu_item_id }}" class="widefat edit-menu-item-attr-title" name="menu-item-attr-title" />
+				</label>
+			</p>
+			<p class="field-css-classes description description-thin">
+				<label for="edit-menu-item-classes-{{ data.menu_item_id }}">
+					⟦r¦¦CSS Classes⟧<br />
+					<input type="text" id="edit-menu-item-classes-{{ data.menu_item_id }}" class="widefat code edit-menu-item-classes" name="menu-item-classes" />
+				</label>
+			</p>
+			<p class="field-xfn description description-thin">
+				<label for="edit-menu-item-xfn-{{ data.menu_item_id }}">
+					⟦r¦¦Link Relationship (XFN)⟧<br />
+					<input type="text" id="edit-menu-item-xfn-{{ data.menu_item_id }}" class="widefat code edit-menu-item-xfn" name="menu-item-xfn" />
+				</label>
+			</p>
+			<p class="field-description description description-thin">
+				<label for="edit-menu-item-description-{{ data.menu_item_id }}">
+					⟦r¦¦Description⟧<br />
+					<textarea id="edit-menu-item-description-{{ data.menu_item_id }}" class="widefat edit-menu-item-description" rows="3" cols="20" name="menu-item-description">{{ data.description }}</textarea>
+					<span class="description">⟦r¦¦The description will be displayed in the menu if the active theme supports it.⟧</span>
+				</label>
+			</p>
+
+			
+			<div class="menu-item-actions description-thin submitbox">
+				<# if ( ( 'post_type' === data.item_type || 'taxonomy' === data.item_type ) && '' !== data.original_title ) { #>
+				<p class="link-to-original">
+					⟦r¦¦Original: ⟪%s¦<a class="original-link" href="{{ data.url }}">{{ data.original_title }}</a>⟫⟧				</p>
+				<# } #>
+
+				<button type="button" class="button-link button-link-delete item-delete submitdelete deletion">⟦r¦¦Remove⟧</button>
+				<span class="spinner"></span>
+			</div>
+			<input type="hidden" name="menu-item-db-id[{{ data.menu_item_id }}]" class="menu-item-data-db-id" value="{{ data.menu_item_id }}" />
+			<input type="hidden" name="menu-item-parent-id[{{ data.menu_item_id }}]" class="menu-item-data-parent-id" value="{{ data.parent }}" />
+		</div><!-- .menu-item-settings-->
+		<ul class="menu-item-transport"></ul>
+				</script>
+		
+		<script type="text/html" id="tmpl-customize-control-default-content">
+			<#
+			var inputId = _.uniqueId( 'customize-control-default-input-' );
+			var descriptionId = _.uniqueId( 'customize-control-default-description-' );
+			var describedByAttr = data.description ? ' aria-describedby="' + descriptionId + '" ' : '';
+			#>
+			<# switch ( data.type ) {
+				case 'checkbox': #>
+					<span class="customize-inside-control-row">
+						<input
+							id="{{ inputId }}"
+							{{{ describedByAttr }}}
+							type="checkbox"
+							value="{{ data.value }}"
+							data-customize-setting-key-link="default"
+						>
+						<label for="{{ inputId }}">
+							{{ data.label }}
+						</label>
+						<# if ( data.description ) { #>
+							<span id="{{ descriptionId }}" class="description customize-control-description">{{{ data.description }}}</span>
+						<# } #>
+					</span>
+					<#
+					break;
+				case 'radio':
+					if ( ! data.choices ) {
+						return;
+					}
+					#>
+					<# if ( data.label ) { #>
+						<label for="{{ inputId }}" class="customize-control-title">
+							{{ data.label }}
+						</label>
+					<# } #>
+					<# if ( data.description ) { #>
+						<span id="{{ descriptionId }}" class="description customize-control-description">{{{ data.description }}}</span>
+					<# } #>
+					<# _.each( data.choices, function( val, key ) { #>
+						<span class="customize-inside-control-row">
+							<#
+							var value, text;
+							if ( _.isObject( val ) ) {
+								value = val.value;
+								text = val.text;
+							} else {
+								value = key;
+								text = val;
+							}
+							#>
+							<input
+								id="{{ inputId + '-' + value }}"
+								type="radio"
+								value="{{ value }}"
+								name="{{ inputId }}"
+								data-customize-setting-key-link="default"
+								{{{ describedByAttr }}}
+							>
+							<label for="{{ inputId + '-' + value }}">{{ text }}</label>
+						</span>
+					<# } ); #>
+					<#
+					break;
+				default:
+					#>
+					<# if ( data.label ) { #>
+						<label for="{{ inputId }}" class="customize-control-title">
+							{{ data.label }}
+						</label>
+					<# } #>
+					<# if ( data.description ) { #>
+						<span id="{{ descriptionId }}" class="description customize-control-description">{{{ data.description }}}</span>
+					<# } #>
+
+					<#
+					var inputAttrs = {
+						id: inputId,
+						'data-customize-setting-key-link': 'default'
+					};
+					if ( 'textarea' === data.type ) {
+						inputAttrs.rows = '5';
+					} else if ( 'button' === data.type ) {
+						inputAttrs['class'] = 'button button-secondary';
+						inputAttrs.type = 'button';
+					} else {
+						inputAttrs.type = data.type;
+					}
+					if ( data.description ) {
+						inputAttrs['aria-describedby'] = descriptionId;
+					}
+					_.extend( inputAttrs, data.input_attrs );
+					#>
+
+					<# if ( 'button' === data.type ) { #>
+						<button
+							<# _.each( _.extend( inputAttrs ), function( value, key ) { #>
+								{{{ key }}}="{{ value }}"
+							<# } ); #>
+						>{{ inputAttrs.value }}</button>
+					<# } else if ( 'textarea' === data.type ) { #>
+						<textarea
+							<# _.each( _.extend( inputAttrs ), function( value, key ) { #>
+								{{{ key }}}="{{ value }}"
+							<# }); #>
+						>{{ inputAttrs.value }}</textarea>
+					<# } else if ( 'select' === data.type ) { #>
+						<# delete inputAttrs.type; #>
+						<select
+							<# _.each( _.extend( inputAttrs ), function( value, key ) { #>
+								{{{ key }}}="{{ value }}"
+							<# }); #>
+							>
+							<# _.each( data.choices, function( val, key ) { #>
+								<#
+								var value, text;
+								if ( _.isObject( val ) ) {
+									value = val.value;
+									text = val.text;
+								} else {
+									value = key;
+									text = val;
+								}
+								#>
+								<option value="{{ value }}">{{ text }}</option>
+							<# } ); #>
+						</select>
+					<# } else { #>
+						<input
+							<# _.each( _.extend( inputAttrs ), function( value, key ) { #>
+								{{{ key }}}="{{ value }}"
+							<# }); #>
+							>
+					<# } #>
+			<# } #>
+		</script>
+
+		<script type="text/html" id="tmpl-customize-notification">
+			<li class="notice notice-{{ data.type || 'info' }} {{ data.alt ? 'notice-alt' : '' }} {{ data.dismissible ? 'is-dismissible' : '' }} {{ data.containerClasses || '' }}" data-code="{{ data.code }}" data-type="{{ data.type }}">
+				<div class="notification-message">{{{ data.message || data.code }}}</div>
+				<# if ( data.dismissible ) { #>
+					<button type="button" class="notice-dismiss"><span class="screen-reader-text">
+						⟦r¦¦Dismiss⟧					</span></button>
+				<# } #>
+			</li>
+		</script>
+
+		<script type="text/html" id="tmpl-customize-changeset-locked-notification">
+			<li class="notice notice-{{ data.type || 'info' }} {{ data.containerClasses || '' }}" data-code="{{ data.code }}" data-type="{{ data.type }}">
+				<div class="notification-message customize-changeset-locked-message {{ data.lockUser.avatar ? 'has-avatar' : '' }}">
+					<# if ( data.lockUser.avatar ) { #>
+						<img class="customize-changeset-locked-avatar" src="{{ data.lockUser.avatar }}" alt="{{ data.lockUser.name }}" />
+					<# } #>
+					<p class="currently-editing">
+						<# if ( data.message ) { #>
+							{{{ data.message }}}
+						<# } else if ( data.allowOverride ) { #>
+							⟦h¦¦⟪%s¦{{ data.lockUser.name }}⟫ is already customizing this site. Do you want to take over?⟧						<# } else { #>
+							⟦h¦¦⟪%s¦{{ data.lockUser.name }}⟫ is already customizing this site. Please wait until they are done to try customizing. Your latest changes have been autosaved.⟧						<# } #>
+					</p>
+					<p class="notice notice-error notice-alt" hidden></p>
+					<p class="action-buttons">
+						<# if ( data.returnUrl !== data.previewUrl ) { #>
+							<a class="button customize-notice-go-back-button" href="{{ data.returnUrl }}">⟦r¦¦Go back⟧</a>
+						<# } #>
+						<a class="button customize-notice-preview-button" href="{{ data.frontendPreviewUrl }}">⟦h¦verb¦Preview⟧</a>
+						<# if ( data.allowOverride ) { #>
+							<button class="button button-primary wp-tab-last customize-notice-take-over-button">⟦r¦¦Take over⟧</button>
+						<# } #>
+					</p>
+				</div>
+			</li>
+		</script>
+
+		<script type="text/html" id="tmpl-customize-code-editor-lint-error-notification">
+			<li class="notice notice-{{ data.type || 'info' }} {{ data.alt ? 'notice-alt' : '' }} {{ data.dismissible ? 'is-dismissible' : '' }} {{ data.containerClasses || '' }}" data-code="{{ data.code }}" data-type="{{ data.type }}">
+				<div class="notification-message">{{{ data.message || data.code }}}</div>
+
+				<p>
+					<# var elementId = 'el-' + String( Math.random() ); #>
+					<input id="{{ elementId }}" type="checkbox">
+					<label for="{{ elementId }}">⟦r¦¦Update anyway, even though it might break your site?⟧</label>
+				</p>
+			</li>
+		</script>
+
+				<script type="text/html" id="tmpl-customize-control-notifications">
+			<ul>
+				<# _.each( data.notifications, function( notification ) { #>
+					<li class="notice notice-{{ notification.type || 'info' }} {{ data.altNotice ? 'notice-alt' : '' }}" data-code="{{ notification.code }}" data-type="{{ notification.type }}">{{{ notification.message || notification.code }}}</li>
+				<# } ); #>
+			</ul>
+		</script>
+
+		<script type="text/html" id="tmpl-customize-preview-link-control" >
+			<# var elementPrefix = _.uniqueId( 'el' ) + '-' #>
+			<p class="customize-control-title">
+				⟦h¦¦Share Preview Link⟧			</p>
+			<p class="description customize-control-description">⟦h¦¦See how changes would look live on your website, and share the preview with people who can&#039;t access the Customizer.⟧</p>
+			<div class="customize-control-notifications-container"></div>
+			<div class="preview-link-wrapper">
+				<label for="{{ elementPrefix }}customize-preview-link-input" class="screen-reader-text">
+					⟦h¦¦Preview Link⟧				</label>
+				<a href="" target="">
+					<span class="preview-control-element" data-component="url"></span>
+					<span class="screen-reader-text">
+						⟦r¦¦(opens in a new tab)⟧					</span>
+				</a>
+				<input id="{{ elementPrefix }}customize-preview-link-input" readonly tabindex="-1" class="preview-control-element" data-component="input">
+				<button class="customize-copy-preview-link preview-control-element button button-secondary" data-component="button" data-copy-text="⟦a¦¦Copy⟧" data-copied-text="⟦a¦¦Copied⟧" >⟦h¦¦Copy⟧</button>
+			</div>
+		</script>
+		<script type="text/html" id="tmpl-customize-selected-changeset-status-control">
+			<# var inputId = _.uniqueId( 'customize-selected-changeset-status-control-input-' ); #>
+			<# var descriptionId = _.uniqueId( 'customize-selected-changeset-status-control-description-' ); #>
+			<# if ( data.label ) { #>
+				<label for="{{ inputId }}" class="customize-control-title">{{ data.label }}</label>
+			<# } #>
+			<# if ( data.description ) { #>
+				<span id="{{ descriptionId }}" class="description customize-control-description">{{{ data.description }}}</span>
+			<# } #>
+			<# _.each( data.choices, function( choice ) { #>
+				<# var choiceId = inputId + '-' + choice.status; #>
+				<span class="customize-inside-control-row">
+					<input id="{{ choiceId }}" type="radio" value="{{ choice.status }}" name="{{ inputId }}" data-customize-setting-key-link="default">
+					<label for="{{ choiceId }}">{{ choice.label }}</label>
+				</span>
+			<# } ); #>
+		</script>
+		

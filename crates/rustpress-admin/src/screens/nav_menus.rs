@@ -66,16 +66,16 @@ pub(super) async fn menu_locations(ctx: &Ctx<'_>) -> Vec<(String, i64)> {
 }
 
 /// `get_post_type_object( $name )` as far as the boxes use it.
-struct BoxType {
-    name: String,
-    title: String,
+pub(super) struct BoxType {
+    pub(super) name: String,
+    pub(super) title: String,
     search_items: String,
     all_items: String,
-    hierarchical: bool,
+    pub(super) hierarchical: bool,
 }
 
 /// `get_post_types( [ 'show_in_nav_menus' => true ], 'object' )`.
-fn box_post_types(ctx: &Ctx<'_>) -> Vec<BoxType> {
+pub(super) fn box_post_types(ctx: &Ctx<'_>) -> Vec<BoxType> {
     let mut types = vec![
         BoxType { name: "post".into(), title: ctx.tr("Posts"), search_items: ctx.tr("Search Posts"), all_items: ctx.tr("All Posts"), hierarchical: false },
         BoxType { name: "page".into(), title: ctx.tr("Pages"), search_items: ctx.tr("Search Pages"), all_items: ctx.tr("All Pages"), hierarchical: true },
@@ -96,16 +96,16 @@ fn box_post_types(ctx: &Ctx<'_>) -> Vec<BoxType> {
 }
 
 /// `get_taxonomies( [ 'show_in_nav_menus' => true ], 'object' )`.
-struct BoxTaxonomy {
-    name: String,
-    title: String,
+pub(super) struct BoxTaxonomy {
+    pub(super) name: String,
+    pub(super) title: String,
     most_used: String,
     search_items: String,
     all_items: String,
     hierarchical: bool,
 }
 
-fn box_taxonomies(ctx: &Ctx<'_>) -> Vec<BoxTaxonomy> {
+pub(super) fn box_taxonomies(ctx: &Ctx<'_>) -> Vec<BoxTaxonomy> {
     let mut taxonomies = vec![
         BoxTaxonomy { name: "category".into(), title: ctx.tr("Categories"), most_used: ctx.env.site.trx("Most Used", "categories"), search_items: ctx.tr("Search Categories"), all_items: ctx.tr("All Categories"), hierarchical: true },
         BoxTaxonomy { name: "post_tag".into(), title: ctx.tr("Tags"), most_used: ctx.env.site.trx("Most Used", "tags"), search_items: ctx.tr("Search Tags"), all_items: ctx.tr("All Tags"), hierarchical: false },
@@ -821,7 +821,7 @@ pub(super) async fn setup_item(ctx: &Ctx<'_>, post: &Post) -> EditItem {
 }
 
 /// `labels->singular_name` of a post type.
-fn singular_of(ctx: &Ctx<'_>, name: &str) -> String {
+pub(super) fn singular_of(ctx: &Ctx<'_>, name: &str) -> String {
     match name {
         "post" => ctx.env.site.trx("Post", "post type singular name"),
         "page" => ctx.env.site.trx("Page", "post type singular name"),
@@ -830,7 +830,7 @@ fn singular_of(ctx: &Ctx<'_>, name: &str) -> String {
 }
 
 /// `labels->singular_name` of a taxonomy.
-fn singular_of_taxonomy(ctx: &Ctx<'_>, name: &str) -> String {
+pub(super) fn singular_of_taxonomy(ctx: &Ctx<'_>, name: &str) -> String {
     match name {
         "category" => ctx.env.site.trx("Category", "taxonomy singular name"),
         "post_tag" => ctx.env.site.trx("Tag", "taxonomy singular name"),

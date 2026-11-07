@@ -1,7 +1,8 @@
 //! The Underscore templates are baked from the reference (`dev/templates-bake.py`) with their texts marked:
-//! `⟦kind¦context¦text⟧`, where the kind tells how WordPress escaped the text (`r`aw, `h`tml, `a`ttribute) and the text
-//! may hold the values of a format as `⟪conversion¦value⟫`. A plural has the kind `n`, `N` or `A` and its context is
-//! `context¶singular¶plural¶number`, with `％` for a percent sign. This prints them in the language of the site.
+//! `⟦kind¦context¦text⟧`, where the kind tells how WordPress escaped the text (`r`aw, `h`tml, `a`ttribute, `j`: printed
+//! by `wp_json_encode()`) and the text may hold the values of a format as `⟪conversion¦value⟫`. A plural has the kind
+//! `n`, `N` or `A` and its context is `context¶singular¶plural¶number`, with `％` for a percent sign. This prints them in
+//! the language of the site.
 
 use rustpress_core::Site;
 use rustpress_core::formatting::{esc_attr, esc_html};
@@ -98,6 +99,8 @@ pub fn translate(site: &Site, template: &str) -> String {
         out.push_str(&match kind {
             "h" | "N" => esc_html(&text),
             "a" | "A" => esc_attr(&text),
+            // `wp_json_encode()`, quotes and all.
+            "j" => rustpress_blocks::php_json::encode_with(&serde_json::Value::String(text), rustpress_blocks::php_json::Flags { unescaped_slashes: false, unescaped_unicode: false }),
             _ => text,
         });
         rest = &rest[end + '⟧'.len_utf8()..];

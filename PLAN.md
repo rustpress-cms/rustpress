@@ -108,7 +108,13 @@ The reference stack, the tools and the working rules are in [AGENTS.md](AGENTS.m
   `site-health.php` that are about PHP (RustPress has none) and the `Info` tab, which reports its own environment.
 
 **Sign-in, administration, REST**
-- `customize.php`, and with it the Ajax actions of its header control (`custom-header-crop`, `-add`, `-remove`).
+- The Customizer beyond its page: the preview in the frame (the front end with `customize_changeset_uuid` and
+  `customize_messenger_channel`, `customize-preview` and the selective refresh), saving (`customize_save` with the
+  `customize_changeset` posts, drafts, schedules, autosaves and locks), its other Ajax actions (`customize_load_themes`,
+  `customize_refresh_nonces`, `customize_trash`, `customize_dismiss_autosave_or_lock`, `customize_override_changeset_lock`,
+  the header control's `custom-header-crop`, `-add` and `-remove`, the menus' `load-available-menu-items-customizer`,
+  `search-available-menu-items-customizer` and `customize-nav-menus-insert-auto-draft`, `update-widget`), and the
+  arguments `changeset_uuid` and `theme` (the preview of another theme) of `customize.php`.
 - Widgets: what the RSS widget prints (front and `rendered`; it needs `fetch_feed()`), the video widget with an address
   that `wp_oembed_get()` would ask a provider or the site itself about (RustPress prints nothing, as WordPress does for an
   address without a provider), the feed check of `wp_widget_rss_process()`, the old format of `wp_convert_widget_settings()`, `alt_option_name`,
@@ -581,7 +587,7 @@ Measurement afterwards (release, `RUSTPRESS_RELOAD_SECS=1`, median / minimum of 
 
 #### Phase 5 – missing features (wp-admin and REST)
 - (new) The "Excerpt" list view (`mode=excerpt`, `posts_list_mode` through `set_user_setting()`/`user-settings`): RustPress does not evaluate `mode`.
-19. `customize.php` – **postponed (2026-10-27)** until the test on the real web server (CGI mode): not in the menu for block themes, needed only for Twenty Seventeen; a complete Customizer is big. So far only the 403 semantics.
+19. `customize.php` – the page itself done (2026-11-07, see "The page of the Customizer"); the preview, saving and the Ajax actions are in the Open list.
 20. `media-upload.php` (the old upload dialog without JavaScript) – **postponed (2026-10-27)**, same reason. Uploading already works through `media-new.php`, the media library, the media dialog, the block editor and REST.
 21. REST (done 2026-10-26): reading `sidebars`/`widgets`/`widget-types` (`edit/widgets.rs`: `retrieve_widgets()` including `wp_map_sidebars_widgets()` and saving as in WordPress, registered widgets from `widget_*`, the edit context with `instance`/`wp_hash`, a form only for the block widget; `dev/rest-widgets-compare.py` 72/72 as rpadmin and rpeditor). `block-types` (`edit/block_types.rs`: `block.json` as PHP decodes it, the attributes of the block supports in registration order, style handles, variations of `navigation-link`/`post-terms`/`template-part`, theme styles; WordPress registers the style variations from `styles/` only when `core/template-part` reads its templates – the blocks before it do not have them; `dev/rest-block-types-compare.py` 3953/3954, the rest = the order of the template parts from 27). `font-collections` from the site transient of the Google Fonts collection (without the transient: `font_collection_request_error` like a failed download). Deliberately different (environment, see 27): the Site Health tests `background-updates`, `dotorg-communication`, `loopback-requests`, `authorization-header` (no Apache/`mod_rewrite`), `page-cache`/`directory-sizes` (measurements). Open: writing widgets/sidebars, the forms of the classic widgets, `widget-types/<id>/encode|render`, `rendered` in registered sidebars (classic theme).
 22. The Ajax success paths of the classic editor: `set-post-thumbnail`/`get-post-thumbnail-html` (the HTML of the featured image box), `add-meta`/`delete-meta` (custom fields), `get-comments` (the rows of the comment box), `send-attachment-to-editor` (`get_image_send_to_editor` complete), `parse-media-shortcode` for galleries/audio/video. Done (2026-10-27): `set-post-thumbnail`/`get-post-thumbnail-html` including the image in the featured image box (`wp_get_attachment_image( $id, array( 266, 266 ) )`), `add-meta`/`delete-meta` (creating, changing, deleting, an auto-draft becomes a draft, `_list_meta_row()`), checked with `dev/classic-ajax-compare.py` (16/16). Also done: `get-comments` (the rows of `WP_Post_Comments_List_Table`, also for `replyto-comment`/`edit-comment` depending on `mode`/`checkbox`; `dev/get-comments-compare.py`, `dev/comment-rows-compare.py`), `send-attachment-to-editor` (`get_image_send_to_editor()` with `get_image_tag()`, `rel`, `[caption]`; `dev/send-to-editor-compare.py` 10/10). Open: `parse-media-shortcode` with a preview (`do_shortcode()` plus the scripts of `wp-mediaelement`/`wp-playlist` as a separate print).
@@ -742,7 +748,7 @@ at first (the permalink structure was not put back, the language pack had not be
   Meta widget. The links of the logo menu are translated (`de.wordpress.org`); that was wrong in the block themes, too.
 - **Core:** `get_page_link()` of the front page is `home_url( '/' )`; plain permalinks lost the slash, in canonical links
   and oEmbed discovery as well. The speculation rules are printed on classic themes, too.
-- `customize.php` itself stays open; the toolbar links to it as WordPress does.
+- `customize.php` has its page now (2026-11-07); the toolbar links to it as WordPress does.
 
 ### The real site in `rustpress-compat`, `core/navigation-submenu` (2026-11-06)
 
@@ -995,4 +1001,32 @@ Compared with `dev/custom-header-compare.py` on the copy of the real site: 16 fo
 choosing from the library, cropping and skipping, by the answers, the stored theme mods, the attachments with their meta and
 the files. RustPress has to write into the folder of the month of the copy's uploads for that (`podman unshare chmod o+w`).
 The pixels of what was cropped and the file sizes are not compared; the random pick is masked.
+
+### The page of the Customizer (2026-11-07)
+
+`wp-admin/customize.php` in `rustpress-admin/src/screens/customize/`: `WP_Customize_Manager` (`manager.rs`: the settings,
+panels, sections and controls with their instance numbers, `prepare_controls()` and the JSON of
+`customize_pane_settings()`), `register_controls()` and `twentyseventeen_customize_register()` (`register.rs`), the markup
+the server prints for a control (`controls.rs`), `WP_Customize_Widgets` with the block editor of the widget areas and the
+forms of the widgets one can add (`widgets.rs`), `WP_Customize_Nav_Menus` (`nav_menus.rs`) and what the page enqueues, in
+WordPress' order (`assets.rs`). The page is a document of its own (`chrome::customize_document()`): `$wp_scripts` starts
+empty, and only the widgets fire the actions of the administration, so with a block theme the head has none of their styles
+and `_wp_footer_scripts()` prints after the templates of the menus, notices and themes.
+
+- **Baked:** the Underscore templates of the panels, sections and controls, the menus, the update notices, the themes and
+  the header, and the forms of the core widgets as `form_callback( -1 )` prints them (`dev/customize-bake.py`, texts
+  marked). What depends on the site is printed by RustPress: the date control (its data, the timezone and the order of
+  the fields), the menu locations, the Screen Options of the menus panel, the taxonomies of the tag cloud and the menus of
+  the menu widget. A text that went through `wp_json_encode()` has the mark kind `j`.
+- **`setup_theme()`** dies for who may not customize before the translations are loaded: the page is English, its
+  language the locale (`de-DE`).
+- **Found on the way:** `script-loader.php` is read with `_n()` and `esc_url()` now (`_wpCustomizeControlsL10n` lacked
+  four texts); the attachments of `wp_prepare_attachment_for_js()` format their date with `__( 'F j, Y' )` (the option
+  before: wrong on every site that is not English), leave out the file size when there is none and have the media states of
+  the header images and the logo (`get_media_states()`); `add_query_arg()` writes the brackets of a nested argument
+  encoded, as `build_query()` does.
+
+Compared with `dev/customize-compare.py`: on the copy of the real site with Twenty Seventeen as an administrator in
+German and English, with `return` and `url`, with `autofocus`, as an editor, and on the reference with Twenty Twenty-Five
+as an administrator and an editor: 7 of 7 equal, the UUID of the changeset, the nonces and the times masked.
 
