@@ -128,6 +128,28 @@ pub async fn plugin_slugs(site: &Site) -> Vec<(String, String)> {
     slugs
 }
 
+/// A plugin update the transient `update_plugins` announces.
+#[derive(Debug, Clone, Default)]
+pub struct PluginUpdate {
+    pub slug: String,
+    pub new_version: String,
+    pub package: String,
+}
+
+/// The updates of the transient `update_plugins`, by plugin file.
+pub async fn plugin_update_list(site: &Site) -> Vec<(String, PluginUpdate)> {
+    let Some(plugins) = transient(site, "update_plugins").await else { return Vec::new() };
+    let Some(Value::Array(items) | Value::Object { props: items, .. }) = field(&plugins, "response") else { return Vec::new() };
+    let text = |entry: &Value, name: &str| field(entry, name).and_then(Value::as_str).unwrap_or_default().to_owned();
+    items
+        .iter()
+        .filter_map(|(key, entry)| match key {
+            Key::Str(file) => Some((String::from_utf8_lossy(file).into_owned(), PluginUpdate { slug: text(entry, "slug"), new_version: text(entry, "new_version"), package: text(entry, "package") })),
+            _ => None,
+        })
+        .collect()
+}
+
 /// The plugin files the transient `update_plugins` has an update for.
 pub async fn plugin_updates(site: &Site) -> Vec<String> {
     let Some(plugins) = transient(site, "update_plugins").await else { return Vec::new() };
