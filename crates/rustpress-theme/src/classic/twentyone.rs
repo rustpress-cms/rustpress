@@ -1023,8 +1023,8 @@ async fn comments_template(ctx: &Ctx<'_>, post: &Arc<Post>) -> Result<String> {
     let mut out = format!("\n<div id=\"comments\" class=\"comments-area default-max-width {}\">\n\n\t", if avatars { "show-avatars" } else { "" });
     let request_uri = ctx.request_uri();
     if !page.comments.is_empty() {
-        let count = post.comment_count;
-        let title = if count == 1 {
+        let count = site.comments_number(post, env.query.viewer.as_ref());
+        let title = if site.comments_number_is_one(post, env.query.viewer.as_ref()) {
             th(ctx, "1 comment")
         } else {
             let template = site.i18n().npgettext(THEME, "Comments title", "%s comment", "%s comments", count);
@@ -1038,7 +1038,7 @@ async fn comments_template(ctx: &Ctx<'_>, post: &Arc<Post>) -> Result<String> {
         let next = format!("<span class=\"nav-next-text\">{}</span> {}", th(ctx, "Newer comments"), ui(if rtl { "arrow_left" } else { "arrow_right" }));
         let pagination = tags::comments_pagination_with(site, &site.permalink(post).await?, &request_uri, page.page, page.max_pages, &prev, &next, 0, &format!("{} ", th(ctx, "Page")));
         out.push_str(&format!("\t\t</ol><!-- .comment-list -->\n\n\t\t{pagination}\n\t\t"));
-        if !comments::comments_open(post) {
+        if !comments::comments_open(site, env.query.viewer.as_ref(), post) {
             out.push_str(&format!("\t\t\t<p class=\"no-comments\">{}</p>\n\t\t", th(ctx, "Comments are closed.")));
         }
         out.push('\t');
@@ -1170,14 +1170,14 @@ async fn main_template(ctx: &Ctx<'_>) -> Result<String> {
             ctx.env.with_state(|s| s.looped_posts.push(post.id));
             if f.is_attachment && post.post_mime_type.starts_with("image/") {
                 out.push_str(&image_part(ctx, &post).await?);
-                if comments::comments_open(&post) || post.comment_count > 0 {
+                if comments::comments_open(site, q.viewer.as_ref(), &post) || site.comments_number(&post, q.viewer.as_ref()) > 0 {
                     out.push_str(&comments_template(ctx, &post).await?);
                 }
                 continue;
             }
             if f.is_page {
                 out.push_str(&page_part(ctx, &post).await?);
-                if comments::comments_open(&post) || post.comment_count > 0 {
+                if comments::comments_open(site, q.viewer.as_ref(), &post) || site.comments_number(&post, q.viewer.as_ref()) > 0 {
                     out.push_str(&comments_template(ctx, &post).await?);
                 }
                 continue;
@@ -1187,7 +1187,7 @@ async fn main_template(ctx: &Ctx<'_>) -> Result<String> {
                 let text = sprintf(&t(ctx, "<span class=\"meta-nav\">Published in</span><span class=\"post-title\">%s</span>"), &["%title"]);
                 out.push_str(&post_navigation(ctx, &post, &text, None).await?);
             }
-            if comments::comments_open(&post) || post.comment_count > 0 {
+            if comments::comments_open(site, q.viewer.as_ref(), &post) || site.comments_number(&post, q.viewer.as_ref()) > 0 {
                 out.push_str(&comments_template(ctx, &post).await?);
             }
             let rtl = site.is_rtl();
@@ -1547,14 +1547,15 @@ async fn head(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State, registry: &Re
     out.push_str(&plugin_head.late);
     // `twenty_twenty_one_pingback_header()`.
     if let (true, Queried::Post(post)) = (q.flags.is_singular(), &q.queried)
-        && post.ping_status == "open"
+        && site.pings_open(post, q.viewer.as_ref())
     {
         out.push_str(&format!("<link rel=\"pingback\" href=\"{}\">", esc_url(&site.site_url("xmlrpc.php"))));
     }
     // What plugins hook on `wp_head` on `init`.
     out.push_str(&plugin_head.late_init);
     // `recent_comments_style()`: an active "Recent Comments" widget.
-    if preview.is_some() || widgets::sidebars_widgets(site).iter().any(|(name, ids)| name != "wp_inactive_widgets" && ids.iter().any(|id| id.starts_with("recent-comments-"))) {
+    // `show_recent_comments_widget_style`, which a plugin that unregisters the widget turns off.
+    if (preview.is_some() || widgets::sidebars_widgets(site).iter().any(|(name, ids)| name != "wp_inactive_widgets" && ids.iter().any(|id| id.starts_with("recent-comments-")))) && !site.plugins.comments_off_everywhere(q.viewer.as_ref()) {
         out.push_str("<style>.recentcomments a{display:inline !important;padding:0 !important;margin:0 !important;}</style>");
     }
     out.push_str(&custom_background_style(ctx));
@@ -1644,7 +1645,8 @@ async fn wp_footer(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State, plugin_h
     out.push_str(&printer.scripts(&early_scripts, true));
     // `comment-reply`, enqueued by `twenty_twenty_one_scripts()` for singular pages with open comments.
     if let (true, Queried::Post(post)) = (ctx.q.flags.is_singular(), &ctx.q.queried)
-        && post.comment_status == "open"
+        && site.comments_open(post, ctx.q.viewer.as_ref())
+        && !site.plugins.closes_singular_comments(post, ctx.q.viewer.as_ref())
         && site.options.get("thread_comments") == Some("1")
     {
         out.push_str(&format!("<script async data-wp-strategy=\"async\" fetchpriority=\"low\" id=\"comment-reply-js\" src=\"{includes_url}/js/comment-reply.min.js?ver={version}\"></script>\n"));

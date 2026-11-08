@@ -432,7 +432,7 @@ async fn page(app: &App, uri: &axum::http::Uri, request_headers: &axum::http::He
             let verify_session = token.clone();
             let privacy_page = loaded.site.options.u64("wp_page_for_privacy_policy", 0);
             let verify = move |nonce: &str, action: &str| verify_auth.as_ref().is_some_and(|auth| auth.verify_nonce(nonce, action, uid, &verify_session, crate::admin::now()).is_some());
-            let viewer = rustpress_core::Viewer::new(user.id, move |capability| can_user.can(capability)).with_identity(&user.login, &user.display_name, &user.email, show_bar, nonce).with_verifier(privacy_page, verify);
+            let viewer = rustpress_core::Viewer::new(user.id, move |capability| can_user.can(capability)).with_identity(&user.login, &user.display_name, &user.email, show_bar, nonce).with_verifier(privacy_page, verify).with_roles(&user.roles);
             if show_bar && let Some(found) = crate::admin::front_toolbar(&loaded, &user, &token, customize.as_ref()).await {
                 extras = found;
             }
@@ -516,6 +516,14 @@ async fn page(app: &App, uri: &axum::http::Uri, request_headers: &axum::http::He
     // 404 page rather than a canonical redirect. Only `/index.php` is WordPress' own alias for `/`.
     let php_endpoint = path.ends_with(".php") && path != "/index.php";
     // `template_redirect` of the plugins runs before `redirect_canonical()`.
+    if !php_endpoint && let Some(die) = site.plugins.template_redirect_die(site, &result) {
+        if result.flags.is_feed {
+            // `WP::send_headers()` already sent the headers of the feed; `nocache_headers()` takes `Last-Modified`.
+            let etag = rustpress_theme::feed::redirect_headers(site, &result).await?.map(|feed| feed.etag);
+            return Ok(xml_die_response(site, &die, etag.as_deref()));
+        }
+        return Ok(die_response(site, &die));
+    }
     if !php_endpoint && let Some(plugin) = site.plugins.template_redirect(site, &result).await? {
         return plugin_redirect(&loaded, &plugin_request, &sent_headers, &result, &plugin).await;
     }
@@ -673,13 +681,47 @@ async fn page(app: &App, uri: &axum::http::Uri, request_headers: &axum::http::He
     Ok(with_api_link(response, &loaded, &result))
 }
 
+/// `wp_die()` of a plugin on the website (`_default_wp_die_handler()`).
+fn die_response(site: &rustpress_core::Site, die: &rustpress_core::native::Die) -> Response<Body> {
+    let title = if die.title.is_empty() { site.tr("WordPress &rsaquo; Error") } else { die.title.clone() };
+    let mut response = Response::new(Body::from(rustpress_admin::die::page(site, &title, &die.message)));
+    *response.status_mut() = StatusCode::from_u16(die.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+    let headers = response.headers_mut();
+    headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("text/html; charset=utf-8"));
+    no_cache(headers);
+    response
+}
+
+/// `_xml_wp_die_handler()`: `wp_die()` of a plugin in a feed.
+fn xml_die_response(site: &rustpress_core::Site, die: &rustpress_core::native::Die, etag: Option<&str>) -> Response<Body> {
+    use rustpress_core::text_diff::htmlspecialchars;
+    let title = if die.title.is_empty() { site.tr("WordPress &rsaquo; Error") } else { die.title.clone() };
+    let body = format!(
+        "<error>\n    <code>wp_die</code>\n    <title><![CDATA[{}]]></title>\n    <message><![CDATA[{}]]></message>\n    <data>\n        <status>{}</status>\n    </data>\n</error>\n",
+        htmlspecialchars(&title),
+        htmlspecialchars(&die.message),
+        die.status
+    );
+    let mut response = Response::new(Body::from(body));
+    *response.status_mut() = StatusCode::from_u16(die.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+    let headers = response.headers_mut();
+    if let Some(value) = etag.and_then(|e| HeaderValue::from_str(e).ok()) {
+        headers.insert(header::ETAG, value);
+    }
+    headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("text/xml; charset=UTF-8"));
+    no_cache(headers);
+    response
+}
+
 /// `WP::send_headers()` for single posts: pingback discovery and no caching of protected posts.
 fn singular_headers(response: &mut Response<Body>, result: &rustpress_core::QueryResult, loaded: &Loaded) {
     if !result.flags.is_singular() {
         return;
     }
     let Some(post) = result.queried_post() else { return };
-    if post.ping_status == "open"
+    // `filter_wp_headers()` of a plugin that turns comments off everywhere takes the header away.
+    if loaded.site.pings_open(post, result.viewer.as_ref())
+        && !loaded.site.plugins.comments_off_everywhere(result.viewer.as_ref())
         && let Ok(value) = HeaderValue::from_str(&loaded.site.site_url("xmlrpc.php"))
     {
         response.headers_mut().insert("x-pingback", value);

@@ -497,6 +497,20 @@ impl Db {
         }
         Ok(query.fetch_optional(&self.pool).await?)
     }
+    /// The first value of the meta `key` of every post that has it.
+    pub async fn post_meta_by_key(&self, key: &str) -> Result<Vec<(u64, String)>> {
+        let mut sql = Sql::new(format!("SELECT meta_id, post_id, meta_key, meta_value FROM {} WHERE meta_key = ", self.prefix.table("postmeta")));
+        sql.push_bind(key.to_owned()).push(" ORDER BY meta_id");
+        let rows: Vec<PostMeta> = sql.fetch_all(&self.pool).await?;
+        let mut values: Vec<(u64, String)> = Vec::new();
+        for row in rows {
+            if !values.iter().any(|(id, _)| *id == row.post_id) {
+                values.push((row.post_id, row.meta_value.unwrap_or_default()));
+            }
+        }
+        Ok(values)
+    }
+
     pub async fn post_meta(&self, post_id: u64) -> Result<Vec<PostMeta>> {
         if let Some(primed) = crate::primed::primed_meta(post_id) {
             return Ok(primed);

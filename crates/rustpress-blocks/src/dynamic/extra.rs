@@ -338,7 +338,7 @@ fn php_urlencode(s: &str) -> String {
 
 pub(super) async fn post_comments_count(bc: &BlockCtx<'_>) -> Result<String> {
     let Some(post_id) = bc.context.post_id() else { return Ok(String::new()) };
-    let count = bc.env.site.db.post(post_id).await?.map_or(0, |p| p.comment_count);
+    let count = bc.env.site.db.post(post_id).await?.map_or(0, |p| bc.env.site.comments_number(&p, bc.env.query.viewer.as_ref()));
     let wrapper = bc.wrapper_attributes(&[("class", align_class(bc))]);
     Ok(format!("<div {wrapper}>{count}</div>"))
 }
@@ -347,7 +347,7 @@ pub(super) async fn post_comments_link(bc: &BlockCtx<'_>) -> Result<String> {
     let Some(post_id) = bc.context.post_id() else { return Ok(String::new()) };
     let site = bc.env.site;
     let Some(post) = site.db.post(post_id).await? else { return Ok(String::new()) };
-    if post.comment_status != "open" {
+    if !site.comments_open(&post, bc.env.query.viewer.as_ref()) {
         return Ok(String::new());
     }
     let mut classes = Vec::new();
@@ -359,7 +359,7 @@ pub(super) async fn post_comments_link(bc: &BlockCtx<'_>) -> Result<String> {
         classes.push("has-link-color".to_owned());
     }
     let wrapper = bc.wrapper_attributes(&[("class", classes.join(" "))]);
-    let number = post.comment_count;
+    let number = site.comments_number(&post, bc.env.query.viewer.as_ref());
     let link = format!("{}{}", site.permalink(&post).await?, if number > 0 { "#comments" } else { "#respond" });
     let title = the_title_for(site, &post);
     let html = if number == 0 {

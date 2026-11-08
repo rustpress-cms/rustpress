@@ -38,7 +38,11 @@ pub async fn feed_links(site: &Site, q: &QueryResult) -> Result<String> {
     let main_feed = if pretty_feeds { site.user_trailingslashit(&site.home_url(&format!("{}feed", site.root()))) } else { site.home_url("?feed=rss2") };
     let comments_feed = if pretty_feeds { site.user_trailingslashit(&site.home_url(&format!("{}comments/feed", site.root()))) } else { site.home_url("?feed=comments-rss2") };
     let mut out = link(&titled("%1$s %2$s Feed", &[]), &main_feed);
-    out.push_str(&link(&titled("%1$s %2$s Comments Feed", &[]), &comments_feed));
+    // `feed_links_show_comments_feed`.
+    let show_comments_feed = !site.plugins.comments_off_everywhere(q.viewer.as_ref());
+    if show_comments_feed {
+        out.push_str(&link(&titled("%1$s %2$s Comments Feed", &[]), &comments_feed));
+    }
 
     let flags = &q.flags;
     let pretty = site.uses_pretty_permalinks();
@@ -47,7 +51,9 @@ pub async fn feed_links(site: &Site, q: &QueryResult) -> Result<String> {
     };
     if flags.is_singular() {
         if let Queried::Post(post) = &q.queried
-            && (post.comment_status == "open" || post.ping_status == "open" || post.comment_count > 0)
+            && !site.plugins.closes_singular_comments(post, q.viewer.as_ref())
+            && show_comments_feed
+            && (site.comments_open(post, q.viewer.as_ref()) || site.pings_open(post, q.viewer.as_ref()) || post.comment_count > 0)
         {
             // `get_post_comments_feed_link()` uses the page's own address, also for the front page.
             let permalink = if post.post_type == "page" { site.page_link_of(post).await? } else { site.permalink(post).await? };

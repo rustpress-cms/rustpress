@@ -1029,7 +1029,7 @@ async fn main_template(ctx: &Ctx<'_>) -> Result<String> {
         } else {
             content_part(ctx, &post).await?
         });
-        if (f.is_single || f.is_page) && !is_static_front_page(ctx) && (comments::comments_open(&post) || post.comment_count > 0) {
+        if (f.is_single || f.is_page) && !is_static_front_page(ctx) && (comments::comments_open(ctx.site, q.viewer.as_ref(), &post) || ctx.site.comments_number(&post, q.viewer.as_ref()) > 0) {
             let args = comments::ListArgs { avatar_size: 100, reply_text: format!("{}{}", svg("mail-reply", false), t(ctx, "Reply")), short_ping: true, cpage: None };
             let text = |s: &str| t(ctx, s);
             let text_x = |s: &str, c: &str| tx(ctx, s, c);
@@ -1319,7 +1319,7 @@ async fn head(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State, registry: &Re
     out.push_str(&plugin_head.late);
     // `twentyseventeen_pingback_header()`.
     if let (true, Queried::Post(post)) = (q.flags.is_singular(), &q.queried)
-        && post.ping_status == "open"
+        && site.pings_open(post, q.viewer.as_ref())
     {
         out.push_str(&format!("<link rel=\"pingback\" href=\"{}\">\n", esc_url(&site.site_url("xmlrpc.php"))));
     }
@@ -1327,7 +1327,8 @@ async fn head(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State, registry: &Re
     // What plugins hook on `wp_head` on `init` (before the widgets register).
     out.push_str(&plugin_head.late_init);
     // `recent_comments_style()`: an active "Recent Comments" widget.
-    if preview.is_some() || widgets::sidebars_widgets(site).iter().any(|(name, ids)| name != "wp_inactive_widgets" && ids.iter().any(|id| id.starts_with("recent-comments-"))) {
+    // `show_recent_comments_widget_style`, which a plugin that unregisters the widget turns off.
+    if (preview.is_some() || widgets::sidebars_widgets(site).iter().any(|(name, ids)| name != "wp_inactive_widgets" && ids.iter().any(|id| id.starts_with("recent-comments-")))) && !site.plugins.comments_off_everywhere(q.viewer.as_ref()) {
         out.push_str("<style>.recentcomments a{display:inline !important;padding:0 !important;margin:0 !important;}</style>");
     }
     out.push_str(&header_style(ctx));
@@ -1413,7 +1414,8 @@ async fn wp_footer(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State, plugin_h
     out.push_str(&format!("<script data-wp-strategy=\"defer\" defer id=\"jquery-scrollto-js\" src=\"{}/assets/js/jquery.scrollTo.js?ver=2.1.3\"></script>\n", ctx.theme.template_directory_uri()));
     // `comment-reply`, enqueued by `twentyseventeen_scripts()` for singular pages with open comments.
     if let (true, Queried::Post(post)) = (ctx.q.flags.is_singular(), &ctx.q.queried)
-        && post.comment_status == "open"
+        && site.comments_open(post, ctx.q.viewer.as_ref())
+        && !site.plugins.closes_singular_comments(post, ctx.q.viewer.as_ref())
         && site.options.get("thread_comments") == Some("1")
     {
         out.push_str(&format!("<script async data-wp-strategy=\"async\" fetchpriority=\"low\" id=\"comment-reply-js\" src=\"{}/js/comment-reply.min.js?ver={version}\"></script>\n", site.site_url("wp-includes")));
@@ -1464,7 +1466,8 @@ async fn preview_footer_scripts(ctx: &Ctx<'_>, state: &rustpress_blocks::env::St
     out.push_str(&printer.scripts(&plugin_assets.scripts, true));
     scripts.enqueue("jquery-scrollto");
     if let (true, Queried::Post(post)) = (ctx.q.flags.is_singular(), &ctx.q.queried)
-        && post.comment_status == "open"
+        && site.comments_open(post, ctx.q.viewer.as_ref())
+        && !site.plugins.closes_singular_comments(post, ctx.q.viewer.as_ref())
         && site.options.get("thread_comments") == Some("1")
     {
         scripts.enqueue("comment-reply");

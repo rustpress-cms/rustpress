@@ -208,6 +208,14 @@ impl QueryResult {
         }
     }
 
+    /// `is_comment_feed()`. `WP_Query::set_404()` leaves it off: a 404 is a feed of (no) posts.
+    pub fn is_comment_feed(&self) -> bool {
+        let truthy = |name: &str| self.vars.get(name).is_some_and(|v| !v.is_empty() && v != "0");
+        self.flags.is_feed
+            && !self.flags.is_404
+            && (truthy("withcomments") || self.vars.get("feed").unwrap_or("feed").contains("comments-") || (!truthy("withoutcomments") && self.flags.is_singular()))
+    }
+
     pub fn queried_post(&self) -> Option<&Post> {
         match &self.queried {
             Queried::Post(post) => Some(post.as_ref()),

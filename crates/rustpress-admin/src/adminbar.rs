@@ -71,6 +71,15 @@ fn avatar(site: &Site, email: &str, size: u64) -> String {
 }
 
 /// The toolbar for the administration area.
+/// Whether a plugin turns comments off everywhere for the user ([rustpress_core::native::ActivePlugin::comments_off_everywhere]).
+fn comments_off_everywhere(site: &Site, user: &CurrentUser) -> bool {
+    if site.plugins.is_empty() {
+        return false;
+    }
+    let caps = user.clone();
+    site.plugins.comments_off_everywhere(Some(&rustpress_core::Viewer::new(user.id, move |c| caps.can(c)).with_roles(&user.roles)))
+}
+
 pub fn render_admin(site: &Site, user: &CurrentUser, ctx: &BarContext) -> String {
     let tr = |s: &str| site.tr(s);
     let admin = |path: &str| esc_url(&site.site_url(&format!("wp-admin/{path}")));
@@ -139,8 +148,8 @@ pub fn render_admin(site: &Site, user: &CurrentUser, ctx: &BarContext) -> String
         ));
     }
 
-    // Comments
-    if user.can("edit_posts") {
+    // Comments; a plugin that turns comments off everywhere removes `wp_admin_bar_comments_menu()`.
+    if user.can("edit_posts") && !comments_off_everywhere(site, user) {
         let text = rustpress_core::i18n::sprintf(&site.trn("%s Comment in moderation", "%s Comments in moderation", ctx.pending_comments as i64), &[&number(ctx.pending_comments)]);
         top.push(item(
             "comments",
@@ -332,8 +341,8 @@ pub fn render_front(site: &Site, user: &CurrentUser, ctx: &FrontContext) -> Stri
         ));
     }
 
-    // Comments
-    if user.can("edit_posts") {
+    // Comments; a plugin that turns comments off everywhere removes `wp_admin_bar_comments_menu()`.
+    if user.can("edit_posts") && !comments_off_everywhere(site, user) {
         let text = rustpress_core::i18n::sprintf(&site.trn("%s Comment in moderation", "%s Comments in moderation", ctx.pending_comments as i64), &[&number(ctx.pending_comments)]);
         top.push(item(
             "comments",

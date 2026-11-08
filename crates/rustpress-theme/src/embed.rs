@@ -169,9 +169,9 @@ async fn thumbnail_image(env: &Env<'_>, id: u64, size: &str) -> Result<String> {
 }
 
 /// `print_embed_comments_button()`.
-fn comments_button(site: &Site, post: &Post, permalink: &str) -> String {
-    let number = post.comment_count;
-    if !(number > 0 || post.comment_status == "open") {
+fn comments_button(site: &Site, viewer: Option<&rustpress_core::Viewer>, post: &Post, permalink: &str) -> String {
+    let number = site.comments_number(post, viewer);
+    if !(number > 0 || site.comments_open(post, viewer)) {
         return String::new();
     }
     let hash = if number > 0 { "#comments" } else { "#respond" };
@@ -259,7 +259,7 @@ async fn content(env: &Env<'_>, post: &Arc<Post>) -> Result<String> {
     out.push_str(&format!(
         "\n\t\t<div class=\"wp-embed-footer\">\n\t\t\t{}\n\t\t\t<div class=\"wp-embed-meta\">\n\t\t\t\t{}{}\t\t\t</div>\n\t\t</div>\n\t</div>\n",
         embed_site_title(env).await?,
-        comments_button(site, post, &permalink),
+        comments_button(site, env.query.viewer.as_ref(), post, &permalink),
         sharing_button(site)
     ));
     Ok(out)

@@ -16,6 +16,8 @@ pub struct Viewer {
     pub show_admin_bar: bool,
     /// The page of the privacy policy: only who manages the privacy options may edit it.
     pub privacy_page: u64,
+    /// The roles of the user (`wp_get_current_user()->roles`).
+    pub roles: Vec<String>,
     can: Arc<dyn Fn(&str) -> bool + Send + Sync>,
     nonce: Arc<dyn Fn(&str) -> String + Send + Sync>,
     verify: Arc<dyn Fn(&str, &str) -> bool + Send + Sync>,
@@ -29,7 +31,7 @@ impl std::fmt::Debug for Viewer {
 
 impl Viewer {
     pub fn new(id: u64, can: impl Fn(&str) -> bool + Send + Sync + 'static) -> Self {
-        Self { id, login: String::new(), display_name: String::new(), email: String::new(), show_admin_bar: false, privacy_page: 0, can: Arc::new(can), nonce: Arc::new(|_| String::new()), verify: Arc::new(|_, _| false) }
+        Self { id, login: String::new(), display_name: String::new(), email: String::new(), show_admin_bar: false, privacy_page: 0, roles: Vec::new(), can: Arc::new(can), nonce: Arc::new(|_| String::new()), verify: Arc::new(|_, _| false) }
     }
 
     /// Who the viewer is, and how a nonce of their session is made.
@@ -39,6 +41,12 @@ impl Viewer {
         self.email = email.to_owned();
         self.show_admin_bar = show_admin_bar;
         self.nonce = Arc::new(nonce);
+        self
+    }
+
+    /// The roles of the user.
+    pub fn with_roles(mut self, roles: &[String]) -> Self {
+        self.roles = roles.to_vec();
         self
     }
 

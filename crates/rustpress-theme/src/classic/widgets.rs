@@ -232,6 +232,8 @@ async fn display(s: &Services<'_>, sidebar: &Sidebar<'_>, mut before: String, ba
         "text" => Some(text(s, sidebar, &before, settings)),
         "custom_html" => Some(custom_html(s, sidebar, &before, settings)),
         "nav_menu" => nav_menu(s, sidebar, &before, settings).await?,
+        // `unregister_widget( 'WP_Widget_Recent_Comments' )` of a plugin.
+        "recent-comments" if s.site.plugins.comments_off_everywhere(s.q.viewer.as_ref()) => None,
         "recent-comments" => Some(recent_comments(s, sidebar, &before, settings).await?),
         "pages" => Some(pages(s, sidebar, &before, settings).await?),
         "tag_cloud" => tag_cloud(s, sidebar, &before, settings).await?,
