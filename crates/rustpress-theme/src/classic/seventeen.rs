@@ -842,6 +842,7 @@ async fn pagination(ctx: &Ctx<'_>) -> String {
             prev_text: format!("{}<span class=\"screen-reader-text\">{}</span>", svg("arrow-left", false), t(ctx, "Previous page")),
             next_text: format!("<span class=\"screen-reader-text\">{}</span>{}", t(ctx, "Next page"), svg("arrow-right", false)),
             before_page_number: format!("<span class=\"meta-nav screen-reader-text\">{} </span>", t(ctx, "Page")),
+            mid_size: 1,
         },
     )
 }
@@ -898,10 +899,19 @@ async fn archive_header(ctx: &Ctx<'_>) -> Result<String> {
             (title, term.description.clone())
         }
         Queried::Term(term) if f.is_category || f.is_tag || f.is_tax => {
-            let prefix = if f.is_category { site.trx("Category:", "category archive title prefix") } else if f.is_tag { site.trx("Tag:", "tag archive title prefix") } else { format!("{}:", term.taxonomy) };
+            let prefix = if f.is_category {
+                site.trx("Category:", "category archive title prefix")
+            } else if f.is_tag {
+                site.trx("Tag:", "tag archive title prefix")
+            } else {
+                rustpress_core::i18n::sprintf(&site.trx("%s:", "taxonomy term archive title prefix"), &[&site.taxonomy_singular_label(&term.taxonomy)])
+            };
             (format!("{prefix} <span>{}</span>", term.name), term.description.clone())
         }
         Queried::User(user) if f.is_author => (format!("{} <span>{}</span>", site.trx("Author:", "author archive title prefix"), user.display_name), String::new()),
+        Queried::PostType(post_type) if f.is_post_type_archive && !(f.is_year || f.is_month || f.is_day) => {
+            (format!("{} <span>{}</span>", site.trx("Archives:", "post type archive title prefix"), site.post_type_label(post_type)), String::new())
+        }
         _ if f.is_year || f.is_month || f.is_day => {
             let first = q.posts.first();
             let ts = first.and_then(|p| site.timezone.local_timestamp(&p.post_date)).unwrap_or(0);
@@ -1194,10 +1204,12 @@ async fn head(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State, registry: &Re
         }
     }
     // Smallest files first until the inline budget is used up.
-    let mut by_size: Vec<(usize, u64)> = sheets.iter().enumerate().filter_map(|(i, s)| rustpress_core::files::size(&s.path).map(|len| (i, len))).collect();
+    // `wp_maybe_inline_styles()` runs twice: in `wp_head` for the common block styles alone (which gives them an
+    // empty `src`), and in the footer for the block styles enqueued while the page rendered.
+    let mut by_size: Vec<(usize, u64)> = sheets.iter().enumerate().filter(|(_, s)| s.id != "wp-block-library").filter_map(|(i, s)| rustpress_core::files::size(&s.path).map(|len| (i, len))).collect();
     by_size.sort_by_key(|(_, size)| *size);
     let mut budget = 0u64;
-    let mut inline: Vec<usize> = Vec::new();
+    let mut inline: Vec<usize> = sheets.iter().position(|s| s.id == "wp-block-library").into_iter().collect();
     for (i, size) in by_size {
         if budget + size > INLINE_LIMIT {
             break;

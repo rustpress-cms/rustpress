@@ -4,6 +4,8 @@
 pub fn of_theme(stylesheet: &str) -> &'static [(&'static str, u32, u32, bool)] {
     match stylesheet {
         "twentyseventeen" => &[("twentyseventeen-featured-image", 2000, 1200, true), ("twentyseventeen-thumbnail-avatar", 100, 100, true)],
+        // `set_post_thumbnail_size( 1568, 9999 )`.
+        "twentytwentyone" => &[("post-thumbnail", 1568, 9999, false)],
         _ => &[],
     }
 }

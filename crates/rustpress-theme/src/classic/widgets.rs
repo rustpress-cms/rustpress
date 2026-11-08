@@ -48,7 +48,7 @@ pub struct RegisteredSidebar {
 /// block theme kept from the theme before it (`_wp_block_theme_register_classic_sidebars()`).
 pub fn registered_sidebars(theme: &crate::theme::Theme, site: &Site) -> Vec<RegisteredSidebar> {
     if super::is_ported(theme) {
-        return super::seventeen::registered_sidebars(site);
+        return if super::is_twentyone(theme) { super::twentyone::registered_sidebars(site) } else { super::seventeen::registered_sidebars(site) };
     }
     let mods = super::menu::theme_mod(site, &theme.stylesheet);
     let Some(list) = mods.get("wp_classic_sidebars").and_then(Value::as_array) else { return Vec::new() };
@@ -514,8 +514,12 @@ async fn tag_cloud(s: &Services<'_>, sidebar: &Sidebar<'_>, before: &str, settin
     };
     let title = setting_str(settings, "title");
     let title = rustpress_core::formatting::esc_html(&site.texturize(if title.is_empty() { &default } else { &title }));
-    // `twentyseventeen_widget_tag_cloud_args()`
-    let args = general::TagCloud { taxonomy, smallest: 1.0, largest: 1.0, unit: "em".into(), list: true, show_count: setting_flag(settings, "count"), ..general::TagCloud::new() };
+    // `twentyseventeen_widget_tag_cloud_args()`; other themes keep the defaults.
+    let args = if s.stylesheet == "twentyseventeen" {
+        general::TagCloud { taxonomy, smallest: 1.0, largest: 1.0, unit: "em".into(), list: true, show_count: setting_flag(settings, "count"), ..general::TagCloud::new() }
+    } else {
+        general::TagCloud { taxonomy, show_count: setting_flag(settings, "count"), ..general::TagCloud::new() }
+    };
     let cloud = general::wp_tag_cloud(s.env, &args).await?;
     if cloud.is_empty() {
         return Ok(None);

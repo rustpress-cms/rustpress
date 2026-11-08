@@ -680,6 +680,76 @@ fn inner_wrapper_class(first_chunk: Option<&str>) -> Option<String> {
     stack.into_iter().rev().flatten().find(|c| !c.is_empty())
 }
 
+/// `wp_restore_group_inner_container()` on `render_block_core/group`: themes without a `theme.json` get the
+/// `wp-block-group__inner-container` wrapper back, with the layout classes moved onto it.
+pub fn restore_group_inner_container(attrs: &serde_json::Map<String, Value>, content: String) -> String {
+    use regex::bytes::Regex;
+    let tag_name = attrs.get("tagName").and_then(Value::as_str).unwrap_or("div");
+    let quoted = regex::escape(tag_name);
+    // PCRE's `\s` without `/u`.
+    const S: &str = r"[ \t\n\x0B\x0C\r]";
+    let Ok(existing) = Regex::new(&format!(r#"(?-u)^{S}*<{quoted}\b[^>]*wp-block-group({S}|")[^>]*>{S}*<div\b[^>]*wp-block-group__inner-container({S}|")[^>]*>"#)) else { return content };
+    let layout = attrs.get("layout").and_then(|l| l.get("type")).and_then(Value::as_str);
+    if existing.is_match(content.as_bytes()) || matches!(layout, Some("flex" | "grid")) {
+        return content;
+    }
+    let mut layout_classes: Vec<String> = Vec::new();
+    let mut without = content.clone();
+    if let Some(tag) = crate::html::tags(&content, 0).into_iter().find(|t| !t.is_closer && t.attr("class").is_some_and(|c| c.split_ascii_whitespace().any(|c| c == "wp-block-group"))) {
+        let mut editor = crate::html::TagEditor::from_tag(&content, tag);
+        let classes: Vec<String> = editor.get_attribute("class").unwrap_or_default().split_ascii_whitespace().map(str::to_owned).collect();
+        for class in classes {
+            if class.contains("is-layout-") && !layout_classes.contains(&class) {
+                editor.remove_class(&class);
+                layout_classes.push(class);
+            }
+        }
+        without = editor.finish();
+    }
+    let Ok(replace) = Regex::new(&format!(r"(?ms-u)(^{S}*<{quoted}\b[^>]*wp-block-group[^>]*>)(.*)(</{quoted}>{S}*$)")) else { return content };
+    let updated = replace.replace_all(without.as_bytes(), |caps: &regex::bytes::Captures<'_>| {
+        let mut out = caps[1].to_vec();
+        out.extend_from_slice(b"<div class=\"wp-block-group__inner-container\">");
+        out.extend_from_slice(&caps[2]);
+        out.extend_from_slice(b"</div>");
+        out.extend_from_slice(&caps[3]);
+        out
+    });
+    let updated = String::from_utf8_lossy(&updated).into_owned();
+    if layout_classes.is_empty() {
+        return updated;
+    }
+    let Some(tag) = crate::html::tags(&updated, 0).into_iter().find(|t| !t.is_closer && t.attr("class").is_some_and(|c| c.split_ascii_whitespace().any(|c| c == "wp-block-group__inner-container"))) else { return updated };
+    let mut editor = crate::html::TagEditor::from_tag(&updated, tag);
+    for class in &layout_classes {
+        editor.add_class(class);
+    }
+    editor.finish()
+}
+
+/// `wp_restore_image_outer_container()` on `render_block_core/image`: themes without a `theme.json` get aligned
+/// images wrapped in a `<div class="wp-block-image">` again.
+pub fn restore_image_outer_container(attrs: &serde_json::Map<String, Value>, content: String) -> String {
+    let Some(tag) = crate::html::tags(&content, 0).into_iter().find(|t| !t.is_closer && t.name == "figure") else { return content };
+    let mut figure = crate::html::TagEditor::from_tag(&content, tag);
+    if !figure.has_class("wp-block-image") || !["alignleft", "aligncenter", "alignright"].iter().any(|c| figure.has_class(c)) {
+        return content;
+    }
+    let class = match attrs.get("className").and_then(Value::as_str) {
+        Some(extra) => format!("wp-block-image {extra}"),
+        None => "wp-block-image".to_owned(),
+    };
+    figure.remove_class("wp-block-image");
+    let mut seen: Vec<&str> = Vec::new();
+    for name in class.split_ascii_whitespace() {
+        if !seen.contains(&name) {
+            seen.push(name);
+            figure.remove_class(name);
+        }
+    }
+    format!("<div class=\"{}\">{}</div>", crate::html::esc_attr(&class), figure.finish())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -9,6 +9,8 @@ mod media_widgets;
 pub mod menu;
 pub mod seventeen;
 pub mod tags;
+pub mod twentyone;
+mod twentyone_icons;
 pub mod widgets;
 
 use rustpress_blocks::{Env, Registry};
@@ -21,7 +23,7 @@ use crate::document::Document;
 use crate::theme::Theme;
 
 /// Slugs of the classic themes that exist as Rust ports.
-const PORTS: &[&str] = &["twentyseventeen"];
+pub const PORTS: &[&str] = &["twentyseventeen", "twentytwentyone"];
 
 /// Whether the active theme is a classic theme with a port (a theme without `theme.json`).
 pub fn is_ported(theme: &Theme) -> bool {
@@ -74,13 +76,19 @@ pub async fn wp_get_custom_css(site: &Site, mods: &Value) -> Result<String> {
 pub fn post_formats(theme: &str) -> &'static [&'static str] {
     match theme {
         "twentyseventeen" => &["aside", "image", "video", "quote", "link", "gallery", "audio"],
+        "twentytwentyone" => &["link", "aside", "gallery", "image", "quote", "status", "video", "audio", "chat"],
         _ => &["aside", "audio", "chat", "gallery", "image", "link", "quote", "status", "video"],
     }
 }
 
 /// `$content_width` a ported theme sets on `after_setup_theme`.
 pub fn content_width(theme: &str) -> Option<u64> {
-    (theme == "twentyseventeen").then_some(525)
+    match theme {
+        "twentyseventeen" => Some(525),
+        // `twenty_twenty_one_content_width()`.
+        "twentytwentyone" => Some(750),
+        _ => None,
+    }
 }
 
 /// The names of the sizes a ported theme registers with `add_image_size()`, in its order.
@@ -124,7 +132,15 @@ pub async fn add_body_classes(theme: &Theme, site: &Site, q: &QueryResult, regis
     let env = Env::new(site, q, theme, registry);
     let mods = menu::theme_mod(site, &theme.stylesheet);
     let ctx = Ctx { theme, site, q, env, mods };
+    if is_twentyone(theme) {
+        return twentyone::add_body_classes(&ctx, classes).await;
+    }
     seventeen::add_body_classes(&ctx, classes).await
+}
+
+/// Whether the ported theme is Twenty Twenty-One (else it is Twenty Seventeen).
+pub fn is_twentyone(theme: &Theme) -> bool {
+    theme.template == "twentytwentyone"
 }
 
 /// Renders a request with the ported theme.
@@ -133,6 +149,9 @@ pub async fn legacy_widget_preview(theme: &Theme, site: &Site, q: &QueryResult, 
     let env = Env::new(site, q, theme, registry);
     let mods = menu::theme_mod(site, &theme.stylesheet);
     let ctx = Ctx { theme, site, q, env, mods };
+    if is_twentyone(theme) {
+        return twentyone::legacy_widget_preview(&ctx, registry, id_base, instance).await;
+    }
     seventeen::legacy_widget_preview(&ctx, registry, id_base, instance).await
 }
 
@@ -152,14 +171,15 @@ pub async fn render_partials(theme: &Theme, site: &Site, q: &QueryResult, regist
         let mut rendered = Vec::new();
         let mut missing = false;
         for placement in placements {
-            match seventeen::render_partial(&ctx, id, placement).await? {
+            let partial = if is_twentyone(theme) { twentyone::render_partial(&ctx, id, placement).await? } else { seventeen::render_partial(&ctx, id, placement).await? };
+            match partial {
                 Some(value) => rendered.push(value),
                 None => missing = true,
             }
         }
         contents.insert(id.clone(), if missing { serde_json::Value::Null } else { serde_json::Value::Array(rendered) });
     }
-    let header = if partials.iter().any(|(id, _)| id == "custom_header") { Some(seventeen::header_video_export(&ctx).await?) } else { None };
+    let header = if !is_twentyone(theme) && partials.iter().any(|(id, _)| id == "custom_header") { Some(seventeen::header_video_export(&ctx).await?) } else { None };
     Ok((contents, header))
 }
 
@@ -167,5 +187,89 @@ pub async fn render_document(theme: &Theme, site: &Site, q: &QueryResult, regist
     let env = Env::new(site, q, theme, registry);
     let mods = menu::theme_mod(site, &theme.stylesheet);
     let ctx = Ctx { theme, site, q, env, mods };
+    if is_twentyone(theme) {
+        return twentyone::render(&ctx, registry, extras).await;
+    }
     seventeen::render(&ctx, registry, extras).await
+}
+
+/// What `WP_Theme_JSON_Resolver::get_theme_data()` makes of the theme supports of a ported classic theme without a
+/// `theme.json`: `WP_Theme_JSON::get_from_editor_settings( get_classic_theme_supports_block_editor_settings() )` and the
+/// defaults it adds for classic themes.
+pub fn theme_supports_json(template: &str, i18n: &rustpress_core::i18n::I18n) -> Option<serde_json::Value> {
+    use serde_json::json;
+    // Twenty Seventeen was compared without this layer; it adds no presets.
+    if template != "twentytwentyone" {
+        return None;
+    }
+    // `get_theme_support( 'disable-custom-colors' )` and the others are `false` when not supported, which `isset()`
+    // accepts: custom colors, gradients and font sizes stay on.
+    let mut settings = json!({
+        "color": { "custom": true, "customGradient": true },
+        "typography": { "customFontSize": true },
+    });
+    if template == "twentytwentyone" {
+        let t = |text: &str| rustpress_core::formatting::esc_html(&i18n.gettext(template, text));
+        // `twenty_twenty_one_setup()`.
+        let palette = [
+            ("Black", "black", "#000000"),
+            ("Dark gray", "dark-gray", "#28303D"),
+            ("Gray", "gray", "#39414D"),
+            ("Green", "green", "#D1E4DD"),
+            ("Blue", "blue", "#D1DFE4"),
+            ("Purple", "purple", "#D1D1E4"),
+            ("Red", "red", "#E4D1D1"),
+            ("Orange", "orange", "#E4DAD1"),
+            ("Yellow", "yellow", "#EEEADD"),
+            ("White", "white", "#FFFFFF"),
+        ];
+        let color = |slug: &str| palette.iter().find(|(_, s, _)| *s == slug).map_or("", |(_, _, c)| *c);
+        let gradients = [
+            ("Purple to yellow", "purple-to-yellow", "purple", "yellow"),
+            ("Yellow to purple", "yellow-to-purple", "yellow", "purple"),
+            ("Green to yellow", "green-to-yellow", "green", "yellow"),
+            ("Yellow to green", "yellow-to-green", "yellow", "green"),
+            ("Red to yellow", "red-to-yellow", "red", "yellow"),
+            ("Yellow to red", "yellow-to-red", "yellow", "red"),
+            ("Purple to red", "purple-to-red", "purple", "red"),
+            ("Red to purple", "red-to-purple", "red", "purple"),
+        ];
+        let sizes = [
+            ("Extra small", "XS", 16, "extra-small"),
+            ("Small", "S", 18, "small"),
+            ("Normal", "M", 20, "normal"),
+            ("Large", "L", 24, "large"),
+            ("Extra large", "XL", 40, "extra-large"),
+            ("Huge", "XXL", 96, "huge"),
+            ("Gigantic", "XXXL", 144, "gigantic"),
+        ];
+        settings["typography"]["lineHeight"] = json!(true);
+        settings["spacing"] = json!({ "units": ["px", "em", "rem", "vh", "vw", "%"], "padding": true });
+        settings["color"]["palette"] = palette.iter().map(|(name, slug, value)| json!({ "name": t(name), "slug": slug, "color": value })).collect();
+        settings["color"]["gradients"] = gradients
+            .iter()
+            .map(|(name, slug, from, to)| json!({ "name": t(name), "gradient": format!("linear-gradient(160deg, {} 0%, {} 100%)", color(from), color(to)), "slug": slug }))
+            .collect();
+        settings["typography"]["fontSizes"] = sizes
+            .iter()
+            .map(|(name, short, size, slug)| {
+                json!({ "name": t(name), "shortName": rustpress_core::formatting::esc_html(&i18n.pgettext(template, "Font size", short)), "size": format!("{size}px"), "slug": slug })
+            })
+            .collect();
+    }
+    let has = |settings: &serde_json::Value, section: &str, key: &str| settings[section].get(key).is_some();
+    let (palette, gradients, sizes) = (has(&settings, "color", "palette"), has(&settings, "color", "gradients"), has(&settings, "typography", "fontSizes"));
+    settings["color"]["defaultPalette"] = json!(!palette);
+    settings["color"]["defaultGradients"] = json!(!gradients);
+    settings["typography"]["defaultFontSizes"] = json!(!sizes);
+    if settings.get("spacing").is_none() {
+        settings["spacing"] = json!({});
+    }
+    settings["spacing"]["defaultSpacingSizes"] = json!(true);
+    settings["shadow"] = json!({ "defaultPresets": false });
+    // `add_theme_support( 'link-color' )`.
+    if template == "twentytwentyone" {
+        settings["color"]["link"] = json!(true);
+    }
+    Some(json!({ "version": 3, "settings": settings }))
 }

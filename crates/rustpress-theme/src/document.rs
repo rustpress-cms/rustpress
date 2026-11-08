@@ -162,6 +162,10 @@ pub async fn body_classes(theme: &Theme, site: &Site, q: &QueryResult) -> Result
             c.push("no-customize-support".into());
         }
     }
+    // `custom-background` for the ported themes that support it with a default color.
+    if crate::classic::is_twentyone(theme) && crate::classic::twentyone::has_custom_background(&crate::classic::menu::theme_mod(site, &theme.stylesheet)) {
+        c.push("custom-background".into());
+    }
     if rustpress_blocks::images::custom_logo_id(site).await? != 0 {
         c.push("wp-custom-logo".into());
     }
@@ -264,6 +268,8 @@ pub async fn document_title(site: &Site, q: &QueryResult) -> Result<String> {
     if site_name_last && !(f.is_front_page && parts.is_empty()) {
         parts.push(s.blogname.clone());
     }
+    // `array_filter()`: an empty part (a post without a title) is left out.
+    parts.retain(|part| !part.is_empty());
     let title = parts.join(" - ");
     let title = site.texturize(&title);
     Ok(capital_p_dangit(&title, true))

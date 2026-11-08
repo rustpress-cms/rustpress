@@ -56,7 +56,7 @@ const MISSING_BEHIND_THE_SCENES: &[(&str, &str)] = &[
 ];
 
 /// Classic themes with a Rust port (keep in step with `rustpress_theme::classic`).
-const PORTED_THEMES: &[&str] = &["twentyseventeen"];
+const PORTED_THEMES: &[&str] = &["twentyseventeen", "twentytwentyone"];
 
 /// Checks the theme, a child theme's parent and the active plugins of the site.
 pub async fn check(config: &Config) -> Result<Vec<Item>, String> {
@@ -191,6 +191,8 @@ mod tests {
         std::fs::create_dir_all(root.join("astra")).unwrap();
         assert_eq!(theme_item(&root, "block").support, Support::Yes);
         assert_eq!(theme_item(&root, "twentyseventeen").support, Support::Yes);
+        std::fs::create_dir_all(root.join("twentytwentyone")).unwrap();
+        assert_eq!(theme_item(&root, "twentytwentyone").support, Support::Yes);
         assert_eq!(theme_item(&root, "astra").support, Support::No);
         assert_eq!(theme_item(&root, "missing").support, Support::No);
         std::fs::remove_dir_all(&root).unwrap();
