@@ -1362,6 +1362,7 @@ async fn head(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State, registry: &Re
 
     let crate::head::PluginHead { head: plugin_head, blocks: early_blocks } = crate::head::plugin_head(theme, site, q, registry, true, None).await?;
     // The plugins' actions of priority 0 come first.
+    out.push_str(&plugin_head.early);
     out.push_str(&plugin_head.first);
     if !plugin_head.removed.contains(&"_wp_render_title_tag") {
         let title = match plugin_head.title {
@@ -1538,6 +1539,8 @@ async fn head(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State, registry: &Re
     }
 
     out.push_str(&discovery_links(site, q, &version, 0, !plugin_head.removed.contains(&"rel_canonical"), &crate::document::locale_stylesheet(theme, site)).await?);
+    // The plugins' actions of priority 10, before the theme's.
+    out.push_str(&plugin_head.late);
     // `twenty_twenty_one_pingback_header()`.
     if let (true, Queried::Post(post)) = (q.flags.is_singular(), &q.queried)
         && post.ping_status == "open"

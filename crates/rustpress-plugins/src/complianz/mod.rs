@@ -855,9 +855,9 @@ impl ActivePlugin for Active {
             }
             let mut head = Head { robots: None, ..Head::default() };
             // dynamic_gtm_enqueue(): the consent scripts of Google Tag Gateway, and the statistics in the head.
-            head.first.push_str(&self.stats().gtg_consent_script());
+            head.early.push_str(&self.stats().gtg_consent_script());
             if self.options.is("gtm_code_head", "yes") {
-                head.first.push_str(&self.stats().inline_cookie_script());
+                head.early.push_str(&self.stats().inline_cookie_script());
             }
             // cookiebanner_css().
             head.late.push_str("\t\t\t<style>.cmplz-hidden {\n\t\t\t\t\tdisplay: none !important;\n\t\t\t\t}</style>\n\t\t\t\t");
