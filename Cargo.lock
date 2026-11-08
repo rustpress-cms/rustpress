@@ -1785,11 +1785,14 @@ dependencies = [
 name = "rustpress-plugins"
 version = "0.2.0"
 dependencies = [
+ "base64 0.22.1",
  "chrono",
  "fancy-regex",
  "flate2",
  "futures",
+ "hmac",
  "md5",
+ "rand 0.9.5",
  "regex",
  "rustpress-admin",
  "rustpress-auth",

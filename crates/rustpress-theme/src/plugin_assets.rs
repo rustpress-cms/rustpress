@@ -78,6 +78,11 @@ impl<'s> StylePrinter<'s> {
         }
         self.printed.push(style.handle.clone());
         out.push_str(&format!("<link rel='stylesheet' id='{}-css' href='{}' media='{}' />\n", esc_attr(&style.handle), esc_url(&src(style)), esc_attr(&style.media)));
+        // `wp_add_inline_style()`.
+        if !style.after.is_empty() {
+            let handle = esc_attr(&style.handle);
+            out.push_str(&format!("<style id=\"{handle}-inline-css\">\n{}\n/*# sourceURL={handle}-inline-css */\n</style>\n", style.after.join("\n")));
+        }
         out
     }
 

@@ -93,6 +93,8 @@ pub struct AdminEnv<'a> {
     pub registry: &'a rustpress_blocks::Registry,
     /// Sends e-mail; without it every message fails (`wp_mail()` on a host that cannot send).
     pub mailer: Option<std::sync::Arc<dyn crate::login::Mail>>,
+    /// `wp_mail()` for the plugins, with the headers and attachments they send.
+    pub plugin_mailer: Option<std::sync::Arc<dyn rustpress_core::native::Mailer>>,
 }
 
 impl AdminEnv<'_> {
@@ -246,6 +248,9 @@ impl Ctx<'_> {
             screen_id: "",
             typenow: "",
             files: &parts.files,
+            mailer: self.env.plugin_mailer.as_deref(),
+            remote_addr: self.request.remote_addr.as_deref().unwrap_or_default(),
+            referer: self.request.referer.as_deref(),
         }
     }
 
@@ -379,6 +384,7 @@ pub async fn customize_preview_exports(env: &AdminEnv<'_>, original: &rustpress_
         theme: env.theme,
         registry: env.registry,
         mailer: env.mailer.clone(),
+        plugin_mailer: env.plugin_mailer.clone(),
     };
     let stored_ctx = Ctx { env: &stored, request, user: user.clone(), token: session.token.clone() };
     let ctx = Ctx { env, request, user, token: session.token.clone() };

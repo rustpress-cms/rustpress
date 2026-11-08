@@ -1,0 +1,17 @@
+{
+ "form_from": "email",
+ "form_settings": {
+  "antispam_v3": "0",
+  "antispam": "0"
+ },
+ "fields": {
+  "1": {
+   "filter_type": "denylist",
+   "denylist": "*@spam.com,bad*@example.com"
+  }
+ },
+ "wpforms_settings": {
+  "validation-email-restricted": "Nope: {value}"
+ },
+ "post": "action=wpforms_submit&wpforms[id]=9300&wpforms[fields][1]=badguy%40example.com&wpforms[fields][2][primary]=x%40example.com&wpforms[fields][2][secondary]=x%40example.com&page_url=http%3A%2F%2Flocalhost%3A8080%2Fcontact%2F%3Fa%3Db%26c%3D%25C3%25A4&page_title=Contact+%26+%3Cmore%3E&page_id=2&url_referer=http%3A%2F%2Flocalhost%3A8080%2Ffrom%2F"
+}

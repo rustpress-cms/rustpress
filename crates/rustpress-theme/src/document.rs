@@ -945,7 +945,9 @@ pub async fn render_document_with(theme: &Theme, site: &Site, query: &QueryResul
     let plugin_assets = site.plugins.assets_for(site, Some(query), Some(&state.plugins)).await;
     let printed: &[&str] = if toolbar_on { &["dashicons", "admin-bar"] } else { &[] };
     let mut style_printer = crate::plugin_assets::StylePrinter::new(wp_root, site).with_printed(printed);
-    let (early_styles, late_styles): (Vec<_>, Vec<_>) = plugin_assets.styles.iter().cloned().partition(|a| a.priority <= 10);
+    // Stylesheets enqueued in the footer are printed by `print_late_styles()` before the footer scripts.
+    let (footer_styles, head_styles): (Vec<_>, Vec<_>) = plugin_assets.styles.iter().cloned().partition(|a| a.in_footer);
+    let (early_styles, late_styles): (Vec<_>, Vec<_>) = head_styles.into_iter().partition(|a| a.priority <= 10);
     styles.push_str(&style_printer.links(&early_styles));
     // The theme's style.css is only printed when its functions.php enqueues it.
     let theme_css = theme.theme_style_handle().and_then(|handle| ["style.min.css", "style.css"].iter().find_map(|f| read(&theme.template_dir().join(f)).map(|c| (handle, *f, c))));
@@ -996,6 +998,7 @@ pub async fn render_document_with(theme: &Theme, site: &Site, query: &QueryResul
     let playlist_templates = if state.playlist || preview.is_some() { rustpress_blocks::shortcodes::playlist_templates(site) } else { String::new() };
     let nav_menus = preview.map(crate::customize_preview::nav_menus_exports).unwrap_or_default();
     let mut footer_scripts = format!("{playlist_templates}{nav_menus}{speculation}{}{plugin_footer}{}{module_scripts}{}{}{lightbox}", rustpress_blocks::duotone::footer_svgs(&state.duotone), plugin_head.footer, state.interactivity.data_script().unwrap_or_default(), plugin_head.footer_on_wp);
+    footer_scripts.push_str(&style_printer.links(&footer_styles));
     // MediaElement: jQuery in the head, the player scripts in the footer. The scripts plugins enqueue for the head
     // follow, after their dependencies.
     let mut printer = crate::plugin_assets::ScriptPrinter::new(&includes_url, "3.7.1", "3.4.1").with_packages(&theme.wp_root, site);

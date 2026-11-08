@@ -1,0 +1,14 @@
+{
+ "form_from": "contact",
+ "form_settings": {
+  "antispam_v3": "0",
+  "antispam": "0",
+  "confirmations": {
+   "1": {
+    "type": "page",
+    "page": "previous_page"
+   }
+  }
+ },
+ "post": "action=wpforms_submit&wpforms[id]=9300&wpforms[fields][1][first]=Ada&wpforms[fields][1][last]=L&wpforms[fields][2]=ada%40example.com&page_url=http%3A%2F%2Flocalhost%3A8080%2F&url_referer=https%3A%2F%2Fevil.example%2F"
+}
