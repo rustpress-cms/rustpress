@@ -116,6 +116,24 @@ async fn writes_are_rejected() {
     assert_eq!(response.headers()[header::ALLOW], "GET, HEAD");
 }
 
+/// `admin-ajax.php` of a read-only site answers the plugins' actions for visitors; anything else is `wp_die( '0', 400 )`
+/// as in WordPress.
+#[tokio::test]
+async fn read_only_admin_ajax_answers_like_wordpress() {
+    let Some(app) = app().await else { return };
+    let request = Request::builder()
+        .method(Method::POST)
+        .uri("/wp-admin/admin-ajax.php")
+        .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+        .body(Body::from("action=rustpress_nothing"))
+        .unwrap();
+    let response = app.router().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(response.headers()[header::CONTENT_TYPE], "text/html; charset=UTF-8");
+    assert_eq!(response.headers()["x-robots-tag"], "noindex");
+    assert_eq!(response.into_body().collect().await.unwrap().to_bytes().as_ref(), b"0");
+}
+
 #[tokio::test]
 async fn canonical_redirects_are_relative_301s() {
     let Some(app) = app().await else { return };

@@ -12,7 +12,7 @@ pub mod files;
 pub mod formatting;
 pub mod health;
 pub mod hierarchy;
-mod html_entities;
+pub mod html_entities;
 pub mod kses;
 mod kses_post_table;
 pub mod safe_css;

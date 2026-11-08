@@ -77,6 +77,8 @@ The reference stack, the tools and the working rules are in [AGENTS.md](AGENTS.m
   - Complianz – GDPR/CCPA Cookie Consent 7.5.6 – stage 1, the website: banner, statistics, cookie blocker, REST,
     the consent shortcodes. Stage 2, the legal documents, is open (see below).
   - Site Kit by Google 1.191.0 – the tags on the website (Analytics with consent mode, site verification), not the dashboard.
+  - WPForms Lite 2.0.4 – forms on the website (shortcode, block), submitting with validation, confirmations and the
+    notification e-mails, also on read-only sites; not the administration (forms are made in WordPress).
 - **Following WordPress** – `WORDPRESS_VERSION` is the target; a daily workflow opens an issue per release with the
   report of `dev/wp-diff.sh`; `dev/wp-bump.sh` moves the reference. 7.1.4 was followed (issue #9).
 - **Review** – the security and robustness findings of the review of 2026-10-26 (A1, A2) are fixed except S12; the
@@ -154,6 +156,8 @@ The reference stack, the tools and the working rules are in [AGENTS.md](AGENTS.m
   groups from local JSON or PHP.
 - Site Kit: the dashboard, the setup with Google and its REST answers; the tags of Tag Manager, AdSense, Ads, Reader
   Revenue Manager and Sign in with Google; the Google tag gateway, conversion tracking and custom dimensions.
+- WPForms Lite: the form builder and the rest of the administration; CAPTCHAs (reCAPTCHA, hCaptcha, Turnstile),
+  Akismet, the legacy e-mail template, theme overrides of the e-mail templates, sending without JavaScript (see below).
 - Next: Polylang (needs the language per request). Following plugin releases (`PLUGIN_VERSIONS` and the diff report).
 
 **Review and tests**
@@ -1230,3 +1234,47 @@ say `module`, the module is not printed), the Do Not Track signal in `manage_con
 the browser's header there), computing the cookie shredder list, overrides of the banner templates in a theme, the
 `is_ssl()` normalization of the plugin URLs, and the administration (wizard, scan, banner editor): settings are made in
 WordPress.
+
+### WPForms Lite 2.0.4 (2026-11-08)
+
+`crates/rustpress-plugins/src/wpforms/`: the forms of the website and what happens when they are sent, from the forms
+and settings made in WordPress.
+
+- **Forms** (`render.rs`, `fields.rs`, `css_vars.rs`): the shortcode `[wpforms]` and the block `wpforms/form-selector`
+  as `WPForms_Frontend::output()` prints them, with the modern and the classic markup, the fields Name, E-mail
+  (with confirmation), Single Line Text, Paragraph, Dropdown (also modern), Multiple Choice and Checkboxes (also image
+  and icon choices), Numbers, Number Slider and GDPR Agreement, the honeypot and AntiSpam v3 (`token.rs`), the block's
+  style variables, the assets and `wpforms_settings`. Goldens: `dev/wpforms-form-golden.sh` (`tests/data/wpforms-forms`).
+- **Submitting** (`submit.rs`, `ajax.rs`): `admin-ajax.php` with `wpforms_submit` like `WPForms_Process::ajax_submit()`,
+  `process()` and the fields' `validate()`/`format()` (required fields, lengths in characters or words, e-mail with
+  `is_email()`, IDN, allow and deny lists, numbers and ranges, choices, the honeypot, the AntiSpam token and its time,
+  the nonce of signed-in users, `ajax_submit` with a corrupted action), the errors as `wpforms_submit` sends them (the
+  field HTML with the error), the confirmations (message with smart tags and `wpautop`, page, redirect with
+  `page_url_parameters`), the answer for `wpforms_get_token` and `wpforms_restricted_email`. With write access the
+  counters of a saved entry: `wpforms_entries_count` of the form, `wpforms_entries_count_daily`, the cache generation
+  and the dashboard transients it deletes (WPForms Lite stores no entries).
+- **Smart tags** (`smart_tags.rs`): the tags of the plugin's list except the ones named below, `{all_fields}` with
+  `exclude`, `{field_id}`, `{field_html_id}`, `{field_value_id}`, the page, user, author and date tags, `{url_referer}`,
+  `{query_var}`.
+- **Notifications** (`notify.rs`, `template.rs`, `inline.rs`, `dom.rs`, `punycode.rs`): `WPForms_Process::entry_email()`
+  and `Notifications::send()` with the recipients' smart tags, `carboncopy`, the From and Reply-To headers as the
+  `wp_mail_from`/`wp_mail_from_name` filters leave them, conditional sending, `recipients_can`, the templates Classic,
+  Compact and Plain text (legacy `default` falls back to Classic) read at runtime from the plugin's
+  `templates/emails/*.php` by a small interpreter for what these files use, the header image, the colors of the
+  settings with `generate_contrasting_color()`, the CSS made inline like `Styler` (Emogrifier for the selectors these
+  styles use) and `make_clickable()`. Goldens: `dev/wpforms-submit-golden.sh` has the plugin process 47 submissions
+  and catches `wp_mail()` (`tests/data/wpforms-submit`: answers and whole e-mails equal).
+- **Read-only sites:** `admin-ajax.php` answers the plugins' visitor actions (`wp_ajax_nopriv_*`) without write
+  access, so forms can be sent on a site without `allow_writes` (CGI). The counters are not written there; everything
+  else of `admin-ajax.php` answers `0` with 400, also `heartbeat` and `generate-password` for visitors.
+
+Compared live with `dev/wpforms-compare.py` (with and without `--read-only`): 17 form pages as a visitor and as
+rpadmin, 11 submissions (valid and invalid, every field type), their 7 e-mails, the counters per submission, and five
+answers of `wpforms_get_token`/`wpforms_restricted_email` – equal. The headers of `admin-ajax.php` come in another
+order than in PHP, as everywhere in the administration.
+
+Not ported: CAPTCHAs (reCAPTCHA, hCaptcha, Turnstile) and Akismet, payments and Pro fields, dynamic choices, the
+legacy e-mail template, e-mail templates overridden in the theme, sending without JavaScript (a POST to the page),
+`email_async` (mails are sent during the request), proxy headers for the IP (`REMOTE_ADDR` only), smart tags in
+markup attributes, `{url_logout}`, `{user_meta}`, payment tags, the plugin's logs, LiteConnect and the usage
+statistics, and the administration (builder, settings, tools).

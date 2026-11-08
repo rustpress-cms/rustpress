@@ -216,9 +216,12 @@ pub fn render<'a>(bc: &'a BlockCtx<'a>) -> BoxFuture<'a, Result<String>> {
             "core/tab-list" => tabs::tab_list(bc),
             "core/tab-panel" => tabs::tab_panel(bc),
             name if bc.env.site.plugins.renders_block(name) => {
-                let rest = bc.env.with_state(|s| s.outside_loop);
-                let ctx = rustpress_core::native::BlockContext { site: bc.env.site, query: bc.env.query, services: bc.env, post: bc.available.post.as_deref(), rest };
-                Ok(bc.env.site.plugins.render_block(name, &bc.raw_attrs, &ctx).await?)
+                let (plugins, rest) = bc.env.with_state(|s| (std::mem::take(&mut s.plugins), s.outside_loop));
+                let state = std::sync::Mutex::new(plugins);
+                let ctx = rustpress_core::native::BlockContext { site: bc.env.site, query: bc.env.query, services: bc.env, post: bc.available.post.as_deref(), rest, state: &state };
+                let output = bc.env.site.plugins.render_block(name, &bc.raw_attrs, &ctx).await;
+                bc.env.with_state(|s| s.plugins = state.into_inner().unwrap_or_default());
+                Ok(output?)
             }
             _ => Ok(bc.content.clone()),
         }

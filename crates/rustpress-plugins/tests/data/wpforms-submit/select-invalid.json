@@ -1,0 +1,214 @@
+{
+    "form_from": "select",
+    "form_settings": {
+        "antispam_v3": "0",
+        "antispam": "0"
+    },
+    "post": "action=wpforms_submit&wpforms[id]=9300&wpforms[fields][1]=Nope&wpforms[fields][2]=zz&page_url=http%3A%2F%2Flocalhost%3A8080%2Fcontact%2F%3Fa%3Db%26c%3D%25C3%25A4&page_title=Contact+%26+%3Cmore%3E&page_id=2&url_referer=http%3A%2F%2Flocalhost%3A8080%2Ffrom%2F",
+    "form_data": {
+        "field_id": 6,
+        "settings": {
+            "form_title": "Golden Form",
+            "form_desc": "",
+            "submit_text": "Submit",
+            "submit_text_processing": "Sending...",
+            "antispam_v3": "0",
+            "ajax_submit": "1",
+            "notification_enable": "1",
+            "notifications": {
+                "1": {
+                    "email": "{admin_email}",
+                    "replyto": "{field_id=\"2\"}",
+                    "message": "{all_fields}"
+                }
+            },
+            "confirmations": {
+                "1": {
+                    "type": "message",
+                    "message": "Thanks for contacting us! We will be in touch with you shortly.",
+                    "message_scroll": "1"
+                }
+            },
+            "antispam": "0"
+        },
+        "fields": {
+            "1": {
+                "id": "1",
+                "type": "select",
+                "label": "Pick",
+                "size": "medium",
+                "required": "1",
+                "choices": {
+                    "1": {
+                        "label": "First Choice",
+                        "value": ""
+                    },
+                    "2": {
+                        "label": "Second & <b>bold</b>",
+                        "value": ""
+                    },
+                    "3": {
+                        "label": "Third Choice",
+                        "value": ""
+                    }
+                },
+                "style": "classic"
+            },
+            "2": {
+                "id": "2",
+                "type": "select",
+                "label": "Placeholder",
+                "placeholder": "Choose one",
+                "choices": {
+                    "1": {
+                        "label": "A",
+                        "value": "a"
+                    },
+                    "2": {
+                        "label": "B",
+                        "value": "b",
+                        "default": "1"
+                    }
+                },
+                "show_values": "1",
+                "size": "small"
+            },
+            "3": {
+                "id": "3",
+                "type": "select",
+                "label": "Multi",
+                "multiple": "1",
+                "placeholder": "Many",
+                "choices": {
+                    "1": {
+                        "label": "A"
+                    },
+                    "2": {
+                        "label": ""
+                    }
+                }
+            },
+            "4": {
+                "id": "4",
+                "type": "select",
+                "label": "Modern",
+                "style": "modern",
+                "size": "large",
+                "choices": {
+                    "1": {
+                        "label": "One"
+                    },
+                    "2": {
+                        "label": "Two",
+                        "default": "1"
+                    }
+                }
+            },
+            "5": {
+                "id": "5",
+                "type": "select",
+                "label": "Modern multi",
+                "style": "modern",
+                "multiple": "1",
+                "placeholder": "Search",
+                "choices": {
+                    "1": {
+                        "label": "Item 1"
+                    },
+                    "2": {
+                        "label": "Item 2"
+                    },
+                    "3": {
+                        "label": "Item 3"
+                    },
+                    "4": {
+                        "label": "Item 4"
+                    },
+                    "5": {
+                        "label": "Item 5"
+                    },
+                    "6": {
+                        "label": "Item 6"
+                    },
+                    "7": {
+                        "label": "Item 7"
+                    },
+                    "8": {
+                        "label": "Item 8"
+                    },
+                    "9": {
+                        "label": "Item 9"
+                    },
+                    "10": {
+                        "label": "Item 10"
+                    },
+                    "11": {
+                        "label": "Item 11"
+                    },
+                    "12": {
+                        "label": "Item 12"
+                    },
+                    "13": {
+                        "label": "Item 13"
+                    },
+                    "14": {
+                        "label": "Item 14"
+                    },
+                    "15": {
+                        "label": "Item 15"
+                    },
+                    "16": {
+                        "label": "Item 16"
+                    },
+                    "17": {
+                        "label": "Item 17"
+                    },
+                    "18": {
+                        "label": "Item 18"
+                    },
+                    "19": {
+                        "label": "Item 19"
+                    },
+                    "20": {
+                        "label": "Item 20"
+                    },
+                    "21": {
+                        "label": "Item 21"
+                    }
+                }
+            }
+        },
+        "id": "9300"
+    },
+    "now": 1794172726,
+    "secret": "t8gWedj08loeI4fRQszTD1i9ML4AijKkMCYzXAUM9eo=",
+    "settings": {
+        "modern-markup": "1",
+        "modern-markup-is-set": true,
+        "modern-markup-hide-setting": true
+    },
+    "query": "action=wpforms_submit&wpforms[id]=9300&wpforms[fields][1]=Nope&wpforms[fields][2]=zz&page_url=http%3A%2F%2Flocalhost%3A8080%2Fcontact%2F%3Fa%3Db%26c%3D%25C3%25A4&page_title=Contact+%26+%3Cmore%3E&page_id=2&url_referer=http%3A%2F%2Flocalhost%3A8080%2Ffrom%2F",
+    "nonce": "c517aae026",
+    "user_data": null,
+    "can_manage": false,
+    "super_admin": false,
+    "site": {
+        "admin_email": "admin@example.com",
+        "blogname": "RustPress Test",
+        "home": "http://localhost:8080",
+        "login": "http://localhost:8080/wp-login.php",
+        "date_format": "F j, Y",
+        "gmt_offset": 0,
+        "language": "lang=\"en-US\""
+    },
+    "permalinks": {},
+    "page_author": [
+        1,
+        "admin"
+    ],
+    "manager_emails": [
+        "admin@example.com"
+    ],
+    "response": "{\"success\":false,\"data\":{\"errors\":{\"general\":{\"header\":\"<div id=\\\"wpforms-9300-header-error\\\" class=\\\"wpforms-error-container\\\" role=\\\"alert\\\">\\n\\t\\t\\t\\t\\t\\t<span class=\\\"wpforms-hidden\\\" aria-hidden=\\\"false\\\">Form error message<\\/span><p>Form has not been submitted, please see the errors below.<\\/p>\\n\\n\\t\\t\\t\\t\\t<\\/div>\"},\"field\":{\"wpforms[fields][1]\":\"The selected option is invalid.\",\"wpforms[fields][2]\":\"The selected option is invalid.\"}}}}",
+    "mails": []
+}
