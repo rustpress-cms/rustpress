@@ -74,6 +74,8 @@ The reference stack, the tools and the working rules are in [AGENTS.md](AGENTS.m
     screen and in the comment form with saving, the lists, the editors of field groups, post types and taxonomies with
     their Ajax, the tools (export as JSON and PHP, import), the options pages preview.
   - Classic Editor 1.7.0 – complete except the frontend toolbar link (see below).
+  - Complianz – GDPR/CCPA Cookie Consent 7.5.6 – stage 1, the website: banner, statistics, cookie blocker, REST,
+    the consent shortcodes. Stage 2, the legal documents, is open (see below).
   - Site Kit by Google 1.191.0 – the tags on the website (Analytics with consent mode, site verification), not the dashboard.
   - WPCode Lite 2.4.1 – the global header, body and footer scripts and the site-wide snippets with their conditions, not PHP.
 - **Following WordPress** – `WORDPRESS_VERSION` is the target; a daily workflow opens an issue per release with the
@@ -135,6 +137,13 @@ The reference stack, the tools and the working rules are in [AGENTS.md](AGENTS.m
 - The dashboard and the block editor are still slower than the reference.
 
 **Native plugins**
+- Complianz, stage 2 – the legal documents: the shortcode `[cmplz-document]` and the block `complianz/document`
+  (`cmplz_document::get_document_html()` with the document elements of `config/documents/*.php`, the conditions on the
+  wizard's answers, the cookie list of `cmplz_cookies`/`cmplz_services` per service and purpose), the cookie policy with
+  `[cmplz-cookies]`, the consent area (`[cmplz-consent-area]`, the block `complianz/consent-area` and the REST route
+  `consent-area/<post>/<block>`), the REST route `documents`, the document CSS for a page that holds a document (the
+  body class and the stylesheet are already there), the do-not-sell page of the US region, and the snapshots of the
+  documents. After that, maybe: A/B tests and records of consent (Premium only), the integrations with other plugins.
 - Contact Form 7: the configuration check (`WPCF7_ConfigValidator`), setting up the services, `action=validate`, the
   REST routes to read, create, change and delete forms, the block `contact-form-7/contact-form-selector`.
 - Yoast SEO: FAQ/HowTo blocks in the schema, the admin bar, signed-in viewers, the administration.
@@ -1196,3 +1205,64 @@ administrators also miss the toolbar menu "WPCode", its style and script and the
 (`WPCode_Admin_Bar_Info`). Not ported: PHP and universal snippets with PHP (no PHP runs), the locations before and
 after the content, paragraphs, excerpts and posts, the PHP-only locations (`everywhere`, `frontend_only`,
 `frontend_cl`), safe mode, the preview of the snippet editor, the administration and the snippet library.
+
+### Complianz – GDPR/CCPA Cookie Consent 7.5.6, stage 1 (2026-11-08)
+
+The module `complianz` follows 7.5.6 (`complianz-gdpr/complianz-gpdr.php`) for the website; the settings are made in a
+WordPress installation, the module reads `cmplz_options`, the banners of `{prefix}cmplz_cookiebanners` and the plugin's
+own transients (`cmplz_transients`, read only; RustPress never writes them).
+
+- **Framework:** `wp_footer` and `wp_print_footer_scripts` with the query (`ActivePlugin::wp_footer_query`,
+  `print_footer_scripts`), `body_class`, the whole page before it is sent (`template_output`, the output buffer of
+  `template_redirect`), `wp_head` at priority 0 from an action added when the plugin loads (`Head::early`: before the
+  theme's actions of priority 0 and, in block themes, before `_block_template_viewport_meta_tag()`) and at priority 10
+  (`Head::late`, shared with Site Kit), the `defer` strategy (`Asset::defer_attr`), `enqueue_query` is asynchronous (a plugin can
+  read the database for its localized settings), and `NativePlugin::load_at` knows the WordPress directory (plugin
+  assets, `filemtime()` versions, templates). Core: inline scripts lose their leading line breaks
+  (`WP_Scripts::get_inline_script_data()`).
+- **Banner** (`cmplz_banner_loader`): `site_needs_cookie_warning()` with `site_shares_data()`, the statistics rules
+  (`statistics_privacy_friendly()`, `cookie_warning_required_stats()`, the `array_search()` quirk of
+  `consent_required_for_anonymous_stats()`), the excluded pages, the page builder previews; the banner and the manage
+  consent button for each used consent type from the templates (rendered once with the reference, translated strings
+  put back), `get_html_settings()` with `nl2br()`, the default banner (the transient, the default row, the first
+  row); the settings `complianz` of `complianz.min.js` in the order of the plugin (regions, consent types with
+  `maybe_filter_consenttype()`, cookie path and domain, `page_links` with the quirk that a document without a page
+  links to the current post, placeholder texts, `css_file`), the banner CSS from `uploads/complianz/css` with one
+  consent type, `cmplz-general` and the document styles, the `.cmplz-hidden` style.
+- **Statistics:** Google Analytics (gtag, consent mode), Tag Manager (also in the head with `gtm_code_head`), Matomo
+  (also anonymized, the tag manager), Clicky, Yandex, Clarity, the Google Tag Gateway consent scripts, Amazon's consent
+  signal, the scripts of the Script Center; the category of each, and the variant without a cookie warning. A theme's
+  `complianz-gdpr/` overrides of the statistics templates are used.
+- **Services:** the integrations of `config/integrations.php` that the settings load (third party services, social
+  media, statistics), their known scripts, styles, iframes and images with the placeholders, the dependencies, the
+  inline scripts (Twitter, Microsoft Ads, HubSpot) and footer styles (HubSpot, Snapchat).
+- **Cookie blocker** (`cmplz_cookie_blocker::replace_tags()`): images, styles, iframes (with `data-src`), video tags,
+  the placeholder markers of the services, scripts (inline and with a source, `type="module"`, the whitelist,
+  `post_scribe`, the dependencies), `data-cmplz` on `<body>`; only where `cmplz_can_run_cookie_blocker()` allows it.
+  The regex ported with PCRE's byte semantics where the plugin has no `/u`. Placeholder images: the default per style
+  and ratio, a theme override, the cached transients of YouTube, Vimeo, Dailymotion and static maps (RustPress does not
+  download thumbnails; without a transient it takes the default image).
+- **REST:** the routes of `complianz/v1` in the index; `banner`, `track`, `manage_consent_html` and `cookie_data` (the
+  list of the cookie shredder with consent per service).
+- **Shortcodes:** `[cmplz-manage-consent]`, `[cmplz-revoke-link]`, `[cmplz-accept-link]`; pages with a Complianz
+  document get the body class `cmplz-document`.
+
+Goldens: `dev/complianz-blocker-golden.sh` has the plugin block 22 snippets in two scenarios
+(`tests/data/complianz/blocker-*.json`, all equal). Compared byte for byte with the plugin active on Twenty Twenty-Five
+in five settings scenarios (EU with Analytics and services, US with consent per service, Tag Manager in the head, UK
+without a warning, Canada/Québec with Matomo and HubSpot), also with the parameter `cmplz_user_region`: the front page,
+a page with embeds of every service, a post, a search, a feed, a page with the shortcodes and the REST routes, all
+equal; `rustpress-compat` with the plugin active (see below). Twenty Seventeen and Twenty Twenty-One (merged in parallel)
+print the hooks the same way (`Head::early` first in `wp_head()`, the query's assets, `wp_print_footer_scripts`), but neither was
+compared with the plugin active: the reference had no Twenty Seventeen installed at the time.
+
+**Not ported (stage 1):** the legal documents and the consent area (stage 2, see Open), A/B testing, TCF and geo IP
+(Premium), WPML/Polylang translations of the banner texts (the strings come from the language pack), downloading
+placeholder thumbnails and writing any transient, regenerating the banner CSS (the files the plugin generated are
+used), the integrations with other plugins (page builders, forms, maps plugins, WooCommerce and so on, except the
+Contact Form 7 check of the blocked scripts) and the comment cookie integration, the site logo and a custom logo in the
+banner (only the Complianz logo), the script module router `cmplz-router` (`enable_iapi_navigation`; the settings
+say `module`, the module is not printed), the Do Not Track signal in `manage_consent_html` (RustPress does not look at
+the browser's header there), computing the cookie shredder list, overrides of the banner templates in a theme, the
+`is_ssl()` normalization of the plugin URLs, and the administration (wizard, scan, banner editor): settings are made in
+WordPress.

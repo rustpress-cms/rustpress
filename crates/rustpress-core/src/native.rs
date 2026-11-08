@@ -21,6 +21,11 @@ pub trait NativePlugin: Send + Sync {
     fn version(&self) -> &'static str;
     /// `plugins_loaded`/`init`: what the plugin reads from the database, once per snapshot of the site.
     fn load<'a>(&'a self, site: &'a Site) -> BoxFuture<'a, Result<Box<dyn ActivePlugin>>>;
+
+    /// [NativePlugin::load] for a module that also reads files of the installation under `wp_root` (`ABSPATH`).
+    fn load_at<'a>(&'a self, site: &'a Site, _wp_root: &'a std::path::Path) -> BoxFuture<'a, Result<Box<dyn ActivePlugin>>> {
+        self.load(site)
+    }
     /// The text domain WordPress loads just in time from `wp-content/languages/plugins/<domain>-<locale>.mo`.
     fn text_domain(&self) -> Option<&'static str> {
         None
@@ -67,6 +72,35 @@ pub trait ActivePlugin: Send + Sync {
     /// posts `the_post` ran for, in order.
     fn wp_footer<'a>(&'a self, _site: &'a Site, _looped: &'a [u64]) -> BoxFuture<'a, Result<String>> {
         Box::pin(async { Ok(String::new()) })
+    }
+
+    /// `wp_footer` at the default priority, for plugins that look at the main query (`global $post`), after
+    /// [ActivePlugin::wp_footer].
+    fn wp_footer_query<'a>(&'a self, _site: &'a Site, _query: &'a crate::QueryResult) -> BoxFuture<'a, Result<String>> {
+        Box::pin(async { Ok(String::new()) })
+    }
+
+    /// `wp_enqueue_scripts` for plugins that look at the main query (`is_singular()`, `is_preview()`), after
+    /// [ActivePlugin::enqueue].
+    fn enqueue_query<'a>(&'a self, _site: &'a Site, _query: &'a crate::QueryResult, _assets: &'a mut Assets) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async { Ok(()) })
+    }
+
+    /// `wp_print_footer_scripts` after `_wp_footer_scripts()` (and after the scripts of
+    /// [PluginState::footer_scripts]): the last thing before `</body>`.
+    fn print_footer_scripts(&self, _site: &Site, _query: &crate::QueryResult) -> String {
+        String::new()
+    }
+
+    /// The `body_class` filter of the website: classes the plugin appends (before the theme's own filter).
+    fn body_class<'a>(&'a self, _site: &'a Site, _query: &'a crate::QueryResult) -> BoxFuture<'a, Result<Vec<String>>> {
+        Box::pin(async { Ok(Vec::new()) })
+    }
+
+    /// An output buffer the plugin starts on `template_redirect` (`ob_start( $callback )`) and flushes on
+    /// `shutdown`: the whole HTML of a page of the website, as the theme printed it.
+    fn template_output(&self, _site: &Site, _query: &crate::QueryResult, html: String) -> String {
+        html
     }
 
     /// `login_head` at the default priority: what the plugin prints in the head of `wp-login.php`.
@@ -951,6 +985,9 @@ pub struct Head {
     pub title: Option<String>,
     /// Printed on `wp_head` at priority 1, right after the robots tag.
     pub html: String,
+    /// Printed on `wp_head` at priority 0 by an action the plugin adds when it loads: before the theme's actions of
+    /// priority 0 (in a block theme, like [Head::first], before `_block_template_viewport_meta_tag()`).
+    pub early: String,
     /// Printed on `wp_head` at priority 0 by an action the plugin hooks on `init`: before the robots tag, after the
     /// theme's actions of priority 0.
     pub first: String,
@@ -1478,6 +1515,9 @@ pub struct Asset {
     pub tag_prefix: String,
     /// Scripts: the text domain of `wp_set_script_translations()`.
     pub translations: Option<String>,
+    /// Scripts: a `script_loader_tag` filter that puts `defer` in front of the tags of the handle
+    /// (`preg_replace( '/^<script /', '<script defer ', $tag )`).
+    pub defer_attr: bool,
 }
 
 /// What the plugins enqueue on a page, in the order they enqueue it.
@@ -1589,11 +1629,11 @@ pub struct Plugins {
 
 impl Plugins {
     /// Loads the modules of `active` (plugin files). A module that fails to load is left out.
-    pub async fn load(site: &Site, active: &[String]) -> Self {
+    pub async fn load(site: &Site, active: &[String], wp_root: &std::path::Path) -> Self {
         let mut loaded = Vec::new();
         for file in active {
             let Some(plugin) = registered().iter().find(|p| p.file() == file) else { continue };
-            match plugin.load(site).await {
+            match plugin.load_at(site, wp_root).await {
                 Ok(instance) => loaded.push((*plugin, instance)),
                 Err(e) => tracing::error!(plugin = file.as_str(), error = %e, "native plugin failed to load"),
             }
@@ -1625,6 +1665,24 @@ impl Plugins {
         for plugin in self.hooks() {
             plugin.enqueue(site, &mut assets);
         }
+        Self::finish_assets(assets, state)
+    }
+
+    /// What the plugins enqueue on a page of the website with its main query.
+    pub async fn assets_for(&self, site: &Site, query: Option<&crate::QueryResult>, state: Option<&PluginState>) -> Assets {
+        let mut assets = Assets::default();
+        for plugin in self.hooks() {
+            plugin.enqueue(site, &mut assets);
+            if let Some(query) = query
+                && let Err(e) = plugin.enqueue_query(site, query, &mut assets).await {
+                    tracing::error!(error = %e, "native plugin enqueue failed");
+                }
+        }
+        Self::finish_assets(assets, state)
+    }
+
+    /// Adds what the plugins enqueued while the page was rendered and sorts by the priority of the callbacks.
+    fn finish_assets(mut assets: Assets, state: Option<&PluginState>) -> Assets {
         if let Some(state) = state {
             assets.styles.extend(state.assets.styles.iter().cloned());
             assets.scripts.extend(state.assets.scripts.iter().cloned());
@@ -2405,12 +2463,35 @@ impl Plugins {
     }
 
     /// What the plugins print in `wp_footer`.
-    pub async fn wp_footer(&self, site: &Site, looped: &[u64]) -> Result<String> {
+    pub async fn wp_footer(&self, site: &Site, query: &crate::QueryResult, looped: &[u64]) -> Result<String> {
         let mut out = String::new();
         for plugin in self.hooks() {
             out.push_str(&plugin.wp_footer(site, looped).await?);
+            out.push_str(&plugin.wp_footer_query(site, query).await?);
         }
         Ok(out)
+    }
+
+    /// What the plugins print on `wp_print_footer_scripts` after the scripts of the footer.
+    pub fn print_footer_scripts(&self, site: &Site, query: &crate::QueryResult) -> String {
+        self.hooks().map(|plugin| plugin.print_footer_scripts(site, query)).collect()
+    }
+
+    /// The classes the plugins add on `body_class`.
+    pub async fn body_class(&self, site: &Site, query: &crate::QueryResult) -> Result<Vec<String>> {
+        let mut out = Vec::new();
+        for plugin in self.hooks() {
+            out.extend(plugin.body_class(site, query).await?);
+        }
+        Ok(out)
+    }
+
+    /// The page after the plugins' output buffers of the website.
+    pub fn template_output(&self, site: &Site, query: &crate::QueryResult, mut html: String) -> String {
+        for plugin in self.hooks() {
+            html = plugin.template_output(site, query, html);
+        }
+        html
     }
 
     /// What the plugins print on `login_head` at the default priority.
@@ -2441,6 +2522,7 @@ impl Plugins {
             head.html.push_str(&changed.html);
             head.first.push_str(&changed.first);
             head.late.push_str(&changed.late);
+            head.early.push_str(&changed.early);
             head.late_init.push_str(&changed.late_init);
             head.on_wp.push_str(&changed.on_wp);
             head.body_open.push_str(&changed.body_open);

@@ -625,7 +625,8 @@ async fn page(app: &App, uri: &axum::http::Uri, request_headers: &axum::http::He
         rustpress_theme::render_document_with(&loaded.theme, site, &result, &loaded.registry, &extras).await
     })
     .await?;
-    let mut html = document.html;
+    // The plugins' output buffers of `template_redirect`, flushed on `shutdown`.
+    let mut html = site.plugins.template_output(site, &result, document.html);
     if let Some(preview) = &preview {
         let exports = crate::admin::customize_preview_exports(&loaded, site, &app.config, app.writer.as_ref(), request_headers, client, &result, preview).await;
         html = html.replacen(rustpress_theme::customize_preview::FOOTER_EXPORTS, &exports, 1);

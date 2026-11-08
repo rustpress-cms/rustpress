@@ -3,6 +3,7 @@
 
 pub mod acf;
 pub mod classic_editor;
+pub mod complianz;
 pub mod contact_form_7;
 pub mod redirection;
 pub mod site_kit;
@@ -13,5 +14,5 @@ pub mod wpcode;
 
 /// Makes every module known to [`rustpress_core::native`]; call once at startup.
 pub fn register() {
-    rustpress_core::native::register(vec![&acf::Acf, &classic_editor::ClassicEditor, &contact_form_7::ContactForm7, &redirection::Redirection, &site_kit::SiteKit, &svg_support::SvgSupport, &wordpress_seo::WordpressSeo, &wp_date_remover::WpDateRemover, &wpcode::Wpcode]);
+    rustpress_core::native::register(vec![&acf::Acf, &classic_editor::ClassicEditor, &complianz::Complianz, &contact_form_7::ContactForm7, &redirection::Redirection, &site_kit::SiteKit, &svg_support::SvgSupport, &wordpress_seo::WordpressSeo, &wp_date_remover::WpDateRemover, &wpcode::Wpcode]);
 }

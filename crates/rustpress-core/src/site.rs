@@ -59,7 +59,7 @@ impl Site {
             site.types.infer_query_vars(&site.rewrite, &registrations);
             site.types.apply(&registrations, plain);
         }
-        site.plugins = crate::native::Plugins::load(&site, &plugins).await;
+        site.plugins = crate::native::Plugins::load(&site, &plugins, wp_root).await;
         Ok(site)
     }
 
