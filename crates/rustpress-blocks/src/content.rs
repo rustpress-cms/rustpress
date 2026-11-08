@@ -33,7 +33,12 @@ pub fn the_title(post: &Post) -> String {
 
 /// [`the_title`] with the "Protected: %s" / "Private: %s" formats translated for the site.
 pub fn the_title_for(site: &rustpress_core::Site, post: &Post) -> String {
-    title_with_prefixes(post, &site.tr("Protected: %s"), &site.tr("Private: %s"), |text| site.texturize(text))
+    let title = title_with_prefixes(post, &site.tr("Protected: %s"), &site.tr("Private: %s"), |text| site.texturize(text));
+    // `twenty_twenty_one_post_title()` on `the_title` (outside of the administration).
+    if title.is_empty() && site.options.get("template") == Some("twentytwentyone") {
+        return rustpress_core::formatting::esc_html(&site.i18n().pgettext("twentytwentyone", "Added on the front end to posts and pages that are missing titles", "Untitled"));
+    }
+    title
 }
 
 /// `get_the_title()` under `is_admin()`: the filters run, but no "Protected: " / "Private: " prefix.
@@ -222,7 +227,11 @@ fn content_with_permalink(env: &Env<'_>, post: &Post, page: u64, singular: bool,
             } else {
                 rustpress_core::formatting::strip_tags(&custom_text)
             };
-            output.push_str(&format!(" <a href=\"{}#more-{id}\" class=\"more-link\">{text}</a>", permalink, id = post.id));
+            // `the_content_more_link`.
+            match env.theme.content_more_link(&rustpress_core::formatting::esc_url(permalink), post.id, &the_title_for(env.site, post)) {
+                Some(link) => output.push_str(&link),
+                None => output.push_str(&format!(" <a href=\"{}#more-{id}\" class=\"more-link\">{text}</a>", permalink, id = post.id)),
+            }
         }
         return output;
     }
@@ -236,6 +245,10 @@ pub async fn password_form(env: &Env<'_>, post: &Post) -> Result<String> {
 }
 
 fn password_form_for(env: &Env<'_>, post: &Post, permalink: &str) -> String {
+    // `the_password_form`.
+    if let Some(form) = env.theme.password_form(env.site, post) {
+        return form;
+    }
     env.with_state(|s| s.note_block("core/button"));
     let field_id = format!("pwbox-{}", post.id);
     format!(
@@ -422,6 +435,8 @@ pub async fn post_class(env: &Env<'_>, post: &Post, extra: &[&str], is_home_unpa
             classes.push(sanitize_html_class(&format!("{}-{term_class}", term.taxonomy)));
         }
     }
+    // The `post_class` filter of the theme.
+    env.theme.filter_post_class(&mut classes);
     let mut seen = Vec::new();
     classes.retain(|c| {
         if seen.contains(c) {

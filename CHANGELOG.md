@@ -4,6 +4,10 @@ All notable changes to RustPress. Each release names the WordPress release it fo
 
 ## Unreleased
 
+- **Twenty Twenty-One** 2.9 rebuilt natively, the second classic theme: all templates, menus with sub-menu toggles,
+  descriptions and social icons, the footer widgets, logo, colors and the dark mode switch; on the way the shared parts
+  of classic themes got `wp_restore_group_inner_container()`/`wp_restore_image_outer_container()`, the core block styles
+  in registration order, the archive titles of post types and taxonomies and the signed-in comment form.
 - Native plugin module **Complianz – GDPR/CCPA Cookie Consent** 7.5.6, stage 1 (the website): the cookie banner and
   the manage consent button for every region and consent type, the settings of `complianz.min.js`, the statistics
   scripts (Google Analytics, Tag Manager with the head option, Matomo, Clicky, Clarity and the others the plugin

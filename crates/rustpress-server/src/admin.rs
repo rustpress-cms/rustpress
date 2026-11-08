@@ -244,6 +244,7 @@ pub async fn front_toolbar(loaded: &std::sync::Arc<Loaded>, user: &std::sync::Ar
             context.site_editor_url = Some(format!("{}?postType=wp_template&postId={}//{}&canvas=edit", admin("site-editor.php"), site.settings.stylesheet, info.template_slug));
         }
         context.classic_theme = !rustpress_blocks::ThemeAccess::is_block_theme(&loaded.theme);
+        context.custom_background = rustpress_theme::classic::is_twentyone(&loaded.theme);
         let home = site.home_url("");
         let scheme = home.split_once("://").map_or("http", |(scheme, _)| scheme);
         let host = info.query.http_host.as_deref().unwrap_or_else(|| home.split_once("://").map_or("", |(_, rest)| rest.split('/').next().unwrap_or_default()));
@@ -252,8 +253,9 @@ pub async fn front_toolbar(loaded: &std::sync::Arc<Loaded>, user: &std::sync::Ar
         context.customize_changeset = changeset.clone();
         let tr = |s: &str| site.tr(s);
         context.edit = match &info.query.queried {
-            // `get_edit_post_link()` is empty in the preview of the Customizer.
-            rustpress_core::Queried::Post(post) if info.query.flags.is_singular() && changeset.is_none() => {
+            // `get_edit_post_link()` is empty in the preview of the Customizer. Any queried post counts, also the page
+            // for posts (`wp_admin_bar_edit_menu()` does not ask for `is_singular()`).
+            rustpress_core::Queried::Post(post) if changeset.is_none() => {
                 let can = user.can(match post.post_type.as_str() {
                     "page" => if post.post_author == user.id { "edit_pages" } else { "edit_others_pages" },
                     _ => if post.post_author == user.id { "edit_posts" } else { "edit_others_posts" },

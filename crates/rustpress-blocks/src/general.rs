@@ -831,6 +831,12 @@ fn week_month(m: &str, week: i64) -> (u32, u32) {
 }
 
 pub async fn get_calendar(env: &Env<'_>, initial: bool, override_month: Option<(u32, u32)>) -> Result<String> {
+    let calendar = calendar_markup(env, initial, override_month).await?;
+    // The `get_calendar` filter of the theme.
+    Ok(env.theme.filter_calendar(calendar, env.site.is_rtl()))
+}
+
+async fn calendar_markup(env: &Env<'_>, initial: bool, override_month: Option<(u32, u32)>) -> Result<String> {
     let site = env.site;
     let locale = site.locale_data();
     let now = now_timestamp();
