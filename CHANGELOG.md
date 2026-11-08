@@ -13,6 +13,22 @@ All notable changes to RustPress. Each release names the WordPress release it fo
   `wp_print_footer_scripts` with the query, `body_class`, the whole page before it is sent (`template_output`),
   `wp_head` at priority 0; plugin assets can be enqueued asynchronously.
 - Inline scripts before and after a script lose their leading line breaks, as in `WP_Scripts::get_inline_script_data()`.
+- Third-party block themes: Frost and Ollie 1.6.6 run, with Ollie's `functions.php` ported; block presets,
+  `gmdate()` in patterns and the query title ([#48](https://github.com/rustpress-cms/rustpress/pull/48), [#49](https://github.com/rustpress-cms/rustpress/pull/49)).
+- **Classic Editor** 1.7.0 as a native module: the classic edit screen with its settings and the choice per user
+  and post ([#57](https://github.com/rustpress-cms/rustpress/pull/57)).
+- Classic themes in wp-admin: `nav-menus.php`, `widgets.php` with writing widgets and `batch/v1`, the header screen,
+  the Customizer and its preview; media widgets on the website and in REST; the theme's image sizes in uploads
+  ([#59](https://github.com/rustpress-cms/rustpress/pull/59), [#60](https://github.com/rustpress-cms/rustpress/pull/60), [#67](https://github.com/rustpress-cms/rustpress/pull/67) to [#71](https://github.com/rustpress-cms/rustpress/pull/71)).
+- The administration in the language of the site: texts, templates, JS translations, the dashboard and the file
+  editors ([#61](https://github.com/rustpress-cms/rustpress/pull/61) to [#63](https://github.com/rustpress-cms/rustpress/pull/63), [#65](https://github.com/rustpress-cms/rustpress/pull/65), [#66](https://github.com/rustpress-cms/rustpress/pull/66)); updates in the list of plugins ([#64](https://github.com/rustpress-cms/rustpress/pull/64)).
+- Blocks and media of WordPress 7.1: block supports (visibility, states, viewports, custom CSS), the lightbox,
+  dynamic galleries, playlists and `[playlist]`, `core/navigation-submenu`, embeds, calendar weeks
+  ([#51](https://github.com/rustpress-cms/rustpress/pull/51) to [#53](https://github.com/rustpress-cms/rustpress/pull/53), [#55](https://github.com/rustpress-cms/rustpress/pull/55)); `media-upload.php` and `sanitize_file_name()` ([#58](https://github.com/rustpress-cms/rustpress/pull/58)).
+- Twenty Seventeen: post formats, front page panels, colors, the social menu and signed-in viewers ([#54](https://github.com/rustpress-cms/rustpress/pull/54)).
+- Comment feeds of archives and searches, password rehash on sign-in, REST `_method` ([#50](https://github.com/rustpress-cms/rustpress/pull/50)).
+- `rustpress check` no longer counts backup, migration and translation plugins as missing, and reports security
+  and admin-only plugins as a note that says what is lost instead of "does not run".
 
 ## 0.2.0 (2026-11-05)
 
