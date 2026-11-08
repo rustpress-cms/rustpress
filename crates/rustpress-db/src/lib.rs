@@ -16,6 +16,7 @@ mod admin_media;
 mod admin_users;
 mod archives;
 mod comments;
+mod complianz;
 mod export;
 mod info;
 mod models;

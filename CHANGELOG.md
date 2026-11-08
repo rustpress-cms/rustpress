@@ -8,6 +8,15 @@ All notable changes to RustPress. Each release names the WordPress release it fo
   descriptions and social icons, the footer widgets, logo, colors and the dark mode switch; on the way the shared parts
   of classic themes got `wp_restore_group_inner_container()`/`wp_restore_image_outer_container()`, the core block styles
   in registration order, the archive titles of post types and taxonomies and the signed-in comment form.
+- Native plugin module **Complianz – GDPR/CCPA Cookie Consent** 7.5.6, stage 1 (the website): the cookie banner and
+  the manage consent button for every region and consent type, the settings of `complianz.min.js`, the statistics
+  scripts (Google Analytics, Tag Manager with the head option, Matomo, Clicky, Clarity and the others the plugin
+  configures), the scripts and styles of the services, the cookie blocker with its placeholders, the REST routes
+  `complianz/v1` the website calls, and the shortcodes `[cmplz-manage-consent]`, `[cmplz-revoke-link]` and
+  `[cmplz-accept-link]`. The legal documents are stage 2. New hooks for plugins: `wp_footer` and
+  `wp_print_footer_scripts` with the query, `body_class`, the whole page before it is sent (`template_output`),
+  `wp_head` at priority 0; plugin assets can be enqueued asynchronously.
+- Inline scripts before and after a script lose their leading line breaks, as in `WP_Scripts::get_inline_script_data()`.
 - Third-party block themes: Frost and Ollie 1.6.6 run, with Ollie's `functions.php` ported; block presets,
   `gmdate()` in patterns and the query title ([#48](https://github.com/rustpress-cms/rustpress/pull/48), [#49](https://github.com/rustpress-cms/rustpress/pull/49)).
 - **Classic Editor** 1.7.0 as a native module: the classic edit screen with its settings and the choice per user
