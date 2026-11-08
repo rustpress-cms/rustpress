@@ -234,6 +234,8 @@ impl<'s> ScriptPrinter<'s> {
         if let Some(extra) = &script.extra {
             out.push_str(&format!("<script id=\"{handle}-js-extra\">\n{extra}\n//# sourceURL={handle}-js-extra\n</script>\n"));
         }
+        // `script_loader_tag` sees the translations, the inline scripts and the tag together.
+        let tag_start = out.len();
         if let Some(json) = script.translations.as_deref().and_then(|domain| self.script_translations(script, domain).map(|json| (domain, json))) {
             let (domain, json) = json;
             out.push_str(&format!(
@@ -241,11 +243,14 @@ impl<'s> ScriptPrinter<'s> {
             ));
         }
         if !script.before.is_empty() {
-            out.push_str(&format!("<script id=\"{handle}-js-before\">\n{}\n//# sourceURL={handle}-js-before\n</script>\n", script.before.join("\n")));
+            out.push_str(&format!("<script id=\"{handle}-js-before\">\n{}\n//# sourceURL={handle}-js-before\n</script>\n", script.before.join("\n").trim_start_matches('\n')));
         }
         out.push_str(&format!("<script id=\"{handle}-js\" src=\"{}\"></script>\n", esc_url(&src(script))));
         if !script.after.is_empty() {
-            out.push_str(&format!("<script id=\"{handle}-js-after\">\n{}\n//# sourceURL={handle}-js-after\n</script>\n", script.after.join("\n")));
+            out.push_str(&format!("<script id=\"{handle}-js-after\">\n{}\n//# sourceURL={handle}-js-after\n</script>\n", script.after.join("\n").trim_start_matches('\n')));
+        }
+        if script.defer_attr && out[tag_start..].starts_with("<script ") {
+            out.replace_range(tag_start..tag_start + "<script ".len(), "<script defer ");
         }
         out
     }

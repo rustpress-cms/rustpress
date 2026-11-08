@@ -2,6 +2,18 @@
 
 All notable changes to RustPress. Each release names the WordPress release it follows.
 
+## Unreleased
+
+- Native plugin module **Complianz – GDPR/CCPA Cookie Consent** 7.5.6, stage 1 (the website): the cookie banner and
+  the manage consent button for every region and consent type, the settings of `complianz.min.js`, the statistics
+  scripts (Google Analytics, Tag Manager with the head option, Matomo, Clicky, Clarity and the others the plugin
+  configures), the scripts and styles of the services, the cookie blocker with its placeholders, the REST routes
+  `complianz/v1` the website calls, and the shortcodes `[cmplz-manage-consent]`, `[cmplz-revoke-link]` and
+  `[cmplz-accept-link]`. The legal documents are stage 2. New hooks for plugins: `wp_footer` and
+  `wp_print_footer_scripts` with the query, `body_class`, the whole page before it is sent (`template_output`),
+  `wp_head` at priority 0; plugin assets can be enqueued asynchronously.
+- Inline scripts before and after a script lose their leading line breaks, as in `WP_Scripts::get_inline_script_data()`.
+
 ## 0.2.0 (2026-11-05)
 
 Follows WordPress 7.1.4.

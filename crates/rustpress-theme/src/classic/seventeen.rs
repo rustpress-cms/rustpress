@@ -1118,8 +1118,10 @@ async fn head(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State, registry: &Re
     let theme_uri = theme.template_directory_uri();
     let mut out = String::new();
 
-    out.push_str("<script>(function(html){html.className = html.className.replace(/\\bno-js\\b/,'js')})(document.documentElement);</script>\n");
     let crate::head::PluginHead { head: plugin_head, blocks: early_blocks } = crate::head::plugin_head(theme, site, q, registry, true, None).await?;
+    // The plugins' actions of priority 0 come before the theme's `twentyseventeen_javascript_detection()`.
+    out.push_str(&plugin_head.first);
+    out.push_str("<script>(function(html){html.className = html.className.replace(/\\bno-js\\b/,'js')})(document.documentElement);</script>\n");
     if !plugin_head.removed.contains(&"_wp_render_title_tag") {
         let title = match plugin_head.title {
             Some(title) => title,
@@ -1247,8 +1249,11 @@ async fn head(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State, registry: &Re
     // The theme's own styles and scripts (`twentyseventeen_scripts()`).
     let fonts_on = tx(ctx, "on", "Libre Franklin font: on or off") != "off";
     out.push('\n');
-    let plugin_assets = site.plugins.assets(site);
-    out.push_str(&crate::plugin_assets::StylePrinter::new(wp_root, site).links(&plugin_assets.styles));
+    let plugin_assets = site.plugins.assets_for(site, Some(ctx.q), None).await;
+    // Stylesheets plugins enqueue at priority 10 come before the theme's, later ones after it.
+    let mut style_printer = crate::plugin_assets::StylePrinter::new(wp_root, site);
+    let (early_styles, late_styles): (Vec<_>, Vec<_>) = plugin_assets.styles.iter().cloned().partition(|a| a.priority <= 10);
+    out.push_str(&style_printer.links(&early_styles));
     if fonts_on {
         out.push_str(&format!("<link rel='stylesheet' id='twentyseventeen-fonts-css' href='{theme_uri}/assets/fonts/font-libre-franklin.css?ver=20230328' media='all' />\n"));
     }
@@ -1257,6 +1262,7 @@ async fn head(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State, registry: &Re
     if ctx.mod_str("colorscheme").as_deref() == Some("dark") || preview.is_some() {
         out.push_str(&format!("<link rel='stylesheet' id='twentyseventeen-colors-dark-css' href='{theme_uri}/assets/css/colors-dark.css?ver=20240412' media='all' />\n"));
     }
+    out.push_str(&style_printer.links(&late_styles));
     // The media widgets and the Text widget enqueue the players for widgets the preview may add.
     if preview.is_some() {
         out.push_str(&crate::customize_preview::media_styles(&includes_url, &version));
@@ -1291,6 +1297,8 @@ async fn head(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State, registry: &Re
     }
 
     out.push_str(&discovery_links(site, q, &version, 0, !plugin_head.removed.contains(&"rel_canonical"), &crate::document::locale_stylesheet(theme, site)).await?);
+    // The plugins' actions of priority 10, before the theme's.
+    out.push_str(&plugin_head.late);
     // `twentyseventeen_pingback_header()`.
     if let (true, Queried::Post(post)) = (q.flags.is_singular(), &q.queried)
         && post.ping_status == "open"
@@ -1356,7 +1364,7 @@ async fn wp_footer(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State) -> Resul
     {
         looped.insert(0, id);
     }
-    let plugin_footer = site.plugins.wp_footer(site, &looped).await?;
+    let plugin_footer = site.plugins.wp_footer(site, ctx.q, &looped).await?;
     let preview = preview(ctx);
     // `wp_underscore_playlist_templates()` runs first (the Text widget asks for it in the preview), the speculation
     // rules are for visitors.
@@ -1371,7 +1379,7 @@ async fn wp_footer(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State) -> Resul
         out.push_str(&read(&ctx.theme.template_dir().join("assets/images/svg-icons.svg")).unwrap_or_default());
         return Ok(out);
     }
-    let plugin_assets = site.plugins.assets(site);
+    let plugin_assets = site.plugins.assets_for(site, Some(ctx.q), None).await;
     let mut printer = crate::plugin_assets::ScriptPrinter::new(&site.site_url("wp-includes"), &script_version(wp_root, "jquery-core", "3.7.1"), &script_version(wp_root, "jquery-migrate", "3.4.1")).with_packages(wp_root, site);
     if ctx.q.viewer.as_ref().is_some_and(|viewer| viewer.show_admin_bar) {
         let includes_url = site.site_url("wp-includes");
@@ -1401,6 +1409,7 @@ async fn wp_footer(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State) -> Resul
         out.push_str(&printer.core("wp-playlist"));
     }
     out.push_str(&emoji_detection_script(site, wp_root, &version));
+    out.push_str(&site.plugins.print_footer_scripts(site, ctx.q));
     out.push_str(&read(&ctx.theme.template_dir().join("assets/images/svg-icons.svg")).unwrap_or_default());
     Ok(out)
 }
@@ -1424,7 +1433,7 @@ async fn preview_footer_scripts(ctx: &Ctx<'_>, state: &rustpress_blocks::env::St
         let includes_url = site.site_url("wp-includes");
         out.push_str(&format!("<script id=\"hoverintent-js-js\" src=\"{includes_url}/js/hoverintent-js.min.js?ver=2.2.1\"></script>\n<script id=\"admin-bar-js\" src=\"{includes_url}/js/admin-bar.min.js?ver={}\"></script>\n", wp_version(wp_root)));
     }
-    let plugin_assets = site.plugins.assets(site);
+    let plugin_assets = site.plugins.assets_for(site, Some(ctx.q), None).await;
     let mut printer = crate::plugin_assets::ScriptPrinter::new(&site.site_url("wp-includes"), &script_version(wp_root, "jquery-core", "3.7.1"), &script_version(wp_root, "jquery-migrate", "3.4.1")).with_packages(wp_root, site);
     printer.mark_printed(&["jquery"]);
     out.push_str(&printer.scripts(&plugin_assets.scripts, true));
