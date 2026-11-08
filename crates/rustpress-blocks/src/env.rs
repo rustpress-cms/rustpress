@@ -19,6 +19,16 @@ pub trait ThemeAccess: Send + Sync {
     fn is_block_theme(&self) -> bool {
         true
     }
+    /// The `post_class` filter of a ported classic theme (before `get_post_class()` drops the duplicates).
+    fn filter_post_class(&self, _classes: &mut Vec<String>) {}
+    /// The `get_calendar` filter of a ported classic theme.
+    fn filter_calendar(&self, calendar: String, _rtl: bool) -> String {
+        calendar
+    }
+    /// `wp_theme_has_theme_json()`.
+    fn has_theme_json(&self) -> bool {
+        self.is_block_theme()
+    }
     /// Merged `styles` (`wp_get_global_styles()`).
     fn global_styles(&self) -> &Value;
     /// Block markup of a template part (`header`, `footer`, ...), if it exists.
@@ -50,6 +60,18 @@ pub trait ThemeAccess: Send + Sync {
     fn excerpt_more(&self) -> Option<String> {
         None
     }
+    /// The `the_content_more_link` filter of the theme: the link to the rest of a post after its `<!--more-->` teaser,
+    /// for the escaped permalink, the post's id and its title.
+    fn content_more_link(&self, _permalink: &str, _post_id: u64, _title: &str) -> Option<String> {
+        None
+    }
+    /// The `the_password_form` filter of the theme: the form for a password protected post.
+    fn password_form(&self, _site: &Site, _post: &Post) -> Option<String> {
+        None
+    }
+    /// The `wp_get_attachment_image_attributes` filter of the theme for the other attributes: `full` is the size of the
+    /// original image from its metadata, `requested` the size when it was asked for as `array( $width, $height )`.
+    fn filter_attachment_attributes(&self, _attrs: &mut Vec<(String, crate::images::AttrValue)>, _full: Option<(u64, u64)>, _requested: Option<(u64, u64)>) {}
     /// A size registered with `add_image_size()`: width and height.
     fn image_size(&self, _name: &str) -> Option<(u64, u64)> {
         None

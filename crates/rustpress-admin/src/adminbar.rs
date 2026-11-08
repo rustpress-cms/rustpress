@@ -231,6 +231,8 @@ pub struct FrontContext {
     pub site_icon: Option<(String, String)>,
     /// `wp_is_block_theme()` is false: widgets and menus in the site menu, the Customizer.
     pub classic_theme: bool,
+    /// `current_theme_supports( 'custom-background' )` of a classic theme (Twenty Twenty-One).
+    pub custom_background: bool,
     /// The address of the page, for the Customizer to come back to.
     pub current_url: String,
     /// `changeset_uuid()` when the page is in the preview of the Customizer.
@@ -287,8 +289,12 @@ pub fn render_front(site: &Site, user: &CurrentUser, ctx: &FrontContext) -> Stri
         if ctx.classic_theme && user.can("edit_theme_options") {
             appearance.push(item("widgets", "", &link(&admin("widgets.php"), &tr("Widgets"), false)));
             appearance.push(item("menus", "", &link(&admin("nav-menus.php"), &tr("Menus"), false)));
-            // `current_theme_supports( 'custom-header' )`.
-            appearance.push(item("header", "hide-if-customize", &link(&admin("themes.php?page=custom-header"), &tr("Header"), false)));
+            if ctx.custom_background {
+                appearance.push(item("background", "hide-if-customize", &link(&admin("themes.php?page=custom-background"), &tr("Background"), false)));
+            } else {
+                // `current_theme_supports( 'custom-header' )`: Twenty Seventeen.
+                appearance.push(item("header", "hide-if-customize", &link(&admin("themes.php?page=custom-header"), &tr("Header"), false)));
+            }
         }
         groups.push_str(&submenu(&site_title, "appearance", "ab-submenu", &appearance));
     }

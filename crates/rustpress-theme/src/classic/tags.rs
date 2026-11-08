@@ -23,6 +23,8 @@ pub struct Pagination {
     pub prev_text: String,
     pub next_text: String,
     pub before_page_number: String,
+    /// `mid_size` (1 by default).
+    pub mid_size: u64,
 }
 
 /// `get_the_posts_pagination()` for the main query.
@@ -34,7 +36,7 @@ pub fn posts_pagination(site: &Site, q: &QueryResult, args: &Pagination) -> Stri
     let request = format!("{}{}", q.url_path, if q.raw_query.is_empty() { String::new() } else { format!("?{}", q.raw_query) });
     let total = q.max_pages;
     let current = q.paged.max(1);
-    let mid_size = 1;
+    let mid_size = args.mid_size;
     let end_size = 1;
     let mut links: Vec<String> = Vec::new();
     // `paginate_links()`: with plain permalinks `?paged=N` comes first, then the arguments of the request.
@@ -79,6 +81,12 @@ pub fn posts_pagination(site: &Site, q: &QueryResult, args: &Pagination) -> Stri
 
 /// `the_comments_pagination()`: the links to the other pages of comments.
 pub fn comments_pagination(site: &Site, permalink: &str, request_uri: &str, current: u64, total: u64, prev_text: &str, next_text: &str) -> String {
+    comments_pagination_with(site, permalink, request_uri, current, total, prev_text, next_text, 2, "")
+}
+
+/// [`comments_pagination`] with `mid_size` and `before_page_number`.
+#[allow(clippy::too_many_arguments)]
+pub fn comments_pagination_with(site: &Site, permalink: &str, request_uri: &str, current: u64, total: u64, prev_text: &str, next_text: &str, mid_size: u64, before_page_number: &str) -> String {
     if total < 2 {
         return String::new();
     }
@@ -90,14 +98,14 @@ pub fn comments_pagination(site: &Site, permalink: &str, request_uri: &str, curr
         };
         esc_url(&format!("{base}#comments"))
     };
-    let (mid_size, end_size) = (2, 1);
+    let end_size = 1;
     let mut links: Vec<String> = Vec::new();
     if current > 1 {
         links.push(format!("<a class=\"prev page-numbers\" href=\"{}\">{prev_text}</a>", page_link(current - 1)));
     }
     let mut dots = false;
     for n in 1..=total {
-        let label = site.number_i18n(n);
+        let label = format!("{before_page_number}{}", site.number_i18n(n));
         if n == current {
             links.push(format!("<span aria-current=\"page\" class=\"page-numbers current\">{label}</span>"));
             dots = true;
