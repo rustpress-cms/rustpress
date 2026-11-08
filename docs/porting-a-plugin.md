@@ -19,6 +19,7 @@ The existing modules are the best examples, from small to large:
 | `wordpress_seo/` | Yoast SEO 28.8 | `wp_head`, sitemaps, `robots.txt`, REST fields, feeds |
 | `redirection/` | Redirection 5.10.1 | requests before the main query, headers, logs |
 | `site_kit/` | Site Kit by Google 1.191.0 | head order, script tags, resource hints, a REST namespace |
+| `wpcode/` | WPCode Lite 2.4.1 | `wp_body_open`, the footer, a shortcode, PHP loose comparisons |
 | `acf/` | Advanced Custom Fields 6.8.10 | registrations, REST fields, form rendering and saving |
 
 ## 0. Pick the scope

@@ -106,6 +106,8 @@ pub struct QueryResult {
     pub http_host: Option<String>,
     /// `$_SERVER['HTTP_USER_AGENT']`.
     pub user_agent: Option<String>,
+    /// `$_SERVER['HTTP_REFERER']`.
+    pub referer: Option<String>,
     /// `wp_create_nonce()` of a visitor who is not signed in (user 0, no session), when the site knows its salts.
     pub guest_nonce: Option<GuestNonce>,
     /// `is_customize_preview()`: the page is in the preview of the Customizer.
@@ -170,6 +172,7 @@ impl QueryResult {
             viewer: None,
             guest_nonce: None,
             user_agent: None,
+            referer: None,
             http_host: None,
             customize: None,
         }

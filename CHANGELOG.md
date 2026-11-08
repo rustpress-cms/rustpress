@@ -24,6 +24,9 @@ All notable changes to RustPress. Each release names the WordPress release it fo
 - Comment feeds of archives and searches, password rehash on sign-in, REST `_method` ([#50](https://github.com/rustpress-cms/rustpress/pull/50)).
 - **Site Kit by Google** 1.191.0 as a native module for the website: the Analytics tag with consent mode and the
   opt-out for signed-in users, the site verification meta tags and file, and the generator tag.
+- **WPCode Lite** 2.4.1 as a native module for the website: the global header, body and footer scripts, the
+  site-wide snippets (HTML, text, JavaScript, CSS) with their conditional logic and the `[wpcode]` shortcode.
+  `wp_body_open` is new for plugins.
 - `rustpress check` no longer counts backup, migration and translation plugins as missing, and reports security
   and admin-only plugins as a note that says what is lost instead of "does not run".
 

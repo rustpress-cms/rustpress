@@ -914,6 +914,11 @@ pub trait PageServices: Send + Sync {
         Box::pin(async move { Ok(text.to_owned()) })
     }
 
+    /// `do_shortcode( $text )`, `post` being `global $post`.
+    fn do_shortcode<'a>(&'a self, _post: Option<&'a Post>, text: &'a str) -> BoxFuture<'a, Result<String>> {
+        Box::pin(async move { Ok(text.to_owned()) })
+    }
+
     /// `get_avatar( $id_or_email, $size )`.
     fn avatar(&self, _email: &str, _size: u64) -> String {
         String::new()
@@ -955,6 +960,17 @@ pub struct Head {
     /// Printed on `wp_head` at priority 10 by actions the plugin hooks on `init`: after the import map and the
     /// preloads of the script modules.
     pub late_init: String,
+    /// Printed on `wp_head` at priority 10 by actions the plugin hooks on `wp`: after every other action of that
+    /// priority.
+    pub on_wp: String,
+    /// Printed on `wp_body_open`, after the toolbar (`wp_admin_bar_render()` at priority 0).
+    pub body_open: String,
+    /// Printed on `wp_footer` at the default priority, after what [`ActivePlugin::wp_footer`] prints (the page is
+    /// rendered by then, so a plugin may work out its footer with the head).
+    pub footer: String,
+    /// Printed on `wp_footer` at the default priority by actions the plugin hooks on `wp`: after the script modules
+    /// and their data.
+    pub footer_on_wp: String,
     /// Core actions removed from `wp_head`: `rel_canonical`, `_wp_render_title_tag`.
     pub removed: Vec<&'static str>,
 }
@@ -2426,6 +2442,10 @@ impl Plugins {
             head.first.push_str(&changed.first);
             head.late.push_str(&changed.late);
             head.late_init.push_str(&changed.late_init);
+            head.on_wp.push_str(&changed.on_wp);
+            head.body_open.push_str(&changed.body_open);
+            head.footer.push_str(&changed.footer);
+            head.footer_on_wp.push_str(&changed.footer_on_wp);
             head.removed.extend(changed.removed);
         }
         Ok(head)

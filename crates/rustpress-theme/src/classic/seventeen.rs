@@ -1118,7 +1118,8 @@ fn script_version(wp_root: &std::path::Path, handle: &str, default: &str) -> Str
     default.to_owned()
 }
 
-async fn head(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State, registry: &Registry) -> Result<String> {
+/// The head, and what the plugins print on `wp_body_open` and in `wp_footer` (they work it out with the head).
+async fn head(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State, registry: &Registry) -> Result<(String, String, (String, String))> {
     let site = ctx.site;
     let theme = ctx.theme;
     let q = ctx.q;
@@ -1328,6 +1329,8 @@ async fn head(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State, registry: &Re
     if let Some(preview) = preview {
         out.push_str(&crate::customize_preview::loading_style(preview));
     }
+    // What plugins hook on `wp_head` on `wp`.
+    out.push_str(&plugin_head.on_wp);
     let icon = super::wp_site_icon(ctx.site).await?;
     // The default icon in the preview, so that the live preview can replace it.
     out.push_str(if icon.is_empty() && preview.is_some() { "<link rel=\"icon\" href=\"/favicon.ico\" sizes=\"32x32\" />\n" } else { &icon });
@@ -1349,7 +1352,7 @@ async fn head(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State, registry: &Re
         out.push_str(&late);
         out.push('\n');
     }
-    Ok(out)
+    Ok((out, plugin_head.body_open, (plugin_head.footer, plugin_head.footer_on_wp)))
 }
 
 /// `wp_get_custom_css()`.
@@ -1364,7 +1367,7 @@ async fn custom_css(ctx: &Ctx<'_>) -> Result<Option<String>> {
 
 // --------------------------------------------------------------------- footer
 
-async fn wp_footer(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State) -> Result<String> {
+async fn wp_footer(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State, plugin_head_footer: &(String, String)) -> Result<String> {
     let site = ctx.site;
     let wp_root = &ctx.theme.wp_root;
     let version = wp_version(wp_root);
@@ -1384,7 +1387,8 @@ async fn wp_footer(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State) -> Resul
     let playlist = if state.playlist || preview.is_some() { rustpress_blocks::shortcodes::playlist_templates(site) } else { String::new() };
     let speculation = if ctx.q.viewer.is_some() || preview.is_some() { String::new() } else { crate::document::speculation_rules(site, ctx.theme) };
     let nav_menus = preview.map(crate::customize_preview::nav_menus_exports).unwrap_or_default();
-    let mut out = format!("{playlist}{speculation}{nav_menus}{plugin_footer}{importmap}{module_scripts}{}{preloads}", state.interactivity.data_script().unwrap_or_default());
+    // `WP_Script_Modules::add_hooks()`: the import map, the modules and the preloads, then the data on `wp_footer`.
+    let mut out = format!("{playlist}{speculation}{nav_menus}{plugin_footer}{}{importmap}{module_scripts}{preloads}{}{}", plugin_head_footer.0, state.interactivity.data_script().unwrap_or_default(), plugin_head_footer.1);
     if let Some(preview) = preview {
         out.push_str(&preview_footer_scripts(ctx, state, preview).await?);
         out.push_str(&emoji_detection_script(site, wp_root, &version));
@@ -1696,8 +1700,8 @@ pub async fn legacy_widget_preview(ctx: &Ctx<'_>, registry: &Registry, id_base: 
     let services = widgets::Services { site, q: ctx.q, env: &ctx.env, stylesheet: &ctx.theme.stylesheet, request_uri: "", search_form: &search };
     let widget = widgets::the_widget(&services, id_base, instance.unwrap_or(&empty)).await?;
     let state = ctx.env.take_state();
-    let head_html = head(ctx, &state, registry).await?;
-    let footer_html = wp_footer(ctx, &state).await?;
+    let (head_html, _, plugin_footer) = head(ctx, &state, registry).await?;
+    let footer_html = wp_footer(ctx, &state, &plugin_footer).await?;
     Ok(format!(
         "\t\t<!doctype html>\n\t\t<html {}lang=\"{}\">\n\t\t<head>\n\t\t\t<meta charset=\"UTF-8\" />\n\t\t\t<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />\n\t\t\t<link rel=\"profile\" href=\"https://gmpg.org/xfn/11\" />\n\t\t\t{head_html}\t\t\t<style>\n\t\t\t\t/* Reset theme styles */\n\t\t\t\thtml, body, #page, #content {{\n\t\t\t\t\tpadding: 0 !important;\n\t\t\t\t\tmargin: 0 !important;\n\t\t\t\t}}\n\t\t\t</style>\n\t\t</head>\n\t\t<body class=\"{}\">\n\t\t<div id=\"page\" class=\"site\">\n\t\t\t<div id=\"content\" class=\"site-content\">\n\t\t\t\t{widget}\t\t\t</div><!-- #content -->\n\t\t</div><!-- #page -->\n\t\t{footer_html}\t\t</body>\n\t\t</html>\n\t\t",
         if site.is_rtl() { "dir=\"rtl\" " } else { "" },
@@ -1723,11 +1727,14 @@ pub async fn render(ctx: &Ctx<'_>, registry: &Registry, extras: &crate::document
         _ => String::new(),
     };
     let mut body = header(ctx, &classes, &bar).await?;
+    // `wp_body_open` comes right after the toolbar.
+    let body_open_at = format!("<body class=\"{}\">\n", esc_attr(&classes.join(" "))).len() + bar.len();
     body.push_str(&main_template(ctx).await?);
     body.push_str(&footer(ctx).await?);
     let state = ctx.env.take_state();
-    let head_html = head(ctx, &state, registry).await?;
-    let footer_html = wp_footer(ctx, &state).await?;
+    let (head_html, body_open, plugin_footer) = head(ctx, &state, registry).await?;
+    body.insert_str(body_open_at, &body_open);
+    let footer_html = wp_footer(ctx, &state, &plugin_footer).await?;
     let html = format!(
         "<!DOCTYPE html>\n<html {}lang=\"{}\" class=\"no-js no-svg\">\n<head>\n<meta charset=\"UTF-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n<link rel=\"profile\" href=\"https://gmpg.org/xfn/11\">\n\n{head_html}</head>\n\n{body}{footer_html}\n</body>\n</html>\n",
         if site.is_rtl() { "dir=\"rtl\" " } else { "" },

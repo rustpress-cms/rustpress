@@ -407,6 +407,16 @@ impl rustpress_core::native::PageServices for Env<'_> {
         })
     }
 
+    fn do_shortcode<'a>(&'a self, post: Option<&'a rustpress_db::Post>, text: &'a str) -> futures::future::BoxFuture<'a, rustpress_core::Result<String>> {
+        Box::pin(async move {
+            let post = post.map(|p| std::sync::Arc::new(p.clone()));
+            crate::shortcodes::do_shortcode(self, post.as_ref(), text).await.map_err(|e| match e {
+                crate::Error::Core(e) => e,
+                crate::Error::Db(e) => rustpress_core::Error::Db(e),
+            })
+        })
+    }
+
     fn avatar(&self, email: &str, size: u64) -> String {
         crate::content::get_avatar(self, email, size, "", "", "")
     }

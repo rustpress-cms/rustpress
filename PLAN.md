@@ -75,6 +75,7 @@ The reference stack, the tools and the working rules are in [AGENTS.md](AGENTS.m
     their Ajax, the tools (export as JSON and PHP, import), the options pages preview.
   - Classic Editor 1.7.0 – complete except the frontend toolbar link (see below).
   - Site Kit by Google 1.191.0 – the tags on the website (Analytics with consent mode, site verification), not the dashboard.
+  - WPCode Lite 2.4.1 – the global header, body and footer scripts and the site-wide snippets with their conditions, not PHP.
 - **Following WordPress** – `WORDPRESS_VERSION` is the target; a daily workflow opens an issue per release with the
   report of `dev/wp-diff.sh`; `dev/wp-bump.sh` moves the reference. 7.1.4 was followed (issue #9).
 - **Review** – the security and robustness findings of the review of 2026-10-26 (A1, A2) are fixed except S12; the
@@ -145,6 +146,8 @@ The reference stack, the tools and the working rules are in [AGENTS.md](AGENTS.m
   groups from local JSON or PHP.
 - Site Kit: the dashboard, the setup with Google and its REST answers; the tags of Tag Manager, AdSense, Ads, Reader
   Revenue Manager and Sign in with Google; the Google tag gateway, conversion tracking and custom dimensions.
+- WPCode: the locations in and around the content, excerpts and posts, the toolbar menu "WPCode" for administrators,
+  the administration.
 - Next: Polylang (needs the language per request). Following plugin releases (`PLUGIN_VERSIONS` and the diff report).
 
 **Review and tests**
@@ -1160,3 +1163,36 @@ before release 0.3.0). Version 2.9, compared with that release active in the ref
   `inc/block-styles.php` in the editor), the right-to-left languages (only `style-rtl.css` is chosen; not compared), and
   the RSS widget with `twenty_twenty_one_rss_widget_feed_link` (not compared). Found but not about the theme: WordPress redirects `/team/page/2/` of a child page to its full
   address (`redirect_guess_404_permalink()` with paging), RustPress answers 404.
+
+### WPCode Lite 2.4.1 (2026-11-08)
+
+`crates/rustpress-plugins/src/wpcode/` (plugin file `insert-headers-and-footers/ihaf.php`): what WPCode adds to the
+website, so that tracking codes and other scripts added with it keep working.
+
+- **Global scripts** (`global-output.php`): `ihaf_insert_header` on `wp_head`, `ihaf_insert_body` on `wp_body_open` at
+  priority 1 and `ihaf_insert_footer` on `wp_footer`, through `wp_unslash()`, nothing for a blank option.
+- **Site-wide snippets** (`WPCode_Auto_Insert_Site_Wide`, hooked on `wp`): the locations `site_wide_header`, `_body` and
+  `_footer` from the snippet cache (`wpcode_snippets`, by priority, equal ones in their order), with the code types
+  HTML, text (`do_shortcode()`), JavaScript (`<script>`, not for an empty or `0` code), CSS
+  (`<style class="wpcode-css-snippet">`, not for a blank one) and universal snippets without PHP (less the line break
+  after the closing tag).
+- **Conditional logic** (`rules.rs`): show or hide, groups that match when all their rows do, the user (logged in,
+  roles) and the page (type of page, post type, referrer, taxonomy page, terms, page URL) with WPCode's loose
+  comparisons; the options of WPCode Pro never match, rows of unknown types are skipped.
+- **The shortcode** `[wpcode id="…"]`, which reads the snippet from its post (status, code type term, rules).
+- "Headers & Footers mode" turns everything but the global scripts off.
+
+New in the framework: `wp_body_open` (after the toolbar, in block themes, Twenty Seventeen and Twenty Twenty-One),
+`Head::on_wp`, `Head::body_open`, `Head::footer` and `Head::footer_on_wp` (the places plugins reach from `wp_head`
+and from actions hooked on `wp`), `PageServices::do_shortcode()` and the referrer in `QueryResult`. Twenty Twenty-One
+now prints what plugins add to the head at all priorities (also Site Kit's), plugin scripts of a later priority after
+its own, and Twenty Seventeen the module preloads before the module data.
+
+Compared with the plugin active (global scripts with a slashed quote, 21 snippets of every code type with priorities,
+rules of every kind, the shortcode in a post and in a text snippet, Headers & Footers mode): the block theme, Twenty
+Seventeen and Twenty Twenty-One on the front page, a post, a page, a category, a tag, an author, a search, a 404 and
+with query parameters and a referrer – equal for visitors, except PHP snippets, which print nothing. Signed-in
+administrators also miss the toolbar menu "WPCode", its style and script and the list of the snippets on the page
+(`WPCode_Admin_Bar_Info`). Not ported: PHP and universal snippets with PHP (no PHP runs), the locations before and
+after the content, paragraphs, excerpts and posts, the PHP-only locations (`everywhere`, `frontend_only`,
+`frontend_cl`), safe mode, the preview of the snippet editor, the administration and the snippet library.
