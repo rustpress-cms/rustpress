@@ -43,7 +43,7 @@ pub async fn comments_template(site: &Site, env: &rustpress_blocks::Env<'_>, pos
     if !comments_open(post) && count != 0 {
         out.push_str(&format!("\n\n\t\t<p class=\"no-comments\">{}</p>\n\t\t", theme_text("Comments are closed.")));
     }
-    out.push_str(&comment_form(site, post, request_uri, false).await?);
+    out.push_str(&comment_form(site, env.query.viewer.as_ref(), post, request_uri, false).await?);
     out.push_str("\n</div><!-- #comments -->\n");
     Ok(out)
 }

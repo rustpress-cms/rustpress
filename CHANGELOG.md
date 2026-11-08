@@ -4,6 +4,10 @@ All notable changes to RustPress. Each release names the WordPress release it fo
 
 ## Unreleased
 
+- **Twenty Twenty-One** 2.9 rebuilt natively, the second classic theme: all templates, menus with sub-menu toggles,
+  descriptions and social icons, the footer widgets, logo, colors and the dark mode switch; on the way the shared parts
+  of classic themes got `wp_restore_group_inner_container()`/`wp_restore_image_outer_container()`, the core block styles
+  in registration order, the archive titles of post types and taxonomies and the signed-in comment form.
 - Third-party block themes: Frost and Ollie 1.6.6 run, with Ollie's `functions.php` ported; block presets,
   `gmdate()` in patterns and the query title ([#48](https://github.com/rustpress-cms/rustpress/pull/48), [#49](https://github.com/rustpress-cms/rustpress/pull/49)).
 - **Classic Editor** 1.7.0 as a native module: the classic edit screen with its settings and the choice per user
