@@ -4,6 +4,10 @@ All notable changes to RustPress. Each release names the WordPress release it fo
 
 ## Unreleased
 
+- Native plugin module **WPForms Lite** 2.0.4: forms of the shortcode and the block on the website, submitting with
+  validation, the honeypot and the AntiSpam token, confirmations (message, page, redirect), the smart tags, and the
+  notification e-mails in the plugin's templates Classic, Compact and Plain text. Forms can also be sent on read-only
+  sites: `admin-ajax.php` answers the plugins' visitor actions without write access.
 - **Twenty Twenty-One** 2.9 rebuilt natively, the second classic theme: all templates, menus with sub-menu toggles,
   descriptions and social icons, the footer widgets, logo, colors and the dark mode switch; on the way the shared parts
   of classic themes got `wp_restore_group_inner_container()`/`wp_restore_image_outer_container()`, the core block styles
