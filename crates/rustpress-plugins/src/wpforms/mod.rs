@@ -2,13 +2,30 @@
 //! JSON in `post_content`), printed by the shortcode `[wpforms]` and the block `wpforms/form-selector`, and sent
 //! through `admin-ajax.php` (`wpforms_submit`).
 
+pub mod ajax;
 pub mod css_vars;
+pub mod dom;
 pub mod fields;
+#[cfg(test)]
+mod golden;
+pub mod inline;
+pub mod notify;
 pub mod page;
 pub mod php;
+pub mod punycode;
 pub mod render;
 pub mod settings;
+pub mod smart_tags;
+pub mod template;
+pub mod submit;
 pub mod token;
+
+pub(crate) use crate::redirection::php as redirection_php;
+
+/// `wp_send_json()`: `json_encode()` without flags.
+fn encode(value: &Value) -> String {
+    rustpress_blocks::php_json::encode(value)
+}
 
 use futures::future::BoxFuture;
 use rustpress_core::native::{ActivePlugin, BlockContext, NativePlugin, ShortcodeContext};
@@ -57,7 +74,7 @@ impl NativePlugin for WpForms {
                 limit: None,
                 ..PostQuery::default()
             };
-            let forms = site.db.posts(&query).await?.into_iter().map(|post| FormPost { id: post.id, status: post.post_status.clone(), data: decode(&post.post_content) }).collect();
+            let forms = site.db.posts(&query).await?.into_iter().map(|post| FormPost { id: post.id, status: post.post_status.clone(), date: post.post_date.clone(), data: decode(&post.post_content) }).collect();
             let settings = Settings::parse(site.options.fetch(&site.db, "wpforms_settings").await?.as_deref());
             let secret = token::secret_key(site.options.fetch(&site.db, "wpforms_crypto_secret_key").await?.as_deref());
             Ok(Box::new(Loaded { forms, settings, secret, themes: std::sync::OnceLock::new() }) as Box<dyn ActivePlugin>)
@@ -128,6 +145,8 @@ pub fn decode(content: &str) -> Value {
 pub struct FormPost {
     pub id: u64,
     pub status: String,
+    /// `post_date`.
+    pub date: String,
     pub data: Value,
 }
 
@@ -377,6 +396,16 @@ impl ActivePlugin for Loaded {
 
     fn shortcode<'a>(&'a self, _tag: &'a str, atts: &'a Atts, _content: Option<&'a str>, ctx: &'a ShortcodeContext<'a>) -> BoxFuture<'a, Result<String>> {
         Box::pin(self.shortcode_html(atts, ctx))
+    }
+
+    /// `wp_ajax_wpforms_submit`, `wp_ajax_wpforms_get_token` and `wp_ajax_wpforms_restricted_email`.
+    fn admin_ajax<'a>(&'a self, action: &'a str, ctx: &'a rustpress_core::native::AdminContext<'a>) -> BoxFuture<'a, Result<Option<rustpress_core::native::AjaxAnswer>>> {
+        Box::pin(ajax::handle(self, action, ctx))
+    }
+
+    /// The same actions for visitors (`wp_ajax_nopriv_*`).
+    fn admin_ajax_nopriv<'a>(&'a self, action: &'a str, ctx: &'a rustpress_core::native::AdminContext<'a>) -> BoxFuture<'a, Result<Option<rustpress_core::native::AjaxAnswer>>> {
+        Box::pin(ajax::handle(self, action, ctx))
     }
 }
 

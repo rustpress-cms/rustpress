@@ -173,11 +173,10 @@ fn email_confirmation_properties(p: Value, field: &Value, form_id: i64, field_id
     if set(field, "required") {
         php::push(&mut p["inputs"]["secondary"]["class"], "wpforms-field-required");
     }
-    if !set(field, "sublabel_hide") {
-        if let Value::Object(attr) = &mut p["label"]["attr"] {
+    if !set(field, "sublabel_hide")
+        && let Value::Object(attr) = &mut p["label"]["attr"] {
             attr.shift_remove("for");
         }
-    }
     p
 }
 
@@ -194,11 +193,10 @@ fn name_properties(mut p: Value, field: &Value, form_id: i64, field_id: i64, ctx
     if let Value::Object(inputs) = &mut p["inputs"] {
         inputs.shift_remove("primary");
     }
-    if !set(field, "sublabel_hide") {
-        if let Value::Object(attr) = &mut p["label"]["attr"] {
+    if !set(field, "sublabel_hide")
+        && let Value::Object(attr) = &mut p["label"]["attr"] {
             attr.shift_remove("for");
         }
-    }
     let hidden = set(field, "sublabel_hide");
     let required = if set(field, "required") { "required" } else { "" };
     let props = json!({

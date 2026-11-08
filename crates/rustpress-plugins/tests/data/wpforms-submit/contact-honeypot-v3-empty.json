@@ -1,0 +1,102 @@
+{
+    "form_from": "contact",
+    "form_settings": {
+        "antispam": "0"
+    },
+    "post": "action=wpforms_submit&wpforms[id]=9300&wpforms[fields][1][first]=Ada&wpforms[fields][1][last]=L&wpforms[fields][2]=ada%40example.com&wpforms[fields][7]=&page_url=http%3A%2F%2Flocalhost%3A8080%2Fcontact%2F%3Fa%3Db%26c%3D%25C3%25A4&page_title=Contact+%26+%3Cmore%3E&page_id=2&url_referer=http%3A%2F%2Flocalhost%3A8080%2Ffrom%2F",
+    "form_data": {
+        "fields": {
+            "1": {
+                "id": "1",
+                "type": "name",
+                "format": "first-last",
+                "label": "Name",
+                "required": "1",
+                "size": "medium"
+            },
+            "2": {
+                "id": "2",
+                "type": "email",
+                "label": "Email",
+                "required": "1",
+                "size": "medium"
+            },
+            "3": {
+                "id": "3",
+                "type": "textarea",
+                "label": "Comment or Message",
+                "size": "medium",
+                "placeholder": "",
+                "css": ""
+            }
+        },
+        "field_id": 4,
+        "settings": {
+            "form_title": "Golden Form",
+            "form_desc": "",
+            "submit_text": "Submit",
+            "submit_text_processing": "Sending...",
+            "antispam_v3": "1",
+            "ajax_submit": "1",
+            "notification_enable": "1",
+            "notifications": {
+                "1": {
+                    "email": "{admin_email}",
+                    "replyto": "{field_id=\"2\"}",
+                    "message": "{all_fields}"
+                }
+            },
+            "confirmations": {
+                "1": {
+                    "type": "message",
+                    "message": "Thanks for contacting us! We will be in touch with you shortly.",
+                    "message_scroll": "1"
+                }
+            },
+            "antispam": "0"
+        },
+        "id": "9300"
+    },
+    "now": 1794172693,
+    "secret": "t8gWedj08loeI4fRQszTD1i9ML4AijKkMCYzXAUM9eo=",
+    "settings": {
+        "modern-markup": "1",
+        "modern-markup-is-set": true,
+        "modern-markup-hide-setting": true
+    },
+    "query": "action=wpforms_submit&wpforms[id]=9300&wpforms[fields][1][first]=Ada&wpforms[fields][1][last]=L&wpforms[fields][2]=ada%40example.com&wpforms[fields][7]=&page_url=http%3A%2F%2Flocalhost%3A8080%2Fcontact%2F%3Fa%3Db%26c%3D%25C3%25A4&page_title=Contact+%26+%3Cmore%3E&page_id=2&url_referer=http%3A%2F%2Flocalhost%3A8080%2Ffrom%2F",
+    "nonce": "c517aae026",
+    "user_data": null,
+    "can_manage": false,
+    "super_admin": false,
+    "site": {
+        "admin_email": "admin@example.com",
+        "blogname": "RustPress Test",
+        "home": "http://localhost:8080",
+        "login": "http://localhost:8080/wp-login.php",
+        "date_format": "F j, Y",
+        "gmt_offset": 0,
+        "language": "lang=\"en-US\""
+    },
+    "permalinks": {},
+    "page_author": [
+        1,
+        "admin"
+    ],
+    "manager_emails": [
+        "admin@example.com"
+    ],
+    "response": "{\"success\":true,\"data\":{\"confirmation\":\"<div class=\\\"wpforms-confirmation-container-full wpforms-confirmation-scroll\\\" id=\\\"wpforms-confirmation-9300\\\" tabindex=\\\"-1\\\"><p>Thanks for contacting us! We will be in touch with you shortly.<\\/p>\\n<\\/div>\"}}",
+    "mails": [
+        {
+            "to": "admin@example.com",
+            "subject": "New Golden Form Entry",
+            "body": "<!doctype html>\n<html lang=\"en-US\">\n<head>\n\t<meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\">\n\t<meta content=\"width=device-width, initial-scale=1.0\" name=\"viewport\">\n\t<meta http-equiv=\"X-UA-Compatible\" content=\"IE=edge\">\n\t<meta name=\"color-scheme\" content=\"light dark\">\n\t<title>WPForms</title>\n<style type=\"text/css\">@media(prefers-color-scheme: light){.header-wrapper.dark-mode{display:none !important}}@media(prefers-color-scheme: dark){.header-wrapper.dark-mode{display:table-row !important}.header-wrapper.dark-mode+.light-mode{display:none !important}}@media only screen and (max-width: 599px){.wpforms-layout-table-display-rows .wpforms-layout-table-row .field-name{display:block !important}.wpforms-layout-table .wpforms-layout-table-row{display:block;width:100%}.wpforms-layout-table .wpforms-layout-table-row table,.wpforms-layout-table .wpforms-layout-table-row thead,.wpforms-layout-table .wpforms-layout-table-row tbody,.wpforms-layout-table .wpforms-layout-table-row tr,.wpforms-layout-table .wpforms-layout-table-row td,.wpforms-layout-table .wpforms-layout-table-row th{display:block;width:100% !important;padding-bottom:0 !important}.wpforms-layout-table .wpforms-layout-table-row tr{padding-top:0 !important}.wpforms-layout-table .wpforms-layout-table-row td.field-value{padding-bottom:25px !important}.wpforms-layout-table .wpforms-layout-table-row td.field-name{padding-bottom:10px !important}.wpforms-layout-table>td{padding-bottom:0 !important}}@media only screen and (max-width: 599px){.body-inner{padding-top:25px !important;padding-bottom:25px !important}.wrapper-inner{padding:0 25px 25px 25px !important}.header{padding-bottom:25px !important}.header .has-image-size-small img{max-height:100px !important}.header .has-image-size-medium img{max-height:140px !important}.header .has-image-size-large img{max-height:180px !important}.wpforms-layout-table .wpforms-layout-table-row td.field-value{padding-bottom:10px !important}.wpforms-layout-table .wpforms-layout-table-row td.field-name{padding-bottom:7px !important}.wpforms-layout-table-display-blocks table:not(:first-child) .field-repeater-name{padding-top:25px !important}}\n\n@media (prefers-color-scheme: dark) {\n\tbody, .body {\n\t\tbackground-color: #2d2f31 !important;\n\t}\n\n\t.wrapper-inner {\n\t\tbackground-color: #1f1f1f !important;\n\t\tborder: 1px solid #525252 !important;\n\t}\n\n\tbody, table.body, h1, h2, h3, h4, h5, h6, p, td, th, a {\n\t\tcolor: #dddddd !important;\n\t\tfont-family: -apple-system, BlinkMacSystemFont, avenir next, avenir, segoe ui, helvetica neue, helvetica, Cantarell, Ubuntu, roboto, noto, arial, sans-serif !important;\n\t}\n\n\ta, a:visited,\n\ta:hover, a:active,\n\th1 a, h1 a:visited,\n\th2 a, h2 a:visited,\n\th3 a, h3 a:visited,\n\th4 a, h4 a:visited,\n\th5 a, h5 a:visited,\n\th6 a, h6 a:visited {\n\t\tcolor: #e27730 !important;\n\t}\n\n\ta.button-link {\n\t\tbackground-color: #1f1f1f !important;\n\t\tborder: 1px solid #e27730 !important;\n\t\tcolor: #e27730 !important;\n\t}\n\n\t.content .field-value,\n\t.wpforms-layout-table > td {\n\t\tborder-bottom: 1px solid #3e3e3e !important;\n\t}\n\n\t.footer, .footer a {\n\t\tcolor: #7a7a7a !important;\n\t}\n\n\ttable.wpforms-order-summary-preview {\n\t\tborder: 1px solid #3e3e3e !important;\n\t}\n\n\ttable.wpforms-order-summary-preview td {\n\t\tborder-top: 1px solid #3e3e3e !important;\n\t}\n\n\t\t.dark-mode .header-image {\n\t\tmax-width: 350px !important;\n\t}\n\t.dark-mode .header-image img {\n\t\tmax-height: 180px !important;\n\t}\n\t}\n</style>\n</head>\n<body leftmargin=\"0\" marginwidth=\"0\" topmargin=\"0\" marginheight=\"0\" offset=\"0\" bgcolor=\"#e9eaec\" class=\"ltr\" style=\"height: 100% !important; width: 100% !important; min-width: 100%; -moz-box-sizing: border-box; -webkit-box-sizing: border-box; box-sizing: border-box; -webkit-font-smoothing: antialiased !important; -moz-osx-font-smoothing: grayscale !important; -ms-text-size-adjust: 100%; -webkit-text-size-adjust: 100%; font-weight: normal; margin: 0; font-size: 14px; mso-line-height-rule: exactly; text-align: center; padding: 0 25px 0 25px; line-height: 22px; background-color: #e9eaec; color: #333333; font-family: -apple-system, BlinkMacSystemFont, avenir next, avenir, segoe ui, helvetica neue, helvetica, Cantarell, Ubuntu, roboto, noto, arial, sans-serif;\">\n<table border=\"0\" cellpadding=\"0\" cellspacing=\"0\" width=\"100%\" height=\"100%\" class=\"body\" role=\"presentation\" style=\"border-collapse: collapse; border-spacing: 0; vertical-align: top; mso-table-lspace: 0pt; mso-table-rspace: 0pt; -ms-text-size-adjust: 100%; -webkit-text-size-adjust: 100%; height: 100% !important; width: 100% !important; min-width: 100%; -moz-box-sizing: border-box; -webkit-box-sizing: border-box; box-sizing: border-box; -webkit-font-smoothing: antialiased !important; -moz-osx-font-smoothing: grayscale !important; text-align: center; background-color: #e9eaec; font-weight: normal; padding: 0; margin: 0; font-size: 14px; mso-line-height-rule: exactly; line-height: 22px; color: #333333; font-family: -apple-system, BlinkMacSystemFont, avenir next, avenir, segoe ui, helvetica neue, helvetica, Cantarell, Ubuntu, roboto, noto, arial, sans-serif;\">\n\t<tr style=\"padding: 0; vertical-align: top;\">\n\t\t<td style=\"word-wrap: break-word; -webkit-hyphens: auto; -moz-hyphens: auto; hyphens: auto; border-collapse: collapse !important; vertical-align: top; mso-table-lspace: 0pt; mso-table-rspace: 0pt; -ms-text-size-adjust: 100%; -webkit-text-size-adjust: 100%; font-weight: normal; padding: 0; margin: 0; font-size: 14px; mso-line-height-rule: exactly; color: #333333; font-family: -apple-system, BlinkMacSystemFont, avenir next, avenir, segoe ui, helvetica neue, helvetica, Cantarell, Ubuntu, roboto, noto, arial, sans-serif; line-height: 22px;\"><!-- Deliberately empty to support consistent sizing and layout across multiple email clients. --></td>\n\t\t<td align=\"center\" valign=\"top\" class=\"body-inner\" width=\"660\" style=\"word-wrap: break-word; -webkit-hyphens: auto; -moz-hyphens: auto; hyphens: auto; border-collapse: collapse !important; vertical-align: top; mso-table-lspace: 0pt; mso-table-rspace: 0pt; -ms-text-size-adjust: 100%; -webkit-text-size-adjust: 100%; font-weight: normal; padding: 0; margin: 0; font-size: 14px; mso-line-height-rule: exactly; color: #333333; font-family: -apple-system, BlinkMacSystemFont, avenir next, avenir, segoe ui, helvetica neue, helvetica, Cantarell, Ubuntu, roboto, noto, arial, sans-serif; padding-top: 50px; padding-bottom: 50px; line-height: 22px;\">\n\t\t\t<div class=\"wrapper\" width=\"100%\" dir=\"ltr\" style=\"max-width: 660px; margin-left: auto; margin-right: auto;\">\n\t\t\t\t<table border=\"0\" cellpadding=\"0\" cellspacing=\"0\" width=\"100%\" class=\"container\" role=\"presentation\" style=\"border-collapse: collapse; border-spacing: 0; padding: 0; vertical-align: top; mso-table-lspace: 0pt; mso-table-rspace: 0pt; -ms-text-size-adjust: 100%; -webkit-text-size-adjust: 100%; margin: 0 auto 0 auto;\">\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<tr style=\"padding: 0; vertical-align: top;\">\n\t\t\t\t\t\t<td class=\"wrapper-inner\" bgcolor=\"#ffffff\" style=\"word-wrap: break-word; -webkit-hyphens: auto; -moz-hyphens: auto; hyphens: auto; border-collapse: collapse !important; vertical-align: top; mso-table-lspace: 0pt; mso-table-rspace: 0pt; -ms-text-size-adjust: 100%; -webkit-text-size-adjust: 100%; font-weight: normal; margin: 0; font-size: 14px; mso-line-height-rule: exactly; color: #333333; font-family: -apple-system, BlinkMacSystemFont, avenir next, avenir, segoe ui, helvetica neue, helvetica, Cantarell, Ubuntu, roboto, noto, arial, sans-serif; padding: 25px 30px 50px 30px; background-color: #ffffff; border: 1px solid #c6c6c6; line-height: 22px;\">\n\t\t\t\t\t\t\t<table border=\"0\" cellpadding=\"0\" cellspacing=\"0\" width=\"100%\" role=\"presentation\" style=\"border-collapse: collapse; border-spacing: 0; padding: 0; vertical-align: top; mso-table-lspace: 0pt; mso-table-rspace: 0pt; -ms-text-size-adjust: 100%; -webkit-text-size-adjust: 100%;\">\n\t\t\t\t\t\t\t\t<tr style=\"padding: 0; vertical-align: top;\">\n\t\t\t\t\t\t\t\t\t<td valign=\"top\" class=\"content\" style=\"word-wrap: break-word; -webkit-hyphens: auto; -moz-hyphens: auto; hyphens: auto; border-collapse: collapse !important; vertical-align: top; mso-table-lspace: 0pt; mso-table-rspace: 0pt; -ms-text-size-adjust: 100%; -webkit-text-size-adjust: 100%; font-weight: normal; padding: 0; margin: 0; font-size: 14px; mso-line-height-rule: exactly; color: #333333; font-family: -apple-system, BlinkMacSystemFont, avenir next, avenir, segoe ui, helvetica neue, helvetica, Cantarell, Ubuntu, roboto, noto, arial, sans-serif; line-height: 22px;\">\n\n<table border=\"0\" cellpadding=\"0\" cellspacing=\"0\" width=\"100%\" role=\"presentation\" style=\"border-collapse: collapse; border-spacing: 0; padding: 0; vertical-align: top; mso-table-lspace: 0pt; mso-table-rspace: 0pt; -ms-text-size-adjust: 100%; -webkit-text-size-adjust: 100%;\">\n\t<tbody>\n\t\t<tr style=\"padding: 0; vertical-align: top;\">\n\t<td class=\"field-name\" style=\"word-wrap: break-word; -webkit-hyphens: auto; -moz-hyphens: auto; hyphens: auto; border-collapse: collapse !important; vertical-align: top; mso-table-lspace: 0pt; mso-table-rspace: 0pt; -ms-text-size-adjust: 100%; -webkit-text-size-adjust: 100%; font-weight: normal; padding: 0; margin: 0; font-size: 14px; mso-line-height-rule: exactly; color: #333333; font-family: -apple-system, BlinkMacSystemFont, avenir next, avenir, segoe ui, helvetica neue, helvetica, Cantarell, Ubuntu, roboto, noto, arial, sans-serif; line-height: 22px; padding-top: 25px; padding-bottom: 7px;\"><strong style=\"margin-bottom: 0;\">Name</strong></td>\n</tr>\n<tr class=\"field-name\" style=\"padding: 0; vertical-align: top; padding-top: 25px; padding-bottom: 7px;\">\n\t<td class=\"field-value\" style=\"word-wrap: break-word; -webkit-hyphens: auto; -moz-hyphens: auto; hyphens: auto; border-collapse: collapse !important; vertical-align: top; mso-table-lspace: 0pt; mso-table-rspace: 0pt; -ms-text-size-adjust: 100%; -webkit-text-size-adjust: 100%; font-weight: normal; padding: 0; margin: 0; font-size: 14px; mso-line-height-rule: exactly; color: #333333; font-family: -apple-system, BlinkMacSystemFont, avenir next, avenir, segoe ui, helvetica neue, helvetica, Cantarell, Ubuntu, roboto, noto, arial, sans-serif; line-height: 22px; padding-bottom: 25px; border-bottom: 1px solid #e2e2e2;\">Ada L</td>\n</tr>\n<tr style=\"padding: 0; vertical-align: top;\">\n\t<td class=\"field-name\" style=\"word-wrap: break-word; -webkit-hyphens: auto; -moz-hyphens: auto; hyphens: auto; border-collapse: collapse !important; vertical-align: top; mso-table-lspace: 0pt; mso-table-rspace: 0pt; -ms-text-size-adjust: 100%; -webkit-text-size-adjust: 100%; font-weight: normal; padding: 0; margin: 0; font-size: 14px; mso-line-height-rule: exactly; color: #333333; font-family: -apple-system, BlinkMacSystemFont, avenir next, avenir, segoe ui, helvetica neue, helvetica, Cantarell, Ubuntu, roboto, noto, arial, sans-serif; line-height: 22px; padding-top: 25px; padding-bottom: 7px;\"><strong style=\"margin-bottom: 0;\">Email</strong></td>\n</tr>\n<tr class=\"field-email\" style=\"padding: 0; vertical-align: top;\">\n\t<td class=\"field-value\" style=\"word-wrap: break-word; -webkit-hyphens: auto; -moz-hyphens: auto; hyphens: auto; border-collapse: collapse !important; vertical-align: top; mso-table-lspace: 0pt; mso-table-rspace: 0pt; -ms-text-size-adjust: 100%; -webkit-text-size-adjust: 100%; font-weight: normal; padding: 0; margin: 0; font-size: 14px; mso-line-height-rule: exactly; color: #333333; font-family: -apple-system, BlinkMacSystemFont, avenir next, avenir, segoe ui, helvetica neue, helvetica, Cantarell, Ubuntu, roboto, noto, arial, sans-serif; line-height: 22px; padding-bottom: 25px; border-bottom: 1px solid #e2e2e2;\"><a href=\"mailto:ada@example.com\" style=\"-ms-text-size-adjust: 100%; -webkit-text-size-adjust: 100%; font-weight: normal; padding: 0; margin: 0; mso-line-height-rule: exactly; line-height: 22px; font-family: -apple-system, BlinkMacSystemFont, avenir next, avenir, segoe ui, helvetica neue, helvetica, Cantarell, Ubuntu, roboto, noto, arial, sans-serif; color: #e27730; -ms-word-break: break-word; word-break: break-word; margin-bottom: 0;\">ada@example.com</a></td>\n</tr>\t</tbody>\n</table>\n\n\t\t\t\t\t\t\t\t\t</td>\n\t\t\t\t\t\t\t\t</tr>\n\t\t\t\t\t\t\t\t<tr style=\"padding: 0; vertical-align: top;\">\n\t\t\t\t\t\t\t\t\t<td align=\"center\" valign=\"top\" class=\"footer\" style=\"word-wrap: break-word; -webkit-hyphens: auto; -moz-hyphens: auto; hyphens: auto; border-collapse: collapse !important; vertical-align: top; mso-table-lspace: 0pt; mso-table-rspace: 0pt; -ms-text-size-adjust: 100%; -webkit-text-size-adjust: 100%; font-weight: normal; padding: 0; margin: 0; mso-line-height-rule: exactly; font-family: -apple-system, BlinkMacSystemFont, avenir next, avenir, segoe ui, helvetica neue, helvetica, Cantarell, Ubuntu, roboto, noto, arial, sans-serif; font-size: 12px; text-align: center; padding-top: 25px; color: #999999; line-height: 22px;\">\n\t\t\t\t\t\t\t\t\t\tSent from <a href=\"http://localhost:8080\" style=\"-ms-text-size-adjust: 100%; -webkit-text-size-adjust: 100%; font-weight: normal; padding: 0; margin: 0; mso-line-height-rule: exactly; line-height: 22px; font-family: -apple-system, BlinkMacSystemFont, avenir next, avenir, segoe ui, helvetica neue, helvetica, Cantarell, Ubuntu, roboto, noto, arial, sans-serif; text-decoration: underline; color: #999999;\">RustPress Test</a>\t\t\t\t\t\t\t\t\t</td>\n\t\t\t\t\t\t\t\t</tr>\n\t\t\t\t\t\t\t</table>\n\t\t\t\t\t\t</td>\n\t\t\t\t\t</tr>\n\t\t\t\t</table>\n\t\t\t</div>\n\t\t</td>\n\t\t<td style=\"word-wrap: break-word; -webkit-hyphens: auto; -moz-hyphens: auto; hyphens: auto; border-collapse: collapse !important; vertical-align: top; mso-table-lspace: 0pt; mso-table-rspace: 0pt; -ms-text-size-adjust: 100%; -webkit-text-size-adjust: 100%; font-weight: normal; padding: 0; margin: 0; font-size: 14px; mso-line-height-rule: exactly; color: #333333; font-family: -apple-system, BlinkMacSystemFont, avenir next, avenir, segoe ui, helvetica neue, helvetica, Cantarell, Ubuntu, roboto, noto, arial, sans-serif; line-height: 22px;\"><!-- Deliberately empty to support consistent sizing and layout across multiple email clients. --></td>\n\t</tr>\n</table>\n</body>\n</html>",
+            "headers": [
+                "From: RustPress Test <admin@example.com>",
+                "Reply-To: ada@example.com",
+                "Content-Type: text/html; charset=utf-8"
+            ]
+        }
+    ]
+}

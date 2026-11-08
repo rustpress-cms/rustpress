@@ -163,14 +163,13 @@ pub fn output(form: Option<&Form<'_>>, title: bool, description: bool, env: &Env
     if has_upload {
         action = rustpress_core::urls::add_query_arg(&action, "wpforms_form_id", &form_id.to_string());
     }
-    if let Some(sub) = env.submitted.filter(|s| s.form_id == form_id as i64 && empty(Some(&s.errors))) {
-        if let Some(message) = &sub.confirmation {
+    if let Some(sub) = env.submitted.filter(|s| s.form_id == form_id as i64 && empty(Some(&s.errors)))
+        && let Some(message) = &sub.confirmation {
             container_open(out, &form_data, form_id, env, modern);
             confirmation(out, message, sub.scroll, form_id, env);
             container_close(out);
             return r;
         }
-    }
     r.printed = true;
     let settings = &form_data["settings"];
     let mut form_classes = vec!["wpforms-validate", "wpforms-form"];
@@ -210,9 +209,9 @@ pub fn output(form: Option<&Form<'_>>, title: bool, description: bool, env: &Env
         }
     }
     // `AntiSpam::maybe_insert_honeypot_init_js()` on `wpforms_display_fields_after`.
-    if honeypot_enabled {
-        if let Some((before, _)) = &env.honeypot {
-            if rendered_fields.contains(before) {
+    if honeypot_enabled
+        && let Some((before, _)) = &env.honeypot
+            && rendered_fields.contains(before) {
                 let hp = honeypot_field_id(&form_data);
                 r.honeypot_field = Some(hp);
                 let ids = format!("#wpforms-{form_id}-field_{hp}-container");
@@ -225,8 +224,6 @@ pub fn output(form: Option<&Form<'_>>, title: bool, description: bool, env: &Env
                     php::esc_js(&styles)
                 ));
             }
-        }
-    }
     out.push_str("</div><!-- .wpforms-field-container -->");
     // `Honeypot::render()`.
     if str_of(settings, "honeypot") == "1" {
@@ -320,17 +317,60 @@ pub fn sanitize_error(error: &str) -> String {
 
 /// The render engine's `form_error( $type, $error )`.
 pub fn form_error(out: &mut String, kind: &str, error: &str, form_id: u64, env: &Env<'_>, modern: bool) {
-    if modern {
-        out.push_str(&format!(
-            "<div id=\"wpforms-{}-{}-error\" class=\"wpforms-error-container\" role=\"alert\">\n\t\t\t\t\t\t<span class=\"wpforms-hidden\" aria-hidden=\"false\">{}</span>{}\n\t\t\t\t\t</div>",
-            esc_attr(&form_id.to_string()),
-            esc_attr(kind),
-            esc_html(&(env.tr)("Form error message")),
-            wpautop(&sanitize_error(error))
-        ));
-    } else {
-        out.push_str(&format!("<div class=\"wpforms-error-container\">{}</div>", wpautop(&sanitize_error(error))));
+    out.push_str(&form_error_html(kind, error, &form_id.to_string(), env.tr, modern));
+}
+
+/// `Classic::form_error()` and `Modern::form_error()` of the form with the ID `$form_data['id']`.
+pub fn form_error_html(kind: &str, error: &str, form_id: &str, tr: &(dyn Fn(&str) -> String + Sync), modern: bool) -> String {
+    let styled = matches!(kind, "header_styled" | "footer_styled");
+    if !styled && !matches!(kind, "header" | "footer") {
+        return String::new();
     }
+    if !modern {
+        return if styled {
+            format!("<div class=\"wpforms-error-container wpforms-error-styled-container\"><div class=\"wpforms-error\">{}</div></div>", wpautop(&sanitize_error(error)))
+        } else {
+            format!("<div class=\"wpforms-error-container\">{}</div>", wpautop(&sanitize_error(error)))
+        };
+    }
+    let (class, open, close) = if styled { (" wpforms-error-styled-container", "<div class=\"wpforms-error\">", "</div>") } else { ("", "", "") };
+    format!(
+        "<div id=\"wpforms-{}-{}-error\" class=\"wpforms-error-container{class}\" role=\"alert\">\n\t\t\t\t\t\t{open}<span class=\"wpforms-hidden\" aria-hidden=\"false\">{}</span>{}{close}\n\t\t\t\t\t</div>",
+        esc_attr(form_id),
+        esc_attr(kind),
+        esc_html(&tr("Form error message")),
+        wpautop(&sanitize_error(error))
+    )
+}
+
+/// `Frontend::get_field_properties( $field, $form_data )` outside the printing of a form (an AJAX request without
+/// `$_GET` and without errors).
+pub fn field_props(field: &Value, form_data: &Value, settings: &Settings, tr: &(dyn Fn(&str) -> String + Sync)) -> Value {
+    let smart_tags = |content: &str, _: &Value, _: &str| content.to_owned();
+    let env = Env {
+        settings,
+        tr,
+        plugin_url: String::new(),
+        action: String::new(),
+        token: String::new(),
+        token_time: String::new(),
+        time_token: String::new(),
+        nonce: None,
+        page_title: String::new(),
+        page_url: String::new(),
+        url_referer: String::new(),
+        singular: None,
+        honeypot: None,
+        legacy_honeypot_label: String::new(),
+        smart_tags: &smart_tags,
+        get: &[],
+        container_classes: Vec::new(),
+        submitted: None,
+    };
+    let Some(field) = fields::field_data(field.clone(), settings) else { return Value::Null };
+    let ctx = Ctx { env: &env, form_data, form_id: php::int(form_data.get("id")), modern: modern(settings), errors: &Value::Null };
+    let attributes = field_attributes(&field, &ctx);
+    field_properties(&field, &attributes, &ctx)
 }
 
 /// `wpforms_get_field_required_label()` of the render engine.
@@ -371,9 +411,9 @@ fn render_field(out: &mut String, form_data: &Value, field: Value, env: &Env<'_>
 
     // `wpforms_display_field_before`: the honeypot (1), the container (5), the fieldset (10), the label (15) and a
     // description before the field (20).
-    if honeypot_enabled {
-        if let Some((before, label)) = &env.honeypot {
-            if *before == field_id {
+    if honeypot_enabled
+        && let Some((before, label)) = &env.honeypot
+            && *before == field_id {
                 let hp = honeypot_field_id(form_data);
                 let id_attr = format!("wpforms-{form_id}-field_{hp}");
                 out.push_str(&format!(
@@ -383,8 +423,6 @@ fn render_field(out: &mut String, form_data: &Value, field: Value, env: &Env<'_>
                     esc_html(label)
                 ));
             }
-        }
-    }
     let props = &field["properties"];
     let mut container = props["container"].clone();
     container["data"]["field-id"] = json!(field_id);

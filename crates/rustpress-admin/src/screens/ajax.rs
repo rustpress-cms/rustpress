@@ -141,6 +141,70 @@ fn registered(request: &AdminRequest, _action: &str) -> bool {
     request.get("action").is_some_and(|a| GET.contains(&a)) || (request.post && request.post_field("action").is_some_and(|a| POST.contains(&a)))
 }
 
+/// What `wp_ajax_nopriv_{$action}` of the plugins needs of the site, also on a read-only site.
+pub struct Visitor<'a> {
+    pub site: &'a rustpress_core::Site,
+    pub writer: Option<&'a rustpress_db::Writer>,
+    pub auth: &'a rustpress_auth::Auth,
+    pub now: i64,
+    pub wp_version: &'a str,
+    pub wp_root: &'a std::path::Path,
+    pub mailer: Option<&'a dyn rustpress_core::native::Mailer>,
+}
+
+/// `do_action( "wp_ajax_nopriv_{$action}" )` of the plugins for a visitor of `admin-ajax.php`; `None` when no plugin has
+/// the action. `origin` is the scheme and host of the request.
+pub async fn plugin_nopriv(visitor: &Visitor<'_>, request: &AdminRequest, action: &str, origin: String) -> Option<AdminResponse> {
+    if visitor.site.plugins.is_empty() {
+        return None;
+    }
+    let (auth, now) = (visitor.auth.clone(), visitor.now);
+    let verify_auth = auth.clone();
+    let can = |_: &str| false;
+    let nonce = move |action: &str| auth.create_nonce(action, 0, "", now).unwrap_or_default();
+    let verify = move |nonce: &str, action: &str| verify_auth.verify_nonce(nonce, action, 0, "", now).is_some();
+    let same_origin = request.referer.as_deref().is_some_and(|r| r == origin || r.starts_with(&format!("{origin}/")));
+    let ctx = rustpress_core::native::AdminContext {
+        site: visitor.site,
+        writer: visitor.writer,
+        user: 0,
+        now: visitor.now,
+        hook_suffix: "admin-ajax.php",
+        post: request.post,
+        request_uri: &request.request_uri,
+        query: &request.query,
+        form: &request.form,
+        same_origin,
+        can: &can,
+        nonce: &nonce,
+        verify_nonce: &verify,
+        user_agent: request.user_agent.as_deref(),
+        wp_version: visitor.wp_version,
+        wp_root: visitor.wp_root,
+        edited_post: None,
+        block_editor: false,
+        taxonomy: None,
+        edited_term: None,
+        screen_id: "",
+        typenow: "",
+        files: &[],
+        mailer: visitor.mailer,
+        remote_addr: request.remote_addr.as_deref().unwrap_or_default(),
+        referer: request.referer.as_deref(),
+    };
+    match visitor.site.plugins.admin_ajax_nopriv(action, &ctx).await {
+        Ok(Some(answer)) => {
+            let content_type = if answer.json { "application/json; charset=UTF-8" } else { "text/html; charset=UTF-8" };
+            Some(AdminResponse { status: answer.status, headers: headers(content_type), cookies: Vec::new(), body: answer.body, bytes: Vec::new() })
+        }
+        Ok(None) => None,
+        Err(e) => {
+            tracing::error!(action, error = %e, "plugin ajax failed");
+            Some(text(500, "0"))
+        }
+    }
+}
+
 /// Handles a request to `admin-ajax.php`.
 pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse {
     let action = if request.file == "async-upload.php" { "async-upload".to_owned() } else { request.request("action").unwrap_or_default().to_owned() };
@@ -151,50 +215,9 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse
     };
     let Some(session) = session else {
         // `wp_ajax_nopriv_{$action}` of the plugins.
-        if !env.site.plugins.is_empty() {
-            let (auth, now) = (env.auth.clone(), env.now);
-            let verify_auth = auth.clone();
-            let can = |_: &str| false;
-            let nonce = move |action: &str| auth.create_nonce(action, 0, "", now).unwrap_or_default();
-            let verify = move |nonce: &str, action: &str| verify_auth.verify_nonce(nonce, action, 0, "", now).is_some();
-            let origin = super::request_origin(env, request);
-            let same_origin = request.referer.as_deref().is_some_and(|r| r == origin || r.starts_with(&format!("{origin}/")));
-            let ctx = rustpress_core::native::AdminContext {
-                site: env.site,
-                writer: env.writer,
-                user: 0,
-                now: env.now,
-                hook_suffix: "admin-ajax.php",
-                post: request.post,
-                request_uri: &request.request_uri,
-                query: &request.query,
-                form: &request.form,
-                same_origin,
-                can: &can,
-                nonce: &nonce,
-                verify_nonce: &verify,
-                user_agent: request.user_agent.as_deref(),
-                wp_version: &env.loader.version,
-                wp_root: env.loader.includes.parent().unwrap_or(&env.loader.includes),
-                edited_post: None,
-                block_editor: false,
-                taxonomy: None,
-                edited_term: None,
-                screen_id: "",
-                typenow: "",
-                files: &[],
-            };
-            match env.site.plugins.admin_ajax_nopriv(&action, &ctx).await {
-                Ok(Some(answer)) => {
-                    let content_type = if answer.json { "application/json; charset=UTF-8" } else { "text/html; charset=UTF-8" };
-                    return AdminResponse { status: answer.status, headers: headers(content_type), cookies: Vec::new(), body: answer.body, bytes: Vec::new() };
-                }
-                Ok(None) => {}
-                Err(e) => {
-                    tracing::error!(action = action.as_str(), error = %e, "plugin ajax failed");
-                    return text(500, "0");
-                }
-            }
+        let visitor = Visitor { site: env.site, writer: env.writer, auth: env.auth, now: env.now, wp_version: &env.loader.version, wp_root: env.loader.includes.parent().unwrap_or(&env.loader.includes), mailer: env.plugin_mailer.as_deref() };
+        if let Some(answer) = plugin_nopriv(&visitor, request, &action, super::request_origin(env, request)).await {
+            return answer;
         }
         // `wp_ajax_nopriv_heartbeat` and `wp_ajax_nopriv_generate_password` are the actions for visitors.
         return match action.as_str() {

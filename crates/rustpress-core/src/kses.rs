@@ -152,7 +152,7 @@ pub fn normalize_entities(content: &str) -> String {
 }
 
 /// `wp_kses_decode_entities()`: only the numeric references, each as the one byte `chr()` makes of it.
-fn decode_entities(content: &str) -> String {
+pub fn decode_entities(content: &str) -> String {
     static DECIMAL: OnceLock<Regex> = OnceLock::new();
     static HEX: OnceLock<Regex> = OnceLock::new();
     let content = re(&DECIMAL, r"&#([0-9]+);").replace_all(content, |caps: &regex::Captures| char::from((caps[1].parse::<u64>().unwrap_or(0) % 256) as u8).to_string());

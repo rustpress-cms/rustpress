@@ -326,6 +326,9 @@ async fn admin_route(app: &Arc<App>, request: Request<Body>) -> std::result::Res
     let is_scripts = path.ends_with("/wp-admin/load-scripts.php");
     // A file that `wp-admin` does not have is a request for the site: its 404 page.
     let admin_file = admin_file_of(&path).filter(|file| app.config.wp_root.join("wp-admin").join(file).is_file());
+    if app.writer.is_none() && admin_file.as_deref() == Some("admin-ajax.php") && matches!(*request.method(), Method::GET | Method::POST) {
+        return Ok(visitor_ajax(app, request).await);
+    }
     if !(is_login || is_styles || is_scripts || admin_file.is_some()) || app.writer.is_none() {
         return Err(request);
     }
@@ -367,6 +370,21 @@ async fn admin_route(app: &Arc<App>, request: Request<Body>) -> std::result::Res
         app.reload_now().await;
     }
     Ok(response)
+}
+
+/// `admin-ajax.php` of a read-only site: the plugins' actions for visitors, with a visitor's form as the body.
+async fn visitor_ajax(app: &Arc<App>, request: Request<Body>) -> Response<Body> {
+    let loaded = app.current().await;
+    let post = request.method() == Method::POST;
+    let query = request.uri().query().unwrap_or("").to_owned();
+    let request_uri = request.uri().path_and_query().map(|p| p.as_str().to_owned()).unwrap_or_default();
+    let (parts, body) = request.into_parts();
+    let bytes = match axum::body::to_bytes(body, FORM_BODY_LIMIT).await {
+        Ok(bytes) => bytes,
+        Err(_) => return text(StatusCode::PAYLOAD_TOO_LARGE, "Payload Too Large\n"),
+    };
+    let client = crate::client::Client::of(&app.config, &parts, &loaded.site.settings.siteurl);
+    crate::admin::visitor_ajax(&loaded, &app.config, post, &request_uri, &query, &bytes, &parts.headers, &client).await
 }
 
 /// The body a signed-in user may send (an upload) and the body a visitor may send (a form).

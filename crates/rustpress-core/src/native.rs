@@ -1411,6 +1411,12 @@ pub struct AdminContext<'a> {
     pub typenow: &'a str,
     /// `$_FILES`: the uploaded files of a multipart form.
     pub files: &'a [RestFile],
+    /// `wp_mail()`; without it every message fails.
+    pub mailer: Option<&'a dyn Mailer>,
+    /// `$_SERVER['REMOTE_ADDR']`.
+    pub remote_addr: &'a str,
+    /// `$_SERVER['HTTP_REFERER']`.
+    pub referer: Option<&'a str>,
 }
 
 /// A post status a plugin registers, as the lists of `edit.php` use it.
