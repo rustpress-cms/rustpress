@@ -1067,13 +1067,19 @@ pub async fn render_document_with(theme: &Theme, site: &Site, query: &QueryResul
         site_icon = "<link rel=\"icon\" href=\"/favicon.ico\" sizes=\"32x32\" />\n".to_owned();
     }
     let head = format!(
-        "<meta charset=\"UTF-8\" />\n\t<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />\n{robots}<title>{}</title>\n{}{}{styles}{}{importmap}{preloads}{loading}{fonts}{site_icon}",
+        // Plugins' `wp_head` actions of priority 0 run before `_block_template_viewport_meta_tag()`, which is hooked
+        // when the template is loaded; the actions plugins hook on `init` at priority 10 come after the script modules.
+        "<meta charset=\"UTF-8\" />\n\t{}<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />\n{robots}<title>{}</title>\n{}{}{}{styles}{}{importmap}{preloads}{}{loading}{fonts}{site_icon}",
+        plugin_head.first,
         esc_html(&title),
+        rustpress_core::native::resource_hints(site, &plugin_assets),
         crate::head::feed_links(site, query).await?,
         oembed_links(site, query).await?,
         discovery_links(site, query, &version, state.cpage_override, !plugin_head.removed.contains(&"rel_canonical"), &locale_stylesheet(theme, site)).await?
             // A ported block theme's `wp_head` actions of priority 10 come after core's (`rel_canonical`, the shortlink).
+            + &plugin_head.late
             + &theme.block_theme_port().map(|port| port.wp_head(query)).unwrap_or_default(),
+        plugin_head.late_init,
     );
     let bar = match (&extras.toolbar, toolbar_on) {
         (Some(toolbar), true) => toolbar(&ToolbarInfo { template_slug: &rendered.template_slug, query }),

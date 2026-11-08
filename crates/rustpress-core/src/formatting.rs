@@ -690,6 +690,15 @@ mod tests {
     }
 
     #[test]
+    fn esc_js_matches_wordpress() {
+        // Captured from `esc_js()` of the reference.
+        assert_eq!(esc_js("G-AB'C\"D\\E\nF\r<x>&amp;"), "G-AB\\'C&quot;DE\\nF&lt;x&gt;&amp;");
+        assert_eq!(esc_js("a\\\\b"), "a\\\\b");
+        assert_eq!(esc_js("x&#39;y&#x0027;z&#039"), "x\\'y\\'z&amp;#039");
+        assert_eq!(esc_js("it's & <b>"), "it\\'s &amp; &lt;b&gt;");
+    }
+
+    #[test]
     fn urls_are_escaped_like_esc_url() {
         assert_eq!(esc_url("http://a.test/?x=1&y=2"), "http://a.test/?x=1&#038;y=2");
         assert_eq!(esc_url("/path with space"), "/path%20with%20space");
@@ -864,6 +873,52 @@ pub fn ent2ncr(text: &str) -> String {
         }
     })
     .into_owned()
+}
+
+/// `esc_js()`: `_wp_specialchars( ENT_COMPAT )`, `stripslashes()`, `&#39;`/`&#x27;` back to `'`, CRs dropped,
+/// `addslashes()` and LFs as `\n`.
+pub fn esc_js(text: &str) -> String {
+    let mut special = String::with_capacity(text.len() + 8);
+    for (i, c) in text.char_indices() {
+        match c {
+            '&' if is_entity_at(&text[i..]) => special.push('&'),
+            '&' => special.push_str("&amp;"),
+            '<' => special.push_str("&lt;"),
+            '>' => special.push_str("&gt;"),
+            '"' => special.push_str("&quot;"),
+            _ => special.push(c),
+        }
+    }
+    // `stripslashes()`: a backslash goes, `\\` keeps one, `\0` is NUL.
+    let mut stripped = String::with_capacity(special.len());
+    let mut chars = special.chars();
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            match chars.next() {
+                Some('0') => stripped.push('\0'),
+                Some(next) => stripped.push(next),
+                None => {}
+            }
+        } else {
+            stripped.push(c);
+        }
+    }
+    static APOS: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let apos = APOS.get_or_init(|| regex::Regex::new(r"(?i)&#(?:x0*27|0*39);?").expect("valid regex"));
+    let safe = apos.replace_all(&stripped, "'").replace('\r', "");
+    let mut out = String::with_capacity(safe.len());
+    for c in safe.chars() {
+        match c {
+            '\n' => out.push_str("\\n"),
+            '\'' | '"' | '\\' => {
+                out.push('\\');
+                out.push(c);
+            }
+            '\0' => out.push_str("\\0"),
+            c => out.push(c),
+        }
+    }
+    out
 }
 
 /// `html_entity_decode( $text, ENT_COMPAT )`: double quotes and `&amp;` are decoded, single quotes are not.

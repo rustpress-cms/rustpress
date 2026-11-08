@@ -42,6 +42,14 @@ impl Db {
         Ok(count as u64)
     }
 
+    /// `SELECT user_id, meta_value FROM wp_usermeta WHERE meta_key = %s`: every row of one key, in the order of the
+    /// rows.
+    pub async fn user_meta_by_key(&self, key: &str) -> Result<Vec<(u64, String)>> {
+        let sql = format!("SELECT user_id, meta_value FROM {} WHERE meta_key = ? ORDER BY umeta_id", self.prefix.table("usermeta"));
+        let rows: Vec<(u64, Option<String>)> = sqlx::query_as(AssertSqlSafe(sql)).bind(key).fetch_all(&self.pool).await?;
+        Ok(rows.into_iter().map(|(id, value)| (id, value.unwrap_or_default())).collect())
+    }
+
     /// One `wp_usermeta` value (`get_user_meta( $id, $key, true )`).
     pub async fn user_meta(&self, user_id: u64, key: &str) -> Result<Option<String>> {
         match crate::primed::primed_user_meta(user_id) {

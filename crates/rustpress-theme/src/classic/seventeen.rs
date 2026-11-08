@@ -1128,8 +1128,10 @@ async fn head(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State, registry: &Re
     let theme_uri = theme.template_directory_uri();
     let mut out = String::new();
 
-    out.push_str("<script>(function(html){html.className = html.className.replace(/\\bno-js\\b/,'js')})(document.documentElement);</script>\n");
     let crate::head::PluginHead { head: plugin_head, blocks: early_blocks } = crate::head::plugin_head(theme, site, q, registry, true, None).await?;
+    out.push_str("<script>(function(html){html.className = html.className.replace(/\\bno-js\\b/,'js')})(document.documentElement);</script>\n");
+    // Plugins hook their `wp_head` actions of priority 0 on `init`, after the theme's `twentyseventeen_javascript_detection()`.
+    out.push_str(&plugin_head.first);
     if !plugin_head.removed.contains(&"_wp_render_title_tag") {
         let title = match plugin_head.title {
             Some(title) => title,
@@ -1139,6 +1141,8 @@ async fn head(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State, registry: &Re
     }
     out.push_str(&rustpress_core::native::robots_tag(plugin_head.robots.as_deref().unwrap_or_default()));
     out.push_str(&plugin_head.html);
+    let plugin_assets = site.plugins.assets(site);
+    out.push_str(&rustpress_core::native::resource_hints(site, &plugin_assets));
     out.push_str(&crate::head::feed_links(site, q).await?);
     out.push_str(&oembed_links(site, q).await?);
 
@@ -1259,7 +1263,6 @@ async fn head(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State, registry: &Re
     // The theme's own styles and scripts (`twentyseventeen_scripts()`).
     let fonts_on = tx(ctx, "on", "Libre Franklin font: on or off") != "off";
     out.push('\n');
-    let plugin_assets = site.plugins.assets(site);
     out.push_str(&crate::plugin_assets::StylePrinter::new(wp_root, site).links(&plugin_assets.styles));
     if fonts_on {
         out.push_str(&format!("<link rel='stylesheet' id='twentyseventeen-fonts-css' href='{theme_uri}/assets/fonts/font-libre-franklin.css?ver=20230328' media='all' />\n"));
@@ -1285,7 +1288,9 @@ async fn head(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State, registry: &Re
     if preview.is_some() {
         out.push_str(&printer.core("jquery"));
     }
-    out.push_str(&printer.scripts(&plugin_assets.scripts, false));
+    // Scripts of a later `wp_enqueue_scripts` callback than the theme's are queued after its own.
+    let (early_scripts, late_scripts): (Vec<_>, Vec<_>) = plugin_assets.scripts.iter().cloned().partition(|a| a.priority <= 10);
+    out.push_str(&printer.scripts(&early_scripts, false));
     out.push_str(&printer.core("jquery"));
     let has_menu = menu::has_nav_menu(site, &ctx.mods, "top").await?;
     let mut l10n = vec![("quote", svg("quote-right", false))];
@@ -1301,8 +1306,10 @@ async fn head(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State, registry: &Re
     if has_menu {
         out.push_str(&format!("<script data-wp-strategy=\"defer\" defer id=\"twentyseventeen-navigation-js\" src=\"{theme_uri}/assets/js/navigation.js?ver=20210122\"></script>\n"));
     }
+    out.push_str(&printer.scripts(&late_scripts, false));
 
     out.push_str(&discovery_links(site, q, &version, 0, !plugin_head.removed.contains(&"rel_canonical"), &crate::document::locale_stylesheet(theme, site)).await?);
+    out.push_str(&plugin_head.late);
     // `twentyseventeen_pingback_header()`.
     if let (true, Queried::Post(post)) = (q.flags.is_singular(), &q.queried)
         && post.ping_status == "open"
@@ -1310,6 +1317,8 @@ async fn head(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State, registry: &Re
         out.push_str(&format!("<link rel=\"pingback\" href=\"{}\">\n", esc_url(&site.site_url("xmlrpc.php"))));
     }
     out.push_str(&custom_colors_css(ctx));
+    // What plugins hook on `wp_head` on `init` (before the widgets register).
+    out.push_str(&plugin_head.late_init);
     // `recent_comments_style()`: an active "Recent Comments" widget.
     if preview.is_some() || widgets::sidebars_widgets(site).iter().any(|(name, ids)| name != "wp_inactive_widgets" && ids.iter().any(|id| id.starts_with("recent-comments-"))) {
         out.push_str("<style>.recentcomments a{display:inline !important;padding:0 !important;margin:0 !important;}</style>");
@@ -1389,7 +1398,8 @@ async fn wp_footer(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State) -> Resul
         let includes_url = site.site_url("wp-includes");
         out.push_str(&format!("<script id=\"hoverintent-js-js\" src=\"{includes_url}/js/hoverintent-js.min.js?ver=2.2.1\"></script>\n<script id=\"admin-bar-js\" src=\"{includes_url}/js/admin-bar.min.js?ver={version}\"></script>\n"));
     }
-    out.push_str(&printer.scripts(&plugin_assets.scripts, true));
+    let (early_scripts, late_scripts): (Vec<_>, Vec<_>) = plugin_assets.scripts.iter().cloned().partition(|a| a.priority <= 10);
+    out.push_str(&printer.scripts(&early_scripts, true));
     out.push_str(&format!("<script data-wp-strategy=\"defer\" defer id=\"jquery-scrollto-js\" src=\"{}/assets/js/jquery.scrollTo.js?ver=2.1.3\"></script>\n", ctx.theme.template_directory_uri()));
     // `comment-reply`, enqueued by `twentyseventeen_scripts()` for singular pages with open comments.
     if let (true, Queried::Post(post)) = (ctx.q.flags.is_singular(), &ctx.q.queried)
@@ -1398,6 +1408,7 @@ async fn wp_footer(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State) -> Resul
     {
         out.push_str(&format!("<script async data-wp-strategy=\"async\" fetchpriority=\"low\" id=\"comment-reply-js\" src=\"{}/js/comment-reply.min.js?ver={version}\"></script>\n", site.site_url("wp-includes")));
     }
+    out.push_str(&printer.scripts(&late_scripts, true));
     let includes_url = site.site_url("wp-includes");
     if state.playlist {
         // The head has printed jQuery.
