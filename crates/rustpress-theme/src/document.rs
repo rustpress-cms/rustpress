@@ -1038,7 +1038,9 @@ pub async fn render_document_with(theme: &Theme, site: &Site, query: &QueryResul
         printer.mark_printed(&["mediaelement", "mediaelement-core", "mediaelement-migrate"]);
         footer_scripts.push_str(&printer.core("wp-playlist"));
     }
-    if state.scripts.iter().any(|s| s == "comment-reply") && preview.is_none() {
+    // A plugin may deregister `comment-reply` on a singular page ([rustpress_core::native::ActivePlugin::closes_singular_comments]).
+    let reply_deregistered = query.flags.is_singular() && query.queried_post().is_some_and(|post| site.plugins.closes_singular_comments(post, query.viewer.as_ref()));
+    if state.scripts.iter().any(|s| s == "comment-reply") && preview.is_none() && !reply_deregistered {
         footer_scripts.push_str(&format!("<script async data-wp-strategy=\"async\" fetchpriority=\"low\" id=\"comment-reply-js\" src=\"{includes_url}/js/comment-reply.min.js?ver={version}\"></script>\n"));
     }
     footer_scripts.push_str(&printer.scripts(&plugin_assets.scripts, true));

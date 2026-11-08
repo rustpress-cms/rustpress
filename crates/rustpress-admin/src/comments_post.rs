@@ -119,7 +119,11 @@ impl CommentEnv<'_> {
         if status == "private" && !user.is_some_and(can_read) {
             return Err(failure(String::new(), 0));
         }
-        if !comments_open(self.site, &post, self.now) {
+        let viewer = user.map(|u| {
+            let caps = u.clone();
+            rustpress_core::Viewer::new(u.id, move |c| caps.can(c)).with_roles(&u.roles)
+        });
+        if !comments_open(self.site, &post, self.now, viewer.as_ref()) {
             return Err(failure(tr("Sorry, comments are closed for this item."), 403));
         } else if status == "trash" {
             return Err(failure(String::new(), 0));

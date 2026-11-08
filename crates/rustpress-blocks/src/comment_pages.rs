@@ -57,6 +57,12 @@ fn descendants<'a>(all: &'a [Comment], parent: u64, out: &mut Vec<&'a Comment>) 
 /// The comments of a post for `comments_template()`, which also makes the page the default `cpage` of the request.
 pub async fn comments_for_template(env: &Env<'_>, post_id: u64) -> Result<CommentPage> {
     let mut page = comments_for_post(env, post_id).await?;
+    // The `comments_array` filters of the plugins.
+    if !env.site.plugins.is_empty()
+        && let Some(post) = env.site.db.post(post_id).await?
+    {
+        env.site.filter_comments_array(&post, env.query.viewer.as_ref(), &mut page.comments);
+    }
     // `cpage` becomes the newest (or first) page only while there is more than one page, and only for the template.
     if env.query.vars.u64("cpage").unwrap_or(0) == 0 {
         if page.max_pages <= 1 {

@@ -80,6 +80,8 @@ The reference stack, the tools and the working rules are in [AGENTS.md](AGENTS.m
   - WPCode Lite 2.4.1 – the global header, body and footer scripts and the site-wide snippets with their conditions, not PHP.
   - WPForms Lite 2.0.4 – forms on the website (shortcode, block), submitting with validation, confirmations and the
     notification e-mails, also on read-only sites; not the administration (forms are made in WordPress).
+  - Disable Comments 2.9.1 – comments and pings off everywhere, per post type or by rule, on the website and in the
+    REST API; not the administration.
 - **Following WordPress** – `WORDPRESS_VERSION` is the target; a daily workflow opens an issue per release with the
   report of `dev/wp-diff.sh`; `dev/wp-bump.sh` moves the reference. 7.1.4 was followed (issue #9).
 - **Review** – the security and robustness findings of the review of 2026-10-26 (A1, A2) are fixed except S12; the
@@ -161,6 +163,8 @@ The reference stack, the tools and the working rules are in [AGENTS.md](AGENTS.m
   the administration.
 - WPForms Lite: the form builder and the rest of the administration; CAPTCHAs (reCAPTCHA, hCaptcha, Turnstile),
   Akismet, the legacy e-mail template, theme overrides of the e-mail templates, sending without JavaScript (see below).
+- Disable Comments: the settings and tools pages, the changes of the administration and the editor, the Abilities API,
+  the counter of blocked attempts, the blocklist of comment types, WooCommerce reviews, network settings.
 - Next: Polylang (needs the language per request). Following plugin releases (`PLUGIN_VERSIONS` and the diff report).
 
 **Review and tests**
@@ -1314,3 +1318,43 @@ legacy e-mail template, e-mail templates overridden in the theme, sending withou
 `email_async` (mails are sent during the request), proxy headers for the IP (`REMOTE_ADDR` only), smart tags in
 markup attributes, `{url_logout}`, `{user_meta}`, payment tags, the plugin's logs, LiteConnect and the usage
 statistics, and the administration (builder, settings, tools).
+
+### Disable Comments 2.9.1 (2026-11-08)
+
+`crates/rustpress-plugins/src/disable_comments/` (plugin file `disable-comments/disable-comments.php`): what the plugin
+changes on the website and in the REST API, read from `disable_comments_options`.
+
+- **Per post** (`is_disabled_for_post()`): "everywhere", the disabled post types, the role exclusion (roles,
+  administrators through `is_super_admin()`, `logged-out-users`), the conditional rules (taxonomy terms, page template,
+  "enable" before "disable", the auto-close age). The objects of the rule terms, the page templates and the counts of
+  the allowed comment types are read once per snapshot.
+- **Filters**: `comments_open`, `pings_open`, `get_comments_number` (0, the approved comments of the allowed types, or
+  unchanged with "show existing comments"; the plugin's number is an int, so the `'1' ===` checks of the comments
+  title block, Twenty Seventeen, Twenty Twenty-One and `theme-compat` take the plural), `comments_array`,
+  `remove_post_type_support()` of `comments` and `trackbacks` (the REST API leaves `comment_status` and `ping_status`
+  out), `check_comment_template()` (no post comments feed link, `comment-reply` deregistered).
+- **Everywhere**: the recent comments widget and its style, the comments feed link, the toolbar's comments menu (also in
+  the administration), `X-Pingback`, and every comment feed answered by `_xml_wp_die_handler()` with 403 (with the
+  feed's `ETag`, as WordPress sent it before).
+- **REST**: `rest_pre_dispatch` answers `/wp/v2/comments` routes with `rest_comment_disabled` (no `Allow` header, also
+  for embedded `replies`), allowed comment types and, without the REST switch, posts a rule keeps open pass;
+  `rest_comment_query` empties the collection (the `post` parameter is a list by then, so rules never reopen it).
+  Comment submissions see the closed post (`comment_closed`, `rest_comment_closed`).
+
+New in the framework: `ActivePlugin::comments_off`, `comments_off_everywhere`, `removes_post_type_support`,
+`closes_singular_comments`, `template_redirect_die`, `rest_pre_dispatch` and `rest_comment_query_empty`;
+`Site::comments_open()`, `pings_open()`, `comments_number()`, `comments_number_is_one()` and
+`filter_comments_array()`, which every comment template, block, feed, embed and theme now asks; the roles on `Viewer`;
+`QueryResult::is_comment_feed()`. Twenty Seventeen no longer prints an extra line break before "Comments are closed.".
+
+Compared with the plugin active, for visitors and administrators: the block theme in eleven settings (nothing set,
+everywhere, one post type, with existing comments, allowed types, the REST switch, excluded visitors and
+administrators, an "enable" taxonomy rule, a template rule, auto-close) on posts with and without comments, a page,
+the front page, feeds, comment feeds, embeds and the REST routes of posts, pages and comments (also `_embed`); Twenty
+Seventeen and Twenty Twenty-One in four of them, also with a recent comments widget; comment submissions – all equal.
+Known: the REST API decides the role exclusion with the REST user, while WordPress asks the cookie user before
+the nonce check (a signed-in excluded user reading the REST API without a nonce); the counter of blocked attempts
+(`disable_comments_blocked_*`, written on `shutdown`) stays unwritten. Not ported: the administration (settings and
+tools pages, deleting and exporting comments, the theme scan, the menus, dashboard and discussion settings it hides,
+the editor's blocks), the Abilities API, the blocklist of comment types (it refuses submissions), XML-RPC (no
+`xmlrpc.php`), WooCommerce reviews, network settings, the upgrade of settings older than 2.3.1 (`show_avatars`).

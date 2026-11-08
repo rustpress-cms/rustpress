@@ -157,6 +157,21 @@ impl Db {
         Ok(values)
     }
 
+    /// The objects in any of the terms `term_ids` of `taxonomy` (`has_term()` for many objects at once).
+    pub async fn object_ids_in_terms(&self, taxonomy: &str, term_ids: &[u64]) -> Result<Vec<u64>> {
+        if term_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let ids = term_ids.iter().map(u64::to_string).collect::<Vec<_>>().join(",");
+        let sql = format!(
+            "SELECT DISTINCT tr.object_id FROM {} AS tr INNER JOIN {} AS tt ON tt.term_taxonomy_id = tr.term_taxonomy_id WHERE tt.taxonomy = ? AND tt.term_id IN ({ids})",
+            self.prefix.table("term_relationships"),
+            self.prefix.table("term_taxonomy")
+        );
+        let rows: Vec<(u64,)> = sqlx::query_as(AssertSqlSafe(sql)).bind(taxonomy).fetch_all(&self.pool).await?;
+        Ok(rows.into_iter().map(|(id,)| id).collect())
+    }
+
     pub async fn term_by_slug(&self, taxonomy: &str, slug: &str) -> Result<Option<Term>> {
         let mut sql = Sql::new(format!("SELECT {TERM_COLUMNS} FROM {} WHERE tt.taxonomy = ", self.term_from()));
         sql.push_bind(taxonomy).push(" AND t.slug = ").push_bind(slug);

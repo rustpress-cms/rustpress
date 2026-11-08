@@ -126,9 +126,9 @@ pub fn filter_url(url: &str) -> String {
     rustpress_core::kses::kses_data(&url)
 }
 
-/// `comments_open()`: open, and not closed for old posts.
-pub fn comments_open(site: &Site, post: &rustpress_db::Post, now: i64) -> bool {
-    if post.comment_status != "open" {
+/// `comments_open()`: open, not closed for old posts, and not by a plugin's `comments_open` filter for `viewer`.
+pub fn comments_open(site: &Site, post: &rustpress_db::Post, now: i64, viewer: Option<&rustpress_core::Viewer>) -> bool {
+    if !site.comments_open(post, viewer) {
         return false;
     }
     if site.options.string("close_comments_for_old_posts", "0") != "0" && post.post_type == "post" {

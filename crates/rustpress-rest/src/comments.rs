@@ -147,6 +147,18 @@ impl Rest<'_> {
         }
 
         // The total counts every match; the list leaves out what the user may not read.
+        // `rest_comment_query` of the plugins.
+        if !self.site.plugins.is_empty() {
+            let (route, raw) = self.route.lock().unwrap_or_else(|e| e.into_inner()).clone();
+            let mut pairs = rustpress_core::canonical::parse_qs(&raw);
+            if !pairs.iter().any(|(k, _)| k == "type") {
+                pairs.push(("type".to_owned(), "comment".to_owned()));
+            }
+            let request = rustpress_core::native::RestPreDispatch { site: self.site, method: "GET", route: &route, params: &pairs, user: self.blank.viewer.as_ref() };
+            if self.site.plugins.rest_comment_query_empty(&request).await? {
+                query.ids = vec![0];
+            }
+        }
         let total = self.site.db.count_comments(&query).await?;
         let max_pages = total.div_ceil(per_page);
         if query.offset == 0 {

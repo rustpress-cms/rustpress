@@ -27,8 +27,8 @@ struct Counters {
 }
 
 /// `comments_open()`.
-pub fn comments_open(post: &Post) -> bool {
-    post.comment_status == "open"
+pub fn comments_open(site: &Site, viewer: Option<&rustpress_core::viewer::Viewer>, post: &Post) -> bool {
+    site.comments_open(post, viewer)
 }
 
 /// The walker output of `wp_list_comments()` (without the surrounding `<ol>`).
@@ -177,7 +177,7 @@ async fn start_element(
     let when = rustpress_core::i18n::sprintf(&site.tr("%1$s at %2$s"), &[&date, &time]);
     let link = crate::comment_pages::comment_link(env, comment, args.cpage).await?;
     let text = comment_text(site, &comment.comment_content);
-    let reply = if comments_open(post) && (max_depth <= 0 || depth < max_depth) {
+    let reply = if comments_open(site, env.query.viewer.as_ref(), post) && (max_depth <= 0 || depth < max_depth) {
         let author = comment_author(site, comment);
         let reply_to = rustpress_core::i18n::sprintf(&site.tr("Reply to %s"), &[&author]);
         let base = if site.options.get("page_comments") == Some("1") { link.replace(&format!("#comment-{}", comment.comment_id), "") } else { site.permalink(post).await? };
@@ -234,7 +234,7 @@ impl Default for FormArgs {
 
 /// [`comment_form`] with the arguments of a theme.
 pub async fn comment_form_with(site: &Site, viewer: Option<&rustpress_core::viewer::Viewer>, post: &Post, request_uri: &str, block_theme: bool, form: &FormArgs) -> Result<String> {
-    if !comments_open(post) {
+    if !comments_open(site, viewer, post) {
         return Ok(String::new());
     }
     let options = &site.options;
@@ -315,8 +315,8 @@ pub async fn compat_comments_template(site: &Site, env: &crate::env::Env<'_>, po
     let mut out = String::from("\n<!-- You can start editing here. -->\n\n");
     if !comments.is_empty() {
         let title = format!("&#8220;{}&#8221;", the_title_for(site, post));
-        let count = post.comment_count;
-        let heading = if count == 1 {
+        let count = site.comments_number(post, env.query.viewer.as_ref());
+        let heading = if site.comments_number_is_one(post, env.query.viewer.as_ref()) {
             rustpress_core::i18n::sprintf(&site.tr("One response to %s"), &[&title])
         } else {
             rustpress_core::i18n::sprintf(&site.trn("%1$s response to %2$s", "%1$s responses to %2$s", count), &[&site.number_i18n(count.max(0) as u64), &title])
@@ -329,7 +329,7 @@ pub async fn compat_comments_template(site: &Site, env: &crate::env::Env<'_>, po
         out.push_str(&format!("\t<h3 id=\"comments\">\n\t\t{heading}\t</h3>\n\n{navigation}\n\t<ol class=\"commentlist\">\n\t"));
         out.push_str(&list_comments(site, env, post, &comments, &args).await?);
         out.push_str(&format!("\t</ol>\n\n{navigation}\n"));
-    } else if comments_open(post) {
+    } else if comments_open(site, env.query.viewer.as_ref(), post) {
         out.push_str("\n\t\t\t<!-- If comments are open, but there are no comments. -->\n\n\t\n");
     } else {
         out.push_str(&format!("\n\t\n\t\t<!-- If comments are closed. -->\n\t\t<p class=\"nocomments\">{}</p>\n\t", site.tr("Comments are closed.")));

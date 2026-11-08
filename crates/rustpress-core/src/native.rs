@@ -189,6 +189,11 @@ pub trait ActivePlugin: Send + Sync {
         false
     }
 
+    /// `template_redirect` at a priority before 10: a `wp_die()` instead of the page (before `redirect_canonical()`).
+    fn template_redirect_die(&self, _site: &Site, _query: &crate::QueryResult) -> Option<Die> {
+        None
+    }
+
     /// `template_redirect`: a redirect instead of the page (before `redirect_canonical()`).
     fn template_redirect<'a>(&'a self, _site: &'a Site, _query: &'a crate::QueryResult) -> BoxFuture<'a, Result<Option<Redirect>>> {
         Box::pin(async { Ok(None) })
@@ -231,6 +236,41 @@ pub trait ActivePlugin: Send + Sync {
     /// The `comment_reply_link` filter: the link of `get_comment_reply_link()`.
     fn comment_reply_link(&self, link: String) -> String {
         link
+    }
+
+    /// The `comments_open`, `pings_open`, `get_comments_number` and `comments_array` filters for one post: `Some`
+    /// when the plugin closes its comments and pings for the viewer.
+    fn comments_off(&self, _post: &Post, _viewer: Option<&crate::Viewer>) -> Option<CommentsOff> {
+        None
+    }
+
+    /// Whether the plugin turns comments off on the whole site for the viewer: the recent comments widget, the
+    /// `X-Pingback` header, the comment feeds, their links and the comments menu of the toolbar go away.
+    fn comments_off_everywhere(&self, _viewer: Option<&crate::Viewer>) -> bool {
+        false
+    }
+
+    /// `remove_post_type_support()` on `wp_loaded`: whether the plugin takes `feature` from `post_type`.
+    fn removes_post_type_support(&self, _post_type: &str, _feature: &str) -> bool {
+        false
+    }
+
+    /// `remove_action( 'wp_head', 'feed_links_extra', 3 )` and `wp_deregister_script( 'comment-reply' )` on
+    /// `template_redirect`: whether the plugin drops the extra feed links and the comment reply script of the
+    /// singular page of `post`.
+    fn closes_singular_comments(&self, _post: &Post, _viewer: Option<&crate::Viewer>) -> bool {
+        false
+    }
+
+    /// The `rest_comment_query` filter of `GET /wp/v2/comments`: whether the plugin empties the result
+    /// (`comment__in` of `[0]`). The parameters have the defaults of the route.
+    fn rest_comment_query_empty<'a>(&'a self, _request: &'a RestPreDispatch<'a>) -> BoxFuture<'a, Result<bool>> {
+        Box::pin(async { Ok(false) })
+    }
+
+    /// The `rest_pre_dispatch` filter: an error that answers the REST request before its route runs.
+    fn rest_pre_dispatch<'a>(&'a self, _request: &'a RestPreDispatch<'a>) -> BoxFuture<'a, Result<Option<RestAnswer>>> {
+        Box::pin(async { Ok(None) })
     }
 
     /// `comment_post` (a visitor's comment was saved) and `edit_comment` (the administration saved one): the plugin
@@ -1029,6 +1069,28 @@ pub struct ShortcodeContext<'a> {
     /// What the plugins keep for the rest of the request (their `static` variables).
     pub state: &'a std::sync::Mutex<PluginState>,
     pub services: &'a dyn PageServices,
+}
+
+/// What a plugin's [ActivePlugin::comments_off] leaves of the comments of a post. Comments and pings are closed.
+#[derive(Clone, Debug, Default)]
+pub struct CommentsOff {
+    /// `get_comments_number()`: the number shown instead of the post's `comment_count`, `None` keeps it. It is a PHP
+    /// int, so `'1' === get_comments_number()` is false for it.
+    pub count: Option<i64>,
+    /// `comments_array`: the comment types that stay in the list of `comments_template()`, `None` keeps every
+    /// comment.
+    pub keep_types: Option<Vec<String>>,
+}
+
+/// A REST request before its route runs (`rest_pre_dispatch`).
+pub struct RestPreDispatch<'a> {
+    pub site: &'a Site,
+    pub method: &'a str,
+    /// The route, such as `/wp/v2/comments/5`.
+    pub route: &'a str,
+    /// `$request->get_param()` of the query string and the body (before the URL parameters of the route are known).
+    pub params: &'a [(String, String)],
+    pub user: Option<&'a crate::Viewer>,
 }
 
 /// Per-request state of the plugins: counters and lists by a name the plugin picks.
@@ -1979,6 +2041,11 @@ impl Plugins {
         Ok(None)
     }
 
+    /// The first `wp_die()` of a plugin early on `template_redirect` ([ActivePlugin::template_redirect_die]).
+    pub fn template_redirect_die(&self, site: &Site, query: &crate::QueryResult) -> Option<Die> {
+        self.hooks().find_map(|plugin| plugin.template_redirect_die(site, query))
+    }
+
     /// The first redirect a plugin asks for on `template_redirect`.
     pub async fn template_redirect(&self, site: &Site, query: &crate::QueryResult) -> Result<Option<Redirect>> {
         for plugin in self.hooks() {
@@ -2130,6 +2197,47 @@ impl Plugins {
     /// The link of `get_comment_reply_link()` after the plugins' `comment_reply_link` filters.
     pub fn comment_reply_link(&self, link: String) -> String {
         self.hooks().fold(link, |link, plugin| plugin.comment_reply_link(link))
+    }
+
+    /// How the plugins close the comments of `post` for the viewer ([ActivePlugin::comments_off]).
+    pub fn comments_off(&self, post: &Post, viewer: Option<&crate::Viewer>) -> Option<CommentsOff> {
+        self.hooks().find_map(|plugin| plugin.comments_off(post, viewer))
+    }
+
+    /// Whether a plugin turns comments off everywhere ([ActivePlugin::comments_off_everywhere]).
+    pub fn comments_off_everywhere(&self, viewer: Option<&crate::Viewer>) -> bool {
+        self.hooks().any(|plugin| plugin.comments_off_everywhere(viewer))
+    }
+
+    /// Whether a plugin removed `feature` from `post_type` ([ActivePlugin::removes_post_type_support]).
+    pub fn removes_post_type_support(&self, post_type: &str, feature: &str) -> bool {
+        self.hooks().any(|plugin| plugin.removes_post_type_support(post_type, feature))
+    }
+
+    /// Whether a plugin drops the extra feed links and `comment-reply` of a singular page
+    /// ([ActivePlugin::closes_singular_comments]).
+    pub fn closes_singular_comments(&self, post: &Post, viewer: Option<&crate::Viewer>) -> bool {
+        self.hooks().any(|plugin| plugin.closes_singular_comments(post, viewer))
+    }
+
+    /// Whether a plugin empties the comments of `GET /wp/v2/comments` ([ActivePlugin::rest_comment_query_empty]).
+    pub async fn rest_comment_query_empty(&self, request: &RestPreDispatch<'_>) -> Result<bool> {
+        for plugin in self.hooks() {
+            if plugin.rest_comment_query_empty(request).await? {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    /// `rest_pre_dispatch` of the plugins: the first answer wins.
+    pub async fn rest_pre_dispatch(&self, request: &RestPreDispatch<'_>) -> Result<Option<RestAnswer>> {
+        for plugin in self.hooks() {
+            if let Some(answer) = plugin.rest_pre_dispatch(request).await? {
+                return Ok(Some(answer));
+            }
+        }
+        Ok(None)
     }
 
     /// `comment_post` / `edit_comment` of the plugins; the first `wp_die()` ends it.

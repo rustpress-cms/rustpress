@@ -40,6 +40,10 @@ All notable changes to RustPress. Each release names the WordPress release it fo
 - **WPCode Lite** 2.4.1 as a native module for the website: the global header, body and footer scripts, the
   site-wide snippets (HTML, text, JavaScript, CSS) with their conditional logic and the `[wpcode]` shortcode.
   `wp_body_open` is new for plugins.
+- **Disable Comments** 2.9.1 as a native module for the website and the REST API: comments and pings off
+  everywhere, per post type or by conditional rule (terms, page template, roles, auto-close), the existing comments
+  kept or hidden, allowed comment types, the comment feeds and REST routes refused. Twenty Seventeen no longer prints
+  an extra line break before "Comments are closed.".
 - `rustpress check` no longer counts backup, migration and translation plugins as missing, and reports security
   and admin-only plugins as a note that says what is lost instead of "does not run".
 
