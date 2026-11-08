@@ -175,6 +175,10 @@ impl rustpress_core::native::PageServices for Services<'_> {
         rustpress_core::native::PageServices::content_filters(&self.0, post, text, context)
     }
 
+    fn do_shortcode<'a>(&'a self, post: Option<&'a rustpress_db::Post>, text: &'a str) -> futures::future::BoxFuture<'a, rustpress_core::Result<String>> {
+        rustpress_core::native::PageServices::do_shortcode(&self.0, post, text)
+    }
+
     fn avatar(&self, email: &str, size: u64) -> String {
         rustpress_core::native::PageServices::avatar(&self.0, email, size)
     }

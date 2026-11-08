@@ -1349,8 +1349,8 @@ fn script_version(wp_root: &std::path::Path, handle: &str, default: &str) -> Str
     default.to_owned()
 }
 
-/// `wp_head()`.
-async fn head(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State, registry: &Registry) -> Result<String> {
+/// `wp_head()`, and what the plugins print on `wp_body_open` and in `wp_footer` (they work it out with the head).
+async fn head(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State, registry: &Registry) -> Result<(String, String, (String, String))> {
     let site = ctx.site;
     let theme = ctx.theme;
     let q = ctx.q;
@@ -1363,6 +1363,7 @@ async fn head(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State, registry: &Re
     let crate::head::PluginHead { head: plugin_head, blocks: early_blocks } = crate::head::plugin_head(theme, site, q, registry, true, None).await?;
     // The plugins' actions of priority 0 come first.
     out.push_str(&plugin_head.early);
+    let plugin_assets = site.plugins.assets_for(site, Some(q), None).await;
     out.push_str(&plugin_head.first);
     if !plugin_head.removed.contains(&"_wp_render_title_tag") {
         let title = match plugin_head.title {
@@ -1373,6 +1374,7 @@ async fn head(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State, registry: &Re
     }
     out.push_str(&rustpress_core::native::robots_tag(plugin_head.robots.as_deref().unwrap_or_default()));
     out.push_str(&plugin_head.html);
+    out.push_str(&rustpress_core::native::resource_hints(site, &plugin_assets));
     out.push_str(&crate::head::feed_links(site, q).await?);
     out.push_str(&oembed_links(site, q).await?);
 
@@ -1498,7 +1500,6 @@ async fn head(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State, registry: &Re
 
     // The theme's styles (`twenty_twenty_one_scripts()`, `Twenty_Twenty_One_Dark_Mode::enqueue_scripts()`).
     out.push('\n');
-    let plugin_assets = site.plugins.assets_for(site, Some(q), None).await;
     out.push_str(&crate::plugin_assets::StylePrinter::new(wp_root, site).links(&plugin_assets.styles));
     let style = if rtl { "style-rtl.css" } else { "style.css" };
     out.push_str(&format!("<link rel='stylesheet' id='twenty-twenty-one-style-css' href='{theme_uri}/{style}?ver={VERSION}' media='all' />\n"));
@@ -1533,10 +1534,13 @@ async fn head(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State, registry: &Re
     if preview.is_some() {
         out.push_str(&printer.core("jquery"));
     }
-    out.push_str(&printer.scripts(&plugin_assets.scripts, false));
+    // Plugin scripts of a later priority (or enqueued on `init`) come after the theme's.
+    let (early_scripts, late_scripts): (Vec<_>, Vec<_>) = plugin_assets.scripts.iter().cloned().partition(|a| a.priority <= 10);
+    out.push_str(&printer.scripts(&early_scripts, false));
     if menu::has_nav_menu(site, &ctx.mods, "primary").await? {
         out.push_str(&format!("<script data-wp-strategy=\"defer\" defer id=\"twenty-twenty-one-primary-navigation-script-js\" src=\"{theme_uri}/assets/js/primary-navigation.js?ver={VERSION}\"></script>\n"));
     }
+    out.push_str(&printer.scripts(&late_scripts, false));
 
     out.push_str(&discovery_links(site, q, &version, 0, !plugin_head.removed.contains(&"rel_canonical"), &crate::document::locale_stylesheet(theme, site)).await?);
     // The plugins' actions of priority 10, before the theme's.
@@ -1547,6 +1551,8 @@ async fn head(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State, registry: &Re
     {
         out.push_str(&format!("<link rel=\"pingback\" href=\"{}\">", esc_url(&site.site_url("xmlrpc.php"))));
     }
+    // What plugins hook on `wp_head` on `init`.
+    out.push_str(&plugin_head.late_init);
     // `recent_comments_style()`: an active "Recent Comments" widget.
     if preview.is_some() || widgets::sidebars_widgets(site).iter().any(|(name, ids)| name != "wp_inactive_widgets" && ids.iter().any(|id| id.starts_with("recent-comments-"))) {
         out.push_str("<style>.recentcomments a{display:inline !important;padding:0 !important;margin:0 !important;}</style>");
@@ -1555,6 +1561,8 @@ async fn head(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State, registry: &Re
     if let Some(preview) = preview {
         out.push_str(&crate::customize_preview::loading_style(preview));
     }
+    // What plugins hook on `wp_head` on `wp`.
+    out.push_str(&plugin_head.on_wp);
     let icon = super::wp_site_icon(ctx.site).await?;
     out.push_str(if icon.is_empty() && preview.is_some() { "<link rel=\"icon\" href=\"/favicon.ico\" sizes=\"32x32\" />\n" } else { &icon });
     match custom_css(ctx).await? {
@@ -1575,7 +1583,7 @@ async fn head(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State, registry: &Re
         out.push_str(&late);
         out.push('\n');
     }
-    Ok(out)
+    Ok((out, plugin_head.body_open, (plugin_head.footer, plugin_head.footer_on_wp)))
 }
 
 /// `wp_get_custom_css()`.
@@ -1605,7 +1613,7 @@ fn dark_mode_switch(ctx: &Ctx<'_>) -> String {
 }
 
 /// `wp_footer()`.
-async fn wp_footer(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State) -> Result<String> {
+async fn wp_footer(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State, plugin_head_footer: &(String, String)) -> Result<String> {
     let site = ctx.site;
     let wp_root = &ctx.theme.wp_root;
     let version = wp_version(wp_root);
@@ -1625,14 +1633,15 @@ async fn wp_footer(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State) -> Resul
     // `twenty_twenty_one_supports_js()` and the switch of the dark mode run on `wp_footer` before the scripts.
     let supports_js = "<script>\ndocument.body.classList.remove('no-js');\n//# sourceURL=twenty_twenty_one_supports_js\n</script>\n";
     let switch = if dark_mode(ctx) { dark_mode_switch(ctx) } else { String::new() };
-    let mut out = format!("{playlist}{speculation}{nav_menus}{plugin_footer}{supports_js}{switch}{importmap}{module_scripts}{preloads}{}", state.interactivity.data_script().unwrap_or_default());
+    let mut out = format!("{playlist}{speculation}{nav_menus}{plugin_footer}{}{supports_js}{switch}{importmap}{module_scripts}{preloads}{}{}", plugin_head_footer.0, state.interactivity.data_script().unwrap_or_default(), plugin_head_footer.1);
     let includes_url = site.site_url("wp-includes");
     let plugin_assets = site.plugins.assets_for(site, Some(ctx.q), None).await;
     let mut printer = crate::plugin_assets::ScriptPrinter::new(&includes_url, &script_version(wp_root, "jquery-core", "3.7.1"), &script_version(wp_root, "jquery-migrate", "3.4.1")).with_packages(wp_root, site);
     if ctx.q.viewer.as_ref().is_some_and(|viewer| viewer.show_admin_bar) {
         out.push_str(&format!("<script id=\"hoverintent-js-js\" src=\"{includes_url}/js/hoverintent-js.min.js?ver=2.2.1\"></script>\n<script id=\"admin-bar-js\" src=\"{includes_url}/js/admin-bar.min.js?ver={version}\"></script>\n"));
     }
-    out.push_str(&printer.scripts(&plugin_assets.scripts, true));
+    let (early_scripts, late_scripts): (Vec<_>, Vec<_>) = plugin_assets.scripts.iter().cloned().partition(|a| a.priority <= 10);
+    out.push_str(&printer.scripts(&early_scripts, true));
     // `comment-reply`, enqueued by `twenty_twenty_one_scripts()` for singular pages with open comments.
     if let (true, Queried::Post(post)) = (ctx.q.flags.is_singular(), &ctx.q.queried)
         && post.comment_status == "open"
@@ -1641,6 +1650,7 @@ async fn wp_footer(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State) -> Resul
         out.push_str(&format!("<script async data-wp-strategy=\"async\" fetchpriority=\"low\" id=\"comment-reply-js\" src=\"{includes_url}/js/comment-reply.min.js?ver={version}\"></script>\n"));
     }
     out.push_str(&format!("<script id=\"twenty-twenty-one-responsive-embeds-script-js\" src=\"{}/assets/js/responsive-embeds.js?ver={VERSION}\"></script>\n", ctx.theme.template_directory_uri()));
+    out.push_str(&printer.scripts(&late_scripts, true));
     if state.playlist {
         out.push_str(&printer.core("jquery"));
         out.push_str(&printer.core("wp-util"));
@@ -1719,8 +1729,8 @@ pub async fn legacy_widget_preview(ctx: &Ctx<'_>, registry: &Registry, id_base: 
     let services = widgets::Services { site, q: ctx.q, env: &ctx.env, stylesheet: &ctx.theme.stylesheet, request_uri: "", search_form: &search };
     let widget = widgets::the_widget(&services, id_base, instance.unwrap_or(&empty)).await?;
     let state = ctx.env.take_state();
-    let head_html = head(ctx, &state, registry).await?;
-    let footer_html = wp_footer(ctx, &state).await?;
+    let (head_html, _, plugin_footer) = head(ctx, &state, registry).await?;
+    let footer_html = wp_footer(ctx, &state, &plugin_footer).await?;
     Ok(format!(
         "\t\t<!doctype html>\n\t\t<html {}lang=\"{}\">\n\t\t<head>\n\t\t\t<meta charset=\"UTF-8\" />\n\t\t\t<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />\n\t\t\t<link rel=\"profile\" href=\"https://gmpg.org/xfn/11\" />\n\t\t\t{head_html}\t\t\t<style>\n\t\t\t\t/* Reset theme styles */\n\t\t\t\thtml, body, #page, #content {{\n\t\t\t\t\tpadding: 0 !important;\n\t\t\t\t\tmargin: 0 !important;\n\t\t\t\t}}\n\t\t\t</style>\n\t\t</head>\n\t\t<body class=\"{}\">\n\t\t<div id=\"page\" class=\"site\">\n\t\t\t<div id=\"content\" class=\"site-content\">\n\t\t\t\t{widget}\t\t\t</div><!-- #content -->\n\t\t</div><!-- #page -->\n\t\t{footer_html}\t\t</body>\n\t\t</html>\n\t\t",
         if site.is_rtl() { "dir=\"rtl\" " } else { "" },
@@ -1746,11 +1756,14 @@ pub async fn render(ctx: &Ctx<'_>, registry: &Registry, extras: &crate::document
         _ => String::new(),
     };
     let mut body = header(ctx, &classes, &bar).await?;
+    // `wp_body_open` comes right after the toolbar.
+    let body_open_at = format!("<body class=\"{}\">\n", esc_attr(&classes.join(" "))).len() + bar.len();
     body.push_str(&main_template(ctx).await?);
     body.push_str(&footer(ctx).await?);
     let state = ctx.env.take_state();
-    let head_html = head(ctx, &state, registry).await?;
-    let footer_html = wp_footer(ctx, &state).await?;
+    let (head_html, body_open, plugin_footer) = head(ctx, &state, registry).await?;
+    body.insert_str(body_open_at, &body_open);
+    let footer_html = wp_footer(ctx, &state, &plugin_footer).await?;
     let html = format!(
         "<!doctype html>\n<html {}lang=\"{}\" {}>\n<head>\n\t<meta charset=\"UTF-8\" />\n\t<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n\t{head_html}</head>\n\n{body}{footer_html}\n</body>\n</html>\n",
         if site.is_rtl() { "dir=\"rtl\" " } else { "" },

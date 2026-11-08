@@ -4,7 +4,7 @@
 //! when the row is missing or outdated), so pages look the same before and after the plugin saw them.
 
 mod breadcrumbs;
-mod head;
+pub(crate) mod head;
 mod images;
 mod options;
 mod presentation;

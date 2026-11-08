@@ -997,7 +997,7 @@ pub async fn render_document_with(theme: &Theme, site: &Site, query: &QueryResul
     let lightbox = if state.lightbox_overlay { rustpress_blocks::dynamic::lightbox::overlay(site, theme) } else { String::new() };
     let playlist_templates = if state.playlist || preview.is_some() { rustpress_blocks::shortcodes::playlist_templates(site) } else { String::new() };
     let nav_menus = preview.map(crate::customize_preview::nav_menus_exports).unwrap_or_default();
-    let mut footer_scripts = format!("{playlist_templates}{nav_menus}{speculation}{}{plugin_footer}{module_scripts}{}{lightbox}", rustpress_blocks::duotone::footer_svgs(&state.duotone), state.interactivity.data_script().unwrap_or_default());
+    let mut footer_scripts = format!("{playlist_templates}{nav_menus}{speculation}{}{plugin_footer}{}{module_scripts}{}{}{lightbox}", rustpress_blocks::duotone::footer_svgs(&state.duotone), plugin_head.footer, state.interactivity.data_script().unwrap_or_default(), plugin_head.footer_on_wp);
     footer_scripts.push_str(&style_printer.links(&footer_styles));
     // MediaElement: jQuery in the head, the player scripts in the footer. The scripts plugins enqueue for the head
     // follow, after their dependencies.
@@ -1075,7 +1075,7 @@ pub async fn render_document_with(theme: &Theme, site: &Site, query: &QueryResul
     let head = format!(
         // Plugins' `wp_head` actions of priority 0 run before `_block_template_viewport_meta_tag()`, which is hooked
         // when the template is loaded; the actions plugins hook on `init` at priority 10 come after the script modules.
-        "<meta charset=\"UTF-8\" />\n\t{}<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />\n{robots}<title>{}</title>\n{}{}{}{styles}{}{importmap}{preloads}{}{loading}{fonts}{site_icon}",
+        "<meta charset=\"UTF-8\" />\n\t{}<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />\n{robots}<title>{}</title>\n{}{}{}{styles}{}{importmap}{preloads}{}{}{loading}{fonts}{site_icon}",
         format!("{}{}", plugin_head.early, plugin_head.first),
         esc_html(&title),
         rustpress_core::native::resource_hints(site, &plugin_assets),
@@ -1086,16 +1086,18 @@ pub async fn render_document_with(theme: &Theme, site: &Site, query: &QueryResul
             + &plugin_head.late
             + &theme.block_theme_port().map(|port| port.wp_head(query)).unwrap_or_default(),
         plugin_head.late_init,
+        plugin_head.on_wp,
     );
     let bar = match (&extras.toolbar, toolbar_on) {
         (Some(toolbar), true) => toolbar(&ToolbarInfo { template_slug: &rendered.template_slug, query }),
         _ => String::new(),
     };
     let html = format!(
-        "<!DOCTYPE html>\n<html {}lang=\"{}\">\n<head>\n\t{head}</head>\n\n<body class=\"{}\">\n{bar}\n{}\n{footer_scripts}</body>\n</html>\n",
+        "<!DOCTYPE html>\n<html {}lang=\"{}\">\n<head>\n\t{head}</head>\n\n<body class=\"{}\">\n{bar}{}\n{}\n{footer_scripts}</body>\n</html>\n",
         if rtl { "dir=\"rtl\" " } else { "" },
         esc_attr(&lang),
         esc_attr(&classes.join(" ")),
+        plugin_head.body_open,
         rendered.html
     );
     tracing::debug!(body_ms = body_done.as_secs_f64() * 1000.0, total_ms = started.elapsed().as_secs_f64() * 1000.0, path = query.url_path.as_str(), "document rendered");
