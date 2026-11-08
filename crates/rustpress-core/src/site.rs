@@ -297,6 +297,21 @@ impl Site {
         }
     }
 
+    /// The site with some autoloaded options changed for one request (the preview of the Customizer); the settings
+    /// follow the options, the rest is shared.
+    pub fn with_options(&self, changed: &[(String, String)]) -> Self {
+        let mut options = self.options.clone();
+        for (name, value) in changed {
+            options.set(name, value);
+        }
+        let settings = Settings::from_options(&options);
+        let i18n = std::sync::OnceLock::new();
+        if let Some(loaded) = self.i18n.get() {
+            let _ = i18n.set(loaded.clone());
+        }
+        Self { db: self.db.clone(), options, settings, rewrite: self.rewrite.clone(), timezone: self.timezone.clone(), types: self.types.clone(), plugins: self.plugins.clone(), i18n }
+    }
+
     pub fn from_parts(db: Db, options: Options) -> Self {
         let settings = Settings::from_options(&options);
         let rewrite = options.value("rewrite_rules").map(|v| RewriteRules::from_option(&v)).unwrap_or_default();

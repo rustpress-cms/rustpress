@@ -108,6 +108,8 @@ pub struct QueryResult {
     pub user_agent: Option<String>,
     /// `wp_create_nonce()` of a visitor who is not signed in (user 0, no session), when the site knows its salts.
     pub guest_nonce: Option<GuestNonce>,
+    /// `is_customize_preview()`: the page is in the preview of the Customizer.
+    pub customize: Option<std::sync::Arc<crate::customize::Preview>>,
 }
 
 /// `wp_create_nonce( $action )` for user 0 without a session token.
@@ -169,6 +171,7 @@ impl QueryResult {
             guest_nonce: None,
             user_agent: None,
             http_host: None,
+            customize: None,
         }
     }
 

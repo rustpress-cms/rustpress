@@ -364,6 +364,19 @@ fn dedup<T: PartialEq + Clone>(list: &mut Vec<T>) {
     });
 }
 
+/// A value of the arguments a partial sends back, as PHP has it after `json_decode( $json, true )`.
+pub fn json_to_php(value: &serde_json::Value) -> rustpress_phpser::Value {
+    use rustpress_phpser::{Key, Value as Php};
+    match value {
+        serde_json::Value::Null => Php::Null,
+        serde_json::Value::Bool(b) => Php::Bool(*b),
+        serde_json::Value::Number(n) => n.as_i64().map_or_else(|| Php::Float(n.as_f64().unwrap_or(0.0)), Php::Int),
+        serde_json::Value::String(s) => Php::Str(s.as_bytes().to_vec()),
+        serde_json::Value::Array(items) => Php::Array(items.iter().enumerate().map(|(i, v)| (Key::Int(i as i64), json_to_php(v))).collect()),
+        serde_json::Value::Object(map) => Php::Array(map.iter().map(|(k, v)| (Key::Str(k.as_bytes().to_vec()), json_to_php(v))).collect()),
+    }
+}
+
 /// The arguments of `wp_nav_menu()` that the themes here use.
 #[derive(Debug, Clone)]
 pub struct NavArgs {
@@ -377,11 +390,76 @@ pub struct NavArgs {
     pub container: Option<(String, Option<String>)>,
     /// The items that printed their `id="menu-item-N"` earlier in the request (`_nav_menu_item_id_use_once()`).
     pub used_ids: std::collections::HashSet<u64>,
+    /// The `menu` argument: a menu's term id, or none when the menu comes from the theme location.
+    pub menu: Option<u64>,
+    /// `fallback_cb`.
+    pub fallback_cb: &'static str,
+    /// The preview of the Customizer, which marks the menu as a partial (`WP_Customize_Nav_Menus`).
+    pub customize: Option<std::sync::Arc<rustpress_core::customize::Preview>>,
 }
 
 impl NavArgs {
     pub fn new(location: &str) -> Self {
-        Self { theme_location: location.to_owned(), menu_id: String::new(), menu_class: "menu".into(), depth: 0, link_before: String::new(), link_after: String::new(), container: Some(("div".into(), None)), used_ids: Default::default() }
+        Self {
+            theme_location: location.to_owned(),
+            menu_id: String::new(),
+            menu_class: "menu".into(),
+            depth: 0,
+            link_before: String::new(),
+            link_after: String::new(),
+            container: Some(("div".into(), None)),
+            used_ids: Default::default(),
+            menu: None,
+            fallback_cb: "wp_page_menu",
+            customize: None,
+        }
+    }
+
+    /// `WP_Customize_Nav_Menus::filter_wp_nav_menu_args()`: the arguments exported to the preview, sorted by key, and
+    /// their `args_hmac` (`wp_hash( serialize( $args ) )`). The menus here are echoed, have a location or a menu and a
+    /// container, so they can always be refreshed on their own.
+    fn exported(&self) -> (String, serde_json::Value) {
+        use rustpress_phpser::{Key, Value as Php};
+        let text = |s: &str| Php::Str(s.as_bytes().to_vec());
+        let (container, label) = match &self.container {
+            Some((tag, label)) => (text(tag), label.clone().unwrap_or_default()),
+            None => (Php::Bool(false), String::new()),
+        };
+        let pairs: Vec<(&str, Php)> = vec![
+            ("after", text("")),
+            ("before", text("")),
+            ("can_partial_refresh", Php::Bool(true)),
+            ("container", container),
+            ("container_aria_label", text(&label)),
+            ("container_class", text("")),
+            ("container_id", text("")),
+            ("depth", Php::Int(self.depth as i64)),
+            ("echo", Php::Bool(true)),
+            ("fallback_cb", text(self.fallback_cb)),
+            ("item_spacing", text("preserve")),
+            ("items_wrap", text("<ul id=\"%1$s\" class=\"%2$s\">%3$s</ul>")),
+            ("link_after", text(&self.link_after)),
+            ("link_before", text(&self.link_before)),
+            ("menu", self.menu.map_or_else(|| text(""), |id| Php::Int(id as i64))),
+            ("menu_class", text(&self.menu_class)),
+            ("menu_id", text(&self.menu_id)),
+            ("theme_location", text(&self.theme_location)),
+            ("walker", text("")),
+        ];
+        let array = Php::Array(pairs.iter().map(|(k, v)| (Key::Str(k.as_bytes().to_vec()), v.clone())).collect());
+        let hmac = rustpress_blocks::commenter::wp_hash(&String::from_utf8_lossy(&rustpress_phpser::serialize(&array)), "auth");
+        let mut json = serde_json::Map::new();
+        for (key, value) in pairs {
+            let value = match value {
+                Php::Bool(b) => serde_json::Value::Bool(b),
+                Php::Int(i) => serde_json::json!(i),
+                Php::Str(bytes) => serde_json::Value::String(String::from_utf8_lossy(&bytes).into_owned()),
+                _ => serde_json::Value::Null,
+            };
+            json.insert(key.to_owned(), value);
+        }
+        json.insert("args_hmac".into(), serde_json::Value::String(hmac.clone()));
+        (hmac, serde_json::Value::Object(json))
     }
 
     /// `_nav_menu_item_id_use_once()`: takes the ids used so far, and marks the ones of this menu.
@@ -421,7 +499,7 @@ pub fn wp_nav_menu(
     }
     let id = if args.menu_id.is_empty() { format!("menu-{}", menu.slug) } else { args.menu_id.clone() };
     let list = format!("<ul id=\"{}\" class=\"{}\">{body}</ul>", esc_attr(&id), esc_attr(&args.menu_class));
-    match &args.container {
+    let html = match &args.container {
         Some((tag, label)) => {
             let aria = match (tag.as_str(), label) {
                 ("nav", Some(label)) if !label.is_empty() => format!(" aria-label=\"{}\"", esc_attr(label)),
@@ -430,6 +508,21 @@ pub fn wp_nav_menu(
             format!("<{tag} class=\"menu-{}-container\"{aria}>{list}</{tag}>", menu.slug)
         }
         None => list,
+    };
+    // `WP_Customize_Nav_Menus::filter_wp_nav_menu()`: the attributes of the partial on the first element.
+    match &args.customize {
+        Some(preview) => {
+            let (hmac, exported) = args.exported();
+            let attributes = format!(
+                " data-customize-partial-id=\"{}\" data-customize-partial-type=\"nav_menu_instance\" data-customize-partial-placement-context=\"{}\"",
+                esc_attr(&format!("nav_menu_instance[{hmac}]")),
+                esc_attr(&rustpress_blocks::php_json::encode(&exported))
+            );
+            preview.add_nav_menu_args(&hmac, exported);
+            let name_end = html.char_indices().skip(1).find(|(_, c)| !(c.is_ascii_alphanumeric() || *c == '_')).map_or(html.len(), |(i, _)| i);
+            if html.starts_with('<') && name_end > 1 { format!("{} {attributes}{}", &html[..name_end], &html[name_end..]) } else { html }
+        }
+        None => html,
     }
 }
 

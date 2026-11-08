@@ -218,14 +218,16 @@ def snapshot(made, port):
     text = json.dumps(data, sort_keys=True)
     # IDs differ between the sides; file sizes and the pixels of what was cropped as well.
     for real, label in sorted(ids.items(), key=lambda item: -len(item[0])):
-        text = re.sub(rf'(?<![0-9]){real}(?![0-9])', label, text)
+        # Not inside a size (`1536x1536`, `-1536x480.jpg`), which an ID can equal.
+        text = re.sub(rf'(?<![0-9x]){real}(?![0-9x])', label, text)
     text = re.sub(r's:8:\\"filesize\\";i:\d+;', 's:8:\\"filesize\\";i:N;', text)
     return text.replace('localhost:8081', 'localhost:PORT').replace('localhost:3002', 'localhost:PORT'), ids
 
 
 def normalize_ids(text, ids):
     for real, label in sorted(ids.items(), key=lambda item: -len(item[0])):
-        text = re.sub(rf'(?<![0-9]){real}(?![0-9])', label, text)
+        # Not inside a size (`1536x1536`, `-1536x480.jpg`), which an ID can equal.
+        text = re.sub(rf'(?<![0-9x]){real}(?![0-9x])', label, text)
     return text
 
 

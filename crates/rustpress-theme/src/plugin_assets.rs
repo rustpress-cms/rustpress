@@ -20,7 +20,7 @@ fn src(asset: &Asset) -> String {
 }
 
 /// `LoaderEnv` of the website: the registry of the WordPress files in `wp_root` for this site.
-fn loader_env(site: &Site, wp_root: &Path) -> LoaderEnv {
+pub(crate) fn loader_env(site: &Site, wp_root: &Path) -> LoaderEnv {
     LoaderEnv {
         includes: wp_root.join("wp-includes"),
         site_url: site.site_url(""),

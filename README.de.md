@@ -22,7 +22,7 @@ $ RUSTPRESS_DATABASE_URL=mysql://user:pass@localhost/wordpress RUSTPRESS_WP_ROOT
 | Block-Themes, auch Twenty Twenty-Two bis Twenty Twenty-Five, Frost und Ollie | Klassische PHP-Themes außer Twenty Seventeen (Astra, GeneratePress, Divi, Hello Elementor, …) |
 | Twenty Seventeen (nativ nachgebaut) | Page-Builder (Elementor, Divi, WPBakery) und WooCommerce |
 | Yoast SEO, Contact Form 7, Redirection, Advanced Custom Fields, Classic Editor, SVG Support, WP Date Remover | Alle anderen PHP-Plugins: Sie werden ignoriert, was sie zur Seite beitragen, fehlt |
-| Plugins, die RustPress überflüssig macht: Seiten-Caches, WP Mail SMTP | Multisite, der Customizer (bisher lädt seine Seite, ohne Vorschau und Speichern), PHP in der `functions.php` eines Block-Themes über einfache Registrierungen hinaus |
+| Plugins, die RustPress überflüssig macht: Seiten-Caches, WP Mail SMTP | Multisite, das Speichern im Customizer (Seite und Vorschau funktionieren), PHP in der `functions.php` eines Block-Themes über einfache Registrierungen hinaus |
 | Jede Sprache, für die WordPress ein Sprachpaket hat | Dienste mit ausgehendem HTTP (Akismet, reCAPTCHA, Update-Prüfung) |
 
 Fehlt ein Plugin, hilft eine [Port-Anfrage](https://github.com/rustpress-cms/rustpress/issues/new?template=port-request.yml); wer selbst nachbauen will, findet die Anleitung in [docs/porting-a-plugin.md](docs/porting-a-plugin.md) (englisch).

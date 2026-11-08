@@ -562,6 +562,10 @@ pub(crate) fn core_robots(site: &Site, q: &QueryResult) -> Vec<(String, Robot)> 
             no_robots(&mut robots);
         }
     }
+    // `WP_Customize_Manager::customize_preview_init()` adds `wp_robots_no_robots()` last.
+    if q.customize.is_some() {
+        no_robots(&mut robots);
+    }
     robots
 }
 
@@ -653,22 +657,12 @@ pub(crate) fn emoji_detection_script(site: &Site, wp_root: &Path, version: &str)
 
 /// The scripts `wp_enqueue_script( 'wp-mediaelement' )` brings to the footer.
 pub(crate) fn mediaelement_scripts(site: &Site, wp_root: &std::path::Path, includes_url: &str, version: &str, vimeo: bool, wp_mediaelement: bool) -> String {
-    // The strings of `mejsL10n` are read from WordPress's own script-loader and translated.
-    let mut strings = serde_json::Map::new();
-    if let Some(php) = read(&wp_root.join("wp-includes").join("script-loader.php"))
-        && let Some(re) = Some(rustpress_core::formatting::cached_plain_regex(r"'(mejs\.[a-z-]+)'\s*=>\s*__\(\s*'((?:[^'\\]|\\.)*)'\s*\)"))
-    {
-        for c in re.captures_iter(&php) {
-            strings.insert(c[1].to_owned(), serde_json::Value::from(site.tr(&c[2].replace("\\'", "'"))));
-        }
-    }
-    let language = site.locale().split(['_', '-']).next().unwrap_or("en").to_lowercase();
-    let l10n = rustpress_blocks::php_json::encode(&serde_json::json!({ "language": language, "strings": strings })).replace('<', "\\u003C").replace('>', "\\u003E");
+    let l10n = mejs_l10n(site, wp_root);
     let settings = rustpress_blocks::php_json::encode(&serde_json::json!({
         "pluginPath": "/wp-includes/js/mediaelement/", "classPrefix": "mejs-", "stretching": "responsive",
         "audioShortcodeLibrary": "mediaelement", "videoShortcodeLibrary": "mediaelement"
     })).replace("\\/", "/");
-    let mut out = format!("<script id=\"mediaelement-core-js-before\">\nvar mejsL10n = {};\n//# sourceURL=mediaelement-core-js-before\n</script>\n", l10n.replace("\\/", "/"));
+    let mut out = format!("<script id=\"mediaelement-core-js-before\">\nvar mejsL10n = {l10n};\n//# sourceURL=mediaelement-core-js-before\n</script>\n");
     out.push_str(&format!("<script id=\"mediaelement-core-js\" src=\"{includes_url}/js/mediaelement/mediaelement-and-player.min.js?ver=4.2.17\"></script>\n"));
     out.push_str(&format!("<script id=\"mediaelement-migrate-js\" src=\"{includes_url}/js/mediaelement/mediaelement-migrate.min.js?ver={version}\"></script>\n"));
     out.push_str(&format!("<script id=\"mediaelement-js-extra\">\nvar _wpmejsSettings = {settings};\n//# sourceURL=mediaelement-js-extra\n</script>\n"));
@@ -679,6 +673,21 @@ pub(crate) fn mediaelement_scripts(site: &Site, wp_root: &std::path::Path, inclu
         out.push_str(&format!("<script id=\"mediaelement-vimeo-js\" src=\"{includes_url}/js/mediaelement/renderers/vimeo.min.js?ver=4.2.17\"></script>\n"));
     }
     out
+}
+
+/// The JSON of `mejsL10n`, which `wp_default_scripts()` adds on `init`: the strings are read from WordPress's own
+/// script-loader and translated.
+pub(crate) fn mejs_l10n(site: &Site, wp_root: &std::path::Path) -> String {
+    let mut strings = serde_json::Map::new();
+    if let Some(php) = read(&wp_root.join("wp-includes").join("script-loader.php"))
+        && let Some(re) = Some(rustpress_core::formatting::cached_plain_regex(r"'(mejs\.[a-z-]+)'\s*=>\s*__\(\s*'((?:[^'\\]|\\.)*)'\s*\)"))
+    {
+        for c in re.captures_iter(&php) {
+            strings.insert(c[1].to_owned(), serde_json::Value::from(site.tr(&c[2].replace("\\'", "'"))));
+        }
+    }
+    let language = site.locale().split(['_', '-']).next().unwrap_or("en").to_lowercase();
+    rustpress_blocks::php_json::encode(&serde_json::json!({ "language": language, "strings": strings })).replace('<', "\\u003C").replace('>', "\\u003E").replace("\\/", "/")
 }
 
 /// Renders a request into a complete HTML document.
@@ -822,7 +831,10 @@ pub async fn render_document_with(theme: &Theme, site: &Site, query: &QueryResul
     let mut styles = String::new();
     styles.push_str("<style id=\"wp-img-auto-sizes-contain-inline-css\">\nimg:is([sizes=auto i],[sizes^=\"auto,\" i]){contain-intrinsic-size:3000px 1500px}\n/*# sourceURL=wp-img-auto-sizes-contain-inline-css */\n</style>\n");
     let toolbar_on = query.viewer.as_ref().is_some_and(|v| v.show_admin_bar);
-    if toolbar_on {
+    let preview = query.customize.as_deref();
+    if preview.is_some() {
+        styles.push_str(&crate::customize_preview::styles(&includes_url, &version, rtl, toolbar_on));
+    } else if toolbar_on {
         styles.push_str(&toolbar_styles(&includes_url, &version, rtl));
     }
     for sheet in &sheets {
@@ -866,6 +878,24 @@ pub async fn render_document_with(theme: &Theme, site: &Site, query: &QueryResul
             }
         }
         let mut chunks = theme.global_style_chunks(registry, site, Some(&queued));
+        // `wp_enqueue_global_styles()` of a block theme: the Additional CSS of the Customizer follows the stylesheet,
+        // in the preview always and between milestones the live preview finds.
+        let mut customizer_css = match preview.and_then(|p| p.custom_css.clone()) {
+            Some(css) => css,
+            None => crate::classic::wp_get_custom_css(site, &crate::classic::menu::theme_mod(site, &theme.stylesheet)).await?,
+        }
+        .trim()
+        .to_owned();
+        if !customizer_css.is_empty() || preview.is_some() {
+            if preview.is_some() {
+                let (before, after) = ("/*BEGIN_CUSTOMIZER_CUSTOM_CSS*/", "/*END_CUSTOMIZER_CUSTOM_CSS*/");
+                customizer_css = format!("{before}\n{}\n{after}", customizer_css.replace(before, "").replace(after, ""));
+            }
+            if let Some(first) = chunks.first_mut() {
+                first.push('\n');
+                first.push_str(&customizer_css);
+            }
+        }
         let presets = rustpress_blocks::duotone::global_styles_presets(&state.duotone);
         if !presets.is_empty() {
             chunks.push(presets);
@@ -917,6 +947,10 @@ pub async fn render_document_with(theme: &Theme, site: &Site, query: &QueryResul
     } else if let Some((handle, file, css)) = theme_css {
         styles.push_str(&format!("<style id=\"{handle}-inline-css\">\n{}\n/*# sourceURL={}/{file} */\n</style>\n", css.trim_end(), theme.template_directory_uri()));
     }
+    // The media widgets and the Text widget of the preview enqueue the players' styles, unless the content did.
+    if preview.is_some() && !handles.iter().any(|h| h == "wp-mediaelement") {
+        styles.push_str(&crate::customize_preview::media_styles(&includes_url, &version));
+    }
     styles.push_str(&style_printer.links(&late_styles));
     // Blocks a plugin rendered in `wp_head` that the template did not use: their stylesheets were enqueued after the
     // theme's (and after `wp_maybe_inline_styles()` ran), so they are linked.
@@ -951,39 +985,58 @@ pub async fn render_document_with(theme: &Theme, site: &Site, query: &QueryResul
     }
     let plugin_footer = site.plugins.wp_footer(site, &looped).await?;
     let lightbox = if state.lightbox_overlay { rustpress_blocks::dynamic::lightbox::overlay(site, theme) } else { String::new() };
-    let playlist_templates = if state.playlist { rustpress_blocks::shortcodes::playlist_templates(site) } else { String::new() };
-    let mut footer_scripts = format!("{playlist_templates}{speculation}{}{plugin_footer}{module_scripts}{}{lightbox}", rustpress_blocks::duotone::footer_svgs(&state.duotone), state.interactivity.data_script().unwrap_or_default());
+    let playlist_templates = if state.playlist || preview.is_some() { rustpress_blocks::shortcodes::playlist_templates(site) } else { String::new() };
+    let nav_menus = preview.map(crate::customize_preview::nav_menus_exports).unwrap_or_default();
+    let mut footer_scripts = format!("{playlist_templates}{nav_menus}{speculation}{}{plugin_footer}{module_scripts}{}{lightbox}", rustpress_blocks::duotone::footer_svgs(&state.duotone), state.interactivity.data_script().unwrap_or_default());
     // MediaElement: jQuery in the head, the player scripts in the footer. The scripts plugins enqueue for the head
     // follow, after their dependencies.
     let mut printer = crate::plugin_assets::ScriptPrinter::new(&includes_url, "3.7.1", "3.4.1").with_packages(&theme.wp_root, site);
     let mut head_scripts = String::new();
-    if state.mediaelement || state.playlist {
+    if state.mediaelement || state.playlist || preview.is_some() {
         head_scripts.push_str(&printer.core("jquery"));
     }
     head_scripts.push_str(&printer.scripts(&plugin_assets.scripts, false));
     let styles = format!("{styles}{head_scripts}");
+    // The preview queues its own scripts first (`wp_loaded`), and with them the players of the media widgets.
+    let mut preview_scripts = preview.map(|_| crate::customize_preview::FooterScripts::new(site, wp_root, &[], &["jquery", "jquery-core", "jquery-migrate"]));
+    if let Some(scripts) = preview_scripts.as_mut() {
+        scripts.enqueue("customize-preview");
+        footer_scripts.push_str(&scripts.print());
+    }
     if toolbar_on {
         footer_scripts.push_str(&format!("<script id=\"hoverintent-js-js\" src=\"{includes_url}/js/hoverintent-js.min.js?ver=2.2.1\"></script>\n<script id=\"admin-bar-js\" src=\"{includes_url}/js/admin-bar.min.js?ver={version}\"></script>\n"));
     }
+    if let Some(scripts) = preview_scripts.as_mut() {
+        for handle in ["wp-mediaelement", "mediaelement-vimeo", "wp-playlist", "customize-selective-refresh", "customize-preview-nav-menus"] {
+            scripts.enqueue(handle);
+        }
+        if state.scripts.iter().any(|s| s == "comment-reply") {
+            scripts.enqueue("comment-reply");
+        }
+        footer_scripts.push_str(&scripts.print());
+    }
     // `wp-playlist` needs `wp-util`, `backbone` and `mediaelement`, but not `wp-mediaelement`.
-    if state.playlist {
+    if state.playlist && preview.is_none() {
         footer_scripts.push_str(&printer.core("wp-util"));
         footer_scripts.push_str(&printer.core("backbone"));
     }
-    if state.mediaelement || state.playlist {
+    if (state.mediaelement || state.playlist) && preview.is_none() {
         footer_scripts.push_str(&mediaelement_scripts(site, wp_root, &includes_url, &version, state.vimeo, state.mediaelement));
     }
-    if state.playlist {
+    if state.playlist && preview.is_none() {
         printer.mark_printed(&["mediaelement", "mediaelement-core", "mediaelement-migrate"]);
         footer_scripts.push_str(&printer.core("wp-playlist"));
     }
-    if state.scripts.iter().any(|s| s == "comment-reply") {
+    if state.scripts.iter().any(|s| s == "comment-reply") && preview.is_none() {
         footer_scripts.push_str(&format!("<script async data-wp-strategy=\"async\" fetchpriority=\"low\" id=\"comment-reply-js\" src=\"{includes_url}/js/comment-reply.min.js?ver={version}\"></script>\n"));
     }
     footer_scripts.push_str(&printer.scripts(&plugin_assets.scripts, true));
     footer_scripts.push_str(&emoji_detection_script(site, wp_root, &version));
     // `wp_print_footer_scripts` after `_wp_footer_scripts()`.
     footer_scripts.push_str(&state.plugins.footer_scripts.concat());
+    if preview.is_some() {
+        footer_scripts.push_str(crate::customize_preview::FOOTER_EXPORTS);
+    }
 
     // --- head ------------------------------------------------------------
     let mut robots = rustpress_core::native::robots_tag(plugin_head.robots.as_deref().unwrap_or_default());
@@ -1000,8 +1053,15 @@ pub async fn render_document_with(theme: &Theme, site: &Site, query: &QueryResul
     let lang = site.language_tag();
     let classes = body_classes(theme, site, query).await?;
 
+    // `customize_preview_loading_style()` on `wp_head` after the actions of priority 10 of core.
+    let loading = preview.map(crate::customize_preview::loading_style).unwrap_or_default();
+    // `wp_site_icon()`: the default icon in the preview, so that the live preview can replace it.
+    let mut site_icon = crate::classic::wp_site_icon(site).await?;
+    if site_icon.is_empty() && preview.is_some() {
+        site_icon = "<link rel=\"icon\" href=\"/favicon.ico\" sizes=\"32x32\" />\n".to_owned();
+    }
     let head = format!(
-        "<meta charset=\"UTF-8\" />\n\t<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />\n{robots}<title>{}</title>\n{}{}{styles}{}{importmap}{preloads}{fonts}",
+        "<meta charset=\"UTF-8\" />\n\t<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />\n{robots}<title>{}</title>\n{}{}{styles}{}{importmap}{preloads}{loading}{fonts}{site_icon}",
         esc_html(&title),
         crate::head::feed_links(site, query).await?,
         oembed_links(site, query).await?,

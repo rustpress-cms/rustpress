@@ -6,6 +6,7 @@ mod assets;
 mod controls;
 mod manager;
 mod nav_menus;
+mod preview;
 mod register;
 mod templates;
 mod widgets;
@@ -20,6 +21,7 @@ use super::block_editor::inline_json;
 use super::{AdminResponse, Ctx, render};
 use crate::chrome::{CustomizeParts, Screen};
 use manager::Manager;
+pub(super) use preview::exports as preview_exports;
 
 const TEMPLATES: &str = include_str!("../../data/customize_templates.html");
 const MENU_TEMPLATES: &str = include_str!("../../data/customize_menus.html");
@@ -47,6 +49,10 @@ pub(super) struct State<'a> {
     pub syntax_highlighting: bool,
     /// `wp_get_custom_css()`.
     pub custom_css: String,
+    /// The settings are registered for the preview on the website, outside of the administration.
+    pub preview: bool,
+    /// What the values of the menu items are made with: in the preview, the site with its stored options.
+    pub items_ctx: Option<&'a Ctx<'a>>,
 }
 
 /// Prints a baked template with the addresses of the site, in its language.
@@ -200,17 +206,7 @@ fn pane_settings(state: &State<'_>, m: &Manager, preview_url: &str, return_url: 
         choices.push(json!({"status": "future", "label": site.trx("Schedule", "customizer changeset action/button label")}));
     }
     let (panels, sections) = m.containers(&tr);
-    let mut nonces = serde_json::Map::new();
-    nonces.insert("save".into(), json!(ctx.create_nonce(&format!("save-customize_{}", state.stylesheet))));
-    nonces.insert("preview".into(), json!(ctx.create_nonce(&format!("preview-customize_{}", state.stylesheet))));
-    nonces.insert("switch_themes".into(), json!(ctx.create_nonce("switch_themes")));
-    nonces.insert("dismiss_autosave_or_lock".into(), json!(ctx.create_nonce("customize_dismiss_autosave_or_lock")));
-    nonces.insert("override_lock".into(), json!(ctx.create_nonce("customize_override_changeset_lock")));
-    nonces.insert("trash".into(), json!(ctx.create_nonce("trash_customize_changeset")));
-    if !ctx.env.block_theme {
-        nonces.insert("update-widget".into(), json!(ctx.create_nonce("update-widget")));
-    }
-    nonces.insert("customize-menus".into(), json!(ctx.create_nonce("customize-menus")));
+    let nonces = nonces(state);
     let uuid = uuid4();
     let millis = ctx.env.now * 1000;
     let settings = json!({
@@ -266,6 +262,23 @@ fn pane_settings(state: &State<'_>, m: &Manager, preview_url: &str, return_url: 
     format!("<script>{script}\n</script>\n")
 }
 
+/// `get_nonces()` with what the widgets and menus add on `customize_refresh_nonces`.
+fn nonces(state: &State<'_>) -> serde_json::Map<String, serde_json::Value> {
+    let ctx = state.ctx;
+    let mut nonces = serde_json::Map::new();
+    nonces.insert("save".into(), json!(ctx.create_nonce(&format!("save-customize_{}", state.stylesheet))));
+    nonces.insert("preview".into(), json!(ctx.create_nonce(&format!("preview-customize_{}", state.stylesheet))));
+    nonces.insert("switch_themes".into(), json!(ctx.create_nonce("switch_themes")));
+    nonces.insert("dismiss_autosave_or_lock".into(), json!(ctx.create_nonce("customize_dismiss_autosave_or_lock")));
+    nonces.insert("override_lock".into(), json!(ctx.create_nonce("customize_override_changeset_lock")));
+    nonces.insert("trash".into(), json!(ctx.create_nonce("trash_customize_changeset")));
+    if !ctx.env.block_theme {
+        nonces.insert("update-widget".into(), json!(ctx.create_nonce("update-widget")));
+    }
+    nonces.insert("customize-menus".into(), json!(ctx.create_nonce("customize-menus")));
+    nonces
+}
+
 fn esc_url_raw(url: &str) -> String {
     rustpress_core::formatting::esc_url_raw(url)
 }
@@ -295,7 +308,7 @@ async fn state<'a>(ctx: &'a Ctx<'a>) -> State<'a> {
     let has_published_pages = ctx.env.db.count_posts(&pages).await.unwrap_or(0) > 0;
     let syntax_highlighting = ctx.env.db.user_meta(ctx.user.id, "syntax_highlighting").await.ok().flatten().as_deref() != Some("false");
     let custom_css = rustpress_theme::classic::wp_get_custom_css(site, &mods).await.unwrap_or_default();
-    State { ctx, mods, support, template_uri, stylesheet_uri, stylesheet, theme_name: theme_name(ctx), custom_logo, has_published_pages, syntax_highlighting, custom_css }
+    State { ctx, mods, support, template_uri, stylesheet_uri, stylesheet, theme_name: theme_name(ctx), custom_logo, has_published_pages, syntax_highlighting, custom_css, preview: false, items_ctx: None }
 }
 
 pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {

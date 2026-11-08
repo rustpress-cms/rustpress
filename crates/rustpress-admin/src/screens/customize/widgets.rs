@@ -66,7 +66,8 @@ pub(super) async fn load(state: &State<'_>) -> Widgets {
     let mut names: Vec<String> = rustpress_rest::edit::WIDGET_TYPES.iter().map(|(base, ..)| format!("widget_{base}")).collect();
     names.push("sidebars_widgets".into());
     let rows = ctx.env.db.options_named(&names.iter().map(String::as_str).collect::<Vec<_>>()).await.unwrap_or_default();
-    let option = |name: &str| rows.iter().find(|(n, _)| n == name).map(|(_, value)| rustpress_core::options::maybe_unserialize(value));
+    // The autoloaded options as the site has them (the preview changes them), the others from the database.
+    let option = |name: &str| site.options.get(name).map(rustpress_core::options::maybe_unserialize).or_else(|| rows.iter().find(|(n, _)| n == name).map(|(_, value)| rustpress_core::options::maybe_unserialize(value)));
     let mut registered = Vec::new();
     let mut instances = Vec::new();
     for (id_base, ..) in rustpress_rest::edit::WIDGET_TYPES {
@@ -133,6 +134,14 @@ fn js_instance(state: &State<'_>, instance: &Php) -> Value {
         "instance_hash_key": state.ctx.env.auth.salts().hash(&String::from_utf8_lossy(&serialized), "auth").unwrap_or_default(),
         "raw_instance": raw,
     })
+}
+
+/// `get_setting_type()`: the setting of a widget's instance or of a widget area.
+pub(super) fn is_widget_setting(id: &str) -> bool {
+    if let Some(area) = id.strip_prefix("sidebars_widgets[").and_then(|rest| rest.strip_suffix(']')) {
+        return !area.is_empty();
+    }
+    id.strip_prefix("widget_").and_then(|rest| rest.strip_suffix(']')).and_then(|rest| rest.split_once('[')).is_some_and(|(base, number)| !base.is_empty() && !number.is_empty() && number.bytes().all(|b| b.is_ascii_digit()))
 }
 
 /// `WP_Customize_Widgets::customize_register()` with the block editor.
@@ -241,11 +250,8 @@ fn available(state: &State<'_>, w: &Widgets) -> Vec<(Registered, Map<String, Val
 }
 
 /// `var _wpCustomizeWidgetsSettings = ...;`.
-pub(super) fn settings_data(state: &State<'_>, w: &Widgets) -> String {
-    let ctx = state.ctx;
-    let site = ctx.site();
-    let tr = |text: &str| ctx.tr(text);
-    let decode = rustpress_core::formatting::html_entity_decode;
+/// `array_values( $wp_registered_sidebars )`.
+pub(super) fn sidebars_json(w: &Widgets) -> Value {
     let sidebars: Vec<Value> = w
         .sidebars
         .iter()
@@ -256,10 +262,34 @@ pub(super) fn settings_data(state: &State<'_>, w: &Widgets) -> String {
             })
         })
         .collect();
+    Value::Array(sidebars)
+}
+
+/// `$wp_registered_widgets` without the callbacks.
+pub(super) fn registered_widgets_json(state: &State<'_>, w: &Widgets) -> Value {
     let mut registered = Map::new();
     for widget in &w.registered {
         registered.insert(widget.id.clone(), Value::Object(registered_json(state, widget)));
     }
+    Value::Object(registered)
+}
+
+/// `get_selective_refreshable_widgets()`: every core widget can.
+pub(super) fn refreshable_json() -> Value {
+    let mut refreshable = Map::new();
+    for (id_base, ..) in rustpress_rest::edit::WIDGET_TYPES {
+        refreshable.insert(id_base.to_owned(), json!(true));
+    }
+    Value::Object(refreshable)
+}
+
+pub(super) fn settings_data(state: &State<'_>, w: &Widgets) -> String {
+    let ctx = state.ctx;
+    let site = ctx.site();
+    let tr = |text: &str| ctx.tr(text);
+    let decode = rustpress_core::formatting::html_entity_decode;
+    let sidebars = sidebars_json(w);
+    let registered = registered_widgets_json(state, w);
     let available: Vec<Value> = available(state, w).into_iter().map(|(_, item)| Value::Object(item)).collect();
     let count = w.sidebars.len() as i64;
     let mut some_shown = Map::new();
@@ -283,10 +313,7 @@ pub(super) fn settings_data(state: &State<'_>, w: &Widgets) -> String {
         tr("Select an area to move this widget into:"),
         site.trx("Move", "Move widget")
     );
-    let mut refreshable = Map::new();
-    for (id_base, ..) in rustpress_rest::edit::WIDGET_TYPES {
-        refreshable.insert(id_base.to_owned(), json!(true));
-    }
+    let refreshable = refreshable_json();
     let settings = json!({
         "registeredSidebars": sidebars,
         "registeredWidgets": registered,

@@ -2,6 +2,7 @@
 
 pub mod block_themes;
 pub mod classic;
+pub mod customize_preview;
 pub mod document;
 pub mod embed;
 pub mod feed;

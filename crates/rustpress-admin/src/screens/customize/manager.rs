@@ -205,7 +205,7 @@ impl Manager {
     }
 
     /// `WP_Customize_Control::check_capabilities()`.
-    fn control_allowed(&self, control: &Control, can: &dyn Fn(&str) -> bool) -> bool {
+    pub fn control_allowed(&self, control: &Control, can: &dyn Fn(&str) -> bool) -> bool {
         if control.capability.is_some_and(|cap| !can(cap)) {
             return false;
         }
