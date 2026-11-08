@@ -218,7 +218,8 @@ pub async fn frontend_user(loaded: &Loaded, headers: &HeaderMap) -> Option<(rust
 }
 
 /// The toolbar of the site for a signed-in user: a function of the page it is printed on.
-pub async fn front_toolbar(loaded: &std::sync::Arc<Loaded>, user: &std::sync::Arc<rustpress_auth::CurrentUser>, token: &str) -> Option<rustpress_theme::Extras> {
+pub async fn front_toolbar(loaded: &std::sync::Arc<Loaded>, user: &std::sync::Arc<rustpress_auth::CurrentUser>, token: &str, customize: Option<&crate::customize::Request>) -> Option<rustpress_theme::Extras> {
+    let changeset = customize.map(|c| crate::customize::sanitize_key(&c.uuid));
     let parts = loaded.admin.as_ref()?;
     let at = now();
     let updates = rustpress_admin::updates::counts(&loaded.site).await.total();
@@ -248,9 +249,11 @@ pub async fn front_toolbar(loaded: &std::sync::Arc<Loaded>, user: &std::sync::Ar
         let host = info.query.http_host.as_deref().unwrap_or_else(|| home.split_once("://").map_or("", |(_, rest)| rest.split('/').next().unwrap_or_default()));
         let query = if info.query.raw_query.is_empty() { String::new() } else { format!("?{}", info.query.raw_query) };
         context.current_url = format!("{scheme}://{host}{}{query}", info.query.url_path);
+        context.customize_changeset = changeset.clone();
         let tr = |s: &str| site.tr(s);
         context.edit = match &info.query.queried {
-            rustpress_core::Queried::Post(post) if info.query.flags.is_singular() => {
+            // `get_edit_post_link()` is empty in the preview of the Customizer.
+            rustpress_core::Queried::Post(post) if info.query.flags.is_singular() && changeset.is_none() => {
                 let can = user.can(match post.post_type.as_str() {
                     "page" => if post.post_author == user.id { "edit_pages" } else { "edit_others_pages" },
                     _ => if post.post_author == user.id { "edit_posts" } else { "edit_others_posts" },
@@ -502,6 +505,54 @@ pub async fn admin_page(loaded: &Loaded, config: &Config, writer: Option<&rustpr
         }
     }
     response
+}
+
+/// What the preview of the Customizer prints at the end of the page, for the user of the request.
+#[allow(clippy::too_many_arguments)]
+pub async fn customize_preview_exports(
+    loaded: &Loaded,
+    site: &Site,
+    config: &Config,
+    writer: Option<&rustpress_db::Writer>,
+    headers: &HeaderMap,
+    client: &crate::client::Client,
+    result: &rustpress_core::QueryResult,
+    preview: &rustpress_core::customize::Preview,
+) -> String {
+    let Some(parts) = &loaded.admin else { return String::new() };
+    let themes = config.wp_root.join("wp-content").join("themes");
+    let block_theme = [&loaded.site.settings.stylesheet, &loaded.site.settings.template].iter().any(|t| themes.join(t.as_str()).join("templates").join("index.html").is_file());
+    let env = rustpress_admin::screens::AdminEnv {
+        site,
+        db: &site.db,
+        writer,
+        auth: &parts.auth,
+        roles: &parts.roles,
+        loader: parts.loader.clone(),
+        https: client.https,
+        now: now(),
+        languages: parts.languages.clone(),
+        available_translations: Vec::new(),
+        block_theme,
+        theme: &loaded.theme,
+        registry: &loaded.registry,
+        mailer: parts.mailer.clone(),
+    };
+    let request_uri = if result.raw_query.is_empty() { result.url_path.clone() } else { format!("{}?{}", result.url_path, result.raw_query) };
+    let request = rustpress_admin::screens::AdminRequest {
+        post: false,
+        file: String::new(),
+        query: pairs_of(&result.raw_query),
+        form: Vec::new(),
+        files: Vec::new(),
+        cookies: cookies_of(headers),
+        request_uri,
+        remote_addr: client.ip.clone(),
+        user_agent: headers.get(header::USER_AGENT).and_then(|v| v.to_str().ok()).map(str::to_owned),
+        referer: headers.get(header::REFERER).and_then(|v| v.to_str().ok()).map(str::to_owned),
+        host: headers.get(header::HOST).and_then(|v| v.to_str().ok()).map(str::to_owned),
+    };
+    rustpress_admin::screens::customize_preview_exports(&env, &loaded.site, &request, result, preview).await
 }
 
 fn plain(status: StatusCode, text: &'static str) -> Response<Body> {

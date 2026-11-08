@@ -204,6 +204,8 @@ pub struct State {
     /// `static $instance` of `wp_playlist_shortcode()`.
     pub playlist_instances: u64,
     pub vimeo: bool,
+    /// `the_custom_header_markup()` enqueued `wp-custom-header` (the header video).
+    pub custom_header_script: bool,
     /// Duotone filters used on the page.
     pub duotone: crate::duotone::DuotoneState,
     /// `static $instance` of `gallery_shortcode()`.

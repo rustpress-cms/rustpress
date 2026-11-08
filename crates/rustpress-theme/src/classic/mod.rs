@@ -136,6 +136,33 @@ pub async fn legacy_widget_preview(theme: &Theme, site: &Site, q: &QueryResult, 
     seventeen::legacy_widget_preview(&ctx, registry, id_base, instance).await
 }
 
+/// The partials of a request of selective refresh (`handle_render_partials_request()`), each for its placements, and
+/// the settings of the header video when the header is one of them (`export_header_video_settings()`).
+pub async fn render_partials(theme: &Theme, site: &Site, q: &QueryResult, registry: &Registry, partials: &[(String, serde_json::Value)]) -> Result<(serde_json::Map<String, serde_json::Value>, Option<serde_json::Value>)> {
+    let env = Env::new(site, q, theme, registry);
+    let mods = menu::theme_mod(site, &theme.stylesheet);
+    let ctx = Ctx { theme, site, q, env, mods };
+    let mut contents = serde_json::Map::new();
+    for (id, contexts) in partials {
+        let placements: Vec<Option<&serde_json::Value>> = match contexts.as_array() {
+            Some(list) if !list.is_empty() => list.iter().map(Some).collect(),
+            // Without placements the partial is rendered once.
+            _ => vec![None],
+        };
+        let mut rendered = Vec::new();
+        let mut missing = false;
+        for placement in placements {
+            match seventeen::render_partial(&ctx, id, placement).await? {
+                Some(value) => rendered.push(value),
+                None => missing = true,
+            }
+        }
+        contents.insert(id.clone(), if missing { serde_json::Value::Null } else { serde_json::Value::Array(rendered) });
+    }
+    let header = if partials.iter().any(|(id, _)| id == "custom_header") { Some(seventeen::header_video_export(&ctx).await?) } else { None };
+    Ok((contents, header))
+}
+
 pub async fn render_document(theme: &Theme, site: &Site, q: &QueryResult, registry: &Registry, extras: &crate::document::Extras) -> Result<Document> {
     let env = Env::new(site, q, theme, registry);
     let mods = menu::theme_mod(site, &theme.stylesheet);

@@ -10,6 +10,8 @@ pub mod cgi;
 pub mod check;
 pub mod client;
 pub mod config;
+mod customize;
+mod customize_values;
 pub mod install;
 pub mod statics;
 

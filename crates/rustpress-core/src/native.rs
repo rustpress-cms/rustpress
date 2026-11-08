@@ -1481,9 +1481,9 @@ pub fn registered() -> &'static [&'static dyn NativePlugin] {
 }
 
 /// The native modules of the active plugins, in the order of `active_plugins` (the order WordPress loads them in).
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Plugins {
-    active: Vec<(&'static dyn NativePlugin, Box<dyn ActivePlugin>)>,
+    active: std::sync::Arc<Vec<(&'static dyn NativePlugin, Box<dyn ActivePlugin>)>>,
 }
 
 impl Plugins {
@@ -1497,7 +1497,7 @@ impl Plugins {
                 Err(e) => tracing::error!(plugin = file.as_str(), error = %e, "native plugin failed to load"),
             }
         }
-        Self { active: loaded }
+        Self { active: std::sync::Arc::new(loaded) }
     }
 
     pub fn is_empty(&self) -> bool {

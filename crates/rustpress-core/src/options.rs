@@ -44,6 +44,11 @@ impl Options {
         Self { autoloaded: pairs.into_iter().map(|(k, v)| (k.to_owned(), v.to_owned())).collect() }
     }
 
+    /// Sets an autoloaded option for this copy of the options (`pre_option_{$option}` of a preview).
+    pub fn set(&mut self, name: &str, value: &str) {
+        self.autoloaded.insert(name.to_owned(), value.to_owned());
+    }
+
     /// Raw value of an autoloaded option.
     pub fn get(&self, name: &str) -> Option<&str> {
         self.autoloaded.get(name).map(String::as_str)

@@ -247,21 +247,39 @@ async fn handle_request(axum::extract::State(app): axum::extract::State<Arc<App>
         Ok(response) => return response,
         Err(request) => request,
     };
-    if !matches!(*request.method(), Method::GET | Method::HEAD) {
+    let not_allowed = || {
         let mut response = text(StatusCode::METHOD_NOT_ALLOWED, "RustPress is read-only: only GET and HEAD are supported.\n");
         response.headers_mut().insert(header::ALLOW, HeaderValue::from_static("GET, HEAD"));
-        return response;
+        response
+    };
+    // The Customizer posts to the page in its preview: the changes that are not in the changeset yet, and the requests
+    // of selective refresh. Any other POST is refused.
+    let post = *request.method() == Method::POST;
+    if !post && !matches!(*request.method(), Method::GET | Method::HEAD) {
+        return not_allowed();
     }
     let uri = request.uri().clone();
     let headers = request.headers().clone();
     let method = request.method().clone();
     let (parts, body) = request.into_parts();
     let client = crate::client::Client::of(&app.config, &parts, &app.current().await.site.settings.siteurl);
-    let request = Request::from_parts(parts, body);
-    if let Some(response) = app.statics.serve(request).await {
-        return response;
-    }
-    match page(&app, &uri, &headers, &method, &client).await {
+    let form = if post {
+        let form = match axum::body::to_bytes(body, FORM_BODY_LIMIT).await {
+            Ok(bytes) => crate::admin::pairs_of_public(&String::from_utf8_lossy(&bytes)),
+            Err(_) => return text(StatusCode::PAYLOAD_TOO_LARGE, "Payload Too Large\n"),
+        };
+        if crate::customize::Request::parse(uri.query().unwrap_or(""), &form).is_none() {
+            return not_allowed();
+        }
+        form
+    } else {
+        let request = Request::from_parts(parts, body);
+        if let Some(response) = app.statics.serve(request).await {
+            return response;
+        }
+        Vec::new()
+    };
+    match page(&app, &uri, &headers, &method, &client, &form).await {
         Ok(response) => response,
         Err(e) => {
             tracing::error!(error = %e, path = uri.path(), "request failed");
@@ -368,7 +386,7 @@ fn admin_file_of(path: &str) -> Option<String> {
     valid.then(|| rest.to_owned())
 }
 
-async fn page(app: &App, uri: &axum::http::Uri, request_headers: &axum::http::HeaderMap, method: &Method, client: &crate::client::Client) -> Result<Response<Body>> {
+async fn page(app: &App, uri: &axum::http::Uri, request_headers: &axum::http::HeaderMap, method: &Method, client: &crate::client::Client, form: &[(String, String)]) -> Result<Response<Body>> {
     let (path, query) = (uri.path(), uri.query().unwrap_or(""));
     let started = std::time::Instant::now();
     let loaded = app.current().await;
@@ -379,10 +397,14 @@ async fn page(app: &App, uri: &axum::http::Uri, request_headers: &axum::http::He
     }
     let mut extras = rustpress_theme::Extras::default();
     let mut signed_in = false;
+    // `_wp_customize_include()`: a page in the preview of the Customizer.
+    let customize = crate::customize::Request::parse(query, form);
     let viewer = match crate::admin::frontend_user(&loaded, request_headers).await {
         Some((user, token)) => {
             let user = std::sync::Arc::new(user);
-            let show_bar = loaded.site.db.user_meta(user.id, "show_admin_bar_front").await.ok().flatten().is_none_or(|v| v != "false");
+            // `setup_theme()` hides the toolbar inside the frame of the Customizer.
+            let in_frame = customize.as_ref().is_some_and(|c| !c.channel.is_empty());
+            let show_bar = !in_frame && loaded.site.db.user_meta(user.id, "show_admin_bar_front").await.ok().flatten().is_none_or(|v| v != "false");
             let parts = loaded.admin.as_ref();
             let nonce_auth = parts.map(|p| p.auth.clone());
             let (uid, session) = (user.id, token.clone());
@@ -393,7 +415,7 @@ async fn page(app: &App, uri: &axum::http::Uri, request_headers: &axum::http::He
             let privacy_page = loaded.site.options.u64("wp_page_for_privacy_policy", 0);
             let verify = move |nonce: &str, action: &str| verify_auth.as_ref().is_some_and(|auth| auth.verify_nonce(nonce, action, uid, &verify_session, crate::admin::now()).is_some());
             let viewer = rustpress_core::Viewer::new(user.id, move |capability| can_user.can(capability)).with_identity(&user.login, &user.display_name, &user.email, show_bar, nonce).with_verifier(privacy_page, verify);
-            if show_bar && let Some(found) = crate::admin::front_toolbar(&loaded, &user, &token).await {
+            if show_bar && let Some(found) = crate::admin::front_toolbar(&loaded, &user, &token, customize.as_ref()).await {
                 extras = found;
             }
             signed_in = true;
@@ -401,6 +423,15 @@ async fn page(app: &App, uri: &axum::http::Uri, request_headers: &axum::http::He
         }
         None => None,
     };
+    let (preview, preview_site) = match &customize {
+        Some(request) => match crate::customize::setup_theme(&loaded, viewer.as_ref(), request, form).await {
+            Ok((preview, site)) => (Some(preview), site),
+            Err(response) => return Ok(response),
+        },
+        None => (None, None),
+    };
+    // The options and theme mods as the preview shows them.
+    let site: &rustpress_core::Site = preview_site.as_ref().unwrap_or(&loaded.site);
     let before_query = started.elapsed();
     // `init` of the plugins: they may answer the request, change it, or keep `redirect_canonical()` from it.
     let header_list: Vec<(String, String)> = request_headers.iter().map(|(name, value)| (name.as_str().to_owned(), String::from_utf8_lossy(value.as_bytes()).into_owned())).collect();
@@ -440,10 +471,11 @@ async fn page(app: &App, uri: &axum::http::Uri, request_headers: &axum::http::He
     if let Some(rustpress_core::native::Serve::Response(answer)) = served {
         return Ok(plugin_response(&answer));
     }
-    let mut result = loaded.site.query_as(path, query, viewer.as_ref()).await?;
+    let mut result = site.query_as(path, query, viewer.as_ref()).await?;
+    result.customize = preview.clone();
     if viewer.is_none() {
         // A read-only site knows its salts as well.
-        let auth = rustpress_auth::Auth::new(loaded.salts.clone(), &loaded.site.settings.siteurl);
+        let auth = rustpress_auth::Auth::new(loaded.salts.clone(), &site.settings.siteurl);
         result.guest_nonce = Some(rustpress_core::query::GuestNonce(std::sync::Arc::new(move |action: &str| auth.create_nonce(action, 0, "", crate::admin::now()).unwrap_or_default())));
     }
     if matches!(served, Some(rustpress_core::native::Serve::NotFound)) {
@@ -465,11 +497,18 @@ async fn page(app: &App, uri: &axum::http::Uri, request_headers: &axum::http::He
     // 404 page rather than a canonical redirect. Only `/index.php` is WordPress' own alias for `/`.
     let php_endpoint = path.ends_with(".php") && path != "/index.php";
     // `template_redirect` of the plugins runs before `redirect_canonical()`.
-    if !php_endpoint && let Some(plugin) = loaded.site.plugins.template_redirect(&loaded.site, &result).await? {
+    if !php_endpoint && let Some(plugin) = site.plugins.template_redirect(site, &result).await? {
         return plugin_redirect(&loaded, &plugin_request, &sent_headers, &result, &plugin).await;
     }
+    // `handle_render_partials_request()` on `template_redirect`.
+    if let Some(preview) = &preview
+        && form.iter().any(|(k, v)| k == "wp_customize_render_partials" && !v.is_empty())
+    {
+        return Ok(crate::customize::render_partials(&loaded, site, &result, preview, form).await);
+    }
     // A rule of a plugin that took the request on `init` turns `redirect_canonical()` off.
-    let canonical = if php_endpoint || init.is_some() { None } else { loaded.site.canonical_redirect_for_request(path, query, &result).await? };
+    // `redirect_canonical()` leaves requests other than GET and HEAD alone.
+    let canonical = if php_endpoint || init.is_some() || *method == Method::POST { None } else { site.canonical_redirect_for_request(path, query, &result).await? };
     let canonical_done = started.elapsed();
     tracing::debug!(setup_ms = before_query.as_secs_f64() * 1000.0, query_ms = (query_done - before_query).as_secs_f64() * 1000.0, canonical_ms = (canonical_done - query_done).as_secs_f64() * 1000.0, path, "page prepared");
     if let Some(target) = canonical {
@@ -483,17 +522,20 @@ async fn page(app: &App, uri: &axum::http::Uri, request_headers: &axum::http::He
             no_cache(response.headers_mut());
         }
         // `redirect_canonical()` passes the absolute address on.
-        let home = loaded.site.home_url("");
+        let home = site.home_url("");
         let origin = home.split_once("://").map_or(home.clone(), |(scheme, rest)| format!("{scheme}://{}", rest.split('/').next().unwrap_or_default()));
         let absolute = if target.starts_with('/') { format!("{origin}{target}") } else { target.clone() };
         let redirected = rustpress_core::native::Redirected { location: &absolute, status: 301, by: "WordPress" };
-        let plugin_headers = loaded.site.plugins.wp_redirect(&loaded.site, &plugin_request, &redirected).await?;
+        let plugin_headers = site.plugins.wp_redirect(site, &plugin_request, &redirected).await?;
         set_headers(&mut response, sent_headers.iter().chain(&plugin_headers));
         // `wp_redirect( $redirect_url, 301 )` in `redirect_canonical()`.
         response.headers_mut().insert("x-redirect-by", HeaderValue::from_static("WordPress"));
+        if preview.is_some() {
+            crate::customize::preview_headers(response.headers_mut());
+        }
         if !result.flags.is_feed {
             response.headers_mut().insert(header::CONTENT_TYPE, HeaderValue::from_static("text/html; charset=UTF-8"));
-        } else if let Some(feed) = rustpress_theme::feed::redirect_headers(&loaded.site, &result).await? {
+        } else if let Some(feed) = rustpress_theme::feed::redirect_headers(site, &result).await? {
             let headers = response.headers_mut();
             if let Ok(value) = HeaderValue::from_str(&feed.content_type) {
                 headers.insert(header::CONTENT_TYPE, value);
@@ -508,7 +550,7 @@ async fn page(app: &App, uri: &axum::http::Uri, request_headers: &axum::http::He
         return Ok(response);
     }
     // `pre_handle_404` of a plugin: an empty feed of an archive becomes the 404 page.
-    let result = if result.flags.is_feed && loaded.site.plugins.feed_not_found(&result) {
+    let result = if result.flags.is_feed && site.plugins.feed_not_found(&result) {
         let mut not_found = result.into_404();
         not_found.flags.is_feed = false;
         not_found
@@ -516,13 +558,13 @@ async fn page(app: &App, uri: &axum::http::Uri, request_headers: &axum::http::He
         result
     };
     // `template_redirect` after `redirect_canonical()` on a 404 page.
-    if result.flags.is_404 && !php_endpoint && init.is_none() && let Some(plugin) = loaded.site.plugins.not_found(&loaded.site, &result, &plugin_request).await? {
+    if result.flags.is_404 && !php_endpoint && init.is_none() && let Some(plugin) = site.plugins.not_found(site, &result, &plugin_request).await? {
         return plugin_redirect(&loaded, &plugin_request, &sent_headers, &result, &plugin).await;
     }
     if result.flags.is_feed {
         let feed = rustpress_db::Db::with_term_cache(async {
-            loaded.site.db.prime_loop(&result.posts).await?;
-            render_feed(&loaded.theme, &loaded.site, &result, &loaded.registry, request_uri).await
+            site.db.prime_loop(&result.posts).await?;
+            render_feed(&loaded.theme, site, &result, &loaded.registry, request_uri).await
         })
         .await;
         let Some(feed) = feed? else {
@@ -535,28 +577,28 @@ async fn page(app: &App, uri: &axum::http::Uri, request_headers: &axum::http::He
     }
     let mut result = result;
     if result.flags.is_robots {
-        let mut response = typed(StatusCode::OK, "text/plain; charset=utf-8", loaded.site.robots_txt());
-        for (name, value) in loaded.site.plugins.robots_txt_headers() {
+        let mut response = typed(StatusCode::OK, "text/plain; charset=utf-8", site.robots_txt());
+        for (name, value) in site.plugins.robots_txt_headers() {
             response.headers_mut().insert(name, HeaderValue::from_static(value));
         }
         set_headers(&mut response, &sent_headers);
         return Ok(with_api_link(response, &loaded, &result));
     }
     if result.flags.is_favicon {
-        let icon = match site_icon_url(&loaded.site, 32).await {
+        let icon = match site_icon_url(site, 32).await {
             Some(icon) => icon,
-            None => loaded.site.site_url("wp-includes/images/w-logo-gray-white-bg.png"),
+            None => site.site_url("wp-includes/images/w-logo-gray-white-bg.png"),
         };
         let mut response = redirect(&icon);
         *response.status_mut() = StatusCode::FOUND;
         response.headers_mut().insert(header::CONTENT_TYPE, HeaderValue::from_static("text/html; charset=UTF-8"));
         let redirected = rustpress_core::native::Redirected { location: &icon, status: 302, by: "WordPress" };
-        let plugin_headers = loaded.site.plugins.wp_redirect(&loaded.site, &plugin_request, &redirected).await?;
+        let plugin_headers = site.plugins.wp_redirect(site, &plugin_request, &redirected).await?;
         set_headers(&mut response, sent_headers.iter().chain(&plugin_headers));
         return Ok(with_api_link(response, &loaded, &result));
     }
     if result.flags.is_sitemap {
-        match loaded.site.sitemap(&result).await? {
+        match site.sitemap(&result).await? {
             SitemapOutput::Xml(xml) => return Ok(typed(StatusCode::OK, "application/xml; charset=UTF-8", xml)),
             SitemapOutput::Stylesheet(xsl) => return Ok(typed(StatusCode::OK, "application/xml; charset=UTF-8", xsl)),
             SitemapOutput::NotFound => result = result.into_404(),
@@ -564,7 +606,7 @@ async fn page(app: &App, uri: &axum::http::Uri, request_headers: &axum::http::He
     }
     // `wp-trackback.php` for a request that is not a trackback ping: back to the post.
     if result.vars.get("tb").is_some() && result.flags.is_singular() && let Some(post) = result.queried_post() {
-        let permalink = loaded.site.permalink(post).await?;
+        let permalink = site.permalink(post).await?;
         let (target_path, target_query) = rustpress_core::canonical::split_url(&permalink);
         let target = if target_query.is_empty() { target_path } else { format!("{target_path}?{target_query}") };
         let mut response = redirect(&target);
@@ -572,19 +614,27 @@ async fn page(app: &App, uri: &axum::http::Uri, request_headers: &axum::http::He
         response.headers_mut().insert(header::CONTENT_TYPE, HeaderValue::from_static("text/html; charset=UTF-8"));
         singular_headers(&mut response, &result, &loaded);
         let redirected = rustpress_core::native::Redirected { location: &permalink, status: 302, by: "WordPress" };
-        let plugin_headers = loaded.site.plugins.wp_redirect(&loaded.site, &plugin_request, &redirected).await?;
+        let plugin_headers = site.plugins.wp_redirect(site, &plugin_request, &redirected).await?;
         set_headers(&mut response, sent_headers.iter().chain(&plugin_headers));
         return Ok(with_api_link(response, &loaded, &result));
     }
     // The terms of the posts of the main query are read once (`update_object_term_cache()`).
     let document = rustpress_db::Db::with_term_cache(async {
-        loaded.site.db.prime_loop(&result.posts).await?;
-        rustpress_theme::render_document_with(&loaded.theme, &loaded.site, &result, &loaded.registry, &extras).await
+        site.db.prime_loop(&result.posts).await?;
+        rustpress_theme::render_document_with(&loaded.theme, site, &result, &loaded.registry, &extras).await
     })
     .await?;
-    let mut response = Response::new(Body::from(document.html));
+    let mut html = document.html;
+    if let Some(preview) = &preview {
+        let exports = crate::admin::customize_preview_exports(&loaded, site, &app.config, app.writer.as_ref(), request_headers, client, &result, preview).await;
+        html = html.replacen(rustpress_theme::customize_preview::FOOTER_EXPORTS, &exports, 1);
+    }
+    let mut response = Response::new(Body::from(html));
     *response.status_mut() = StatusCode::from_u16(document.status).unwrap_or(StatusCode::OK);
     response.headers_mut().insert(header::CONTENT_TYPE, HeaderValue::from_static("text/html; charset=UTF-8"));
+    if preview.is_some() {
+        crate::customize::preview_headers(response.headers_mut());
+    }
     // `WP::send_headers()`: pages for a signed-in user are not cached.
     if document.status == 404 || signed_in {
         no_cache(response.headers_mut());

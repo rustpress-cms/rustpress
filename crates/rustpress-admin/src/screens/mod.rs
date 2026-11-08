@@ -353,6 +353,38 @@ pub fn die(env: &AdminEnv<'_>, status: u16, title: &str, message: &str) -> Admin
     AdminResponse { status, headers: page_headers(), cookies: Vec::new(), body: crate::die::page(env.site, &env.site.tr(title), message), bytes: Vec::new() }
 }
 
+/// What the preview of the Customizer prints at the end of a page of the website for the signed-in user of the
+/// request (`customize_preview_settings()` and the exports of the widgets and of selective refresh).
+pub async fn customize_preview_exports(env: &AdminEnv<'_>, original: &rustpress_core::Site, request: &AdminRequest, q: &rustpress_core::QueryResult, preview: &rustpress_core::customize::Preview) -> String {
+    // The website knows the user from the cookie of `logged_in`.
+    let name = env.auth.cookie_name(Scheme::LoggedIn);
+    let session = match request.cookie(&name) {
+        Some(cookie) => env.auth.validate_cookie(env.db, cookie, Scheme::LoggedIn, env.now, false).await.ok().flatten(),
+        None => None,
+    };
+    let Some(session) = session else { return String::new() };
+    let Ok(user) = CurrentUser::load(env.db, env.roles, &session.user).await else { return String::new() };
+    let stored = AdminEnv {
+        site: original,
+        db: env.db,
+        writer: env.writer,
+        auth: env.auth,
+        roles: env.roles,
+        loader: env.loader.clone(),
+        https: env.https,
+        now: env.now,
+        languages: env.languages.clone(),
+        available_translations: Vec::new(),
+        block_theme: env.block_theme,
+        theme: env.theme,
+        registry: env.registry,
+        mailer: env.mailer.clone(),
+    };
+    let stored_ctx = Ctx { env: &stored, request, user: user.clone(), token: session.token.clone() };
+    let ctx = Ctx { env, request, user, token: session.token.clone() };
+    customize::preview_exports(&ctx, &stored_ctx, q, preview).await
+}
+
 /// Handles a request to a file in `wp-admin`.
 pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse {
     if request.file == "admin-ajax.php" || request.file == "async-upload.php" {

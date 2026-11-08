@@ -233,6 +233,8 @@ pub struct FrontContext {
     pub classic_theme: bool,
     /// The address of the page, for the Customizer to come back to.
     pub current_url: String,
+    /// `changeset_uuid()` when the page is in the preview of the Customizer.
+    pub customize_changeset: Option<String>,
 }
 
 /// `wp_customize_support_script()`.
@@ -299,9 +301,18 @@ pub fn render_front(site: &Site, user: &CurrentUser, ctx: &FrontContext) -> Stri
     }
 
     // `wp_admin_bar_customize_menu()`
-    let customize = ctx.classic_theme && user.can("edit_theme_options");
+    // A block theme has the menu when something uses the Customizer: in its preview, the Customizer itself.
+    let customize = (ctx.classic_theme || ctx.customize_changeset.is_some()) && user.can("edit_theme_options");
     if customize {
-        let url = rustpress_core::urls::add_query_arg(&site.site_url("wp-admin/customize.php"), "url", &rustpress_core::canonical::php_urlencode(&ctx.current_url));
+        // In the preview the Customizer opens the changeset again, and the page comes without it.
+        let current = match &ctx.customize_changeset {
+            Some(_) => rustpress_core::urls::remove_query_arg(&ctx.current_url, "customize_changeset_uuid"),
+            None => ctx.current_url.clone(),
+        };
+        let mut url = rustpress_core::urls::add_query_arg(&site.site_url("wp-admin/customize.php"), "url", &rustpress_core::canonical::php_urlencode(&current));
+        if let Some(uuid) = &ctx.customize_changeset {
+            url = rustpress_core::urls::add_query_arg(&url, "changeset_uuid", uuid);
+        }
         top.push(item("customize", "hide-if-no-customize", &link(&esc_url(&url), &tr("Customize"), false)));
     }
 

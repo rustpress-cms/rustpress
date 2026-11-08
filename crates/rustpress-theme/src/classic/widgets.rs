@@ -103,13 +103,13 @@ fn classname(base: &str) -> String {
 }
 
 /// Splits `recent-posts-6` into `recent-posts` and `6`.
-fn split_id(id: &str) -> Option<(&str, u64)> {
+pub(super) fn split_id(id: &str) -> Option<(&str, u64)> {
     let (base, number) = id.rsplit_once('-')?;
     Some((base, number.parse().ok()?))
 }
 
 /// The settings of one widget instance from the `widget_<base>` option.
-fn instance(site: &Site, base: &str, number: u64) -> Option<Value> {
+pub(super) fn instance(site: &Site, base: &str, number: u64) -> Option<Value> {
     let option = site.options.value(&format!("widget_{base}"))?;
     let entries = option.as_array()?;
     entries.iter().find_map(|(key, value)| match key {
@@ -145,13 +145,69 @@ pub(super) fn widget_title(site: &Site, instance: &Value, default: Option<&str>)
 /// `dynamic_sidebar()`: the widgets of a sidebar, wrapped the way the theme registered it.
 pub async fn dynamic_sidebar(s: &Services<'_>, sidebar: &Sidebar<'_>) -> Result<String> {
     let mut out = String::new();
-    let Some((_, ids)) = sidebars_widgets(s.site).into_iter().find(|(name, _)| name == sidebar.id) else { return Ok(out) };
-    for id in ids {
-        let Some((base, number)) = split_id(&id) else { continue };
-        let Some(settings) = instance(s.site, base, number) else { continue };
-        out.push_str(&render_widget(s, sidebar, &id, base, &settings).await?);
+    // `WP_Customize_Widgets` in the preview: `dynamic_sidebar_has_widgets` counts the sidebar, and with selective
+    // refresh `dynamic_sidebar_before` and `_after` mark where its widgets are.
+    let preview = s.q.customize.as_deref().filter(|p| p.widgets);
+    let marked = preview.filter(|p| p.selective_refresh_widgets);
+    let instance_number = marked.map(|p| p.start_sidebar(sidebar.id));
+    if let (Some(_), Some(number)) = (marked, instance_number) {
+        out.push_str(&rustpress_core::customize::sidebar_marker("before", sidebar.id, number));
+    }
+    if let Some((_, ids)) = sidebars_widgets(s.site).into_iter().find(|(name, _)| name == sidebar.id) {
+        for id in ids {
+            let Some((base, number)) = split_id(&id) else { continue };
+            let Some(settings) = instance(s.site, base, number) else { continue };
+            if let Some(preview) = preview {
+                preview.tally_widget(&id);
+            }
+            match instance_number {
+                Some(number) => {
+                    // `filter_dynamic_sidebar_params()`: the attributes of the partial on the widget's element.
+                    let before = sidebar.before_widget.replacen("%1$s", &id, 1).replacen("%2$s", &classname(base), 1);
+                    let context = format!("{{\"sidebar_id\":{},\"sidebar_instance_number\":{number}}}", rustpress_blocks::php_json::encode(&serde_json::Value::String(sidebar.id.to_owned())));
+                    let attributes = format!(
+                        " data-customize-partial-id=\"{}\" data-customize-partial-type=\"widget\" data-customize-partial-placement-context=\"{}\" data-customize-widget-id=\"{}\"",
+                        esc_attr(&format!("widget[{id}]")),
+                        esc_attr(&context),
+                        esc_attr(&id)
+                    );
+                    let name_end = before.char_indices().skip(1).find(|(_, c)| !(c.is_ascii_alphanumeric() || *c == '_')).map_or(before.len(), |(i, _)| i);
+                    let before = if before.starts_with('<') && name_end > 1 { format!("{} {attributes}{}", &before[..name_end], &before[name_end..]) } else { before };
+                    out.push_str(&display(s, sidebar, before, base, id.rsplit('-').next().unwrap_or_default(), &settings).await?);
+                }
+                None => out.push_str(&render_widget(s, sidebar, &id, base, &settings).await?),
+            }
+        }
+    }
+    if let (Some(_), Some(number)) = (marked, instance_number) {
+        out.push_str(&rustpress_core::customize::sidebar_marker("after", sidebar.id, number));
     }
     Ok(out)
+}
+
+/// `WP_Customize_Widgets::render_widget_partial()`: `dynamic_sidebar()` with only this widget in the sidebar, with
+/// the attributes of its partial (the sidebar's call number comes from the request) and without the markers.
+pub async fn render_widget_partial(s: &Services<'_>, sidebar: &Sidebar<'_>, id: &str, instance_number: Option<i64>) -> Result<String> {
+    let Some(preview) = s.q.customize.as_deref() else { return Ok(String::new()) };
+    let counted = preview.start_sidebar(sidebar.id);
+    let Some((base, number)) = split_id(id) else { return Ok(String::new()) };
+    let Some(settings) = instance(s.site, base, number) else { return Ok(String::new()) };
+    preview.tally_widget(id);
+    let before = sidebar.before_widget.replacen("%1$s", id, 1).replacen("%2$s", &classname(base), 1);
+    let context = format!(
+        "{{\"sidebar_id\":{},\"sidebar_instance_number\":{}}}",
+        rustpress_blocks::php_json::encode(&serde_json::Value::String(sidebar.id.to_owned())),
+        instance_number.unwrap_or(i64::from(counted))
+    );
+    let attributes = format!(
+        " data-customize-partial-id=\"{}\" data-customize-partial-type=\"widget\" data-customize-partial-placement-context=\"{}\" data-customize-widget-id=\"{}\"",
+        esc_attr(&format!("widget[{id}]")),
+        esc_attr(&context),
+        esc_attr(id)
+    );
+    let name_end = before.char_indices().skip(1).find(|(_, c)| !(c.is_ascii_alphanumeric() || *c == '_')).map_or(before.len(), |(i, _)| i);
+    let before = if before.starts_with('<') && name_end > 1 { format!("{} {attributes}{}", &before[..name_end], &before[name_end..]) } else { before };
+    display(s, sidebar, before, base, id.rsplit('-').next().unwrap_or_default(), &settings).await
 }
 
 /// `wp_render_widget()`: one widget with the settings the caller holds.
@@ -330,6 +386,9 @@ async fn nav_menu(s: &Services<'_>, sidebar: &Sidebar<'_>, before: &str, setting
     menu::classes_by_context(site, s.q, s.request_uri, &mut menu.items).await?;
     let mut args = NavArgs::new("");
     args.container = Some(("nav".into(), Some(strip_tags(&title).trim().to_owned())));
+    args.menu = Some(menu.term_id);
+    args.fallback_cb = "";
+    args.customize = s.q.customize.clone();
     args.use_ids_once(s.env, &menu.items);
     let title_hook = |t: &str, _: &menu::MenuItem, _: usize| t.to_owned();
     let link_hook = |l: String, _: &menu::MenuItem, _: usize| l;

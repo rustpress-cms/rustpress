@@ -58,7 +58,7 @@ https://github.com/rustpress-cms/rustpress/issues/new?template=port-request.yml
 | Block themes, including Twenty Twenty-Two to Twenty Twenty-Five, Frost and Ollie | Classic PHP themes other than Twenty Seventeen (Astra, GeneratePress, Divi, Hello Elementor, ...) |
 | Twenty Seventeen (ported natively) | Page builders (Elementor, Divi, WPBakery) and WooCommerce |
 | Yoast SEO, Contact Form 7, Redirection, Advanced Custom Fields, Classic Editor, SVG Support, WP Date Remover | Any other PHP plugin: it is ignored, so whatever it adds to the site is missing |
-| Plugins that RustPress makes unnecessary: page caches, WP Mail SMTP | Multisite, the Customizer (so far its page loads, without the preview and saving), PHP in a block theme's `functions.php` beyond simple registrations |
+| Plugins that RustPress makes unnecessary: page caches, WP Mail SMTP | Multisite, saving in the Customizer (its page and the preview work), PHP in a block theme's `functions.php` beyond simple registrations |
 | Every site language WordPress has a language pack for | Services that need outgoing HTTP (Akismet, reCAPTCHA, update checks) |
 
 The plugins that people need most are ported next: ask for one with a [port request](https://github.com/rustpress-cms/rustpress/issues/new?template=port-request.yml), or port it yourself with [docs/porting-a-plugin.md](docs/porting-a-plugin.md).

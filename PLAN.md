@@ -108,13 +108,19 @@ The reference stack, the tools and the working rules are in [AGENTS.md](AGENTS.m
   `site-health.php` that are about PHP (RustPress has none) and the `Info` tab, which reports its own environment.
 
 **Sign-in, administration, REST**
-- The Customizer beyond its page: the preview in the frame (the front end with `customize_changeset_uuid` and
-  `customize_messenger_channel`, `customize-preview` and the selective refresh), saving (`customize_save` with the
-  `customize_changeset` posts, drafts, schedules, autosaves and locks), its other Ajax actions (`customize_load_themes`,
-  `customize_refresh_nonces`, `customize_trash`, `customize_dismiss_autosave_or_lock`, `customize_override_changeset_lock`,
-  the header control's `custom-header-crop`, `-add` and `-remove`, the menus' `load-available-menu-items-customizer`,
+- The Customizer beyond its page and preview: saving (`customize_save` with the `customize_changeset` posts, drafts,
+  schedules, autosaves and locks), its other Ajax actions (`customize_load_themes`, `customize_refresh_nonces`,
+  `customize_trash`, `customize_dismiss_autosave_or_lock`, `customize_override_changeset_lock`, the header control's
+  `custom-header-crop`, `-add` and `-remove`, the menus' `load-available-menu-items-customizer`,
   `search-available-menu-items-customizer` and `customize-nav-menus-insert-auto-draft`, `update-widget`), and the
-  arguments `changeset_uuid` and `theme` (the preview of another theme) of `customize.php`.
+  arguments `changeset_uuid` and `theme` of `customize.php`.
+- The preview of the Customizer (see "The preview of the Customizer"), what it does not do yet: the settings of the menus
+  and their items (`nav_menu[…]`, `nav_menu_item[…]`, which `WP_Customize_Nav_Menu_Item_Setting::preview()` brings into
+  `wp_get_nav_menu_items()`), `WP_Customize_Header_Image_Setting` (the header image is taken as posted), `active_theme`
+  and the preview of another theme (`customize_theme`), the exports for a visitor who looks at a changeset that exists
+  (RustPress leaves them out without a signed-in user), `wp_customize=on` without a UUID (the latest unpublished
+  changeset), the toolbar of a frameless preview with a previewed site title, `add_state_query_params()` on the redirects
+  of plugins, and the headers of the preview on feeds and on the other answers that are not pages.
 - Widgets: what the RSS widget prints (front and `rendered`; it needs `fetch_feed()`), the video widget with an address
   that `wp_oembed_get()` would ask a provider or the site itself about (RustPress prints nothing, as WordPress does for an
   address without a provider), the feed check of `wp_widget_rss_process()`, the old format of `wp_convert_widget_settings()`, `alt_option_name`,
@@ -587,7 +593,7 @@ Measurement afterwards (release, `RUSTPRESS_RELOAD_SECS=1`, median / minimum of 
 
 #### Phase 5 – missing features (wp-admin and REST)
 - (new) The "Excerpt" list view (`mode=excerpt`, `posts_list_mode` through `set_user_setting()`/`user-settings`): RustPress does not evaluate `mode`.
-19. `customize.php` – the page itself done (2026-11-07, see "The page of the Customizer"); the preview, saving and the Ajax actions are in the Open list.
+19. `customize.php` – the page (2026-11-07, see "The page of the Customizer") and the preview (2026-11-08, see "The preview of the Customizer") done; saving and the Ajax actions are in the Open list.
 20. `media-upload.php` (the old upload dialog without JavaScript) – **postponed (2026-10-27)**, same reason. Uploading already works through `media-new.php`, the media library, the media dialog, the block editor and REST.
 21. REST (done 2026-10-26): reading `sidebars`/`widgets`/`widget-types` (`edit/widgets.rs`: `retrieve_widgets()` including `wp_map_sidebars_widgets()` and saving as in WordPress, registered widgets from `widget_*`, the edit context with `instance`/`wp_hash`, a form only for the block widget; `dev/rest-widgets-compare.py` 72/72 as rpadmin and rpeditor). `block-types` (`edit/block_types.rs`: `block.json` as PHP decodes it, the attributes of the block supports in registration order, style handles, variations of `navigation-link`/`post-terms`/`template-part`, theme styles; WordPress registers the style variations from `styles/` only when `core/template-part` reads its templates – the blocks before it do not have them; `dev/rest-block-types-compare.py` 3953/3954, the rest = the order of the template parts from 27). `font-collections` from the site transient of the Google Fonts collection (without the transient: `font_collection_request_error` like a failed download). Deliberately different (environment, see 27): the Site Health tests `background-updates`, `dotorg-communication`, `loopback-requests`, `authorization-header` (no Apache/`mod_rewrite`), `page-cache`/`directory-sizes` (measurements). Open: writing widgets/sidebars, the forms of the classic widgets, `widget-types/<id>/encode|render`, `rendered` in registered sidebars (classic theme).
 22. The Ajax success paths of the classic editor: `set-post-thumbnail`/`get-post-thumbnail-html` (the HTML of the featured image box), `add-meta`/`delete-meta` (custom fields), `get-comments` (the rows of the comment box), `send-attachment-to-editor` (`get_image_send_to_editor` complete), `parse-media-shortcode` for galleries/audio/video. Done (2026-10-27): `set-post-thumbnail`/`get-post-thumbnail-html` including the image in the featured image box (`wp_get_attachment_image( $id, array( 266, 266 ) )`), `add-meta`/`delete-meta` (creating, changing, deleting, an auto-draft becomes a draft, `_list_meta_row()`), checked with `dev/classic-ajax-compare.py` (16/16). Also done: `get-comments` (the rows of `WP_Post_Comments_List_Table`, also for `replyto-comment`/`edit-comment` depending on `mode`/`checkbox`; `dev/get-comments-compare.py`, `dev/comment-rows-compare.py`), `send-attachment-to-editor` (`get_image_send_to_editor()` with `get_image_tag()`, `rel`, `[caption]`; `dev/send-to-editor-compare.py` 10/10). Open: `parse-media-shortcode` with a preview (`do_shortcode()` plus the scripts of `wp-mediaelement`/`wp-playlist` as a separate print).
@@ -1030,3 +1036,48 @@ Compared with `dev/customize-compare.py`: on the copy of the real site with Twen
 German and English, with `return` and `url`, with `autofocus`, as an editor, and on the reference with Twenty Twenty-Five
 as an administrator and an editor: 7 of 7 equal, the UUID of the changeset, the nonces and the times masked.
 
+### The preview of the Customizer (2026-11-08)
+
+The frame of `customize.php` loads the website with `customize_changeset_uuid`, `customize_theme` and
+`customize_messenger_channel`; with changes that are not in a changeset yet it posts them there (`customized`), and
+selective refresh posts `wp_customize_render_partials` to the page. RustPress answers all three for Twenty Seventeen and
+for block themes.
+
+- **The request** (`rustpress-server/src/customize.rs`): `_wp_customize_include()` and `setup_theme()`. A UUID that is
+  none, a changeset that does not exist for who may not customize, and the frame without that capability get the error
+  page of `WP_Customize_Manager::wp_die()` (English, as before the translations; in the frame with `customize-base` and
+  the message to the Customizer). In the frame the toolbar is hidden. The page gets `nocache_headers()`, `X-Robots`,
+  `X-Robots-Tag`, `X-Frame-Options` and the `Content-Security-Policy` of the frame, also on canonical redirects, and
+  `redirect_canonical()` leaves a POST alone. Any other POST to the website is still refused.
+- **The previewed values** (`customize_values.rs`): `unsanitized_post_values()` of the changeset and of `customized` (only
+  with the capability and the nonce of the preview) for the settings of WordPress, of Twenty Seventeen, of the widgets and
+  areas (the raw instance of the block editor) and of the menu locations, sanitized with the settings' callbacks, and the
+  Additional CSS. They go into a copy of the site for the request (`Site::with_options()`, the native plugins are shared
+  now); the values of the menu items are made with the stored options, as WordPress makes them before the preview.
+- **The page** (`rustpress-theme/src/customize_preview.rs`, the templates of Twenty Seventeen, `document.rs` for block
+  themes): `wp_robots_no_robots()`, the styles of `customize-preview` and of the highlighted widget, the loading style
+  and the script that drops the channel outside the frame, the players the media widgets and the Text widget enqueue for
+  the preview, the scripts of the footer in the order of the queue (`FooterScripts`, the script loader of the
+  administration), the attributes of the partials of widgets (with `dynamic_sidebar_before`/`_after`) and menus (with
+  `args_hmac` = `wp_hash( serialize( $args ) )`), `_wpCustomizePreviewNavMenusExports`, no edit links, the placeholders of
+  the empty panels, the logo, the header and the site description that are always there, the colors CSS with its hue,
+  the dark colors, the custom CSS and the default icon.
+- **The exports** (`rustpress-admin/src/screens/customize/preview.rs`): `_wpCustomizeSettings` of the preview,
+  `_wpWidgetCustomizerPreviewSettings` and `_customizePartialRefreshExports`, from the settings the Customizer's page
+  registers, in the order of the website (the widgets on `wp`, after `prepare_controls()`; posted widget settings first,
+  as `register_settings()` makes them on `widgets_init`), with the active callbacks run for the page and the sidebars it
+  rendered. Menu items have no post states outside the administration.
+- **Selective refresh**: the partials of the site title and tagline, the logo, the header (with
+  `custom_header_settings`), the panels of the front page, the widgets (alone in their sidebar) and the menus (after the
+  check of their hash), with the validities of the settings and `nav_menu_instance_args`.
+- **Found on the way:** a block theme prints `wp_site_icon()` and the Additional CSS of the Customizer in the global
+  styles (both were missing); the site title of Twenty Seventeen goes through the filters of `bloginfo` (`'display'`).
+
+Compared with `dev/customize-preview-compare.py`: on the copy of the real site with Twenty Seventeen the front page in
+German and English, the second page, a post, a page, a category, a search, a 404, a static front page with its panels,
+without the frame, with `customize_autosaved`, as an editor, as a visitor and with a UUID that is none; on the reference
+with Twenty Twenty-Five the front page, a post and a page (canonical redirects), without the frame, as an editor and as a
+visitor; posted values for the title, the colors and layout (also invalid ones), the front page, the CSS, the widgets, a
+menu location, without a valid nonce and on the block theme; and the partials of the title, the panels, the widgets and
+the menus (also with a hash that does not fit), without partials and on the block theme: 36 of 36 equal, the nonces
+masked, the credits of the footer as everywhere.

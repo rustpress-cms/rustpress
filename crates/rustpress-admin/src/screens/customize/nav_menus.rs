@@ -35,7 +35,7 @@ fn html_excerpt(text: &str, count: usize, more: &str) -> String {
 
 /// The items of a menu as `wp_get_nav_menu_items()` gives them: published, numbered by `menu_order`.
 async fn menu_items(state: &State<'_>, menu: &Term) -> Vec<admin::EditItem> {
-    let ctx = state.ctx;
+    let ctx = state.items_ctx.unwrap_or(state.ctx);
     if menu.count <= 0 {
         return Vec::new();
     }
@@ -45,6 +45,10 @@ async fn menu_items(state: &State<'_>, menu: &Term) -> Vec<admin::EditItem> {
         let mut item = admin::setup_item(ctx, &post).await;
         if post.post_title.is_empty() {
             item.title = String::new();
+        }
+        // `get_post_states()` exists only in the administration: on the website the label is the type's name.
+        if state.preview && item.kind == "post_type" && !item.invalid {
+            item.type_label = admin::box_post_types(ctx).into_iter().find(|t| t.name == item.object).map_or_else(|| item.object.clone(), |t| admin::singular_of(ctx, &t.name));
         }
         items.push(item);
     }
