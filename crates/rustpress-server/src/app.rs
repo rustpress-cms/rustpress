@@ -493,6 +493,7 @@ async fn page(app: &App, uri: &axum::http::Uri, request_headers: &axum::http::He
     let query_done = started.elapsed();
     result.http_host = request_headers.get(header::HOST).and_then(|v| v.to_str().ok()).map(str::to_owned);
     result.user_agent = request_headers.get(header::USER_AGENT).and_then(|v| v.to_str().ok()).map(str::to_owned);
+    result.referer = request_headers.get(header::REFERER).and_then(|v| v.to_str().ok()).map(str::to_owned);
     // Physical PHP endpoints (wp-login.php, xmlrpc.php, ...) do not exist here; they get the
     // 404 page rather than a canonical redirect. Only `/index.php` is WordPress' own alias for `/`.
     let php_endpoint = path.ends_with(".php") && path != "/index.php";

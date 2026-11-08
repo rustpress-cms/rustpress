@@ -1,0 +1,60 @@
+{
+ "form": {
+  "field_id": 4,
+  "settings": {
+   "form_title": "Golden Form",
+   "form_desc": "",
+   "submit_text": "Submit",
+   "submit_text_processing": "Sending...",
+   "antispam_v3": "0",
+   "ajax_submit": "",
+   "notification_enable": "1",
+   "notifications": {
+    "1": {
+     "email": "{admin_email}",
+     "replyto": "{field_id=\"2\"}",
+     "message": "{all_fields}"
+    }
+   },
+   "confirmations": {
+    "1": {
+     "type": "message",
+     "message": "Thanks for contacting us! We will be in touch with you shortly.",
+     "message_scroll": "1"
+    }
+   }
+  },
+  "fields": {
+   "1": {
+    "id": "1",
+    "type": "textarea",
+    "label": "Message",
+    "required": "1",
+    "size": "large",
+    "default_value": "Line one\nLine & <two>",
+    "description": "Before",
+    "placeholder": "Say it"
+   },
+   "2": {
+    "id": "2",
+    "type": "textarea",
+    "label": "Limited",
+    "size": "small",
+    "limit_enabled": "1",
+    "limit_count": "100",
+    "limit_min": "10"
+   },
+   "3": {
+    "id": "3",
+    "type": "textarea",
+    "label": "Words",
+    "limit_enabled": "1",
+    "limit_count": "50",
+    "limit_mode": "words",
+    "read_only": "1"
+   }
+  }
+ },
+ "title": false,
+ "description": false
+}

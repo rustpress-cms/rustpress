@@ -761,6 +761,8 @@ pub struct BlockContext<'a> {
     pub post: Option<&'a Post>,
     /// `wp_is_serving_rest_request()`.
     pub rest: bool,
+    /// What the plugins keep for the rest of the request (their `static` variables).
+    pub state: &'a std::sync::Mutex<PluginState>,
 }
 
 /// A feed a plugin may change.
@@ -1481,7 +1483,7 @@ pub struct Asset {
     pub ver: Option<String>,
     /// Styles: `media`.
     pub media: String,
-    /// Scripts: printed in the footer.
+    /// Scripts: printed in the footer. Styles: enqueued after the head, printed by `print_late_styles()`.
     pub in_footer: bool,
     /// The priority of the `wp_enqueue_scripts` callback that enqueues it (10 by default).
     pub priority: i32,
@@ -1489,7 +1491,7 @@ pub struct Asset {
     pub extra: Option<String>,
     /// Scripts: `wp_add_inline_script( $handle, $data, 'before' )`.
     pub before: Vec<String>,
-    /// Scripts: `wp_add_inline_script( $handle, $data )` after the script.
+    /// Scripts: `wp_add_inline_script( $handle, $data )` after the script. Styles: `wp_add_inline_style()`.
     pub after: Vec<String>,
     /// Registered but not enqueued (`wp_register_script()`): printed only as a dependency of another script.
     pub registered_only: bool,
