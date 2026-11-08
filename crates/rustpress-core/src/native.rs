@@ -69,6 +69,17 @@ pub trait ActivePlugin: Send + Sync {
         Box::pin(async { Ok(String::new()) })
     }
 
+    /// `login_head` at the default priority: what the plugin prints in the head of `wp-login.php`.
+    fn login_head(&self, _site: &Site) -> String {
+        String::new()
+    }
+
+    /// URLs the `wp_resource_hints` filter adds for `relation` (`dns-prefetch`, `preconnect`, `prefetch`,
+    /// `prerender`).
+    fn resource_hints(&self, _relation: &str) -> Vec<String> {
+        Vec::new()
+    }
+
     /// `wp_head` at priority 1, after `wp_robots()`, with what the plugin changes around it: the `wp_robots` filter
     /// (gets the directives of the core filters), `pre_get_document_title` and core actions it removes from `wp_head`.
     fn wp_head<'a>(&'a self, _ctx: &'a HeadContext<'a>, _robots: &'a [(String, Robot)]) -> BoxFuture<'a, Result<Option<Head>>> {
@@ -89,6 +100,12 @@ pub trait ActivePlugin: Send + Sync {
     /// The public post statuses the plugin registers (`register_post_status()`): the slug and the translated label.
     fn post_statuses(&self, _site: &Site) -> Vec<(&'static str, String)> {
         Vec::new()
+    }
+
+    /// The internal post statuses the plugin registers (`register_post_status()` with `internal`): only
+    /// `get_post_stati()` without arguments lists them.
+    fn internal_post_statuses(&self) -> &'static [&'static str] {
+        &[]
     }
 
     /// Links a plugin adds to an object of the REST API on `rest_prepare_{$type}` (`WP_REST_Response::add_link()`),
@@ -929,6 +946,15 @@ pub struct Head {
     pub title: Option<String>,
     /// Printed on `wp_head` at priority 1, right after the robots tag.
     pub html: String,
+    /// Printed on `wp_head` at priority 0 by an action the plugin hooks on `init`: before the robots tag, after the
+    /// theme's actions of priority 0.
+    pub first: String,
+    /// Printed on `wp_head` at priority 10, after the actions of core at that priority (`rel_canonical`,
+    /// `wp_shortlink_wp_head`) and before the theme's.
+    pub late: String,
+    /// Printed on `wp_head` at priority 10 by actions the plugin hooks on `init`: after the import map and the
+    /// preloads of the script modules.
+    pub late_init: String,
     /// Core actions removed from `wp_head`: `rel_canonical`, `_wp_render_title_tag`.
     pub removed: Vec<&'static str>,
 }
@@ -1430,6 +1456,10 @@ pub struct Asset {
     pub after: Vec<String>,
     /// Registered but not enqueued (`wp_register_script()`): printed only as a dependency of another script.
     pub registered_only: bool,
+    /// Scripts: attributes a `script_loader_tag` filter adds to the script element (` async`), before `></script>`.
+    pub tag_attributes: String,
+    /// Scripts: what `script_loader_tag` filters put in front of the tags of the script (an HTML comment).
+    pub tag_prefix: String,
     /// Scripts: the text domain of `wp_set_script_translations()`.
     pub translations: Option<String>,
 }
@@ -1466,6 +1496,61 @@ impl Assets {
         self.scripts.push(Asset { handle: handle.to_owned(), src, deps: deps.iter().map(|d| (*d).to_owned()).collect(), ver: Some(ver.to_owned()), in_footer, priority: 10, ..Asset::default() });
         self.scripts.last_mut().expect("just pushed")
     }
+}
+
+/// `PHP_URL_HOST` of an address (`wp_parse_url( $url, PHP_URL_HOST )`), if it has one.
+fn url_host(url: &str) -> Option<&str> {
+    let rest = url.strip_prefix("//").or_else(|| url.split_once("://").map(|(_, r)| r))?;
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    let host = authority.rsplit_once('@').map_or(authority, |(_, h)| h);
+    let host = host.split(':').next().unwrap_or_default();
+    (!host.is_empty()).then_some(host)
+}
+
+/// `wp_resource_hints()` on `wp_head` at priority 2 (`login_head` at 8): `wp_dependencies_unique_hosts()` of the enqueued plugin scripts
+/// and stylesheets (core's are on the site's own host) as `dns-prefetch`, with what the plugins add.
+pub fn resource_hints(site: &Site, assets: &Assets) -> String {
+    let server = url_host(&site.settings.home).unwrap_or_default().to_owned();
+    let mut hosts: Vec<String> = Vec::new();
+    for asset in assets.scripts.iter().chain(&assets.styles).filter(|a| !a.registered_only) {
+        if let Some(host) = url_host(&asset.src)
+            && !hosts.iter().any(|h| h == host)
+            && host != server
+        {
+            hosts.push(host.to_owned());
+        }
+    }
+    let mut out = String::new();
+    for relation in ["dns-prefetch", "preconnect", "prefetch", "prerender"] {
+        let urls = site.plugins.resource_hints(relation, if relation == "dns-prefetch" { hosts.clone() } else { Vec::new() });
+        let mut seen: Vec<String> = Vec::new();
+        let mut unique: Vec<String> = Vec::new();
+        for url in urls {
+            // `esc_url( $url, array( 'http', 'https' ) )`.
+            let url = crate::formatting::esc_url(&url);
+            let scheme_ok = url.split_once(':').is_none_or(|(scheme, _)| scheme.contains(['/', '?', '#']) || matches!(scheme.to_ascii_lowercase().as_str(), "http" | "https"));
+            if url.is_empty() || !scheme_ok || seen.contains(&url) {
+                continue;
+            }
+            let href = if matches!(relation, "preconnect" | "dns-prefetch") {
+                let Some(host) = url_host(&url) else { continue };
+                match url.split_once("://") {
+                    Some((scheme, _)) if relation == "preconnect" => format!("{scheme}://{host}"),
+                    _ => format!("//{host}"),
+                }
+            } else {
+                url
+            };
+            if !seen.contains(&href) {
+                seen.push(href.clone());
+                unique.push(href);
+            }
+        }
+        for href in unique {
+            out.push_str(&format!("<link rel='{}' href='{}' />\n", crate::formatting::esc_attr(relation), crate::formatting::esc_url(&href)));
+        }
+    }
+    out
 }
 
 static REGISTERED: OnceLock<Vec<&'static dyn NativePlugin>> = OnceLock::new();
@@ -1876,6 +1961,10 @@ impl Plugins {
     }
 
     /// The public post statuses of the plugins, in the order they register them.
+    pub fn internal_post_statuses(&self) -> Vec<&'static str> {
+        self.hooks().flat_map(|plugin| plugin.internal_post_statuses().iter().copied()).collect()
+    }
+
     pub fn post_statuses(&self, site: &Site) -> Vec<(&'static str, String)> {
         self.hooks().flat_map(|plugin| plugin.post_statuses(site)).collect()
     }
@@ -2308,6 +2397,20 @@ impl Plugins {
         Ok(out)
     }
 
+    /// What the plugins print on `login_head` at the default priority.
+    pub fn login_head(&self, site: &Site) -> String {
+        self.hooks().map(|plugin| plugin.login_head(site)).collect()
+    }
+
+    /// The `wp_resource_hints` filter of the plugins for `relation`, after the URLs of core.
+    pub fn resource_hints(&self, relation: &str, urls: Vec<String>) -> Vec<String> {
+        let mut urls = urls;
+        for plugin in self.hooks() {
+            urls.extend(plugin.resource_hints(relation));
+        }
+        urls
+    }
+
     /// What the plugins change in the head; `robots` are the directives of core's `wp_robots` filters.
     pub async fn wp_head(&self, ctx: &HeadContext<'_>, robots: Vec<(String, Robot)>) -> Result<Head> {
         let mut head = Head { robots: Some(robots), ..Head::default() };
@@ -2320,6 +2423,9 @@ impl Plugins {
             head.robots = Some(changed.robots.unwrap_or(current));
             head.title = changed.title.or(head.title);
             head.html.push_str(&changed.html);
+            head.first.push_str(&changed.first);
+            head.late.push_str(&changed.late);
+            head.late_init.push_str(&changed.late_init);
             head.removed.extend(changed.removed);
         }
         Ok(head)

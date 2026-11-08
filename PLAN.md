@@ -74,6 +74,7 @@ The reference stack, the tools and the working rules are in [AGENTS.md](AGENTS.m
     screen and in the comment form with saving, the lists, the editors of field groups, post types and taxonomies with
     their Ajax, the tools (export as JSON and PHP, import), the options pages preview.
   - Classic Editor 1.7.0 – complete except the frontend toolbar link (see below).
+  - Site Kit by Google 1.191.0 – the tags on the website (Analytics with consent mode, site verification), not the dashboard.
 - **Following WordPress** – `WORDPRESS_VERSION` is the target; a daily workflow opens an issue per release with the
   report of `dev/wp-diff.sh`; `dev/wp-bump.sh` moves the reference. 7.1.4 was followed (issue #9).
 - **Review** – the security and robustness findings of the review of 2026-10-26 (A1, A2) are fixed except S12; the
@@ -142,6 +143,8 @@ The reference stack, the tools and the working rules are in [AGENTS.md](AGENTS.m
   chosen posts, terms and users in conditional logic (`acf/conditional_logic/choices`), widgets of plugins in the
   `widget` rule, `not_registered` (a key another plugin registered first), the import from Custom Post Type UI, field
   groups from local JSON or PHP.
+- Site Kit: the dashboard, the setup with Google and its REST answers; the tags of Tag Manager, AdSense, Ads, Reader
+  Revenue Manager and Sign in with Google; the Google tag gateway, conversion tracking and custom dimensions.
 - Next: Polylang (needs the language per request). Following plugin releases (`PLUGIN_VERSIONS` and the diff report).
 
 **Review and tests**
@@ -1081,3 +1084,34 @@ visitor; posted values for the title, the colors and layout (also invalid ones),
 menu location, without a valid nonce and on the block theme; and the partials of the title, the panels, the widgets and
 the menus (also with a hash that does not fit), without partials and on the block theme: 36 of 36 equal, the nonces
 masked, the credits of the footer as everywhere.
+
+### Site Kit by Google 1.191.0 (2026-11-08)
+
+`crates/rustpress-plugins/src/site_kit/`: only what the plugin adds to the website, from the settings the plugin stored
+while it ran under PHP (connecting a site to Google needs its dashboard, which RustPress does not have).
+
+- **Analytics** (`googlesitekit_analytics-4_settings`, `Settings::get_default()` for missing keys): with
+  `analytics-4` active, `useSnippet`, a measurement ID and the environment type `production`, the `google_gtagjs` script
+  (`gtag/js?id=` with the Google tag ID or the measurement ID, `async`, the two comments of `script_loader_tag`) with its
+  inline lines (`linker` with the home domain, `developer_id`, `config`), the `dns-prefetch` hint, and for signed-in
+  viewers the opt-out snippet of `trackingDisabled` (`loggedinUsers`, `contentCreators`).
+- **Consent mode** (`googlesitekit_consent_mode`): the default consent `dataLayer` snippet with the EU regions and the
+  footer script `googlesitekit-consent-mode`.
+- **Site verification**: the meta tags of the users who may set Site Kit up (from the transient or the user meta,
+  through `wp_kses()`) on the website and the login page, and `/google<token>.html`.
+- The generator meta tag, the namespace `google-site-kit/v1` in the REST index (the routes answer 404) and the three
+  internal post statuses of the email reports in the `status` enums of REST.
+
+New in `native.rs`: `Head::first` (an action hooked on `init` at priority 0 of `wp_head`), `Head::late` (priority 10
+after core's actions), `Head::late_init` (priority 10, hooked on `init`: after the import map), `Asset::tag_attributes`
+and `tag_prefix` (`script_loader_tag`), the hooks `login_head`, `resource_hints` and `internal_post_statuses`, and
+`wp_resource_hints()` with `wp_dependencies_unique_hosts()` for the website and the login page; `esc_js()` is exact now
+(`stripslashes()` first, `ENT_COMPAT`). Twenty Seventeen prints plugin scripts of a priority above 10 after its own.
+
+Compared with the plugin active (Analytics with and without a Google tag ID, consent mode on, tracking disabled for
+signed-in users, two verification tags, a verification file): the block theme (front page, posts, a page, a category,
+a search, a 404, the feed, as a visitor and signed in), Twenty Seventeen 3.9, the login page, the REST index and
+`/google<token>.html` – equal. Not ported: the dashboard and everything that talks to Google, the tags of the other
+modules (Tag Manager, AdSense, Ads, Reader Revenue Manager, Sign in with Google), custom dimensions, the Google tag
+gateway, conversion tracking, `?tagverify=1`, the `googlesitekit-setup` meta tag of the setup and the translations of
+the consent script.

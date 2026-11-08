@@ -18,6 +18,8 @@ All notable changes to RustPress. Each release names the WordPress release it fo
   ([#51](https://github.com/rustpress-cms/rustpress/pull/51) to [#53](https://github.com/rustpress-cms/rustpress/pull/53), [#55](https://github.com/rustpress-cms/rustpress/pull/55)); `media-upload.php` and `sanitize_file_name()` ([#58](https://github.com/rustpress-cms/rustpress/pull/58)).
 - Twenty Seventeen: post formats, front page panels, colors, the social menu and signed-in viewers ([#54](https://github.com/rustpress-cms/rustpress/pull/54)).
 - Comment feeds of archives and searches, password rehash on sign-in, REST `_method` ([#50](https://github.com/rustpress-cms/rustpress/pull/50)).
+- **Site Kit by Google** 1.191.0 as a native module for the website: the Analytics tag with consent mode and the
+  opt-out for signed-in users, the site verification meta tags and file, and the generator tag.
 - `rustpress check` no longer counts backup, migration and translation plugins as missing, and reports security
   and admin-only plugins as a note that says what is lost instead of "does not run".
 

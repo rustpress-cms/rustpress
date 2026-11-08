@@ -664,10 +664,12 @@ impl<'a> Rest<'a> {
         const PUBLIC: [&str; 5] = ["publish", "future", "draft", "pending", "private"];
         const ALL: [&str; 13] = ["publish", "future", "draft", "pending", "private", "trash", "auto-draft", "inherit", "request-pending", "request-confirmed", "request-failed", "request-completed", "any"];
         let statuses: Vec<Value> = self.site.plugins.post_statuses(self.site).into_iter().map(|(slug, _)| Value::from(slug)).collect();
-        if statuses.is_empty() {
+        let internal: Vec<Value> = self.site.plugins.internal_post_statuses().into_iter().map(Value::from).collect();
+        if statuses.is_empty() && internal.is_empty() {
             return;
         }
-        fn walk(value: &mut Value, statuses: &[Value]) {
+        let every: Vec<Value> = statuses.iter().chain(&internal).cloned().collect();
+        fn walk(value: &mut Value, statuses: &[Value], every: &[Value]) {
             match value {
                 Value::Object(map) => {
                     for (key, child) in map.iter_mut() {
@@ -679,19 +681,19 @@ impl<'a> Rest<'a> {
                                 items.extend(statuses.iter().cloned());
                             } else if names == ALL {
                                 let any = items.pop();
-                                items.extend(statuses.iter().cloned());
+                                items.extend(every.iter().cloned());
                                 items.extend(any);
                             }
                         } else {
-                            walk(child, statuses);
+                            walk(child, statuses, every);
                         }
                     }
                 }
-                Value::Array(items) => items.iter_mut().for_each(|item| walk(item, statuses)),
+                Value::Array(items) => items.iter_mut().for_each(|item| walk(item, statuses, every)),
                 _ => {}
             }
         }
-        walk(value, &statuses);
+        walk(value, &statuses, &every);
     }
 
     /// `rest_handle_options_request()`: the description of the route a path matches (`get_data_for_route()` in the
