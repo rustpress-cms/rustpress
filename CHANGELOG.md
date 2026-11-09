@@ -20,6 +20,14 @@ All notable changes to RustPress. Each release names the WordPress release it fo
   `[cmplz-accept-link]`. The legal documents are stage 2. New hooks for plugins: `wp_footer` and
   `wp_print_footer_scripts` with the query, `body_class`, the whole page before it is sent (`template_output`),
   `wp_head` at priority 0; plugin assets can be enqueued asynchronously.
+- Third-party block themes **Extendable** 2.2.0 and **Bluehost Blueprint** 1.0.2 run, with their `functions.php`
+  ported (scripts, the block styles of `assets/block-styles/`). On the way, for every block theme: the order of
+  `PROPERTIES_METADATA` of WordPress 7.1 (`text-shadow`, the root padding variables), the theme.json elements
+  `textInput` and `select` and plain `cite`, the preset classes of blocks (`:where(.wp-block-button …).has-…`), the
+  rules of a block's feature selectors after its own, `@font-face` with `font-variation-settings` and the other
+  properties in WordPress's order, relative `url()`s of inlined stylesheets (`_wp_normalize_relative_css_links()`),
+  `if … : elseif … : else : endif;` in patterns, `home_url( '/' )` with its slash, and `?paged=0` in the page
+  numbers of a custom query.
 - Inline scripts before and after a script lose their leading line breaks, as in `WP_Scripts::get_inline_script_data()`.
 - Third-party block themes: Frost and Ollie 1.6.6 run, with Ollie's `functions.php` ported; block presets,
   `gmdate()` in patterns and the query title ([#48](https://github.com/rustpress-cms/rustpress/pull/48), [#49](https://github.com/rustpress-cms/rustpress/pull/49)).

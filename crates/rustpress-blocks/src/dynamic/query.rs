@@ -530,7 +530,8 @@ pub(super) async fn pagination_numbers(bc: &BlockCtx<'_>) -> Result<String> {
         if page != 1 {
             args.push(("cst".to_owned(), String::new()));
         }
-        if let Some(paged) = QueryVars::parse(&q.raw_query).u64("paged") {
+        // `$paged = empty( $_GET['paged'] ) ? null : (int) $_GET['paged']`, kept when it is not 0.
+        if let Some(paged) = QueryVars::parse(&q.raw_query).get("paged").map(php_int).filter(|p| *p != 0) {
             args = vec![("paged".to_owned(), paged.to_string())];
         }
         // `paginate_links()` also carries the other query arguments of the requested URL
@@ -578,6 +579,22 @@ fn enhance_numbers(content: &str) -> String {
     out
 }
 
+/// `(int) $string`: leading whitespace, a sign and the digits that follow (saturating like PHP's cast).
+fn php_int(value: &str) -> i64 {
+    let value = value.trim_start_matches([' ', '\t', '\n', '\r', '\x0B', '\x0C']);
+    let (negative, rest) = match value.as_bytes().first() {
+        Some(b'-') => (true, &value[1..]),
+        Some(b'+') => (false, &value[1..]),
+        _ => (false, value),
+    };
+    let digits = &rest[..rest.find(|c: char| !c.is_ascii_digit()).unwrap_or(rest.len())];
+    if digits.is_empty() {
+        return 0;
+    }
+    let magnitude = digits.parse::<i64>().unwrap_or(i64::MAX);
+    if negative { -magnitude } else { magnitude }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -610,3 +627,4 @@ mod tests {
         assert_eq!(url_encode("a b&c"), "a+b%26c");
     }
 }
+

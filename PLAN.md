@@ -103,6 +103,19 @@ The reference stack, the tools and the working rules are in [AGENTS.md](AGENTS.m
   theme whose `functions.php` does more than the literal calls gets a port in `rustpress-theme/src/block_themes/`
   (Ollie: its stylesheet handle, the `glob()` loop of `wp_enqueue_block_style()`, a `wp_head` style, a
   `render_block_core/navigation` filter, the template part area `sidebar`).
+  Extendable 2.2.0 and Bluehost Blueprint 1.0.2 (the third-party block themes with the most active installs on
+  wordpress.org after Frost/Ollie were chosen, 2026-11-09) are equal as well: Extendable 782 URLs, 760 identical,
+  22 known; Bluehost Blueprint 781 URLs, 758 identical, 21 known, and 2 archive pages with posts of the same date
+  (the environment difference above). Their ports: Extendable's footer scripts `header.js` and
+  `navigation-customization.js` with `ExtendableNavData`; Bluehost Blueprint's stylesheet handle, the
+  `assets/block-styles/` loop (with the `.min.css` files) and the YITH Wonder back-compat stylesheet. Not ported, as
+  they need a plugin, a signed-in viewer or the editor: Extendable's WooCommerce/Contact Form 7/WPForms styles and
+  filters, the duotone of Extendify demo logos, the animations of `inc/animations.php` (signed-in viewers or the
+  option `extendify_animation_settings`), its pattern categories and REST filters; the YITH Wonder back-compat style
+  reads the theme mods only when they are autoloaded. Found on the way (all block themes): `PROPERTIES_METADATA` of
+  7.1, the elements `textInput`/`select`, block preset classes, the order of feature selector rules, `@font-face`
+  properties, `_wp_normalize_relative_css_links()` for inlined stylesheets, the alternative `if` syntax in patterns,
+  `home_url( '/' )`, `?paged=0` in custom query pagination.
 - Caching of rendered pages.
 
 **Languages**

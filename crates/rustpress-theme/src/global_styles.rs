@@ -65,14 +65,16 @@ const PROPERTIES: &[(&str, &[&str])] = &[
     ("padding-right", &["spacing", "padding", "right"]),
     ("padding-bottom", &["spacing", "padding", "bottom"]),
     ("padding-left", &["spacing", "padding", "left"]),
+    // The `--wp--style--root--padding-*` variables of the root follow here (see `root_styles()`).
     ("text-decoration", &["typography", "textDecoration"]),
-    ("text-indent", &["typography", "textIndent"]),
+    ("text-shadow", &["typography", "textShadow"]),
     ("text-transform", &["typography", "textTransform"]),
+    ("text-indent", &["typography", "textIndent"]),
     ("filter", &["filter", "duotone"]),
     ("box-shadow", &["shadow"]),
-    ("writing-mode", &["typography", "writingMode"]),
-    ("width", &["dimensions", "width"]),
     ("height", &["dimensions", "height"]),
+    ("width", &["dimensions", "width"]),
+    ("writing-mode", &["typography", "writingMode"]),
 ];
 
 struct Preset {
@@ -115,6 +117,8 @@ const ELEMENTS: &[(&str, &str)] = &[
         ".wp-element-caption, .wp-block-audio figcaption, .wp-block-embed figcaption, .wp-block-gallery figcaption, .wp-block-image figcaption, .wp-block-table figcaption, .wp-block-video figcaption",
     ),
     ("cite", "cite"),
+    ("textInput", "textarea, input:where([type=email],[type=number],[type=password],[type=search],[type=text],[type=tel],[type=url])"),
+    ("select", "select"),
 ];
 
 const PSEUDO_ORDER: &[&str] = &[":link", ":any-link", ":visited", ":hover", ":focus", ":focus-visible", ":active"];
@@ -402,16 +406,23 @@ impl<'a> GlobalStyles<'a> {
         out
     }
 
+    /// `get_preset_classes()`: `compute_preset_classes()` for the root and then for each block of `settings.blocks`,
+    /// whose classes are prefixed with `:where(<block selector>)`.
     fn preset_classes(&self, settings: &Value) -> String {
         let mut out = String::new();
-        for preset in PRESETS {
-            for (suffix, property) in preset.classes {
-                for (slug, item) in self.presets(preset.path, None) {
-                    if self.preset_value(preset, &item, settings).is_none() {
-                        continue;
+        let blocks = self.json.merged.get("settings").and_then(|s| s.get("blocks")).and_then(Value::as_object);
+        let nodes = std::iter::once(None).chain(blocks.into_iter().flat_map(|b| b.keys().map(|k| Some(k.as_str()))));
+        for block in nodes {
+            let prefix = block.map(|name| format!(":where({})", self.block_selector(name).0)).unwrap_or_default();
+            for preset in PRESETS {
+                for (suffix, property) in preset.classes {
+                    for (slug, item) in self.presets(preset.path, block) {
+                        if self.preset_value(preset, &item, settings).is_none() {
+                            continue;
+                        }
+                        let slug = to_kebab_case(&slug);
+                        out.push_str(&format!("{prefix}.has-{slug}-{suffix}{{{property}: var(--wp--preset--{}--{slug}) !important;}}", preset.var));
                     }
-                    let slug = to_kebab_case(&slug);
-                    out.push_str(&format!(".has-{slug}-{suffix}{{{property}: var(--wp--preset--{}--{slug}) !important;}}", preset.var));
                 }
             }
         }
@@ -476,9 +487,11 @@ impl<'a> GlobalStyles<'a> {
         if aware {
             let padding = styles.get("spacing").and_then(|s| s.get("padding")).and_then(Value::as_object);
             let side = |name: &str| padding.and_then(|p| p.get(name)).and_then(Value::as_str).unwrap_or("0px").to_owned();
-            for name in ["top", "right", "bottom", "left"] {
-                declarations.push((format!("--wp--style--root--padding-{name}"), side(name)));
-            }
+            // In `PROPERTIES_METADATA` the variables come right after `padding-left`.
+            let after_padding = PROPERTIES.iter().position(|(p, _)| *p == "padding-left").map_or(PROPERTIES.len(), |i| i + 1);
+            let at = declarations.iter().position(|(p, _)| PROPERTIES.iter().position(|(q, _)| q == p).is_some_and(|i| i >= after_padding)).unwrap_or(declarations.len());
+            let vars: Vec<(String, String)> = ["top", "right", "bottom", "left"].iter().map(|name| (format!("--wp--style--root--padding-{name}"), side(name))).collect();
+            declarations.splice(at..at, vars);
         }
         if !declarations.is_empty() {
             css.push_str(&format!("body{{{}}}", ruleset(&declarations)));
@@ -629,6 +642,15 @@ impl<'a> GlobalStyles<'a> {
                 None => groups.push((target, vec![(property, value)])),
             }
         }
+        // `get_styles_for_block()`: the rules of the general selector, then the block gap layouts, then the feature
+        // selectors' rules. (A variation's rules keep the order of their first declaration.)
+        let feature_rules: Vec<(String, Vec<(String, String)>)> = if scope.is_none() {
+            let (general, features): (Vec<_>, Vec<_>) = groups.into_iter().partition(|(target, _)| *target == selector);
+            groups = general;
+            features
+        } else {
+            Vec::new()
+        };
         for (target, declarations) in groups {
             css.push_str(&format!(":root :where({target}){{{}}}", ruleset(&declarations)));
         }
@@ -640,6 +662,9 @@ impl<'a> GlobalStyles<'a> {
             for (kind, class) in LAYOUT_TYPES {
                 css.push_str(&layout_spacing_rules(kind, &format!(".{base}-{class}"), gap));
             }
+        }
+        for (target, declarations) in feature_rules {
+            css.push_str(&format!(":root :where({target}){{{}}}", ruleset(&declarations)));
         }
         if let Some(extra) = node.get("css").and_then(Value::as_str) {
             css.push_str(&process_custom_css(extra, &selector));
@@ -725,8 +750,10 @@ impl<'a> GlobalStyles<'a> {
     }
 }
 
+/// Top-level element rules keep their element-only selector unless the element is class based
+/// (`__EXPERIMENTAL_ELEMENT_CLASS_NAMES`).
 fn name_is_plain(name: &str) -> bool {
-    matches!(name, "link" | "heading" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6")
+    !matches!(name, "button" | "caption")
 }
 
 /// `.wp-block-post-title` for `core/post-title`.

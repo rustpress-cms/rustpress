@@ -22,6 +22,7 @@ pub(crate) struct Host {
     home: String,
     siteurl: String,
     i18n: std::sync::Arc<rustpress_core::i18n::I18n>,
+    has_custom_logo: bool,
 }
 
 impl PhpHost for Host {
@@ -43,12 +44,23 @@ impl PhpHost for Host {
             None => self.i18n.gettext(domain, text),
         }
     }
+    fn has_custom_logo(&self) -> bool {
+        self.has_custom_logo
+    }
 }
 
+/// `has_custom_logo()`: the logo (`get_theme_mod( 'custom_logo' )`) is an image attachment (`wp_attachment_is_image()`).
+async fn has_custom_logo(site: &Site) -> Result<bool> {
+    let id = rustpress_blocks::images::custom_logo_id(site).await?;
+    if id == 0 {
+        return Ok(false);
+    }
+    Ok(site.db.post(id).await?.is_some_and(|post| post.post_type == "attachment" && rustpress_blocks::images::is_image(&post)))
+}
+
+/// `home_url( $path )`/`site_url( $path )`: a non-empty path is appended after a slash (`home_url( '/' )` ends in one).
 fn join_url(base: &str, path: &str) -> String {
-    let base = base.trim_end_matches('/');
-    let path = path.trim_start_matches('/');
-    if path.is_empty() { base.to_owned() } else { format!("{base}/{path}") }
+    if path.is_empty() { base.to_owned() } else { format!("{base}/{}", path.trim_start_matches('/')) }
 }
 
 pub struct Theme {
@@ -158,6 +170,7 @@ impl Theme {
             home: site.settings.home.clone(),
             siteurl: site.settings.siteurl.clone(),
             i18n: site.i18n(),
+            has_custom_logo: has_custom_logo(site).await?,
         };
         Ok(Self {
             wp_root,
