@@ -120,7 +120,7 @@ impl Scripts {
     }
 
     /// `var object = {…};` as `WP_Scripts::localize()` prints it.
-    fn l10n_script(object_name: &str, l10n: &Value) -> String {
+    pub(crate) fn l10n_script(object_name: &str, l10n: &Value) -> String {
         // Scalar values lose their HTML entities before they are encoded (`html_entity_decode()`).
         let mut l10n = l10n.clone();
         if let Value::Object(map) = &mut l10n {

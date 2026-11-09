@@ -282,6 +282,32 @@ pub(crate) fn read(path: &Path) -> Option<String> {
     rustpress_core::files::read(path).map(|text| text.to_string())
 }
 
+/// `_wp_normalize_relative_css_links()`: `url()` values relative to the stylesheet become relative to the site root
+/// when `wp_maybe_inline_styles()` inlines it.
+pub(crate) fn normalize_relative_css_links(css: &str, stylesheet_url: &str) -> String {
+    static URL: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| regex::Regex::new(r#"(url[ \t\n\x0B\x0C\r]*\([ \t\n\x0B\x0C\r]*['"]?[ \t\n\x0B\x0C\r]*)([^'")]+)"#).expect("valid pattern"));
+    if !css.contains("url") {
+        return css.to_owned();
+    }
+    URL.replace_all(css, |caps: &regex::Captures<'_>| {
+        let (prefix, url) = (&caps[1], &caps[2]);
+        if ["http:", "https:", "/", "#", "data:"].iter().any(|p| url.starts_with(p)) {
+            return caps[0].to_owned();
+        }
+        // `dirname()` of the URL.
+        let dir = stylesheet_url.trim_end_matches('/').rsplit_once('/').map_or(".", |(d, _)| d);
+        let absolute = format!("{dir}/{url}").replace("/./", "/");
+        format!("{prefix}{}", make_link_relative(&absolute))
+    })
+    .into_owned()
+}
+
+/// `wp_make_link_relative()`: `preg_replace( '|^(https?:)?//[^/]+(/?.*)|i', '$2', $link )`.
+fn make_link_relative(link: &str) -> String {
+    static HOST: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| regex::Regex::new(r"(?i)^(https?:)?//[^/]+(/?.*)").expect("valid pattern"));
+    HOST.replace(link, "$2").into_owned()
+}
+
 pub(crate) fn wp_version(wp_root: &Path) -> String {
     read(&wp_root.join("wp-includes").join("version.php"))
         .and_then(|t| t.lines().find_map(|l| l.strip_prefix("$wp_version = '").and_then(|r| r.split('\'').next().map(str::to_owned))))
@@ -415,17 +441,40 @@ fn font_faces_of(theme: &Theme, families: &[Value]) -> String {
             let name = face.get("fontFamily").and_then(Value::as_str).unwrap_or_default();
             // Names with spaces get quotes (`WP_Font_Face::maybe_add_quotes()`).
             let name = if name.contains(' ') && !name.contains('"') && !name.contains('\'') { format!("\"{name}\"") } else { name.to_owned() };
-            let mut rule = format!("font-family:{name};");
-            for (key, property) in [("fontStyle", "font-style"), ("fontWeight", "font-weight")] {
-                if let Some(v) = face.get(key).and_then(Value::as_str) {
-                    rule.push_str(&format!("{property}:{v};"));
+            // `WP_Font_Face_Resolver::to_kebab_case()` keeps the keys that are kebab case already in place and appends the
+            // converted ones; `wp_parse_args()` with the defaults puts family, style, weight and display first.
+            let Some(map) = face.as_object() else { continue };
+            let mut props: Vec<(String, &Value)> = map.iter().filter(|(k, _)| rustpress_blocks::style_engine::to_kebab_case(k) == **k).map(|(k, v)| (k.clone(), v)).collect();
+            for (key, value) in map {
+                let kebab = rustpress_blocks::style_engine::to_kebab_case(key);
+                if kebab == *key {
+                    continue;
+                }
+                match props.iter_mut().find(|(k, _)| *k == kebab) {
+                    Some(slot) => slot.1 = value,
+                    None => props.push((kebab, value)),
                 }
             }
-            rule.push_str(&format!("font-display:{};", face.get("fontDisplay").and_then(Value::as_str).unwrap_or("fallback")));
+            let text = |value: &Value| match value {
+                Value::String(s) => s.clone(),
+                Value::Number(n) => n.to_string(),
+                // `compile_variations()`.
+                Value::Object(axes) => axes.iter().map(|(axis, v)| format!("{axis} {}", v.as_str().map_or_else(|| v.to_string(), str::to_owned))).collect(),
+                _ => String::new(),
+            };
+            let get = |key: &str| props.iter().find(|(k, _)| k == key).map(|(_, v)| text(v));
+            let display = get("font-display").filter(|d| ["auto", "block", "fallback", "swap", "optional"].contains(&d.as_str())).unwrap_or_else(|| "fallback".to_owned());
+            let mut rule = format!("font-family:{name};font-style:{};font-weight:{};font-display:{display};", get("font-style").unwrap_or_else(|| "normal".to_owned()), get("font-weight").unwrap_or_else(|| "400".to_owned()));
             let sources: Vec<String> = face
                 .get("src")
-                .and_then(Value::as_array)
-                .map(|a| a.iter().filter_map(Value::as_str).map(|s| {
+                .map(|src| match src {
+                    Value::Array(items) => items.iter().filter_map(Value::as_str).collect(),
+                    Value::String(one) => vec![one.as_str()],
+                    _ => Vec::new(),
+                })
+                .unwrap_or_default()
+                .into_iter()
+                .map(|s| {
                     let url = match s.strip_prefix("file:./") {
                         Some(rel) => format!("{base}/{rel}"),
                         None => s.to_owned(),
@@ -436,15 +485,21 @@ fn font_faces_of(theme: &Theme, families: &[Value]) -> String {
                         other => other,
                     };
                     format!("url('{url}') format('{format}')")
-                }).collect())
-                .unwrap_or_default();
+                })
+                .collect();
             if sources.is_empty() {
                 continue;
             }
-            rule.push_str(&format!("src:{};", sources.join(", ")));
-            // ont-stretch follows the source in WordPress' output.
-            if let Some(v) = face.get("fontStretch").and_then(Value::as_str) {
-                rule.push_str(&format!("font-stretch:{v};"));
+            const VALID: &[&str] = &["ascent-override", "descent-override", "font-stretch", "font-variant", "font-feature-settings", "font-variation-settings", "line-gap-override", "size-adjust", "src", "unicode-range"];
+            for (key, value) in &props {
+                if !VALID.contains(&key.as_str()) {
+                    continue;
+                }
+                let value = if key == "src" { sources.join(", ") } else { text(value) };
+                // `empty()`.
+                if !(value.is_empty() || value == "0") {
+                    rule.push_str(&format!("{key}:{value};"));
+                }
             }
             css.push_str(&format!("@font-face{{{rule}}}\n"));
         }
@@ -740,6 +795,16 @@ pub async fn render_document_with(theme: &Theme, site: &Site, query: &QueryResul
                 handles.push(handle.clone());
             }
         }
+        // Stylesheets the theme enqueues for a block without a stylesheet of its own (`core/column`) are queued when
+        // the block is rendered, like the block styles; the others follow the block's stylesheet (below).
+        let own_sheet = name.strip_prefix("core/").is_some_and(|short| block_type.styles.iter().any(|h| h.strip_prefix("wp-block-") == Some(short)) && rustpress_core::files::is_file(&registry.blocks_dir().join(short).join("style.min.css")));
+        if !own_sheet {
+            for extra in theme.block_stylesheets().iter().filter(|s| s.block == *name && state.rendered_blocks.contains(&s.block)) {
+                if !handles.contains(&extra.handle) {
+                    handles.push(extra.handle.clone());
+                }
+            }
+        }
         // `add_theme_support( 'wp-block-styles' )` adds the `theme.css` handle of every core block.
         if theme.wp_block_styles() && let Some(short) = name.strip_prefix("core/") {
             let handle = format!("wp-block-{short}-theme");
@@ -756,6 +821,14 @@ pub async fn render_document_with(theme: &Theme, site: &Site, query: &QueryResul
         } {
             let path = wp_root.join("wp-includes").join("js").join("mediaelement").join(file);
             sheets.push(Sheet { id: handle.clone(), file: Some((path, format!("{includes_url}/js/mediaelement/{file}?ver={ver}"))), inline: None, extra: Vec::new(), rtl_link: None, linked: true });
+            continue;
+        }
+        if let Some(extra) = theme.block_stylesheets().iter().find(|s| s.handle == *handle) {
+            if let Some(file) = theme.theme_file(&extra.path) {
+                let ver = if extra.theme_version { theme.version() } else { version.clone() };
+                let url = format!("{}/{}?ver={ver}", theme.template_directory_uri(), extra.path);
+                sheets.push(Sheet { id: extra.handle.clone(), file: Some((file, url)), inline: None, extra: Vec::new(), rtl_link: None, linked: false });
+            }
             continue;
         }
         let Some(slug) = handle.strip_prefix("wp-block-") else { continue };
@@ -831,8 +904,9 @@ pub async fn render_document_with(theme: &Theme, site: &Site, query: &QueryResul
     let theme_style_inline = inline_ids.contains(&THEME_STYLE);
     inline_ids.retain(|i| *i < THEME_STYLE);
     for i in inline_ids {
-        if let Some((path, _)) = &sheets[i].file {
-            sheets[i].inline = read(path);
+        if let Some((path, url)) = &sheets[i].file {
+            let src = url.split('?').next().unwrap_or(url);
+            sheets[i].inline = read(path).map(|css| normalize_relative_css_links(&css, src));
         }
     }
 
@@ -942,7 +1016,19 @@ pub async fn render_document_with(theme: &Theme, site: &Site, query: &QueryResul
     }
     // Plugins enqueue on `wp_enqueue_scripts` before the theme does: their stylesheets of priority 10 come before the
     // theme's, later ones after it.
-    let plugin_assets = site.plugins.assets_for(site, Some(query), Some(&state.plugins)).await;
+    let mut plugin_assets = site.plugins.assets_for(site, Some(query), Some(&state.plugins)).await;
+    // A ported block theme's `wp_enqueue_scripts` callbacks run after the plugins' of the same priority.
+    let theme_port_styles = match theme.block_theme_port() {
+        Some(port) => {
+            let env = rustpress_blocks::Env::new(site, query, theme, registry);
+            let logo = rustpress_blocks::images::custom_logo_id(site).await?;
+            let custom_logo_url = if logo == 0 { String::new() } else { rustpress_blocks::images::attachment_image_url(&env, logo, "full").await?.unwrap_or_default() };
+            let ctx = crate::block_themes::ScriptContext { site, template_dir: theme.template_dir().to_owned(), template_uri: theme.template_directory_uri(), version: theme.version(), custom_logo_url };
+            plugin_assets.scripts.extend(port.scripts(&ctx));
+            port.styles(&ctx)
+        }
+        None => Vec::new(),
+    };
     let printed: &[&str] = if toolbar_on { &["dashicons", "admin-bar"] } else { &[] };
     let mut style_printer = crate::plugin_assets::StylePrinter::new(wp_root, site).with_printed(printed);
     // Stylesheets enqueued in the footer are printed by `print_late_styles()` before the footer scripts.
@@ -955,8 +1041,10 @@ pub async fn render_document_with(theme: &Theme, site: &Site, query: &QueryResul
         let file = theme_style_file.as_ref().and_then(|p| p.file_name()).and_then(|n| n.to_str()).unwrap_or("style.css");
         styles.push_str(&format!("<link rel='stylesheet' id='{handle}-css' href='{}/{file}?ver={}' media='all' />\n", theme.template_directory_uri(), theme.version()));
     } else if let Some((handle, file, css)) = theme_css {
-        styles.push_str(&format!("<style id=\"{handle}-inline-css\">\n{}\n/*# sourceURL={}/{file} */\n</style>\n", css.trim_end(), theme.template_directory_uri()));
+        let src = format!("{}/{file}", theme.template_directory_uri());
+        styles.push_str(&format!("<style id=\"{handle}-inline-css\">\n{}\n/*# sourceURL={src} */\n</style>\n", normalize_relative_css_links(css.trim_end(), &src)));
     }
+    styles.push_str(&style_printer.links(&theme_port_styles));
     // The media widgets and the Text widget of the preview enqueue the players' styles, unless the content did.
     if preview.is_some() && !handles.iter().any(|h| h == "wp-mediaelement") {
         styles.push_str(&crate::customize_preview::media_styles(&includes_url, &version));
@@ -1104,4 +1192,20 @@ pub async fn render_document_with(theme: &Theme, site: &Site, query: &QueryResul
     );
     tracing::debug!(body_ms = body_done.as_secs_f64() * 1000.0, total_ms = started.elapsed().as_secs_f64() * 1000.0, path = query.url_path.as_str(), "document rendered");
     Ok(Document { status: query.status(), html })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn relative_css_links_become_site_relative() {
+        assert_eq!(
+            normalize_relative_css_links(
+                "a{mask-image:url(../images/w.svg);b:url( 'x.png' );c:url(data:x);d:url(/abs.png)}",
+                "http://localhost:8080/wp-content/themes/t/assets/block-styles/core-group.min.css"
+            ),
+            "a{mask-image:url(/wp-content/themes/t/assets/block-styles/../images/w.svg);b:url( '/wp-content/themes/t/assets/block-styles/x.png' );c:url(data:x);d:url(/abs.png)}"
+        );
+    }
 }

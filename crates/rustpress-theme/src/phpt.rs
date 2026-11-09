@@ -4,8 +4,10 @@
 //! translated strings and URLs: `esc_html_e( 'Text', 'domain' )`,
 //! `echo esc_url( get_theme_file_uri( 'assets/a.png' ) )`, `printf(...)`.
 //! This supports exactly that: string literals, `.` concatenation, a table of
-//! known functions and `echo`/`print`/`printf` statements. Anything else is
-//! reported as an error instead of being guessed at.
+//! known functions and `echo`/`print`/`printf` statements, plus the alternative
+//! syntax `if ( … ) : … elseif ( … ) : … else : … endif;` with `!`, `&&`, `||`
+//! and `===`/`!==` (Bluehost Blueprint picks the site logo or title that way).
+//! Anything else is reported as an error instead of being guessed at.
 
 use rustpress_core::formatting::{esc_attr, esc_html, esc_url};
 
@@ -18,6 +20,10 @@ pub trait PhpHost {
     /// `__( $text, $domain )` and friends; the default is "no translation".
     fn translate(&self, text: &str, _context: Option<&str>, _domain: &str) -> String {
         text.to_owned()
+    }
+    /// `has_custom_logo()`.
+    fn has_custom_logo(&self) -> bool {
+        false
     }
     /// The current Unix time, for `gmdate()` and `date()`.
     fn now(&self) -> i64 {
@@ -47,18 +53,22 @@ pub fn pattern_array_content(source: &str, host: &dyn PhpHost) -> Result<String,
     let Some(arrow) = source[after_key..].find("=>") else { return Err(PhpError { message: "no => after content".into(), offset: after_key }) };
     let start = after_key + arrow + 2;
     let mut vars = std::collections::HashMap::new();
-    let mut parser = Parser { src: source, pos: start, base: 0, host, vars: &mut vars };
+    let mut branches = Vec::new();
+    let mut parser = Parser { src: source, pos: start, base: 0, host, vars: &mut vars, branches: &mut branches };
     parser.expression()
 }
 
 /// Renders a PHP template file to its output.
 pub fn render(source: &str, host: &dyn PhpHost) -> Result<String, PhpError> {
     let mut vars = std::collections::HashMap::new();
+    let mut branches = Vec::new();
     let mut out = String::with_capacity(source.len());
     let mut rest = source;
     let mut base = 0usize;
     while let Some(open) = rest.find("<?") {
-        out.push_str(&rest[..open]);
+        if active(&branches) {
+            out.push_str(&rest[..open]);
+        }
         let after = &rest[open + 2..];
         let (code_start, echo_tag) = if after.starts_with("php") {
             (open + 5, false)
@@ -71,10 +81,10 @@ pub fn render(source: &str, host: &dyn PhpHost) -> Result<String, PhpError> {
         let Some(close) = find_close_tag(code_area) else {
             // An unclosed trailing block runs to the end of the file.
             let code = code_area;
-            run_block(code, echo_tag, host, &mut vars, &mut out, base + code_start)?;
-            return Ok(out);
+            run_block(code, echo_tag, host, &mut vars, &mut branches, &mut out, base + code_start)?;
+            return finish(out, &branches);
         };
-        run_block(&code_area[..close], echo_tag, host, &mut vars, &mut out, base + code_start)?;
+        run_block(&code_area[..close], echo_tag, host, &mut vars, &mut branches, &mut out, base + code_start)?;
         let mut consumed = code_start + close + 2;
         // A newline directly after `?>` is swallowed, like PHP does.
         if rest[consumed..].starts_with("\r\n") {
@@ -85,8 +95,26 @@ pub fn render(source: &str, host: &dyn PhpHost) -> Result<String, PhpError> {
         base += consumed;
         rest = &rest[consumed..];
     }
-    out.push_str(rest);
-    Ok(out)
+    if active(&branches) {
+        out.push_str(rest);
+    }
+    finish(out, &branches)
+}
+
+/// One `if` of the alternative syntax: whether the enclosing code runs, whether a branch was taken already and whether
+/// the current branch runs.
+struct Branch {
+    outer: bool,
+    taken: bool,
+    on: bool,
+}
+
+fn active(branches: &[Branch]) -> bool {
+    branches.last().is_none_or(|b| b.on)
+}
+
+fn finish(out: String, branches: &[Branch]) -> Result<String, PhpError> {
+    if branches.is_empty() { Ok(out) } else { Err(PhpError { message: "missing endif".into(), offset: 0 }) }
 }
 
 /// Finds `?>` that is not inside a string or comment.
@@ -128,9 +156,13 @@ fn find_close_tag(code: &str) -> Option<usize> {
     None
 }
 
-fn run_block(code: &str, echo_tag: bool, host: &dyn PhpHost, vars: &mut std::collections::HashMap<String, String>, out: &mut String, offset: usize) -> Result<(), PhpError> {
-    let mut parser = Parser { src: code, pos: 0, base: offset, host, vars };
+fn run_block(code: &str, echo_tag: bool, host: &dyn PhpHost, vars: &mut std::collections::HashMap<String, String>, branches: &mut Vec<Branch>, out: &mut String, offset: usize) -> Result<(), PhpError> {
+    let mut parser = Parser { src: code, pos: 0, base: offset, host, vars, branches };
     parser.skip_ws();
+    if !active(parser.branches) {
+        // Code of a branch that does not run is only scanned for the statements that end the branch.
+        return parser.skip_inactive(out);
+    }
     if echo_tag {
         let value = parser.expression()?;
         out.push_str(&value);
@@ -144,6 +176,9 @@ fn run_block(code: &str, echo_tag: bool, host: &dyn PhpHost, vars: &mut std::col
             break;
         }
         parser.statement(out)?;
+        if !active(parser.branches) {
+            return parser.skip_inactive(out);
+        }
     }
     Ok(())
 }
@@ -155,6 +190,8 @@ struct Parser<'a> {
     host: &'a dyn PhpHost,
     /// String variables, which live on from one `<?php ?>` island to the next.
     vars: &'a mut std::collections::HashMap<String, String>,
+    /// The open `if` blocks, innermost last.
+    branches: &'a mut Vec<Branch>,
 }
 
 impl Parser<'_> {
@@ -243,6 +280,14 @@ impl Parser<'_> {
             return self.err(format!("unsupported PHP statement: {}", self.rest().chars().take(30).collect::<String>()));
         };
         match name.as_str() {
+            "if" => {
+                let outer = active(self.branches);
+                let on = self.condition()?;
+                self.branch_colon()?;
+                self.branches.push(Branch { outer, taken: on, on });
+                Ok(())
+            }
+            "elseif" | "else" | "endif" => self.branch_keyword(&name),
             "echo" | "print" => {
                 loop {
                     let v = self.expression()?;
@@ -264,6 +309,211 @@ impl Parser<'_> {
                 self.eat(';');
                 Ok(())
             }
+        }
+    }
+
+    /// `elseif ( … ) :`, `else :` and `endif;` of the innermost `if`.
+    fn branch_keyword(&mut self, keyword: &str) -> Result<(), PhpError> {
+        let Some(branch) = self.branches.last() else { return self.err(format!("{keyword} without if")) };
+        let (outer, taken) = (branch.outer, branch.taken);
+        match keyword {
+            "elseif" => {
+                // The condition is only evaluated when no earlier branch ran.
+                let on = if outer && !taken { self.condition()? } else { self.skip_condition()? };
+                self.branch_colon()?;
+                let branch = self.branches.last_mut().expect("checked above");
+                branch.on = outer && !taken && on;
+                branch.taken |= branch.on;
+            }
+            "else" => {
+                self.branch_colon()?;
+                let branch = self.branches.last_mut().expect("checked above");
+                branch.on = outer && !taken;
+                branch.taken = true;
+            }
+            _ => {
+                self.eat(';');
+                self.branches.pop();
+            }
+        }
+        Ok(())
+    }
+
+    fn branch_colon(&mut self) -> Result<(), PhpError> {
+        if self.eat(':') { Ok(()) } else { self.err("only the alternative syntax of if is supported") }
+    }
+
+    /// The rest of an island inside a branch that does not run: only `if`/`elseif`/`else`/`endif` count.
+    fn skip_inactive(&mut self, out: &mut String) -> Result<(), PhpError> {
+        loop {
+            self.skip_ws();
+            if self.pos >= self.src.len() {
+                return Ok(());
+            }
+            let start = self.pos;
+            match self.identifier().as_deref() {
+                Some("if") => {
+                    self.skip_condition()?;
+                    self.branch_colon()?;
+                    self.branches.push(Branch { outer: false, taken: false, on: false });
+                }
+                Some(keyword @ ("elseif" | "else" | "endif")) => {
+                    let keyword = keyword.to_owned();
+                    self.branch_keyword(&keyword)?;
+                    // The branch that starts here runs the rest of the island.
+                    while active(self.branches) {
+                        self.skip_ws();
+                        if self.pos >= self.src.len() {
+                            return Ok(());
+                        }
+                        self.statement(out)?;
+                    }
+                }
+                _ => {
+                    // Skip to the end of the statement.
+                    self.pos = start;
+                    self.skip_statement();
+                }
+            }
+        }
+    }
+
+    /// Moves past the next `;` outside strings and parentheses (or to the end of the island).
+    fn skip_statement(&mut self) {
+        let bytes = self.src.as_bytes();
+        let mut depth = 0i32;
+        while self.pos < bytes.len() {
+            match bytes[self.pos] {
+                b'\'' | b'"' => {
+                    let quote = bytes[self.pos];
+                    self.pos += 1;
+                    while self.pos < bytes.len() && bytes[self.pos] != quote {
+                        if bytes[self.pos] == b'\\' {
+                            self.pos += 1;
+                        }
+                        self.pos += 1;
+                    }
+                }
+                b'(' => depth += 1,
+                b')' => depth -= 1,
+                b';' if depth <= 0 => {
+                    self.pos += 1;
+                    return;
+                }
+                _ => {}
+            }
+            self.pos += 1;
+        }
+    }
+
+    /// `( … )` of an `if` that is not evaluated.
+    fn skip_condition(&mut self) -> Result<bool, PhpError> {
+        if !self.eat('(') {
+            return self.err("missing ( after if");
+        }
+        self.skip_operand(true);
+        if !self.eat(')') {
+            return self.err("missing ) after condition");
+        }
+        Ok(false)
+    }
+
+    /// `( … )` of an `if`: its truth value.
+    fn condition(&mut self) -> Result<bool, PhpError> {
+        if !self.eat('(') {
+            return self.err("missing ( after if");
+        }
+        let value = self.or_condition()?;
+        if !self.eat(')') {
+            return self.err("missing ) after condition");
+        }
+        Ok(value)
+    }
+
+    fn or_condition(&mut self) -> Result<bool, PhpError> {
+        let mut value = self.and_condition()?;
+        while self.eat_operator("||") {
+            if value {
+                // Short-circuit: the rest of the group is not evaluated.
+                self.skip_operand(true);
+                return Ok(true);
+            }
+            value = self.and_condition()?;
+        }
+        Ok(value)
+    }
+
+    fn and_condition(&mut self) -> Result<bool, PhpError> {
+        let mut value = self.unary_condition()?;
+        while self.eat_operator("&&") {
+            if value {
+                value = self.unary_condition()?;
+            } else {
+                self.skip_operand(false);
+            }
+        }
+        Ok(value)
+    }
+
+    fn unary_condition(&mut self) -> Result<bool, PhpError> {
+        if self.eat_operator("!") {
+            return Ok(!self.unary_condition()?);
+        }
+        self.skip_ws();
+        if self.rest().starts_with('(') {
+            self.pos += 1;
+            let value = self.or_condition()?;
+            if !self.eat(')') {
+                return self.err("missing ) in condition");
+            }
+            return Ok(value);
+        }
+        let left = self.expression()?;
+        if self.eat_operator("===") {
+            return Ok(left == self.expression()?);
+        }
+        if self.eat_operator("!==") {
+            return Ok(left != self.expression()?);
+        }
+        // `(bool)` of a string.
+        Ok(!(left.is_empty() || left == "0"))
+    }
+
+    fn eat_operator(&mut self, operator: &str) -> bool {
+        self.skip_ws();
+        if self.rest().starts_with(operator) && !(operator == "!" && self.rest().starts_with("!=")) {
+            self.pos += operator.len();
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Skips an operand that short-circuiting leaves unevaluated: up to the next `&&`/`||` of the same level
+    /// (`whole_group`: up to the closing parenthesis of the group).
+    fn skip_operand(&mut self, whole_group: bool) {
+        let bytes = self.src.as_bytes();
+        let mut depth = 0i32;
+        while self.pos < bytes.len() {
+            match bytes[self.pos] {
+                b'\'' | b'"' => {
+                    let quote = bytes[self.pos];
+                    self.pos += 1;
+                    while self.pos < bytes.len() && bytes[self.pos] != quote {
+                        if bytes[self.pos] == b'\\' {
+                            self.pos += 1;
+                        }
+                        self.pos += 1;
+                    }
+                }
+                b'(' | b'[' => depth += 1,
+                b')' | b']' if depth == 0 => return,
+                b')' | b']' => depth -= 1,
+                b'&' | b'|' if depth == 0 && !whole_group && bytes.get(self.pos + 1) == Some(&bytes[self.pos]) => return,
+                b':' | b';' if depth == 0 => return,
+                _ => {}
+            }
+            self.pos += 1;
         }
     }
 
@@ -420,6 +670,10 @@ impl Parser<'_> {
                 let path = arg(0);
                 string(if path.is_empty() { base } else { format!("{base}/{}", path.trim_start_matches('/')) })
             }
+            "has_custom_logo" => string(if host.has_custom_logo() { "1".into() } else { String::new() }),
+            // Patterns are rendered for the website (the REST API does not render them for the editor here).
+            "is_admin" => string(String::new()),
+            "defined" if arg(0) == "REST_REQUEST" => string(String::new()),
             "home_url" => string(host.home_url(arg(0))),
             "site_url" => string(host.site_url(arg(0))),
             // WordPress sets PHP's default time zone to UTC, so `date()` is `gmdate()` (frost/footer-default uses
@@ -573,6 +827,16 @@ mod tests {
     fn variables_survive_between_islands() {
         let src = "<?php $link = '<a>' . esc_html__( 'WP', 'td' ) . '</a>'; ?>x<?php echo sprintf( esc_html__( 'Designed with %1$s', 'td' ), $link ); ?>";
         assert_eq!(run(src), "xDesigned with <a>WP</a>");
+    }
+
+    #[test]
+    fn alternative_if_syntax() {
+        // Bluehost Blueprint's site headers: without a logo the site title.
+        let src = "<div>\n<?php\n$has_logo = has_custom_logo();\nif ( is_admin() || ( defined( 'REST_REQUEST' ) && REST_REQUEST && isset( $_GET['context'] ) && 'edit' === sanitize_text_field( wp_unslash( $_GET['context'] ) ) ) ) : // phpcs:ignore WordPress.Security.NonceVerification.Recommended\n\t?>\n\t<!-- wp:site-logo /-->\n<?php elseif ( $has_logo ) : ?>\n\t<!-- wp:site-logo /-->\n<?php else : ?>\n\t<!-- wp:site-title /-->\n<?php endif; ?>\n\n<!-- wp:navigation /--></div>";
+        assert_eq!(run(src), "<div>\n\t<!-- wp:site-title /-->\n\n<!-- wp:navigation /--></div>");
+        assert_eq!(run("<?php if ( ! false && ( 'a' === 'a' ) ) : ?>y<?php if ( true ) : ?>z<?php endif; ?><?php else : ?>n<?php endif; ?>"), "yz");
+        assert_eq!(run("<?php if ( false ) : ?>a<?php if ( mystery() ) : ?>b<?php endif; ?><?php elseif ( '0' ) : ?>c<?php else : echo 'd'; ?>e<?php endif; ?>"), "de");
+        assert!(render("<?php if ( true ) : ?>a", &Host).is_err());
     }
 
     #[test]

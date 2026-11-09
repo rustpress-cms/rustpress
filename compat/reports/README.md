@@ -12,6 +12,7 @@ else counts as unexpected.
 | `twentytwentyfive-perma-*.md` (permalink structures), `twentytwentyfive-settings-*.md` (reading and discussion settings) | WordPress 7.1.3 | 2026-10-25 |
 | `release-twentytwentyfive.md` (the release build) | WordPress 7.1.3 | 2026-10-24 |
 | `twentytwentyone.md` (the classic theme Twenty Twenty-One 2.9, with `sidebars_widgets` as after the theme switch) | WordPress 7.1.4 | 2026-11-08 |
+| `extendable.md` (Extendable 2.2.0), `bluehost-blueprint.md` (Bluehost Blueprint 1.0.2): third-party block themes with their `functions.php` ported | WordPress 7.1.4 | 2026-11-09 |
 
 The older runs are kept until they are repeated against the current release; they predate several fixes,
 so a difference listed there may be gone. The median times are those of one local run of the reference
