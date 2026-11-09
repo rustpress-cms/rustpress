@@ -81,9 +81,9 @@ fn bloginfo_rss(value: &str) -> String {
     ent2ncr(&convert_chars(&strip_tags(value)))
 }
 
-/// `get_comments_number()`-style counts come from the cached `comment_count`.
-fn has_comment_section(post: &Post) -> bool {
-    post.comment_count != 0 || post.comment_status == "open"
+/// `get_comments_number() || comments_open()`.
+fn has_comment_section(site: &Site, q: &QueryResult, post: &Post) -> bool {
+    site.comments_number(post, q.viewer.as_ref()) != 0 || site.comments_open(post, q.viewer.as_ref())
 }
 
 /// `get_feed_link( $feed )` and `get_feed_link( 'comments_' . $feed )`.
@@ -237,11 +237,7 @@ pub async fn render_feed(theme: &Theme, site: &Site, q: &QueryResult, registry: 
         _ => return Ok(None),
     };
     let singular = q.flags.is_singular();
-    // `WP_Query::set_404()` leaves `is_comment_feed` off: a 404 is a feed of (no) posts.
-    let comment_feed = !q.flags.is_404
-        && (q.vars.get("withcomments").is_some_and(|v| !v.is_empty() && v != "0")
-            || feed_var.contains("comments-")
-            || (!q.vars.get("withoutcomments").is_some_and(|v| !v.is_empty() && v != "0") && singular));
+    let comment_feed = q.is_comment_feed();
 
     let self_url = format!("{}{}", site.settings.home.trim_end_matches('/').split("://").next().map_or(String::new(), |s| format!("{s}://")) + site.settings.home.trim_end_matches('/').split("://").nth(1).unwrap_or("").split('/').next().unwrap_or(""), request_uri);
     let self_url = esc_url(&self_url);
@@ -345,9 +341,7 @@ pub async fn redirect_headers(site: &Site, q: &QueryResult) -> Result<Option<Fee
         "atom" => Kind::Atom,
         _ => return Ok(None),
     };
-    let comment_feed = q.vars.get("withcomments").is_some_and(|v| !v.is_empty() && v != "0")
-        || feed_var.contains("comments-")
-        || (!q.vars.get("withoutcomments").is_some_and(|v| !v.is_empty() && v != "0") && q.flags.is_singular());
+    let comment_feed = q.is_comment_feed();
     let (content_type, last_modified, etag, nocache) = send_headers(site, q, kind, comment_feed).await?;
     Ok(Some(Feed { content_type: content_type.to_owned(), body: String::new(), modified_at: last_modified.clone(), last_modified: (!nocache).then_some(last_modified), etag, nocache, not_found: false, headers: Vec::new() }))
 }
@@ -407,11 +401,12 @@ async fn rss2_posts(c: &Ctx<'_>, q: &QueryResult, self_url: &str, home: &str, de
     for post in &q.posts {
         let post = Arc::new(post.clone());
         let permalink = c.site.permalink(&post).await?;
-        let comments_section = has_comment_section(&post);
+        let comments_section = has_comment_section(c.site, c.env.query, &post);
+        let comments_number = c.site.comments_number(&post, c.env.query.viewer.as_ref());
         let meta = c.site.db.post_meta(post.id).await?;
         out.push_str(&format!("\t<item>\n\t\t<title>{}</title>\n\t\t<link>{}</link>\n\t\t", c.title_rss(&post), esc_url(&permalink)));
         if comments_section {
-            let hash = if post.comment_count != 0 { "#comments" } else { "#respond" };
+            let hash = if comments_number != 0 { "#comments" } else { "#respond" };
             out.push_str(&format!("\t\t\t<comments>{}</comments>\n\t\t", esc_url(&format!("{permalink}{hash}"))));
         }
         let author = c.author(&post).await?.map(|u| u.display_name).unwrap_or_default();
@@ -431,7 +426,7 @@ async fn rss2_posts(c: &Ctx<'_>, q: &QueryResult, self_url: &str, home: &str, de
             out.push_str(&format!(
                 "\t\t\t<wfw:commentRss>{}</wfw:commentRss>\n\t\t\t<slash:comments>{}</slash:comments>\n\t\t",
                 esc_url(&comment_feed_link(c.site, &post, Kind::Rss2).await?),
-                post.comment_count
+                comments_number
             ));
         }
         out.push_str("\n\t\t");
@@ -479,8 +474,8 @@ async fn atom_posts(c: &Ctx<'_>, q: &QueryResult, self_url: &str, home: &str, de
         let content = c.content(&post).await?;
         out.push_str(&format!("\t\t\t<content type=\"html\" xml:base=\"{}\"><![CDATA[{content}]]></content>\n\t\t\n\t\t", esc_url(&permalink)));
         out.push_str(&c.enclosures(&meta, &post));
-        if has_comment_section(&post) {
-            let count = post.comment_count;
+        if has_comment_section(c.site, c.env.query, &post) {
+            let count = c.site.comments_number(&post, c.env.query.viewer.as_ref());
             out.push_str(&format!(
                 "\t\t\t<link rel=\"replies\" type=\"text/html\" href=\"{0}#comments\" thr:count=\"{count}\" />\n\t\t\t<link rel=\"replies\" type=\"application/atom+xml\" href=\"{1}\" thr:count=\"{count}\" />\n\t\t\t<thr:total>{count}</thr:total>\n\t\t",
                 esc_url(&permalink),
@@ -577,7 +572,7 @@ async fn atom_comments(c: &Ctx<'_>, q: &QueryResult, comments: &[Comment], _self
     match &post {
         Some(p) => {
             let permalink = c.site.permalink(p).await?;
-            let hash = if p.comment_count != 0 { "#comments" } else { "#respond" };
+            let hash = if c.site.comments_number(p, c.env.query.viewer.as_ref()) != 0 { "#comments" } else { "#respond" };
             let feed_link = esc_url(&comment_feed_link(c.site, p, Kind::Atom).await?);
             out.push_str(&format!(
                 "\t<link rel=\"alternate\" type=\"text/html\" href=\"{}\" />\n\t<link rel=\"self\" type=\"application/atom+xml\" href=\"{feed_link}\" />\n\t<id>{feed_link}</id>\n",

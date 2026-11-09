@@ -29,7 +29,7 @@ mod internal;
 mod internal_edit;
 mod list_actions;
 mod locations;
-mod php;
+pub(crate) mod php;
 mod render;
 mod rest_format;
 mod rest_schema;

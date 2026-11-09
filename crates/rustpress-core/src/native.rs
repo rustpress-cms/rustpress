@@ -21,6 +21,11 @@ pub trait NativePlugin: Send + Sync {
     fn version(&self) -> &'static str;
     /// `plugins_loaded`/`init`: what the plugin reads from the database, once per snapshot of the site.
     fn load<'a>(&'a self, site: &'a Site) -> BoxFuture<'a, Result<Box<dyn ActivePlugin>>>;
+
+    /// [NativePlugin::load] for a module that also reads files of the installation under `wp_root` (`ABSPATH`).
+    fn load_at<'a>(&'a self, site: &'a Site, _wp_root: &'a std::path::Path) -> BoxFuture<'a, Result<Box<dyn ActivePlugin>>> {
+        self.load(site)
+    }
     /// The text domain WordPress loads just in time from `wp-content/languages/plugins/<domain>-<locale>.mo`.
     fn text_domain(&self) -> Option<&'static str> {
         None
@@ -69,6 +74,46 @@ pub trait ActivePlugin: Send + Sync {
         Box::pin(async { Ok(String::new()) })
     }
 
+    /// `wp_footer` at the default priority, for plugins that look at the main query (`global $post`), after
+    /// [ActivePlugin::wp_footer].
+    fn wp_footer_query<'a>(&'a self, _site: &'a Site, _query: &'a crate::QueryResult) -> BoxFuture<'a, Result<String>> {
+        Box::pin(async { Ok(String::new()) })
+    }
+
+    /// `wp_enqueue_scripts` for plugins that look at the main query (`is_singular()`, `is_preview()`), after
+    /// [ActivePlugin::enqueue].
+    fn enqueue_query<'a>(&'a self, _site: &'a Site, _query: &'a crate::QueryResult, _assets: &'a mut Assets) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async { Ok(()) })
+    }
+
+    /// `wp_print_footer_scripts` after `_wp_footer_scripts()` (and after the scripts of
+    /// [PluginState::footer_scripts]): the last thing before `</body>`.
+    fn print_footer_scripts(&self, _site: &Site, _query: &crate::QueryResult) -> String {
+        String::new()
+    }
+
+    /// The `body_class` filter of the website: classes the plugin appends (before the theme's own filter).
+    fn body_class<'a>(&'a self, _site: &'a Site, _query: &'a crate::QueryResult) -> BoxFuture<'a, Result<Vec<String>>> {
+        Box::pin(async { Ok(Vec::new()) })
+    }
+
+    /// An output buffer the plugin starts on `template_redirect` (`ob_start( $callback )`) and flushes on
+    /// `shutdown`: the whole HTML of a page of the website, as the theme printed it.
+    fn template_output(&self, _site: &Site, _query: &crate::QueryResult, html: String) -> String {
+        html
+    }
+
+    /// `login_head` at the default priority: what the plugin prints in the head of `wp-login.php`.
+    fn login_head(&self, _site: &Site) -> String {
+        String::new()
+    }
+
+    /// URLs the `wp_resource_hints` filter adds for `relation` (`dns-prefetch`, `preconnect`, `prefetch`,
+    /// `prerender`).
+    fn resource_hints(&self, _relation: &str) -> Vec<String> {
+        Vec::new()
+    }
+
     /// `wp_head` at priority 1, after `wp_robots()`, with what the plugin changes around it: the `wp_robots` filter
     /// (gets the directives of the core filters), `pre_get_document_title` and core actions it removes from `wp_head`.
     fn wp_head<'a>(&'a self, _ctx: &'a HeadContext<'a>, _robots: &'a [(String, Robot)]) -> BoxFuture<'a, Result<Option<Head>>> {
@@ -89,6 +134,12 @@ pub trait ActivePlugin: Send + Sync {
     /// The public post statuses the plugin registers (`register_post_status()`): the slug and the translated label.
     fn post_statuses(&self, _site: &Site) -> Vec<(&'static str, String)> {
         Vec::new()
+    }
+
+    /// The internal post statuses the plugin registers (`register_post_status()` with `internal`): only
+    /// `get_post_stati()` without arguments lists them.
+    fn internal_post_statuses(&self) -> &'static [&'static str] {
+        &[]
     }
 
     /// Links a plugin adds to an object of the REST API on `rest_prepare_{$type}` (`WP_REST_Response::add_link()`),
@@ -138,6 +189,11 @@ pub trait ActivePlugin: Send + Sync {
         false
     }
 
+    /// `template_redirect` at a priority before 10: a `wp_die()` instead of the page (before `redirect_canonical()`).
+    fn template_redirect_die(&self, _site: &Site, _query: &crate::QueryResult) -> Option<Die> {
+        None
+    }
+
     /// `template_redirect`: a redirect instead of the page (before `redirect_canonical()`).
     fn template_redirect<'a>(&'a self, _site: &'a Site, _query: &'a crate::QueryResult) -> BoxFuture<'a, Result<Option<Redirect>>> {
         Box::pin(async { Ok(None) })
@@ -180,6 +236,41 @@ pub trait ActivePlugin: Send + Sync {
     /// The `comment_reply_link` filter: the link of `get_comment_reply_link()`.
     fn comment_reply_link(&self, link: String) -> String {
         link
+    }
+
+    /// The `comments_open`, `pings_open`, `get_comments_number` and `comments_array` filters for one post: `Some`
+    /// when the plugin closes its comments and pings for the viewer.
+    fn comments_off(&self, _post: &Post, _viewer: Option<&crate::Viewer>) -> Option<CommentsOff> {
+        None
+    }
+
+    /// Whether the plugin turns comments off on the whole site for the viewer: the recent comments widget, the
+    /// `X-Pingback` header, the comment feeds, their links and the comments menu of the toolbar go away.
+    fn comments_off_everywhere(&self, _viewer: Option<&crate::Viewer>) -> bool {
+        false
+    }
+
+    /// `remove_post_type_support()` on `wp_loaded`: whether the plugin takes `feature` from `post_type`.
+    fn removes_post_type_support(&self, _post_type: &str, _feature: &str) -> bool {
+        false
+    }
+
+    /// `remove_action( 'wp_head', 'feed_links_extra', 3 )` and `wp_deregister_script( 'comment-reply' )` on
+    /// `template_redirect`: whether the plugin drops the extra feed links and the comment reply script of the
+    /// singular page of `post`.
+    fn closes_singular_comments(&self, _post: &Post, _viewer: Option<&crate::Viewer>) -> bool {
+        false
+    }
+
+    /// The `rest_comment_query` filter of `GET /wp/v2/comments`: whether the plugin empties the result
+    /// (`comment__in` of `[0]`). The parameters have the defaults of the route.
+    fn rest_comment_query_empty<'a>(&'a self, _request: &'a RestPreDispatch<'a>) -> BoxFuture<'a, Result<bool>> {
+        Box::pin(async { Ok(false) })
+    }
+
+    /// The `rest_pre_dispatch` filter: an error that answers the REST request before its route runs.
+    fn rest_pre_dispatch<'a>(&'a self, _request: &'a RestPreDispatch<'a>) -> BoxFuture<'a, Result<Option<RestAnswer>>> {
+        Box::pin(async { Ok(None) })
     }
 
     /// `comment_post` (a visitor's comment was saved) and `edit_comment` (the administration saved one): the plugin
@@ -710,6 +801,8 @@ pub struct BlockContext<'a> {
     pub post: Option<&'a Post>,
     /// `wp_is_serving_rest_request()`.
     pub rest: bool,
+    /// What the plugins keep for the rest of the request (their `static` variables).
+    pub state: &'a std::sync::Mutex<PluginState>,
 }
 
 /// A feed a plugin may change.
@@ -897,6 +990,11 @@ pub trait PageServices: Send + Sync {
         Box::pin(async move { Ok(text.to_owned()) })
     }
 
+    /// `do_shortcode( $text )`, `post` being `global $post`.
+    fn do_shortcode<'a>(&'a self, _post: Option<&'a Post>, text: &'a str) -> BoxFuture<'a, Result<String>> {
+        Box::pin(async move { Ok(text.to_owned()) })
+    }
+
     /// `get_avatar( $id_or_email, $size )`.
     fn avatar(&self, _email: &str, _size: u64) -> String {
         String::new()
@@ -929,6 +1027,29 @@ pub struct Head {
     pub title: Option<String>,
     /// Printed on `wp_head` at priority 1, right after the robots tag.
     pub html: String,
+    /// Printed on `wp_head` at priority 0 by an action the plugin adds when it loads: before the theme's actions of
+    /// priority 0 (in a block theme, like [Head::first], before `_block_template_viewport_meta_tag()`).
+    pub early: String,
+    /// Printed on `wp_head` at priority 0 by an action the plugin hooks on `init`: before the robots tag, after the
+    /// theme's actions of priority 0.
+    pub first: String,
+    /// Printed on `wp_head` at priority 10, after the actions of core at that priority (`rel_canonical`,
+    /// `wp_shortlink_wp_head`) and before the theme's.
+    pub late: String,
+    /// Printed on `wp_head` at priority 10 by actions the plugin hooks on `init`: after the import map and the
+    /// preloads of the script modules.
+    pub late_init: String,
+    /// Printed on `wp_head` at priority 10 by actions the plugin hooks on `wp`: after every other action of that
+    /// priority.
+    pub on_wp: String,
+    /// Printed on `wp_body_open`, after the toolbar (`wp_admin_bar_render()` at priority 0).
+    pub body_open: String,
+    /// Printed on `wp_footer` at the default priority, after what [`ActivePlugin::wp_footer`] prints (the page is
+    /// rendered by then, so a plugin may work out its footer with the head).
+    pub footer: String,
+    /// Printed on `wp_footer` at the default priority by actions the plugin hooks on `wp`: after the script modules
+    /// and their data.
+    pub footer_on_wp: String,
     /// Core actions removed from `wp_head`: `rel_canonical`, `_wp_render_title_tag`.
     pub removed: Vec<&'static str>,
 }
@@ -948,6 +1069,28 @@ pub struct ShortcodeContext<'a> {
     /// What the plugins keep for the rest of the request (their `static` variables).
     pub state: &'a std::sync::Mutex<PluginState>,
     pub services: &'a dyn PageServices,
+}
+
+/// What a plugin's [ActivePlugin::comments_off] leaves of the comments of a post. Comments and pings are closed.
+#[derive(Clone, Debug, Default)]
+pub struct CommentsOff {
+    /// `get_comments_number()`: the number shown instead of the post's `comment_count`, `None` keeps it. It is a PHP
+    /// int, so `'1' === get_comments_number()` is false for it.
+    pub count: Option<i64>,
+    /// `comments_array`: the comment types that stay in the list of `comments_template()`, `None` keeps every
+    /// comment.
+    pub keep_types: Option<Vec<String>>,
+}
+
+/// A REST request before its route runs (`rest_pre_dispatch`).
+pub struct RestPreDispatch<'a> {
+    pub site: &'a Site,
+    pub method: &'a str,
+    /// The route, such as `/wp/v2/comments/5`.
+    pub route: &'a str,
+    /// `$request->get_param()` of the query string and the body (before the URL parameters of the route are known).
+    pub params: &'a [(String, String)],
+    pub user: Option<&'a crate::Viewer>,
 }
 
 /// Per-request state of the plugins: counters and lists by a name the plugin picks.
@@ -1346,6 +1489,12 @@ pub struct AdminContext<'a> {
     pub typenow: &'a str,
     /// `$_FILES`: the uploaded files of a multipart form.
     pub files: &'a [RestFile],
+    /// `wp_mail()`; without it every message fails.
+    pub mailer: Option<&'a dyn Mailer>,
+    /// `$_SERVER['REMOTE_ADDR']`.
+    pub remote_addr: &'a str,
+    /// `$_SERVER['HTTP_REFERER']`.
+    pub referer: Option<&'a str>,
 }
 
 /// A post status a plugin registers, as the lists of `edit.php` use it.
@@ -1418,7 +1567,7 @@ pub struct Asset {
     pub ver: Option<String>,
     /// Styles: `media`.
     pub media: String,
-    /// Scripts: printed in the footer.
+    /// Scripts: printed in the footer. Styles: enqueued after the head, printed by `print_late_styles()`.
     pub in_footer: bool,
     /// The priority of the `wp_enqueue_scripts` callback that enqueues it (10 by default).
     pub priority: i32,
@@ -1426,12 +1575,19 @@ pub struct Asset {
     pub extra: Option<String>,
     /// Scripts: `wp_add_inline_script( $handle, $data, 'before' )`.
     pub before: Vec<String>,
-    /// Scripts: `wp_add_inline_script( $handle, $data )` after the script.
+    /// Scripts: `wp_add_inline_script( $handle, $data )` after the script. Styles: `wp_add_inline_style()`.
     pub after: Vec<String>,
     /// Registered but not enqueued (`wp_register_script()`): printed only as a dependency of another script.
     pub registered_only: bool,
+    /// Scripts: attributes a `script_loader_tag` filter adds to the script element (` async`), before `></script>`.
+    pub tag_attributes: String,
+    /// Scripts: what `script_loader_tag` filters put in front of the tags of the script (an HTML comment).
+    pub tag_prefix: String,
     /// Scripts: the text domain of `wp_set_script_translations()`.
     pub translations: Option<String>,
+    /// Scripts: a `script_loader_tag` filter that puts `defer` in front of the tags of the handle
+    /// (`preg_replace( '/^<script /', '<script defer ', $tag )`).
+    pub defer_attr: bool,
 }
 
 /// What the plugins enqueue on a page, in the order they enqueue it.
@@ -1468,6 +1624,61 @@ impl Assets {
     }
 }
 
+/// `PHP_URL_HOST` of an address (`wp_parse_url( $url, PHP_URL_HOST )`), if it has one.
+fn url_host(url: &str) -> Option<&str> {
+    let rest = url.strip_prefix("//").or_else(|| url.split_once("://").map(|(_, r)| r))?;
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    let host = authority.rsplit_once('@').map_or(authority, |(_, h)| h);
+    let host = host.split(':').next().unwrap_or_default();
+    (!host.is_empty()).then_some(host)
+}
+
+/// `wp_resource_hints()` on `wp_head` at priority 2 (`login_head` at 8): `wp_dependencies_unique_hosts()` of the enqueued plugin scripts
+/// and stylesheets (core's are on the site's own host) as `dns-prefetch`, with what the plugins add.
+pub fn resource_hints(site: &Site, assets: &Assets) -> String {
+    let server = url_host(&site.settings.home).unwrap_or_default().to_owned();
+    let mut hosts: Vec<String> = Vec::new();
+    for asset in assets.scripts.iter().chain(&assets.styles).filter(|a| !a.registered_only) {
+        if let Some(host) = url_host(&asset.src)
+            && !hosts.iter().any(|h| h == host)
+            && host != server
+        {
+            hosts.push(host.to_owned());
+        }
+    }
+    let mut out = String::new();
+    for relation in ["dns-prefetch", "preconnect", "prefetch", "prerender"] {
+        let urls = site.plugins.resource_hints(relation, if relation == "dns-prefetch" { hosts.clone() } else { Vec::new() });
+        let mut seen: Vec<String> = Vec::new();
+        let mut unique: Vec<String> = Vec::new();
+        for url in urls {
+            // `esc_url( $url, array( 'http', 'https' ) )`.
+            let url = crate::formatting::esc_url(&url);
+            let scheme_ok = url.split_once(':').is_none_or(|(scheme, _)| scheme.contains(['/', '?', '#']) || matches!(scheme.to_ascii_lowercase().as_str(), "http" | "https"));
+            if url.is_empty() || !scheme_ok || seen.contains(&url) {
+                continue;
+            }
+            let href = if matches!(relation, "preconnect" | "dns-prefetch") {
+                let Some(host) = url_host(&url) else { continue };
+                match url.split_once("://") {
+                    Some((scheme, _)) if relation == "preconnect" => format!("{scheme}://{host}"),
+                    _ => format!("//{host}"),
+                }
+            } else {
+                url
+            };
+            if !seen.contains(&href) {
+                seen.push(href.clone());
+                unique.push(href);
+            }
+        }
+        for href in unique {
+            out.push_str(&format!("<link rel='{}' href='{}' />\n", crate::formatting::esc_attr(relation), crate::formatting::esc_url(&href)));
+        }
+    }
+    out
+}
+
 static REGISTERED: OnceLock<Vec<&'static dyn NativePlugin>> = OnceLock::new();
 
 /// Makes the modules known; the first call wins.
@@ -1488,11 +1699,11 @@ pub struct Plugins {
 
 impl Plugins {
     /// Loads the modules of `active` (plugin files). A module that fails to load is left out.
-    pub async fn load(site: &Site, active: &[String]) -> Self {
+    pub async fn load(site: &Site, active: &[String], wp_root: &std::path::Path) -> Self {
         let mut loaded = Vec::new();
         for file in active {
             let Some(plugin) = registered().iter().find(|p| p.file() == file) else { continue };
-            match plugin.load(site).await {
+            match plugin.load_at(site, wp_root).await {
                 Ok(instance) => loaded.push((*plugin, instance)),
                 Err(e) => tracing::error!(plugin = file.as_str(), error = %e, "native plugin failed to load"),
             }
@@ -1524,6 +1735,24 @@ impl Plugins {
         for plugin in self.hooks() {
             plugin.enqueue(site, &mut assets);
         }
+        Self::finish_assets(assets, state)
+    }
+
+    /// What the plugins enqueue on a page of the website with its main query.
+    pub async fn assets_for(&self, site: &Site, query: Option<&crate::QueryResult>, state: Option<&PluginState>) -> Assets {
+        let mut assets = Assets::default();
+        for plugin in self.hooks() {
+            plugin.enqueue(site, &mut assets);
+            if let Some(query) = query
+                && let Err(e) = plugin.enqueue_query(site, query, &mut assets).await {
+                    tracing::error!(error = %e, "native plugin enqueue failed");
+                }
+        }
+        Self::finish_assets(assets, state)
+    }
+
+    /// Adds what the plugins enqueued while the page was rendered and sorts by the priority of the callbacks.
+    fn finish_assets(mut assets: Assets, state: Option<&PluginState>) -> Assets {
         if let Some(state) = state {
             assets.styles.extend(state.assets.styles.iter().cloned());
             assets.scripts.extend(state.assets.scripts.iter().cloned());
@@ -1812,6 +2041,11 @@ impl Plugins {
         Ok(None)
     }
 
+    /// The first `wp_die()` of a plugin early on `template_redirect` ([ActivePlugin::template_redirect_die]).
+    pub fn template_redirect_die(&self, site: &Site, query: &crate::QueryResult) -> Option<Die> {
+        self.hooks().find_map(|plugin| plugin.template_redirect_die(site, query))
+    }
+
     /// The first redirect a plugin asks for on `template_redirect`.
     pub async fn template_redirect(&self, site: &Site, query: &crate::QueryResult) -> Result<Option<Redirect>> {
         for plugin in self.hooks() {
@@ -1876,6 +2110,10 @@ impl Plugins {
     }
 
     /// The public post statuses of the plugins, in the order they register them.
+    pub fn internal_post_statuses(&self) -> Vec<&'static str> {
+        self.hooks().flat_map(|plugin| plugin.internal_post_statuses().iter().copied()).collect()
+    }
+
     pub fn post_statuses(&self, site: &Site) -> Vec<(&'static str, String)> {
         self.hooks().flat_map(|plugin| plugin.post_statuses(site)).collect()
     }
@@ -1959,6 +2197,47 @@ impl Plugins {
     /// The link of `get_comment_reply_link()` after the plugins' `comment_reply_link` filters.
     pub fn comment_reply_link(&self, link: String) -> String {
         self.hooks().fold(link, |link, plugin| plugin.comment_reply_link(link))
+    }
+
+    /// How the plugins close the comments of `post` for the viewer ([ActivePlugin::comments_off]).
+    pub fn comments_off(&self, post: &Post, viewer: Option<&crate::Viewer>) -> Option<CommentsOff> {
+        self.hooks().find_map(|plugin| plugin.comments_off(post, viewer))
+    }
+
+    /// Whether a plugin turns comments off everywhere ([ActivePlugin::comments_off_everywhere]).
+    pub fn comments_off_everywhere(&self, viewer: Option<&crate::Viewer>) -> bool {
+        self.hooks().any(|plugin| plugin.comments_off_everywhere(viewer))
+    }
+
+    /// Whether a plugin removed `feature` from `post_type` ([ActivePlugin::removes_post_type_support]).
+    pub fn removes_post_type_support(&self, post_type: &str, feature: &str) -> bool {
+        self.hooks().any(|plugin| plugin.removes_post_type_support(post_type, feature))
+    }
+
+    /// Whether a plugin drops the extra feed links and `comment-reply` of a singular page
+    /// ([ActivePlugin::closes_singular_comments]).
+    pub fn closes_singular_comments(&self, post: &Post, viewer: Option<&crate::Viewer>) -> bool {
+        self.hooks().any(|plugin| plugin.closes_singular_comments(post, viewer))
+    }
+
+    /// Whether a plugin empties the comments of `GET /wp/v2/comments` ([ActivePlugin::rest_comment_query_empty]).
+    pub async fn rest_comment_query_empty(&self, request: &RestPreDispatch<'_>) -> Result<bool> {
+        for plugin in self.hooks() {
+            if plugin.rest_comment_query_empty(request).await? {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    /// `rest_pre_dispatch` of the plugins: the first answer wins.
+    pub async fn rest_pre_dispatch(&self, request: &RestPreDispatch<'_>) -> Result<Option<RestAnswer>> {
+        for plugin in self.hooks() {
+            if let Some(answer) = plugin.rest_pre_dispatch(request).await? {
+                return Ok(Some(answer));
+            }
+        }
+        Ok(None)
     }
 
     /// `comment_post` / `edit_comment` of the plugins; the first `wp_die()` ends it.
@@ -2300,12 +2579,49 @@ impl Plugins {
     }
 
     /// What the plugins print in `wp_footer`.
-    pub async fn wp_footer(&self, site: &Site, looped: &[u64]) -> Result<String> {
+    pub async fn wp_footer(&self, site: &Site, query: &crate::QueryResult, looped: &[u64]) -> Result<String> {
         let mut out = String::new();
         for plugin in self.hooks() {
             out.push_str(&plugin.wp_footer(site, looped).await?);
+            out.push_str(&plugin.wp_footer_query(site, query).await?);
         }
         Ok(out)
+    }
+
+    /// What the plugins print on `wp_print_footer_scripts` after the scripts of the footer.
+    pub fn print_footer_scripts(&self, site: &Site, query: &crate::QueryResult) -> String {
+        self.hooks().map(|plugin| plugin.print_footer_scripts(site, query)).collect()
+    }
+
+    /// The classes the plugins add on `body_class`.
+    pub async fn body_class(&self, site: &Site, query: &crate::QueryResult) -> Result<Vec<String>> {
+        let mut out = Vec::new();
+        for plugin in self.hooks() {
+            out.extend(plugin.body_class(site, query).await?);
+        }
+        Ok(out)
+    }
+
+    /// The page after the plugins' output buffers of the website.
+    pub fn template_output(&self, site: &Site, query: &crate::QueryResult, mut html: String) -> String {
+        for plugin in self.hooks() {
+            html = plugin.template_output(site, query, html);
+        }
+        html
+    }
+
+    /// What the plugins print on `login_head` at the default priority.
+    pub fn login_head(&self, site: &Site) -> String {
+        self.hooks().map(|plugin| plugin.login_head(site)).collect()
+    }
+
+    /// The `wp_resource_hints` filter of the plugins for `relation`, after the URLs of core.
+    pub fn resource_hints(&self, relation: &str, urls: Vec<String>) -> Vec<String> {
+        let mut urls = urls;
+        for plugin in self.hooks() {
+            urls.extend(plugin.resource_hints(relation));
+        }
+        urls
     }
 
     /// What the plugins change in the head; `robots` are the directives of core's `wp_robots` filters.
@@ -2320,6 +2636,14 @@ impl Plugins {
             head.robots = Some(changed.robots.unwrap_or(current));
             head.title = changed.title.or(head.title);
             head.html.push_str(&changed.html);
+            head.first.push_str(&changed.first);
+            head.late.push_str(&changed.late);
+            head.early.push_str(&changed.early);
+            head.late_init.push_str(&changed.late_init);
+            head.on_wp.push_str(&changed.on_wp);
+            head.body_open.push_str(&changed.body_open);
+            head.footer.push_str(&changed.footer);
+            head.footer_on_wp.push_str(&changed.footer_on_wp);
             head.removed.extend(changed.removed);
         }
         Ok(head)

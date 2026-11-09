@@ -35,10 +35,28 @@ const NOT_NEEDED: &[(&str, &str)] = &[
     ("wp-fastest-cache/wpFastestCache.php", "not needed: a page cache for PHP"),
     ("litespeed-cache/litespeed-cache.php", "not needed: a page cache for PHP"),
     ("hello.php", "not needed: it only shows a line in wp-admin"),
+    ("sg-cachepress/sg-cachepress.php", "not needed: a page cache and optimizer for PHP"),
+    ("updraftplus/updraftplus.php", "not needed to serve the site: backups run in PHP; back up the database and wp-content yourself"),
+    ("all-in-one-wp-migration/all-in-one-wp-migration.php", "not needed to serve the site: export and import run in PHP"),
+    ("duplicator/duplicator.php", "not needed to serve the site: packages and migrations run in PHP"),
+    ("wordpress-importer/wordpress-importer.php", "not needed to serve the site: the importer runs in PHP"),
+    ("loco-translate/loco.php", "not needed to serve the site: its translation files in wp-content/languages are read as they are"),
+];
+
+/// Plugins the site runs without, but whose work is missing under RustPress: the site looks the same, so they do not
+/// stop it from running, but the note says what is lost.
+const MISSING_BEHIND_THE_SCENES: &[(&str, &str)] = &[
+    ("wordfence/wordfence.php", "its firewall, scans and login protection do not run; protect the site in the web server instead"),
+    ("limit-login-attempts-reloaded/limit-login-attempts-reloaded.php", "sign-in attempts are not limited; do that in the web server instead"),
+    ("wps-hide-login/wps-hide-login.php", "the sign-in address is not hidden: wp-login.php answers as usual"),
+    ("really-simple-ssl/rlrsssl-really-simple-ssl.php", "the redirect to HTTPS and the security headers are the web server's job"),
+    ("akismet/akismet.php", "comments are not checked for spam (Akismet needs outgoing HTTP)"),
+    ("duplicate-post/duplicate-post.php", "its copy actions are missing in wp-admin"),
+    ("duplicate-page/duplicatepage.php", "its copy actions are missing in wp-admin"),
 ];
 
 /// Classic themes with a Rust port (keep in step with `rustpress_theme::classic`).
-const PORTED_THEMES: &[&str] = &["twentyseventeen"];
+const PORTED_THEMES: &[&str] = &["twentyseventeen", "twentytwentyone"];
 
 /// Checks the theme, a child theme's parent and the active plugins of the site.
 pub async fn check(config: &Config) -> Result<Vec<Item>, String> {
@@ -102,6 +120,9 @@ fn plugin_item(plugins: &Path, file: &str) -> Item {
     if let Some((_, why)) = NOT_NEEDED.iter().find(|(f, _)| *f == file) {
         return Item { what, support: Support::Yes, detail: (*why).into() };
     }
+    if let Some((_, what_is_lost)) = MISSING_BEHIND_THE_SCENES.iter().find(|(f, _)| *f == file) {
+        return Item { what, support: Support::Note, detail: format!("not ported, the site runs without it: {what_is_lost}") };
+    }
     Item { what, support: Support::No, detail: "PHP plugin without a native module; RustPress ignores it".into() }
 }
 
@@ -139,6 +160,9 @@ pub fn render(items: &[Item]) -> (String, bool) {
     let _ = writeln!(out);
     if runs {
         let _ = writeln!(out, "Yes: RustPress can serve this site. Compare a few pages with WordPress before you switch over.");
+        if items.iter().any(|i| i.support == Support::Note) {
+            let _ = writeln!(out, "Read the notes above: they say what works differently.");
+        }
     } else {
         let _ = writeln!(out, "Not yet: {missing} part(s) of this site do not run in RustPress. Tell us which ones you need:");
         let _ = writeln!(out, "https://github.com/rustpress-cms/rustpress/issues/new?template=port-request.yml");
@@ -167,6 +191,8 @@ mod tests {
         std::fs::create_dir_all(root.join("astra")).unwrap();
         assert_eq!(theme_item(&root, "block").support, Support::Yes);
         assert_eq!(theme_item(&root, "twentyseventeen").support, Support::Yes);
+        std::fs::create_dir_all(root.join("twentytwentyone")).unwrap();
+        assert_eq!(theme_item(&root, "twentytwentyone").support, Support::Yes);
         assert_eq!(theme_item(&root, "astra").support, Support::No);
         assert_eq!(theme_item(&root, "missing").support, Support::No);
         std::fs::remove_dir_all(&root).unwrap();
@@ -180,6 +206,9 @@ mod tests {
         assert_eq!(plugin_version(&root.join("x/x.php")).as_deref(), Some("1.2.3"));
         let item = plugin_item(&root, "x/x.php");
         assert_eq!((item.support, item.what.as_str()), (Support::No, "Plugin x/x.php 1.2.3"));
+        assert_eq!(plugin_item(&root, "updraftplus/updraftplus.php").support, Support::Yes);
+        let wordfence = plugin_item(&root, "wordfence/wordfence.php");
+        assert!(wordfence.support == Support::Note && wordfence.detail.starts_with("not ported, the site runs without it: its firewall"), "{}", wordfence.detail);
         std::fs::remove_dir_all(&root).unwrap();
     }
 
@@ -188,6 +217,9 @@ mod tests {
         let ok = Item { what: "Theme a".into(), support: Support::Yes, detail: "block theme".into() };
         let no = Item { what: "Plugin b".into(), support: Support::No, detail: "no module".into() };
         assert!(render(std::slice::from_ref(&ok)).1);
+        let note = Item { what: "Plugin c".into(), support: Support::Note, detail: "not ported".into() };
+        let (text, runs) = render(&[ok.clone(), note]);
+        assert!(runs && text.contains("Read the notes above"), "{text}");
         let (text, runs) = render(&[ok, no]);
         assert!(!runs && text.contains("[no  ] Plugin b: no module") && text.contains("1 part(s)"), "{text}");
     }

@@ -29,6 +29,8 @@ pub struct MenuItem {
     pub menu_order: i64,
     /// `post_parent` of the linked page, for `current-page-parent`.
     pub post_parent: u64,
+    /// `description`: `wp_trim_words( post_content, 200 )`.
+    pub description: String,
 }
 
 /// The menu assigned to a theme location.
@@ -220,6 +222,7 @@ async fn setup_item(site: &Site, post: &Post) -> Result<Option<MenuItem>> {
         target: get("_menu_item_target"),
         attr_title: post.post_excerpt.clone(),
         xfn: get("_menu_item_xfn"),
+        description: rustpress_core::formatting::wp_trim_words(&post.post_content, 200, "&hellip;"),
         menu_order: i64::from(post.menu_order),
         ..MenuItem::default()
     };
@@ -397,7 +400,9 @@ pub async fn classes_by_context(site: &Site, q: &QueryResult, request_uri: &str,
             let item_url = raw_item_url.trim_end_matches('/').to_owned();
             let indexless = current_url.trim_end_matches("index.php").trim_end_matches('/').to_owned();
             let root_relative = request_uri.trim_end_matches('/').to_owned();
-            let candidates = [current_url.clone(), indexless.clone(), root_relative];
+            // `$matches`: each address also `urldecode()`d.
+            let decode = |s: &str| String::from_utf8_lossy(&rustpress_core::rewrite::urldecode(s.as_bytes())).into_owned();
+            let candidates = [current_url.clone(), decode(&current_url), indexless.clone(), decode(&indexless), root_relative.clone(), decode(&root_relative)];
             if !raw_item_url.is_empty() && candidates.contains(&item_url) {
                 classes.push("current-menu-item".into());
                 item.current = true;
@@ -514,6 +519,13 @@ pub struct NavArgs {
     pub fallback_cb: &'static str,
     /// The preview of the Customizer, which marks the menu as a partial (`WP_Customize_Nav_Menus`).
     pub customize: Option<std::sync::Arc<rustpress_core::customize::Preview>>,
+    /// `container_class`: the class of the container instead of `menu-{slug}-container`.
+    pub container_class: String,
+    /// `items_wrap`: `%1$s` is the id of the list, `%2$s` its class, `%3$s` the items.
+    pub items_wrap: String,
+    /// The `nav_menu_item_args` filter of the theme: it may change `link_after` for the item, and the change stays for
+    /// the items that follow (the arguments are one object).
+    pub item_args: Option<fn(&mut String, &MenuItem, usize)>,
 }
 
 impl NavArgs {
@@ -530,6 +542,9 @@ impl NavArgs {
             menu: None,
             fallback_cb: "wp_page_menu",
             customize: None,
+            container_class: String::new(),
+            items_wrap: "<ul id=\"%1$s\" class=\"%2$s\">%3$s</ul>".into(),
+            item_args: None,
         }
     }
 
@@ -611,9 +626,10 @@ pub fn wp_nav_menu(
         }
     }
     let mut body = String::new();
+    let mut link_after = args.link_after.clone();
     // `Walker::walk()`: without items at the top, the parent of the first item is the root.
     let root = if sorted.iter().any(|i| i.parent == 0) { 0 } else { sorted.first().map_or(0, |i| i.parent) };
-    walk(site, &sorted, root, 0, args.depth, args, title_hook, link_hook, &mut body);
+    walk(site, &sorted, root, 0, args.depth, args, &mut link_after, title_hook, link_hook, &mut body);
     // The orphans, whose parent is not in the menu, follow at the top without their children.
     if args.depth == 0 {
         let mut shown: Vec<i64> = vec![root];
@@ -631,7 +647,7 @@ pub fn wp_nav_menu(
         }
         for parent in groups {
             for item in sorted.iter().filter(|i| i.parent == parent && !shown.contains(&i.id)) {
-                walk(site, std::slice::from_ref(item), parent, 0, 1, args, title_hook, link_hook, &mut body);
+                walk(site, std::slice::from_ref(item), parent, 0, 1, args, &mut link_after, title_hook, link_hook, &mut body);
             }
         }
     }
@@ -639,14 +655,15 @@ pub fn wp_nav_menu(
         return String::new();
     }
     let id = if args.menu_id.is_empty() { format!("menu-{}", menu.slug) } else { args.menu_id.clone() };
-    let list = format!("<ul id=\"{}\" class=\"{}\">{body}</ul>", esc_attr(&id), esc_attr(&args.menu_class));
+    let list = rustpress_core::i18n::sprintf(&args.items_wrap, &[&esc_attr(&id), &esc_attr(&args.menu_class), &body]);
     let html = match &args.container {
         Some((tag, label)) => {
             let aria = match (tag.as_str(), label) {
                 ("nav", Some(label)) if !label.is_empty() => format!(" aria-label=\"{}\"", esc_attr(label)),
                 _ => String::new(),
             };
-            format!("<{tag} class=\"menu-{}-container\"{aria}>{list}</{tag}>", menu.slug)
+            let class = if args.container_class.is_empty() { format!("menu-{}-container", menu.slug) } else { args.container_class.clone() };
+            format!("<{tag} class=\"{}\"{aria}>{list}</{tag}>", esc_attr(&class))
         }
         None => list,
     };
@@ -675,6 +692,7 @@ fn walk(
     depth: usize,
     max_depth: usize,
     args: &NavArgs,
+    link_after: &mut String,
     title_hook: &dyn Fn(&str, &MenuItem, usize) -> String,
     link_hook: &dyn Fn(String, &MenuItem, usize) -> String,
     out: &mut String,
@@ -696,6 +714,9 @@ fn walk(
                 atts.push_str(&format!(" {name}=\"{}\"", if url { esc_url(value) } else { esc_attr(value) }));
             }
         };
+        if let Some(filter) = args.item_args {
+            filter(link_after, item, depth);
+        }
         attribute("target", &item.target, false);
         attribute("rel", &item.xfn, false);
         attribute("href", &item.url, true);
@@ -704,12 +725,12 @@ fn walk(
         if !item.attr_title.is_empty() && !same(&item.attr_title, &item.title) && !same(&item.attr_title, &filtered) && !same(&item.attr_title, &title) {
             attribute("title", &item.attr_title, false);
         }
-        let link = format!("<a{atts}>{}{title}{}</a>", args.link_before, args.link_after);
+        let link = format!("<a{atts}>{}{title}{link_after}</a>", args.link_before);
         out.push_str(&link_hook(link, item, depth));
         let has_children = (max_depth == 0 || depth + 1 < max_depth) && items.iter().any(|i| i.parent == item.id);
         if has_children {
             out.push_str(&format!("\n{indent}<ul class=\"sub-menu\">\n"));
-            walk(site, items, item.id, depth + 1, max_depth, args, title_hook, link_hook, out);
+            walk(site, items, item.id, depth + 1, max_depth, args, link_after, title_hook, link_hook, out);
             out.push_str(&format!("{indent}</ul>\n"));
         }
         out.push_str("</li>\n");
@@ -737,7 +758,7 @@ mod tests {
         let link = |l: String, _: &MenuItem, _: usize| l;
         // The site is only used for the title filters; texturizing plain words changes nothing.
         let site = rustpress_core::Site::from_parts(rustpress_db::Db::connect_lazy("mysql://nobody@127.0.0.1:1/none", "wp_").expect("lazy pool"), rustpress_core::options::Options::from_pairs([("home", "http://x")]));
-        walk(&site, &items, 0, 0, 0, &args, &hook, &link, &mut out);
+        walk(&site, &items, 0, 0, 0, &args, &mut String::new(), &hook, &link, &mut out);
         assert_eq!(
             out,
             "<li id=\"menu-item-1\" class=\"menu-item menu-item-1\"><a href=\"http://x/?p=1\">A</a>\n<ul class=\"sub-menu\">\n\t<li id=\"menu-item-2\" class=\"menu-item menu-item-2\"><a href=\"http://x/?p=2\">B</a></li>\n</ul>\n</li>\n<li id=\"menu-item-3\" class=\"menu-item menu-item-3\"><a href=\"http://x/?p=3\">C</a></li>\n"

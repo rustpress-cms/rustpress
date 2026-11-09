@@ -360,6 +360,8 @@ impl LoginEnv<'_> {
             out.push_str(&inline_script_tag("if(\"sessionStorage\" in window){try{for(var key in sessionStorage){if(key.indexOf(\"wp-autosave-\")!=-1){sessionStorage.removeItem(key)}}}catch(e){}};", &[]));
         }
         out.push_str(&self.robots());
+        // `wp_resource_hints()` on `login_head` at priority 8.
+        out.push_str(&rustpress_core::native::resource_hints(self.site, &rustpress_core::native::Assets::default()));
         if !head_scripts.is_empty() {
             let mut scripts = default_scripts(&self.loader);
             self.user_settings(&mut scripts);
@@ -369,6 +371,8 @@ impl LoginEnv<'_> {
             out.push_str(&scripts.print_head_scripts(true));
         }
         out.push_str(&admin_styles);
+        // `login_head` of the plugins at priority 10, before `wp_strict_cross_origin_referrer()` (also 10, hooked later).
+        out.push_str(&self.site.plugins.login_head(self.site));
         out.push_str("\t<meta name='referrer' content='strict-origin-when-cross-origin' />\n\t");
         out.push_str("\t<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n\t");
         if interim {

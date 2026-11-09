@@ -532,6 +532,9 @@ pub fn attachment_image(env: &Env<'_>, meta: Option<&Metadata>, attached_file: &
     if let Some(sizes) = env.theme.filter_attachment_sizes(site, env.query, text(&attr, "sizes").as_deref()) {
         put_attr(&mut attr, "sizes", sizes);
     }
+    // The theme's other `wp_get_attachment_image_attributes` filters; a preview of a PDF has no size of its own.
+    let full = meta.filter(|m| m.0.get("_preview").is_none() && m.0.get("width").is_some() && m.0.get("height").is_some()).map(|m| (m.width(), m.height()));
+    env.theme.filter_attachment_attributes(&mut attr, full, args.requested);
     if args.post_thumbnail {
         let class = text(&attr, "class").unwrap_or_default();
         put_attr(&mut attr, "class", format!("{class} wp-post-image"));

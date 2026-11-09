@@ -1,0 +1,9 @@
+{
+ "form_from": "contact",
+ "status": "draft",
+ "form_settings": {
+  "antispam_v3": "0",
+  "antispam": "0"
+ },
+ "post": "action=wpforms_submit&wpforms[id]=9300&wpforms[fields][1][first]=Ada&page_url=http%3A%2F%2Flocalhost%3A8080%2Fcontact%2F%3Fa%3Db%26c%3D%25C3%25A4&page_title=Contact+%26+%3Cmore%3E&page_id=2&url_referer=http%3A%2F%2Flocalhost%3A8080%2Ffrom%2F"
+}

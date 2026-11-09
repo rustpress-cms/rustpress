@@ -225,6 +225,10 @@ impl<'a> Env<'a> {
                 content = crate::states::render_states_support(self, bt, &raw_attrs, content);
             }
             content = dynamic::name_filter(name, &raw_attrs, content);
+            // `wp_restore_group_inner_container()` and `wp_restore_image_outer_container()`.
+            if (name == "core/group" || name == "core/image") && !self.theme.has_theme_json() {
+                content = if name == "core/group" { layout::restore_group_inner_container(&raw_attrs, content) } else { layout::restore_image_outer_container(&raw_attrs, content) };
+            }
             if name == "core/image" && self.with_state(|s| s.image_lightbox) {
                 content = dynamic::lightbox::render(self, block, &child_ctx, content).await?;
             }

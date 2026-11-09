@@ -1,0 +1,100 @@
+{
+    "form_from": "gdpr",
+    "wpforms_settings": {
+        "gdpr": "1"
+    },
+    "form_settings": {
+        "antispam_v3": "0",
+        "antispam": "0"
+    },
+    "post": "action=wpforms_submit&wpforms[id]=9300&wpforms[fields][1][]=I+consent+to+having+this+website+store+my+%3Ca+href%3D%22%2Fprivacy%22%3Esubmitted%3C%2Fa%3E+information.&wpforms[fields][2]=&page_url=http%3A%2F%2Flocalhost%3A8080%2Fcontact%2F%3Fa%3Db%26c%3D%25C3%25A4&page_title=Contact+%26+%3Cmore%3E&page_id=2&url_referer=http%3A%2F%2Flocalhost%3A8080%2Ffrom%2F",
+    "form_data": {
+        "field_id": 3,
+        "settings": {
+            "form_title": "Golden Form",
+            "form_desc": "",
+            "submit_text": "Submit",
+            "submit_text_processing": "Sending...",
+            "antispam_v3": "0",
+            "ajax_submit": "1",
+            "notification_enable": "1",
+            "notifications": {
+                "1": {
+                    "email": "{admin_email}",
+                    "replyto": "{field_id=\"2\"}",
+                    "message": "{all_fields}"
+                }
+            },
+            "confirmations": {
+                "1": {
+                    "type": "message",
+                    "message": "Thanks for contacting us! We will be in touch with you shortly.",
+                    "message_scroll": "1"
+                }
+            },
+            "antispam": "0"
+        },
+        "fields": {
+            "1": {
+                "id": "1",
+                "type": "gdpr-checkbox",
+                "label": "GDPR Agreement",
+                "required": "1",
+                "choices": {
+                    "1": {
+                        "label": "I consent to having this website store my <a href=\"/privacy\">submitted</a> information.",
+                        "value": "",
+                        "image": "",
+                        "default": ""
+                    }
+                }
+            },
+            "2": {
+                "id": "2",
+                "type": "gdpr-checkbox",
+                "label": "Hidden label",
+                "label_hide": "1",
+                "required": "1",
+                "choices": {
+                    "1": {
+                        "label": "I agree",
+                        "value": ""
+                    }
+                }
+            }
+        },
+        "id": "9300"
+    },
+    "now": 1794172705,
+    "secret": "t8gWedj08loeI4fRQszTD1i9ML4AijKkMCYzXAUM9eo=",
+    "settings": {
+        "modern-markup": "1",
+        "modern-markup-is-set": true,
+        "modern-markup-hide-setting": true,
+        "gdpr": "1"
+    },
+    "query": "action=wpforms_submit&wpforms[id]=9300&wpforms[fields][1][]=I+consent+to+having+this+website+store+my+%3Ca+href%3D%22%2Fprivacy%22%3Esubmitted%3C%2Fa%3E+information.&wpforms[fields][2]=&page_url=http%3A%2F%2Flocalhost%3A8080%2Fcontact%2F%3Fa%3Db%26c%3D%25C3%25A4&page_title=Contact+%26+%3Cmore%3E&page_id=2&url_referer=http%3A%2F%2Flocalhost%3A8080%2Ffrom%2F",
+    "nonce": "c517aae026",
+    "user_data": null,
+    "can_manage": false,
+    "super_admin": false,
+    "site": {
+        "admin_email": "admin@example.com",
+        "blogname": "RustPress Test",
+        "home": "http://localhost:8080",
+        "login": "http://localhost:8080/wp-login.php",
+        "date_format": "F j, Y",
+        "gmt_offset": 0,
+        "language": "lang=\"en-US\""
+    },
+    "permalinks": {},
+    "page_author": [
+        1,
+        "admin"
+    ],
+    "manager_emails": [
+        "admin@example.com"
+    ],
+    "response": "{\"success\":false,\"data\":{\"errors\":{\"general\":{\"header\":\"<div id=\\\"wpforms-9300-header-error\\\" class=\\\"wpforms-error-container\\\" role=\\\"alert\\\">\\n\\t\\t\\t\\t\\t\\t<span class=\\\"wpforms-hidden\\\" aria-hidden=\\\"false\\\">Form error message<\\/span><p>Form has not been submitted, please see the errors below.<\\/p>\\n\\n\\t\\t\\t\\t\\t<\\/div>\"},\"field\":{\"wpforms[fields][2][]\":\"This field is required.\"}}}}",
+    "mails": []
+}

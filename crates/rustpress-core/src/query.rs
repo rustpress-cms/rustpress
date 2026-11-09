@@ -106,6 +106,8 @@ pub struct QueryResult {
     pub http_host: Option<String>,
     /// `$_SERVER['HTTP_USER_AGENT']`.
     pub user_agent: Option<String>,
+    /// `$_SERVER['HTTP_REFERER']`.
+    pub referer: Option<String>,
     /// `wp_create_nonce()` of a visitor who is not signed in (user 0, no session), when the site knows its salts.
     pub guest_nonce: Option<GuestNonce>,
     /// `is_customize_preview()`: the page is in the preview of the Customizer.
@@ -170,6 +172,7 @@ impl QueryResult {
             viewer: None,
             guest_nonce: None,
             user_agent: None,
+            referer: None,
             http_host: None,
             customize: None,
         }
@@ -203,6 +206,14 @@ impl QueryResult {
             Queried::User(user) => user.id,
             Queried::None | Queried::PostType(_) => 0,
         }
+    }
+
+    /// `is_comment_feed()`. `WP_Query::set_404()` leaves it off: a 404 is a feed of (no) posts.
+    pub fn is_comment_feed(&self) -> bool {
+        let truthy = |name: &str| self.vars.get(name).is_some_and(|v| !v.is_empty() && v != "0");
+        self.flags.is_feed
+            && !self.flags.is_404
+            && (truthy("withcomments") || self.vars.get("feed").unwrap_or("feed").contains("comments-") || (!truthy("withoutcomments") && self.flags.is_singular()))
     }
 
     pub fn queried_post(&self) -> Option<&Post> {

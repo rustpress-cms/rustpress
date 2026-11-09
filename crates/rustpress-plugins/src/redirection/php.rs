@@ -91,7 +91,7 @@ pub fn parse_str(query: &str) -> Params {
     params
 }
 
-fn register(params: &mut Params, name: &str, value: String) {
+pub(crate) fn register(params: &mut Params, name: &str, value: String) {
     let name = name.trim_start_matches(' ');
     let mut base = String::new();
     let mut rest = None;

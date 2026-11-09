@@ -12,8 +12,8 @@ step: what was ported, how it was compared and what deliberately differs.
 - **WordPress is the oracle.** Everything is ported from the PHP source and compared with a real WordPress (golden
   tests, compare scripts in `dev/`, `rustpress-compat`). A difference that cannot be avoided is recorded with its reason
   (`compat/known.toml` for the compat runs, this file for the rest).
-- **Themes:** block themes (`theme.json` + HTML templates). Twenty Seventeen is the one classic theme, rebuilt natively
-  (decision of 2026-10-25). Other classic PHP themes do not run.
+- **Themes:** block themes (`theme.json` + HTML templates). Twenty Seventeen and Twenty Twenty-One are the classic
+  themes, rebuilt natively (decisions of 2026-10-25 and 2026-11-08). Other classic PHP themes do not run.
 - **Plugins:** PHP never runs. Important plugins are rebuilt as native modules (`crates/rustpress-plugins`) that take
   over while the plugin is in `active_plugins`; the plugin's files stay for assets, headers and language packs.
 - **Writing is an explicit switch** (`RUSTPRESS_ALLOW_WRITES=1` / `allow_writes`): without it RustPress is a read-only
@@ -29,7 +29,7 @@ step: what was ported, how it was compared and what deliberately differs.
 | `rustpress-db` | access to the WordPress schema (sqlx), the read pool and the `Writer` |
 | `rustpress-core` | options, rewrite rules and their generation, main query, template hierarchy, canonical redirects, sitemaps, kses, the native plugin framework (`native.rs`) |
 | `rustpress-blocks` | block parser and renderer, block supports, style engine, dynamic blocks, Interactivity |
-| `rustpress-theme` | `theme.json`, templates, global styles, documents and feeds, the script loader, Twenty Seventeen |
+| `rustpress-theme` | `theme.json`, templates, global styles, documents and feeds, the script loader, Twenty Seventeen and Twenty Twenty-One |
 | `rustpress-content` | writing posts, terms, users, comments and uploads |
 | `rustpress-auth` | passwords, cookies, sessions, nonces, capabilities (`map_meta_cap`), application passwords |
 | `rustpress-admin` | `wp-admin`, sign-in and the installer |
@@ -47,7 +47,7 @@ The reference stack, the tools and the working rules are in [AGENTS.md](AGENTS.m
   URLs each: pages, patterns, feeds, sitemaps, REST, files; 0 unexpected differences), across eight permalink
   structures and a matrix of settings, and in de_DE, ru_RU, ar and ja. Twenty Seventeen on a copy of the maintainer's real site,
   0 unexpected differences (2026-11-06): 322 URLs with its plain permalinks, all 105 HTML pages identical; 539 URLs with
-  `/%postname%/`. Covered: the main query and template hierarchy, canonical redirects, custom
+  `/%postname%/`. Twenty Twenty-One on the reference, 0 unexpected differences in 778 URLs (2026-11-08). Covered: the main query and template hierarchy, canonical redirects, custom
   post types and taxonomies (from the stored rules and the literal `register_*()` calls of plugins and themes),
   shortcodes, embeds/oEmbed, the dynamic blocks including Interactivity, the comment form and submitting comments,
   previews and private content for signed-in users, the admin bar.
@@ -74,6 +74,14 @@ The reference stack, the tools and the working rules are in [AGENTS.md](AGENTS.m
     screen and in the comment form with saving, the lists, the editors of field groups, post types and taxonomies with
     their Ajax, the tools (export as JSON and PHP, import), the options pages preview.
   - Classic Editor 1.7.0 – complete except the frontend toolbar link (see below).
+  - Complianz – GDPR/CCPA Cookie Consent 7.5.6 – stage 1, the website: banner, statistics, cookie blocker, REST,
+    the consent shortcodes. Stage 2, the legal documents, is open (see below).
+  - Site Kit by Google 1.191.0 – the tags on the website (Analytics with consent mode, site verification), not the dashboard.
+  - WPCode Lite 2.4.1 – the global header, body and footer scripts and the site-wide snippets with their conditions, not PHP.
+  - WPForms Lite 2.0.4 – forms on the website (shortcode, block), submitting with validation, confirmations and the
+    notification e-mails, also on read-only sites; not the administration (forms are made in WordPress).
+  - Disable Comments 2.9.1 – comments and pings off everywhere, per post type or by rule, on the website and in the
+    REST API; not the administration.
 - **Following WordPress** – `WORDPRESS_VERSION` is the target; a daily workflow opens an issue per release with the
   report of `dev/wp-diff.sh`; `dev/wp-bump.sh` moves the reference. 7.1.4 was followed (issue #9).
 - **Review** – the security and robustness findings of the review of 2026-10-26 (A1, A2) are fixed except S12; the
@@ -133,6 +141,13 @@ The reference stack, the tools and the working rules are in [AGENTS.md](AGENTS.m
 - The dashboard and the block editor are still slower than the reference.
 
 **Native plugins**
+- Complianz, stage 2 – the legal documents: the shortcode `[cmplz-document]` and the block `complianz/document`
+  (`cmplz_document::get_document_html()` with the document elements of `config/documents/*.php`, the conditions on the
+  wizard's answers, the cookie list of `cmplz_cookies`/`cmplz_services` per service and purpose), the cookie policy with
+  `[cmplz-cookies]`, the consent area (`[cmplz-consent-area]`, the block `complianz/consent-area` and the REST route
+  `consent-area/<post>/<block>`), the REST route `documents`, the document CSS for a page that holds a document (the
+  body class and the stylesheet are already there), the do-not-sell page of the US region, and the snapshots of the
+  documents. After that, maybe: A/B tests and records of consent (Premium only), the integrations with other plugins.
 - Contact Form 7: the configuration check (`WPCF7_ConfigValidator`), setting up the services, `action=validate`, the
   REST routes to read, create, change and delete forms, the block `contact-form-7/contact-form-selector`.
 - Yoast SEO: FAQ/HowTo blocks in the schema, the admin bar, signed-in viewers, the administration.
@@ -142,6 +157,14 @@ The reference stack, the tools and the working rules are in [AGENTS.md](AGENTS.m
   chosen posts, terms and users in conditional logic (`acf/conditional_logic/choices`), widgets of plugins in the
   `widget` rule, `not_registered` (a key another plugin registered first), the import from Custom Post Type UI, field
   groups from local JSON or PHP.
+- Site Kit: the dashboard, the setup with Google and its REST answers; the tags of Tag Manager, AdSense, Ads, Reader
+  Revenue Manager and Sign in with Google; the Google tag gateway, conversion tracking and custom dimensions.
+- WPCode: the locations in and around the content, excerpts and posts, the toolbar menu "WPCode" for administrators,
+  the administration.
+- WPForms Lite: the form builder and the rest of the administration; CAPTCHAs (reCAPTCHA, hCaptcha, Turnstile),
+  Akismet, the legacy e-mail template, theme overrides of the e-mail templates, sending without JavaScript (see below).
+- Disable Comments: the settings and tools pages, the changes of the administration and the editor, the Abilities API,
+  the counter of blocked attempts, the blocklist of comment types, WooCommerce reviews, network settings.
 - Next: Polylang (needs the language per request). Following plugin releases (`PLUGIN_VERSIONS` and the diff report).
 
 **Review and tests**
@@ -284,7 +307,7 @@ With that, single pages (also hierarchical), archives, taxonomy pages, `?post_ty
 Known gaps, roughly ordered by value:
 - **Administration**: sign-in, `wp-admin`, posting comments, editing (the front end is read-only). This is the next big block.
 - **Plugins**: only rebuilt modules; shortcodes and custom types of plugins are recognized only as described above. The real site's `wp-date-remover` is missing.
-- **More classic themes** besides Twenty Seventeen (Twenty Sixteen/Fifteen/Nineteen/Twenty/TwentyOne, third-party themes).
+- **More classic themes** besides Twenty Seventeen and Twenty Twenty-One (Twenty Sixteen/Fifteen/Nineteen/Twenty, third-party themes).
 - **oEmbed/autoembed** (network), `[playlist]`, lightbox, `useFirstImageFromPost`, galleries with `dynamicContent`.
 - **Feeds**: comment feeds for archives and search (RDF and RSS 0.92 exist now).
 - **Languages**: per request (user language, Polylang/WPML) and JavaScript translations.
@@ -1135,3 +1158,257 @@ Compared with `dev/customize-preview-compare.py`, as well as the cases of the fi
   theme that does not exist, a name `validate_file()` refuses, posted values, partials, and a visitor.
 
 76 of 76 equal (the 36 of the first step among them), the nonces masked.
+
+### Site Kit by Google 1.191.0 (2026-11-08)
+
+`crates/rustpress-plugins/src/site_kit/`: only what the plugin adds to the website, from the settings the plugin stored
+while it ran under PHP (connecting a site to Google needs its dashboard, which RustPress does not have).
+
+- **Analytics** (`googlesitekit_analytics-4_settings`, `Settings::get_default()` for missing keys): with
+  `analytics-4` active, `useSnippet`, a measurement ID and the environment type `production`, the `google_gtagjs` script
+  (`gtag/js?id=` with the Google tag ID or the measurement ID, `async`, the two comments of `script_loader_tag`) with its
+  inline lines (`linker` with the home domain, `developer_id`, `config`), the `dns-prefetch` hint, and for signed-in
+  viewers the opt-out snippet of `trackingDisabled` (`loggedinUsers`, `contentCreators`).
+- **Consent mode** (`googlesitekit_consent_mode`): the default consent `dataLayer` snippet with the EU regions and the
+  footer script `googlesitekit-consent-mode`.
+- **Site verification**: the meta tags of the users who may set Site Kit up (from the transient or the user meta,
+  through `wp_kses()`) on the website and the login page, and `/google<token>.html`.
+- The generator meta tag, the namespace `google-site-kit/v1` in the REST index (the routes answer 404) and the three
+  internal post statuses of the email reports in the `status` enums of REST.
+
+New in `native.rs`: `Head::first` (an action hooked on `init` at priority 0 of `wp_head`), `Head::late` (priority 10
+after core's actions), `Head::late_init` (priority 10, hooked on `init`: after the import map), `Asset::tag_attributes`
+and `tag_prefix` (`script_loader_tag`), the hooks `login_head`, `resource_hints` and `internal_post_statuses`, and
+`wp_resource_hints()` with `wp_dependencies_unique_hosts()` for the website and the login page; `esc_js()` is exact now
+(`stripslashes()` first, `ENT_COMPAT`). Twenty Seventeen prints plugin scripts of a priority above 10 after its own.
+
+Compared with the plugin active (Analytics with and without a Google tag ID, consent mode on, tracking disabled for
+signed-in users, two verification tags, a verification file): the block theme (front page, posts, a page, a category,
+a search, a 404, the feed, as a visitor and signed in), Twenty Seventeen 3.9, the login page, the REST index and
+`/google<token>.html` – equal. Not ported: the dashboard and everything that talks to Google, the tags of the other
+modules (Tag Manager, AdSense, Ads, Reader Revenue Manager, Sign in with Google), custom dimensions, the Google tag
+gateway, conversion tracking, `?tagverify=1`, the `googlesitekit-setup` meta tag of the setup and the translations of
+the consent script.
+
+### Twenty Twenty-One natively (2026-11-08)
+
+The second classic theme, so that sites on the default theme of WordPress 5.6 to 5.8 run (decision of 2026-11-08,
+before release 0.3.0). Version 2.9, compared with that release active in the reference.
+
+- **The port** (`rustpress-theme/src/classic/twentyone.rs`, the icons in `twentyone_icons.rs` generated from
+  `classes/class-twenty-twenty-one-svg-icons.php`): `header.php` with `site-branding.php` and `site-nav.php`, `index.php`,
+  `archive.php`, `search.php`, `single.php`, `page.php`, `image.php`, `404.php`, `comments.php`, `footer.php` with the
+  footer widgets, the content parts (full and excerpt, with the excerpts of every post format through
+  `twenty_twenty_one_print_first_instance_of_block()`), `author-bio.php`, `searchform.php`; the template tags of
+  `inc/template-tags.php`, the filters of `inc/template-functions.php` (body classes, `post_class` `entry`, the continue
+  reading links, the password form, the calendar arrows, the menu description, the sub-menu toggles, social icons in the
+  footer menu, the image `style` of `wp_get_attachment_image_attributes`), the custom colors (luminance, `is-dark-theme`,
+  the CSS variables of a background that is not the default), the dark mode switch with its script and the
+  `custom-background` support with its style and body class.
+- **Theme supports as `theme.json`:** a classic theme without a `theme.json` gets its settings from
+  `get_classic_theme_supports_block_editor_settings()`; `classic::theme_supports_json()` builds that layer (palette,
+  gradients, font sizes, custom units, spacing, link color) as `WP_Theme_JSON_Resolver::get_theme_data()` does.
+- **Shared parts that changed:** `wp_restore_group_inner_container()` and `wp_restore_image_outer_container()` for every
+  theme without a `theme.json` (`ThemeAccess::has_theme_json()`); the block styles of the page in the order of the style
+  handles of all registered blocks (as `wp_hoist_late_printed_styles()` collects them; `wp-block-buttons` comes with
+  `core/post-comments-form`), and their inline budget without `wp-block-library`, which `wp_maybe_inline_styles()` already
+  inlined in the head (also Twenty Seventeen); the gap rules of blocks with their own default gap in the order of the
+  block nodes; the archive titles of post type archives and custom taxonomies (also Twenty Seventeen); the comment list
+  and form for signed-in viewers (edit links, `logged_in_as`, the unfiltered HTML nonce; also Twenty Seventeen) and the
+  indentation of pingbacks with `short_ping`; menu items compare the `urldecode()`d address; "Edit Page" in the toolbar
+  for the page of posts; "Background" instead of "Header" in the toolbar for a theme with `custom-background`; new
+  `ThemeAccess` hooks (`content_more_link`, `password_form`, `filter_attachment_attributes`, `filter_post_class`,
+  `filter_calendar`); "Untitled" for posts without a title in `the_title_for()` while the theme is active (templates,
+  feeds, REST); the document title leaves out empty parts (`array_filter()`); `wp_nav_menu()` with `items_wrap`, `container_class` and `nav_menu_item_args`.
+- **Compared:** `rustpress-compat` with the theme active (`compat/reports/twentytwentyone.md`): 778 URLs, 0 unexpected
+  differences; with menus, a logo and a dark background as well. Switching the theme in the database is not enough for a
+  run: the first request to the administration makes `retrieve_widgets()` move the widgets of the second sidebar of the
+  install into the theme's only one, so set `sidebars_widgets` like that before the run (the in-process RustPress reads
+  the site once). `dev/twentytwentyone-compare.sh` covers what the seeded
+  content does not: menus with a sub-menu, a description and social icons, the logo with and without the title, a light
+  and a dark background, the dark mode switch, full posts on the blog, a static front page with a posts page, signed in
+  and out: all pages identical. The footer credit says "Proudly powered by RustPress" and links the site, as with Twenty
+  Seventeen; the compat run and `dev/front-compare.py` mask it.
+- **Open:** the administration for the theme (the Customizer's sections and controls of the theme, the background
+  screen, the editor styles and the block patterns of `inc/block-patterns.php`, the block styles of
+  `inc/block-styles.php` in the editor), the right-to-left languages (only `style-rtl.css` is chosen; not compared), and
+  the RSS widget with `twenty_twenty_one_rss_widget_feed_link` (not compared). Found but not about the theme: WordPress redirects `/team/page/2/` of a child page to its full
+  address (`redirect_guess_404_permalink()` with paging), RustPress answers 404.
+
+### WPCode Lite 2.4.1 (2026-11-08)
+
+`crates/rustpress-plugins/src/wpcode/` (plugin file `insert-headers-and-footers/ihaf.php`): what WPCode adds to the
+website, so that tracking codes and other scripts added with it keep working.
+
+- **Global scripts** (`global-output.php`): `ihaf_insert_header` on `wp_head`, `ihaf_insert_body` on `wp_body_open` at
+  priority 1 and `ihaf_insert_footer` on `wp_footer`, through `wp_unslash()`, nothing for a blank option.
+- **Site-wide snippets** (`WPCode_Auto_Insert_Site_Wide`, hooked on `wp`): the locations `site_wide_header`, `_body` and
+  `_footer` from the snippet cache (`wpcode_snippets`, by priority, equal ones in their order), with the code types
+  HTML, text (`do_shortcode()`), JavaScript (`<script>`, not for an empty or `0` code), CSS
+  (`<style class="wpcode-css-snippet">`, not for a blank one) and universal snippets without PHP (less the line break
+  after the closing tag).
+- **Conditional logic** (`rules.rs`): show or hide, groups that match when all their rows do, the user (logged in,
+  roles) and the page (type of page, post type, referrer, taxonomy page, terms, page URL) with WPCode's loose
+  comparisons; the options of WPCode Pro never match, rows of unknown types are skipped.
+- **The shortcode** `[wpcode id="…"]`, which reads the snippet from its post (status, code type term, rules).
+- "Headers & Footers mode" turns everything but the global scripts off.
+
+New in the framework: `wp_body_open` (after the toolbar, in block themes, Twenty Seventeen and Twenty Twenty-One),
+`Head::on_wp`, `Head::body_open`, `Head::footer` and `Head::footer_on_wp` (the places plugins reach from `wp_head`
+and from actions hooked on `wp`), `PageServices::do_shortcode()` and the referrer in `QueryResult`. Twenty Twenty-One
+now prints what plugins add to the head at all priorities (also Site Kit's), plugin scripts of a later priority after
+its own, and Twenty Seventeen the module preloads before the module data.
+
+Compared with the plugin active (global scripts with a slashed quote, 21 snippets of every code type with priorities,
+rules of every kind, the shortcode in a post and in a text snippet, Headers & Footers mode): the block theme, Twenty
+Seventeen and Twenty Twenty-One on the front page, a post, a page, a category, a tag, an author, a search, a 404 and
+with query parameters and a referrer – equal for visitors, except PHP snippets, which print nothing. Signed-in
+administrators also miss the toolbar menu "WPCode", its style and script and the list of the snippets on the page
+(`WPCode_Admin_Bar_Info`). Not ported: PHP and universal snippets with PHP (no PHP runs), the locations before and
+after the content, paragraphs, excerpts and posts, the PHP-only locations (`everywhere`, `frontend_only`,
+`frontend_cl`), safe mode, the preview of the snippet editor, the administration and the snippet library.
+
+### Complianz – GDPR/CCPA Cookie Consent 7.5.6, stage 1 (2026-11-08)
+
+The module `complianz` follows 7.5.6 (`complianz-gdpr/complianz-gpdr.php`) for the website; the settings are made in a
+WordPress installation, the module reads `cmplz_options`, the banners of `{prefix}cmplz_cookiebanners` and the plugin's
+own transients (`cmplz_transients`, read only; RustPress never writes them).
+
+- **Framework:** `wp_footer` and `wp_print_footer_scripts` with the query (`ActivePlugin::wp_footer_query`,
+  `print_footer_scripts`), `body_class`, the whole page before it is sent (`template_output`, the output buffer of
+  `template_redirect`), `wp_head` at priority 0 from an action added when the plugin loads (`Head::early`: before the
+  theme's actions of priority 0 and, in block themes, before `_block_template_viewport_meta_tag()`) and at priority 10
+  (`Head::late`, shared with Site Kit), the `defer` strategy (`Asset::defer_attr`), `enqueue_query` is asynchronous (a plugin can
+  read the database for its localized settings), and `NativePlugin::load_at` knows the WordPress directory (plugin
+  assets, `filemtime()` versions, templates). Core: inline scripts lose their leading line breaks
+  (`WP_Scripts::get_inline_script_data()`).
+- **Banner** (`cmplz_banner_loader`): `site_needs_cookie_warning()` with `site_shares_data()`, the statistics rules
+  (`statistics_privacy_friendly()`, `cookie_warning_required_stats()`, the `array_search()` quirk of
+  `consent_required_for_anonymous_stats()`), the excluded pages, the page builder previews; the banner and the manage
+  consent button for each used consent type from the templates (rendered once with the reference, translated strings
+  put back), `get_html_settings()` with `nl2br()`, the default banner (the transient, the default row, the first
+  row); the settings `complianz` of `complianz.min.js` in the order of the plugin (regions, consent types with
+  `maybe_filter_consenttype()`, cookie path and domain, `page_links` with the quirk that a document without a page
+  links to the current post, placeholder texts, `css_file`), the banner CSS from `uploads/complianz/css` with one
+  consent type, `cmplz-general` and the document styles, the `.cmplz-hidden` style.
+- **Statistics:** Google Analytics (gtag, consent mode), Tag Manager (also in the head with `gtm_code_head`), Matomo
+  (also anonymized, the tag manager), Clicky, Yandex, Clarity, the Google Tag Gateway consent scripts, Amazon's consent
+  signal, the scripts of the Script Center; the category of each, and the variant without a cookie warning. A theme's
+  `complianz-gdpr/` overrides of the statistics templates are used.
+- **Services:** the integrations of `config/integrations.php` that the settings load (third party services, social
+  media, statistics), their known scripts, styles, iframes and images with the placeholders, the dependencies, the
+  inline scripts (Twitter, Microsoft Ads, HubSpot) and footer styles (HubSpot, Snapchat).
+- **Cookie blocker** (`cmplz_cookie_blocker::replace_tags()`): images, styles, iframes (with `data-src`), video tags,
+  the placeholder markers of the services, scripts (inline and with a source, `type="module"`, the whitelist,
+  `post_scribe`, the dependencies), `data-cmplz` on `<body>`; only where `cmplz_can_run_cookie_blocker()` allows it.
+  The regex ported with PCRE's byte semantics where the plugin has no `/u`. Placeholder images: the default per style
+  and ratio, a theme override, the cached transients of YouTube, Vimeo, Dailymotion and static maps (RustPress does not
+  download thumbnails; without a transient it takes the default image).
+- **REST:** the routes of `complianz/v1` in the index; `banner`, `track`, `manage_consent_html` and `cookie_data` (the
+  list of the cookie shredder with consent per service).
+- **Shortcodes:** `[cmplz-manage-consent]`, `[cmplz-revoke-link]`, `[cmplz-accept-link]`; pages with a Complianz
+  document get the body class `cmplz-document`.
+
+Goldens: `dev/complianz-blocker-golden.sh` has the plugin block 22 snippets in two scenarios
+(`tests/data/complianz/blocker-*.json`, all equal). Compared byte for byte with the plugin active on Twenty Twenty-Five
+in five settings scenarios (EU with Analytics and services, US with consent per service, Tag Manager in the head, UK
+without a warning, Canada/Québec with Matomo and HubSpot), also with the parameter `cmplz_user_region`: the front page,
+a page with embeds of every service, a post, a search, a feed, a page with the shortcodes and the REST routes, all
+equal; `rustpress-compat` with the plugin active (see below). Twenty Seventeen and Twenty Twenty-One (merged in parallel)
+print the hooks the same way (`Head::early` first in `wp_head()`, the query's assets, `wp_print_footer_scripts`), but neither was
+compared with the plugin active: the reference had no Twenty Seventeen installed at the time.
+
+**Not ported (stage 1):** the legal documents and the consent area (stage 2, see Open), A/B testing, TCF and geo IP
+(Premium), WPML/Polylang translations of the banner texts (the strings come from the language pack), downloading
+placeholder thumbnails and writing any transient, regenerating the banner CSS (the files the plugin generated are
+used), the integrations with other plugins (page builders, forms, maps plugins, WooCommerce and so on, except the
+Contact Form 7 check of the blocked scripts) and the comment cookie integration, the site logo and a custom logo in the
+banner (only the Complianz logo), the script module router `cmplz-router` (`enable_iapi_navigation`; the settings
+say `module`, the module is not printed), the Do Not Track signal in `manage_consent_html` (RustPress does not look at
+the browser's header there), computing the cookie shredder list, overrides of the banner templates in a theme, the
+`is_ssl()` normalization of the plugin URLs, and the administration (wizard, scan, banner editor): settings are made in
+WordPress.
+
+### WPForms Lite 2.0.4 (2026-11-08)
+
+`crates/rustpress-plugins/src/wpforms/`: the forms of the website and what happens when they are sent, from the forms
+and settings made in WordPress.
+
+- **Forms** (`render.rs`, `fields.rs`, `css_vars.rs`): the shortcode `[wpforms]` and the block `wpforms/form-selector`
+  as `WPForms_Frontend::output()` prints them, with the modern and the classic markup, the fields Name, E-mail
+  (with confirmation), Single Line Text, Paragraph, Dropdown (also modern), Multiple Choice and Checkboxes (also image
+  and icon choices), Numbers, Number Slider and GDPR Agreement, the honeypot and AntiSpam v3 (`token.rs`), the block's
+  style variables, the assets and `wpforms_settings`. Goldens: `dev/wpforms-form-golden.sh` (`tests/data/wpforms-forms`).
+- **Submitting** (`submit.rs`, `ajax.rs`): `admin-ajax.php` with `wpforms_submit` like `WPForms_Process::ajax_submit()`,
+  `process()` and the fields' `validate()`/`format()` (required fields, lengths in characters or words, e-mail with
+  `is_email()`, IDN, allow and deny lists, numbers and ranges, choices, the honeypot, the AntiSpam token and its time,
+  the nonce of signed-in users, `ajax_submit` with a corrupted action), the errors as `wpforms_submit` sends them (the
+  field HTML with the error), the confirmations (message with smart tags and `wpautop`, page, redirect with
+  `page_url_parameters`), the answer for `wpforms_get_token` and `wpforms_restricted_email`. With write access the
+  counters of a saved entry: `wpforms_entries_count` of the form, `wpforms_entries_count_daily`, the cache generation
+  and the dashboard transients it deletes (WPForms Lite stores no entries).
+- **Smart tags** (`smart_tags.rs`): the tags of the plugin's list except the ones named below, `{all_fields}` with
+  `exclude`, `{field_id}`, `{field_html_id}`, `{field_value_id}`, the page, user, author and date tags, `{url_referer}`,
+  `{query_var}`.
+- **Notifications** (`notify.rs`, `template.rs`, `inline.rs`, `dom.rs`, `punycode.rs`): `WPForms_Process::entry_email()`
+  and `Notifications::send()` with the recipients' smart tags, `carboncopy`, the From and Reply-To headers as the
+  `wp_mail_from`/`wp_mail_from_name` filters leave them, conditional sending, `recipients_can`, the templates Classic,
+  Compact and Plain text (legacy `default` falls back to Classic) read at runtime from the plugin's
+  `templates/emails/*.php` by a small interpreter for what these files use, the header image, the colors of the
+  settings with `generate_contrasting_color()`, the CSS made inline like `Styler` (Emogrifier for the selectors these
+  styles use) and `make_clickable()`. Goldens: `dev/wpforms-submit-golden.sh` has the plugin process 47 submissions
+  and catches `wp_mail()` (`tests/data/wpforms-submit`: answers and whole e-mails equal).
+- **Read-only sites:** `admin-ajax.php` answers the plugins' visitor actions (`wp_ajax_nopriv_*`) without write
+  access, so forms can be sent on a site without `allow_writes` (CGI). The counters are not written there; everything
+  else of `admin-ajax.php` answers `0` with 400, also `heartbeat` and `generate-password` for visitors.
+
+Compared live with `dev/wpforms-compare.py` (with and without `--read-only`): 17 form pages as a visitor and as
+rpadmin, 11 submissions (valid and invalid, every field type), their 7 e-mails, the counters per submission, and five
+answers of `wpforms_get_token`/`wpforms_restricted_email` – equal. The headers of `admin-ajax.php` come in another
+order than in PHP, as everywhere in the administration.
+
+Not ported: CAPTCHAs (reCAPTCHA, hCaptcha, Turnstile) and Akismet, payments and Pro fields, dynamic choices, the
+legacy e-mail template, e-mail templates overridden in the theme, sending without JavaScript (a POST to the page),
+`email_async` (mails are sent during the request), proxy headers for the IP (`REMOTE_ADDR` only), smart tags in
+markup attributes, `{url_logout}`, `{user_meta}`, payment tags, the plugin's logs, LiteConnect and the usage
+statistics, and the administration (builder, settings, tools).
+
+### Disable Comments 2.9.1 (2026-11-08)
+
+`crates/rustpress-plugins/src/disable_comments/` (plugin file `disable-comments/disable-comments.php`): what the plugin
+changes on the website and in the REST API, read from `disable_comments_options`.
+
+- **Per post** (`is_disabled_for_post()`): "everywhere", the disabled post types, the role exclusion (roles,
+  administrators through `is_super_admin()`, `logged-out-users`), the conditional rules (taxonomy terms, page template,
+  "enable" before "disable", the auto-close age). The objects of the rule terms, the page templates and the counts of
+  the allowed comment types are read once per snapshot.
+- **Filters**: `comments_open`, `pings_open`, `get_comments_number` (0, the approved comments of the allowed types, or
+  unchanged with "show existing comments"; the plugin's number is an int, so the `'1' ===` checks of the comments
+  title block, Twenty Seventeen, Twenty Twenty-One and `theme-compat` take the plural), `comments_array`,
+  `remove_post_type_support()` of `comments` and `trackbacks` (the REST API leaves `comment_status` and `ping_status`
+  out), `check_comment_template()` (no post comments feed link, `comment-reply` deregistered).
+- **Everywhere**: the recent comments widget and its style, the comments feed link, the toolbar's comments menu (also in
+  the administration), `X-Pingback`, and every comment feed answered by `_xml_wp_die_handler()` with 403 (with the
+  feed's `ETag`, as WordPress sent it before).
+- **REST**: `rest_pre_dispatch` answers `/wp/v2/comments` routes with `rest_comment_disabled` (no `Allow` header, also
+  for embedded `replies`), allowed comment types and, without the REST switch, posts a rule keeps open pass;
+  `rest_comment_query` empties the collection (the `post` parameter is a list by then, so rules never reopen it).
+  Comment submissions see the closed post (`comment_closed`, `rest_comment_closed`).
+
+New in the framework: `ActivePlugin::comments_off`, `comments_off_everywhere`, `removes_post_type_support`,
+`closes_singular_comments`, `template_redirect_die`, `rest_pre_dispatch` and `rest_comment_query_empty`;
+`Site::comments_open()`, `pings_open()`, `comments_number()`, `comments_number_is_one()` and
+`filter_comments_array()`, which every comment template, block, feed, embed and theme now asks; the roles on `Viewer`;
+`QueryResult::is_comment_feed()`. Twenty Seventeen no longer prints an extra line break before "Comments are closed.".
+
+Compared with the plugin active, for visitors and administrators: the block theme in eleven settings (nothing set,
+everywhere, one post type, with existing comments, allowed types, the REST switch, excluded visitors and
+administrators, an "enable" taxonomy rule, a template rule, auto-close) on posts with and without comments, a page,
+the front page, feeds, comment feeds, embeds and the REST routes of posts, pages and comments (also `_embed`); Twenty
+Seventeen and Twenty Twenty-One in four of them, also with a recent comments widget; comment submissions – all equal.
+Known: the REST API decides the role exclusion with the REST user, while WordPress asks the cookie user before
+the nonce check (a signed-in excluded user reading the REST API without a nonce); the counter of blocked attempts
+(`disable_comments_blocked_*`, written on `shutdown`) stays unwritten. Not ported: the administration (settings and
+tools pages, deleting and exporting comments, the theme scan, the menus, dashboard and discussion settings it hides,
+the editor's blocks), the Abilities API, the blocklist of comment types (it refuses submissions), XML-RPC (no
+`xmlrpc.php`), WooCommerce reviews, network settings, the upgrade of settings older than 2.3.1 (`show_avatars`).

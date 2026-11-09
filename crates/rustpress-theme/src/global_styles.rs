@@ -288,17 +288,24 @@ impl<'a> GlobalStyles<'a> {
         main.push_str("body .is-layout-grid{display: grid;}.is-layout-grid > :is(*, div){margin: 0;}");
         main.push_str(&self.root_styles(&settings, &styles));
         main.push_str(&self.preset_classes(&settings));
-        let mut chunks = vec![main];
-        chunks.extend(self.block_chunks(&settings, &styles, handles));
-        // Blocks with a default block gap of their own (the gallery) get layout rules for it.
+        let mut groups: Vec<(String, Vec<String>)> = self.block_chunk_groups(&settings, &styles).into_iter().filter(|(name, _)| block_on_page(name, handles)).collect();
+        // Blocks with a default block gap of their own (the gallery, the latest posts) get layout rules for it, in
+        // their place among the block nodes (the order the blocks were registered in).
+        let order = self.registry.registration_order();
+        let position = |name: &str| order.iter().position(|n| n == name).unwrap_or(usize::MAX);
         for handle in handles.unwrap_or_default() {
             let Some(short) = handle.strip_prefix("wp-block-") else { continue };
-            let Some(block) = self.registry.get(&format!("core/{short}")) else { continue };
+            let name = format!("core/{short}");
+            let Some(block) = self.registry.get(&name) else { continue };
             let gap = block.supports.get("spacing").and_then(|s| s.get("blockGap")).and_then(|g| g.get("__experimentalDefault")).and_then(Value::as_str);
             if let Some(gap) = gap {
-                chunks.push(format!(":where(.wp-block-{short}.is-layout-flex){{gap: {gap};}}:where(.wp-block-{short}.is-layout-grid){{gap: {gap};}}"));
+                let chunk = format!(":where(.wp-block-{short}.is-layout-flex){{gap: {gap};}}:where(.wp-block-{short}.is-layout-grid){{gap: {gap};}}");
+                let at = groups.iter().position(|(other, _)| position(other) > position(&name)).unwrap_or(groups.len());
+                groups.insert(at, (name, vec![chunk]));
             }
         }
+        let mut chunks = vec![main];
+        chunks.extend(groups.into_iter().flat_map(|(_, chunks)| chunks));
         chunks.retain(|c| !c.is_empty());
         chunks
     }

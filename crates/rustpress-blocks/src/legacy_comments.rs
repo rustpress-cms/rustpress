@@ -27,8 +27,8 @@ struct Counters {
 }
 
 /// `comments_open()`.
-pub fn comments_open(post: &Post) -> bool {
-    post.comment_status == "open"
+pub fn comments_open(site: &Site, viewer: Option<&rustpress_core::viewer::Viewer>, post: &Post) -> bool {
+    site.comments_open(post, viewer)
 }
 
 /// The walker output of `wp_list_comments()` (without the surrounding `<ol>`).
@@ -159,10 +159,11 @@ async fn start_element(
     // `Walker_Comment::ping()`
     if args.short_ping && matches!(comment.comment_type.as_str(), "pingback" | "trackback") {
         out.push_str(&format!(
-            "\t<li id=\"comment-{}\" class=\"{class}\">\n\t\t<div class=\"comment-body\">\n\t\t\t{} {} \t\t</div>\n\t",
+            "\t\t<li id=\"comment-{}\" class=\"{class}\">\n\t\t\t<div class=\"comment-body\">\n\t\t\t\t{} {} {}\t\t\t</div>\n\t\t",
             comment.comment_id,
             site.tr("Pingback:"),
-            comment_author_link(site, comment)
+            comment_author_link(site, comment),
+            edit_comment_link(site, env, post, comment, "<span class=\"edit-link\">", "</span>")
         ));
         return Ok(());
     }
@@ -176,7 +177,7 @@ async fn start_element(
     let when = rustpress_core::i18n::sprintf(&site.tr("%1$s at %2$s"), &[&date, &time]);
     let link = crate::comment_pages::comment_link(env, comment, args.cpage).await?;
     let text = comment_text(site, &comment.comment_content);
-    let reply = if comments_open(post) && (max_depth <= 0 || depth < max_depth) {
+    let reply = if comments_open(site, env.query.viewer.as_ref(), post) && (max_depth <= 0 || depth < max_depth) {
         let author = comment_author(site, comment);
         let reply_to = rustpress_core::i18n::sprintf(&site.tr("Reply to %s"), &[&author]);
         let base = if site.options.get("page_comments") == Some("1") { link.replace(&format!("#comment-{}", comment.comment_id), "") } else { site.permalink(post).await? };
@@ -192,18 +193,48 @@ async fn start_element(
         String::new()
     };
     out.push_str(&format!(
-        "\t\t<li id=\"comment-{id}\" class=\"{class}\">\n\t\t\t<article id=\"div-comment-{id}\" class=\"comment-body\">\n\t\t\t\t<footer class=\"comment-meta\">\n\t\t\t\t\t<div class=\"comment-author vcard\">\n\t\t\t\t\t\t{avatar}\t\t\t\t\t\t{says}\t\t\t\t\t</div><!-- .comment-author -->\n\n\t\t\t\t\t<div class=\"comment-metadata\">\n\t\t\t\t\t\t<a href=\"{link}\"><time datetime=\"{iso}\">{when}</time></a>\t\t\t\t\t</div><!-- .comment-metadata -->\n\n\t\t\t\t\t{note}</footer><!-- .comment-meta -->\n\n\t\t\t\t<div class=\"comment-content\">\n\t\t\t\t\t{text}\t\t\t\t</div><!-- .comment-content -->\n\n\t\t\t\t{reply}\t\t\t</article><!-- .comment-body -->\n\t\t",
+        "\t\t<li id=\"comment-{id}\" class=\"{class}\">\n\t\t\t<article id=\"div-comment-{id}\" class=\"comment-body\">\n\t\t\t\t<footer class=\"comment-meta\">\n\t\t\t\t\t<div class=\"comment-author vcard\">\n\t\t\t\t\t\t{avatar}\t\t\t\t\t\t{says}\t\t\t\t\t</div><!-- .comment-author -->\n\n\t\t\t\t\t<div class=\"comment-metadata\">\n\t\t\t\t\t\t<a href=\"{link}\"><time datetime=\"{iso}\">{when}</time></a>{edit}\t\t\t\t\t</div><!-- .comment-metadata -->\n\n\t\t\t\t\t{note}</footer><!-- .comment-meta -->\n\n\t\t\t\t<div class=\"comment-content\">\n\t\t\t\t\t{text}\t\t\t\t</div><!-- .comment-content -->\n\n\t\t\t\t{reply}\t\t\t</article><!-- .comment-body -->\n\t\t",
         id = comment.comment_id,
         link = esc_url(&link),
         iso = site.date("c", ts),
+        edit = edit_comment_link(site, env, post, comment, " <span class=\"edit-link\">", "</span>"),
         note = if pending { format!("\t\t\t\t\t<em class=\"comment-awaiting-moderation\">{moderation_note}</em>\n\t\t\t\t\t\t\t\t\t") } else { "\t\t\t\t".to_owned() },
     ));
     Ok(())
 }
 
+/// `edit_comment_link( __( 'Edit' ), $before, $after )`: for who may edit the comment's post.
+fn edit_comment_link(site: &Site, env: &crate::env::Env<'_>, post: &Post, comment: &Comment, before: &str, after: &str) -> String {
+    if !env.query.viewer.as_ref().is_some_and(|viewer| viewer.can_edit_post(post)) {
+        return String::new();
+    }
+    let url = site.site_url(&format!("wp-admin/comment.php?action=editcomment&c={}", comment.comment_id));
+    format!("{before}<a class=\"comment-edit-link\" href=\"{}\">{}</a>{after}", esc_url(&url), site.tr("Edit"))
+}
+
 /// `comment_form()` with the defaults of a theme that supports `html5` comment forms.
-pub async fn comment_form(site: &Site, post: &Post, request_uri: &str, block_theme: bool) -> Result<String> {
-    if !comments_open(post) {
+pub async fn comment_form(site: &Site, viewer: Option<&rustpress_core::viewer::Viewer>, post: &Post, request_uri: &str, block_theme: bool) -> Result<String> {
+    comment_form_with(site, viewer, post, request_uri, block_theme, &FormArgs::default()).await
+}
+
+/// The arguments of `comment_form()` a theme passes, and the `rows` its `comment_form_defaults` filter sets.
+pub struct FormArgs {
+    /// `title_reply`; empty for the default "Leave a Reply".
+    pub title_reply: String,
+    pub title_reply_before: String,
+    pub title_reply_after: String,
+    pub rows: u32,
+}
+
+impl Default for FormArgs {
+    fn default() -> Self {
+        Self { title_reply: String::new(), title_reply_before: "<h3 id=\"reply-title\" class=\"comment-reply-title\">".into(), title_reply_after: "</h3>".into(), rows: 8 }
+    }
+}
+
+/// [`comment_form`] with the arguments of a theme.
+pub async fn comment_form_with(site: &Site, viewer: Option<&rustpress_core::viewer::Viewer>, post: &Post, request_uri: &str, block_theme: bool, form: &FormArgs) -> Result<String> {
+    if !comments_open(site, viewer, post) {
         return Ok(String::new());
     }
     let options = &site.options;
@@ -211,15 +242,32 @@ pub async fn comment_form(site: &Site, post: &Post, request_uri: &str, block_the
     let indicator = format!("<span class=\"required\">{}</span>", rustpress_core::formatting::esc_html(&site.tr("*")));
     let required_attr = if require { " required" } else { "" };
     let mark = if require { format!(" {indicator}") } else { String::new() };
-    let notes = format!(
-        "<p class=\"comment-notes\"><span id=\"email-notes\">{}</span> <span class=\"required-field-message\">{}</span></p>",
-        site.tr("Your email address will not be published."),
-        rustpress_core::i18n::sprintf(&site.tr("Required fields are marked %s"), &[&indicator])
-    );
+    let required_text = format!(" <span class=\"required-field-message\">{}</span>", rustpress_core::i18n::sprintf(&site.tr("Required fields are marked %s"), &[&indicator]));
+    let mut notes = format!("<p class=\"comment-notes\"><span id=\"email-notes\">{}</span>{required_text}</p>", site.tr("Your email address will not be published."));
+    // A signed-in viewer is named instead of asked (`logged_in_as`), and gets the nonce of `wp_comment_form_unfiltered_html_nonce()`.
+    let mut unfiltered = String::new();
+    if let Some(viewer) = viewer {
+        let permalink = site.permalink(post).await?;
+        let logout = rustpress_core::formatting::esc_html(&format!("{}?action=logout&redirect_to={}&_wpnonce={}", site.site_url("wp-login.php"), rustpress_core::canonical::php_urlencode(&permalink), viewer.create_nonce("log-out")));
+        notes = format!(
+            "<p class=\"logged-in-as\">{}{required_text}</p>",
+            rustpress_core::i18n::sprintf(
+                &site.tr("Logged in as %1$s. <a href=\"%2$s\">Edit your profile</a>. <a href=\"%3$s\">Log out?</a>"),
+                &[&rustpress_core::formatting::esc_html(&viewer.display_name), &esc_url(&site.site_url("wp-admin/profile.php")), &logout]
+            )
+        );
+        if viewer.can("unfiltered_html") {
+            unfiltered = format!(
+                "<input type=\"hidden\" id=\"_wp_unfiltered_html_comment_disabled\" name=\"_wp_unfiltered_html_comment_disabled\" value=\"{}\" /><script>\n(function(){{if(window===window.parent){{document.getElementById('_wp_unfiltered_html_comment_disabled').name='_wp_unfiltered_html_comment';}}}})();\n//# sourceURL=wp_comment_form_unfiltered_html_nonce\n</script>\n",
+                viewer.create_nonce(&format!("unfiltered-html-comment_{}", post.id))
+            );
+        }
+    }
     let comment_field = format!(
-        "<p class=\"comment-form-comment\"><label for=\"comment\">{}{}</label> <textarea id=\"comment\" name=\"comment\" cols=\"45\" rows=\"8\" maxlength=\"65525\" required></textarea></p>",
+        "<p class=\"comment-form-comment\"><label for=\"comment\">{}{}</label> <textarea id=\"comment\" name=\"comment\" cols=\"45\" rows=\"{}\" maxlength=\"65525\" required></textarea></p>",
         site.trx("Comment", "noun"),
-        format_args!(" {indicator}")
+        format_args!(" {indicator}"),
+        form.rows
     );
     let (commenter_author, commenter_email, commenter_url) = crate::commenter::current_commenter();
     let mut fields = vec![
@@ -247,10 +295,12 @@ pub async fn comment_form(site: &Site, post: &Post, request_uri: &str, block_the
         post.id
     );
     Ok(format!(
-        "\t<div id=\"respond\" class=\"comment-respond\">\n\t\t<h3 id=\"reply-title\" class=\"comment-reply-title\">{}{cancel}</h3><form action=\"{}\" method=\"post\" id=\"commentform\" class=\"comment-form\">{notes}{comment_field}{}{submit}</form>\t</div><!-- #respond -->\n\t",
-        site.tr("Leave a Reply"),
+        "\t<div id=\"respond\" class=\"comment-respond\">\n\t\t{}{}{cancel}{}<form action=\"{}\" method=\"post\" id=\"commentform\" class=\"comment-form\">{notes}{comment_field}{}{submit}{unfiltered}</form>\t</div><!-- #respond -->\n\t",
+        form.title_reply_before,
+        if form.title_reply.is_empty() { site.tr("Leave a Reply") } else { form.title_reply.clone() },
+        form.title_reply_after,
         esc_url(&site.site_url("/wp-comments-post.php")),
-        fields.join("\n") + "\n"
+        if viewer.is_some() { String::new() } else { fields.join("\n") + "\n" }
     ))
 }
 
@@ -265,8 +315,8 @@ pub async fn compat_comments_template(site: &Site, env: &crate::env::Env<'_>, po
     let mut out = String::from("\n<!-- You can start editing here. -->\n\n");
     if !comments.is_empty() {
         let title = format!("&#8220;{}&#8221;", the_title_for(site, post));
-        let count = post.comment_count;
-        let heading = if count == 1 {
+        let count = site.comments_number(post, env.query.viewer.as_ref());
+        let heading = if site.comments_number_is_one(post, env.query.viewer.as_ref()) {
             rustpress_core::i18n::sprintf(&site.tr("One response to %s"), &[&title])
         } else {
             rustpress_core::i18n::sprintf(&site.trn("%1$s response to %2$s", "%1$s responses to %2$s", count), &[&site.number_i18n(count.max(0) as u64), &title])
@@ -279,11 +329,11 @@ pub async fn compat_comments_template(site: &Site, env: &crate::env::Env<'_>, po
         out.push_str(&format!("\t<h3 id=\"comments\">\n\t\t{heading}\t</h3>\n\n{navigation}\n\t<ol class=\"commentlist\">\n\t"));
         out.push_str(&list_comments(site, env, post, &comments, &args).await?);
         out.push_str(&format!("\t</ol>\n\n{navigation}\n"));
-    } else if comments_open(post) {
+    } else if comments_open(site, env.query.viewer.as_ref(), post) {
         out.push_str("\n\t\t\t<!-- If comments are open, but there are no comments. -->\n\n\t\n");
     } else {
         out.push_str(&format!("\n\t\n\t\t<!-- If comments are closed. -->\n\t\t<p class=\"nocomments\">{}</p>\n\t", site.tr("Comments are closed.")));
     }
-    out.push_str(&comment_form(site, post, request_uri, block_theme).await?);
+    out.push_str(&comment_form(site, env.query.viewer.as_ref(), post, request_uri, block_theme).await?);
     Ok(out)
 }

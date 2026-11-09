@@ -4,7 +4,7 @@
 //! when the row is missing or outdated), so pages look the same before and after the plugin saw them.
 
 mod breadcrumbs;
-mod head;
+pub(crate) mod head;
 mod images;
 mod options;
 mod presentation;
@@ -154,7 +154,7 @@ impl Loaded {
         let presentation = presentation::present(&page).await?;
         let title = head::title(&page, &presentation).await?;
         let html = head::present(&page, &presentation, ctx.title_tag).await?;
-        Ok(Head { robots: Some(head::wp_robots(robots, &presentation.robots)), title: Some(title), html, removed: vec!["rel_canonical", "_wp_render_title_tag"] })
+        Ok(Head { robots: Some(head::wp_robots(robots, &presentation.robots)), title: Some(title), html, removed: vec!["rel_canonical", "_wp_render_title_tag"], ..Head::default() })
     }
 }
 

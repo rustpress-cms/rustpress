@@ -86,7 +86,10 @@ fn randomised(text: &str) -> String {
 /// The credit line of Twenty Seventeen names RustPress instead of WordPress on purpose.
 fn unbrand(html: &str) -> String {
     static CREDIT: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| regex::Regex::new(r#"(?s)<a href="[^"]*" class="imprint">.*?</a>"#).unwrap());
-    CREDIT.replace_all(html, "<a class=\"imprint\"></a>").into_owned()
+    // Twenty Twenty-One: `Proudly powered by <a href="https://wordpress.org/">WordPress</a>.`
+    static POWERED: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| regex::Regex::new(r#"(?s)(<div class="powered-by">).*?(</div>)"#).unwrap());
+    let html = CREDIT.replace_all(html, "<a class=\"imprint\"></a>");
+    POWERED.replace_all(&html, "$1$2").into_owned()
 }
 
 fn show(value: &Option<String>) -> String {

@@ -246,6 +246,7 @@ pub async fn front_toolbar(loaded: &std::sync::Arc<Loaded>, user: &std::sync::Ar
             context.site_editor_url = Some(format!("{}?postType=wp_template&postId={}//{}&canvas=edit", admin("site-editor.php"), site.settings.stylesheet, info.template_slug));
         }
         context.classic_theme = !rustpress_blocks::ThemeAccess::is_block_theme(&loaded.theme);
+        context.custom_background = rustpress_theme::classic::is_twentyone(&loaded.theme);
         let home = site.home_url("");
         let scheme = home.split_once("://").map_or("http", |(scheme, _)| scheme);
         let host = info.query.http_host.as_deref().unwrap_or_else(|| home.split_once("://").map_or("", |(_, rest)| rest.split('/').next().unwrap_or_default()));
@@ -254,8 +255,9 @@ pub async fn front_toolbar(loaded: &std::sync::Arc<Loaded>, user: &std::sync::Ar
         context.customize_changeset = changeset.clone();
         let tr = |s: &str| site.tr(s);
         context.edit = match &info.query.queried {
-            // `get_edit_post_link()` is empty in the preview of the Customizer.
-            rustpress_core::Queried::Post(post) if info.query.flags.is_singular() && changeset.is_none() => {
+            // `get_edit_post_link()` is empty in the preview of the Customizer. Any queried post counts, also the page
+            // for posts (`wp_admin_bar_edit_menu()` does not ask for `is_singular()`).
+            rustpress_core::Queried::Post(post) if changeset.is_none() => {
                 let can = user.can(match post.post_type.as_str() {
                     "page" => if post.post_author == user.id { "edit_pages" } else { "edit_others_pages" },
                     _ => if post.post_author == user.id { "edit_posts" } else { "edit_others_posts" },
@@ -469,6 +471,7 @@ pub async fn admin_page(loaded: &Loaded, config: &Config, writer: Option<&rustpr
         theme: &loaded.theme,
         registry: &loaded.registry,
         mailer: parts.mailer.clone(),
+        plugin_mailer: loaded.mail.clone(),
     };
     let content_type = headers.get(header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).unwrap_or_default();
     let (form, files) = if !method_post {
@@ -509,6 +512,53 @@ pub async fn admin_page(loaded: &Loaded, config: &Config, writer: Option<&rustpr
     response
 }
 
+/// `admin-ajax.php` on a read-only site, where the administration is closed: only the plugins' actions for visitors
+/// (`wp_ajax_nopriv_{$action}`, such as sending a WPForms form); everything else is `wp_die( '0', 400 )`.
+#[allow(clippy::too_many_arguments)]
+pub async fn visitor_ajax(loaded: &Loaded, config: &Config, method_post: bool, request_uri: &str, query: &str, body: &[u8], headers: &HeaderMap, client: &crate::client::Client) -> Response<Body> {
+    let content_type = headers.get(header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).unwrap_or_default();
+    let (form, files) = if !method_post {
+        (Vec::new(), Vec::new())
+    } else if let Some(boundary) = rustpress_admin::multipart::boundary(content_type) {
+        rustpress_admin::multipart::parse(&boundary, body)
+    } else {
+        (pairs_of(&String::from_utf8_lossy(body)), Vec::new())
+    };
+    let header = |name: header::HeaderName| headers.get(name).and_then(|v| v.to_str().ok()).map(str::to_owned);
+    let request = rustpress_admin::screens::AdminRequest {
+        post: method_post,
+        file: "admin-ajax.php".to_owned(),
+        query: pairs_of(query),
+        form,
+        files,
+        cookies: cookies_of(headers),
+        request_uri: request_uri.to_owned(),
+        remote_addr: client.ip.clone(),
+        user_agent: header(header::USER_AGENT),
+        referer: header(header::REFERER),
+        host: header(header::HOST),
+    };
+    let action = request.request("action").unwrap_or_default().to_owned();
+    let includes = config.wp_root.join("wp-includes");
+    let version = wp_version(&includes);
+    let auth = Auth::new(loaded.salts.clone(), &loaded.site.settings.siteurl);
+    let visitor = rustpress_admin::screens::ajax::Visitor { site: &loaded.site, writer: None, auth: &auth, now: now(), wp_version: &version, wp_root: &config.wp_root, mailer: loaded.mail.as_deref() };
+    let origin = match request.host.as_deref().filter(|h| !h.is_empty()) {
+        Some(host) => format!("{}://{host}", if client.https { "https" } else { "http" }),
+        None => loaded.site.settings.siteurl.split('/').take(3).collect::<Vec<_>>().join("/"),
+    };
+    let answer = rustpress_admin::screens::ajax::plugin_nopriv(&visitor, &request, &action, origin).await;
+    let reply = rustpress_core::i18n::in_admin(async { answer.unwrap_or_else(|| rustpress_admin::screens::ajax::text(400, "0")) }).await;
+    let mut response = Response::new(Body::from(reply.body));
+    *response.status_mut() = StatusCode::from_u16(reply.status).unwrap_or(StatusCode::OK);
+    for (name, value) in &reply.headers {
+        if let (Ok(name), Ok(value)) = (header::HeaderName::from_bytes(name.as_bytes()), HeaderValue::from_str(value)) {
+            response.headers_mut().append(name, value);
+        }
+    }
+    response
+}
+
 /// What the preview of the Customizer prints at the end of the page, for the user of the request.
 #[allow(clippy::too_many_arguments)]
 pub async fn customize_preview_exports(
@@ -539,6 +589,7 @@ pub async fn customize_preview_exports(
         theme: &loaded.theme,
         registry: &loaded.registry,
         mailer: parts.mailer.clone(),
+        plugin_mailer: loaded.mail.clone(),
     };
     let request_uri = if result.raw_query.is_empty() { result.url_path.clone() } else { format!("{}?{}", result.url_path, result.raw_query) };
     let request = rustpress_admin::screens::AdminRequest {

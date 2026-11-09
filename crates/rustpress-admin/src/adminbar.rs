@@ -71,6 +71,15 @@ fn avatar(site: &Site, email: &str, size: u64) -> String {
 }
 
 /// The toolbar for the administration area.
+/// Whether a plugin turns comments off everywhere for the user ([rustpress_core::native::ActivePlugin::comments_off_everywhere]).
+fn comments_off_everywhere(site: &Site, user: &CurrentUser) -> bool {
+    if site.plugins.is_empty() {
+        return false;
+    }
+    let caps = user.clone();
+    site.plugins.comments_off_everywhere(Some(&rustpress_core::Viewer::new(user.id, move |c| caps.can(c)).with_roles(&user.roles)))
+}
+
 pub fn render_admin(site: &Site, user: &CurrentUser, ctx: &BarContext) -> String {
     let tr = |s: &str| site.tr(s);
     let admin = |path: &str| esc_url(&site.site_url(&format!("wp-admin/{path}")));
@@ -139,8 +148,8 @@ pub fn render_admin(site: &Site, user: &CurrentUser, ctx: &BarContext) -> String
         ));
     }
 
-    // Comments
-    if user.can("edit_posts") {
+    // Comments; a plugin that turns comments off everywhere removes `wp_admin_bar_comments_menu()`.
+    if user.can("edit_posts") && !comments_off_everywhere(site, user) {
         let text = rustpress_core::i18n::sprintf(&site.trn("%s Comment in moderation", "%s Comments in moderation", ctx.pending_comments as i64), &[&number(ctx.pending_comments)]);
         top.push(item(
             "comments",
@@ -231,6 +240,8 @@ pub struct FrontContext {
     pub site_icon: Option<(String, String)>,
     /// `wp_is_block_theme()` is false: widgets and menus in the site menu, the Customizer.
     pub classic_theme: bool,
+    /// `current_theme_supports( 'custom-background' )` of a classic theme (Twenty Twenty-One).
+    pub custom_background: bool,
     /// The address of the page, for the Customizer to come back to.
     pub current_url: String,
     /// `changeset_uuid()` when the page is in the preview of the Customizer.
@@ -287,8 +298,12 @@ pub fn render_front(site: &Site, user: &CurrentUser, ctx: &FrontContext) -> Stri
         if ctx.classic_theme && user.can("edit_theme_options") {
             appearance.push(item("widgets", "", &link(&admin("widgets.php"), &tr("Widgets"), false)));
             appearance.push(item("menus", "", &link(&admin("nav-menus.php"), &tr("Menus"), false)));
-            // `current_theme_supports( 'custom-header' )`.
-            appearance.push(item("header", "hide-if-customize", &link(&admin("themes.php?page=custom-header"), &tr("Header"), false)));
+            if ctx.custom_background {
+                appearance.push(item("background", "hide-if-customize", &link(&admin("themes.php?page=custom-background"), &tr("Background"), false)));
+            } else {
+                // `current_theme_supports( 'custom-header' )`: Twenty Seventeen.
+                appearance.push(item("header", "hide-if-customize", &link(&admin("themes.php?page=custom-header"), &tr("Header"), false)));
+            }
         }
         groups.push_str(&submenu(&site_title, "appearance", "ab-submenu", &appearance));
     }
@@ -326,8 +341,8 @@ pub fn render_front(site: &Site, user: &CurrentUser, ctx: &FrontContext) -> Stri
         ));
     }
 
-    // Comments
-    if user.can("edit_posts") {
+    // Comments; a plugin that turns comments off everywhere removes `wp_admin_bar_comments_menu()`.
+    if user.can("edit_posts") && !comments_off_everywhere(site, user) {
         let text = rustpress_core::i18n::sprintf(&site.trn("%s Comment in moderation", "%s Comments in moderation", ctx.pending_comments as i64), &[&number(ctx.pending_comments)]);
         top.push(item(
             "comments",

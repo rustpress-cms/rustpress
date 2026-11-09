@@ -164,6 +164,10 @@ pub async fn body_classes(theme: &Theme, site: &Site, q: &QueryResult) -> Result
             c.push("no-customize-support".into());
         }
     }
+    // `custom-background` for the ported themes that support it with a default color.
+    if crate::classic::is_twentyone(theme) && crate::classic::twentyone::has_custom_background(&crate::classic::menu::theme_mod(site, &theme.stylesheet)) {
+        c.push("custom-background".into());
+    }
     if rustpress_blocks::images::custom_logo_id(site).await? != 0 {
         c.push("wp-custom-logo".into());
     }
@@ -200,6 +204,8 @@ pub async fn body_classes(theme: &Theme, site: &Site, q: &QueryResult) -> Result
     if site.settings.stylesheet != site.settings.template {
         c.push(format!("wp-child-theme-{}", html_class(&site.settings.stylesheet)));
     }
+    // The `body_class` filters of the plugins (`esc_attr()` comes later).
+    c.extend(site.plugins.body_class(site, q).await?);
     let mut seen = Vec::new();
     c.retain(|x| {
         if seen.contains(x) {
@@ -266,6 +272,8 @@ pub async fn document_title(site: &Site, q: &QueryResult) -> Result<String> {
     if site_name_last && !(f.is_front_page && parts.is_empty()) {
         parts.push(s.blogname.clone());
     }
+    // `array_filter()`: an empty part (a post without a title) is left out.
+    parts.retain(|part| !part.is_empty());
     let title = parts.join(" - ");
     let title = site.texturize(&title);
     Ok(capital_p_dangit(&title, true))
@@ -936,10 +944,12 @@ pub async fn render_document_with(theme: &Theme, site: &Site, query: &QueryResul
     }
     // Plugins enqueue on `wp_enqueue_scripts` before the theme does: their stylesheets of priority 10 come before the
     // theme's, later ones after it.
-    let plugin_assets = site.plugins.assets_with(site, Some(&state.plugins));
+    let plugin_assets = site.plugins.assets_for(site, Some(query), Some(&state.plugins)).await;
     let printed: &[&str] = if toolbar_on { &["dashicons", "admin-bar"] } else { &[] };
     let mut style_printer = crate::plugin_assets::StylePrinter::new(wp_root, site).with_printed(printed);
-    let (early_styles, late_styles): (Vec<_>, Vec<_>) = plugin_assets.styles.iter().cloned().partition(|a| a.priority <= 10);
+    // Stylesheets enqueued in the footer are printed by `print_late_styles()` before the footer scripts.
+    let (footer_styles, head_styles): (Vec<_>, Vec<_>) = plugin_assets.styles.iter().cloned().partition(|a| a.in_footer);
+    let (early_styles, late_styles): (Vec<_>, Vec<_>) = head_styles.into_iter().partition(|a| a.priority <= 10);
     styles.push_str(&style_printer.links(&early_styles));
     // The theme's style.css is only printed when its functions.php enqueues it.
     let theme_css = theme.theme_style_handle().and_then(|handle| ["style.min.css", "style.css"].iter().find_map(|f| read(&theme.template_dir().join(f)).map(|c| (handle, *f, c))));
@@ -985,11 +995,12 @@ pub async fn render_document_with(theme: &Theme, site: &Site, query: &QueryResul
     {
         looped.push(id);
     }
-    let plugin_footer = site.plugins.wp_footer(site, &looped).await?;
+    let plugin_footer = site.plugins.wp_footer(site, query, &looped).await?;
     let lightbox = if state.lightbox_overlay { rustpress_blocks::dynamic::lightbox::overlay(site, theme) } else { String::new() };
     let playlist_templates = if state.playlist || preview.is_some() { rustpress_blocks::shortcodes::playlist_templates(site) } else { String::new() };
     let nav_menus = preview.filter(|p| p.menus_previewed()).map(crate::customize_preview::nav_menus_exports).unwrap_or_default();
-    let mut footer_scripts = format!("{playlist_templates}{nav_menus}{speculation}{}{plugin_footer}{module_scripts}{}{lightbox}", rustpress_blocks::duotone::footer_svgs(&state.duotone), state.interactivity.data_script().unwrap_or_default());
+    let mut footer_scripts = format!("{playlist_templates}{nav_menus}{speculation}{}{plugin_footer}{}{module_scripts}{}{}{lightbox}", rustpress_blocks::duotone::footer_svgs(&state.duotone), plugin_head.footer, state.interactivity.data_script().unwrap_or_default(), plugin_head.footer_on_wp);
+    footer_scripts.push_str(&style_printer.links(&footer_styles));
     // MediaElement: jQuery in the head, the player scripts in the footer. The scripts plugins enqueue for the head
     // follow, after their dependencies.
     let mut printer = crate::plugin_assets::ScriptPrinter::new(&includes_url, "3.7.1", "3.4.1").with_packages(&theme.wp_root, site);
@@ -1035,13 +1046,16 @@ pub async fn render_document_with(theme: &Theme, site: &Site, query: &QueryResul
         printer.mark_printed(&["mediaelement", "mediaelement-core", "mediaelement-migrate"]);
         footer_scripts.push_str(&printer.core("wp-playlist"));
     }
-    if state.scripts.iter().any(|s| s == "comment-reply") && preview.is_none() {
+    // A plugin may deregister `comment-reply` on a singular page ([rustpress_core::native::ActivePlugin::closes_singular_comments]).
+    let reply_deregistered = query.flags.is_singular() && query.queried_post().is_some_and(|post| site.plugins.closes_singular_comments(post, query.viewer.as_ref()));
+    if state.scripts.iter().any(|s| s == "comment-reply") && preview.is_none() && !reply_deregistered {
         footer_scripts.push_str(&format!("<script async data-wp-strategy=\"async\" fetchpriority=\"low\" id=\"comment-reply-js\" src=\"{includes_url}/js/comment-reply.min.js?ver={version}\"></script>\n"));
     }
     footer_scripts.push_str(&printer.scripts(&plugin_assets.scripts, true));
     footer_scripts.push_str(&emoji_detection_script(site, wp_root, &version));
     // `wp_print_footer_scripts` after `_wp_footer_scripts()`.
     footer_scripts.push_str(&state.plugins.footer_scripts.concat());
+    footer_scripts.push_str(&site.plugins.print_footer_scripts(site, query));
     if preview.is_some() {
         footer_scripts.push_str(crate::customize_preview::FOOTER_EXPORTS);
     }
@@ -1069,23 +1083,31 @@ pub async fn render_document_with(theme: &Theme, site: &Site, query: &QueryResul
         site_icon = "<link rel=\"icon\" href=\"/favicon.ico\" sizes=\"32x32\" />\n".to_owned();
     }
     let head = format!(
-        "<meta charset=\"UTF-8\" />\n\t<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />\n{robots}<title>{}</title>\n{}{}{styles}{}{importmap}{preloads}{loading}{fonts}{site_icon}",
+        // Plugins' `wp_head` actions of priority 0 run before `_block_template_viewport_meta_tag()`, which is hooked
+        // when the template is loaded; the actions plugins hook on `init` at priority 10 come after the script modules.
+        "<meta charset=\"UTF-8\" />\n\t{}<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />\n{robots}<title>{}</title>\n{}{}{}{styles}{}{importmap}{preloads}{}{}{loading}{fonts}{site_icon}",
+        format!("{}{}", plugin_head.early, plugin_head.first),
         esc_html(&title),
+        rustpress_core::native::resource_hints(site, &plugin_assets),
         crate::head::feed_links(site, query).await?,
         oembed_links(site, query).await?,
         discovery_links(site, query, &version, state.cpage_override, !plugin_head.removed.contains(&"rel_canonical"), &locale_stylesheet(theme, site)).await?
             // A ported block theme's `wp_head` actions of priority 10 come after core's (`rel_canonical`, the shortlink).
+            + &plugin_head.late
             + &theme.block_theme_port().map(|port| port.wp_head(query)).unwrap_or_default(),
+        plugin_head.late_init,
+        plugin_head.on_wp,
     );
     let bar = match (&extras.toolbar, toolbar_on) {
         (Some(toolbar), true) => toolbar(&ToolbarInfo { template_slug: &rendered.template_slug, query, site }),
         _ => String::new(),
     };
     let html = format!(
-        "<!DOCTYPE html>\n<html {}lang=\"{}\">\n<head>\n\t{head}</head>\n\n<body class=\"{}\">\n{bar}\n{}\n{footer_scripts}</body>\n</html>\n",
+        "<!DOCTYPE html>\n<html {}lang=\"{}\">\n<head>\n\t{head}</head>\n\n<body class=\"{}\">\n{bar}{}\n{}\n{footer_scripts}</body>\n</html>\n",
         if rtl { "dir=\"rtl\" " } else { "" },
         esc_attr(&lang),
         esc_attr(&classes.join(" ")),
+        plugin_head.body_open,
         rendered.html
     );
     tracing::debug!(body_ms = body_done.as_secs_f64() * 1000.0, total_ms = started.elapsed().as_secs_f64() * 1000.0, path = query.url_path.as_str(), "document rendered");

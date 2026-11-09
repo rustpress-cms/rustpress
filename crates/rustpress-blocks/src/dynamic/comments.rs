@@ -31,8 +31,14 @@ fn align_and_link_classes(bc: &BlockCtx<'_>) -> String {
     classes.join(" ")
 }
 
-fn comments_open(post: &Post) -> bool {
-    post.comment_status == "open"
+/// `comments_open()`.
+fn comments_open(bc: &BlockCtx<'_>, post: &Post) -> bool {
+    bc.env.site.comments_open(post, bc.env.query.viewer.as_ref())
+}
+
+/// `get_comments_number()`.
+fn comments_number(bc: &BlockCtx<'_>, post: &Post) -> i64 {
+    bc.env.site.comments_number(post, bc.env.query.viewer.as_ref())
 }
 
 async fn current_comment(bc: &BlockCtx<'_>) -> Result<Option<Comment>> {
@@ -70,7 +76,7 @@ pub(super) async fn comments(bc: &BlockCtx<'_>) -> Result<String> {
     if bc.context.post_id().is_none() {
         return Ok(String::new());
     }
-    if !comments_open(&post) && post.comment_count == 0 {
+    if !comments_open(bc, &post) && comments_number(bc, &post) == 0 {
         return Ok(String::new());
     }
     if bc.attr_bool("legacy") {
@@ -82,7 +88,7 @@ pub(super) async fn comments(bc: &BlockCtx<'_>) -> Result<String> {
 /// The legacy comments block (`core/post-comments`, or `core/comments` with `legacy`): the classic comments template.
 pub(super) async fn legacy(bc: &BlockCtx<'_>) -> Result<String> {
     let Some(post) = global_post(bc).await? else { return Ok(String::new()) };
-    if bc.context.post_id().is_none() || (!comments_open(&post) && post.comment_count == 0) {
+    if bc.context.post_id().is_none() || (!comments_open(bc, &post) && comments_number(bc, &post) == 0) {
         return Ok(String::new());
     }
     let q = bc.env.query;
@@ -112,8 +118,10 @@ pub(super) async fn comments_title(bc: &BlockCtx<'_>) -> Result<String> {
     if post_password_required(&post) {
         return Ok(String::new());
     }
-    let count = post.comment_count;
-    if count == 0 {
+    let count = comments_number(bc, &post);
+    // `'0' === $comments_count` and `'1' === $comments_count`: a plugin's number is an int and never equals.
+    let one = bc.env.site.comments_number_is_one(&post, bc.env.query.viewer.as_ref());
+    if count == 0 && bc.env.site.plugins.comments_off(&post, bc.env.query.viewer.as_ref()).and_then(|off| off.count).is_none() {
         return Ok(String::new());
     }
     let show_title = bc.attr_bool("showPostTitle");
@@ -124,19 +132,19 @@ pub(super) async fn comments_title(bc: &BlockCtx<'_>) -> Result<String> {
     let quoted = |text: String| rustpress_core::i18n::sprintf(&text, &[&title]);
     let heading = if show_count {
         if show_title {
-            if count == 1 {
+            if one {
                 quoted(site.tr("One response to &#8220;%s&#8221;"))
             } else {
                 rustpress_core::i18n::sprintf(&site.trn("%1$s response to &#8220;%2$s&#8221;", "%1$s responses to &#8220;%2$s&#8221;", count), &[&number, &title])
             }
-        } else if count == 1 {
+        } else if one {
             site.tr("One response")
         } else {
             rustpress_core::i18n::sprintf(&site.trn("%s response", "%s responses", count), &[&number])
         }
     } else if show_title {
-        if count == 1 { quoted(site.tr("Response to &#8220;%s&#8221;")) } else { quoted(site.tr("Responses to &#8220;%s&#8221;")) }
-    } else if count == 1 {
+        if one { quoted(site.tr("Response to &#8220;%s&#8221;")) } else { quoted(site.tr("Responses to &#8220;%s&#8221;")) }
+    } else if one {
         site.tr("Response")
     } else {
         site.tr("Responses")
@@ -325,7 +333,7 @@ pub(super) async fn comment_reply_link(bc: &BlockCtx<'_>) -> Result<String> {
         return Ok(String::new());
     }
     let Some(post) = bc.env.site.db.post(comment.comment_post_id).await? else { return Ok(String::new()) };
-    if !comments_open(&post) {
+    if !comments_open(bc, &post) {
         return Ok(String::new());
     }
     let permalink = if crate::comment_pages::paginated(bc.env) {
@@ -534,7 +542,7 @@ pub(super) async fn post_comments_form(bc: &BlockCtx<'_>) -> Result<String> {
         classes.push("has-link-color".to_owned());
     }
     let wrapper = bc.wrapper_attributes(&[("class", classes.join(" "))]);
-    if !comments_open(&post) {
+    if !comments_open(bc, &post) {
         return Ok(String::new());
     }
     let site = bc.env.site;

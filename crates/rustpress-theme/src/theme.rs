@@ -90,9 +90,17 @@ impl Theme {
             return Err(Error::ThemeMissing(template));
         }
 
+        // Translations: WordPress itself and the text domains of the active theme(s).
+        let mut domains = vec![(template.clone(), template_dir.clone())];
+        if stylesheet != template {
+            domains.push((stylesheet.clone(), stylesheet_dir.clone()));
+        }
+        site.init_i18n(&wp_root, &domains);
+
         let user = load_user_styles(site, &stylesheet).await?;
         let core = read_file(&wp_root.join("wp-includes").join("theme.json")).unwrap_or_default();
-        let parent = read_file(&template_dir.join("theme.json"));
+        // A classic theme without `theme.json` gives its theme supports (`WP_Theme_JSON_Resolver::get_theme_data()`).
+        let parent = read_file(&template_dir.join("theme.json")).or_else(|| crate::classic::theme_supports_json(&template, &site.i18n()));
         let child = if stylesheet != template { read_file(&stylesheet_dir.join("theme.json")) } else { None };
         // Block style variations: every `styles/**.json` that names `blockTypes` (a child theme's file wins by name).
         let partials = read_partials(&[stylesheet_dir.join("styles"), template_dir.join("styles")]);
@@ -142,12 +150,6 @@ impl Theme {
             block_stylesheets.extend(port.block_stylesheets(&template_dir));
         }
 
-        // Translations: WordPress itself and the text domains of the active theme(s).
-        let mut domains = vec![(template.clone(), template_dir.clone())];
-        if stylesheet != template {
-            domains.push((stylesheet.clone(), stylesheet_dir.clone()));
-        }
-        site.init_i18n(&wp_root, &domains);
         let blocks_dir = wp_root.join("wp-includes").join("blocks");
         let content_url = join_url(&site.settings.siteurl, "wp-content");
         let host = Host {
@@ -343,6 +345,16 @@ impl Theme {
         crate::block_themes::port(&self.template)
     }
 
+    /// The active theme is the port of Twenty Seventeen.
+    fn is_seventeen(&self) -> bool {
+        crate::classic::is_ported(self) && !crate::classic::is_twentyone(self)
+    }
+
+    /// The active theme is the port of Twenty Twenty-One.
+    fn is_twentyone(&self) -> bool {
+        crate::classic::is_ported(self) && crate::classic::is_twentyone(self)
+    }
+
     pub fn stylesheet_dir(&self) -> &Path {
         &self.stylesheet_dir
     }
@@ -357,6 +369,21 @@ impl ThemeAccess for Theme {
         !crate::classic::is_ported(self)
     }
 
+    fn filter_post_class(&self, classes: &mut Vec<String>) {
+        // `twenty_twenty_one_post_classes()`.
+        if self.is_twentyone() {
+            classes.push("entry".into());
+        }
+    }
+
+    fn filter_calendar(&self, calendar: String, rtl: bool) -> String {
+        if self.is_twentyone() { crate::classic::twentyone::calendar_nav_arrows(calendar, rtl) } else { calendar }
+    }
+
+    fn has_theme_json(&self) -> bool {
+        self.is_block_theme() || rustpress_core::files::is_file(&self.stylesheet_dir.join("theme.json")) || rustpress_core::files::is_file(&self.template_dir.join("theme.json"))
+    }
+
     fn image_size(&self, name: &str) -> Option<(u64, u64)> {
         crate::classic::image_size(&self.template, name)
     }
@@ -366,15 +393,32 @@ impl ThemeAccess for Theme {
     }
 
     fn filter_calculated_sizes(&self, site: &Site, query: &rustpress_core::QueryResult, sizes: Option<String>, width: u64) -> Option<String> {
-        if crate::classic::is_ported(self) { crate::classic::seventeen::calculated_sizes(site, query, &self.stylesheet, sizes, width) } else { sizes }
+        if self.is_seventeen() { crate::classic::seventeen::calculated_sizes(site, query, &self.stylesheet, sizes, width) } else { sizes }
     }
 
     fn excerpt_more(&self) -> Option<String> {
-        crate::classic::is_ported(self).then(|| crate::classic::seventeen::excerpt_more_template(&self.host.i18n))
+        if self.is_twentyone() {
+            return Some(crate::classic::twentyone::excerpt_more_template(&self.host.i18n));
+        }
+        self.is_seventeen().then(|| crate::classic::seventeen::excerpt_more_template(&self.host.i18n))
+    }
+
+    fn content_more_link(&self, permalink: &str, post_id: u64, title: &str) -> Option<String> {
+        self.is_twentyone().then(|| crate::classic::twentyone::content_more_link(&self.host.i18n, permalink, post_id, title))
+    }
+
+    fn password_form(&self, site: &Site, post: &rustpress_db::Post) -> Option<String> {
+        self.is_twentyone().then(|| crate::classic::twentyone::password_form(site, post))
+    }
+
+    fn filter_attachment_attributes(&self, attrs: &mut Vec<(String, rustpress_blocks::images::AttrValue)>, full: Option<(u64, u64)>, requested: Option<(u64, u64)>) {
+        if self.is_twentyone() {
+            crate::classic::twentyone::attachment_image_attributes(attrs, full, requested);
+        }
     }
 
     fn filter_attachment_sizes(&self, site: &Site, query: &rustpress_core::QueryResult, _current: Option<&str>) -> Option<String> {
-        crate::classic::is_ported(self).then(|| crate::classic::seventeen::attachment_sizes_attr(site, query))
+        self.is_seventeen().then(|| crate::classic::seventeen::attachment_sizes_attr(site, query))
     }
 
     fn global_settings(&self) -> &Value {

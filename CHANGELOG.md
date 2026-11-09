@@ -2,6 +2,51 @@
 
 All notable changes to RustPress. Each release names the WordPress release it follows.
 
+## Unreleased
+
+- Native plugin module **WPForms Lite** 2.0.4: forms of the shortcode and the block on the website, submitting with
+  validation, the honeypot and the AntiSpam token, confirmations (message, page, redirect), the smart tags, and the
+  notification e-mails in the plugin's templates Classic, Compact and Plain text. Forms can also be sent on read-only
+  sites: `admin-ajax.php` answers the plugins' visitor actions without write access.
+- **Twenty Twenty-One** 2.9 rebuilt natively, the second classic theme: all templates, menus with sub-menu toggles,
+  descriptions and social icons, the footer widgets, logo, colors and the dark mode switch; on the way the shared parts
+  of classic themes got `wp_restore_group_inner_container()`/`wp_restore_image_outer_container()`, the core block styles
+  in registration order, the archive titles of post types and taxonomies and the signed-in comment form.
+- Native plugin module **Complianz – GDPR/CCPA Cookie Consent** 7.5.6, stage 1 (the website): the cookie banner and
+  the manage consent button for every region and consent type, the settings of `complianz.min.js`, the statistics
+  scripts (Google Analytics, Tag Manager with the head option, Matomo, Clicky, Clarity and the others the plugin
+  configures), the scripts and styles of the services, the cookie blocker with its placeholders, the REST routes
+  `complianz/v1` the website calls, and the shortcodes `[cmplz-manage-consent]`, `[cmplz-revoke-link]` and
+  `[cmplz-accept-link]`. The legal documents are stage 2. New hooks for plugins: `wp_footer` and
+  `wp_print_footer_scripts` with the query, `body_class`, the whole page before it is sent (`template_output`),
+  `wp_head` at priority 0; plugin assets can be enqueued asynchronously.
+- Inline scripts before and after a script lose their leading line breaks, as in `WP_Scripts::get_inline_script_data()`.
+- Third-party block themes: Frost and Ollie 1.6.6 run, with Ollie's `functions.php` ported; block presets,
+  `gmdate()` in patterns and the query title ([#48](https://github.com/rustpress-cms/rustpress/pull/48), [#49](https://github.com/rustpress-cms/rustpress/pull/49)).
+- **Classic Editor** 1.7.0 as a native module: the classic edit screen with its settings and the choice per user
+  and post ([#57](https://github.com/rustpress-cms/rustpress/pull/57)).
+- Classic themes in wp-admin: `nav-menus.php`, `widgets.php` with writing widgets and `batch/v1`, the header screen,
+  the Customizer and its preview; media widgets on the website and in REST; the theme's image sizes in uploads
+  ([#59](https://github.com/rustpress-cms/rustpress/pull/59), [#60](https://github.com/rustpress-cms/rustpress/pull/60), [#67](https://github.com/rustpress-cms/rustpress/pull/67) to [#71](https://github.com/rustpress-cms/rustpress/pull/71)).
+- The administration in the language of the site: texts, templates, JS translations, the dashboard and the file
+  editors ([#61](https://github.com/rustpress-cms/rustpress/pull/61) to [#63](https://github.com/rustpress-cms/rustpress/pull/63), [#65](https://github.com/rustpress-cms/rustpress/pull/65), [#66](https://github.com/rustpress-cms/rustpress/pull/66)); updates in the list of plugins ([#64](https://github.com/rustpress-cms/rustpress/pull/64)).
+- Blocks and media of WordPress 7.1: block supports (visibility, states, viewports, custom CSS), the lightbox,
+  dynamic galleries, playlists and `[playlist]`, `core/navigation-submenu`, embeds, calendar weeks
+  ([#51](https://github.com/rustpress-cms/rustpress/pull/51) to [#53](https://github.com/rustpress-cms/rustpress/pull/53), [#55](https://github.com/rustpress-cms/rustpress/pull/55)); `media-upload.php` and `sanitize_file_name()` ([#58](https://github.com/rustpress-cms/rustpress/pull/58)).
+- Twenty Seventeen: post formats, front page panels, colors, the social menu and signed-in viewers ([#54](https://github.com/rustpress-cms/rustpress/pull/54)).
+- Comment feeds of archives and searches, password rehash on sign-in, REST `_method` ([#50](https://github.com/rustpress-cms/rustpress/pull/50)).
+- **Site Kit by Google** 1.191.0 as a native module for the website: the Analytics tag with consent mode and the
+  opt-out for signed-in users, the site verification meta tags and file, and the generator tag.
+- **WPCode Lite** 2.4.1 as a native module for the website: the global header, body and footer scripts, the
+  site-wide snippets (HTML, text, JavaScript, CSS) with their conditional logic and the `[wpcode]` shortcode.
+  `wp_body_open` is new for plugins.
+- **Disable Comments** 2.9.1 as a native module for the website and the REST API: comments and pings off
+  everywhere, per post type or by conditional rule (terms, page template, roles, auto-close), the existing comments
+  kept or hidden, allowed comment types, the comment feeds and REST routes refused. Twenty Seventeen no longer prints
+  an extra line break before "Comments are closed.".
+- `rustpress check` no longer counts backup, migration and translation plugins as missing, and reports security
+  and admin-only plugins as a note that says what is lost instead of "does not run".
+
 ## 0.2.0 (2026-11-05)
 
 Follows WordPress 7.1.4.

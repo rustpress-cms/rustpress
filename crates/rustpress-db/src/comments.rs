@@ -39,6 +39,21 @@ impl Db {
 
     /// A single comment by ID, whatever its status.
     /// A comment in any status.
+    /// The approved comments of the types `types` per post (`get_comments( [ 'type__in' => $types, 'status' =>
+    /// 'approve', 'count' => true ] )` for every post at once).
+    pub async fn approved_comment_counts_of_types(&self, types: &[String]) -> Result<Vec<(u64, u64)>> {
+        if types.is_empty() {
+            return Ok(Vec::new());
+        }
+        let marks = vec!["?"; types.len()].join(",");
+        let sql = format!("SELECT comment_post_ID, COUNT(*) FROM {} WHERE comment_approved = '1' AND comment_type IN ({marks}) GROUP BY comment_post_ID", self.prefix.table("comments"));
+        let mut query = sqlx::query_as::<_, (u64, i64)>(AssertSqlSafe(sql));
+        for kind in types {
+            query = query.bind(kind);
+        }
+        Ok(query.fetch_all(&self.pool).await?.into_iter().map(|(id, n)| (id, n.max(0) as u64)).collect())
+    }
+
     pub async fn comment_any(&self, id: u64) -> Result<Option<Comment>> {
         if let Some(primed) = crate::primed::primed_comment(id) {
             return Ok(primed);

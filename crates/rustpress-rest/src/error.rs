@@ -98,13 +98,15 @@ pub struct RestError {
     param: Option<Box<ParamError>>,
     /// The error comes from the endpoint itself, after its permission check passed.
     after_permission: bool,
+    /// An answer of `rest_pre_dispatch`: no route ran, so no `Allow` header.
+    pre_dispatch: bool,
     /// `rest_missing_callback_param`: the parameters that were not sent.
     missing: Vec<String>,
 }
 
 impl RestError {
     pub fn new(code: &str, message: impl Into<Msg>, status: u16) -> Self {
-        Self { code: code.to_owned(), message: message.into(), status, param: None, after_permission: false, missing: Vec::new() }
+        Self { code: code.to_owned(), message: message.into(), status, param: None, after_permission: false, pre_dispatch: false, missing: Vec::new() }
     }
 
     /// `rest_missing_callback_param`.
@@ -130,7 +132,7 @@ impl RestError {
     /// validating parameters or from the endpoint itself. WordPress then still sends `Allow: GET`
     /// (`rest_send_allow_header()`); errors of the permission check and unknown routes have none.
     pub fn passed_permission_check(&self) -> bool {
-        self.after_permission
+        !self.pre_dispatch && (self.after_permission
             || !matches!(
             self.code.as_str(),
             "rest_no_route"
@@ -161,7 +163,13 @@ impl RestError {
                 | "rest_cannot_read_global_styles"
                 | "rest_block_directory_cannot_view"
                 | "rest_pattern_directory_cannot_view"
-        )
+        ))
+    }
+
+    /// Marks an answer of `rest_pre_dispatch` (no `Allow` header).
+    pub fn before_dispatch(mut self) -> Self {
+        self.pre_dispatch = true;
+        self
     }
 
     /// Marks an error that the endpoint callback returned (WordPress then still sends `Allow`).

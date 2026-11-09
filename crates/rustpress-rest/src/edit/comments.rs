@@ -314,7 +314,7 @@ impl Rest<'_> {
             if !self.check_read_post_permission(&post, params, true, false).await {
                 bail!(self.forbidden("rest_cannot_read_post", "Sorry, you are not allowed to read the post for this comment."));
             }
-            if !rustpress_content::comment_rules::comments_open(self.site, &post, self.now()) {
+            if !rustpress_content::comment_rules::comments_open(self.site, &post, self.now(), self.blank.viewer.as_ref()) {
                 bail!(RestError::new("rest_comment_closed", "Sorry, comments are closed for this item.", 403));
             }
         }

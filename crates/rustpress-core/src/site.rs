@@ -59,7 +59,7 @@ impl Site {
             site.types.infer_query_vars(&site.rewrite, &registrations);
             site.types.apply(&registrations, plain);
         }
-        site.plugins = crate::native::Plugins::load(&site, &plugins).await;
+        site.plugins = crate::native::Plugins::load(&site, &plugins, wp_root).await;
         Ok(site)
     }
 
@@ -111,8 +111,11 @@ impl Site {
         self.types.is_viewable(post_type, !self.rewrite.is_empty())
     }
 
-    /// `post_type_supports( $post_type, $feature )`.
+    /// `post_type_supports( $post_type, $feature )`, after the plugins' `remove_post_type_support()`.
     pub fn post_type_supports(&self, post_type: &str, feature: &str) -> bool {
+        if matches!(feature, "comments" | "trackbacks") && self.plugins.removes_post_type_support(post_type, feature) {
+            return false;
+        }
         match post_type {
             "post" => matches!(feature, "title" | "editor" | "author" | "thumbnail" | "excerpt" | "trackbacks" | "custom-fields" | "comments" | "revisions" | "post-formats"),
             "page" => matches!(feature, "title" | "editor" | "author" | "thumbnail" | "page-attributes" | "custom-fields" | "comments" | "revisions"),
@@ -121,6 +124,36 @@ impl Site {
             "wp_font_face" => false,
             "wp_block" => matches!(feature, "title" | "excerpt" | "editor" | "revisions" | "custom-fields"),
             other => self.types.any_post_type(other).is_none_or(|t| t.supports(feature)),
+        }
+    }
+
+    /// `comments_open( $post )` with the `comments_open` filters of the plugins.
+    pub fn comments_open(&self, post: &rustpress_db::Post, viewer: Option<&crate::Viewer>) -> bool {
+        post.comment_status == "open" && self.plugins.comments_off(post, viewer).is_none()
+    }
+
+    /// `pings_open( $post )` with the `pings_open` filters of the plugins.
+    pub fn pings_open(&self, post: &rustpress_db::Post, viewer: Option<&crate::Viewer>) -> bool {
+        post.ping_status == "open" && self.plugins.comments_off(post, viewer).is_none()
+    }
+
+    /// `get_comments_number( $post )`: the cached `comment_count` after the `get_comments_number` filters.
+    pub fn comments_number(&self, post: &rustpress_db::Post, viewer: Option<&crate::Viewer>) -> i64 {
+        self.plugins.comments_off(post, viewer).and_then(|off| off.count).unwrap_or(post.comment_count)
+    }
+
+    /// `'1' === get_comments_number( $post )`: only the cached column is a string; a plugin's number is an int.
+    pub fn comments_number_is_one(&self, post: &rustpress_db::Post, viewer: Option<&crate::Viewer>) -> bool {
+        match self.plugins.comments_off(post, viewer).and_then(|off| off.count) {
+            Some(_) => false,
+            None => post.comment_count == 1,
+        }
+    }
+
+    /// The `comments_array` filters of the plugins on the comments `comments_template()` shows.
+    pub fn filter_comments_array(&self, post: &rustpress_db::Post, viewer: Option<&crate::Viewer>, comments: &mut Vec<rustpress_db::Comment>) {
+        if let Some(types) = self.plugins.comments_off(post, viewer).and_then(|off| off.keep_types) {
+            comments.retain(|c| types.contains(&c.comment_type));
         }
     }
 

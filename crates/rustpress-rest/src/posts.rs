@@ -251,7 +251,7 @@ impl Rest<'_> {
     /// `post_type_supports()` for the type of a REST request.
     pub(crate) fn supports(&self, kind: Kind<'_>, feature: &str) -> bool {
         match kind {
-            Kind::Custom(info) => info.supports(feature),
+            Kind::Custom(info) => info.supports(feature) && !(matches!(feature, "comments" | "trackbacks") && self.site.plugins.removes_post_type_support(kind.name(), feature)),
             // The fixed schema of pages has an excerpt although pages do not support one.
             Kind::Page if feature == "excerpt" => true,
             _ => self.site.post_type_supports(kind.name(), feature),
