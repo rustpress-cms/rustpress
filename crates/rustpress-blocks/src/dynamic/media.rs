@@ -280,6 +280,10 @@ pub(super) fn file(bc: &BlockCtx<'_>) -> Result<String> {
 async fn custom_logo(bc: &BlockCtx<'_>, width: Option<u64>) -> Result<String> {
     let id = images::custom_logo_id(bc.env.site).await?;
     if id == 0 {
+        // The Customizer's preview keeps a place for the logo.
+        if bc.env.query.customize.is_some() {
+            return Ok(format!("<a href=\"{}\" class=\"custom-logo-link\" style=\"display:none;\"><img class=\"custom-logo\" alt=\"\" /></a>", esc_url(&bc.env.site.home_url("/"))));
+        }
         return Ok(String::new());
     }
     let env = bc.env;

@@ -253,7 +253,7 @@ impl Site {
         };
         let mut output = format!("User-agent: *\nDisallow: {admin_path}\nAllow: {admin_path}admin-ajax.php\n");
         if self.sitemaps_enabled() {
-            output.push_str(&format!("\nSitemap: {}\n", esc_url(&self.home_url("/wp-sitemap.xml"))));
+            output.push_str(&format!("\nSitemap: {}\n", esc_url(&self.sitemap_url_for("index", None, 1))));
         }
         self.plugins.robots_txt(self, output)
     }

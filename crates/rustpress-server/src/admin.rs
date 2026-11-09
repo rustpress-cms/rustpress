@@ -26,6 +26,7 @@ pub fn wp_version(includes: &Path) -> String {
 }
 
 /// Everything the administration area derives from the site once per snapshot.
+#[derive(Clone)]
 pub struct AdminParts {
     pub auth: Auth,
     pub roles: Roles,
@@ -217,9 +218,9 @@ pub async fn frontend_user(loaded: &Loaded, headers: &HeaderMap) -> Option<(rust
     Some((user, session.token))
 }
 
-/// The toolbar of the site for a signed-in user: a function of the page it is printed on.
-pub async fn front_toolbar(loaded: &std::sync::Arc<Loaded>, user: &std::sync::Arc<rustpress_auth::CurrentUser>, token: &str, customize: Option<&crate::customize::Request>) -> Option<rustpress_theme::Extras> {
-    let changeset = customize.map(|c| crate::customize::sanitize_key(&c.uuid));
+/// The toolbar of the site for a signed-in user: a function of the page it is printed on. `changeset` is the UUID of
+/// the Customizer's preview.
+pub async fn front_toolbar(loaded: &std::sync::Arc<Loaded>, user: &std::sync::Arc<rustpress_auth::CurrentUser>, token: &str, changeset: Option<String>) -> Option<rustpress_theme::Extras> {
     let parts = loaded.admin.as_ref()?;
     let at = now();
     let updates = rustpress_admin::updates::counts(&loaded.site).await.total();
@@ -237,7 +238,8 @@ pub async fn front_toolbar(loaded: &std::sync::Arc<Loaded>, user: &std::sync::Ar
     };
     let (loaded, user) = (loaded.clone(), user.clone());
     let toolbar: std::sync::Arc<rustpress_theme::ToolbarFn> = std::sync::Arc::new(move |info: &rustpress_theme::ToolbarInfo<'_>| {
-        let site = &loaded.site;
+        // The previewed site title and theme of the Customizer.
+        let site = info.site;
         let admin = |path: &str| site.site_url(&format!("wp-admin/{path}"));
         let mut context = rustpress_admin::adminbar::FrontContext { updates, pending_comments: pending, logout_nonce: logout_nonce.clone(), site_icon: site_icon.clone(), ..Default::default() };
         if [&site.settings.stylesheet, &site.settings.template].iter().any(|t| loaded.theme.wp_root.join("wp-content").join("themes").join(t.as_str()).join("templates").join("index.html").is_file()) && user.can("edit_theme_options") {

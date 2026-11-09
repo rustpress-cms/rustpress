@@ -24,6 +24,8 @@ pub struct ToolbarInfo<'a> {
     /// The slug of the template that rendered the page (`home`, `single`, ...).
     pub template_slug: &'a str,
     pub query: &'a QueryResult,
+    /// The site as the page shows it (with the values of the Customizer's preview).
+    pub site: &'a rustpress_core::Site,
 }
 
 pub type ToolbarFn = dyn Fn(&ToolbarInfo<'_>) -> String + Send + Sync;
@@ -911,6 +913,10 @@ pub async fn render_document_with(theme: &Theme, site: &Site, query: &QueryResul
     }
 
     let mut styles = String::new();
+    // `WP_Customize_Widgets::print_preview_css()` on `wp_head` 1, for a site whose active theme has widgets.
+    if query.customize.as_deref().is_some_and(|p| p.widgets_previewed()) {
+        styles.push_str(crate::customize_preview::WIDGETS_PREVIEW_CSS);
+    }
     styles.push_str("<style id=\"wp-img-auto-sizes-contain-inline-css\">\nimg:is([sizes=auto i],[sizes^=\"auto,\" i]){contain-intrinsic-size:3000px 1500px}\n/*# sourceURL=wp-img-auto-sizes-contain-inline-css */\n</style>\n");
     let toolbar_on = query.viewer.as_ref().is_some_and(|v| v.show_admin_bar);
     let preview = query.customize.as_deref();
@@ -959,7 +965,6 @@ pub async fn render_document_with(theme: &Theme, site: &Site, query: &QueryResul
                 }
             }
         }
-        let mut chunks = theme.global_style_chunks(registry, site, Some(&queued));
         // `wp_enqueue_global_styles()` of a block theme: the Additional CSS of the Customizer follows the stylesheet,
         // in the preview always and between milestones the live preview finds.
         let mut customizer_css = match preview.and_then(|p| p.custom_css.clone()) {
@@ -968,16 +973,13 @@ pub async fn render_document_with(theme: &Theme, site: &Site, query: &QueryResul
         }
         .trim()
         .to_owned();
-        if !customizer_css.is_empty() || preview.is_some() {
-            if preview.is_some() {
-                let (before, after) = ("/*BEGIN_CUSTOMIZER_CUSTOM_CSS*/", "/*END_CUSTOMIZER_CUSTOM_CSS*/");
-                customizer_css = format!("{before}\n{}\n{after}", customizer_css.replace(before, "").replace(after, ""));
-            }
-            if let Some(first) = chunks.first_mut() {
-                first.push('\n');
-                first.push_str(&customizer_css);
-            }
+        if preview.is_some() {
+            let (before, after) = ("/*BEGIN_CUSTOMIZER_CUSTOM_CSS*/", "/*END_CUSTOMIZER_CUSTOM_CSS*/");
+            customizer_css = format!("{before}\n{}\n{after}", customizer_css.replace(before, "").replace(after, ""));
         }
+        // It goes between the stylesheet and the theme's custom CSS.
+        let customizer = (!customizer_css.is_empty() || preview.is_some()).then_some(customizer_css.as_str());
+        let mut chunks = theme.global_style_chunks_with(registry, site, Some(&queued), customizer);
         let presets = rustpress_blocks::duotone::global_styles_presets(&state.duotone);
         if !presets.is_empty() {
             chunks.push(presets);
@@ -1084,7 +1086,7 @@ pub async fn render_document_with(theme: &Theme, site: &Site, query: &QueryResul
     let plugin_footer = site.plugins.wp_footer(site, query, &looped).await?;
     let lightbox = if state.lightbox_overlay { rustpress_blocks::dynamic::lightbox::overlay(site, theme) } else { String::new() };
     let playlist_templates = if state.playlist || preview.is_some() { rustpress_blocks::shortcodes::playlist_templates(site) } else { String::new() };
-    let nav_menus = preview.map(crate::customize_preview::nav_menus_exports).unwrap_or_default();
+    let nav_menus = preview.filter(|p| p.menus_previewed()).map(crate::customize_preview::nav_menus_exports).unwrap_or_default();
     let mut footer_scripts = format!("{playlist_templates}{nav_menus}{speculation}{}{plugin_footer}{}{module_scripts}{}{}{lightbox}", rustpress_blocks::duotone::footer_svgs(&state.duotone), plugin_head.footer, state.interactivity.data_script().unwrap_or_default(), plugin_head.footer_on_wp);
     footer_scripts.push_str(&style_printer.links(&footer_styles));
     // MediaElement: jQuery in the head, the player scripts in the footer. The scripts plugins enqueue for the head
@@ -1106,8 +1108,14 @@ pub async fn render_document_with(theme: &Theme, site: &Site, query: &QueryResul
         footer_scripts.push_str(&format!("<script id=\"hoverintent-js-js\" src=\"{includes_url}/js/hoverintent-js.min.js?ver=2.2.1\"></script>\n<script id=\"admin-bar-js\" src=\"{includes_url}/js/admin-bar.min.js?ver={version}\"></script>\n"));
     }
     if let Some(scripts) = preview_scripts.as_mut() {
-        for handle in ["wp-mediaelement", "mediaelement-vimeo", "wp-playlist", "customize-selective-refresh", "customize-preview-nav-menus"] {
+        for handle in ["wp-mediaelement", "mediaelement-vimeo", "wp-playlist", "customize-selective-refresh"] {
             scripts.enqueue(handle);
+        }
+        if preview.is_some_and(|p| p.widgets_previewed()) {
+            scripts.enqueue("customize-preview-widgets");
+        }
+        if preview.is_some_and(|p| p.menus_previewed()) {
+            scripts.enqueue("customize-preview-nav-menus");
         }
         if state.scripts.iter().any(|s| s == "comment-reply") {
             scripts.enqueue("comment-reply");
@@ -1179,7 +1187,7 @@ pub async fn render_document_with(theme: &Theme, site: &Site, query: &QueryResul
         plugin_head.on_wp,
     );
     let bar = match (&extras.toolbar, toolbar_on) {
-        (Some(toolbar), true) => toolbar(&ToolbarInfo { template_slug: &rendered.template_slug, query }),
+        (Some(toolbar), true) => toolbar(&ToolbarInfo { template_slug: &rendered.template_slug, query, site }),
         _ => String::new(),
     };
     let html = format!(

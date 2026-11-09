@@ -315,7 +315,7 @@ fn menu_item_args(link_after: &mut String, item: &MenuItem, depth: usize) {
 /// `wp_nav_menu()` for one of the theme's locations.
 async fn nav_menu(ctx: &Ctx<'_>, location: &str) -> Result<String> {
     let Some(id) = menu::menu_location(&ctx.mods, location) else { return Ok(String::new()) };
-    let Some(mut found) = menu::load_menu(ctx.site, id).await? else { return Ok(String::new()) };
+    let Some(mut found) = menu::load_menu(ctx.site, ctx.q.customize.as_deref(), id).await? else { return Ok(String::new()) };
     let uri = ctx.request_uri();
     menu::classes_by_context(ctx.site, ctx.q, &uri, &mut found.items).await?;
     let mut args = NavArgs::new(location);
@@ -342,7 +342,7 @@ async fn nav_menu(ctx: &Ctx<'_>, location: &str) -> Result<String> {
 
 /// `template-parts/header/site-nav.php`.
 async fn site_nav(ctx: &Ctx<'_>) -> Result<String> {
-    if !menu::has_nav_menu(ctx.site, &ctx.mods, "primary").await? {
+    if !menu::has_nav_menu(ctx.site, ctx.q.customize.as_deref(), &ctx.mods, "primary").await? {
         return Ok("\n".to_owned());
     }
     Ok(format!(
@@ -366,7 +366,7 @@ async fn header(ctx: &Ctx<'_>, classes: &[String], bar: &str) -> Result<String> 
     if shows_title(ctx) {
         wrapper.push_str(" has-title-and-tagline");
     }
-    if menu::has_nav_menu(ctx.site, &ctx.mods, "primary").await? {
+    if menu::has_nav_menu(ctx.site, ctx.q.customize.as_deref(), &ctx.mods, "primary").await? {
         wrapper.push_str(" has-menu");
     }
     let branding = site_branding(ctx).await?;
@@ -410,7 +410,7 @@ async fn footer(ctx: &Ctx<'_>) -> Result<String> {
         out.push_str(&format!("\n\t<aside class=\"widget-area\">\n\t\t{widgets_html}\t</aside><!-- .widget-area -->\n\n\t"));
     }
     out.push_str("\n\t<footer id=\"colophon\" class=\"site-footer\">\n\n\t\t");
-    if menu::has_nav_menu(ctx.site, &ctx.mods, "footer").await? {
+    if menu::has_nav_menu(ctx.site, ctx.q.customize.as_deref(), &ctx.mods, "footer").await? {
         out.push_str(&format!(
             "\t\t\t<nav aria-label=\"{}\" class=\"footer-navigation\">\n\t\t\t\t<ul class=\"footer-navigation-wrapper\">\n\t\t\t\t\t{}\t\t\t\t</ul><!-- .footer-navigation-wrapper -->\n\t\t\t</nav><!-- .footer-navigation -->\n\t\t",
             esc_attr(&t(ctx, "Secondary menu")),
@@ -1537,7 +1537,7 @@ async fn head(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State, registry: &Re
     // Plugin scripts of a later priority (or enqueued on `init`) come after the theme's.
     let (early_scripts, late_scripts): (Vec<_>, Vec<_>) = plugin_assets.scripts.iter().cloned().partition(|a| a.priority <= 10);
     out.push_str(&printer.scripts(&early_scripts, false));
-    if menu::has_nav_menu(site, &ctx.mods, "primary").await? {
+    if menu::has_nav_menu(site, ctx.q.customize.as_deref(), &ctx.mods, "primary").await? {
         out.push_str(&format!("<script data-wp-strategy=\"defer\" defer id=\"twenty-twenty-one-primary-navigation-script-js\" src=\"{theme_uri}/assets/js/primary-navigation.js?ver={VERSION}\"></script>\n"));
     }
     out.push_str(&printer.scripts(&late_scripts, false));
@@ -1712,7 +1712,7 @@ pub(super) async fn add_body_classes(ctx: &Ctx<'_>, classes: &mut Vec<String>) -
     }
     classes.push("no-js".into());
     classes.push(if ctx.q.flags.is_singular() { "singular".into() } else { "hfeed".into() });
-    if menu::has_nav_menu(ctx.site, &ctx.mods, "primary").await? {
+    if menu::has_nav_menu(ctx.site, ctx.q.customize.as_deref(), &ctx.mods, "primary").await? {
         classes.push("has-main-navigation".into());
     }
     if !active_sidebar(ctx, "sidebar-1") {
@@ -1754,7 +1754,7 @@ pub async fn render(ctx: &Ctx<'_>, registry: &Registry, extras: &crate::document
     ctx.env.with_state(|s| s.content_width = 750);
     let toolbar_on = ctx.q.viewer.as_ref().is_some_and(|viewer| viewer.show_admin_bar);
     let bar = match (&extras.toolbar, toolbar_on) {
-        (Some(toolbar), true) => toolbar(&crate::document::ToolbarInfo { template_slug: "", query: ctx.q }).replace(" loading='lazy'", ""),
+        (Some(toolbar), true) => toolbar(&crate::document::ToolbarInfo { template_slug: "", query: ctx.q, site: ctx.site }).replace(" loading='lazy'", ""),
         _ => String::new(),
     };
     let mut body = header(ctx, &classes, &bar).await?;

@@ -24,6 +24,7 @@ pub async fn exports<'a>(ctx: &'a Ctx<'a>, stored: &'a Ctx<'a>, q: &QueryResult,
     let mut state = super::state(ctx).await;
     state.preview = true;
     state.items_ctx = Some(stored);
+    state.previewed = Some(preview);
     if let Some(css) = &preview.custom_css {
         state.custom_css = css.clone();
     }
@@ -42,16 +43,27 @@ pub async fn exports<'a>(ctx: &'a Ctx<'a>, stored: &'a Ctx<'a>, q: &QueryResult,
         register::twentyseventeen(&state, &mut m);
     }
     nav_menus::register(&state, &mut m, &menus, &locations, widgets_on).await;
+    // `check_capabilities()`: all of them need `edit_theme_options`, which a visitor does not have.
+    let allowed = ctx.can("edit_theme_options");
+    let restrict = |m: &mut Manager| {
+        if !allowed {
+            m.settings.iter_mut().for_each(|s| s.allowed = false);
+            m.sections.iter_mut().for_each(|s| s.allowed = false);
+            m.panels.iter_mut().for_each(|p| p.allowed = false);
+        }
+    };
+    restrict(&mut m);
     m.prepare(&|capability| ctx.can(capability));
     // `prepare_controls()` keeps the sections of panels with their panel only.
     let prepared_sections = m.sections.len();
     let widget_state = if widgets_on { Some(widgets::load(&state).await) } else { None };
     if let Some(w) = &widget_state {
         widgets::register(&state, &mut m, w);
+        restrict(&mut m);
     }
 
     let mut out = settings_script(&state, &m, prepared_sections, q, preview);
-    if let Some(w) = &widget_state {
+    if let Some(w) = widget_state.as_ref().filter(|_| preview.widgets_previewed()) {
         out.push_str(&widgets_script(&state, w, preview));
     }
     out.push_str(&partials_script(&state, &m, seventeen));
@@ -120,13 +132,13 @@ fn settings_script(state: &State<'_>, m: &Manager, prepared_sections: usize, q: 
     }
     let host = home.split_once("://").map_or("", |(_, rest)| rest.split('/').next().unwrap_or_default()).to_owned();
     // `validate_setting_values()` of the posted values: the settings that exist are valid.
-    let valid: Map<String, Value> = preview.dirty.iter().filter(|id| m.settings.iter().any(|s| s.id == **id)).map(|id| (id.clone(), json!(true))).collect();
+    let valid: Map<String, Value> = preview.dirty.iter().filter(|id| m.settings.iter().any(|s| s.id == **id)).map(|id| (id.clone(), preview.validity(id))).collect();
     let validities = if valid.is_empty() { json!([]) } else { Value::Object(valid) };
     let nonce = if ctx.can("customize") { Value::Object(super::nonces(state)) } else { json!([]) };
     let settings = json!({
         "changeset": {"uuid": preview.uuid, "autosaved": preview.autosaved},
         "timeouts": {"selectiveRefresh": 250, "keepAliveSend": 1000},
-        "theme": {"stylesheet": state.stylesheet, "active": true, "isBlockTheme": ctx.env.block_theme},
+        "theme": {"stylesheet": state.stylesheet, "active": preview.theme.is_none(), "isBlockTheme": ctx.env.block_theme},
         "url": {
             "self": self_url,
             "allowed": [rustpress_core::formatting::esc_url_raw(&home)],

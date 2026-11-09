@@ -6,14 +6,16 @@ use rustpress_core::{Queried, QueryResult, Site};
 use rustpress_db::{OrderBy, Order, Post, PostMeta, PostQuery};
 use rustpress_phpser::Value;
 
+use rustpress_core::customize::Preview;
+
 use crate::Result;
 
 /// A menu item as `wp_setup_nav_menu_item()` leaves it.
 #[derive(Debug, Clone, Default)]
 pub struct MenuItem {
-    /// `ID` and `db_id`.
-    pub id: u64,
-    pub parent: u64,
+    /// `ID` and `db_id`; a negative one is an item the Customizer's preview adds.
+    pub id: i64,
+    pub parent: i64,
     pub object_id: u64,
     pub object: String,
     pub kind: String,
@@ -34,7 +36,8 @@ pub struct MenuItem {
 /// The menu assigned to a theme location.
 #[derive(Debug, Clone)]
 pub struct Menu {
-    pub term_id: u64,
+    /// Negative for a menu the Customizer's preview adds.
+    pub term_id: i64,
     pub slug: String,
     pub items: Vec<MenuItem>,
 }
@@ -53,21 +56,41 @@ pub fn theme_mod(site: &Site, stylesheet: &str) -> Value {
     site.options.value(&format!("theme_mods_{stylesheet}")).unwrap_or(Value::Null)
 }
 
-pub fn menu_location(mods: &Value, location: &str) -> Option<u64> {
-    mods.get("nav_menu_locations")?.get(location)?.as_i64().filter(|id| *id > 0).map(|id| id as u64)
+/// The menu of a location; a negative one is a menu the Customizer's preview adds.
+pub fn menu_location(mods: &Value, location: &str) -> Option<i64> {
+    mods.get("nav_menu_locations")?.get(location)?.as_i64().filter(|id| *id != 0)
+}
+
+/// The previewed `nav_menu[…]` setting of a menu: `Some(None)` when the preview deletes it.
+fn previewed_menu(preview: Option<&Preview>, term_id: i64) -> Option<Option<&serde_json::Value>> {
+    preview?.nav_menus.iter().find(|(id, _)| *id == term_id).map(|(_, value)| value.as_ref())
 }
 
 /// `has_nav_menu()`: a menu is assigned to the location and the menu exists.
-pub async fn has_nav_menu(site: &Site, mods: &Value, location: &str) -> Result<bool> {
+pub async fn has_nav_menu(site: &Site, preview: Option<&Preview>, mods: &Value, location: &str) -> Result<bool> {
     let Some(id) = menu_location(mods, location) else { return Ok(false) };
-    Ok(site.db.term_by_id(Some("nav_menu"), id).await?.is_some())
+    if let Some(menu) = previewed_menu(preview, id) {
+        return Ok(menu.is_some());
+    }
+    Ok(id > 0 && site.db.term_by_id(Some("nav_menu"), id as u64).await?.is_some())
 }
 
-/// `wp_get_nav_menu_items()` with `wp_setup_nav_menu_item()`; invalid items are left out.
-pub async fn load_menu(site: &Site, term_id: u64) -> Result<Option<Menu>> {
-    let Some(term) = site.db.term_by_id(Some("nav_menu"), term_id).await? else { return Ok(None) };
+/// `wp_get_nav_menu_items()` with `wp_setup_nav_menu_item()`; invalid items are left out. In the preview of the
+/// Customizer the menu and its items are the previewed ones.
+pub async fn load_menu(site: &Site, preview: Option<&Preview>, term_id: i64) -> Result<Option<Menu>> {
+    let term = if term_id > 0 { site.db.term_by_id(Some("nav_menu"), term_id as u64).await? } else { None };
+    // `WP_Customize_Nav_Menu_Setting::filter_wp_get_nav_menu_object()`: a previewed menu has no items in the
+    // database (its `count` is 0).
+    let (slug, term) = match previewed_menu(preview, term_id) {
+        Some(None) => return Ok(None),
+        Some(Some(value)) => (rustpress_core::slug::sanitize_title_save(value.get("name").and_then(serde_json::Value::as_str).unwrap_or_default(), &site.locale()), None),
+        None => match term {
+            Some(term) => (term.slug.clone(), Some(term)),
+            None => return Ok(None),
+        },
+    };
     let mut items = Vec::new();
-    if term.count > 0 {
+    if let Some(term) = term.as_ref().filter(|term| term.count > 0) {
         let query = PostQuery {
             post_types: vec!["nav_menu_item".into()],
             tax_groups: vec![vec![term.term_taxonomy_id]],
@@ -86,7 +109,102 @@ pub async fn load_menu(site: &Site, term_id: u64) -> Result<Option<Menu>> {
     for (n, item) in items.iter_mut().enumerate() {
         item.menu_order = n as i64 + 1;
     }
-    Ok(Some(Menu { term_id, slug: term.slug, items }))
+    if let Some(preview) = preview.filter(|p| !p.nav_menu_items.is_empty()) {
+        preview_items(site, preview, term_id, &mut items).await?;
+        // `sort_wp_get_nav_menu_items()`.
+        items.sort_by_key(|i| i.menu_order);
+        for (n, item) in items.iter_mut().enumerate() {
+            item.menu_order = n as i64 + 1;
+        }
+    }
+    Ok(Some(Menu { term_id, slug, items }))
+}
+
+/// `WP_Customize_Nav_Menu_Item_Setting::filter_wp_get_nav_menu_items()` of each previewed item: it leaves the menu
+/// it was in, is updated in the menu it is in now, or is added at its end.
+async fn preview_items(site: &Site, preview: &Preview, term_id: i64, items: &mut Vec<MenuItem>) -> Result<()> {
+    for (post_id, value) in &preview.nav_menu_items {
+        // `$original_nav_menu_term_id`: the menu of the stored item.
+        let original = if *post_id > 0 {
+            match site.db.post(*post_id as u64).await? {
+                Some(post) if post.post_type == "nav_menu_item" => site.db.terms_for_post(post.id, Some("nav_menu")).await?.first().map_or(0, |t| t.term_id as i64),
+                _ => 0,
+            }
+        } else {
+            0
+        };
+        let current = value.as_ref().and_then(|v| v.get("nav_menu_term_id")).and_then(serde_json::Value::as_i64);
+        if term_id != original && Some(term_id) != current {
+            continue;
+        }
+        let invalid = value.as_ref().is_some_and(|v| v.get("_invalid") == Some(&serde_json::Value::Bool(true)));
+        if value.is_none() || invalid || (original == term_id && current != Some(original)) {
+            items.retain(|item| item.id != *post_id);
+            continue;
+        }
+        let Some(value) = value else { continue };
+        let item = previewed_item(site, *post_id, value).await?;
+        match items.iter_mut().find(|i| i.id == *post_id) {
+            Some(slot) => *slot = item,
+            None => items.push(item),
+        }
+    }
+    Ok(())
+}
+
+/// `value_as_wp_post_nav_menu_item()`: the item of a previewed value, its address from the object it links.
+async fn previewed_item(site: &Site, post_id: i64, value: &serde_json::Value) -> Result<MenuItem> {
+    let text = |key: &str| value.get(key).and_then(serde_json::Value::as_str).unwrap_or_default().to_owned();
+    let int = |key: &str| value.get(key).and_then(serde_json::Value::as_i64).unwrap_or(0);
+    let kind = text("type");
+    let object = text("object");
+    let object_id = int("object_id").max(0) as u64;
+    let mut item = MenuItem {
+        id: post_id,
+        parent: int("menu_item_parent"),
+        object_id,
+        object: object.clone(),
+        kind: kind.clone(),
+        url: text("url"),
+        target: text("target"),
+        // `nav_menu_attr_title`: `wptexturize()` and `strip_tags()`.
+        attr_title: rustpress_core::formatting::strip_tags(&site.texturize(&text("attr_title"))),
+        xfn: text("xfn"),
+        classes: text("classes").split(' ').map(str::to_owned).collect(),
+        menu_order: int("position"),
+        ..MenuItem::default()
+    };
+    // `get_original_title()`, for an item without a title of its own.
+    let mut original = String::new();
+    match kind.as_str() {
+        "post_type" if object_id != 0 => {
+            let target = site.db.post(object_id).await?;
+            if let Some(target) = &target {
+                original = the_title_filters(site, &target.post_title);
+                if original.is_empty() {
+                    original = rustpress_core::i18n::sprintf(&site.tr("#%d (no title)"), &[&object_id.to_string()]);
+                }
+            }
+            item.url = match &target {
+                Some(target) => site.permalink(target).await?,
+                None => String::new(),
+            };
+        }
+        "taxonomy" if object_id != 0 && !object.is_empty() => match site.db.term_by_id(Some(&object), object_id).await? {
+            Some(term) => {
+                original = term.name.clone();
+                item.url = site.term_link(&term).await?;
+            }
+            None => item.url = String::new(),
+        },
+        "post_type_archive" if !object.is_empty() => item.url = site.post_type_archive_link(&object).unwrap_or_default(),
+        _ => {}
+    }
+    item.title = text("title");
+    if item.title.is_empty() {
+        item.title = original;
+    }
+    Ok(item)
 }
 
 async fn setup_item(site: &Site, post: &Post) -> Result<Option<MenuItem>> {
@@ -96,7 +214,7 @@ async fn setup_item(site: &Site, post: &Post) -> Result<Option<MenuItem>> {
     let object = get("_menu_item_object");
     let object_id: u64 = get("_menu_item_object_id").parse().unwrap_or(0);
     let mut item = MenuItem {
-        id: post.id,
+        id: post.id as i64,
         parent: get("_menu_item_menu_item_parent").parse().unwrap_or(0),
         object_id,
         object: object.clone(),
@@ -175,8 +293,8 @@ pub async fn classes_by_context(site: &Site, q: &QueryResult, request_uri: &str,
         None => String::new(),
     };
 
-    let mut active_ancestor_items: Vec<u64> = Vec::new();
-    let mut active_parent_items: Vec<u64> = Vec::new();
+    let mut active_ancestor_items: Vec<i64> = Vec::new();
+    let mut active_parent_items: Vec<i64> = Vec::new();
     let mut active_parent_objects: Vec<u64> = Vec::new();
     let mut active_object = String::new();
 
@@ -231,8 +349,8 @@ pub async fn classes_by_context(site: &Site, q: &QueryResult, request_uri: &str,
     }
 
     // `_menu_item_menu_item_parent` of every item, to walk up the menu tree.
-    let parents: Vec<(u64, u64)> = items.iter().map(|i| (i.id, i.parent)).collect();
-    let parent_of = |id: u64| parents.iter().find(|(i, _)| *i == id).map_or(0, |(_, p)| *p);
+    let parents: Vec<(i64, i64)> = items.iter().map(|i| (i.id, i.parent)).collect();
+    let parent_of = |id: i64| parents.iter().find(|(i, _)| *i == id).map_or(0, |(_, p)| *p);
 
     for item in items.iter_mut() {
         item.current = false;
@@ -246,7 +364,7 @@ pub async fn classes_by_context(site: &Site, q: &QueryResult, request_uri: &str,
         if item.kind == "post_type" && privacy_page == item.object_id {
             classes.push("menu-item-privacy-policy".into());
         }
-        let walk_ancestors = |start: u64, out: &mut Vec<u64>| {
+        let walk_ancestors = |start: i64, out: &mut Vec<i64>| {
             let mut ancestor = start;
             loop {
                 ancestor = parent_of(ancestor);
@@ -394,9 +512,9 @@ pub struct NavArgs {
     /// The container element (`div` by default) and, for `nav`, its `aria-label`.
     pub container: Option<(String, Option<String>)>,
     /// The items that printed their `id="menu-item-N"` earlier in the request (`_nav_menu_item_id_use_once()`).
-    pub used_ids: std::collections::HashSet<u64>,
+    pub used_ids: std::collections::HashSet<i64>,
     /// The `menu` argument: a menu's term id, or none when the menu comes from the theme location.
-    pub menu: Option<u64>,
+    pub menu: Option<i64>,
     /// `fallback_cb`.
     pub fallback_cb: &'static str,
     /// The preview of the Customizer, which marks the menu as a partial (`WP_Customize_Nav_Menus`).
@@ -455,7 +573,7 @@ impl NavArgs {
             ("items_wrap", text("<ul id=\"%1$s\" class=\"%2$s\">%3$s</ul>")),
             ("link_after", text(&self.link_after)),
             ("link_before", text(&self.link_before)),
-            ("menu", self.menu.map_or_else(|| text(""), |id| Php::Int(id as i64))),
+            ("menu", self.menu.map_or_else(|| text(""), Php::Int)),
             ("menu_class", text(&self.menu_class)),
             ("menu_id", text(&self.menu_id)),
             ("theme_location", text(&self.theme_location)),
@@ -498,7 +616,7 @@ pub fn wp_nav_menu(
     link_hook: &dyn Fn(String, &MenuItem, usize) -> String,
 ) -> String {
     let mut sorted: Vec<MenuItem> = items.to_vec();
-    let with_children: Vec<u64> = sorted.iter().filter(|i| i.parent != 0 && i.parent != i.id).map(|i| i.parent).collect();
+    let with_children: Vec<i64> = sorted.iter().filter(|i| i.parent != 0 && i.parent != i.id).map(|i| i.parent).collect();
     for item in sorted.iter_mut() {
         if item.parent == item.id {
             item.parent = 0;
@@ -509,7 +627,30 @@ pub fn wp_nav_menu(
     }
     let mut body = String::new();
     let mut link_after = args.link_after.clone();
-    walk(site, &sorted, 0, 0, args.depth, args, &mut link_after, title_hook, link_hook, &mut body);
+    // `Walker::walk()`: without items at the top, the parent of the first item is the root.
+    let root = if sorted.iter().any(|i| i.parent == 0) { 0 } else { sorted.first().map_or(0, |i| i.parent) };
+    walk(site, &sorted, root, 0, args.depth, args, &mut link_after, title_hook, link_hook, &mut body);
+    // The orphans, whose parent is not in the menu, follow at the top without their children.
+    if args.depth == 0 {
+        let mut shown: Vec<i64> = vec![root];
+        let mut at = 0;
+        while at < shown.len() {
+            let parent = shown[at];
+            shown.extend(sorted.iter().filter(|i| i.parent == parent && !shown.contains(&i.id)).map(|i| i.id).collect::<Vec<_>>());
+            at += 1;
+        }
+        let mut groups: Vec<i64> = Vec::new();
+        for item in sorted.iter().filter(|i| !shown.contains(&i.id) && i.parent != root) {
+            if !groups.contains(&item.parent) {
+                groups.push(item.parent);
+            }
+        }
+        for parent in groups {
+            for item in sorted.iter().filter(|i| i.parent == parent && !shown.contains(&i.id)) {
+                walk(site, std::slice::from_ref(item), parent, 0, 1, args, &mut link_after, title_hook, link_hook, &mut body);
+            }
+        }
+    }
     if body.is_empty() {
         return String::new();
     }
@@ -547,7 +688,7 @@ pub fn wp_nav_menu(
 fn walk(
     site: &Site,
     items: &[MenuItem],
-    parent: u64,
+    parent: i64,
     depth: usize,
     max_depth: usize,
     args: &NavArgs,
@@ -609,7 +750,7 @@ mod tests {
 
     #[tokio::test]
     async fn nested_items_are_wrapped_like_walker_nav_menu() {
-        let item = |id: u64, parent: u64, title: &str| MenuItem { id, parent, title: title.into(), url: format!("http://x/?p={id}"), classes: vec!["menu-item".into()], menu_order: id as i64, ..MenuItem::default() };
+        let item = |id: i64, parent: i64, title: &str| MenuItem { id, parent, title: title.into(), url: format!("http://x/?p={id}"), classes: vec!["menu-item".into()], menu_order: id, ..MenuItem::default() };
         let items = vec![item(1, 0, "A"), item(2, 1, "B"), item(3, 0, "C")];
         let mut out = String::new();
         let args = NavArgs::new("top");

@@ -32,6 +32,17 @@ pub struct Loaded {
     loaded_at: Instant,
 }
 
+impl Loaded {
+    /// The snapshot with the site and theme of the Customizer's preview of a theme that is not active.
+    async fn previewing(&self, site: Site, wp_root: &std::path::Path) -> Result<Loaded> {
+        // The catalogs are loaded again with the text domain of the previewed theme.
+        let site = site.without_translations();
+        let theme = Theme::load(&site, wp_root).await?;
+        let registry = Registry::new(self.registry.blocks_dir());
+        Ok(Loaded { site, theme, registry, admin: self.admin.clone(), salts: self.salts.clone(), mail: self.mail.clone(), loaded_at: self.loaded_at })
+    }
+}
+
 pub struct App {
     config: Config,
     db: Db,
@@ -417,6 +428,7 @@ async fn page(app: &App, uri: &axum::http::Uri, request_headers: &axum::http::He
     let mut signed_in = false;
     // `_wp_customize_include()`: a page in the preview of the Customizer.
     let customize = crate::customize::Request::parse(query, form);
+    let mut toolbar_user = None;
     let viewer = match crate::admin::frontend_user(&loaded, request_headers).await {
         Some((user, token)) => {
             let user = std::sync::Arc::new(user);
@@ -433,8 +445,8 @@ async fn page(app: &App, uri: &axum::http::Uri, request_headers: &axum::http::He
             let privacy_page = loaded.site.options.u64("wp_page_for_privacy_policy", 0);
             let verify = move |nonce: &str, action: &str| verify_auth.as_ref().is_some_and(|auth| auth.verify_nonce(nonce, action, uid, &verify_session, crate::admin::now()).is_some());
             let viewer = rustpress_core::Viewer::new(user.id, move |capability| can_user.can(capability)).with_identity(&user.login, &user.display_name, &user.email, show_bar, nonce).with_verifier(privacy_page, verify).with_roles(&user.roles);
-            if show_bar && let Some(found) = crate::admin::front_toolbar(&loaded, &user, &token, customize.as_ref()).await {
-                extras = found;
+            if show_bar {
+                toolbar_user = Some((user.clone(), token.clone()));
             }
             signed_in = true;
             Some(viewer)
@@ -448,6 +460,16 @@ async fn page(app: &App, uri: &axum::http::Uri, request_headers: &axum::http::He
         },
         None => (None, None),
     };
+    // The preview of another theme renders the page with that theme.
+    let (loaded, preview_site) = match (preview.as_ref().filter(|p| p.theme.is_some()), preview_site) {
+        (Some(_), Some(site)) => (Arc::new(loaded.previewing(site, &app.config.wp_root).await?), None),
+        (_, site) => (loaded, site),
+    };
+    if let Some((user, token)) = &toolbar_user
+        && let Some(found) = crate::admin::front_toolbar(&loaded, user, token, preview.as_ref().map(|p| p.uuid.clone())).await
+    {
+        extras = found;
+    }
     // The options and theme mods as the preview shows them.
     let site: &rustpress_core::Site = preview_site.as_ref().unwrap_or(&loaded.site);
     let before_query = started.elapsed();
@@ -525,7 +547,7 @@ async fn page(app: &App, uri: &axum::http::Uri, request_headers: &axum::http::He
         return Ok(die_response(site, &die));
     }
     if !php_endpoint && let Some(plugin) = site.plugins.template_redirect(site, &result).await? {
-        return plugin_redirect(&loaded, &plugin_request, &sent_headers, &result, &plugin).await;
+        return plugin_redirect(&loaded, site, preview.as_deref(), &plugin_request, &sent_headers, &result, &plugin).await;
     }
     // `handle_render_partials_request()` on `template_redirect`.
     if let Some(preview) = &preview
@@ -586,7 +608,7 @@ async fn page(app: &App, uri: &axum::http::Uri, request_headers: &axum::http::He
     };
     // `template_redirect` after `redirect_canonical()` on a 404 page.
     if result.flags.is_404 && !php_endpoint && init.is_none() && let Some(plugin) = site.plugins.not_found(site, &result, &plugin_request).await? {
-        return plugin_redirect(&loaded, &plugin_request, &sent_headers, &result, &plugin).await;
+        return plugin_redirect(&loaded, site, preview.as_deref(), &plugin_request, &sent_headers, &result, &plugin).await;
     }
     if result.flags.is_feed {
         let feed = rustpress_db::Db::with_term_cache(async {
@@ -600,6 +622,9 @@ async fn page(app: &App, uri: &axum::http::Uri, request_headers: &axum::http::He
         let mut response = feed_response(&feed, request_headers);
         singular_headers(&mut response, &result, &loaded);
         set_headers(&mut response, &sent_headers);
+        if preview.is_some() {
+            crate::customize::preview_headers(response.headers_mut());
+        }
         return Ok(with_api_link(response, &loaded, &result));
     }
     let mut result = result;
@@ -609,6 +634,9 @@ async fn page(app: &App, uri: &axum::http::Uri, request_headers: &axum::http::He
             response.headers_mut().insert(name, HeaderValue::from_static(value));
         }
         set_headers(&mut response, &sent_headers);
+        if preview.is_some() {
+            crate::customize::preview_headers(response.headers_mut());
+        }
         return Ok(with_api_link(response, &loaded, &result));
     }
     if result.flags.is_favicon {
@@ -616,24 +644,46 @@ async fn page(app: &App, uri: &axum::http::Uri, request_headers: &axum::http::He
             Some(icon) => icon,
             None => site.site_url("wp-includes/images/w-logo-gray-white-bg.png"),
         };
+        let icon = match &preview {
+            Some(preview) => crate::customize::add_state_query_params(site, preview, &icon),
+            None => icon,
+        };
         let mut response = redirect(&icon);
         *response.status_mut() = StatusCode::FOUND;
         response.headers_mut().insert(header::CONTENT_TYPE, HeaderValue::from_static("text/html; charset=UTF-8"));
+        // `wp_redirect()` in `do_favicon()`.
+        response.headers_mut().insert("x-redirect-by", HeaderValue::from_static("WordPress"));
         let redirected = rustpress_core::native::Redirected { location: &icon, status: 302, by: "WordPress" };
         let plugin_headers = site.plugins.wp_redirect(site, &plugin_request, &redirected).await?;
         set_headers(&mut response, sent_headers.iter().chain(&plugin_headers));
+        if preview.is_some() {
+            crate::customize::preview_headers(response.headers_mut());
+        }
         return Ok(with_api_link(response, &loaded, &result));
     }
     if result.flags.is_sitemap {
-        match site.sitemap(&result).await? {
-            SitemapOutput::Xml(xml) => return Ok(typed(StatusCode::OK, "application/xml; charset=UTF-8", xml)),
-            SitemapOutput::Stylesheet(xsl) => return Ok(typed(StatusCode::OK, "application/xml; charset=UTF-8", xsl)),
-            SitemapOutput::NotFound => result = result.into_404(),
+        let xml = match site.sitemap(&result).await? {
+            SitemapOutput::Xml(xml) | SitemapOutput::Stylesheet(xml) => Some(xml),
+            SitemapOutput::NotFound => None,
+        };
+        match xml {
+            Some(xml) => {
+                let mut response = typed(StatusCode::OK, "application/xml; charset=UTF-8", xml);
+                if preview.is_some() {
+                    crate::customize::preview_headers(response.headers_mut());
+                }
+                return Ok(response);
+            }
+            None => result = result.into_404(),
         }
     }
     // `wp-trackback.php` for a request that is not a trackback ping: back to the post.
     if result.vars.get("tb").is_some() && result.flags.is_singular() && let Some(post) = result.queried_post() {
         let permalink = site.permalink(post).await?;
+        let permalink = match &preview {
+            Some(preview) => crate::customize::add_state_query_params(site, preview, &permalink),
+            None => permalink,
+        };
         let (target_path, target_query) = rustpress_core::canonical::split_url(&permalink);
         let target = if target_query.is_empty() { target_path } else { format!("{target_path}?{target_query}") };
         let mut response = redirect(&target);
@@ -643,6 +693,9 @@ async fn page(app: &App, uri: &axum::http::Uri, request_headers: &axum::http::He
         let redirected = rustpress_core::native::Redirected { location: &permalink, status: 302, by: "WordPress" };
         let plugin_headers = site.plugins.wp_redirect(site, &plugin_request, &redirected).await?;
         set_headers(&mut response, sent_headers.iter().chain(&plugin_headers));
+        if preview.is_some() {
+            crate::customize::preview_headers(response.headers_mut());
+        }
         return Ok(with_api_link(response, &loaded, &result));
     }
     // The terms of the posts of the main query are read once (`update_object_term_cache()`).
@@ -793,18 +846,25 @@ fn set_headers<'a>(response: &mut Response<Body>, headers: impl IntoIterator<Ite
 
 /// A redirect a plugin asks for on `template_redirect`, with what `send_headers` and `wp_redirect` add. It exits
 /// before `rest_output_link_header()` (`template_redirect` at priority 11).
-async fn plugin_redirect(loaded: &Loaded, request: &rustpress_core::native::PluginRequest<'_>, sent: &[(String, String)], result: &rustpress_core::QueryResult, plugin: &rustpress_core::native::Redirect) -> Result<Response<Body>> {
-    let mut response = redirect(&plugin.location);
+async fn plugin_redirect(loaded: &Loaded, site: &rustpress_core::Site, preview: Option<&rustpress_core::customize::Preview>, request: &rustpress_core::native::PluginRequest<'_>, sent: &[(String, String)], result: &rustpress_core::QueryResult, plugin: &rustpress_core::native::Redirect) -> Result<Response<Body>> {
+    let location = match preview {
+        Some(preview) => crate::customize::add_state_query_params(site, preview, &plugin.location),
+        None => plugin.location.clone(),
+    };
+    let mut response = redirect(&location);
     if let Some(status) = StatusCode::from_u16(plugin.status).ok().filter(StatusCode::is_redirection) {
         *response.status_mut() = status;
     }
     singular_headers(&mut response, result, loaded);
-    let redirected = rustpress_core::native::Redirected { location: &plugin.location, status: plugin.status, by: plugin.by };
+    let redirected = rustpress_core::native::Redirected { location: &location, status: plugin.status, by: plugin.by };
     let plugin_headers = loaded.site.plugins.wp_redirect(&loaded.site, request, &redirected).await?;
     set_headers(&mut response, sent.iter().chain(&plugin_headers));
     let headers = response.headers_mut();
     headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("text/html; charset=UTF-8"));
     headers.insert("x-redirect-by", HeaderValue::from_static(plugin.by));
+    if preview.is_some() {
+        crate::customize::preview_headers(headers);
+    }
     Ok(response)
 }
 

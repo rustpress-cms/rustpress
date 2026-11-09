@@ -237,7 +237,7 @@ pub struct State {
     /// `static $first_dropdown` of `WP_Widget_Categories::widget()` is spent.
     pub categories_dropdown: bool,
     /// `static $_used_ids` of `_nav_menu_item_id_use_once()`.
-    pub nav_menu_item_ids: HashSet<u64>,
+    pub nav_menu_item_ids: HashSet<i64>,
     /// Patterns being rendered right now (recursion guard).
     pub active_patterns: HashSet<String>,
     /// Script modules that must be loaded on the page.
