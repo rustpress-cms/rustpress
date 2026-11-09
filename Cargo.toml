@@ -27,7 +27,7 @@ format_in_format_args = "allow"
 
 [workspace.package]
 edition = "2024"
-version = "0.2.0"
+version = "0.3.0"
 license = "GPL-2.0-or-later"
 repository = "https://github.com/rustpress-cms/rustpress"
 

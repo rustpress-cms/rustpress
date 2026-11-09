@@ -2,7 +2,9 @@
 
 All notable changes to RustPress. Each release names the WordPress release it follows.
 
-## Unreleased
+## 0.3.0 (2026-11-09)
+
+Follows WordPress 7.1.4.
 
 - Native plugin module **WPForms Lite** 2.0.4: forms of the shortcode and the block on the website, submitting with
   validation, the honeypot and the AntiSpam token, confirmations (message, page, redirect), the smart tags, and the
