@@ -53,6 +53,8 @@ pub(super) struct State<'a> {
     pub preview: bool,
     /// What the values of the menu items are made with: in the preview, the site with its stored options.
     pub items_ctx: Option<&'a Ctx<'a>>,
+    /// The preview, with the menus and menu items it changes.
+    pub previewed: Option<&'a rustpress_core::customize::Preview>,
 }
 
 /// Prints a baked template with the addresses of the site, in its language.
@@ -308,7 +310,7 @@ async fn state<'a>(ctx: &'a Ctx<'a>) -> State<'a> {
     let has_published_pages = ctx.env.db.count_posts(&pages).await.unwrap_or(0) > 0;
     let syntax_highlighting = ctx.env.db.user_meta(ctx.user.id, "syntax_highlighting").await.ok().flatten().as_deref() != Some("false");
     let custom_css = rustpress_theme::classic::wp_get_custom_css(site, &mods).await.unwrap_or_default();
-    State { ctx, mods, support, template_uri, stylesheet_uri, stylesheet, theme_name: theme_name(ctx), custom_logo, has_published_pages, syntax_highlighting, custom_css, preview: false, items_ctx: None }
+    State { ctx, mods, support, template_uri, stylesheet_uri, stylesheet, theme_name: theme_name(ctx), custom_logo, has_published_pages, syntax_highlighting, custom_css, preview: false, items_ctx: None, previewed: None }
 }
 
 pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {

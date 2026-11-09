@@ -312,6 +312,12 @@ impl Site {
         Self { db: self.db.clone(), options, settings, rewrite: self.rewrite.clone(), timezone: self.timezone.clone(), types: self.types.clone(), plugins: self.plugins.clone(), i18n }
     }
 
+    /// The site without its catalogs, which [`Site::init_i18n`] loads again (for the text domains of another theme).
+    pub fn without_translations(mut self) -> Self {
+        self.i18n = std::sync::OnceLock::new();
+        self
+    }
+
     pub fn from_parts(db: Db, options: Options) -> Self {
         let settings = Settings::from_options(&options);
         let rewrite = options.value("rewrite_rules").map(|v| RewriteRules::from_option(&v)).unwrap_or_default();

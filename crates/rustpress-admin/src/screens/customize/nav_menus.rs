@@ -16,6 +16,43 @@ pub(super) async fn menus(state: &State<'_>) -> Vec<Term> {
     state.ctx.env.db.terms("nav_menu").await.unwrap_or_default()
 }
 
+/// A menu of `wp_get_nav_menus()`: stored, or as the preview makes it (`term` is `None` then, its `count` is 0).
+struct MenuRef {
+    term_id: i64,
+    name: String,
+    description: String,
+    parent: i64,
+    term: Option<Term>,
+}
+
+/// `WP_Customize_Nav_Menu_Setting::filter_wp_get_nav_menus()` of each previewed menu, in the order of the values.
+fn previewed_menus(state: &State<'_>, menus: &[Term]) -> Vec<MenuRef> {
+    let mut list: Vec<MenuRef> = menus.iter().map(|t| MenuRef { term_id: t.term_id as i64, name: t.name.clone(), description: t.description.clone(), parent: t.parent as i64, term: Some(t.clone()) }).collect();
+    let Some(preview) = state.previewed else { return list };
+    for (term_id, value) in &preview.nav_menus {
+        let index = list.iter().position(|m| m.term_id == *term_id);
+        let Some(value) = value else {
+            if let Some(index) = index {
+                list.remove(index);
+            }
+            continue;
+        };
+        let text = |key: &str| value.get(key).and_then(Value::as_str).unwrap_or_default().to_owned();
+        let menu = MenuRef { term_id: *term_id, name: text("name"), description: text("description"), parent: value.get("parent").and_then(Value::as_i64).unwrap_or(0), term: None };
+        match index {
+            Some(index) => list[index] = menu,
+            // `array_splice( $menus, -1, 0, … )`: before the last menu.
+            None => {
+                let at = list.len().saturating_sub(1);
+                list.insert(at, menu);
+            }
+        }
+        // `wp_list_sort( $menus, array( 'name' => 'ASC' ) )`.
+        list.sort_by(|a, b| a.name.as_bytes().cmp(b.name.as_bytes()));
+    }
+    list
+}
+
 /// `wp_html_excerpt( $text, $count, $more )`.
 fn html_excerpt(text: &str, count: usize, more: &str) -> String {
     let plain = rustpress_core::formatting::wp_strip_all_tags(text);
@@ -31,6 +68,77 @@ fn html_excerpt(text: &str, count: usize, more: &str) -> String {
         cut.truncate(at);
     }
     cut + more
+}
+
+/// An item of a menu in the Customizer: stored, or one the preview changes or adds (its setting's value is the
+/// previewed one).
+enum Entry {
+    Stored(Box<admin::EditItem>),
+    Previewed { id: i64, position: i64, title: String },
+}
+
+impl Entry {
+    fn id(&self) -> i64 {
+        match self {
+            Entry::Stored(item) => item.id as i64,
+            Entry::Previewed { id, .. } => *id,
+        }
+    }
+
+    fn position(&self) -> i64 {
+        match self {
+            Entry::Stored(item) => item.menu_order,
+            Entry::Previewed { position, .. } => *position,
+        }
+    }
+
+    fn set_position(&mut self, n: i64) {
+        match self {
+            Entry::Stored(item) => item.menu_order = n,
+            Entry::Previewed { position, .. } => *position = n,
+        }
+    }
+}
+
+/// `wp_get_nav_menu_items()` in the preview: the stored items with the previewed ones
+/// (`filter_wp_get_nav_menu_items()`, `sort_wp_get_nav_menu_items()`).
+async fn previewed_items(state: &State<'_>, menu: &MenuRef) -> Vec<Entry> {
+    let mut items: Vec<Entry> = match &menu.term {
+        Some(term) => menu_items(state, term).await.into_iter().map(|item| Entry::Stored(Box::new(item))).collect(),
+        None => Vec::new(),
+    };
+    let Some(preview) = state.previewed.filter(|p| !p.nav_menu_items.is_empty()) else { return items };
+    let db = state.ctx.env.db;
+    for (post_id, value) in &preview.nav_menu_items {
+        let original = if *post_id > 0 {
+            match db.post(*post_id as u64).await.ok().flatten() {
+                Some(post) if post.post_type == "nav_menu_item" => db.terms_for_post(post.id, Some("nav_menu")).await.unwrap_or_default().first().map_or(0, |t| t.term_id as i64),
+                _ => 0,
+            }
+        } else {
+            0
+        };
+        let current = value.as_ref().and_then(|v| v.get("nav_menu_term_id")).and_then(Value::as_i64);
+        if menu.term_id != original && Some(menu.term_id) != current {
+            continue;
+        }
+        let invalid = value.as_ref().is_some_and(|v| v.get("_invalid") == Some(&Value::Bool(true)));
+        if value.is_none() || invalid || (original == menu.term_id && current != Some(original)) {
+            items.retain(|item| item.id() != *post_id);
+            continue;
+        }
+        let Some(value) = value else { continue };
+        let entry = Entry::Previewed { id: *post_id, position: value.get("position").and_then(Value::as_i64).unwrap_or(0), title: value.get("title").and_then(Value::as_str).unwrap_or_default().to_owned() };
+        match items.iter_mut().find(|item| item.id() == *post_id) {
+            Some(slot) => *slot = entry,
+            None => items.push(entry),
+        }
+    }
+    items.sort_by_key(Entry::position);
+    for (n, item) in items.iter_mut().enumerate() {
+        item.set_position(n as i64 + 1);
+    }
+    items
 }
 
 /// The items of a menu as `wp_get_nav_menu_items()` gives them: published, numbered by `menu_order`.
@@ -72,7 +180,7 @@ fn int(text: &str) -> i64 {
 }
 
 /// `WP_Customize_Nav_Menu_Item_Setting::value()` with `js_value()`.
-fn item_value(item: &admin::EditItem, menu_id: u64) -> Value {
+fn item_value(item: &admin::EditItem, menu_id: i64) -> Value {
     let original = match item.kind.as_str() {
         "post_type" | "taxonomy" => item.original_title.clone().unwrap_or_default(),
         _ => String::new(),
@@ -120,6 +228,11 @@ pub(super) async fn register(state: &State<'_>, m: &mut Manager, menus: &[Term],
     } else {
         description.push_str(&format!("<p>{}</p>", tr("Menus can be displayed in locations defined by your theme.")));
     }
+    // The menus and items of the values are previewed first, so that their sections and controls are added.
+    if let Some(preview) = state.previewed {
+        preview_values(state, m, preview).await;
+    }
+    let menus = previewed_menus(state, menus);
     let instance = m.next_panel();
     // `_add_default_theme_supports()`: a block theme without menus and widgets has no panel for menus.
     let active = !(ctx.env.block_theme && locations.is_empty() && !widgets);
@@ -150,7 +263,7 @@ pub(super) async fn register(state: &State<'_>, m: &mut Manager, menus: &[Term],
         extra: Vec::new(),
     });
     let mut choices: Vec<(String, String)> = vec![("0".into(), tr("&mdash; Select &mdash;"))];
-    for menu in menus {
+    for menu in &menus {
         choices.push((menu.term_id.to_string(), html_excerpt(&menu.name, 40, "&hellip;")));
     }
     let assigned = state.mods.get("nav_menu_locations");
@@ -168,7 +281,7 @@ pub(super) async fn register(state: &State<'_>, m: &mut Manager, menus: &[Term],
     }
 
     // A section for each menu, a setting and control for each item.
-    for menu in menus {
+    for menu in &menus {
         let section_id = format!("nav_menu[{}]", menu.term_id);
         let instance = m.next_section();
         m.add_section(Section {
@@ -184,16 +297,24 @@ pub(super) async fn register(state: &State<'_>, m: &mut Manager, menus: &[Term],
             instance,
             extra: vec![("menu_id", json!(menu.term_id))],
         });
-        let auto_add = site.options.value("nav_menu_options").and_then(|options| options.get("auto_add").and_then(|list| list.as_array().map(|items| items.iter().any(|(_, id)| id.as_i64() == Some(menu.term_id as i64))))).unwrap_or(false);
-        m.add_setting(Setting::new(&section_id, "nav_menu", "postMessage", json!({"name": menu.name, "description": menu.description, "parent": menu.parent, "auto_add": auto_add})));
-        for (i, item) in menu_items(state, menu).await.into_iter().enumerate() {
-            let id = format!("nav_menu_item[{}]", item.id);
-            m.add_setting(Setting::new(&id, "nav_menu_item", "postMessage", item_value(&item, menu.term_id)));
+        let auto_add = site.options.value("nav_menu_options").and_then(|options| options.get("auto_add").and_then(|list| list.as_array().map(|items| items.iter().any(|(_, id)| id.as_i64() == Some(menu.term_id))))).unwrap_or(false);
+        // A previewed menu keeps the value of its setting (`preview()` runs again on `wp_loaded`).
+        if m.setting_mut(&section_id).is_none_or(|_| previewed_menus_has(state, menu.term_id).is_none()) {
+            m.add_setting(Setting::new(&section_id, "nav_menu", "postMessage", json!({"name": menu.name, "description": menu.description, "parent": menu.parent, "auto_add": auto_add})));
+        }
+        for (i, entry) in previewed_items(state, menu).await.into_iter().enumerate() {
+            let id = format!("nav_menu_item[{}]", entry.id());
             let mut control = Control::new(&id, "nav_menu_item", &section_id, m.next_control());
-            // `$item->title`: the original title for an item without one.
-            control.label = if item.title.is_empty() { item.original_title.clone().filter(|t| !t.is_empty()).unwrap_or_else(|| sprintf(&tr("#%d (no title)"), &[&item.object_id])) } else { item.title.clone() };
+            match &entry {
+                Entry::Stored(item) => {
+                    m.add_setting(Setting::new(&id, "nav_menu_item", "postMessage", item_value(item, menu.term_id)));
+                    // `$item->title`: the original title for an item without one.
+                    control.label = if item.title.is_empty() { item.original_title.clone().filter(|t| !t.is_empty()).unwrap_or_else(|| sprintf(&tr("#%d (no title)"), &[&item.object_id])) } else { item.title.clone() };
+                }
+                Entry::Previewed { title, .. } => control.label = title.clone(),
+            }
             control.priority = 10 + i as i64;
-            control.json_extra = vec![("menu_item_id", json!(item.id))];
+            control.json_extra = vec![("menu_item_id", json!(entry.id()))];
             m.add_control(control);
         }
     }
@@ -201,6 +322,83 @@ pub(super) async fn register(state: &State<'_>, m: &mut Manager, menus: &[Term],
     m.add_section(Section { id: "add_menu".into(), title: tr("New Menu"), description: String::new(), priority: 20, panel: "nav_menus".into(), kind: "new_menu", description_hidden: false, allowed: true, active: true, instance, extra: Vec::new() });
     let created = site.options.value("nav_menus_created_posts").map_or(json!([]), |value| super::register::php_json(&value));
     m.add_setting(Setting::new("nav_menus_created_posts", "option", "postMessage", created));
+}
+
+/// The previewed value of a menu, if the preview has one.
+fn previewed_menus_has(state: &State<'_>, term_id: i64) -> Option<()> {
+    state.previewed?.nav_menus.iter().any(|(id, _)| *id == term_id).then_some(())
+}
+
+/// `WP_Customize_Nav_Menu_Item_Setting::get_type_label()`.
+fn type_label(state: &State<'_>, kind: &str, object: &str) -> String {
+    let ctx = state.ctx;
+    let site = ctx.site();
+    match kind {
+        "post_type" if matches!(object, "post" | "page") || site.types.post_type_exists(object) => admin::singular_of(ctx, object),
+        "taxonomy" if matches!(object, "category" | "post_tag" | "post_format") || site.types.taxonomy(object).is_some() => admin::singular_of_taxonomy(ctx, object),
+        "post_type" | "taxonomy" => object.to_owned(),
+        "post_type_archive" => ctx.tr("Post Type Archive"),
+        _ => ctx.tr("Custom Link"),
+    }
+}
+
+/// `WP_Customize_Nav_Menu_Item_Setting::get_original_title()`.
+async fn original_title(state: &State<'_>, kind: &str, object: &str, object_id: i64) -> String {
+    let ctx = state.ctx;
+    let site = ctx.site();
+    if object_id == 0 {
+        return String::new();
+    }
+    match kind {
+        "post_type" => match ctx.env.db.post(object_id.unsigned_abs()).await.ok().flatten() {
+            Some(post) => {
+                let title = rustpress_blocks::content::the_title_in_admin(site, &post);
+                if title.is_empty() { sprintf(&ctx.tr("#%d (no title)"), &[&post.id.to_string()]) } else { title }
+            }
+            None => String::new(),
+        },
+        "taxonomy" => ctx.env.db.term_by_id(Some(object), object_id.unsigned_abs()).await.ok().flatten().map(|term| term.name).unwrap_or_default(),
+        _ => String::new(),
+    }
+}
+
+/// The previewed menus and menu items: `value()` and `js_value()` of their settings in the preview, and the dynamic
+/// settings of those that are not registered yet (`register_dynamic_settings()`, in the order of the values).
+pub(super) async fn preview_values(state: &State<'_>, m: &mut Manager, preview: &rustpress_core::customize::Preview) {
+    for id in &preview.previewed {
+        let value = if let Some((_, menu)) = preview.nav_menus.iter().find(|(term_id, _)| *id == format!("nav_menu[{term_id}]")) {
+            (menu.clone().unwrap_or(json!(false)), "nav_menu")
+        } else if let Some((_, item)) = preview.nav_menu_items.iter().find(|(post_id, _)| *id == format!("nav_menu_item[{post_id}]")) {
+            let value = match item {
+                Some(Value::Object(item)) => {
+                    let mut item = item.clone();
+                    let text = |key: &str| item.get(key).and_then(Value::as_str).unwrap_or_default().to_owned();
+                    let (kind, object) = (text("type"), text("object"));
+                    let object_id = item.get("object_id").and_then(Value::as_i64).unwrap_or(0);
+                    item.insert("type_label".into(), json!(type_label(state, &kind, &object)));
+                    item.insert("original_title".into(), json!(html_entity_decode(&original_title(state, &kind, &object, object_id).await)));
+                    Value::Object(item)
+                }
+                _ => json!(false),
+            };
+            (value, "nav_menu_item")
+        } else if id.starts_with("nav_menu[") || id.starts_with("nav_menu_item[") {
+            // A value that does not sanitize is not previewed: the setting is there, with the value it has without.
+            if m.setting_mut(id).is_none() {
+                m.add_setting(Setting::new(id, if id.starts_with("nav_menu[") { "nav_menu" } else { "nav_menu_item" }, "postMessage", json!(false)));
+            }
+            continue;
+        } else {
+            continue;
+        };
+        match m.setting_mut(id) {
+            Some(setting) => {
+                setting.raw = value.0.clone();
+                setting.value = value.0;
+            }
+            None => m.add_setting(Setting::new(id, value.1, "postMessage", value.0)),
+        }
+    }
 }
 
 /// `WP_Customize_Nav_Menu_Location_Control::render_content()`.

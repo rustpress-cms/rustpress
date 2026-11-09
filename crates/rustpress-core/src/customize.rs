@@ -29,6 +29,15 @@ pub struct Preview {
     pub known: Vec<String>,
     /// `wp_get_custom_css()` in the preview, when the Additional CSS is previewed.
     pub custom_css: Option<String>,
+    /// The stylesheet of the previewed theme when it is not the active one (`customize_theme`).
+    pub theme: Option<String>,
+    /// The previewed `nav_menu[…]` settings in their order: the term ID (negative for a menu the Customizer adds) and
+    /// the sanitized value, `None` for a deleted menu.
+    pub nav_menus: Vec<(i64, Option<serde_json::Value>)>,
+    /// The previewed `nav_menu_item[…]` settings: the post ID and the sanitized value, `None` for a deleted item.
+    pub nav_menu_items: Vec<(i64, Option<serde_json::Value>)>,
+    /// The values a setting refuses, with the error `validate_setting_values()` gives for them.
+    pub invalid: Vec<(String, serde_json::Value)>,
     rendered: Mutex<Rendered>,
 }
 
@@ -47,7 +56,24 @@ pub struct Rendered {
 
 impl Preview {
     pub fn new(uuid: &str, channel: &str, widgets: bool, selective_refresh_widgets: bool, can_customize: bool, autosaved: bool) -> Self {
-        Self { uuid: uuid.to_owned(), channel: channel.to_owned(), widgets, selective_refresh_widgets, can_customize, autosaved, dirty: Vec::new(), previewed: Vec::new(), known: Vec::new(), custom_css: None, rendered: Mutex::default() }
+        Self { uuid: uuid.to_owned(), channel: channel.to_owned(), widgets, selective_refresh_widgets, can_customize, autosaved, dirty: Vec::new(), previewed: Vec::new(), known: Vec::new(), custom_css: None, theme: None, nav_menus: Vec::new(), nav_menu_items: Vec::new(), invalid: Vec::new(), rendered: Mutex::default() }
+    }
+
+    /// The preview hooks of `WP_Customize_Widgets`, which it adds for a user who may `edit_theme_options` only: the
+    /// widgets are counted, marked and exported.
+    pub fn widgets_previewed(&self) -> bool {
+        self.widgets && self.can_customize
+    }
+
+    /// The preview hooks of `WP_Customize_Nav_Menus`, for a user who may `edit_theme_options` only: the menus get the
+    /// attributes of their partials and are exported.
+    pub fn menus_previewed(&self) -> bool {
+        self.can_customize
+    }
+
+    /// `validate_setting_values()` of a value: its error, or `true`.
+    pub fn validity(&self, id: &str) -> serde_json::Value {
+        self.invalid.iter().find(|(i, _)| i == id).map_or(serde_json::Value::Bool(true), |(_, error)| error.clone())
     }
 
     /// What was recorded so far.

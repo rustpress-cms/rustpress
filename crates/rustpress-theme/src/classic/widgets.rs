@@ -147,7 +147,7 @@ pub async fn dynamic_sidebar(s: &Services<'_>, sidebar: &Sidebar<'_>) -> Result<
     let mut out = String::new();
     // `WP_Customize_Widgets` in the preview: `dynamic_sidebar_has_widgets` counts the sidebar, and with selective
     // refresh `dynamic_sidebar_before` and `_after` mark where its widgets are.
-    let preview = s.q.customize.as_deref().filter(|p| p.widgets);
+    let preview = s.q.customize.as_deref().filter(|p| p.widgets_previewed());
     let marked = preview.filter(|p| p.selective_refresh_widgets);
     let instance_number = marked.map(|p| p.start_sidebar(sidebar.id));
     if let (Some(_), Some(number)) = (marked, instance_number) {
@@ -378,17 +378,17 @@ fn custom_html(s: &Services<'_>, sidebar: &Sidebar<'_>, before: &str, settings: 
 async fn nav_menu(s: &Services<'_>, sidebar: &Sidebar<'_>, before: &str, settings: &Value) -> Result<Option<String>> {
     let site = s.site;
     let id = setting_int(settings, "nav_menu");
-    if id <= 0 {
+    if id == 0 {
         return Ok(None);
     }
-    let Some(mut menu) = menu::load_menu(site, id as u64).await? else { return Ok(None) };
+    let Some(mut menu) = menu::load_menu(site, s.q.customize.as_deref(), id).await? else { return Ok(None) };
     let (title, _) = widget_title(site, settings, None);
     menu::classes_by_context(site, s.q, s.request_uri, &mut menu.items).await?;
     let mut args = NavArgs::new("");
     args.container = Some(("nav".into(), Some(strip_tags(&title).trim().to_owned())));
     args.menu = Some(menu.term_id);
     args.fallback_cb = "";
-    args.customize = s.q.customize.clone();
+    args.customize = s.q.customize.clone().filter(|p| p.menus_previewed());
     args.use_ids_once(s.env, &menu.items);
     let title_hook = |t: &str, _: &menu::MenuItem, _: usize| t.to_owned();
     let link_hook = |l: String, _: &menu::MenuItem, _: usize| l;

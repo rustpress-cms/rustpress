@@ -137,7 +137,7 @@ fn preview<'c>(ctx: &'c Ctx<'_>) -> Option<&'c rustpress_core::customize::Previe
 
 /// `is_active_sidebar()`, which the Customizer counts as a sidebar of the page.
 fn active_sidebar(ctx: &Ctx<'_>, id: &str) -> bool {
-    if let Some(preview) = preview(ctx) {
+    if let Some(preview) = preview(ctx).filter(|p| p.widgets_previewed()) {
         preview.tally_sidebar(id);
     }
     widgets::is_active_sidebar(ctx.site, id)
@@ -298,12 +298,12 @@ async fn site_branding(ctx: &Ctx<'_>, has_top_menu: bool) -> Result<String> {
 /// `wp_nav_menu( [ 'theme_location' => 'top', 'menu_id' => 'top-menu' ] )`.
 async fn top_menu(ctx: &Ctx<'_>) -> Result<Option<String>> {
     let Some(id) = menu::menu_location(&ctx.mods, "top") else { return Ok(None) };
-    let Some(mut menu) = menu::load_menu(ctx.site, id).await? else { return Ok(None) };
+    let Some(mut menu) = menu::load_menu(ctx.site, preview(ctx), id).await? else { return Ok(None) };
     let uri = ctx.request_uri();
     menu::classes_by_context(ctx.site, ctx.q, &uri, &mut menu.items).await?;
     let mut args = NavArgs::new("top");
     args.menu_id = "top-menu".into();
-    args.customize = ctx.q.customize.clone();
+    args.customize = ctx.q.customize.clone().filter(|p| p.menus_previewed());
     let title_hook = |title: &str, item: &MenuItem, _depth: usize| {
         // `twentyseventeen_dropdown_icon_to_menu_link()`.
         if item.classes.iter().any(|c| c == "menu-item-has-children" || c == "page_item_has_children") { format!("{title}{}", svg("angle-down", false)) } else { title.to_owned() }
@@ -755,12 +755,12 @@ async fn front_page_section(ctx: &Ctx<'_>, number: u32) -> Result<String> {
 /// The social links menu of `footer.php`.
 async fn social_navigation(ctx: &Ctx<'_>) -> Result<String> {
     let Some(id) = menu::menu_location(&ctx.mods, "social") else { return Ok(String::new()) };
-    let Some(mut social) = menu::load_menu(ctx.site, id).await? else { return Ok(String::new()) };
+    let Some(mut social) = menu::load_menu(ctx.site, preview(ctx), id).await? else { return Ok(String::new()) };
     let uri = ctx.request_uri();
     menu::classes_by_context(ctx.site, ctx.q, &uri, &mut social.items).await?;
     let mut args = NavArgs::new("social");
     args.menu_class = "social-links-menu".into();
-    args.customize = ctx.q.customize.clone();
+    args.customize = ctx.q.customize.clone().filter(|p| p.menus_previewed());
     args.depth = 1;
     args.link_before = "<span class=\"screen-reader-text\">".into();
     args.link_after = format!("</span>{}", svg("chain", false));
@@ -1202,7 +1202,7 @@ async fn head(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State, registry: &Re
         inline.push(i);
     }
     let preview = preview(ctx);
-    if preview.is_some_and(|p| p.widgets) {
+    if preview.is_some_and(|p| p.widgets_previewed()) {
         out.push_str(crate::customize_preview::WIDGETS_PREVIEW_CSS);
     }
     out.push_str("<style id=\"wp-img-auto-sizes-contain-inline-css\">\nimg:is([sizes=auto i],[sizes^=\"auto,\" i]){contain-intrinsic-size:3000px 1500px}\n/*# sourceURL=wp-img-auto-sizes-contain-inline-css */\n</style>\n");
@@ -1275,7 +1275,7 @@ async fn head(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State, registry: &Re
     }
     out.push_str(&printer.scripts(&plugin_assets.scripts, false));
     out.push_str(&printer.core("jquery"));
-    let has_menu = menu::has_nav_menu(site, &ctx.mods, "top").await?;
+    let has_menu = menu::has_nav_menu(site, preview, &ctx.mods, "top").await?;
     let mut l10n = vec![("quote", svg("quote-right", false))];
     if has_menu {
         l10n.push(("expand", t(ctx, "Expand child menu")));
@@ -1362,7 +1362,7 @@ async fn wp_footer(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State) -> Resul
     // rules are for visitors.
     let playlist = if state.playlist || preview.is_some() { rustpress_blocks::shortcodes::playlist_templates(site) } else { String::new() };
     let speculation = if ctx.q.viewer.is_some() || preview.is_some() { String::new() } else { crate::document::speculation_rules(site, ctx.theme) };
-    let nav_menus = preview.map(crate::customize_preview::nav_menus_exports).unwrap_or_default();
+    let nav_menus = preview.filter(|p| p.menus_previewed()).map(crate::customize_preview::nav_menus_exports).unwrap_or_default();
     let mut out = format!("{playlist}{speculation}{nav_menus}{plugin_footer}{importmap}{module_scripts}{}{preloads}", state.interactivity.data_script().unwrap_or_default());
     if let Some(preview) = preview {
         out.push_str(&preview_footer_scripts(ctx, state, preview).await?);
@@ -1440,10 +1440,12 @@ async fn preview_footer_scripts(ctx: &Ctx<'_>, state: &rustpress_blocks::env::St
     scripts.enqueue("mediaelement-vimeo");
     scripts.enqueue("wp-playlist");
     scripts.enqueue("customize-selective-refresh");
-    if preview.widgets {
+    if preview.widgets_previewed() {
         scripts.enqueue("customize-preview-widgets");
     }
-    scripts.enqueue("customize-preview-nav-menus");
+    if preview.menus_previewed() {
+        scripts.enqueue("customize-preview-nav-menus");
+    }
     if state.custom_header_script {
         scripts.enqueue("wp-custom-header");
         scripts.localize("wp-custom-header", "_wpCustomHeaderSettings", &header_video_settings(ctx).await?);
@@ -1602,15 +1604,15 @@ async fn nav_menu_partial(ctx: &Ctx<'_>, args: &serde_json::Value) -> Result<Opt
     nav.link_before = text("link_before");
     nav.link_after = text("link_after");
     nav.container = map.get("container").and_then(serde_json::Value::as_str).filter(|c| !c.is_empty()).map(|tag| (tag.to_owned(), Some(text("container_aria_label"))));
-    nav.menu = map.get("menu").and_then(serde_json::Value::as_u64);
+    nav.menu = map.get("menu").and_then(serde_json::Value::as_i64);
     nav.fallback_cb = if text("fallback_cb") == "wp_page_menu" { "wp_page_menu" } else { "" };
-    nav.customize = ctx.q.customize.clone();
+    nav.customize = ctx.q.customize.clone().filter(|p| p.menus_previewed());
     let id = match nav.menu {
         Some(id) => Some(id),
         None => menu::menu_location(&ctx.mods, &location),
     };
     let Some(id) = id else { return Ok(Some(String::new())) };
-    let Some(mut found) = menu::load_menu(ctx.site, id).await? else { return Ok(Some(String::new())) };
+    let Some(mut found) = menu::load_menu(ctx.site, preview(ctx), id).await? else { return Ok(Some(String::new())) };
     let uri = ctx.request_uri();
     menu::classes_by_context(ctx.site, ctx.q, &uri, &mut found.items).await?;
     nav.use_ids_once(&ctx.env, &found.items);
@@ -1696,7 +1698,7 @@ pub async fn render(ctx: &Ctx<'_>, registry: &Registry, extras: &crate::document
     // The toolbar has no template to edit in a classic theme.
     let bar = match (&extras.toolbar, toolbar_on) {
         // Between `get_header` and the loop images count as being in the viewport: the avatars are not lazy.
-        (Some(toolbar), true) => toolbar(&crate::document::ToolbarInfo { template_slug: "", query: ctx.q }).replace(" loading='lazy'", ""),
+        (Some(toolbar), true) => toolbar(&crate::document::ToolbarInfo { template_slug: "", query: ctx.q, site }).replace(" loading='lazy'", ""),
         _ => String::new(),
     };
     let mut body = header(ctx, &classes, &bar).await?;

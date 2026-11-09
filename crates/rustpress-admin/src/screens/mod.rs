@@ -362,8 +362,14 @@ pub async fn customize_preview_exports(env: &AdminEnv<'_>, original: &rustpress_
         Some(cookie) => env.auth.validate_cookie(env.db, cookie, Scheme::LoggedIn, env.now, false).await.ok().flatten(),
         None => None,
     };
-    let Some(session) = session else { return String::new() };
-    let Ok(user) = CurrentUser::load(env.db, env.roles, &session.user).await else { return String::new() };
+    // A visitor may look at a changeset that exists; the exports then have no settings.
+    let (user, token) = match session {
+        Some(session) => match CurrentUser::load(env.db, env.roles, &session.user).await {
+            Ok(user) => (user, session.token),
+            Err(_) => return String::new(),
+        },
+        None => (CurrentUser::nobody(), String::new()),
+    };
     let stored = AdminEnv {
         site: original,
         db: env.db,
@@ -380,8 +386,8 @@ pub async fn customize_preview_exports(env: &AdminEnv<'_>, original: &rustpress_
         registry: env.registry,
         mailer: env.mailer.clone(),
     };
-    let stored_ctx = Ctx { env: &stored, request, user: user.clone(), token: session.token.clone() };
-    let ctx = Ctx { env, request, user, token: session.token.clone() };
+    let stored_ctx = Ctx { env: &stored, request, user: user.clone(), token: token.clone() };
+    let ctx = Ctx { env, request, user, token };
     customize::preview_exports(&ctx, &stored_ctx, q, preview).await
 }
 

@@ -580,7 +580,7 @@ pub fn comment_content_filter(content: &str, home: &str, strict: bool) -> String
 }
 
 /// `convert_invalid_entities()`: the numeric references of the Windows-1252 range name the character they were meant to.
-fn convert_invalid_entities(content: &str) -> String {
+pub fn convert_invalid_entities(content: &str) -> String {
     static CELL: OnceLock<Regex> = OnceLock::new();
     const TABLE: [(u32, &str); 27] = [
         (128, "&#8364;"), (130, "&#8218;"), (131, "&#402;"), (132, "&#8222;"), (133, "&#8230;"), (134, "&#8224;"), (135, "&#8225;"), (136, "&#710;"), (137, "&#8240;"), (138, "&#352;"), (139, "&#8249;"), (140, "&#338;"),

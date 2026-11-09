@@ -1838,6 +1838,7 @@ dependencies = [
  "rustpress-admin",
  "rustpress-auth",
  "rustpress-blocks",
+ "rustpress-content",
  "rustpress-core",
  "rustpress-db",
  "rustpress-mail",

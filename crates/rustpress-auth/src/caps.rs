@@ -89,6 +89,11 @@ impl CurrentUser {
         Self { id: 0, login: String::new(), display_name: String::new(), email: String::new(), roles: Vec::new(), allcaps: HashMap::new(), system: true, site_caps: SiteCaps::default() }
     }
 
+    /// Nobody signed in (ID 0): every check fails.
+    pub fn nobody() -> Self {
+        Self { system: false, ..Self::system() }
+    }
+
     /// Loads the capabilities of `user`.
     pub async fn load(db: &Db, site_roles: &Roles, user: &AuthUser) -> Result<Self, rustpress_db::Error> {
         let key = format!("{}capabilities", db.table_prefix());

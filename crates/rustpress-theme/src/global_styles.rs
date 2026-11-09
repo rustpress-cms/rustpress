@@ -134,13 +134,27 @@ fn block_on_page(name: &str, handles: Option<&[String]>) -> bool {
 /// ([`Theme::global_style_chunks`](crate::Theme::global_style_chunks)).
 pub struct PreparedStyles {
     main: String,
+    /// `wp_get_global_stylesheet( array( 'custom-css' ) )`: the theme's `styles.css`.
+    custom: String,
     blocks: Vec<(String, Vec<String>)>,
 }
 
 impl PreparedStyles {
     /// [`GlobalStyles::stylesheet_chunks`] for the block style handles of a page.
     pub fn chunks(&self, handles: Option<&[String]>) -> Vec<String> {
-        let mut chunks = vec![self.main.clone()];
+        self.chunks_with(handles, None)
+    }
+
+    /// The chunks with the Additional CSS of the Customizer, which `wp_enqueue_global_styles()` puts between the
+    /// stylesheet and the theme's custom CSS (with the newline before it).
+    pub fn chunks_with(&self, handles: Option<&[String]>, customizer: Option<&str>) -> Vec<String> {
+        let mut main = self.main.clone();
+        if let Some(css) = customizer {
+            main.push('\n');
+            main.push_str(css);
+        }
+        main.push_str(&self.custom);
+        let mut chunks = vec![main];
         for (name, block) in &self.blocks {
             if block_on_page(name, handles) {
                 chunks.extend(block.iter().cloned());
@@ -202,10 +216,8 @@ impl<'a> GlobalStyles<'a> {
         main.push_str(&self.root_styles(&settings, &styles));
         main.push_str(&self.preset_classes(&settings));
         // The theme's custom CSS comes last.
-        if let Some(extra) = styles.get("css").and_then(Value::as_str) {
-            main.push_str(extra);
-        }
-        PreparedStyles { main, blocks: self.block_chunk_groups(&settings, &styles) }
+        let custom = styles.get("css").and_then(Value::as_str).unwrap_or_default().to_owned();
+        PreparedStyles { main, custom, blocks: self.block_chunk_groups(&settings, &styles) }
     }
 
     /// The stylesheets of the block editor settings: `wp_get_global_stylesheet( [ 'variables' ] )`,

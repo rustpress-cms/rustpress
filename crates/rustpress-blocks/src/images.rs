@@ -475,7 +475,7 @@ pub fn attachment_image(env: &Env<'_>, meta: Option<&Metadata>, attached_file: &
     let mut attr: Vec<(String, AttrValue)> = vec![
         ("src".into(), AttrValue::Text(src.clone())),
         ("class".into(), AttrValue::Text(format!("attachment-{size} size-{size}"))),
-        ("alt".into(), AttrValue::Text(strip_tags(alt_meta).trim().to_owned())),
+        ("alt".into(), AttrValue::Text(rustpress_core::formatting::php_trim(&strip_tags(alt_meta)).to_owned())),
     ];
     for (key, value) in &args.attrs {
         match attr.iter_mut().find(|(k, _)| k == key) {

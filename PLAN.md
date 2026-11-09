@@ -114,13 +114,13 @@ The reference stack, the tools and the working rules are in [AGENTS.md](AGENTS.m
   `custom-header-crop`, `-add` and `-remove`, the menus' `load-available-menu-items-customizer`,
   `search-available-menu-items-customizer` and `customize-nav-menus-insert-auto-draft`, `update-widget`), and the
   arguments `changeset_uuid` and `theme` of `customize.php`.
-- The preview of the Customizer (see "The preview of the Customizer"), what it does not do yet: the settings of the menus
-  and their items (`nav_menu[…]`, `nav_menu_item[…]`, which `WP_Customize_Nav_Menu_Item_Setting::preview()` brings into
-  `wp_get_nav_menu_items()`), `WP_Customize_Header_Image_Setting` (the header image is taken as posted), `active_theme`
-  and the preview of another theme (`customize_theme`), the exports for a visitor who looks at a changeset that exists
-  (RustPress leaves them out without a signed-in user), `wp_customize=on` without a UUID (the latest unpublished
-  changeset), the toolbar of a frameless preview with a previewed site title, `add_state_query_params()` on the redirects
-  of plugins, and the headers of the preview on feeds and on the other answers that are not pages.
+- The preview of the Customizer (see "The preview of the Customizer"), what it does not do:
+  - A block theme in the preview of a site whose active theme is classic. The widgets of the theme switch
+    (`override_sidebars_widgets_for_theme_switch()`, `old_sidebars_widgets_data`) and the panels of the menus and widgets
+    differ in the exports. A classic theme other than Twenty Seventeen is not rendered at all.
+  - The pages the menus create in the Customizer (`nav_menus_created_posts`, `make_auto_draft_status_previewable()`).
+  - The headers of the preview on what a native plugin answers by itself.
+- Menus: a location whose menu is gone. WordPress prints the fallback `wp_page_menu()`; RustPress prints no navigation.
 - Widgets: what the RSS widget prints (front and `rendered`; it needs `fetch_feed()`), the video widget with an address
   that `wp_oembed_get()` would ask a provider or the site itself about (RustPress prints nothing, as WordPress does for an
   address without a provider), the feed check of `wp_widget_rss_process()`, the old format of `wp_convert_widget_settings()`, `alt_option_name`,
@@ -1081,3 +1081,57 @@ visitor; posted values for the title, the colors and layout (also invalid ones),
 menu location, without a valid nonce and on the block theme; and the partials of the title, the panels, the widgets and
 the menus (also with a hash that does not fit), without partials and on the block theme: 36 of 36 equal, the nonces
 masked, the credits of the footer as everywhere.
+
+**The rest of the preview (2026-11-08).** What the first step left open:
+- **A changeset that exists**:
+  - With `customize_autosaved`, the user's autosave revision is used (`wp_get_post_autosave()`).
+  - A visitor may look at a changeset with its UUID.
+    - The exports then have no settings, panels, sections, controls or nonces.
+    - The preview hooks of `WP_Customize_Widgets` and `WP_Customize_Nav_Menus` are missing for a visitor (no counted
+      or marked widgets, no partials of the menus, no `customize-preview-widgets` and `-nav-menus`), as WordPress adds
+      them only for `edit_theme_options`.
+  - In the frame a visitor gets the error page, with the robots headers.
+  - `wp_customize=on` without a UUID loads the latest changeset that is not published (any author, for a user who may
+    customize); everybody else gets a fresh UUID, which matches no changeset.
+- **The toolbar** shows the previewed site title and theme, and its link to the Customizer carries the established UUID.
+- **Answers that are not pages**:
+  - Feeds, `robots.txt`, the sitemaps, `favicon.ico` and the redirect of a trackback get the headers of the preview.
+  - `add_state_query_params()` adds the changeset, the previewed theme and the channel to the redirects of `wp_redirect()` to
+    the site: the favicon, the trackback and the redirects of the native plugins.
+  - Found on the way: `robots.txt` names `?sitemap=index` with plain permalinks; `do_favicon()` sends `X-Redirect-By`.
+- **Menus**: `nav_menu[…]` and `nav_menu_item[…]` are sanitized as their setting classes do.
+  - Invalid values get their error in `settingValidities` (`invalid_url`, `invalid_value`).
+  - On the page, `filter_wp_get_nav_menu_object()`, `filter_wp_get_nav_menus()` and `filter_wp_get_nav_menu_items()`
+    with `sort_wp_get_nav_menu_items()` apply:
+    - A renamed menu gets its slug through `remove_accents()` and has no stored items (its `count` is 0).
+    - New menus and items have negative IDs (`MenuItem::id` and the locations are signed now).
+    - Moved, deleted and invalid items behave as in WordPress; an item's address comes from what it links.
+  - In the exports, the settings of the menus that are in the values are registered first and previewed.
+    - The menus and their items are registered with the preview: positions, sections of new menus.
+    - Values that do not sanitize keep their setting with the stored value.
+  - The walker shows orphans at the top without their children, and without items at the top it starts at the parent of
+    the first item (`Walker::walk()`).
+- **The header image** is sanitized with `WP_Customize_Header_Image_Setting::sanitize()` (new in 7.1): the parts of an image
+  in their order, the attachment must be an image.
+- **Another theme** (`customize_theme`):
+  - `validate_file()` and the errors of `WP_Theme` (`The theme directory "…" does not exist.`). Without
+    `switch_themes` the error page is "Sorry, you are not allowed to edit theme options on this site."
+  - The request gets a site with `stylesheet` and `template` of the previewed theme, that theme loaded with its own text
+    domain (`Loaded::previewing()`), its theme mods and `customize_stashed_theme_mods`.
+  - The nonces and the changeset's theme mods are those of its stylesheet. `theme.active` is false, and the redirects
+    carry `customize_theme`.
+  - Found on the way: the Additional CSS of a block theme goes before the theme's own `styles.css` (`custom-css`), not
+    after it (Twenty Twenty-Four has one).
+- **Also found**: the site logo block keeps its hidden placeholder in the preview. `alt` of an attachment is trimmed
+  like PHP's `trim()`, which keeps a no-break space.
+
+Compared with `dev/customize-preview-compare.py`, as well as the cases of the first step:
+- A changeset that exists, with an autosave: in the frame, without it, autosaved, as a visitor (also on a post, autosaved,
+  in the frame), without a UUID (in the frame, as a visitor), a feed (also of comments, as a visitor), `robots.txt`, the
+  favicon and the sitemap with all headers, and on the block theme.
+- Posted menu items (changed, moved, new, deleted, invalid), a renamed, a new and a deleted menu, a header image and
+  one removed, and the partials of the menus with posted items and of the header.
+- Twenty Twenty-Four in the preview of the reference: the front page, a post, without the frame, without a UUID, a
+  theme that does not exist, a name `validate_file()` refuses, posted values, partials, and a visitor.
+
+76 of 76 equal (the 36 of the first step among them), the nonces masked.
