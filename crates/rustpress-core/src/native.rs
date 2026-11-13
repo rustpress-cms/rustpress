@@ -744,6 +744,8 @@ pub struct RestRequest<'a> {
     pub now: i64,
     /// `wp_mail()`, when the site can send e-mail.
     pub mailer: Option<&'a dyn Mailer>,
+    /// `do_shortcode()` and the other functions of the page, without `global $post`.
+    pub services: &'a dyn PageServices,
 }
 
 /// A file of a multipart body.

@@ -360,9 +360,14 @@ pub fn shortcode_unautop_with(text: &str, tags: &[&str]) -> String {
         let begin = after + lead;
         let matched = text[begin..].starts_with('[').then(|| match_at(text, begin, tags)).flatten();
         if let Some(m) = matched {
-            let end = m.core_end;
-            let trail = spaces_len(&text[end..]);
-            if text[end + trail..].starts_with("</p>") {
+            // With a closing tag the pattern first takes the whole enclosing shortcode; when no `</p>` follows, the
+            // optional content group gives way and the opening tag alone may stand in the paragraph.
+            let open_tag_end = m.content.as_ref().map(|content| m.core_end - content.len() - m.name.len() - 3);
+            let found = [Some(m.core_end), open_tag_end].into_iter().flatten().find_map(|end| {
+                let trail = spaces_len(&text[end..]);
+                text[end + trail..].starts_with("</p>").then_some((end, trail))
+            });
+            if let Some((end, trail)) = found {
                 out.push_str(&text[at..open]);
                 out.push_str(&text[begin..end]);
                 at = end + trail + 4;
@@ -379,6 +384,12 @@ pub fn shortcode_unautop_with(text: &str, tags: &[&str]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unautop_takes_an_opening_tag_alone_when_its_paragraph_ends() {
+        let text = "<p>[area service=\"x\"]</p>\n<p>Inner</p>\n<p>[/area]<br />\n[area]Two[/area]</p>\n";
+        assert_eq!(shortcode_unautop_with(text, &["area"]), "[area service=\"x\"]\n<p>Inner</p>\n<p>[/area]<br />\n[area]Two[/area]</p>\n");
+    }
 
     #[test]
     fn finds_enclosing_self_closing_and_escaped_shortcodes() {

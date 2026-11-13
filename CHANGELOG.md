@@ -4,6 +4,13 @@ All notable changes to RustPress. Each release names the WordPress release it fo
 
 ## Unreleased
 
+- Native plugin module **Complianz** 7.5.6, stage 3: the consent area. `[cmplz-consent-area]` shows its content once
+  the visitor consented to the service or category (read from the consent cookies of the request) and a placeholder
+  otherwise; the block `complianz/consent-area` and the REST route that loads its content, and the REST route
+  `documents` of the block editor.
+- `shortcode_unautop()` now unwraps an opening shortcode tag that stands alone in its paragraph.
+- Searches of visitors who are not signed in leave out password-protected posts (`WP_Query::parse_search()`), and the
+  REST search route names them without "Protected:".
 - Native plugin module **Complianz** 7.5.6, stage 2: the legal documents. The cookie policy of every region (EU, US,
   UK, Canada, Australia, South Africa, Brazil) through `[cmplz-document]` and the block `complianz/document`, with
   the plugin's numbering, conditions, company details and translations, the list of cookies per service and purpose

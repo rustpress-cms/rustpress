@@ -108,10 +108,46 @@ pub struct QueryResult {
     pub user_agent: Option<String>,
     /// `$_SERVER['HTTP_REFERER']`.
     pub referer: Option<String>,
+    /// `$_COOKIE`: the cookies of the request, see [`parse_cookies()`].
+    pub cookies: Vec<(String, String)>,
     /// `wp_create_nonce()` of a visitor who is not signed in (user 0, no session), when the site knows its salts.
     pub guest_nonce: Option<GuestNonce>,
     /// `is_customize_preview()`: the page is in the preview of the Customizer.
     pub customize: Option<std::sync::Arc<crate::customize::Preview>>,
+}
+
+impl QueryResult {
+    /// `$_COOKIE[ $name ]`.
+    pub fn cookie(&self, name: &str) -> Option<&str> {
+        self.cookies.iter().find(|(k, _)| k == name).map(|(_, v)| v.as_str())
+    }
+}
+
+/// How PHP fills `$_COOKIE` from `Cookie` headers (`php_default_treat_data()` with `PARSE_COOKIE`): pairs split at
+/// `;`, leading whitespace of a name dropped, name and value url-decoded, spaces and dots in a name made `_`, and the
+/// first of several cookies with the same name wins. Names with brackets (arrays) are left out.
+pub fn parse_cookies<'h>(headers: impl IntoIterator<Item = &'h str>) -> Vec<(String, String)> {
+    let mut out: Vec<(String, String)> = Vec::new();
+    for header in headers {
+        for pair in header.split(';') {
+            let pair = pair.trim_start_matches([' ', '\t', '\n', '\r']);
+            let (name, value) = pair.split_once('=').unwrap_or((pair, ""));
+            if name.is_empty() {
+                continue;
+            }
+            let decode = |s: &str| String::from_utf8_lossy(&crate::rewrite::urldecode(s.as_bytes())).into_owned();
+            let name = decode(name);
+            let name = name.trim_start_matches(' ');
+            if name.is_empty() || name.contains('[') {
+                continue;
+            }
+            let name = name.replace([' ', '.'], "_");
+            if !out.iter().any(|(k, _)| *k == name) {
+                out.push((name, decode(value)));
+            }
+        }
+    }
+    out
 }
 
 /// `wp_create_nonce( $action )` for user 0 without a session token.
@@ -173,6 +209,7 @@ impl QueryResult {
             guest_nonce: None,
             user_agent: None,
             referer: None,
+            cookies: Vec::new(),
             http_host: None,
             customize: None,
         }
@@ -613,6 +650,7 @@ impl Site {
                 if let Some(s) = v.get("s") {
                     q.search = parse_search_terms(s, v.has("sentence"));
                     q.search_phrase = Some(s.to_owned());
+                    q.search_signed_in = viewer.is_some();
                     // Feeds are in date order: `empty( $q['orderby'] ) && ! $this->is_feed`.
                     if !f.is_feed {
                         q.order_by = OrderBy::Relevance;

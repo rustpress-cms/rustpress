@@ -1,7 +1,7 @@
 //! The routes that describe the site's content model: `wp/v2/types`, `wp/v2/taxonomies`,
 //! `wp/v2/statuses` and `wp/v2/search`.
 
-use rustpress_blocks::content::the_title_for;
+use rustpress_blocks::content::the_title_unprefixed;
 use rustpress_blocks::php_json::empty_object;
 use rustpress_db::{OrderBy, Order, PostQuery};
 use serde_json::{Map, Value, json};
@@ -521,6 +521,7 @@ impl Rest<'_> {
                     if let Some(search) = &search {
                         query.search = rustpress_core::query::parse_search_terms(search, false);
                         query.search_phrase = Some(search.clone());
+                        query.search_signed_in = self.blank.viewer.is_some();
                         query.order_by = OrderBy::Relevance;
                     } else {
                         query.order_by = OrderBy::Date;
@@ -535,7 +536,7 @@ impl Rest<'_> {
                             let base = self.post_type_base(&post.post_type).unwrap_or_else(|| post.post_type.clone());
                             out.push(json!({
                                 "id": post.id,
-                                "title": the_title_for(self.site, &post),
+                                "title": the_title_unprefixed(self.site, &post),
                                 "url": self.site.permalink(&post).await?,
                                 "type": "post",
                                 "subtype": post.post_type,

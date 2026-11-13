@@ -1082,6 +1082,7 @@ impl Rest<'_> {
         };
         let request = self.request.as_ref();
         let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs() as i64);
+        let services = rustpress_theme::head::Services::new(self.theme, self.site, &self.blank, self.registry);
         let plugin_request = rustpress_core::native::RestRequest {
             site: self.site,
             method: self.method(),
@@ -1097,6 +1098,7 @@ impl Rest<'_> {
             user: self.blank.viewer.as_ref(),
             now,
             mailer: self.mailer.as_deref(),
+            services: &services,
         };
         let Some(answer) = self.site.plugins.rest(&plugin_request).await? else { return Ok(None) };
         // `rest_send_allow_header()`: the methods of the route, once the permission check passed.

@@ -4,7 +4,8 @@
     python dev/front-compare.py [--user rpeditor] [--diff N] / /?p=18&preview=true /privat/
 
 Prints one line per address (identical or the number of differing lines); `--diff N` prints the first N differences.
-The user is rpadmin unless `--user` says otherwise; `--anon` compares without signing in."""
+The user is rpadmin unless `--user` says otherwise; `--anon` compares without signing in. `--cookie NAME=VALUE` sends a
+cookie (with `--anon`)."""
 import difflib
 import http.cookiejar
 import re
@@ -37,9 +38,13 @@ def opener(port, user):
     return _openers[key]
 
 
+COOKIES = []
+
+
 def fetch(port, user, path):
     try:
-        r = opener(port, user).open(f'http://localhost:{port}{path}')
+        request = urllib.request.Request(f'http://localhost:{port}{path}', headers={'Cookie': '; '.join(COOKIES)} if COOKIES else {})
+        r = opener(port, user).open(request)
         return r.status, {k.title(): v for k, v in r.headers.items()}, r.read().decode('utf-8', 'replace')
     except urllib.error.HTTPError as e:
         return e.code, {k.title(): v for k, v in e.headers.items()}, e.read().decode('utf-8', 'replace')
@@ -72,6 +77,9 @@ def main():
             i += 2
         elif args[i] == '--diff':
             diff_lines = int(args[i + 1])
+            i += 2
+        elif args[i] == '--cookie':
+            COOKIES.append(args[i + 1])
             i += 2
         elif args[i] == '--anon':
             user = ''

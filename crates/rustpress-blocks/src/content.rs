@@ -33,7 +33,17 @@ pub fn the_title(post: &Post) -> String {
 
 /// [`the_title`] with the "Protected: %s" / "Private: %s" formats translated for the site.
 pub fn the_title_for(site: &rustpress_core::Site, post: &Post) -> String {
-    let title = title_with_prefixes(post, &site.tr("Protected: %s"), &site.tr("Private: %s"), |text| site.texturize(text));
+    front_title(site, post, &site.tr("Protected: %s"), &site.tr("Private: %s"))
+}
+
+/// `get_the_title()` with `protected_title_format` and `private_title_format` filtered to `%s`, as
+/// `WP_REST_Post_Search_Handler::prepare_item()` does.
+pub fn the_title_unprefixed(site: &rustpress_core::Site, post: &Post) -> String {
+    front_title(site, post, "%s", "%s")
+}
+
+fn front_title(site: &rustpress_core::Site, post: &Post, protected: &str, private: &str) -> String {
+    let title = title_with_prefixes(post, protected, private, |text| site.texturize(text));
     // `twenty_twenty_one_post_title()` on `the_title` (outside of the administration).
     if title.is_empty() && site.options.get("template") == Some("twentytwentyone") {
         return rustpress_core::formatting::esc_html(&site.i18n().pgettext("twentytwentyone", "Added on the front end to posts and pages that are missing titles", "Untitled"));

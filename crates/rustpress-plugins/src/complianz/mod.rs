@@ -5,11 +5,13 @@
 //!
 //! The settings live in the option `cmplz_options`, the banners in the table `{prefix}cmplz_cookiebanners`, the
 //! cookies and services in `{prefix}cmplz_cookies` and `{prefix}cmplz_services`, the plugin's own transients in the
-//! option `cmplz_transients`. The consent area and the submission of data requests are not ported yet (see PLAN.md),
-//! nor is the admin side: the settings are made in a WordPress installation.
+//! option `cmplz_transients`. The consent area (`[cmplz-consent-area]`, its block and REST route) is in `consent.rs`.
+//! The submission of data requests is not ported yet (see PLAN.md), nor is the admin side: the settings are made in a
+//! WordPress installation.
 
 mod banner;
 mod blocker;
+mod consent;
 mod documents;
 #[cfg(test)]
 mod golden;
@@ -82,6 +84,16 @@ const PAGES: &[(&str, &[&str])] = &[
     ("br", &["cookie-statement", "privacy-statement"]),
     ("all", &["impressum"]),
 ];
+
+/// The `title` of a page of `cmplz_config::$pages`.
+fn page_title(kind: &str, region: &str) -> String {
+    match (kind, region) {
+        ("impressum", _) => "Imprint".to_owned(),
+        ("cookie-statement", "us") => "Opt-out preferences".to_owned(),
+        ("cookie-statement", region) => format!("Cookie Policy ({})", region.to_ascii_uppercase()),
+        (_, region) => format!("Privacy Statement ({})", region.to_ascii_uppercase()),
+    }
+}
 
 /// The page of a document as `get_shortcode_page_id()` finds it.
 struct DocumentPage {
@@ -1072,21 +1084,21 @@ impl ActivePlugin for Active {
     fn shortcode_tags(&self) -> &'static [&'static str] {
         // cmplz_DNSMPD adds its form only for a site that targets the US.
         if self.options.has_region("us") {
-            &["cmplz-document", "cmplz-cookies", "cmplz-manage-consent", "cmplz-revoke-link", "cmplz-accept-link", "cmplz-dnsmpi-request"]
+            &["cmplz-document", "cmplz-consent-area", "cmplz-cookies", "cmplz-manage-consent", "cmplz-revoke-link", "cmplz-accept-link", "cmplz-dnsmpi-request"]
         } else {
-            &["cmplz-document", "cmplz-cookies", "cmplz-manage-consent", "cmplz-revoke-link", "cmplz-accept-link"]
+            &["cmplz-document", "cmplz-consent-area", "cmplz-cookies", "cmplz-manage-consent", "cmplz-revoke-link", "cmplz-accept-link"]
         }
     }
 
-    fn shortcode<'a>(&'a self, tag: &'a str, atts: &'a Atts, _content: Option<&'a str>, ctx: &'a ShortcodeContext<'a>) -> BoxFuture<'a, Result<String>> {
+    fn shortcode<'a>(&'a self, tag: &'a str, atts: &'a Atts, content: Option<&'a str>, ctx: &'a ShortcodeContext<'a>) -> BoxFuture<'a, Result<String>> {
         Box::pin(async move {
             let att = |name: &str| atts.named.iter().rev().find(|(k, _)| k.eq_ignore_ascii_case(name)).map(|(_, v)| v.clone());
             let text = att("text").filter(|v| !v.is_empty() && v != "0");
             Ok(match tag {
                 // load_document(): the document through wp_kses() once more.
                 "cmplz-document" => {
-                    let kind = rustpress_core::slug::sanitize_title(&att("type").unwrap_or_default());
-                    let region = rustpress_core::slug::sanitize_title(&att("region").unwrap_or_default());
+                    let kind = rustpress_core::slug::sanitize_title_save(&att("type").unwrap_or_default(), self.options.locale());
+                    let region = rustpress_core::slug::sanitize_title_save(&att("region").unwrap_or_default(), self.options.locale());
                     if kind.is_empty() || kind == "0" {
                         return Ok(String::new());
                     }
@@ -1103,6 +1115,37 @@ impl ActivePlugin for Active {
                     };
                     let html = self.document_html(ctx.site, ctx.query, ctx.services, post, &kind, &region).await?;
                     documents::kses(&html)
+                }
+                // show_consent_area(): the content only once the visitor consented, otherwise a placeholder.
+                "cmplz-consent-area" => {
+                    let Some(content) = content.filter(|c| !c.is_empty() && *c != "0") else { return Ok(String::new()) };
+                    let atts = consent::Atts {
+                        id: atts.named.iter().rev().find(|(k, _)| k.eq_ignore_ascii_case("id")).map(|(_, v)| v.as_str()),
+                        clientside: atts.named.iter().rev().find(|(k, _)| k.eq_ignore_ascii_case("clientside")).map(|(_, v)| v.as_str()),
+                        cache_redirect: atts.named.iter().rev().find(|(k, _)| k.eq_ignore_ascii_case("cache_redirect")).map(|(_, v)| v.as_str()),
+                        scroll_into_view: atts.named.iter().rev().find(|(k, _)| k.eq_ignore_ascii_case("scroll_into_view")).map(|(_, v)| v.as_str()),
+                        service: atts.named.iter().rev().find(|(k, _)| k.eq_ignore_ascii_case("service")).map(|(_, v)| v.as_str()),
+                        category: atts.named.iter().rev().find(|(k, _)| k.eq_ignore_ascii_case("category")).map(|(_, v)| v.as_str()),
+                        text: sanitize_text_field(&att("text").unwrap_or_else(|| self.options.tr("Click to accept the cookies for this service"))),
+                    };
+                    let cookie = |name: &str| ctx.query.cookie(name).map(str::to_owned);
+                    match consent::show_consent_area(&atts, ctx.global_post.unwrap_or(0), &self.default_consenttype(), self.options.locale(), &cookie) {
+                        consent::Area::Html(html) => html,
+                        consent::Area::Consented { prefix } => {
+                            let fetched;
+                            let post = match ctx.query.posts.iter().find(|p| Some(p.id) == ctx.global_post) {
+                                Some(post) => Some(post),
+                                None => {
+                                    fetched = match ctx.global_post {
+                                        Some(id) => ctx.site.db.post(id).await?,
+                                        None => None,
+                                    };
+                                    fetched.as_ref()
+                                }
+                            };
+                            prefix + &ctx.services.do_shortcode(post, content).await?
+                        }
+                    }
                 }
                 "cmplz-cookies" => documents::used_cookies(&self.cookie_data()),
                 "cmplz-dnsmpi-request" => self.datarequest_form(),
@@ -1130,12 +1173,15 @@ impl ActivePlugin for Active {
     }
 
     fn block_names(&self) -> &'static [&'static str] {
-        &["complianz/document"]
+        &["complianz/document", "complianz/consent-area"]
     }
 
-    /// `cmplz_render_document_block()`.
-    fn render_block<'a>(&'a self, _name: &'a str, attrs: &'a Map<String, Json>, ctx: &'a rustpress_core::native::BlockContext<'a>) -> BoxFuture<'a, Result<String>> {
+    /// `cmplz_render_document_block()` and `cmplz_render_consent_area_block()`.
+    fn render_block<'a>(&'a self, name: &'a str, attrs: &'a Map<String, Json>, ctx: &'a rustpress_core::native::BlockContext<'a>) -> BoxFuture<'a, Result<String>> {
         Box::pin(async move {
+            if name == "complianz/consent-area" {
+                return Ok(consent::render_block(attrs, self.options.locale()));
+            }
             let text = |key: &str| match attrs.get(key) {
                 None | Some(Json::Null) => None,
                 Some(Json::String(s)) => Some(s.clone()),
@@ -1182,6 +1228,8 @@ impl ActivePlugin for Active {
                     Some(RestAnswer::ok(list.unwrap_or(Json::Array(Vec::new()))))
                 }
                 ("GET", "/complianz/v1/manage_consent_html") => Some(RestAnswer::ok(Json::String(self.manage_consent_html()))),
+                ("GET", "/complianz/v1/documents") => Some(RestAnswer::ok(self.rest_documents(request).await?)),
+                ("GET", _) if route.starts_with("/complianz/v1/consent-area/") => self.consented_content(request, &route["/complianz/v1/consent-area/".len()..]).await?,
                 _ => None,
             })
         })
@@ -1189,6 +1237,52 @@ impl ActivePlugin for Active {
 }
 
 impl Active {
+    /// `cmplz_rest_api_documents()`: each required document (`get_required_pages()`: the public pages of the active
+    /// regions and `all` whose type is set to `generated`) with its id, title and HTML. The `locale` parameter
+    /// (`switch_to_locale()`) is not looked at.
+    async fn rest_documents(&self, request: &RestRequest<'_>) -> Result<Json> {
+        let query = QueryResult::blank();
+        let mut out = Vec::new();
+        let mut regions = self.options.regions();
+        regions.push("all".to_owned());
+        for region in &regions {
+            let Some((region, kinds)) = PAGES.iter().find(|(r, _)| r == region) else { continue };
+            for kind in kinds.iter().filter(|kind| self.options.is(kind, "generated")) {
+                let html = self.document_html(request.site, &query, request.services, None, kind, region).await?;
+                let id = if *region == "eu" { (*kind).to_owned() } else { format!("{kind}-{region}") };
+                out.push(json!({ "id": id, "title": self.options.tr(&page_title(kind, region)), "content": html }));
+            }
+        }
+        Ok(Json::Array(out))
+    }
+
+    /// `cmplz_rest_consented_content()` for the route `consent-area/(?P<post_id>[0-9]+)/(?P<block_id>[a-z0-9-_]+)`
+    /// (matched without regard to case).
+    async fn consented_content(&self, request: &RestRequest<'_>, rest: &str) -> Result<Option<RestAnswer>> {
+        let Some((post_id, block_id)) = rest.split_once('/') else { return Ok(None) };
+        // PCRE reads `9-_` as a range, so `:;<=>?@[\]^` count as well.
+        static BLOCK_ID: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+        let valid_block = BLOCK_ID.get_or_init(|| regex::Regex::new(r"(?i)^[a-z0-9-_]+$").expect("valid regex")).is_match(block_id);
+        if post_id.is_empty() || !post_id.bytes().all(|b| b.is_ascii_digit()) || !valid_block {
+            return Ok(None);
+        }
+        let block_id = rustpress_core::slug::sanitize_title_save(block_id, self.options.locale());
+        let post = match post_id.parse::<u64>() {
+            Ok(id) if id > 0 => request.site.db.post(id).await?,
+            _ => None,
+        };
+        let Some(post) = post else { return Ok(Some(RestAnswer::ok(Json::String(String::new())))) };
+        let forbidden = || RestAnswer::error("rest_forbidden", "", 403);
+        if post.post_status != "publish" && !request.user.is_some_and(|user| user.can_read_post(&post)) {
+            return Ok(Some(forbidden()));
+        }
+        if !post.post_password.is_empty() && rustpress_blocks::content::post_password_required(&post) {
+            return Ok(Some(forbidden()));
+        }
+        let output = consent::consented_content(&post.post_content, &block_id);
+        Ok(Some(RestAnswer::ok(Json::String(request.services.do_shortcode(None, &output).await?))))
+    }
+
     /// `cmplz_rest_api_manage_consent_html()` (the Do Not Track signal of the browser is not looked at).
     fn manage_consent_html(&self) -> String {
         let Some(banner) = &self.banner else { return String::new() };
