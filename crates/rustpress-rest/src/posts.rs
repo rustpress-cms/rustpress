@@ -185,6 +185,7 @@ impl Rest<'_> {
         if let Some(search) = search {
             query.search = rustpress_core::query::parse_search_terms(search, false);
             query.search_phrase = Some(search.to_owned());
+            query.search_signed_in = self.blank.viewer.is_some();
         }
         for (key, slot) in [("after", &mut query.date_after), ("before", &mut query.date_before), ("modified_after", &mut query.modified_after), ("modified_before", &mut query.modified_before)] {
             if let Some(value) = params.get(key) {

@@ -174,3 +174,51 @@ fn documents() {
     }
     assert!(failed.is_empty(), "{} of {count} documents and lists differ\n{}", failed.len(), failed.join("\n"));
 }
+
+/// The consent area against the real plugin: `tests/data/complianz/consent.json` holds what `show_consent_area()`
+/// gives for attributes, cookies and consent types, what `cmplz_render_consent_area_block()` gives for attributes and
+/// the consented content `cmplz_rest_consented_content()` finds (made by `dev/complianz-consent-golden.sh`).
+#[test]
+fn consent_area() {
+    use super::consent::{self, Area};
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/complianz/consent.json");
+    let cases: Json = serde_json::from_str(&std::fs::read_to_string(path).expect("golden file")).expect("valid JSON");
+    let text = |v: &Json| v.as_str().unwrap_or_default().to_owned();
+    let mut failed = Vec::new();
+    let cases = cases.as_array().expect("cases");
+    for case in cases {
+        let expected = text(&case["expected"]);
+        let actual = match case["kind"].as_str() {
+            Some("shortcode") => {
+                let content = text(&case["content"]);
+                if content.is_empty() {
+                    String::new()
+                } else {
+                    let atts: Vec<(String, String)> = case["atts"].as_object().expect("atts").iter().map(|(k, v)| (k.to_ascii_lowercase(), text(v))).collect();
+                    let get = |name: &str| atts.iter().rev().find(|(k, _)| k == name).map(|(_, v)| v.as_str());
+                    let area = consent::Atts {
+                        id: get("id"),
+                        clientside: get("clientside"),
+                        cache_redirect: get("cache_redirect"),
+                        scroll_into_view: get("scroll_into_view"),
+                        service: get("service"),
+                        category: get("category"),
+                        text: super::sanitize_text_field(&get("text").map_or_else(|| text(&case["default_text"]), str::to_owned)),
+                    };
+                    let cookies = case["cookies"].as_object().expect("cookies");
+                    let cookie = |name: &str| cookies.get(name).map(text);
+                    match consent::show_consent_area(&area, case["post_id"].as_u64().unwrap_or(0), &text(&case["consent_type"]), "en_US", &cookie) {
+                        Area::Html(html) => html,
+                        Area::Consented { prefix } => prefix + &content,
+                    }
+                }
+            }
+            Some("block") => consent::render_block(case["attrs"].as_object().expect("attrs"), "en_US"),
+            _ => consent::consented_content(&text(&case["content"]), &text(&case["block_id"])),
+        };
+        if actual != expected {
+            failed.push(format!("{case}\n  got: {actual:?}"));
+        }
+    }
+    assert!(failed.is_empty(), "{} of {} cases differ\n{}", failed.len(), cases.len(), failed.iter().take(5).cloned().collect::<Vec<_>>().join("\n"));
+}

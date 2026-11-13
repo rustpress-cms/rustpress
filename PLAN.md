@@ -76,7 +76,8 @@ The reference stack, the tools and the working rules are in [AGENTS.md](AGENTS.m
   - Classic Editor 1.7.0 – complete except the frontend toolbar link (see below).
   - Complianz – GDPR/CCPA Cookie Consent 7.5.6 – stage 1, the website: banner, statistics, cookie blocker, REST,
     the consent shortcodes; stage 2, the legal documents: the cookie policies of every region, the cookie list, the
-    do-not-sell form. The consent area and sending data requests are open (see below).
+    do-not-sell form; stage 3: the consent area and the REST route `documents`. Sending data requests is open (see
+    below).
   - Site Kit by Google 1.191.0 – the tags on the website (Analytics with consent mode, site verification), not the dashboard.
   - WPCode Lite 2.4.1 – the global header, body and footer scripts and the site-wide snippets with their conditions, not PHP.
   - WPForms Lite 2.0.4 – forms on the website (shortcode, block), submitting with validation, confirmations and the
@@ -157,12 +158,11 @@ The reference stack, the tools and the working rules are in [AGENTS.md](AGENTS.m
 - The dashboard and the block editor are still slower than the reference.
 
 **Native plugins**
-- Complianz, stage 3: the consent area (`[cmplz-consent-area]`, the block `complianz/consent-area` and the REST route
-  `consent-area/<post>/<block>`), sending data requests (the REST route `datarequests` with its rate limits, the table
-  `cmplz_dnsmpd` and the mails by cron), the REST route `documents` (used by the block editor), the custom document
-  CSS (`inline_styles()` on `wp_head` at priority 100, off by default), documents unlinked in the classic editor
-  (`revert_divs_to_summary()`). After that, maybe: A/B tests and records of consent (Premium only), the integrations
-  with other plugins.
+- Complianz, next: sending data requests (the REST route `datarequests` with its rate limits in transients, the
+  table `cmplz_dnsmpd` and the mails by the cron event `cmplz_process_datarequest_mail`; needs writes from plugin REST
+  routes and plugin hooks in the cron runner), the custom document CSS (`inline_styles()` on `wp_head` at priority
+  100, off by default), documents unlinked in the classic editor (`revert_divs_to_summary()`). After that, maybe: A/B
+  tests and records of consent (Premium only), the integrations with other plugins.
 - Contact Form 7: the configuration check (`WPCF7_ConfigValidator`), setting up the services, `action=validate`, the
   REST routes to read, create, change and delete forms, the block `contact-form-7/contact-form-selector`.
 - Yoast SEO: FAQ/HowTo blocks in the schema, the admin bar, signed-in viewers, the administration.
@@ -1432,6 +1432,40 @@ CSS, unlinked classic documents and documents stored in post meta (`cmplz_custom
 documents and their annexes, dropdowns and loops, overrides of the cookie policy templates in a theme, self-hosted
 Google Fonts (`CMPLZ_SELF_HOSTED_PLUGIN_ACTIVE`), WPML/Polylang (`cmplz_translate()`), the "(Translation error)" link
 `cmplz_sprintf()` adds for administrators, and the `cmplz_cookies` transient (the table is read).
+
+### Complianz – GDPR/CCPA Cookie Consent 7.5.6, stage 3: the consent area (2026-11-14)
+
+`crates/rustpress-plugins/src/complianz/consent.rs`.
+
+- **Shortcode** `[cmplz-consent-area]` (`show_consent_area()`): with consent for the service (the cookie
+  `cmplz_consented_services`, JSON after `stripslashes()`, compared with `1 ==`) or the category (`cmplz_{category}`
+  is `allow`; opt-out without the cookie counts as consent) the content runs through `do_shortcode()` behind the
+  anchor, otherwise the placeholder link with the reload script; `cache_redirect` and `scroll_into_view` with their
+  redirect scripts, `clientside` (`show_consent_area_clientside()`), an empty content prints nothing.
+- **Block** `complianz/consent-area` (`cmplz_render_consent_area_block()`): the placeholder with `postId`, `blockId`,
+  category, service and `placeholderContent` through `wp_kses_post()`.
+- **REST:** `consent-area/<post>/<block>` (`cmplz_rest_consented_content()`): the attribute `consentedContent` of the
+  block with the id (breadth first) or the content of the shortcode with the id (`default`: the first one), through
+  `do_shortcode()`; `""` for a missing post, 403 `rest_forbidden` for a post that is not published and not readable
+  and for one behind a password. The block id follows the route's pattern, where PCRE reads `9-_` as a range. And
+  `documents` (`cmplz_rest_api_documents()`): the generated documents of the active regions and `all` with id, title
+  and HTML; its `locale` parameter (`switch_to_locale()`) is not looked at.
+- **Framework:** `QueryResult::cookies` holds `$_COOKIE` (`query::parse_cookies()`: split at `;`, url-decoded, spaces
+  and dots of names made `_`, the first of a name wins, array names left out); `RestRequest::services` gives plugin
+  routes `do_shortcode()`. `shortcode_unautop()` now lets an opening tag stand alone in its paragraph when the
+  enclosing shortcode spans paragraphs (the optional content group of WordPress' pattern gives way).
+- `sanitize_title()` of the shortcode attributes `type` and `region` and of the block ids now removes accents first.
+- Found by the compat run: a search without a signed-in user leaves out password-protected posts
+  (`PostQuery::search_signed_in`, as `WP_Query::parse_search()` does), and `wp/v2/search` gives their titles without
+  "Protected:" (`the_title_unprefixed()`, the filtered title formats of `WP_REST_Post_Search_Handler`).
+
+Goldens: `dev/complianz-consent-golden.sh` has the plugin render the shortcode for 17 attribute sets, 7 cookie sets,
+the EU (opt-in) and US (opt-out) and with and without a post, the block for 6 attribute sets and the consented
+content of 6 contents for 8 ids – 531 cases, all equal (`tests/data/complianz/consent.json`).
+`dev/complianz-consent-compare.sh` compares a page with shortcodes and one with blocks without and with three consent
+cookies, and 12 requests to the REST route (nested blocks, case of the id, drafts, password, missing posts, bad ids),
+for the EU and the US: all equal. `/wp-json/complianz/v1/documents` is equal for the EU and US scenarios but for the
+random e-mail obfuscation.
 
 ### WPForms Lite 2.0.4 (2026-11-08)
 

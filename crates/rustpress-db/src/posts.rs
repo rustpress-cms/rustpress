@@ -73,6 +73,8 @@ pub struct PostQuery {
     pub search: Vec<String>,
     /// The complete search string, used by [`OrderBy::Relevance`].
     pub search_phrase: Option<String>,
+    /// `is_user_logged_in()`: without it a search leaves out posts with a password (`WP_Query::parse_search()`).
+    pub search_signed_in: bool,
     pub year: Option<u32>,
     pub month: Option<u32>,
     pub day: Option<u32>,
@@ -122,6 +124,7 @@ impl Default for PostQuery {
             tax_groups: Vec::new(),
             search: Vec::new(),
             search_phrase: None,
+            search_signed_in: false,
             year: None,
             month: None,
             day: None,
@@ -236,6 +239,9 @@ impl PostQuery {
             qb.push(" AND (p.post_title LIKE ").push_bind(pattern.clone());
             qb.push(" OR p.post_excerpt LIKE ").push_bind(pattern.clone());
             qb.push(" OR p.post_content LIKE ").push_bind(pattern).push(")");
+        }
+        if !self.search.is_empty() && !self.search_signed_in {
+            qb.push(" AND p.post_password = ''");
         }
         for (column, value) in [("YEAR", self.year), ("MONTH", self.month), ("DAYOFMONTH", self.day), ("HOUR", self.hour), ("MINUTE", self.minute), ("SECOND", self.second)] {
             if let Some(value) = value {
