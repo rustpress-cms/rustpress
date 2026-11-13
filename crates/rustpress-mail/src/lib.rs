@@ -1,30 +1,43 @@
-//! `wp_mail()`: a message over SMTP.
+//! `wp_mail()`: a message over SMTP, or through the host's `sendmail` as PHP's `mail()` sends it.
 //!
 //! The server is named by `RUSTPRESS_SMTP_URL` (`smtp://user:password@host:25`, `smtps://...` for TLS from the start,
 //! `smtp://host:587?tls=required` for STARTTLS); the sender by `RUSTPRESS_MAIL_FROM` (an address, or
-//! `Name <address>`). Without a server nothing is sent and every message fails, as `wp_mail()` does on a host that
-//! cannot send e-mail.
+//! `Name <address>`). Without a server the message goes to `sendmail` (`RUSTPRESS_SENDMAIL`, else
+//! `/usr/sbin/sendmail` or `/usr/lib/sendmail`, the `sendmail_path` PHP is built with), which is what `wp_mail()`
+//! does through PHPMailer's `mail()` on shared hosting. `RUSTPRESS_SENDMAIL=off`, or a host without `sendmail`,
+//! sends nothing, and every message fails, as `wp_mail()` does on a host that cannot send e-mail.
 
 use lettre::message::{Attachment, Mailbox, MultiPart, SinglePart, header::ContentType};
-use lettre::{AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor};
+use lettre::{AsyncSendmailTransport, AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor};
+
+/// The places PHP's `sendmail_path` points to on Linux, in the order `configure` looks for them.
+const SENDMAIL_PATHS: [&str; 2] = ["/usr/sbin/sendmail", "/usr/lib/sendmail"];
+
+/// How a message leaves the host.
+enum Transport {
+    Smtp(AsyncSmtpTransport<Tokio1Executor>),
+    Sendmail(AsyncSendmailTransport<Tokio1Executor>),
+}
 
 /// Where e-mail goes and who it is from.
 pub struct Mailer {
-    transport: AsyncSmtpTransport<Tokio1Executor>,
+    transport: Transport,
     from: Mailbox,
 }
 
 impl Mailer {
-    /// From the environment; `None` when no SMTP server is configured. `default_host` names the site (for the
-    /// sender `wordpress@host`).
+    /// From the environment; `None` when e-mail cannot be sent (no SMTP server and no `sendmail`). `default_host`
+    /// names the site (for the sender `wordpress@host`).
     pub fn from_env(default_host: &str) -> Option<Self> {
-        let url = std::env::var("RUSTPRESS_SMTP_URL").ok().filter(|u| !u.is_empty())?;
-        let transport = match AsyncSmtpTransport::<Tokio1Executor>::from_url(&url) {
-            Ok(builder) => builder.build(),
-            Err(e) => {
-                tracing::error!(error = %e, "RUSTPRESS_SMTP_URL is not a valid address");
-                return None;
-            }
+        let transport = match std::env::var("RUSTPRESS_SMTP_URL").ok().filter(|u| !u.is_empty()) {
+            Some(url) => match AsyncSmtpTransport::<Tokio1Executor>::from_url(&url) {
+                Ok(builder) => Transport::Smtp(builder.build()),
+                Err(e) => {
+                    tracing::error!(error = %e, "RUSTPRESS_SMTP_URL is not a valid address");
+                    return None;
+                }
+            },
+            None => Transport::Sendmail(AsyncSendmailTransport::new_with_command(sendmail_command(std::env::var("RUSTPRESS_SENDMAIL").ok().as_deref(), |p| std::path::Path::new(p).is_file())?)),
         };
         let host = default_host.trim_start_matches("www.");
         let from = std::env::var("RUSTPRESS_MAIL_FROM").ok().filter(|f| !f.is_empty()).unwrap_or_else(|| format!("WordPress <wordpress@{host}>"));
@@ -53,8 +66,12 @@ impl Mailer {
     /// HTML message, `Cc`, `Bcc` and `Reply-To` add addresses, and any other header is passed on.
     pub async fn send_mail(&self, to: &str, subject: &str, message: &str, headers: &[&str], attachments: &[Attached<'_>]) -> bool {
         let Some(email) = self.build(to, subject, message, headers, attachments) else { return false };
-        match self.transport.send(email).await {
-            Ok(_) => true,
+        let sent = match &self.transport {
+            Transport::Smtp(smtp) => smtp.send(email).await.map(|_| ()).map_err(|e| e.to_string()),
+            Transport::Sendmail(sendmail) => sendmail.send(email).await.map_err(|e| e.to_string()),
+        };
+        match sent {
+            Ok(()) => true,
             Err(e) => {
                 tracing::warn!(error = %e, "e-mail could not be sent");
                 false
@@ -64,6 +81,16 @@ impl Mailer {
 
     fn build(&self, to: &str, subject: &str, message: &str, headers: &[&str], attachments: &[Attached<'_>]) -> Option<Message> {
         build_message(&self.from, to, subject, message, headers, attachments)
+    }
+}
+
+/// The `sendmail` program: the one `RUSTPRESS_SENDMAIL` names (`off` for none), else the first of
+/// [`SENDMAIL_PATHS`] that exists.
+fn sendmail_command(configured: Option<&str>, exists: impl Fn(&str) -> bool) -> Option<String> {
+    match configured.map(str::trim).filter(|c| !c.is_empty()) {
+        Some(off) if off.eq_ignore_ascii_case("off") => None,
+        Some(path) => Some(path.to_owned()),
+        None => SENDMAIL_PATHS.iter().find(|p| exists(p)).map(|p| (*p).to_owned()),
     }
 }
 
@@ -171,6 +198,15 @@ mod tests {
         assert!(text.contains("multipart/mixed"), "{text}");
         assert!(text.contains("Content-Type: text/html; charset=utf-8"), "{text}");
         assert!(text.contains("filename=\"a.txt\""), "{text}");
+    }
+
+    #[test]
+    fn sendmail_like_php() {
+        assert_eq!(sendmail_command(None, |p| p == "/usr/lib/sendmail").as_deref(), Some("/usr/lib/sendmail"));
+        assert_eq!(sendmail_command(None, |_| true).as_deref(), Some("/usr/sbin/sendmail"));
+        assert_eq!(sendmail_command(None, |_| false), None);
+        assert_eq!(sendmail_command(Some("off"), |_| true), None);
+        assert_eq!(sendmail_command(Some("/opt/bin/msmtp"), |_| false).as_deref(), Some("/opt/bin/msmtp"));
     }
 
     #[test]
