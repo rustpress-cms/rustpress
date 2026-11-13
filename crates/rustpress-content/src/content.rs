@@ -507,6 +507,11 @@ impl Content<'_> {
         if let Some(template) = &data.page_template {
             self.writer.update_post_meta(post_id, "_wp_page_template", template).await?;
         }
+        if post_type != "attachment"
+            && let Some(post) = &stored
+        {
+            self.transition_post_status(post_id, &post.post_status, &post.post_date).await?;
+        }
         hooks.save_post(post_id).await?;
         if update && post_type != "attachment" {
             self.save_revision(post_id, hooks).await?;
@@ -518,6 +523,25 @@ impl Content<'_> {
             self.update_term_counts(&ids).await?;
         }
         Ok(post_id)
+    }
+
+    /// What `wp_transition_post_status()` does to the scheduled events: `_transition_post_status()` always clears
+    /// `publish_future_post` of the post, and `_future_post_hook()` (on `future_{$post_type}`) schedules it again
+    /// at the post's date while the post is scheduled.
+    pub async fn transition_post_status(&self, post_id: u64, new_status: &str, post_date: &str) -> Result<()> {
+        let mut cron = crate::cron::CronArray::load(self.db).await?;
+        let before = cron.clone();
+        let args = crate::cron::post_args(post_id);
+        cron.clear_scheduled_hook("publish_future_post", &args);
+        if new_status == "future"
+            && let Some(timestamp) = rustpress_core::datetime::SiteTimezone::gmt_timestamp(&self.gmt_from_local(post_date))
+        {
+            cron.schedule_single_event(timestamp, "publish_future_post", args, self.now);
+        }
+        if cron != before {
+            cron.save(self.writer).await?;
+        }
+        Ok(())
     }
 
     fn default_status(&self, post_type: &str, kind: &str) -> String {
@@ -839,6 +863,10 @@ impl Content<'_> {
         self.writer.delete_rows("comments", "comment_post_ID", id).await?;
         self.writer.delete_rows("postmeta", "post_id", id).await?;
         self.writer.delete_rows("posts", "ID", id).await?;
+        let mut cron = crate::cron::CronArray::load(self.db).await?;
+        if cron.clear_scheduled_hook("publish_future_post", &crate::cron::post_args(id)) > 0 {
+            cron.save(self.writer).await?;
+        }
         self.post_trash_change(&post, rustpress_core::native::PostChangeKind::Deleted).await?;
         Ok(true)
     }

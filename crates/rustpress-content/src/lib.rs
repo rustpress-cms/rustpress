@@ -4,5 +4,6 @@
 
 pub mod comment_rules;
 pub mod content;
+pub mod cron;
 pub mod media;
 pub mod sanitize;

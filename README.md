@@ -142,6 +142,8 @@ On hosts that only offer Apache with CGI, RustPress runs as a single static bina
 
 Each request starts a new process, so RustPress keeps the theme and WordPress files it reads in `cgi-bin/rustpress-cache.bin` for the next one (a file that changed is read again). Delete it at any time; the next request writes it again.
 
+Scheduled posts are published by the first request after their time, as WordPress's `wp-cron` does (unless `wp-config.php` defines `DISABLE_WP_CRON`); a read-only site (`allow_writes = false`) cannot publish them.
+
 ## Development
 
 The tests compare RustPress with a real WordPress. A reference stack (MariaDB on `:3306`, WordPress 7 on `:8080`) is started with:

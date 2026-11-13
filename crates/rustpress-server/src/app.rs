@@ -86,6 +86,8 @@ impl App {
         let _ = app.this.set(Arc::downgrade(&app));
         if background && app.writer.is_some() {
             tokio::spawn(scheduler(app.clone()));
+        } else if app.writer.is_some() && !cron_disabled(&app.config) {
+            app.run_due_jobs().await;
         }
         Ok(app)
     }
@@ -170,6 +172,42 @@ impl App {
     pub fn router(self: &Arc<Self>) -> Router {
         Router::new().fallback(handle).with_state(self.clone()).layer(TraceLayer::new_for_http())
     }
+}
+
+impl App {
+    /// `_wp_cron()` for a process that answers one request (CGI): when a scheduled post is due, the jobs run before
+    /// the request is answered. WordPress runs them on `shutdown` in a request of their own; a CGI program cannot
+    /// keep running after its answer, since the web server ends it.
+    async fn run_due_jobs(&self) {
+        let Some(writer) = self.writer.as_ref() else { return };
+        let now = crate::admin::now();
+        if !rustpress_admin::cron::publish_due(&self.current().await.site, now) {
+            return;
+        }
+        let loaded = self.current().await;
+        match rustpress_admin::cron::run(&loaded.site, &self.db, writer, now).await {
+            Ok(report) => {
+                tracing::info!(published = report.published, auto_drafts = report.auto_drafts_deleted, trash = report.trash_purged, "scheduled jobs");
+                self.reload_now().await;
+            }
+            Err(e) => tracing::error!(error = %e, "scheduled jobs failed"),
+        }
+    }
+}
+
+/// `define( 'DISABLE_WP_CRON', true );` in `wp-config.php`: the requests do not run the scheduled jobs.
+fn cron_disabled(config: &Config) -> bool {
+    let Some(text) = config.wp_config_path().and_then(|path| std::fs::read_to_string(path).ok()) else { return false };
+    text.lines().any(|line| {
+        let line = line.trim_start();
+        let Some(rest) = line.strip_prefix("define").map(str::trim_start).and_then(|r| r.strip_prefix('(')) else { return false };
+        let Some((name, value)) = rest.split_once(',') else { return false };
+        if name.trim().trim_matches(|c| c == '\'' || c == '"') != "DISABLE_WP_CRON" {
+            return false;
+        }
+        let value = value.split(')').next().unwrap_or_default().trim().to_ascii_lowercase();
+        !matches!(value.as_str(), "false" | "0" | "''" | "\"\"" | "'0'" | "\"0\"" | "null")
+    })
 }
 
 /// What `wp-cron.php` does for content: publish scheduled posts, empty old auto-drafts and the trash.
