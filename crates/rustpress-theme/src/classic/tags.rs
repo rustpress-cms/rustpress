@@ -90,6 +90,17 @@ pub fn comments_pagination_with(site: &Site, permalink: &str, request_uri: &str,
     if total < 2 {
         return String::new();
     }
+    let links = paginate_comments_links(site, permalink, request_uri, current, total, prev_text, next_text, mid_size, before_page_number);
+    let title = site.tr("Comments pagination");
+    navigation_markup(&links, "comments-pagination", &title, &title)
+}
+
+/// `paginate_comments_links( array( 'echo' => false ) )`: the links without the navigation around them.
+#[allow(clippy::too_many_arguments)]
+pub fn paginate_comments_links(site: &Site, permalink: &str, request_uri: &str, current: u64, total: u64, prev_text: &str, next_text: &str, mid_size: u64, before_page_number: &str) -> String {
+    if total < 2 {
+        return String::new();
+    }
     let page_link = |n: u64| {
         let base = if site.uses_pretty_permalinks() {
             site.user_trailingslashit(&format!("{}comment-page-{n}", rustpress_core::urls::trailingslashit(permalink)))
@@ -120,8 +131,7 @@ pub fn comments_pagination_with(site: &Site, permalink: &str, request_uri: &str,
     if current < total {
         links.push(format!("<a class=\"next page-numbers\" href=\"{}\">{next_text}</a>", page_link(current + 1)));
     }
-    let title = site.tr("Comments pagination");
-    navigation_markup(&links.join("\n"), "comments-pagination", &title, &title)
+    links.join("\n")
 }
 
 /// `get_the_category_list( $separator )`: categories sorted by name.

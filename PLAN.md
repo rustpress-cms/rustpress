@@ -12,8 +12,8 @@ step: what was ported, how it was compared and what deliberately differs.
 - **WordPress is the oracle.** Everything is ported from the PHP source and compared with a real WordPress (golden
   tests, compare scripts in `dev/`, `rustpress-compat`). A difference that cannot be avoided is recorded with its reason
   (`compat/known.toml` for the compat runs, this file for the rest).
-- **Themes:** block themes (`theme.json` + HTML templates). Twenty Seventeen and Twenty Twenty-One are the classic
-  themes, rebuilt natively (decisions of 2026-10-25 and 2026-11-08). Other classic PHP themes do not run.
+- **Themes:** block themes (`theme.json` + HTML templates). Twenty Seventeen, Twenty Twenty and Twenty Twenty-One are
+  the classic themes, rebuilt natively (decisions of 2026-10-25, 2026-11-08 and 2026-11-13). Other classic PHP themes do not run.
 - **Plugins:** PHP never runs. Important plugins are rebuilt as native modules (`crates/rustpress-plugins`) that take
   over while the plugin is in `active_plugins`; the plugin's files stay for assets, headers and language packs.
 - **Writing is an explicit switch** (`RUSTPRESS_ALLOW_WRITES=1` / `allow_writes`): without it RustPress is a read-only
@@ -29,7 +29,7 @@ step: what was ported, how it was compared and what deliberately differs.
 | `rustpress-db` | access to the WordPress schema (sqlx), the read pool and the `Writer` |
 | `rustpress-core` | options, rewrite rules and their generation, main query, template hierarchy, canonical redirects, sitemaps, kses, the native plugin framework (`native.rs`) |
 | `rustpress-blocks` | block parser and renderer, block supports, style engine, dynamic blocks, Interactivity |
-| `rustpress-theme` | `theme.json`, templates, global styles, documents and feeds, the script loader, Twenty Seventeen and Twenty Twenty-One |
+| `rustpress-theme` | `theme.json`, templates, global styles, documents and feeds, the script loader, Twenty Seventeen, Twenty Twenty and Twenty Twenty-One |
 | `rustpress-content` | writing posts, terms, users, comments and uploads |
 | `rustpress-auth` | passwords, cookies, sessions, nonces, capabilities (`map_meta_cap`), application passwords |
 | `rustpress-admin` | `wp-admin`, sign-in and the installer |
@@ -47,7 +47,7 @@ The reference stack, the tools and the working rules are in [AGENTS.md](AGENTS.m
   URLs each: pages, patterns, feeds, sitemaps, REST, files; 0 unexpected differences), across eight permalink
   structures and a matrix of settings, and in de_DE, ru_RU, ar and ja. Twenty Seventeen on a copy of the maintainer's real site,
   0 unexpected differences (2026-11-06): 322 URLs with its plain permalinks, all 105 HTML pages identical; 539 URLs with
-  `/%postname%/`. Twenty Twenty-One on the reference, 0 unexpected differences in 778 URLs (2026-11-08). Covered: the main query and template hierarchy, canonical redirects, custom
+  `/%postname%/`. Twenty Twenty-One on the reference, 0 unexpected differences in 778 URLs (2026-11-08); Twenty Twenty likewise (2026-11-13). Covered: the main query and template hierarchy, canonical redirects, custom
   post types and taxonomies (from the stored rules and the literal `register_*()` calls of plugins and themes),
   shortcodes, embeds/oEmbed, the dynamic blocks including Interactivity, the comment form and submitting comments,
   previews and private content for signed-in users, the admin bar.
@@ -325,7 +325,7 @@ With that, single pages (also hierarchical), archives, taxonomy pages, `?post_ty
 Known gaps, roughly ordered by value:
 - **Administration**: sign-in, `wp-admin`, posting comments, editing (the front end is read-only). This is the next big block.
 - **Plugins**: only rebuilt modules; shortcodes and custom types of plugins are recognized only as described above. The real site's `wp-date-remover` is missing.
-- **More classic themes** besides Twenty Seventeen and Twenty Twenty-One (Twenty Sixteen/Fifteen/Nineteen/Twenty, third-party themes).
+- **More classic themes** besides Twenty Seventeen, Twenty Twenty and Twenty Twenty-One (Twenty Sixteen/Fifteen/Nineteen, third-party themes).
 - **oEmbed/autoembed** (network), `[playlist]`, lightbox, `useFirstImageFromPost`, galleries with `dynamicContent`.
 - **Feeds**: comment feeds for archives and search (RDF and RSS 0.92 exist now).
 - **Languages**: per request (user language, Polylang/WPML) and JavaScript translations.
@@ -1252,6 +1252,43 @@ before release 0.3.0). Version 2.9, compared with that release active in the ref
   `inc/block-styles.php` in the editor), the right-to-left languages (only `style-rtl.css` is chosen; not compared), and
   the RSS widget with `twenty_twenty_one_rss_widget_feed_link` (not compared). Found but not about the theme: WordPress redirects `/team/page/2/` of a child page to its full
   address (`redirect_guess_404_permalink()` with paging), RustPress answers 404.
+
+### Twenty Twenty natively (2026-11-13)
+
+The third classic theme, the default theme of WordPress 5.3 to 5.5 and still common on older sites (decision of
+2026-11-13). Version 3.3, compared with that release active in the reference.
+
+- **The port** (`rustpress-theme/src/classic/twenty.rs`; the icons in `twentytwenty_icons.rs`, generated by
+  `dev/twentytwenty-icons.sh` from `classes/class-twentytwenty-svg-icons.php` through `twentytwenty_get_theme_svg()`, so
+  they come out of `wp_kses()` as the theme prints them): `header.php` with the search and menu modals
+  (`template-parts/modal-search.php`, `modal-menu.php`), `index.php` with the archive header, `singular.php`, the page
+  templates `templates/template-cover.php` and `template-full-width.php`, `404.php`, `comments.php`, `footer.php`,
+  `searchform.php` and the parts `content.php`, `content-cover.php`, `entry-header.php`, `featured-image.php`,
+  `entry-author-bio.php`, `navigation.php`, `pagination.php` (with its placeholders) and `footer-menus-widgets.php`;
+  `twentytwenty_site_logo()` with the retina logo, `twentytwenty_get_post_meta()`, the body classes, the sub-menu toggles
+  of `nav_menu_item_args`, the social icons of `walker_nav_menu_start_el`, `TwentyTwenty_Walker_Page` for the page list
+  fallback of every menu, `TwentyTwenty_Walker_Comment`, the read more button, the edit link, the archive title with its
+  colored prefix, the colors of the Customizer (`twentytwenty_get_customizer_css()` from `accent_accessible_colors`,
+  the cover template's overlay), the non-latin fonts and the editor palette and font sizes as the `theme.json` layer.
+- **Shared parts that changed:** `get_the_password_form()` only wraps the button for block themes (`wp_is_block_theme()`;
+  also Twenty Seventeen and Twenty Twenty-One where no filter replaces the form); `get_body_class()` gives a page
+  template in a folder one class per part of its path (`page-template-templates`); `wp_list_comments()` with the `div`
+  style and a theme walker; `paginate_comments_links()` without the navigation around it; the comment form's
+  `class_form`; "Background" in the toolbar for Twenty Twenty; `ThemeAccess::more_link_text()` for the text of
+  `the_content()`; late block styles go right before `</head>` (`wp_hoist_late_printed_styles()`), which matters for a
+  theme whose `header.php` has whitespace after `wp_head()`.
+- **Compared:** `rustpress-compat` with the theme active (`compat/reports/twentytwenty.md`): 786 URLs, 0 unexpected
+  differences. The theme's two footer sidebars have the ids of the install's sidebars, so the widgets stay where they are
+  when the theme is switched. `dev/twentytwenty-compare.sh` covers what the seeded content does not: the primary,
+  expanded, footer and social menus with a sub-menu, the retina logo, the header search off, other accent colors and a
+  white background (`reduced-spacing`, `custom-background`), the cover template on a page and a post (overlay color,
+  opacity, text color, no fixed background) and the full width template, excerpts on the blog, no author biography, a
+  static front page with a posts page, signed in and out: all pages identical. The footer credit says "Powered by
+  RustPress" and links the site, as with the other classic themes; the compat run and `dev/front-compare.py` mask it.
+- **Open:** the administration for the theme (the Customizer's sections and controls of the theme, among them the
+  accent hue picker that computes `accent_accessible_colors`, the editor styles and the block patterns), the starter
+  content, the right-to-left languages (only `style-rtl.css` is chosen; not compared) and the Customizer's partials of
+  the theme (`blogname`, `blogdescription`, the logo; ported, not compared).
 
 ### WPCode Lite 2.4.1 (2026-11-08)
 

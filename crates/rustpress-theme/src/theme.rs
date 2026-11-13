@@ -112,7 +112,7 @@ impl Theme {
         let user = load_user_styles(site, &stylesheet).await?;
         let core = read_file(&wp_root.join("wp-includes").join("theme.json")).unwrap_or_default();
         // A classic theme without `theme.json` gives its theme supports (`WP_Theme_JSON_Resolver::get_theme_data()`).
-        let parent = read_file(&template_dir.join("theme.json")).or_else(|| crate::classic::theme_supports_json(&template, &site.i18n()));
+        let parent = read_file(&template_dir.join("theme.json")).or_else(|| crate::classic::theme_supports_json(&template, &site.i18n(), &crate::classic::menu::theme_mod(site, &stylesheet)));
         let child = if stylesheet != template { read_file(&stylesheet_dir.join("theme.json")) } else { None };
         // Block style variations: every `styles/**.json` that names `blockTypes` (a child theme's file wins by name).
         let partials = read_partials(&[stylesheet_dir.join("styles"), template_dir.join("styles")]);
@@ -360,12 +360,17 @@ impl Theme {
 
     /// The active theme is the port of Twenty Seventeen.
     fn is_seventeen(&self) -> bool {
-        crate::classic::is_ported(self) && !crate::classic::is_twentyone(self)
+        crate::classic::is_ported(self) && self.template == "twentyseventeen"
     }
 
     /// The active theme is the port of Twenty Twenty-One.
     fn is_twentyone(&self) -> bool {
         crate::classic::is_ported(self) && crate::classic::is_twentyone(self)
+    }
+
+    /// The active theme is the port of Twenty Twenty.
+    fn is_twentytwenty(&self) -> bool {
+        crate::classic::is_ported(self) && crate::classic::is_twentytwenty(self)
     }
 
     pub fn stylesheet_dir(&self) -> &Path {
@@ -416,8 +421,16 @@ impl ThemeAccess for Theme {
         self.is_seventeen().then(|| crate::classic::seventeen::excerpt_more_template(&self.host.i18n))
     }
 
-    fn content_more_link(&self, permalink: &str, post_id: u64, title: &str) -> Option<String> {
+    fn content_more_link(&self, permalink: &str, post_id: u64, title: &str, text: &str) -> Option<String> {
+        if self.is_twentytwenty() {
+            return Some(crate::classic::twenty::read_more_tag(permalink, post_id, title, text));
+        }
         self.is_twentyone().then(|| crate::classic::twentyone::content_more_link(&self.host.i18n, permalink, post_id, title))
+    }
+
+    fn more_link_text(&self) -> Option<String> {
+        // `the_content( __( 'Continue reading', 'twentytwenty' ) )` in `template-parts/content.php`.
+        self.is_twentytwenty().then(|| self.host.i18n.gettext("twentytwenty", "Continue reading"))
     }
 
     fn password_form(&self, site: &Site, post: &rustpress_db::Post) -> Option<String> {

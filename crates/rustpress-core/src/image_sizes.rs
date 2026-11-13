@@ -6,6 +6,8 @@ pub fn of_theme(stylesheet: &str) -> &'static [(&'static str, u32, u32, bool)] {
         "twentyseventeen" => &[("twentyseventeen-featured-image", 2000, 1200, true), ("twentyseventeen-thumbnail-avatar", 100, 100, true)],
         // `set_post_thumbnail_size( 1568, 9999 )`.
         "twentytwentyone" => &[("post-thumbnail", 1568, 9999, false)],
+        // `set_post_thumbnail_size( 1200, 9999 )` and `add_image_size( 'twentytwenty-fullscreen', 1980, 9999 )`.
+        "twentytwenty" => &[("post-thumbnail", 1200, 9999, false), ("twentytwenty-fullscreen", 1980, 9999, false)],
         _ => &[],
     }
 }

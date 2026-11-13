@@ -1030,7 +1030,7 @@ async fn main_template(ctx: &Ctx<'_>) -> Result<String> {
             content_part(ctx, &post).await?
         });
         if (f.is_single || f.is_page) && !is_static_front_page(ctx) && (comments::comments_open(ctx.site, q.viewer.as_ref(), &post) || ctx.site.comments_number(&post, q.viewer.as_ref()) > 0) {
-            let args = comments::ListArgs { avatar_size: 100, reply_text: format!("{}{}", svg("mail-reply", false), t(ctx, "Reply")), short_ping: true, cpage: None };
+            let args = comments::ListArgs { avatar_size: 100, reply_text: format!("{}{}", svg("mail-reply", false), t(ctx, "Reply")), short_ping: true, cpage: None, ..Default::default() };
             let text = |s: &str| t(ctx, s);
             let text_x = |s: &str, c: &str| tx(ctx, s, c);
             let pagination = comments::PaginationText {

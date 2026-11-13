@@ -24,7 +24,7 @@ pub async fn comments_template(site: &Site, env: &rustpress_blocks::Env<'_>, pos
     }
     let page = rustpress_blocks::comment_pages::comments_for_template(env, post.id).await?;
     let comments = page.comments.clone();
-    let args = &ListArgs { avatar_size: args.avatar_size, reply_text: args.reply_text.clone(), short_ping: args.short_ping, cpage: Some(page.page) };
+    let args = &ListArgs { avatar_size: args.avatar_size, reply_text: args.reply_text.clone(), short_ping: args.short_ping, cpage: Some(page.page), ..Default::default() };
     let count = site.comments_number(post, env.query.viewer.as_ref());
     let mut out = String::from("\n<div id=\"comments\" class=\"comments-area\">\n\n\t");
     if !comments.is_empty() {

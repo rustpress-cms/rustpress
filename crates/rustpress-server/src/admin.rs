@@ -267,7 +267,7 @@ pub async fn front_toolbar(loaded: &std::sync::Arc<Loaded>, user: &std::sync::Ar
             context.site_editor_url = Some(format!("{}?postType=wp_template&postId={}//{}&canvas=edit", admin("site-editor.php"), site.settings.stylesheet, info.template_slug));
         }
         context.classic_theme = !rustpress_blocks::ThemeAccess::is_block_theme(&loaded.theme);
-        context.custom_background = rustpress_theme::classic::is_twentyone(&loaded.theme);
+        context.custom_background = rustpress_theme::classic::is_twentyone(&loaded.theme) || rustpress_theme::classic::is_twentytwenty(&loaded.theme);
         let home = site.home_url("");
         let scheme = home.split_once("://").map_or("http", |(scheme, _)| scheme);
         let host = info.query.http_host.as_deref().unwrap_or_else(|| home.split_once("://").map_or("", |(_, rest)| rest.split('/').next().unwrap_or_default()));

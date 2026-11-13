@@ -217,7 +217,9 @@ fn content_with_permalink(env: &Env<'_>, post: &Post, page: u64, singular: bool,
             output.push_str(&format!("<span id=\"more-{}\"></span>{rest}", post.id));
         } else if !no_more_link {
             // `$more_link_text`: the default names the post for screen readers; a custom one comes from the tag.
-            let text = if custom_text.is_empty() {
+            let text = if let (true, Some(text)) = (custom_text.is_empty(), env.theme.more_link_text()) {
+                text
+            } else if custom_text.is_empty() {
                 let title = rustpress_core::formatting::esc_attr(&rustpress_core::formatting::strip_tags(&the_title_for(env.site, post)));
                 format!(
                     "<span aria-label=\"{}\">{}</span>",
@@ -228,7 +230,7 @@ fn content_with_permalink(env: &Env<'_>, post: &Post, page: u64, singular: bool,
                 rustpress_core::formatting::strip_tags(&custom_text)
             };
             // `the_content_more_link`.
-            match env.theme.content_more_link(&rustpress_core::formatting::esc_url(permalink), post.id, &the_title_for(env.site, post)) {
+            match env.theme.content_more_link(&rustpress_core::formatting::esc_url(permalink), post.id, &the_title_for(env.site, post), &text) {
                 Some(link) => output.push_str(&link),
                 None => output.push_str(&format!(" <a href=\"{}#more-{id}\" class=\"more-link\">{text}</a>", permalink, id = post.id)),
             }
@@ -249,10 +251,16 @@ fn password_form_for(env: &Env<'_>, post: &Post, permalink: &str) -> String {
     if let Some(form) = env.theme.password_form(env.site, post) {
         return form;
     }
-    env.with_state(|s| s.note_block("core/button"));
+    // The button of a block theme, with the style of `core/button`.
+    let (open, class, close) = if env.theme.is_block_theme() {
+        env.with_state(|s| s.note_block("core/button"));
+        ("<span class=\"wp-block-button\">", " class=\"wp-block-button__link wp-element-button\"", "</span>")
+    } else {
+        ("", "", "")
+    };
     let field_id = format!("pwbox-{}", post.id);
     format!(
-        "<form action=\"{}\" class=\"post-password-form\" method=\"post\"><input type=\"hidden\" name=\"redirect_to\" value=\"{}\" />\n\t<p>{}</p>\n\t<p><label for=\"{field_id}\">{} <input name=\"post_password\" id=\"{field_id}\" type=\"password\" spellcheck=\"false\" required size=\"20\" /></label> <span class=\"wp-block-button\"><input type=\"submit\" name=\"Submit\" class=\"wp-block-button__link wp-element-button\" value=\"{}\" /></span></p></form>\n\t",
+        "<form action=\"{}\" class=\"post-password-form\" method=\"post\"><input type=\"hidden\" name=\"redirect_to\" value=\"{}\" />\n\t<p>{}</p>\n\t<p><label for=\"{field_id}\">{} <input name=\"post_password\" id=\"{field_id}\" type=\"password\" spellcheck=\"false\" required size=\"20\" /></label> {open}<input type=\"submit\" name=\"Submit\"{class} value=\"{}\" />{close}</p></form>\n\t",
         esc_url(&env.site.site_url("wp-login.php?action=postpass")),
         esc_attr(permalink),
         env.site.tr("This content is password-protected. To view it, please enter the password below."),
