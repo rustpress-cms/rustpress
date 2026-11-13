@@ -4,6 +4,10 @@ All notable changes to RustPress. Each release names the WordPress release it fo
 
 ## Unreleased
 
+- Native plugin module **WP Mail SMTP** 4.10.4: the site's e-mail goes through the SMTP server of the plugin's
+  settings or of the `WPMS_*` constants (host, port, SSL/TLS/auto TLS, authentication with the encrypted password),
+  with the sender of the settings ("force from email/name", the original sender as `Reply-To`), the `X-Mailer` of
+  the plugin and "Do not send". A new hook lets plugins decide how mail is sent (`phpmailer_init`, `wp_mail_from`).
 - E-mail without `RUSTPRESS_SMTP_URL` goes to the host's `sendmail`, as PHP's `mail()` sends it, so password
   resets, comment notifications and form mails work on shared hosting such as Strato without any setting.
   `RUSTPRESS_SENDMAIL` names another program, `off` sends nothing.

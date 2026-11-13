@@ -44,7 +44,28 @@ impl SmtpMail {
     /// The mailer of `RUSTPRESS_SMTP_URL` or `sendmail`, sending as the host of the site.
     pub fn for_site(site: &Site) -> Option<Self> {
         let host = site.settings.home.split_once("://").map_or("localhost", |(_, rest)| rest.split(['/', ':']).next().unwrap_or("localhost")).to_owned();
-        rustpress_mail::Mailer::from_env(&host).map(SmtpMail)
+        let Some(settings) = site.plugins.mail_settings() else { return rustpress_mail::Mailer::from_env(&host).map(SmtpMail) };
+        use rustpress_core::native::{MailTransport, SmtpSecurity};
+        let route = settings.transport.map(|transport| match transport {
+            MailTransport::Sendmail => rustpress_mail::Route::Sendmail,
+            MailTransport::Smtp { host, port, security, credentials } => rustpress_mail::Route::Smtp(rustpress_mail::Smtp {
+                host,
+                port,
+                security: match security {
+                    SmtpSecurity::Implicit => rustpress_mail::Security::Implicit,
+                    SmtpSecurity::StartTls => rustpress_mail::Security::StartTls,
+                    SmtpSecurity::Opportunistic => rustpress_mail::Security::Opportunistic,
+                    SmtpSecurity::Plain => rustpress_mail::Security::Plain,
+                },
+                credentials,
+            }),
+        });
+        let filter = settings.sender.clone();
+        let sender: rustpress_mail::SenderFilter = std::sync::Arc::new(move |s: rustpress_mail::Sender| {
+            let out = filter(rustpress_core::native::MailSender { email: s.email, name: s.name, default_email: s.default_email, reply_to: s.reply_to, headers: s.headers });
+            rustpress_mail::Sender { email: out.email, name: out.name, default_email: out.default_email, reply_to: out.reply_to, headers: out.headers }
+        });
+        rustpress_mail::Mailer::configured(&host, route, Some(sender), settings.blocked).map(SmtpMail)
     }
 }
 

@@ -345,6 +345,12 @@ pub trait ActivePlugin: Send + Sync {
         Box::pin(async { Ok(()) })
     }
 
+    /// `phpmailer_init`, `wp_mail_from` and `wp_mail_from_name` of a plugin that sends the site's e-mail its own way
+    /// (an SMTP server, the sender's address). Read once per snapshot.
+    fn mail_settings(&self) -> Option<MailSettings> {
+        None
+    }
+
     /// `wp_untrash_post_status`: the status a post restored from the trash gets (`draft` by default).
     fn untrash_post_status(&self, _post: &Post, _new_status: &str, _previous: &str) -> Option<String> {
         None
@@ -785,6 +791,61 @@ pub struct Attachment {
     pub filename: String,
     pub content_type: String,
     pub bytes: Vec<u8>,
+}
+
+/// How the messages of `wp_mail()` leave the host when a plugin sets up PHPMailer itself (`phpmailer_init`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MailTransport {
+    /// PHPMailer's `mail()`: PHP's `mail()`, the host's `sendmail`.
+    Sendmail,
+    /// PHPMailer's `smtp`.
+    Smtp { host: String, port: u16, security: SmtpSecurity, credentials: Option<(String, String)> },
+}
+
+/// PHPMailer's `SMTPSecure` and `SMTPAutoTLS`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SmtpSecurity {
+    /// `ssl`: TLS from the start.
+    Implicit,
+    /// `tls`: STARTTLS, required.
+    StartTls,
+    /// No `SMTPSecure`, `SMTPAutoTLS`: STARTTLS when the server offers it.
+    Opportunistic,
+    /// Neither.
+    Plain,
+}
+
+/// The sender of one message as `wp_mail()` has it after parsing its headers, for the filters `wp_mail_from`,
+/// `wp_mail_from_name` and what `phpmailer_init` adds (reply addresses, headers).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MailSender {
+    /// `$from_email`: the address of the `From` header, else `wordpress@` and the site's host.
+    pub email: String,
+    /// `$from_name`: the name of the `From` header, else `WordPress`.
+    pub name: String,
+    /// The `wordpress@` address `wp_mail()` uses when no header names one.
+    pub default_email: String,
+    /// The `Reply-To` addresses the message already has.
+    pub reply_to: Vec<String>,
+    /// Header lines to add (`X-Mailer`).
+    pub headers: Vec<(String, String)>,
+}
+
+/// What a plugin decides about sending e-mail (`ActivePlugin::mail_settings`).
+#[derive(Clone)]
+pub struct MailSettings {
+    /// How messages are sent; `None` keeps RustPress's own way (`RUSTPRESS_SMTP_URL` or `sendmail`).
+    pub transport: Option<MailTransport>,
+    /// Every message fails without being sent.
+    pub blocked: bool,
+    /// The filters of the sender.
+    pub sender: std::sync::Arc<dyn Fn(MailSender) -> MailSender + Send + Sync>,
+}
+
+impl std::fmt::Debug for MailSettings {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MailSettings").field("transport", &self.transport).field("blocked", &self.blocked).finish_non_exhaustive()
+    }
 }
 
 /// `wp_mail()`: `false` when the message could not be sent.
@@ -2311,6 +2372,11 @@ impl Plugins {
             plugin.post_trash_change(change).await?;
         }
         Ok(())
+    }
+
+    /// How the site sends e-mail, when a plugin decides it (the first that does).
+    pub fn mail_settings(&self) -> Option<MailSettings> {
+        self.hooks().find_map(|plugin| plugin.mail_settings())
     }
 
     /// The status of a post restored from the trash after the plugins.
