@@ -13,6 +13,7 @@ rustpress-db.workspace = true
 rustpress-auth.workspace = true
 rustpress-phpser.workspace = true
 rustpress-blocks.workspace = true
+md5.workspace = true
 futures.workspace = true
 regex.workspace = true
 chrono.workspace = true

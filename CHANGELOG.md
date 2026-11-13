@@ -2,6 +2,12 @@
 
 All notable changes to RustPress. Each release names the WordPress release it follows.
 
+## Unreleased
+
+- Scheduled posts are published in CGI mode too, by the first request after their time (`DISABLE_WP_CRON` turns
+  that off). Saving, trashing and deleting a post now keeps its `publish_future_post` event in the option `cron` as
+  WordPress does, so a site that goes back to PHP publishes the posts scheduled in RustPress.
+
 ## 0.3.0 (2026-11-09)
 
 Follows WordPress 7.1.4.

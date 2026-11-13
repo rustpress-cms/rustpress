@@ -1425,3 +1425,35 @@ the nonce check (a signed-in excluded user reading the REST API without a nonce)
 tools pages, deleting and exporting comments, the theme scan, the menus, dashboard and discussion settings it hides,
 the editor's blocks), the Abilities API, the blocklist of comment types (it refuses submissions), XML-RPC (no
 `xmlrpc.php`), WooCommerce reviews, network settings, the upgrade of settings older than 2.3.1 (`show_avatars`).
+
+### Scheduled posts and the option `cron` (2026-11-13)
+
+RustPress now keeps the events of scheduled posts in the option `cron` as WordPress does, and publishes them in CGI
+mode too (before, only the server's background task published them, and it did not know the option).
+
+- **The option** (`rustpress-content/src/cron.rs`): `_get_cron_array()`, `_set_cron_array()` (`version` 2,
+  autoload `on`), `wp_schedule_single_event()` with its ten-minute duplicate check and `uksort()`,
+  `wp_unschedule_event()` and `wp_clear_scheduled_hook()`. Events of other hooks (update checks, plugins) are kept
+  byte for byte.
+- **Saving**: every status change of a post that is not an attachment runs what `wp_transition_post_status()` does
+  to the events: `_transition_post_status()` clears `publish_future_post` of the post, `_future_post_hook()`
+  schedules it again at `strtotime( get_gmt_from_date( post_date ) . ' GMT' )` while the post is `future`.
+  `wp_delete_post()` clears it as well.
+- **Running** (`rustpress-admin/src/cron.rs`): the due `publish_future_post` events are unscheduled and
+  `check_and_publish_future_post()` runs (a post whose date moved is scheduled again), then `wp_publish_post()`:
+  the default category for a post without one, the status, the transition and the term counts.
+- **When**: the server checks every minute (as before). A CGI request checks the autoloaded option before it is
+  answered (no extra query) and runs the jobs when an event is due; `define( 'DISABLE_WP_CRON', true )` in
+  `wp-config.php` turns that off as in `_wp_cron()`. WordPress spawns `wp-cron.php` on `shutdown` instead; a CGI
+  program cannot keep running after its answer, because the web server ends it, so the one visitor waits for it.
+  A read-only site (no writer) publishes nothing.
+
+Compared with `dev/future-post-compare.py`: scheduling, rescheduling, draft, scheduling again, trash, untrash and
+delete through REST (the events in the option), and a post that comes due, published by `wp-cron.php` on the
+reference and by one CGI request of RustPress (status, slug, default category, term counts, the events): equal.
+
+Differs: a scheduled post that is due but has no event (saved by RustPress before this, or with a lost event) is
+published as well; WordPress leaves it as "Missed schedule". Not ported: the plugins' `save_post`,
+`transition_post_status` and `publish_post` on publishing from cron, `_publish_post_hook()` (`_pingme`,
+`_encloseme`, `do_pings`; RustPress sends no pings), and every other cron hook (`wp-cron.php` itself is not
+answered).
