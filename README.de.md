@@ -37,7 +37,7 @@ Fehlt ein Plugin, hilft eine [Port-Anfrage](https://github.com/rustpress-cms/rus
 - Installer wie WordPress (`setup-config.php`, `install.php`), lädt auf Wunsch die WordPress-Dateien herunter
 - `rustpress check` prüft vorab, ob eine Seite läuft
 - Shared Hosting als CGI-Programm (statisch gelinktes Binary, Konfiguration aus `wp-config.php`)
-- E-Mail per SMTP (`RUSTPRESS_SMTP_URL`), auch für Kontaktformulare
+- E-Mail per SMTP (`RUSTPRESS_SMTP_URL`) oder wie PHPs `mail()` über `sendmail` des Hosts, auch für Kontaktformulare
 - Statische Dateien aus `wp-content/` und `wp-includes/`
 - Alle Sprachen, für die WordPress ein Sprachpaket hat (siehe [Sprachen](#sprachen))
 

@@ -116,7 +116,7 @@ allow_writes = false             # true: sign-in, comments and wp-admin
 | `RUSTPRESS_LISTEN` | address to listen on |
 | `RUSTPRESS_ALLOW_WRITES` | `1` enables writing (sign-in, admin, comments) |
 | `RUSTPRESS_TRUSTED_PROXIES` | reverse proxies whose `X-Forwarded-*` headers are trusted |
-| `RUSTPRESS_SMTP_URL`, `RUSTPRESS_MAIL_FROM` | outgoing mail |
+| `RUSTPRESS_SMTP_URL`, `RUSTPRESS_MAIL_FROM` | outgoing mail; without an SMTP server it goes to the host's `sendmail` like PHP's `mail()` (`RUSTPRESS_SENDMAIL` names another program, `off` sends nothing) |
 
 Without `allow_writes` the database session is `READ ONLY` and the administration area stays closed; contact forms (Contact Form 7, WPForms Lite) can still be sent, since they only send e-mail. TLS is left to a reverse proxy.
 

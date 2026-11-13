@@ -4,6 +4,9 @@ All notable changes to RustPress. Each release names the WordPress release it fo
 
 ## Unreleased
 
+- E-mail without `RUSTPRESS_SMTP_URL` goes to the host's `sendmail`, as PHP's `mail()` sends it, so password
+  resets, comment notifications and form mails work on shared hosting such as Strato without any setting.
+  `RUSTPRESS_SENDMAIL` names another program, `off` sends nothing.
 - Scheduled posts are published in CGI mode too, by the first request after their time (`DISABLE_WP_CRON` turns
   that off). Saving, trashing and deleting a post now keeps its `publish_future_post` event in the option `cron` as
   WordPress does, so a site that goes back to PHP publishes the posts scheduled in RustPress.

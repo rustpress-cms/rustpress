@@ -33,7 +33,7 @@ pub struct AdminParts {
     pub loader: LoaderEnv,
     pub languages: Vec<LanguageOption>,
     pub privacy_policy: Option<(String, String)>,
-    /// Sends e-mail, when an SMTP server is configured (`RUSTPRESS_SMTP_URL`).
+    /// Sends e-mail, when an SMTP server is configured (`RUSTPRESS_SMTP_URL`) or the host has `sendmail`.
     pub mailer: Option<std::sync::Arc<dyn rustpress_admin::login::Mail>>,
 }
 
@@ -41,7 +41,7 @@ pub struct AdminParts {
 pub struct SmtpMail(rustpress_mail::Mailer);
 
 impl SmtpMail {
-    /// The mailer of `RUSTPRESS_SMTP_URL`, sending as the host of the site.
+    /// The mailer of `RUSTPRESS_SMTP_URL` or `sendmail`, sending as the host of the site.
     pub fn for_site(site: &Site) -> Option<Self> {
         let host = site.settings.home.split_once("://").map_or("localhost", |(_, rest)| rest.split(['/', ':']).next().unwrap_or("localhost")).to_owned();
         rustpress_mail::Mailer::from_env(&host).map(SmtpMail)
