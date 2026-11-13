@@ -1821,6 +1821,7 @@ async fn wp_footer(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State, plugin_h
         printer.mark_printed(&["mediaelement", "mediaelement-core", "mediaelement-migrate"]);
         out.push_str(&printer.core("wp-playlist"));
     }
+    out.push_str(&site.plugins.print_footer_scripts_early(site, ctx.q));
     out.push_str(&emoji_detection_script(site, wp_root, &version));
     out.push_str(&site.plugins.print_footer_scripts(site, ctx.q));
     Ok(out)

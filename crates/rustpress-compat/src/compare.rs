@@ -74,13 +74,23 @@ pub fn compare(kind: Kind, ours: &Response, theirs: &Response) -> Vec<Difference
     out
 }
 
-/// What WordPress makes up for each request: the secret of an embed (`wp_generate_password()`) and
-/// the number in the ids of the sharing dialog (`wp_rand()`).
+/// What WordPress makes up for each request: the secret of an embed (`wp_generate_password()`), the
+/// number in the ids of the sharing dialog (`wp_rand()`) and which characters of an e-mail address that
+/// Complianz obfuscates `antispambot()` turns into entities.
 fn randomised(text: &str) -> String {
     static SECRET: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| regex::Regex::new(r#"(secret=|data-secret=(?:\\"|&quot;|"))[A-Za-z0-9]{10}"#).unwrap());
     static SUFFIX: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| regex::Regex::new(r"((?:tab|description)-(?:wordpress|html)-\d+)-\d+").unwrap());
+    static OBFUSCATED: std::sync::LazyLock<regex::Regex> =
+        std::sync::LazyLock::new(|| regex::Regex::new(r#"(class=\\?"cmplz-obfuscate\\?">)([^<]*(?:<span class=\\?"cmplz-fmail-domain\\?">[^<]*<\\?/span>[^<]*)?)"#).unwrap());
+    static ENTITY: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| regex::Regex::new(r"&#0*(\d+);").unwrap());
     let text = SECRET.replace_all(text, "${1}SECRET");
-    SUFFIX.replace_all(&text, "${1}-RAND").into_owned()
+    let text = SUFFIX.replace_all(&text, "${1}-RAND");
+    OBFUSCATED
+        .replace_all(&text, |c: &regex::Captures| {
+            let plain = ENTITY.replace_all(&c[2], |e: &regex::Captures| e[1].parse().ok().and_then(char::from_u32).map(String::from).unwrap_or_default());
+            format!("{}{plain}", &c[1])
+        })
+        .into_owned()
 }
 
 /// The credit line of Twenty Seventeen names RustPress instead of WordPress on purpose.
@@ -264,6 +274,14 @@ mod tests {
 
     fn response(status: u16, headers: &[(&str, &str)], body: &str) -> Response {
         Response { status, headers: headers.iter().map(|(n, v)| ((*n).to_owned(), (*v).to_owned())).collect(), body: body.as_bytes().to_vec() }
+    }
+
+    #[test]
+    fn obfuscated_email_addresses_are_decoded() {
+        let a = r#"<span class=\"cmplz-obfuscate\">&#112;riv&#097;c&#121;@<span class=\"cmplz-fmail-domain\">e&#120;&#046;&#099;om<\/span>ex&#097;<\/span>"#;
+        let b = r#"<span class=\"cmplz-obfuscate\">p&#114;&#105;vac&#121;@<span class=\"cmplz-fmail-domain\">ex.c&#111;m<\/span>&#101;xa<\/span>"#;
+        assert_eq!(randomised(a), randomised(b));
+        assert!(randomised(a).contains("privacy@"));
     }
 
     #[test]

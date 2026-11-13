@@ -1398,6 +1398,7 @@ async fn wp_footer(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State, plugin_h
     let mut out = format!("{playlist}{speculation}{nav_menus}{plugin_footer}{}{importmap}{module_scripts}{preloads}{}{}", plugin_head_footer.0, state.interactivity.data_script().unwrap_or_default(), plugin_head_footer.1);
     if let Some(preview) = preview {
         out.push_str(&preview_footer_scripts(ctx, state, preview).await?);
+        out.push_str(&site.plugins.print_footer_scripts_early(site, ctx.q));
         out.push_str(&emoji_detection_script(site, wp_root, &version));
         out.push_str(crate::customize_preview::FOOTER_EXPORTS);
         out.push_str(&read(&ctx.theme.template_dir().join("assets/images/svg-icons.svg")).unwrap_or_default());
@@ -1435,6 +1436,7 @@ async fn wp_footer(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State, plugin_h
         printer.mark_printed(&["mediaelement", "mediaelement-core", "mediaelement-migrate"]);
         out.push_str(&printer.core("wp-playlist"));
     }
+    out.push_str(&site.plugins.print_footer_scripts_early(site, ctx.q));
     out.push_str(&emoji_detection_script(site, wp_root, &version));
     out.push_str(&site.plugins.print_footer_scripts(site, ctx.q));
     out.push_str(&read(&ctx.theme.template_dir().join("assets/images/svg-icons.svg")).unwrap_or_default());

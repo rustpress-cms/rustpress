@@ -1,0 +1,6478 @@
+{
+ "documents": [
+  {
+   "region": "eu",
+   "type": "cookie-statement",
+   "elements": [
+    [
+     "0",
+     {
+      "content": [
+       "<i>",
+       {
+        "sprintf": [
+         [
+          {
+           "_x": [
+            [
+             "This Cookie Policy was last updated on %s and applies to citizens and legal permanent residents of the European Economic Area and Switzerland."
+            ],
+            [
+             "Legal document cookie policy"
+            ]
+           ]
+          }
+         ],
+         [
+          "[publish_date]"
+         ]
+        ]
+       },
+       "</i><br>"
+      ]
+     }
+    ],
+    [
+     "1",
+     {
+      "title": [
+       {
+        "_x": [
+         [
+          "Introduction"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ],
+      "content": [
+       {
+        "sprintf": [
+         [
+          {
+           "_x": [
+            [
+             "Our website, %s (hereinafter: \"the website\") uses cookies and other related technologies (for convenience all technologies are referred to as \"cookies\"). Cookies are also placed by third parties we have engaged. In the document below we inform you about the use of cookies on our website."
+            ],
+            [
+             "Legal document cookie policy"
+            ]
+           ]
+          }
+         ],
+         [
+          "[domain]"
+         ]
+        ]
+       }
+      ]
+     }
+    ],
+    [
+     "2",
+     {
+      "title": [
+       {
+        "_x": [
+         [
+          "What are cookies?"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ],
+      "content": [
+       {
+        "_x": [
+         [
+          "A cookie is a small simple file that is sent along with pages of this website and stored by your browser on the hard drive of your computer or another device. The information stored therein may be returned to our servers or to the servers of the relevant third parties during a subsequent visit."
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       }
+      ]
+     }
+    ],
+    [
+     "3",
+     {
+      "title": [
+       {
+        "_x": [
+         [
+          "What are scripts?"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ],
+      "content": [
+       {
+        "_x": [
+         [
+          "A script is a piece of program code that is used to make our website function properly and interactively. This code is executed on our server or on your device."
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       }
+      ]
+     }
+    ],
+    [
+     "4",
+     {
+      "title": [
+       {
+        "_x": [
+         [
+          "What is a web beacon?"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ],
+      "content": [
+       {
+        "_x": [
+         [
+          "A web beacon (or a pixel tag) is a small, invisible piece of text or image on a website that is used to monitor traffic on a website. In order to do this, various data about you is stored using web beacons."
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       }
+      ],
+      "callback_condition": "NOT cmplz_uses_only_functional_cookies"
+     }
+    ],
+    [
+     "5",
+     {
+      "title": [
+       {
+        "_x": [
+         [
+          "Cookies"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ]
+     }
+    ],
+    [
+     "6",
+     {
+      "subtitle": [
+       {
+        "_x": [
+         [
+          "Technical or functional cookies"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ],
+      "content": [
+       {
+        "_x": [
+         [
+          "Some cookies ensure that certain parts of the website work properly and that your user preferences remain known. By placing functional cookies, we make it easier for you to visit our website. This way, you do not need to repeatedly enter the same information when visiting our website and, for example, the items remain in your shopping cart until you have paid. We may place these cookies without your consent."
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       }
+      ]
+     }
+    ],
+    [
+     "7",
+     {
+      "subtitle": [
+       {
+        "_x": [
+         [
+          "Statistics cookies"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ],
+      "content": [
+       {
+        "_x": [
+         [
+          "We use statistics cookies to optimize the website experience for our users. With these statistics cookies we get insights in the usage of our website."
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       },
+       "&nbsp;",
+       {
+        "_x": [
+         [
+          "We ask your permission to place statistics cookies."
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       }
+      ],
+      "callback_condition": "cmplz_cookie_warning_required_stats_eu",
+      "condition": {
+       "compile_statistics": "NOT no"
+      }
+     }
+    ],
+    [
+     "8",
+     {
+      "subtitle": [
+       {
+        "_x": [
+         [
+          "Statistics cookies"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ],
+      "content": [
+       {
+        "_x": [
+         [
+          "Because statistics are being tracked anonymously, no permission is asked to place statistics cookies."
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       }
+      ],
+      "callback_condition": "NOT cmplz_cookie_warning_required_stats_eu",
+      "condition": {
+       "compile_statistics": "NOT no"
+      }
+     }
+    ],
+    [
+     "9",
+     {
+      "subtitle": [
+       {
+        "_x": [
+         [
+          "Advertising cookies"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ],
+      "content": [
+       {
+        "sprintf": [
+         [
+          {
+           "_x": [
+            [
+             "On this website we use advertising cookies, enabling us to personalize the advertisements for you, and we (and third parties) gain insights into the campaign results. This happens based on a profile we create based on your click and surfing on and outside %s. With these cookies you, as website visitor are linked to a unique ID, so you do not see the same ad more than once for example."
+            ],
+            [
+             "Legal document cookie policy"
+            ]
+           ]
+          }
+         ],
+         [
+          "[domain]"
+         ]
+        ]
+       }
+      ],
+      "condition": {
+       "uses_ad_cookies": "yes",
+       "uses_ad_cookies_personalized": "NOT no"
+      }
+     }
+    ],
+    [
+     "10",
+     {
+      "subtitle": [
+       {
+        "_x": [
+         [
+          "Advertising cookies"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ],
+      "content": [
+       {
+        "sprintf": [
+         [
+          {
+           "_x": [
+            [
+             "On this website we use advertising cookies, enabling us to gain insights into the campaign results. This happens based on a profile we create based on your behavior on %s. With these cookies you, as website visitor, are linked to a unique ID but these cookies will not profile your behavior and interests to serve personalized ads."
+            ],
+            [
+             "Legal document cookie policy"
+            ]
+           ]
+          }
+         ],
+         [
+          "[domain]"
+         ]
+        ]
+       }
+      ],
+      "condition": {
+       "uses_ad_cookies": "yes",
+       "uses_ad_cookies_personalized": "no"
+      }
+     }
+    ],
+    [
+     "11",
+     {
+      "subtitle": [
+       {
+        "_x": [
+         [
+          "Marketing/Tracking cookies"
+         ],
+         [
+          "cookie policy"
+         ]
+        ]
+       }
+      ],
+      "content": [
+       {
+        "_x": [
+         [
+          "Marketing/Tracking cookies are cookies or any other form of local storage, used to create user profiles to display advertising or to track the user on this website or across several websites for similar marketing purposes."
+         ],
+         [
+          "cookie policy"
+         ]
+        ]
+       }
+      ],
+      "callback_condition": "cmplz_uses_marketing_cookies"
+     }
+    ],
+    [
+     "12",
+     {
+      "content": [
+       {
+        "_x": [
+         [
+          "Because these cookies are marked as tracking cookies, we ask your permission to place these."
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       }
+      ],
+      "condition": {
+       "uses_ad_cookies": "yes"
+      }
+     }
+    ],
+    [
+     "13",
+     {
+      "subtitle": [
+       {
+        "_x": [
+         [
+          "Social media"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ],
+      "content": [
+       {
+        "_x": [
+         [
+          "On our website, we have included content to promote web pages (e.g. “like”, “pin”) or share (e.g. “tweet”) on social networks. This content is embedded with code derived from third parties and places cookies. This content might store and process certain information for personalized advertising."
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       }
+      ],
+      "condition": {
+       "uses_social_media": "yes",
+       "socialmedia_on_site": "EMPTY"
+      }
+     }
+    ],
+    [
+     "14",
+     {
+      "subtitle": [
+       {
+        "_x": [
+         [
+          "Social media"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ],
+      "content": [
+       {
+        "sprintf": [
+         [
+          {
+           "_x": [
+            [
+             "On our website, we have included content from %s to promote web pages (e.g. “like”, “pin”) or share (e.g. “tweet”) on social networks like %s. This content is embedded with code derived from %s and places cookies. This content might store and process certain information for personalized advertising."
+            ],
+            [
+             "Legal document cookie policy"
+            ]
+           ]
+          }
+         ],
+         [
+          "[comma_socialmedia_on_site]"
+         ],
+         [
+          "[comma_socialmedia_on_site]"
+         ],
+         [
+          "[comma_socialmedia_on_site]"
+         ]
+        ]
+       }
+      ],
+      "condition": {
+       "uses_social_media": "yes",
+       "socialmedia_on_site": "NOT EMPTY"
+      }
+     }
+    ],
+    [
+     "15",
+     {
+      "content": [
+       {
+        "__": [
+         [
+          "Please read the privacy statement of these social networks (which can change regularly) to read what they do with your (personal) data which they process using these cookies. The data that is retrieved is anonymized as much as possible."
+         ]
+        ]
+       },
+       " ",
+       {
+        "sprintf": [
+         [
+          {
+           "_n": [
+            [
+             "%s is located in the United States."
+            ],
+            [
+             "%s are located in the United States."
+            ],
+            [
+             "socialmedia"
+            ]
+           ]
+          }
+         ],
+         [
+          "[comma_socialmedia_on_site]"
+         ]
+        ]
+       }
+      ],
+      "condition": {
+       "uses_social_media": "yes",
+       "socialmedia_on_site": "NOT EMPTY"
+      }
+     }
+    ],
+    [
+     "16",
+     {
+      "content": [
+       {
+        "__": [
+         [
+          "Please read the privacy statement of these social networks (which can change regularly) to read what they do with your (personal) data which they process using these cookies. The data that is retrieved is anonymized as much as possible."
+         ]
+        ]
+       }
+      ],
+      "condition": {
+       "uses_social_media": "yes",
+       "socialmedia_on_site": "EMPTY"
+      }
+     }
+    ],
+    [
+     "17",
+     {
+      "title": [
+       {
+        "_x": [
+         [
+          "Placed cookies"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ],
+      "callback": "cmplz_used_cookies"
+     }
+    ],
+    [
+     "18",
+     {
+      "title": [
+       {
+        "_x": [
+         [
+          "Consent"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ],
+      "content": [
+       {
+        "sprintf": [
+         [
+          {
+           "_x": [
+            [
+             "When you visit our website for the first time, we will show you a pop-up with an explanation about cookies. As soon as you click on \"%s\", you consent to us using all cookies and plug-ins as described in the pop-up and this Cookie Policy. You can disable the use of cookies via your browser, but please note that our website may no longer work properly."
+            ],
+            [
+             "Legal document cookie policy"
+            ]
+           ]
+          }
+         ],
+         [
+          "[cookie_accept_text]"
+         ]
+        ]
+       }
+      ],
+      "callback_condition": [
+       "NOT cmplz_site_uses_cookie_warning_cats",
+       "cmplz_eu_site_needs_cookie_warning"
+      ]
+     }
+    ],
+    [
+     "19",
+     {
+      "title": [
+       {
+        "_x": [
+         [
+          "Consent"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ],
+      "content": [
+       {
+        "sprintf": [
+         [
+          {
+           "_x": [
+            [
+             "When you visit our website for the first time, we will show you a pop-up with an explanation about cookies. As soon as you click on \"%s\", you consent to us using the categories of cookies and plug-ins you selected in the pop-up, as described in this Cookie Policy. You can disable the use of cookies via your browser, but please note that our website may no longer work properly."
+            ],
+            [
+             "Legal document cookie policy"
+            ]
+           ]
+          }
+         ],
+         [
+          "[cookie_save_preferences_text]"
+         ]
+        ]
+       }
+      ],
+      "callback_condition": [
+       "cmplz_site_uses_cookie_warning_cats",
+       "cmplz_eu_site_needs_cookie_warning"
+      ]
+     }
+    ],
+    [
+     "20",
+     {
+      "subtitle": [
+       {
+        "_x": [
+         [
+          "Manage your consent settings"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ],
+      "content": [
+       "[cmplz-manage-consent]"
+      ],
+      "p": false,
+      "callback_condition": "cmplz_eu_site_needs_cookie_warning"
+     }
+    ],
+    [
+     "21",
+     {
+      "subtitle": [
+       {
+        "_x": [
+         [
+          "Vendors"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ],
+      "p": false,
+      "content": [
+       "[cmplz-tcf-vendors]"
+      ],
+      "callback_condition": "cmplz_tcf_active"
+     }
+    ],
+    [
+     "enable-disable-removal-cookies",
+     {
+      "title": [
+       {
+        "_x": [
+         [
+          "Enabling/disabling and deleting cookies"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ],
+      "content": [
+       {
+        "_x": [
+         [
+          "You can use your internet browser to automatically or manually delete cookies. You can also specify that certain cookies may not be placed. Another option is to change the settings of your internet browser so that you receive a message each time a cookie is placed. For more information about these options, please refer to the instructions in the Help section of your browser."
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       }
+      ]
+     }
+    ],
+    [
+     "enable-disable-removal-cookies-2",
+     {
+      "content": [
+       {
+        "_x": [
+         [
+          "Please note that our website may not work properly if all cookies are disabled. If you do delete the cookies in your browser, they will be placed again after your consent when you visit our website again."
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       }
+      ]
+     }
+    ],
+    [
+     "22",
+     {
+      "title": [
+       {
+        "_x": [
+         [
+          "Your rights with respect to personal data"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ],
+      "content": [
+       {
+        "_x": [
+         [
+          "You have the following rights with respect to your personal data:"
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       }
+      ]
+     }
+    ],
+    [
+     "23",
+     {
+      "p": false,
+      "content": [
+       "<ul>\n                    <li>",
+       {
+        "_x": [
+         [
+          "You have the right to know why your personal data is needed, what will happen to it, and how long it will be retained for."
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       },
+       "</li>\n                    <li>",
+       {
+        "_x": [
+         [
+          "Right of access: You have the right to access your personal data that is known to us."
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       },
+       "</li>\n                    <li>",
+       {
+        "_x": [
+         [
+          "Right to rectification: you have the right to supplement, correct, have deleted or blocked your personal data whenever you wish."
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       },
+       "</li>\n                    <li>",
+       {
+        "_x": [
+         [
+          "If you give us your consent to process your data, you have the right to revoke that consent and to have your personal data deleted."
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       },
+       "</li>\n                    <li>",
+       {
+        "_x": [
+         [
+          "Right to transfer your data: you have the right to request all your personal data from the controller and transfer it in its entirety to another controller."
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       },
+       "</li>\n                    <li>",
+       {
+        "_x": [
+         [
+          "Right to object: you may object to the processing of your data. We comply with this, unless there are justified grounds for processing."
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       },
+       "</li>\n                </ul>"
+      ]
+     }
+    ],
+    [
+     "your-rights-3",
+     {
+      "content": [
+       {
+        "_x": [
+         [
+          "To exercise these rights, please contact us. Please refer to the contact details at the bottom of this Cookie Policy. If you have a complaint about how we handle your data, we would like to hear from you, but you also have the right to submit a complaint to the supervisory authority (the Data Protection Authority)."
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       }
+      ]
+     }
+    ],
+    [
+     "contact-details",
+     {
+      "title": [
+       {
+        "_x": [
+         [
+          "Contact details"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ],
+      "content": [
+       {
+        "_x": [
+         [
+          "For questions and/or comments about our Cookie Policy and this statement, please contact us by using the following contact details:"
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       }
+      ]
+     }
+    ],
+    [
+     "contact-details-2",
+     {
+      "content": [
+       "<span class=\"cmplz-contact-organisation\">[organisation_name]</span><br>\n                      <span class=\"cmplz-contact-address\">[address_company]</span><br>\n                      <span class=\"cmplz-contact-country\">[country_company]</span><br>\n                      <span class=\"cmplz-contact-domain\">",
+       {
+        "_x": [
+         [
+          "Website:"
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       },
+       " [domain]</span><br>\n                      <span class=\"cmplz-contact-email\">",
+       {
+        "_x": [
+         [
+          "Email:"
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       },
+       " [email_company]</span><br>\n                    <span class=\"cmplz-contact-telephone\">[telephone_company]</span>"
+      ]
+     }
+    ],
+    [
+     "last-sync",
+     {
+      "content": [
+       {
+        "sprintf": [
+         [
+          {
+           "_x": [
+            [
+             "This Cookie Policy was synchronized with %scookiedatabase.org%s on %s."
+            ],
+            [
+             "Legal document cookie policy"
+            ]
+           ]
+          }
+         ],
+         [
+          "<a href=\"https://cookiedatabase.org/\" target=\"_blank\">"
+         ],
+         [
+          "</a>"
+         ],
+         [
+          "[sync_date]"
+         ]
+        ]
+       }
+      ],
+      "callback_condition": [
+       "cmplz_cdb_reference_in_policy"
+      ]
+     }
+    ]
+   ]
+  },
+  {
+   "region": "us",
+   "type": "cookie-statement",
+   "elements": [
+    [
+     "0",
+     {
+      "content": [
+       "<i>",
+       {
+        "sprintf": [
+         [
+          "This page was last changed on %s, last checked on %s and applies to citizens and legal permanent residents of the United States. "
+         ],
+         [
+          "[publish_date]"
+         ],
+         [
+          "[checked_date]"
+         ]
+        ]
+       },
+       "</i><br />"
+      ]
+     }
+    ],
+    [
+     "1",
+     {
+      "title": [
+       "Introduction"
+      ],
+      "content": [
+       {
+        "sprintf": [
+         [
+          "Our website, %s (hereinafter: \"the website\") uses cookies and other related technologies (for convenience all technologies are referred to as \"cookies\"). Cookies are also placed by third parties we have engaged. In the document below we inform you about the use of cookies on our website."
+         ],
+         [
+          "[domain]"
+         ]
+        ]
+       }
+      ]
+     }
+    ],
+    [
+     "2",
+     {
+      "content": [
+       "We apply a prior-consent (opt-in) model on this website: non-functional cookies and similar tracking technologies are blocked and are not placed until you actively give your consent. You can grant, withdraw, or change your consent at any time."
+      ],
+      "condition": {
+       "us_california_optin": "yes"
+      }
+     }
+    ],
+    [
+     "3",
+     {
+      "title": [
+       "Selling data to third parties"
+      ],
+      "callback_condition": "cmplz_sells_personal_data",
+      "condition": {
+       "us_states": "NOT EMPTY"
+      }
+     }
+    ],
+    [
+     "4",
+     {
+      "content": [
+       "Our privacy statement describes the limited circumstances under which we share or sell personal information to third parties and if we use or disclose sensitive personal information. You may request that we exclude your personal information from such arrangements, or direct us to limit the use and disclosure of possible sensitive personal information, by entering your name and email address below. You may need to provide additional identifying information before we can process your request."
+      ],
+      "callback_condition": "cmplz_sells_personal_data",
+      "condition": {
+       "us_states": "NOT EMPTY"
+      }
+     }
+    ],
+    [
+     "5",
+     {
+      "subtitle": [
+       "Categories of data"
+      ],
+      "content": [
+       "The following categories of data are sold to third parties"
+      ],
+      "callback_condition": "cmplz_sells_personal_data",
+      "condition": {
+       "us_states": "NOT EMPTY"
+      }
+     }
+    ],
+    [
+     "6",
+     {
+      "content": [
+       "[selling-data-thirdparty_data_purpose_us]"
+      ],
+      "callback_condition": "cmplz_sells_personal_data",
+      "condition": {
+       "us_states": "NOT EMPTY"
+      }
+     }
+    ],
+    [
+     "7",
+     {
+      "content": [
+       "We do not sell or share personal information to third parties for monetary consideration; however, we may disclose certain personal information to third parties under circumstances that might be deemed a “sale” or ”Sharing” for residents of [comma_us_states].\nWe respect and understand that you may want to be sure that your personal information is not being sold or shared. You may request that we exclude your personal information from such arrangements, or direct us to limit the use and disclosure of possible sensitive personal information, by entering your name and email address below. You may need to provide additional identifying information before we can process your request."
+      ],
+      "callback_condition": "NOT cmplz_sells_personal_data",
+      "condition": {
+       "us_states": "NOT EMPTY"
+      }
+     }
+    ],
+    [
+     "8",
+     {
+      "content": [
+       "[cmplz-dnsmpi-request]"
+      ],
+      "condition": {
+       "us_states": "NOT EMPTY"
+      }
+     }
+    ],
+    [
+     "9",
+     {
+      "title": [
+       "Cookies"
+      ],
+      "content": [
+       "When you visit our website it can be necessary to store and/or read certain data from your device by using technologies such as cookies."
+      ]
+     }
+    ],
+    [
+     "10",
+     {
+      "subtitle": [
+       "Technical or functional cookies"
+      ],
+      "content": [
+       "Some cookies ensure that certain parts of the website work properly and that your user preferences remain known. By placing functional cookies, we make it easier for you to visit our website. This way, you do not need to repeatedly enter the same information when visiting our website and, for example, the items remain in your shopping cart until you have paid. We may place these cookies without your consent."
+      ]
+     }
+    ],
+    [
+     "11",
+     {
+      "subtitle": [
+       "Statistics cookies"
+      ],
+      "content": [
+       "We use statistics cookies to optimize the website experience for our users. With these statistics cookies we get insights in the usage of our website."
+      ],
+      "callback_condition": "cmplz_uses_statistics",
+      "condition": {
+       "compile_statistics": "NOT no"
+      }
+     }
+    ],
+    [
+     "12",
+     {
+      "subtitle": [
+       "Advertising cookies"
+      ],
+      "content": [
+       {
+        "sprintf": [
+         [
+          "On this website we use advertising cookies, enabling us to personalize the advertisements for you, and we (and third parties) gain insights into the campaign results. This happens based on a profile we create based on your click and surfing on and outside %s. With these cookies you, as website visitor are linked to a unique ID, so you do not see the same ad more than once for example."
+         ],
+         [
+          "[domain]"
+         ]
+        ]
+       }
+      ],
+      "condition": {
+       "uses_ad_cookies": "yes",
+       "uses_ad_cookies_personalized": "NOT no"
+      }
+     }
+    ],
+    [
+     "13",
+     {
+      "subtitle": [
+       "Advertising cookies"
+      ],
+      "content": [
+       {
+        "sprintf": [
+         [
+          "On this website we use advertising cookies, enabling us to gain insights into the campaign results. This happens based on a profile we create based on your behavior on %s. With these cookies you, as website visitor, are linked to a unique ID but these cookies will not profile your behavior and interests to serve personalized ads."
+         ],
+         [
+          "[domain]"
+         ]
+        ]
+       }
+      ],
+      "condition": {
+       "uses_ad_cookies": "yes",
+       "uses_ad_cookies_personalized": "no"
+      }
+     }
+    ],
+    [
+     "14",
+     {
+      "content": [
+       "You can object to the tracking by these cookies by clicking the \"Manage Consent\" button."
+      ],
+      "condition": {
+       "uses_ad_cookies": "yes"
+      }
+     }
+    ],
+    [
+     "15",
+     {
+      "subtitle": [
+       "Marketing/Tracking cookies"
+      ],
+      "content": [
+       "Marketing/Tracking cookies are cookies or any other form of local storage, used to create user profiles to display advertising or to track the user on this website or across several websites for similar marketing purposes."
+      ],
+      "callback_condition": "cmplz_uses_marketing_cookies"
+     }
+    ],
+    [
+     "16",
+     {
+      "subtitle": [
+       {
+        "_x": [
+         [
+          "Social media"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ],
+      "content": [
+       {
+        "_x": [
+         [
+          "On our website, we have included content to promote web pages (e.g. “like”, “pin”) or share (e.g. “tweet”) on social networks. This content is embedded with code derived from third parties and places cookies. This content might store and process certain information for personalized advertising."
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       }
+      ],
+      "condition": {
+       "uses_social_media": "yes",
+       "socialmedia_on_site": "EMPTY"
+      }
+     }
+    ],
+    [
+     "17",
+     {
+      "subtitle": [
+       "Social media"
+      ],
+      "content": [
+       {
+        "sprintf": [
+         [
+          {
+           "__": [
+            [
+             "On our website, we have included content from %1$s to promote web pages (e.g. “like”, “pin”) or share (e.g. “tweet”) on social networks like %2$s. This content is embedded with code derived from %3$s and places cookies. This content might store and process certain information for personalized advertising."
+            ]
+           ]
+          }
+         ],
+         [
+          "[comma_socialmedia_on_site]"
+         ],
+         [
+          "[comma_socialmedia_on_site]"
+         ],
+         [
+          "[comma_socialmedia_on_site]"
+         ]
+        ]
+       }
+      ],
+      "condition": {
+       "uses_social_media": "yes",
+       "socialmedia_on_site": "NOT EMPTY"
+      }
+     }
+    ],
+    [
+     "18",
+     {
+      "content": [
+       {
+        "__": [
+         [
+          "Please read the privacy statement of these social networks (which can change regularly) to read what they do with your (personal) data which they process using these cookies. The data that is retrieved is anonymized as much as possible."
+         ]
+        ]
+       },
+       " ",
+       {
+        "sprintf": [
+         [
+          {
+           "_n": [
+            [
+             "%s is located in the United States."
+            ],
+            [
+             "%s are located in the United States."
+            ],
+            [
+             "socialmedia"
+            ]
+           ]
+          }
+         ],
+         [
+          "[comma_socialmedia_on_site]"
+         ]
+        ]
+       }
+      ],
+      "condition": {
+       "uses_social_media": "yes",
+       "socialmedia_on_site": "NOT EMPTY"
+      }
+     }
+    ],
+    [
+     "19",
+     {
+      "content": [
+       {
+        "__": [
+         [
+          "Please read the privacy statement of these social networks (which can change regularly) to read what they do with your (personal) data which they process using these cookies. The data that is retrieved is anonymized as much as possible."
+         ]
+        ]
+       }
+      ],
+      "condition": {
+       "uses_social_media": "yes",
+       "socialmedia_on_site": "EMPTY"
+      }
+     }
+    ],
+    [
+     "cookie_names",
+     {
+      "title": [
+       "Placed cookies"
+      ],
+      "content": [
+       "<p>Most of these technologies have a function, a purpose, and an expiration period.</p><ol class=\"alphabetic>\n                      <li>A function is a particular task a technology has. So a function can be to \"store certain data.\"</li>\n                      <li>Purpose is \"the Why\" behind the function. Maybe the data is stored because it is needed for statistics.</li>\n                      <li>The expiration period shows the length of the period the used technology can “store or read certain data.\"</li>\n                  </ol>"
+      ],
+      "callback": "cmplz_used_cookies"
+     }
+    ],
+    [
+     "20",
+     {
+      "title": [
+       "Browser and Device based Consent"
+      ],
+      "content": [
+       "When you visit our website for the first time, we will show you a pop-up with an explanation about cookies. You do have the right to opt-out and to object against the further use of non-functional cookies."
+      ],
+      "condition": {
+       "us_california_optin": "NOT yes"
+      }
+     }
+    ],
+    [
+     "21",
+     {
+      "title": [
+       "Browser and Device based Consent"
+      ],
+      "content": [
+       {
+        "sprintf": [
+         [
+          "When you visit our website for the first time, we will show you a pop-up with an explanation about cookies. Non-functional cookies and similar technologies are not placed until you actively provide consent. As soon as you click on \"%s\", you consent to us using the cookies and plug-ins as described in the pop-up and this Cookie Policy. You can withdraw or change your consent at any time."
+         ],
+         [
+          "[cookie_accept_text]"
+         ]
+        ]
+       }
+      ],
+      "condition": {
+       "us_california_optin": "yes"
+      }
+     }
+    ],
+    [
+     "22",
+     {
+      "subtitle": [
+       "Vendors"
+      ],
+      "content": [
+       "We participate in the Transparency & Consent Framework for the CCPA. Other, so-called 'downstream', participants may re-sell data that was sold by us, as a publisher. You can opt-out to the re-sale of this data on the property of the participant as shown below.[cmplz-tcf-us-vendors]"
+      ],
+      "p": false,
+      "callback_condition": "cmplz_tcf_active",
+      "condition": {
+       "us_states": "NOT EMPTY"
+      }
+     }
+    ],
+    [
+     "23",
+     {
+      "subtitle": [
+       "Manage your opt-out preferences"
+      ],
+      "content": [
+       "[cmplz-manage-consent]"
+      ],
+      "p": false,
+      "condition": {
+       "us_california_optin": "NOT yes"
+      }
+     }
+    ],
+    [
+     "24",
+     {
+      "subtitle": [
+       "Manage your consent settings"
+      ],
+      "content": [
+       "[cmplz-manage-consent]"
+      ],
+      "p": false,
+      "condition": {
+       "us_california_optin": "yes"
+      }
+     }
+    ],
+    [
+     "25",
+     {
+      "title": [
+       "Enabling/disabling and deleting cookies"
+      ],
+      "content": [
+       "You can use your internet browser to automatically or manually delete cookies. You can also specify that certain cookies may not be placed. Another option is to change the settings of your internet browser so that you receive a message each time a cookie is placed. For more information about these options, please refer to the instructions in the Help section of your browser."
+      ]
+     }
+    ],
+    [
+     "enable-disable-removal-cookies-2",
+     {
+      "content": [
+       {
+        "_x": [
+         [
+          "Please note that our website may not work properly if all cookies are disabled. If you do delete the cookies in your browser, they will be placed again after your consent when you visit our website again."
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       }
+      ]
+     }
+    ],
+    [
+     "26",
+     {
+      "title": [
+       "Your rights with respect to personal data"
+      ],
+      "p": false,
+      "content": [
+       "<p>You have the following rights with respect to your personal data:</p><ul>\n                <li>you may submit a request for access to the data we process about you;</li>\n                <li>you may object to the processing;</li>\n                <li>you may request an overview, in a commonly used format, of the data we process about you;</li>\n                <li>you may request correction or deletion of the data if it is incorrect or not or no longer relevant, or to ask to restrict the processing of the data.</li>\n            </ul><p>To exercise these rights, please contact us. Please refer to the contact details at the bottom of this Cookie Policy. If you have a complaint about how we handle your data, we would like to hear from you.</p>"
+      ]
+     }
+    ],
+    [
+     "27",
+     {
+      "content": [
+       {
+        "sprintf": [
+         [
+          "For more information about your rights with respect to personal data, please refer to our %sPrivacy Statement%s"
+         ],
+         [
+          "<a href=\"[privacy-statement-url]\" target=\"_blank\">"
+         ],
+         [
+          "</a>"
+         ]
+        ]
+       }
+      ],
+      "condition": {
+       "privacy-statement": "NOT no"
+      }
+     }
+    ],
+    [
+     "28",
+     {
+      "content": [
+       "For more information about your rights with respect to personal data, please refer to our Privacy Statement"
+      ],
+      "condition": {
+       "privacy-statement": "no"
+      }
+     }
+    ],
+    [
+     "29",
+     {
+      "title": [
+       "Contact details"
+      ],
+      "content": [
+       "For questions and/or comments about our Cookie Policy and this statement, please contact us by using the following contact details:"
+      ]
+     }
+    ],
+    [
+     "30",
+     {
+      "content": [
+       "<span class=\"cmplz-contact-organisation\">[organisation_name]</span><br />\n                      <span class=\"cmplz-contact-address\">[address_company]</span><br />\n                      <span class=\"cmplz-contact-country\">[country_company]</span><br />\n                      <span class=\"cmplz-contact-domain\">Website: [domain]</span><br />\n                      <span class=\"cmplz-contact-email\">Email: [email_company]</span><br />\n                      <span class=\"cmplz-contact-telephone\">[telephone_company]</span>"
+      ]
+     }
+    ],
+    [
+     "31",
+     {
+      "content": [
+       {
+        "sprintf": [
+         [
+          "This Cookie Policy was synchronized with %scookiedatabase.org%s on %s."
+         ],
+         [
+          "<a href=\"https://cookiedatabase.org/\" target=\"_blank\">"
+         ],
+         [
+          "</a>"
+         ],
+         [
+          "[sync_date]"
+         ]
+        ]
+       }
+      ],
+      "callback_condition": [
+       "cmplz_cdb_reference_in_policy"
+      ]
+     }
+    ]
+   ]
+  },
+  {
+   "region": "uk",
+   "type": "cookie-statement",
+   "elements": [
+    [
+     "last-updated",
+     {
+      "content": [
+       "<i>",
+       {
+        "sprintf": [
+         [
+          "This Cookie Policy was last updated on %s and applies to citizens and legal permanent residents of the United Kingdom."
+         ],
+         [
+          "[publish_date]"
+         ]
+        ]
+       },
+       "</i><br>"
+      ]
+     }
+    ],
+    [
+     "introduction",
+     {
+      "title": [
+       "Introduction"
+      ],
+      "content": [
+       {
+        "sprintf": [
+         [
+          "Our website, %s (hereinafter: \"the website\") uses cookies and other related technologies (for convenience all technologies are referred to as \"cookies\"). Cookies are also placed by third parties we have engaged. In the document below we inform you about the use of cookies on our website."
+         ],
+         [
+          "[domain]"
+         ]
+        ]
+       }
+      ]
+     }
+    ],
+    [
+     "what-are-cookies",
+     {
+      "title": [
+       "What are cookies?"
+      ],
+      "content": [
+       "A cookie is a small simple file that is sent along with pages of this website and stored by your browser on the hard drive of your computer or another device. The information stored therein may be returned to our servers or to the servers of the relevant third parties during a subsequent visit."
+      ]
+     }
+    ],
+    [
+     "what-are-scripts",
+     {
+      "title": [
+       "What are scripts?"
+      ],
+      "content": [
+       "A script is a piece of program code that is used to make our website function properly and interactively. This code is executed on our server or on your device."
+      ]
+     }
+    ],
+    [
+     "what-is-a-webbeacon",
+     {
+      "title": [
+       "What is a web beacon?"
+      ],
+      "content": [
+       "A web beacon (or a pixel tag) is a small, invisible piece of text or image on a website that is used to monitor traffic on a website. In order to do this, various data about you is stored using web beacons."
+      ],
+      "callback_condition": "NOT cmplz_uses_only_functional_cookies"
+     }
+    ],
+    [
+     "cookies",
+     {
+      "title": [
+       "Cookies"
+      ]
+     }
+    ],
+    [
+     "0",
+     {
+      "subtitle": [
+       "Technical or functional cookies"
+      ],
+      "content": [
+       "Some cookies ensure that certain parts of the website work properly and that your user preferences remain known. By placing functional cookies, we make it easier for you to visit our website. This way, you do not need to repeatedly enter the same information when visiting our website and, for example, the items remain in your shopping cart until you have paid. We may place these cookies without your consent."
+      ]
+     }
+    ],
+    [
+     "1",
+     {
+      "subtitle": [
+       "Statistics cookies"
+      ],
+      "content": [
+       "We use statistics cookies to optimize the website experience for our users. With these statistics cookies we get insights in the usage of our website.&nbsp;We ask your permission to place statistics cookies."
+      ],
+      "callback_condition": "cmplz_cookie_warning_required_stats_uk",
+      "condition": {
+       "compile_statistics": "NOT no"
+      }
+     }
+    ],
+    [
+     "2",
+     {
+      "subtitle": [
+       "Statistics cookies"
+      ],
+      "content": [
+       "Because statistics are being tracked anonymously, no permission is asked to place statistics cookies."
+      ],
+      "callback_condition": "NOT cmplz_cookie_warning_required_stats_uk",
+      "condition": {
+       "compile_statistics": "NOT no"
+      }
+     }
+    ],
+    [
+     "3",
+     {
+      "subtitle": [
+       "Advertising cookies"
+      ],
+      "content": [
+       {
+        "sprintf": [
+         [
+          "On this website we use advertising cookies, enabling us to personalize the advertisements for you, and we (and third parties) gain insights into the campaign results. This happens based on a profile we create based on your click and surfing on and outside %s. With these cookies you, as website visitor are linked to a unique ID, so you do not see the same ad more than once for example."
+         ],
+         [
+          "[domain]"
+         ]
+        ]
+       }
+      ],
+      "condition": {
+       "uses_ad_cookies": "yes",
+       "uses_ad_cookies_personalized": "NOT no"
+      }
+     }
+    ],
+    [
+     "4",
+     {
+      "subtitle": [
+       "Advertising cookies"
+      ],
+      "content": [
+       {
+        "sprintf": [
+         [
+          "On this website we use advertising cookies, enabling us to gain insights into the campaign results. This happens based on a profile we create based on your behaviour on %s. With these cookies you, as website visitor, are linked to a unique ID but these cookies will not profile your behaviour and interests to serve personalized ads."
+         ],
+         [
+          "[domain]"
+         ]
+        ]
+       }
+      ],
+      "condition": {
+       "uses_ad_cookies": "yes",
+       "uses_ad_cookies_personalized": "no"
+      }
+     }
+    ],
+    [
+     "5",
+     {
+      "content": [
+       "Because these cookies are marked as tracking cookies, we ask your permission to place these."
+      ],
+      "condition": {
+       "uses_ad_cookies": "yes"
+      }
+     }
+    ],
+    [
+     "6",
+     {
+      "subtitle": [
+       "Marketing/Tracking cookies"
+      ],
+      "content": [
+       "Marketing/Tracking cookies are cookies or any other form of local storage, used to create user profiles to display advertising or to track the user on this website or across several websites for similar marketing purposes."
+      ],
+      "callback_condition": "cmplz_uses_marketing_cookies"
+     }
+    ],
+    [
+     "7",
+     {
+      "subtitle": [
+       "Social media"
+      ],
+      "content": [
+       "On our website, we have included content to promote web pages (e.g. “like”, “pin”) or share (e.g. “tweet”) on social networks. This content is embedded with code derived from third parties and places cookies. This content might store and process certain information for personalized advertising."
+      ],
+      "condition": {
+       "uses_social_media": "yes",
+       "socialmedia_on_site": "EMPTY"
+      }
+     }
+    ],
+    [
+     "8",
+     {
+      "subtitle": [
+       "Social media"
+      ],
+      "content": [
+       {
+        "sprintf": [
+         [
+          "On our website, we have included content from %s to promote web pages (e.g. “like”, “pin”) or share (e.g. “tweet”) on social networks like %s. This content is embedded with code derived from %s and places cookies. This content might store and process certain information for personalized advertising."
+         ],
+         [
+          "[comma_socialmedia_on_site]"
+         ],
+         [
+          "[comma_socialmedia_on_site]"
+         ],
+         [
+          "[comma_socialmedia_on_site]"
+         ]
+        ]
+       }
+      ],
+      "condition": {
+       "uses_social_media": "yes",
+       "socialmedia_on_site": "NOT EMPTY"
+      }
+     }
+    ],
+    [
+     "9",
+     {
+      "content": [
+       {
+        "sprintf": [
+         [
+          "%s are located in the United States."
+         ],
+         [
+          "[comma_socialmedia_on_site]"
+         ]
+        ]
+       }
+      ],
+      "condition": {
+       "uses_social_media": "yes",
+       "socialmedia_on_site": "NOT EMPTY"
+      }
+     }
+    ],
+    [
+     "10",
+     {
+      "content": [
+       "Please read the privacy statement of these social networks (which can change regularly) to read what they do with your (personal) data which they process using these cookies. The data that is retrieved is anonymized as much as possible."
+      ],
+      "condition": {
+       "uses_social_media": "yes",
+       "socialmedia_on_site": "EMPTY"
+      }
+     }
+    ],
+    [
+     "cookie_names",
+     {
+      "title": [
+       "Placed cookies"
+      ],
+      "callback": "cmplz_used_cookies"
+     }
+    ],
+    [
+     "consent",
+     {
+      "title": [
+       "Consent"
+      ],
+      "content": [
+       {
+        "sprintf": [
+         [
+          "When you visit our website for the first time, we will show you a pop-up with an explanation about cookies. As soon as you click on \"%s\", you consent to us using all cookies and plug-ins as described in the pop-up and this Cookie Policy. You can disable the use of cookies via your browser, but please note that our website may no longer work properly."
+         ],
+         [
+          "[cookie_accept_text]"
+         ]
+        ]
+       }
+      ],
+      "callback_condition": [
+       "NOT cmplz_site_uses_cookie_warning_cats",
+       "cmplz_uk_site_needs_cookie_warning"
+      ]
+     }
+    ],
+    [
+     "consent_cats",
+     {
+      "title": [
+       "Consent"
+      ],
+      "content": [
+       {
+        "sprintf": [
+         [
+          "When you visit our website for the first time, we will show you a pop-up with an explanation about cookies. As soon as you click on \"%s\", you consent to us using the categories of cookies and plug-ins you selected in the pop-up, as described in this Cookie Policy. You can disable the use of cookies via your browser, but please note that our website may no longer work properly."
+         ],
+         [
+          "[cookie_save_preferences_text]"
+         ]
+        ]
+       }
+      ],
+      "callback_condition": [
+       "cmplz_site_uses_cookie_warning_cats",
+       "cmplz_uk_site_needs_cookie_warning"
+      ]
+     }
+    ],
+    [
+     "revoke_btn",
+     {
+      "p": false,
+      "subtitle": [
+       "Manage your consent settings"
+      ],
+      "content": [
+       "[cmplz-manage-consent]"
+      ],
+      "callback_condition": "cmplz_uk_site_needs_cookie_warning"
+     }
+    ],
+    [
+     "11",
+     {
+      "p": false,
+      "subtitle": [
+       "Vendors"
+      ],
+      "content": [
+       "[cmplz-tcf-vendors]"
+      ],
+      "callback_condition": "cmplz_tcf_active"
+     }
+    ],
+    [
+     "enable-disable-removal-cookies",
+     {
+      "title": [
+       "Enabling/disabling and deleting cookies"
+      ],
+      "content": [
+       "You can use your internet browser to automatically or manually delete cookies. You can also specify that certain cookies may not be placed. Another option is to change the settings of your internet browser so that you receive a message each time a cookie is placed. For more information about these options, please refer to the instructions in the Help section of your browser."
+      ]
+     }
+    ],
+    [
+     "enable-disable-removal-cookies-2",
+     {
+      "content": [
+       "Please note that our website may not work properly if all cookies are disabled. If you do delete the cookies in your browser, they will be placed again after your consent when you visit our website again."
+      ]
+     }
+    ],
+    [
+     "your-rights",
+     {
+      "title": [
+       "Your rights with respect to personal data"
+      ],
+      "content": [
+       "You have the following rights with respect to your personal data:"
+      ]
+     }
+    ],
+    [
+     "your-rights-2",
+     {
+      "p": false,
+      "content": [
+       "<ul>\n                    <li>You have the right to know why your personal data is needed, what will happen to it, and how long it will be retained for.</li>\n                    <li>Right of access: You have the right to access your personal data that is known to us.</li>\n                    <li>Right to rectification: you have the right to supplement, correct, have deleted or blocked your personal data whenever you wish.</li>\n                    <li>If you give us your consent to process your data, you have the right to revoke that consent and to have your personal data deleted.</li>\n                    <li>Right to transfer your data: you have the right to request all your personal data from the controller and transfer it in its entirety to another controller.</li>\n                    <li>Right to object: you may object to the processing of your data. We comply with this, unless there are justified grounds for processing.</li>\n                </ul>"
+      ]
+     }
+    ],
+    [
+     "your-rights-3",
+     {
+      "content": [
+       "To exercise these rights, please contact us. Please refer to the contact details at the bottom of this Cookie Policy. If you have a complaint about how we handle your data, we would like to hear from you, but you also have the right to submit a complaint to the supervisory authority (the Information Commissioner's Office (ICO))."
+      ]
+     }
+    ],
+    [
+     "your-rights-4",
+     {
+      "content": [
+       "For Jersey residents, please contact the Jersey Office of The Information Commissioner. Guernsey residents can contact the Office of the Data Protection Authority in Guernsey."
+      ],
+      "condition": {
+       "uk_consent_regions": "yes"
+      }
+     }
+    ],
+    [
+     "contact-details",
+     {
+      "title": [
+       "Contact details"
+      ],
+      "content": [
+       "For questions and/or comments about our Cookie Policy and this statement, please contact us by using the following contact details:"
+      ]
+     }
+    ],
+    [
+     "contact-details-2",
+     {
+      "content": [
+       "<span class=\"cmplz-contact-organisation\">[organisation_name]</span><br>\n                    <span class=\"cmplz-contact-address\">[address_company]</span><br>\n                    <span class=\"cmplz-contact-country\">[country_company]</span><br>\n                    <span class=\"cmplz-contact-domain\">Website: [domain]</span><br>\n                    <span class=\"cmplz-contact-email\">Email: [email_company]</span><br>\n                    <span class=\"cmplz-contact-telephone\">[telephone_company]</span>"
+      ]
+     }
+    ],
+    [
+     "last-sync",
+     {
+      "content": [
+       {
+        "sprintf": [
+         [
+          "This Cookie Policy was synchronised with %scookiedatabase.org%s on %s."
+         ],
+         [
+          "<a href=\"https://cookiedatabase.org/\" target=\"_blank\">"
+         ],
+         [
+          "</a>"
+         ],
+         [
+          "[sync_date]"
+         ]
+        ]
+       }
+      ],
+      "callback_condition": [
+       "cmplz_cdb_reference_in_policy"
+      ]
+     }
+    ]
+   ]
+  },
+  {
+   "region": "ca",
+   "type": "cookie-statement",
+   "elements": [
+    [
+     "0",
+     {
+      "content": [
+       "<i>",
+       {
+        "sprintf": [
+         [
+          {
+           "_x": [
+            [
+             "This page was last changed on %s, last checked on %s and applies to citizens and legal permanent residents of Canada."
+            ],
+            [
+             "Legal document cookie policy"
+            ]
+           ]
+          }
+         ],
+         [
+          "[publish_date]"
+         ],
+         [
+          "[checked_date]"
+         ]
+        ]
+       },
+       "</i><br />"
+      ]
+     }
+    ],
+    [
+     "1",
+     {
+      "title": [
+       {
+        "_x": [
+         [
+          "Introduction"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ],
+      "content": [
+       {
+        "sprintf": [
+         [
+          {
+           "_x": [
+            [
+             "Our website, %s (hereinafter: \"the website\") uses cookies and other related technologies (for convenience all technologies are referred to as \"cookies\"). Cookies are also placed by third parties we have engaged. In the document below we inform you about the use of cookies on our website."
+            ],
+            [
+             "Legal document cookie policy"
+            ]
+           ]
+          }
+         ],
+         [
+          "[domain]"
+         ]
+        ]
+       }
+      ]
+     }
+    ],
+    [
+     "2",
+     {
+      "title": [
+       {
+        "_x": [
+         [
+          "What are cookies?"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ],
+      "content": [
+       {
+        "_x": [
+         [
+          "A cookie is a small simple file that is sent along with pages of this website and stored by your browser on the hard drive of your computer or another device. The information stored therein may be returned to our servers or to the servers of the relevant third parties during a subsequent visit."
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       }
+      ]
+     }
+    ],
+    [
+     "3",
+     {
+      "title": [
+       {
+        "_x": [
+         [
+          "What are scripts?"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ],
+      "content": [
+       {
+        "_x": [
+         [
+          "A script is a piece of program code that is used to make our website function properly and interactively. This code is executed on our server or on your device."
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       }
+      ]
+     }
+    ],
+    [
+     "4",
+     {
+      "title": [
+       {
+        "_x": [
+         [
+          "What is a web beacon?"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ],
+      "content": [
+       {
+        "_x": [
+         [
+          "A web beacon (or a pixel tag) is a small, invisible piece of text or image on a website that is used to monitor traffic on a website. In order to do this, various data about you is stored using web beacons."
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       }
+      ],
+      "callback_condition": "NOT cmplz_uses_only_functional_cookies"
+     }
+    ],
+    [
+     "5",
+     {
+      "title": [
+       {
+        "_x": [
+         [
+          "Third parties"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ],
+      "content": [
+       {
+        "_x": [
+         [
+          "We have made agreements about the use of cookies with other companies that place cookies. However, we cannot guarantee that these third parties handle your personal data in a reliable or secure manner. Parties such as Google are to be considered as independent data controllers. We recommend that you read the privacy statements of these companies."
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       }
+      ],
+      "callback_condition": "cmplz_site_shares_data"
+     }
+    ],
+    [
+     "6",
+     {
+      "title": [
+       {
+        "_x": [
+         [
+          "Cookies"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ]
+     }
+    ],
+    [
+     "7",
+     {
+      "subtitle": [
+       {
+        "_x": [
+         [
+          "Technical or functional cookies"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ],
+      "content": [
+       {
+        "_x": [
+         [
+          "Some cookies ensure that certain parts of the website work properly and that your user preferences remain known. By placing functional cookies, we make it easier for you to visit our website. This way, you do not need to repeatedly enter the same information when visiting our website and, for example, the items remain in your shopping cart until you have paid."
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       }
+      ]
+     }
+    ],
+    [
+     "8",
+     {
+      "subtitle": [
+       {
+        "_x": [
+         [
+          "Statistics cookies"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ],
+      "content": [
+       {
+        "_x": [
+         [
+          "We use statistics cookies to optimize the website experience for our users. With these statistics cookies we get insights in the usage of our website."
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       }
+      ],
+      "callback_condition": "cmplz_uses_statistics",
+      "condition": {
+       "compile_statistics": "NOT no"
+      }
+     }
+    ],
+    [
+     "9",
+     {
+      "subtitle": [
+       {
+        "_x": [
+         [
+          "Advertising cookies"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ],
+      "content": [
+       {
+        "sprintf": [
+         [
+          {
+           "_x": [
+            [
+             "On this website we use advertising cookies, enabling us to personalize the advertisements for you, and we (and third parties) gain insights into the campaign results. This happens based on a profile we create based on your click and surfing on and outside %s. With these cookies you, as website visitor are linked to a unique ID, so you do not see the same ad more than once for example."
+            ],
+            [
+             "Legal document cookie policy"
+            ]
+           ]
+          }
+         ],
+         [
+          "[domain]"
+         ]
+        ]
+       }
+      ],
+      "condition": {
+       "uses_ad_cookies": "yes",
+       "uses_ad_cookies_personalized": "NOT no"
+      }
+     }
+    ],
+    [
+     "10",
+     {
+      "subtitle": [
+       {
+        "_x": [
+         [
+          "Advertising cookies"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ],
+      "content": [
+       {
+        "sprintf": [
+         [
+          {
+           "_x": [
+            [
+             "On this website we use advertising cookies, enabling us to gain insights into the campaign results. This happens based on a profile we create based on your behavior on %s. With these cookies you, as website visitor, are linked to a unique ID but these cookies will not profile your behavior and interests to serve personalized ads."
+            ],
+            [
+             "Legal document cookie policy"
+            ]
+           ]
+          }
+         ],
+         [
+          "[domain]"
+         ]
+        ]
+       }
+      ],
+      "condition": {
+       "uses_ad_cookies": "yes",
+       "uses_ad_cookies_personalized": "no"
+      }
+     }
+    ],
+    [
+     "11",
+     {
+      "content": [
+       {
+        "_x": [
+         [
+          "You can object to the tracking by these cookies by clicking the \"Manage Consent\" button."
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       }
+      ],
+      "condition": {
+       "uses_ad_cookies": "yes"
+      }
+     }
+    ],
+    [
+     "12",
+     {
+      "subtitle": [
+       {
+        "_x": [
+         [
+          "Marketing/Tracking cookies"
+         ],
+         [
+          "cookie policy"
+         ]
+        ]
+       }
+      ],
+      "content": [
+       {
+        "_x": [
+         [
+          "Marketing/Tracking cookies are cookies or any other form of local storage, used to create user profiles to display advertising or to track the user on this website or across several websites for similar marketing purposes."
+         ],
+         [
+          "cookie policy"
+         ]
+        ]
+       }
+      ],
+      "callback_condition": "cmplz_uses_marketing_cookies"
+     }
+    ],
+    [
+     "13",
+     {
+      "subtitle": [
+       {
+        "_x": [
+         [
+          "Social media"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ],
+      "content": [
+       {
+        "_x": [
+         [
+          "On our website, we have included content to promote web pages (e.g. “like”, “pin”) or share (e.g. “tweet”) on social networks. This content is embedded with code derived from third parties and places cookies. This content might store and process certain information for personalized advertising."
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       }
+      ],
+      "condition": {
+       "uses_social_media": "yes",
+       "socialmedia_on_site": "EMPTY"
+      }
+     }
+    ],
+    [
+     "14",
+     {
+      "subtitle": [
+       {
+        "_x": [
+         [
+          "Social media"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ],
+      "content": [
+       {
+        "sprintf": [
+         [
+          {
+           "_x": [
+            [
+             "On our website, we have included content from %s to promote web pages (e.g. “like”, “pin”) or share (e.g. “tweet”) on social networks like %s. This content is embedded with code derived from %s and places cookies. This content might store and process certain information for personalized advertising."
+            ],
+            [
+             "Legal document cookie policy"
+            ]
+           ]
+          }
+         ],
+         [
+          "[comma_socialmedia_on_site]"
+         ],
+         [
+          "[comma_socialmedia_on_site]"
+         ],
+         [
+          "[comma_socialmedia_on_site]"
+         ]
+        ]
+       }
+      ],
+      "condition": {
+       "uses_social_media": "yes",
+       "socialmedia_on_site": "NOT EMPTY"
+      }
+     }
+    ],
+    [
+     "15",
+     {
+      "content": [
+       {
+        "__": [
+         [
+          "Please read the privacy statement of these social networks (which can change regularly) to read what they do with your (personal) data which they process using these cookies. The data that is retrieved is anonymized as much as possible."
+         ]
+        ]
+       },
+       " ",
+       {
+        "sprintf": [
+         [
+          {
+           "_n": [
+            [
+             "%s is located in the United States."
+            ],
+            [
+             "%s are located in the United States."
+            ],
+            [
+             "socialmedia"
+            ]
+           ]
+          }
+         ],
+         [
+          "[comma_socialmedia_on_site]"
+         ]
+        ]
+       }
+      ],
+      "condition": {
+       "uses_social_media": "yes",
+       "socialmedia_on_site": "NOT EMPTY"
+      }
+     }
+    ],
+    [
+     "16",
+     {
+      "content": [
+       {
+        "__": [
+         [
+          "Please read the privacy statement of these social networks (which can change regularly) to read what they do with your (personal) data which they process using these cookies. The data that is retrieved is anonymized as much as possible."
+         ]
+        ]
+       }
+      ],
+      "condition": {
+       "uses_social_media": "yes",
+       "socialmedia_on_site": "EMPTY"
+      }
+     }
+    ],
+    [
+     "cookie_names",
+     {
+      "title": [
+       {
+        "_x": [
+         [
+          "Placed cookies"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ],
+      "callback": "cmplz_used_cookies"
+     }
+    ],
+    [
+     "17",
+     {
+      "title": [
+       {
+        "_x": [
+         [
+          "Consent"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ],
+      "content": [
+       {
+        "_x": [
+         [
+          "When you visit our website for the first time, we will show you a pop-up with an explanation about cookies. You do have the right to opt-out and to object against the further use of non-functional cookies."
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       }
+      ],
+      "condition": {
+       "ca_targets_quebec": "no"
+      }
+     }
+    ],
+    [
+     "18",
+     {
+      "title": [
+       {
+        "_x": [
+         [
+          "Consent"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ],
+      "content": [
+       {
+        "sprintf": [
+         [
+          {
+           "_x": [
+            [
+             "When you visit our website for the first time, we will show you a pop-up with an explanation about cookies. As soon as you click on \"%s\", you consent to us using all cookies and plug-ins as described in the pop-up and this Cookie Policy. You can disable the use of cookies via your browser, but please note that our website may no longer work properly."
+            ],
+            [
+             "Legal document cookie policy"
+            ]
+           ]
+          }
+         ],
+         [
+          "[cookie_accept_text]"
+         ]
+        ]
+       }
+      ],
+      "condition": {
+       "ca_targets_quebec": "yes"
+      }
+     }
+    ],
+    [
+     "19",
+     {
+      "p": false,
+      "subtitle": [
+       {
+        "_x": [
+         [
+          "Manage your consent settings"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ],
+      "content": [
+       "[cmplz-manage-consent]"
+      ]
+     }
+    ],
+    [
+     "20",
+     {
+      "content": [
+       {
+        "_x": [
+         [
+          "You can also disable the use of cookies via your browser, but please note that our website may no longer work properly."
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ]
+     }
+    ],
+    [
+     "21",
+     {
+      "subtitle": [
+       {
+        "_x": [
+         [
+          "Vendors"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ],
+      "p": false,
+      "content": [
+       "[cmplz-tcf-vendors]"
+      ],
+      "callback_condition": [
+       "cmplz_tcf_active",
+       "cmplz_site_shares_data"
+      ]
+     }
+    ],
+    [
+     "22",
+     {
+      "title": [
+       {
+        "_x": [
+         [
+          "Enabling/disabling and deleting cookies"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ],
+      "content": [
+       {
+        "sprintf": [
+         [
+          {
+           "_x": [
+            [
+             "You can use your internet browser to automatically or manually delete cookies. You can also specify that certain cookies may not be placed. Another option is to change the settings of your internet browser so that you receive a message each time a cookie is placed. For more information about these options, please refer to the instructions in the Help section of your browser. Or you can indicate your preferences on the following page: %syouradchoices.ca%s"
+            ],
+            [
+             "Legal document cookie policy"
+            ]
+           ]
+          }
+         ],
+         [
+          "<a href=\"https://youradchoices.ca\" rel=\"noopener noreferrer nofollow\" target=\"_blank\">"
+         ],
+         [
+          "</a>"
+         ]
+        ]
+       }
+      ]
+     }
+    ],
+    [
+     "enable-disable-removal-cookies-2",
+     {
+      "content": [
+       {
+        "_x": [
+         [
+          "Please note that our website may not work properly if all cookies are disabled. If you do delete the cookies in your browser, they will be placed again after your consent when you visit our website again."
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       }
+      ]
+     }
+    ],
+    [
+     "23",
+     {
+      "title": [
+       {
+        "_x": [
+         [
+          "Your rights with respect to personal data"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ],
+      "p": false,
+      "content": [
+       "<p>",
+       {
+        "_x": [
+         [
+          "You have the following rights with respect to your personal data:"
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       },
+       "</p><ul>\n                <li>",
+       {
+        "_x": [
+         [
+          "you may submit a request for access to the data we process about you;"
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       },
+       "</li>\n                <li>",
+       {
+        "_x": [
+         [
+          "you may object to the processing;"
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       },
+       "</li>\n                <li>",
+       {
+        "_x": [
+         [
+          "you may request an overview, in a commonly used format, of the data we process about you;"
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       },
+       "</li>\n                <li>",
+       {
+        "_x": [
+         [
+          "you may request correction or deletion of the data if it is incorrect or not or no longer relevant. Where appropriate, the amended information shall be transmitted to third parties having access to the information in question."
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       },
+       "</li>\n                <li>",
+       {
+        "_x": [
+         [
+          "You have the right to withdraw consent at any time, subject to legal or contractual restrictions and reasonable notice. You will be informed of the implications of such withdrawal."
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       },
+       "</li>\n                <li>",
+       {
+        "_x": [
+         [
+          "You have the right to address a challenge concerning non-compliance with PIPEDA to our organization and, if the issue is not resolved, to the Office of the Privacy Commissioner of Canada."
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       },
+       "</li>\n            </ul><p>",
+       {
+        "_x": [
+         [
+          "To exercise these rights, please contact us. Please refer to the contact details at the bottom of this Cookie Policy. If you have a complaint about how we handle your data, we would like to hear from you."
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       },
+       "</p>"
+      ]
+     }
+    ],
+    [
+     "24",
+     {
+      "title": [
+       {
+        "_x": [
+         [
+          "Contact details"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ],
+      "content": [
+       {
+        "_x": [
+         [
+          "For questions and/or comments about our Cookie Policy and this statement, please contact us by using the following contact details:"
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       }
+      ]
+     }
+    ],
+    [
+     "25",
+     {
+      "content": [
+       "<span class=\"cmplz-contact-organisation\">[organisation_name]</span><br />\n                    <span class=\"cmplz-contact-address\">[address_company]</span><br />\n                    <span class=\"cmplz-contact-country\">[country_company]</span><br />\n                    <span class=\"cmplz-contact-domain\">",
+       {
+        "_x": [
+         [
+          "Website:"
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       },
+       " [domain]</span><br>\n                    <span class=\"cmplz-contact-email\">",
+       {
+        "_x": [
+         [
+          "Email:"
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       },
+       " [email_company]</span><br>\n                    <span class=\"cmplz-contact-telephone\">[telephone_company]</span>"
+      ]
+     }
+    ],
+    [
+     "26",
+     {
+      "content": [
+       {
+        "sprintf": [
+         [
+          {
+           "_x": [
+            [
+             "This Cookie Policy was synchronized with %scookiedatabase.org%s on %s."
+            ],
+            [
+             "Legal document cookie policy"
+            ]
+           ]
+          }
+         ],
+         [
+          "<a href=\"https://cookiedatabase.org/\" target=\"_blank\">"
+         ],
+         [
+          "</a>"
+         ],
+         [
+          "[sync_date]"
+         ]
+        ]
+       }
+      ],
+      "callback_condition": [
+       "cmplz_cdb_reference_in_policy"
+      ]
+     }
+    ]
+   ]
+  },
+  {
+   "region": "au",
+   "type": "cookie-statement",
+   "elements": [
+    [
+     "0",
+     {
+      "content": [
+       "<i>",
+       {
+        "sprintf": [
+         [
+          "This page was last changed on %s, last checked on %s and applies to citizens of Australia. "
+         ],
+         [
+          "[publish_date]"
+         ],
+         [
+          "[checked_date]"
+         ]
+        ]
+       },
+       "</i><br />"
+      ]
+     }
+    ],
+    [
+     "1",
+     {
+      "title": [
+       "Introduction"
+      ],
+      "content": [
+       {
+        "sprintf": [
+         [
+          "Our website, %s (hereinafter: \"the website\") uses cookies and other related technologies (for convenience all technologies are referred to as \"cookies\"). Cookies are also placed by third parties we have engaged. In the document below we inform you about the use of cookies on our website."
+         ],
+         [
+          "[domain]"
+         ]
+        ]
+       }
+      ]
+     }
+    ],
+    [
+     "2",
+     {
+      "title": [
+       "What are cookies?"
+      ],
+      "content": [
+       "A cookie is a small simple file that is sent along with pages of this website and stored by your browser on the hard drive of your computer or another device. The information stored therein may be returned to our servers or to the servers of the relevant third parties during a subsequent visit."
+      ]
+     }
+    ],
+    [
+     "3",
+     {
+      "title": [
+       "What are scripts?"
+      ],
+      "content": [
+       "A script is a piece of program code that is used to make our website function properly and interactively. This code is executed on our server or on your device."
+      ]
+     }
+    ],
+    [
+     "4",
+     {
+      "title": [
+       "What is a web beacon?"
+      ],
+      "content": [
+       "A web beacon (or a pixel tag) is a small, invisible piece of text or image on a website that is used to monitor traffic on a website. In order to do this, various data about you is stored using web beacons."
+      ],
+      "callback_condition": "NOT cmplz_uses_only_functional_cookies"
+     }
+    ],
+    [
+     "5",
+     {
+      "title": [
+       "Consent"
+      ],
+      "content": [
+       "When you visit our website for the first time, we will show you a pop-up with an explanation about cookies. You do have the right to opt-out and to object against the further use of non-functional cookies."
+      ]
+     }
+    ],
+    [
+     "6",
+     {
+      "subtitle": [
+       "Manage your consent settings"
+      ],
+      "p": false,
+      "content": [
+       "[cmplz-manage-consent]"
+      ]
+     }
+    ],
+    [
+     "7",
+     {
+      "subtitle": [
+       "Vendors"
+      ],
+      "p": false,
+      "content": [
+       "[cmplz-tcf-vendors]"
+      ],
+      "callback_condition": [
+       "cmplz_tcf_active",
+       "cmplz_site_shares_data"
+      ]
+     }
+    ],
+    [
+     "8",
+     {
+      "content": [
+       "You can also disable the use of cookies via your browser, but please note that our website may no longer work properly."
+      ]
+     }
+    ],
+    [
+     "9",
+     {
+      "title": [
+       "Cookies"
+      ]
+     }
+    ],
+    [
+     "10",
+     {
+      "subtitle": [
+       "Technical or functional cookies"
+      ],
+      "content": [
+       "Some cookies ensure that certain parts of the website work properly and that your user preferences remain known. By placing functional cookies, we make it easier for you to visit our website. This way, you do not need to repeatedly enter the same information when visiting our website and, for example, the items remain in your shopping cart until you have paid. We may place these cookies without your consent."
+      ]
+     }
+    ],
+    [
+     "11",
+     {
+      "subtitle": [
+       "Analytical cookies"
+      ],
+      "content": [
+       "We use analytical cookies to optimize the website experience for our users. With these analytical cookies we get insights in the usage of our website."
+      ],
+      "callback_condition": "cmplz_uses_statistics",
+      "condition": {
+       "compile_statistics": "NOT no"
+      }
+     }
+    ],
+    [
+     "12",
+     {
+      "subtitle": [
+       "Advertising cookies"
+      ],
+      "content": [
+       {
+        "sprintf": [
+         [
+          "On this website we use advertising cookies, enabling us to personalize the advertisements for you, and we (and third parties) gain insights into the campaign results. This happens based on a profile we create based on your click and surfing on and outside %s. With these cookies you, as website visitor are linked to a unique ID, so you do not see the same ad more than once for example."
+         ],
+         [
+          "[domain]"
+         ]
+        ]
+       }
+      ],
+      "condition": {
+       "uses_ad_cookies": "yes",
+       "uses_ad_cookies_personalized": "NOT no"
+      }
+     }
+    ],
+    [
+     "13",
+     {
+      "subtitle": [
+       "Advertising cookies"
+      ],
+      "content": [
+       {
+        "sprintf": [
+         [
+          "On this website we use advertising cookies, enabling us to gain insights into the campaign results. This happens based on a profile we create based on your behaviour on %s. With these cookies you, as website visitor, are linked to a unique ID but these cookies will not profile your behaviour and interests to serve personalised ads."
+         ],
+         [
+          "[domain]"
+         ]
+        ]
+       }
+      ],
+      "condition": {
+       "uses_ad_cookies": "yes",
+       "uses_ad_cookies_personalized": "no"
+      }
+     }
+    ],
+    [
+     "14",
+     {
+      "content": [
+       "You can object to the tracking by these cookies by clicking the \"Manage Consent\" button."
+      ],
+      "condition": {
+       "uses_ad_cookies": "yes"
+      }
+     }
+    ],
+    [
+     "15",
+     {
+      "subtitle": [
+       "Marketing/Tracking cookies"
+      ],
+      "0": "cookie policy",
+      "content": [
+       "Marketing/Tracking cookies are cookies or any other form of local storage, used to create user profiles to display advertising or to track the user on this website or across several websites for similar marketing purposes."
+      ],
+      "callback_condition": "cmplz_uses_marketing_cookies"
+     }
+    ],
+    [
+     "16",
+     {
+      "subtitle": [
+       "Social media"
+      ],
+      "0": "Legal document cookie policy:paragraph title",
+      "content": [
+       "On our website, we have included content to promote web pages (e.g. “like”, “pin”) or share (e.g. “tweet”) on social networks. This content is embedded with code derived from third parties and places cookies. This content might store and process certain information for personalized advertising."
+      ],
+      "condition": {
+       "uses_social_media": "yes",
+       "socialmedia_on_site": "EMPTY"
+      }
+     }
+    ],
+    [
+     "17",
+     {
+      "subtitle": [
+       "Social media"
+      ],
+      "0": "Legal document cookie policy:paragraph title",
+      "content": [
+       {
+        "sprintf": [
+         [
+          "On our website, we have included content from %s to promote web pages (e.g. “like”, “pin”) or share (e.g. “tweet”) on social networks like %s. This content is embedded with code derived from %s and places cookies. This content might store and process certain information for personalized advertising."
+         ],
+         [
+          "[comma_socialmedia_on_site]"
+         ],
+         [
+          "[comma_socialmedia_on_site]"
+         ],
+         [
+          "[comma_socialmedia_on_site]"
+         ]
+        ]
+       }
+      ],
+      "condition": {
+       "uses_social_media": "yes",
+       "socialmedia_on_site": "NOT EMPTY"
+      }
+     }
+    ],
+    [
+     "18",
+     {
+      "content": [
+       "Please read the privacy statement of these social networks (which can change regularly) to read what they do with your (personal) data which they process using these cookies. The data that is retrieved is anonymized as much as possible. ",
+       {
+        "sprintf": [
+         [
+          {
+           "_n": [
+            [
+             "%s is located in the United States."
+            ],
+            [
+             "%s are located in the United States."
+            ],
+            [
+             "socialmedia"
+            ]
+           ]
+          }
+         ],
+         [
+          "[comma_socialmedia_on_site]"
+         ]
+        ]
+       }
+      ],
+      "condition": {
+       "uses_social_media": "yes",
+       "socialmedia_on_site": "NOT EMPTY"
+      }
+     }
+    ],
+    [
+     "19",
+     {
+      "content": [
+       "Please read the privacy statement of these social networks (which can change regularly) to read what they do with your (personal) data which they process using these cookies. The data that is retrieved is anonymized as much as possible."
+      ],
+      "condition": {
+       "uses_social_media": "yes",
+       "socialmedia_on_site": "EMPTY"
+      }
+     }
+    ],
+    [
+     "cookie_names",
+     {
+      "title": [
+       "Placed cookies"
+      ],
+      "callback": "cmplz_used_cookies"
+     }
+    ],
+    [
+     "20",
+     {
+      "title": [
+       "Enabling/disabling and deleting cookies"
+      ],
+      "content": [
+       "You can use your internet browser to automatically or manually delete cookies. You can also specify that certain cookies may not be placed. Another option is to change the settings of your internet browser so that you receive a message each time a cookie is placed. For more information about these options, please refer to the instructions in the Help section of your browser."
+      ]
+     }
+    ],
+    [
+     "enable-disable-removal-cookies-2",
+     {
+      "content": [
+       "Please note that our website may not work properly if all cookies are disabled. If you do delete the cookies in your browser, they will be placed again after your consent when you visit our website again."
+      ]
+     }
+    ],
+    [
+     "21",
+     {
+      "title": [
+       "Your rights with respect to personal data"
+      ],
+      "p": false,
+      "content": [
+       "<p>You have the following rights with respect to your personal data:</p><ul>\n                <li>you may submit a request for access to the data we process about you;</li>\n                <li>you may request an overview, in a commonly used format, of the data we process about you;</li>\n                <li>you may request correction or deletion of the data if it is incorrect or not or no longer relevant for any purpose under the Privacy Act.</li>\n            </ul><p>To exercise these rights, please contact us. Please refer to the contact details at the bottom of this cookie statement. If you have a complaint about how we handle your data, we would like to hear from you.</p>"
+      ]
+     }
+    ],
+    [
+     "22",
+     {
+      "title": [
+       "Contact details"
+      ],
+      "0": "Legal document cookie policy:",
+      "content": [
+       "For questions and/or comments about our Cookie Policy and this statement, please contact us by using the following contact details:"
+      ]
+     }
+    ],
+    [
+     "23",
+     {
+      "content": [
+       "<span class=\"cmplz-contact-organisation\">[organisation_name]</span><br />\n                    <span class=\"cmplz-contact-address\">[address_company]</span><br />\n                  <span class=\"cmplz-contact-country\">[country_company]</span><br />\n                    <span class=\"cmplz-contact-domain\">",
+       {
+        "_x": [
+         [
+          "Website:"
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       },
+       " [domain]</span><br>\n                    <span class=\"cmplz-contact-email\">",
+       {
+        "_x": [
+         [
+          "Email:"
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       },
+       " [email_company]</span><br>\n                    <span class=\"cmplz-contact-telephone\">[telephone_company]</span>"
+      ]
+     }
+    ],
+    [
+     "24",
+     {
+      "content": [
+       {
+        "sprintf": [
+         [
+          "This Cookie Policy was synchronised with %scookiedatabase.org%s on %s."
+         ],
+         [
+          "<a href=\"https://cookiedatabase.org/\" target=\"_blank\">"
+         ],
+         [
+          "</a>"
+         ],
+         [
+          "[sync_date]"
+         ]
+        ]
+       }
+      ],
+      "callback_condition": [
+       "cmplz_cdb_reference_in_policy"
+      ]
+     }
+    ]
+   ]
+  },
+  {
+   "region": "za",
+   "type": "cookie-statement",
+   "elements": [
+    [
+     "last-updated",
+     {
+      "content": [
+       "<i>",
+       {
+        "sprintf": [
+         [
+          {
+           "_x": [
+            [
+             "This Cookie Policy was last updated on %s and applies to citizens and legal permanent residents of South Africa."
+            ],
+            [
+             "Legal document cookie policy"
+            ]
+           ]
+          }
+         ],
+         [
+          "[publish_date]"
+         ]
+        ]
+       },
+       "</i><br>"
+      ]
+     }
+    ],
+    [
+     "introduction",
+     {
+      "title": [
+       {
+        "_x": [
+         [
+          "Introduction"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ],
+      "content": [
+       {
+        "sprintf": [
+         [
+          {
+           "_x": [
+            [
+             "Our website, %s (hereinafter: \"the website\") uses cookies and other related technologies (for convenience all technologies are referred to as \"cookies\"). Cookies are also placed by third parties we have engaged. In the document below we inform you about the use of cookies on our website."
+            ],
+            [
+             "Legal document cookie policy"
+            ]
+           ]
+          }
+         ],
+         [
+          "[domain]"
+         ]
+        ]
+       }
+      ]
+     }
+    ],
+    [
+     "what-are-cookies",
+     {
+      "title": [
+       {
+        "_x": [
+         [
+          "What are cookies?"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ],
+      "content": [
+       {
+        "_x": [
+         [
+          "A cookie is a small simple file that is sent along with pages of this website and stored by your browser on the hard drive of your computer or another device. The information stored therein may be returned to our servers or to the servers of the relevant third parties during a subsequent visit."
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       }
+      ]
+     }
+    ],
+    [
+     "what-are-scripts",
+     {
+      "title": [
+       {
+        "_x": [
+         [
+          "What are scripts?"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ],
+      "content": [
+       {
+        "_x": [
+         [
+          "A script is a piece of program code that is used to make our website function properly and interactively. This code is executed on our server or on your device."
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       }
+      ]
+     }
+    ],
+    [
+     "what-is-a-webbeacon",
+     {
+      "title": [
+       {
+        "_x": [
+         [
+          "What is a web beacon?"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ],
+      "content": [
+       {
+        "_x": [
+         [
+          "A web beacon (or a pixel tag) is a small, invisible piece of text or image on a website that is used to monitor traffic on a website. In order to do this, various data about you is stored using web beacons."
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       }
+      ],
+      "callback_condition": "NOT cmplz_uses_only_functional_cookies"
+     }
+    ],
+    [
+     "cookies",
+     {
+      "title": [
+       {
+        "_x": [
+         [
+          "Cookies"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ]
+     }
+    ],
+    [
+     "0",
+     {
+      "subtitle": [
+       {
+        "_x": [
+         [
+          "Technical or functional cookies"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ],
+      "content": [
+       {
+        "_x": [
+         [
+          "Some cookies ensure that certain parts of the website work properly and that your user preferences remain known. By placing functional cookies, we make it easier for you to visit our website. This way, you do not need to repeatedly enter the same information when visiting our website and, for example, the items remain in your shopping cart until you have paid. We may place these cookies without your consent."
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       }
+      ]
+     }
+    ],
+    [
+     "1",
+     {
+      "subtitle": [
+       {
+        "_x": [
+         [
+          "Statistics cookies"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ],
+      "content": [
+       {
+        "_x": [
+         [
+          "We use statistics cookies to optimize the website experience for our users. With these statistics cookies we get insights in the usage of our website."
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       },
+       "&nbsp;",
+       {
+        "_x": [
+         [
+          "We ask your permission to place statistics cookies."
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       }
+      ],
+      "callback_condition": "cmplz_cookie_warning_required_stats_za",
+      "condition": {
+       "compile_statistics": "NOT no"
+      }
+     }
+    ],
+    [
+     "2",
+     {
+      "subtitle": [
+       {
+        "_x": [
+         [
+          "Statistics cookies"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ],
+      "content": [
+       {
+        "_x": [
+         [
+          "Because statistics are being tracked anonymously, no permission is asked to place statistics cookies."
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       }
+      ],
+      "callback_condition": "NOT cmplz_cookie_warning_required_stats_za",
+      "condition": {
+       "compile_statistics": "NOT no"
+      }
+     }
+    ],
+    [
+     "3",
+     {
+      "subtitle": [
+       {
+        "_x": [
+         [
+          "Advertising cookies"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ],
+      "content": [
+       {
+        "sprintf": [
+         [
+          {
+           "_x": [
+            [
+             "On this website we use advertising cookies, enabling us to personalize the advertisements for you, and we (and third parties) gain insights into the campaign results. This happens based on a profile we create based on your click and surfing on and outside %s. With these cookies you, as website visitor are linked to a unique ID, so you do not see the same ad more than once for example."
+            ],
+            [
+             "Legal document cookie policy"
+            ]
+           ]
+          }
+         ],
+         [
+          "[domain]"
+         ]
+        ]
+       }
+      ],
+      "condition": {
+       "uses_ad_cookies": "yes",
+       "uses_ad_cookies_personalized": "NOT no"
+      }
+     }
+    ],
+    [
+     "4",
+     {
+      "subtitle": [
+       {
+        "_x": [
+         [
+          "Advertising cookies"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ],
+      "content": [
+       {
+        "sprintf": [
+         [
+          {
+           "_x": [
+            [
+             "On this website we use advertising cookies, enabling us to gain insights into the campaign results. This happens based on a profile we create based on your behavior on %s. With these cookies you, as website visitor, are linked to a unique ID but these cookies will not profile your behavior and interests to serve personalized ads."
+            ],
+            [
+             "Legal document cookie policy"
+            ]
+           ]
+          }
+         ],
+         [
+          "[domain]"
+         ]
+        ]
+       }
+      ],
+      "condition": {
+       "uses_ad_cookies": "yes",
+       "uses_ad_cookies_personalized": "no"
+      }
+     }
+    ],
+    [
+     "5",
+     {
+      "content": [
+       {
+        "_x": [
+         [
+          "Because these cookies are marked as tracking cookies, we ask your permission to place these."
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       }
+      ],
+      "condition": {
+       "uses_ad_cookies": "yes"
+      }
+     }
+    ],
+    [
+     "6",
+     {
+      "subtitle": [
+       {
+        "_x": [
+         [
+          "Marketing/Tracking cookies"
+         ],
+         [
+          "cookie policy"
+         ]
+        ]
+       }
+      ],
+      "content": [
+       {
+        "_x": [
+         [
+          "Marketing/Tracking cookies are cookies or any other form of local storage, used to create user profiles to display advertising or to track the user on this website or across several websites for similar marketing purposes."
+         ],
+         [
+          "cookie policy"
+         ]
+        ]
+       }
+      ],
+      "callback_condition": "cmplz_uses_marketing_cookies"
+     }
+    ],
+    [
+     "7",
+     {
+      "subtitle": [
+       {
+        "_x": [
+         [
+          "Social media"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ],
+      "content": [
+       {
+        "_x": [
+         [
+          "On our website, we have included content to promote web pages (e.g. “like”, “pin”) or share (e.g. “tweet”) on social networks. This content is embedded with code derived from third parties and places cookies. This content might store and process certain information for personalized advertising."
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       }
+      ],
+      "condition": {
+       "uses_social_media": "yes",
+       "socialmedia_on_site": "EMPTY"
+      }
+     }
+    ],
+    [
+     "8",
+     {
+      "subtitle": [
+       {
+        "_x": [
+         [
+          "Social media"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ],
+      "content": [
+       {
+        "sprintf": [
+         [
+          {
+           "_x": [
+            [
+             "On our website, we have included content from %s to promote web pages (e.g. “like”, “pin”) or share (e.g. “tweet”) on social networks like %s. This content is embedded with code derived from %s and places cookies. This content might store and process certain information for personalized advertising."
+            ],
+            [
+             "Legal document cookie policy"
+            ]
+           ]
+          }
+         ],
+         [
+          "[comma_socialmedia_on_site]"
+         ],
+         [
+          "[comma_socialmedia_on_site]"
+         ],
+         [
+          "[comma_socialmedia_on_site]"
+         ]
+        ]
+       }
+      ],
+      "condition": {
+       "uses_social_media": "yes",
+       "socialmedia_on_site": "NOT EMPTY"
+      }
+     }
+    ],
+    [
+     "9",
+     {
+      "content": [
+       {
+        "__": [
+         [
+          "Please read the privacy statement of these social networks (which can change regularly) to read what they do with your (personal) data which they process using these cookies. The data that is retrieved is anonymized as much as possible."
+         ]
+        ]
+       },
+       " ",
+       {
+        "sprintf": [
+         [
+          {
+           "_n": [
+            [
+             "%s is located in the United States."
+            ],
+            [
+             "%s are located in the United States."
+            ],
+            [
+             "socialmedia"
+            ]
+           ]
+          }
+         ],
+         [
+          "[comma_socialmedia_on_site]"
+         ]
+        ]
+       }
+      ],
+      "condition": {
+       "uses_social_media": "yes",
+       "socialmedia_on_site": "NOT EMPTY"
+      }
+     }
+    ],
+    [
+     "10",
+     {
+      "content": [
+       {
+        "__": [
+         [
+          "Please read the privacy statement of these social networks (which can change regularly) to read what they do with your (personal) data which they process using these cookies. The data that is retrieved is anonymized as much as possible."
+         ]
+        ]
+       }
+      ],
+      "condition": {
+       "uses_social_media": "yes",
+       "socialmedia_on_site": "EMPTY"
+      }
+     }
+    ],
+    [
+     "11",
+     {
+      "title": [
+       {
+        "_x": [
+         [
+          "Placed cookies"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ],
+      "callback": "cmplz_used_cookies"
+     }
+    ],
+    [
+     "12",
+     {
+      "title": [
+       {
+        "_x": [
+         [
+          "Consent"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ],
+      "content": [
+       {
+        "sprintf": [
+         [
+          {
+           "_x": [
+            [
+             "When you visit our website for the first time, we will show you a pop-up with an explanation about cookies. As soon as you click on \"%s\", you consent to us using all cookies and plug-ins as described in the pop-up and this Cookie Policy. You can disable the use of cookies via your browser, but please note that our website may no longer work properly."
+            ],
+            [
+             "Legal document cookie policy"
+            ]
+           ]
+          }
+         ],
+         [
+          "[cookie_accept_text]"
+         ]
+        ]
+       }
+      ],
+      "callback_condition": [
+       "NOT cmplz_site_uses_cookie_warning_cats",
+       "cmplz_za_site_needs_cookie_warning"
+      ]
+     }
+    ],
+    [
+     "13",
+     {
+      "title": [
+       {
+        "_x": [
+         [
+          "Consent"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ],
+      "content": [
+       {
+        "sprintf": [
+         [
+          {
+           "_x": [
+            [
+             "When you visit our website for the first time, we will show you a pop-up with an explanation about cookies. As soon as you click on \"%s\", you consent to us using the categories of cookies and plug-ins you selected in the pop-up, as described in this Cookie Policy. You can disable the use of cookies via your browser, but please note that our website may no longer work properly."
+            ],
+            [
+             "Legal document cookie policy"
+            ]
+           ]
+          }
+         ],
+         [
+          "[cookie_save_preferences_text]"
+         ]
+        ]
+       }
+      ],
+      "callback_condition": [
+       "cmplz_site_uses_cookie_warning_cats",
+       "cmplz_za_site_needs_cookie_warning"
+      ]
+     }
+    ],
+    [
+     "revoke_btn",
+     {
+      "p": false,
+      "subtitle": [
+       {
+        "_x": [
+         [
+          "Manage your consent settings"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ],
+      "content": [
+       "[cmplz-manage-consent]"
+      ],
+      "callback_condition": "cmplz_za_site_needs_cookie_warning"
+     }
+    ],
+    [
+     "14",
+     {
+      "p": false,
+      "subtitle": [
+       {
+        "_x": [
+         [
+          "Vendors"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ],
+      "content": [
+       "[cmplz-tcf-vendors]"
+      ],
+      "callback_condition": "cmplz_tcf_active"
+     }
+    ],
+    [
+     "15",
+     {
+      "title": [
+       "Enabling/disabling and deleting cookies"
+      ],
+      "content": [
+       "You can use your internet browser to automatically or manually delete cookies. You can also specify that certain cookies may not be placed. Another option is to change the settings of your internet browser so that you receive a message each time a cookie is placed. For more information about these options, please refer to the instructions in the Help section of your browser."
+      ]
+     }
+    ],
+    [
+     "enable-disable-removal-cookies-2",
+     {
+      "content": [
+       {
+        "_x": [
+         [
+          "Please note that our website may not work properly if all cookies are disabled. If you do delete the cookies in your browser, they will be placed again after your consent when you visit our website again."
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       }
+      ]
+     }
+    ],
+    [
+     "your-rights",
+     {
+      "title": [
+       {
+        "_x": [
+         [
+          "Your rights with respect to personal data"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ],
+      "content": [
+       {
+        "_x": [
+         [
+          "You have the following rights with respect to your personal data:"
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       }
+      ]
+     }
+    ],
+    [
+     "your-rights-2",
+     {
+      "p": false,
+      "content": [
+       "<ul>\n                    <li>",
+       {
+        "_x": [
+         [
+          "You have the right to know why your personal data is needed, what will happen to it, and how long it will be retained for."
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       },
+       "</li>\n                    <li>",
+       {
+        "_x": [
+         [
+          "Right of access: You have the right to access your personal data that is known to us."
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       },
+       "</li>\n                    <li>",
+       {
+        "_x": [
+         [
+          "Right to rectification: you have the right to supplement, correct, have deleted or blocked your personal data whenever you wish."
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       },
+       "</li>\n                    <li>",
+       {
+        "_x": [
+         [
+          "If you give us your consent to process your data, you have the right to revoke that consent and to have your personal data deleted."
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       },
+       "</li>\n                    <li>",
+       {
+        "_x": [
+         [
+          "Right to object: you may object to the processing of your data. We comply with this, unless there are justified grounds for processing."
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       },
+       "</li>\n                </ul>"
+      ]
+     }
+    ],
+    [
+     "your-rights-3",
+     {
+      "content": [
+       {
+        "_x": [
+         [
+          "To exercise these rights, please contact us. Please refer to the contact details at the bottom of this Cookie Policy. If you have a complaint about how we handle your data, we would like to hear from you, but you also have the right to submit a complaint to the Information Regulator South Africa: P.O Box 31533, Braamfontein, Johannesburg, 2017 Complaints email: complaints.IR@justice.gov.za"
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       }
+      ]
+     }
+    ],
+    [
+     "contact-details",
+     {
+      "title": [
+       {
+        "_x": [
+         [
+          "Contact details"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ],
+      "content": [
+       {
+        "_x": [
+         [
+          "For questions and/or comments about our Cookie Policy and this statement, please contact us by using the following contact details:"
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       }
+      ]
+     }
+    ],
+    [
+     "contact-details-2",
+     {
+      "content": [
+       "<span class=\"cmplz-contact-organisation\">[organisation_name]</span><br>\n                    <span class=\"cmplz-contact-address\">[address_company]</span><br>\n                    <span class=\"cmplz-contact-country\">[country_company]</span><br>\n                    <span class=\"cmplz-contact-domain\">",
+       {
+        "_x": [
+         [
+          "Website:"
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       },
+       " [domain]</span><br>\n                    <span class=\"cmplz-contact-email\">",
+       {
+        "_x": [
+         [
+          "Email:"
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       },
+       " [email_company]</span><br>\n                    <span class=\"cmplz-contact-telephone\">[telephone_company]</span>"
+      ]
+     }
+    ],
+    [
+     "last-sync",
+     {
+      "content": [
+       {
+        "sprintf": [
+         [
+          {
+           "_x": [
+            [
+             "This Cookie Policy was synchronized with %scookiedatabase.org%s on %s."
+            ],
+            [
+             "Legal document cookie policy"
+            ]
+           ]
+          }
+         ],
+         [
+          "<a href=\"https://cookiedatabase.org/\" target=\"_blank\">"
+         ],
+         [
+          "</a>"
+         ],
+         [
+          "[sync_date]"
+         ]
+        ]
+       }
+      ],
+      "callback_condition": [
+       "cmplz_cdb_reference_in_policy"
+      ]
+     }
+    ]
+   ]
+  },
+  {
+   "region": "br",
+   "type": "cookie-statement",
+   "elements": [
+    [
+     "0",
+     {
+      "content": [
+       "<i>",
+       {
+        "sprintf": [
+         [
+          {
+           "_x": [
+            [
+             "This Cookie Policy was last updated on %s and applies to citizens and legal permanent residents of Brazil."
+            ],
+            [
+             "Legal document cookie policy"
+            ]
+           ]
+          }
+         ],
+         [
+          "[publish_date]"
+         ]
+        ]
+       },
+       "</i><br />"
+      ]
+     }
+    ],
+    [
+     "1",
+     {
+      "title": [
+       {
+        "_x": [
+         [
+          "Introduction"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ],
+      "content": [
+       {
+        "sprintf": [
+         [
+          {
+           "_x": [
+            [
+             "Our website, %s (hereinafter: \"the website\") uses cookies and other related technologies (for convenience all technologies are referred to as \"cookies\"). Cookies are also placed by third parties we have engaged. In the document below we inform you about the use of cookies on our website."
+            ],
+            [
+             "Legal document cookie policy"
+            ]
+           ]
+          }
+         ],
+         [
+          "[domain]"
+         ]
+        ]
+       }
+      ]
+     }
+    ],
+    [
+     "2",
+     {
+      "title": [
+       {
+        "_x": [
+         [
+          "What are cookies?"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ],
+      "content": [
+       {
+        "_x": [
+         [
+          "A cookie is a small simple file that is sent along with pages of this website and stored by your browser on the hard drive of your computer or another device. The information stored therein may be returned to our servers or to the servers of the relevant third parties during a subsequent visit."
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       }
+      ]
+     }
+    ],
+    [
+     "3",
+     {
+      "title": [
+       {
+        "_x": [
+         [
+          "What are scripts?"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ],
+      "content": [
+       {
+        "_x": [
+         [
+          "A script is a piece of program code that is used to make our website function properly and interactively. This code is executed on our server or on your device."
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       }
+      ]
+     }
+    ],
+    [
+     "4",
+     {
+      "title": [
+       {
+        "_x": [
+         [
+          "What is a web beacon?"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ],
+      "content": [
+       {
+        "_x": [
+         [
+          "A web beacon (or a pixel tag) is a small, invisible piece of text or image on a website that is used to monitor traffic on a website. In order to do this, various data about you is stored using web beacons."
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       }
+      ],
+      "callback_condition": "NOT cmplz_uses_only_functional_cookies"
+     }
+    ],
+    [
+     "5",
+     {
+      "title": [
+       {
+        "_x": [
+         [
+          "Cookies"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ]
+     }
+    ],
+    [
+     "6",
+     {
+      "subtitle": [
+       {
+        "_x": [
+         [
+          "Technical or functional cookies"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ],
+      "content": [
+       {
+        "_x": [
+         [
+          "Some cookies ensure that certain parts of the website work properly and that your user preferences remain known. By placing functional cookies, we make it easier for you to visit our website. This way, you do not need to repeatedly enter the same information when visiting our website and, for example, the items remain in your shopping cart until you have paid. We may place these cookies without your consent."
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       }
+      ]
+     }
+    ],
+    [
+     "7",
+     {
+      "subtitle": [
+       {
+        "_x": [
+         [
+          "Statistics cookies"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ],
+      "content": [
+       {
+        "_x": [
+         [
+          "We use statistics cookies to optimize the website experience for our users. With these statistics cookies we get insights in the usage of our website."
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       },
+       "&nbsp;",
+       {
+        "_x": [
+         [
+          "We ask your permission to place statistics cookies."
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       }
+      ],
+      "callback_condition": "cmplz_cookie_warning_required_stats_eu",
+      "condition": {
+       "compile_statistics": "NOT no"
+      }
+     }
+    ],
+    [
+     "8",
+     {
+      "subtitle": [
+       {
+        "_x": [
+         [
+          "Statistics cookies"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ],
+      "content": [
+       {
+        "_x": [
+         [
+          "Because statistics are being tracked anonymously, no permission is asked to place statistics cookies."
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       }
+      ],
+      "callback_condition": "NOT cmplz_cookie_warning_required_stats_eu",
+      "condition": {
+       "compile_statistics": "NOT no"
+      }
+     }
+    ],
+    [
+     "9",
+     {
+      "subtitle": [
+       {
+        "_x": [
+         [
+          "Advertising cookies"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ],
+      "content": [
+       {
+        "sprintf": [
+         [
+          {
+           "_x": [
+            [
+             "On this website we use advertising cookies, enabling us to personalize the advertisements for you, and we (and third parties) gain insights into the campaign results. This happens based on a profile we create based on your click and surfing on and outside %s. With these cookies you, as website visitor are linked to a unique ID, so you do not see the same ad more than once for example."
+            ],
+            [
+             "Legal document cookie policy"
+            ]
+           ]
+          }
+         ],
+         [
+          "[domain]"
+         ]
+        ]
+       }
+      ],
+      "condition": {
+       "uses_ad_cookies": "yes",
+       "uses_ad_cookies_personalized": "NOT no"
+      }
+     }
+    ],
+    [
+     "10",
+     {
+      "subtitle": [
+       {
+        "_x": [
+         [
+          "Advertising cookies"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ],
+      "content": [
+       {
+        "sprintf": [
+         [
+          {
+           "_x": [
+            [
+             "On this website we use advertising cookies, enabling us to gain insights into the campaign results. This happens based on a profile we create based on your behavior on %s. With these cookies you, as website visitor, are linked to a unique ID but these cookies will not profile your behavior and interests to serve personalized ads."
+            ],
+            [
+             "Legal document cookie policy"
+            ]
+           ]
+          }
+         ],
+         [
+          "[domain]"
+         ]
+        ]
+       }
+      ],
+      "condition": {
+       "uses_ad_cookies": "yes",
+       "uses_ad_cookies_personalized": "no"
+      }
+     }
+    ],
+    [
+     "11",
+     {
+      "subtitle": [
+       {
+        "_x": [
+         [
+          "Marketing/Tracking cookies"
+         ],
+         [
+          "cookie policy"
+         ]
+        ]
+       }
+      ],
+      "content": [
+       {
+        "_x": [
+         [
+          "Marketing/Tracking cookies are cookies or any other form of local storage, used to create user profiles to display advertising or to track the user on this website or across several websites for similar marketing purposes."
+         ],
+         [
+          "cookie policy"
+         ]
+        ]
+       }
+      ],
+      "callback_condition": "cmplz_uses_marketing_cookies"
+     }
+    ],
+    [
+     "12",
+     {
+      "content": [
+       {
+        "_x": [
+         [
+          "Because these cookies are marked as tracking cookies, we ask your permission to place these."
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       }
+      ],
+      "condition": {
+       "uses_ad_cookies": "yes"
+      }
+     }
+    ],
+    [
+     "13",
+     {
+      "subtitle": [
+       {
+        "_x": [
+         [
+          "Social media"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ],
+      "content": [
+       {
+        "_x": [
+         [
+          "On our website, we have included content to promote web pages (e.g. “like”, “pin”) or share (e.g. “tweet”) on social networks. This content is embedded with code derived from third parties and places cookies. This content might store and process certain information for personalized advertising."
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       }
+      ],
+      "condition": {
+       "uses_social_media": "yes",
+       "socialmedia_on_site": "EMPTY"
+      }
+     }
+    ],
+    [
+     "14",
+     {
+      "subtitle": [
+       {
+        "_x": [
+         [
+          "Social media"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ],
+      "content": [
+       {
+        "sprintf": [
+         [
+          {
+           "_x": [
+            [
+             "On our website, we have included content from %s to promote web pages (e.g. “like”, “pin”) or share (e.g. “tweet”) on social networks like %s. This content is embedded with code derived from %s and places cookies. This content might store and process certain information for personalized advertising."
+            ],
+            [
+             "Legal document cookie policy"
+            ]
+           ]
+          }
+         ],
+         [
+          "[comma_socialmedia_on_site]"
+         ],
+         [
+          "[comma_socialmedia_on_site]"
+         ],
+         [
+          "[comma_socialmedia_on_site]"
+         ]
+        ]
+       }
+      ],
+      "condition": {
+       "uses_social_media": "yes",
+       "socialmedia_on_site": "NOT EMPTY"
+      }
+     }
+    ],
+    [
+     "15",
+     {
+      "content": [
+       {
+        "__": [
+         [
+          "Please read the privacy statement of these social networks (which can change regularly) to read what they do with your (personal) data which they process using these cookies. The data that is retrieved is anonymized as much as possible."
+         ]
+        ]
+       },
+       " ",
+       {
+        "sprintf": [
+         [
+          {
+           "_n": [
+            [
+             "%s is located in the United States."
+            ],
+            [
+             "%s are located in the United States."
+            ],
+            [
+             "socialmedia"
+            ]
+           ]
+          }
+         ],
+         [
+          "[comma_socialmedia_on_site]"
+         ]
+        ]
+       }
+      ],
+      "condition": {
+       "uses_social_media": "yes",
+       "socialmedia_on_site": "NOT EMPTY"
+      }
+     }
+    ],
+    [
+     "16",
+     {
+      "content": [
+       {
+        "__": [
+         [
+          "Please read the privacy statement of these social networks (which can change regularly) to read what they do with your (personal) data which they process using these cookies. The data that is retrieved is anonymized as much as possible."
+         ]
+        ]
+       }
+      ],
+      "condition": {
+       "uses_social_media": "yes",
+       "socialmedia_on_site": "EMPTY"
+      }
+     }
+    ],
+    [
+     "17",
+     {
+      "title": [
+       {
+        "_x": [
+         [
+          "Placed cookies"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ],
+      "callback": "cmplz_used_cookies"
+     }
+    ],
+    [
+     "18",
+     {
+      "title": [
+       {
+        "_x": [
+         [
+          "Consent"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ],
+      "content": [
+       {
+        "sprintf": [
+         [
+          {
+           "_x": [
+            [
+             "When you visit our website for the first time, we will show you a pop-up with an explanation about cookies. As soon as you click on \"%s\", you consent to us using all cookies and plug-ins as described in the pop-up and this Cookie Policy. You can disable the use of cookies via your browser, but please note that our website may no longer work properly."
+            ],
+            [
+             "Legal document cookie policy"
+            ]
+           ]
+          }
+         ],
+         [
+          "[cookie_accept_text]"
+         ]
+        ]
+       }
+      ],
+      "callback_condition": [
+       "NOT cmplz_site_uses_cookie_warning_cats",
+       "cmplz_eu_site_needs_cookie_warning"
+      ]
+     }
+    ],
+    [
+     "19",
+     {
+      "title": [
+       {
+        "_x": [
+         [
+          "Consent"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ],
+      "content": [
+       {
+        "sprintf": [
+         [
+          {
+           "_x": [
+            [
+             "When you visit our website for the first time, we will show you a pop-up with an explanation about cookies. As soon as you click on \"%s\", you consent to us using the categories of cookies and plug-ins you selected in the pop-up, as described in this Cookie Policy. You can disable the use of cookies via your browser, but please note that our website may no longer work properly."
+            ],
+            [
+             "Legal document cookie policy"
+            ]
+           ]
+          }
+         ],
+         [
+          "[cookie_save_preferences_text]"
+         ]
+        ]
+       }
+      ],
+      "callback_condition": [
+       "cmplz_site_uses_cookie_warning_cats",
+       "cmplz_eu_site_needs_cookie_warning"
+      ]
+     }
+    ],
+    [
+     "20",
+     {
+      "subtitle": [
+       {
+        "_x": [
+         [
+          "Manage your consent settings"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ],
+      "content": [
+       "[cmplz-manage-consent]"
+      ],
+      "p": false,
+      "callback_condition": "cmplz_eu_site_needs_cookie_warning"
+     }
+    ],
+    [
+     "21",
+     {
+      "subtitle": [
+       {
+        "_x": [
+         [
+          "Vendors"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ],
+      "p": false,
+      "content": [
+       "[cmplz-tcf-vendors]"
+      ],
+      "callback_condition": "cmplz_tcf_active"
+     }
+    ],
+    [
+     "enable-disable-removal-cookies",
+     {
+      "title": [
+       {
+        "_x": [
+         [
+          "Enabling/disabling and deleting cookies"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ],
+      "content": [
+       {
+        "_x": [
+         [
+          "You can use your internet browser to automatically or manually delete cookies. You can also specify that certain cookies may not be placed. Another option is to change the settings of your internet browser so that you receive a message each time a cookie is placed. For more information about these options, please refer to the instructions in the Help section of your browser."
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       }
+      ]
+     }
+    ],
+    [
+     "enable-disable-removal-cookies-2",
+     {
+      "content": [
+       {
+        "_x": [
+         [
+          "Please note that our website may not work properly if all cookies are disabled. If you do delete the cookies in your browser, they will be placed again after your consent when you visit our website again."
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       }
+      ]
+     }
+    ],
+    [
+     "22",
+     {
+      "title": [
+       {
+        "_x": [
+         [
+          "Your rights with respect to personal data"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ],
+      "content": [
+       {
+        "_x": [
+         [
+          "You have the following rights with respect to your personal data:"
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       }
+      ]
+     }
+    ],
+    [
+     "23",
+     {
+      "p": false,
+      "content": [
+       "<ul>\n                    <li>",
+       {
+        "_x": [
+         [
+          "confirmation of the existence of processing;"
+         ],
+         [
+          "Legal document"
+         ]
+        ]
+       },
+       "</li>\n                    <li>",
+       {
+        "_x": [
+         [
+          "access to data;"
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       },
+       "</li>\n                    <li>",
+       {
+        "_x": [
+         [
+          "correction of incomplete, inaccurate, or outdated data;"
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       },
+       "</li>\n                    <li>",
+       {
+        "_x": [
+         [
+          "anonymization, blocking, or deletion of unnecessary, excessive, or processed data in disagreement with the provisions of the General Law for the Protection of Personal Data (LGPD);"
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       },
+       "</li>\n                    <li>",
+       {
+        "_x": [
+         [
+          "portability of data to another service or product provider, upon express request, in accordance with the regulations of the national authority, observing commercial and industrial secrets;"
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       },
+       "</li>\n                    <li>",
+       {
+        "_x": [
+         [
+          "deletion of personal data processed with the consent of the holder, except in the cases provided for in art. 16 of the General Law for the Protection of Personal Data (LGPD);"
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       },
+       "</li>\n                    <li>",
+       {
+        "_x": [
+         [
+          "information on public and private entities with which the controller shared data;"
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       },
+       "</li>\n                    <li>",
+       {
+        "_x": [
+         [
+          "information on the possibility of not providing consent and on the consequences of denial."
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       },
+       "</li>\n                </ul>"
+      ]
+     }
+    ],
+    [
+     "your-rights-3",
+     {
+      "content": [
+       {
+        "_x": [
+         [
+          "To exercise these rights, please contact us. Please refer to the contact details at the bottom of this Cookie Policy. If you have a complaint about how we handle your data, we would like to hear from you, but you also have the right to submit a complaint to the National Data Protection Authority (ANPD):"
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       }
+      ]
+     }
+    ],
+    [
+     "complaints-address",
+     {
+      "p": false,
+      "content": [
+       "<br />Autoridade Nacional de Proteção de Dados\n\t\t\t\t\t\t<br />\n\t\t\t\t\t\t<br />Esplanada dos Ministérios,\n\t\t\t\t\t\t<br />Bloco C,\n\t\t\t\t\t\t<br />2º andar,\n\t\t\t\t\t\t<br />CEP 70297-400 - Brasília – DF.\n\t\t\t\t\t\t<br /><a href=\"https://www.gov.br/anpd/pt-br/canais_atendimento/\" target=\"_blank\">",
+       {
+        "_x": [
+         [
+          "Website"
+         ],
+         [
+          "Legal document"
+         ]
+        ]
+       },
+       "</a>"
+      ]
+     }
+    ],
+    [
+     "contact-details",
+     {
+      "title": [
+       {
+        "_x": [
+         [
+          "Contact details"
+         ],
+         [
+          "Legal document cookie policy:paragraph title"
+         ]
+        ]
+       }
+      ],
+      "content": [
+       {
+        "_x": [
+         [
+          "For questions and/or comments about our Cookie Policy and this statement, please contact us by using the following contact details:"
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       }
+      ]
+     }
+    ],
+    [
+     "contact-details-2",
+     {
+      "content": [
+       "<span class=\"cmplz-contact-organisation\">[organisation_name]</span><br>\n                    <span class=\"cmplz-contact-address\">[address_company]</span><br>\n                    <span class=\"cmplz-contact-country\">[country_company]</span><br>\n                    <span class=\"cmplz-contact-domain\">",
+       {
+        "_x": [
+         [
+          "Website:"
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       },
+       " [domain]</span><br>\n                    <span class=\"cmplz-contact-email\">",
+       {
+        "_x": [
+         [
+          "Email:"
+         ],
+         [
+          "Legal document cookie policy"
+         ]
+        ]
+       },
+       " [email_company]</span><br>\n                    <span class=\"cmplz-contact-telephone\">[telephone_company]</span>"
+      ]
+     }
+    ],
+    [
+     "last-sync",
+     {
+      "content": [
+       {
+        "sprintf": [
+         [
+          {
+           "_x": [
+            [
+             "This Cookie Policy was synchronized with %scookiedatabase.org%s on %s."
+            ],
+            [
+             "Legal document cookie policy"
+            ]
+           ]
+          }
+         ],
+         [
+          "<a href=\"https://cookiedatabase.org/\" target=\"_blank\">"
+         ],
+         [
+          "</a>"
+         ],
+         [
+          "[sync_date]"
+         ]
+        ]
+       }
+      ],
+      "callback_condition": [
+       "cmplz_cdb_reference_in_policy"
+      ]
+     }
+    ]
+   ]
+  }
+ ],
+ "fields": [
+  {
+   "id": "regions",
+   "type": "radio"
+  },
+  {
+   "id": "other_region_behaviour",
+   "type": "select"
+  },
+  {
+   "id": "eu_consent_regions",
+   "type": "radio"
+  },
+  {
+   "id": "uk_consent_regions",
+   "type": "radio"
+  },
+  {
+   "id": "ca_targets_quebec",
+   "type": "radio"
+  },
+  {
+   "id": "us_states",
+   "type": "multicheckbox",
+   "options": {
+    "cal": "California (CPRA)",
+    "col": "Colorado (CPA)",
+    "con": "Connecticut (CTDPA)",
+    "del": "Delaware (PDPA)",
+    "ind": "Indiana (ICDPA)",
+    "iow": "Iowa (CDPA)",
+    "ken": "Kentucky (KCDPA)",
+    "mar": "Maryland (MODPA)",
+    "min": "Minnesota (MCDPA)",
+    "mon": "Montana (MCDPA)",
+    "neb": "Nebraska (DPA)",
+    "nev": "Nevada (NRS 603A)",
+    "new_ham": "New Hampshire (DPA)",
+    "new_jer": "New Jersey (DPL)",
+    "ore": "Oregon (OCPA)",
+    "rho": "Rhode Island (DTPPA)",
+    "ten": "Tennessee (TIPA)",
+    "tex": "Texas (TDPSA)",
+    "uta": "Utah (UCPA)",
+    "vir": "Virginia (CDPA)"
+   }
+  },
+  {
+   "id": "us_california_optin",
+   "type": "radio"
+  },
+  {
+   "id": "wp_admin_access_users",
+   "type": "radio"
+  },
+  {
+   "id": "cookie-statement",
+   "type": "document"
+  },
+  {
+   "id": "privacy-statement",
+   "type": "document"
+  },
+  {
+   "id": "impressum",
+   "type": "document"
+  },
+  {
+   "id": "disclaimer",
+   "type": "document"
+  },
+  {
+   "id": "organisation_name",
+   "type": "text"
+  },
+  {
+   "id": "address_company",
+   "type": "textarea"
+  },
+  {
+   "id": "country_company",
+   "type": "select",
+   "options": {
+    "AF": "Afghanistan",
+    "AX": "Aland Islands",
+    "AL": "Albania",
+    "DZ": "Algeria",
+    "AS": "American Samoa",
+    "AD": "Andorra",
+    "AO": "Angola",
+    "AI": "Anguilla",
+    "AQ": "Antarctica",
+    "AG": "Antigua And Barbuda",
+    "AR": "Argentina",
+    "AM": "Armenia",
+    "AW": "Aruba",
+    "AU": "Australia",
+    "AT": "Austria",
+    "AZ": "Azerbaijan",
+    "BS": "Bahamas",
+    "BH": "Bahrain",
+    "BD": "Bangladesh",
+    "BB": "Barbados",
+    "BY": "Belarus",
+    "BE": "Belgium",
+    "BZ": "Belize",
+    "BJ": "Benin",
+    "BM": "Bermuda",
+    "BT": "Bhutan",
+    "BO": "Bolivia",
+    "BA": "Bosnia And Herzegovina",
+    "BW": "Botswana",
+    "BV": "Bouvet Island",
+    "BR": "Brazil",
+    "IO": "British Indian Ocean Territory",
+    "BN": "Brunei Darussalam",
+    "BG": "Bulgaria",
+    "BF": "Burkina Faso",
+    "BI": "Burundi",
+    "KH": "Cambodia",
+    "CM": "Cameroon",
+    "CA": "Canada",
+    "CV": "Cape Verde",
+    "KY": "Cayman Islands",
+    "CF": "Central African Republic",
+    "TD": "Chad",
+    "CL": "Chile",
+    "CN": "China",
+    "CX": "Christmas Island",
+    "CC": "Cocos (Keeling) Islands",
+    "CO": "Colombia",
+    "KM": "Comoros",
+    "CG": "Congo",
+    "CD": "Congo, Democratic Republic",
+    "CK": "Cook Islands",
+    "CR": "Costa Rica",
+    "CI": "Cote D'Ivoire",
+    "HR": "Croatia",
+    "CU": "Cuba",
+    "CY": "Cyprus",
+    "CZ": "Czech Republic",
+    "DK": "Denmark",
+    "DJ": "Djibouti",
+    "DM": "Dominica",
+    "DO": "Dominican Republic",
+    "EC": "Ecuador",
+    "EG": "Egypt",
+    "SV": "El Salvador",
+    "GQ": "Equatorial Guinea",
+    "ER": "Eritrea",
+    "EE": "Estonia",
+    "ET": "Ethiopia",
+    "FK": "Falkland Islands (Malvinas)",
+    "FO": "Faroe Islands",
+    "FJ": "Fiji",
+    "FI": "Finland",
+    "FR": "France",
+    "GF": "French Guiana",
+    "PF": "French Polynesia",
+    "TF": "French Southern Territories",
+    "GA": "Gabon",
+    "GM": "Gambia",
+    "GE": "Georgia",
+    "DE": "Germany",
+    "GH": "Ghana",
+    "GI": "Gibraltar",
+    "GR": "Greece",
+    "GL": "Greenland",
+    "GD": "Grenada",
+    "GP": "Guadeloupe",
+    "GU": "Guam",
+    "GT": "Guatemala",
+    "GG": "Guernsey",
+    "GN": "Guinea",
+    "GW": "Guinea-Bissau",
+    "GY": "Guyana",
+    "HT": "Haiti",
+    "HM": "Heard Island & Mcdonald Islands",
+    "VA": "Holy See (Vatican City State)",
+    "HN": "Honduras",
+    "HK": "Hong Kong",
+    "HU": "Hungary",
+    "IS": "Iceland",
+    "IN": "India",
+    "ID": "Indonesia",
+    "IR": "Iran, Islamic Republic Of",
+    "IQ": "Iraq",
+    "IE": "Ireland",
+    "IM": "Isle Of Man",
+    "IL": "Israel",
+    "IT": "Italy",
+    "JM": "Jamaica",
+    "JP": "Japan",
+    "JE": "Jersey",
+    "JO": "Jordan",
+    "KZ": "Kazakhstan",
+    "KE": "Kenya",
+    "KI": "Kiribati",
+    "KR": "Korea",
+    "KW": "Kuwait",
+    "KG": "Kyrgyzstan",
+    "LA": "Lao People's Democratic Republic",
+    "LV": "Latvia",
+    "LB": "Lebanon",
+    "LS": "Lesotho",
+    "LR": "Liberia",
+    "LY": "Libyan Arab Jamahiriya",
+    "LI": "Liechtenstein",
+    "LT": "Lithuania",
+    "LU": "Luxembourg",
+    "MO": "Macao",
+    "MK": "North Macedonia",
+    "MG": "Madagascar",
+    "MW": "Malawi",
+    "MY": "Malaysia",
+    "MV": "Maldives",
+    "ML": "Mali",
+    "MT": "Malta",
+    "MH": "Marshall Islands",
+    "MQ": "Martinique",
+    "MR": "Mauritania",
+    "MU": "Mauritius",
+    "YT": "Mayotte",
+    "MX": "Mexico",
+    "FM": "Micronesia, Federated States Of",
+    "MD": "Moldova",
+    "MC": "Monaco",
+    "MN": "Mongolia",
+    "ME": "Montenegro",
+    "MS": "Montserrat",
+    "MA": "Morocco",
+    "MZ": "Mozambique",
+    "MM": "Myanmar",
+    "NA": "Namibia",
+    "NR": "Nauru",
+    "NP": "Nepal",
+    "NL": "Netherlands",
+    "AN": "Netherlands Antilles",
+    "NC": "New Caledonia",
+    "NZ": "New Zealand",
+    "NI": "Nicaragua",
+    "NE": "Niger",
+    "NG": "Nigeria",
+    "NU": "Niue",
+    "NF": "Norfolk Island",
+    "MP": "Northern Mariana Islands",
+    "NO": "Norway",
+    "OM": "Oman",
+    "PK": "Pakistan",
+    "PW": "Palau",
+    "PS": "Palestinian Territory, Occupied",
+    "PA": "Panama",
+    "PG": "Papua New Guinea",
+    "PY": "Paraguay",
+    "PE": "Peru",
+    "PH": "Philippines",
+    "PN": "Pitcairn",
+    "PL": "Poland",
+    "PT": "Portugal",
+    "PR": "Puerto Rico",
+    "QA": "Qatar",
+    "RE": "Reunion",
+    "RO": "Romania",
+    "RU": "Russian Federation",
+    "RW": "Rwanda",
+    "BL": "Saint Barthelemy",
+    "SH": "Saint Helena",
+    "KN": "Saint Kitts And Nevis",
+    "LC": "Saint Lucia",
+    "MF": "Saint Martin",
+    "PM": "Saint Pierre And Miquelon",
+    "VC": "Saint Vincent And Grenadines",
+    "WS": "Samoa",
+    "SM": "San Marino",
+    "ST": "Sao Tome And Principe",
+    "SA": "Saudi Arabia",
+    "SN": "Senegal",
+    "RS": "Serbia",
+    "SC": "Seychelles",
+    "SL": "Sierra Leone",
+    "SG": "Singapore",
+    "SK": "Slovakia",
+    "SI": "Slovenia",
+    "SB": "Solomon Islands",
+    "SO": "Somalia",
+    "ZA": "South Africa",
+    "GS": "South Georgia And Sandwich Isl.",
+    "ES": "Spain",
+    "LK": "Sri Lanka",
+    "SD": "Sudan",
+    "SR": "Suriname",
+    "SJ": "Svalbard And Jan Mayen",
+    "SZ": "Swaziland",
+    "SE": "Sweden",
+    "CH": "Switzerland",
+    "SY": "Syrian Arab Republic",
+    "TW": "Taiwan",
+    "TJ": "Tajikistan",
+    "TZ": "Tanzania",
+    "TH": "Thailand",
+    "TL": "Timor-Leste",
+    "TG": "Togo",
+    "TK": "Tokelau",
+    "TO": "Tonga",
+    "TT": "Trinidad And Tobago",
+    "TN": "Tunisia",
+    "TR": "Turkey",
+    "TM": "Turkmenistan",
+    "TC": "Turks And Caicos Islands",
+    "TV": "Tuvalu",
+    "UG": "Uganda",
+    "UA": "Ukraine",
+    "AE": "United Arab Emirates",
+    "GB": "United Kingdom",
+    "US": "United States",
+    "UM": "United States Outlying Islands",
+    "UY": "Uruguay",
+    "UZ": "Uzbekistan",
+    "VU": "Vanuatu",
+    "VE": "Venezuela",
+    "VN": "Viet Nam",
+    "VG": "Virgin Islands, British",
+    "VI": "Virgin Islands, U.S.",
+    "WF": "Wallis And Futuna",
+    "EH": "Western Sahara",
+    "YE": "Yemen",
+    "ZM": "Zambia",
+    "ZW": "Zimbabwe"
+   }
+  },
+  {
+   "id": "email_company",
+   "type": "email"
+  },
+  {
+   "id": "telephone_company",
+   "type": "phone",
+   "document_label": "Phone number: "
+  },
+  {
+   "id": "ca_name_accountable_person",
+   "type": "text"
+  },
+  {
+   "id": "ca_address_accountable_person",
+   "type": "textarea"
+  },
+  {
+   "id": "purpose_personaldata",
+   "type": "multicheckbox"
+  },
+  {
+   "id": "records_of_consent",
+   "type": "radio"
+  },
+  {
+   "id": "datarequest",
+   "type": "radio"
+  },
+  {
+   "id": "respect_dnt",
+   "type": "radio"
+  },
+  {
+   "id": "sensitive_information_processed",
+   "type": "radio"
+  },
+  {
+   "id": "consent_type",
+   "type": "hidden"
+  },
+  {
+   "id": "title",
+   "type": "text"
+  },
+  {
+   "id": "use_categories",
+   "type": "select"
+  },
+  {
+   "id": "manage_consent_options",
+   "type": "select"
+  },
+  {
+   "id": "disable_cookiebanner",
+   "type": "checkbox"
+  },
+  {
+   "id": "default",
+   "type": "checkbox"
+  },
+  {
+   "id": "hide_preview",
+   "type": "checkbox"
+  },
+  {
+   "id": "reset_cookiebanner",
+   "type": "banner-reset-button"
+  },
+  {
+   "id": "dismiss_on_scroll",
+   "type": "checkbox"
+  },
+  {
+   "id": "dismiss_on_timeout",
+   "type": "checkbox"
+  },
+  {
+   "id": "dismiss_timeout",
+   "type": "number"
+  },
+  {
+   "id": "position",
+   "type": "select"
+  },
+  {
+   "id": "animation",
+   "type": "select"
+  },
+  {
+   "id": "banner_width",
+   "type": "number"
+  },
+  {
+   "id": "checkbox_style",
+   "type": "select"
+  },
+  {
+   "id": "legal_documents",
+   "type": "checkbox"
+  },
+  {
+   "id": "use_logo",
+   "type": "banner_logo"
+  },
+  {
+   "id": "logo_attachment_id",
+   "type": "hidden"
+  },
+  {
+   "id": "close_button",
+   "type": "checkbox"
+  },
+  {
+   "id": "use_box_shadow",
+   "type": "checkbox"
+  },
+  {
+   "id": "header_footer_shadow",
+   "type": "checkbox"
+  },
+  {
+   "id": "soft_cookiewall",
+   "type": "checkbox"
+  },
+  {
+   "id": "colorpalette_border_radius",
+   "type": "borderradius"
+  },
+  {
+   "id": "border_width",
+   "type": "borderwidth"
+  },
+  {
+   "id": "buttons_border_radius",
+   "type": "borderradius"
+  },
+  {
+   "id": "font_size",
+   "type": "number"
+  },
+  {
+   "id": "colorpalette_background",
+   "type": "colorpicker"
+  },
+  {
+   "id": "colorpalette_text",
+   "type": "colorpicker"
+  },
+  {
+   "id": "wcag_colors_general",
+   "type": "wcag_contrast_checker"
+  },
+  {
+   "id": "colorpalette_toggles",
+   "type": "colorpicker"
+  },
+  {
+   "id": "wcag_colors_toggles",
+   "type": "wcag_contrast_checker"
+  },
+  {
+   "id": "colorpalette_button_accept",
+   "type": "colorpicker"
+  },
+  {
+   "id": "colorpalette_button_deny",
+   "type": "colorpicker"
+  },
+  {
+   "id": "colorpalette_button_settings",
+   "type": "colorpicker"
+  },
+  {
+   "id": "wcag_colors_buttons",
+   "type": "wcag_contrast_checker"
+  },
+  {
+   "id": "disable_width_correction",
+   "type": "checkbox"
+  },
+  {
+   "id": "use_custom_cookie_css",
+   "type": "checkbox"
+  },
+  {
+   "id": "custom_css",
+   "type": "css"
+  },
+  {
+   "id": "revoke",
+   "type": "text"
+  },
+  {
+   "id": "header",
+   "type": "text_checkbox"
+  },
+  {
+   "id": "accept",
+   "type": "text"
+  },
+  {
+   "id": "accept_informational",
+   "type": "text_checkbox"
+  },
+  {
+   "id": "dismiss",
+   "type": "text_checkbox"
+  },
+  {
+   "id": "view_preferences",
+   "type": "text"
+  },
+  {
+   "id": "save_preferences",
+   "type": "text"
+  },
+  {
+   "id": "message_optin",
+   "type": "editor"
+  },
+  {
+   "id": "category_functional",
+   "type": "text"
+  },
+  {
+   "id": "functional_text",
+   "type": "text_checkbox"
+  },
+  {
+   "id": "category_prefs",
+   "type": "text_checkbox"
+  },
+  {
+   "id": "preferences_text",
+   "type": "text_checkbox"
+  },
+  {
+   "id": "category_stats",
+   "type": "text_checkbox"
+  },
+  {
+   "id": "statistics_text",
+   "type": "text_checkbox"
+  },
+  {
+   "id": "statistics_text_anonymous",
+   "type": "text_checkbox"
+  },
+  {
+   "id": "category_all",
+   "type": "text_checkbox"
+  },
+  {
+   "id": "marketing_text",
+   "type": "text_checkbox"
+  },
+  {
+   "id": "message_optout",
+   "type": "editor"
+  },
+  {
+   "id": "contact_data_purpose_us",
+   "type": "multicheckbox"
+  },
+  {
+   "id": "payments_data_purpose_us",
+   "type": "multicheckbox"
+  },
+  {
+   "id": "register-account_data_purpose_us",
+   "type": "multicheckbox"
+  },
+  {
+   "id": "newsletters_data_purpose_us",
+   "type": "multicheckbox"
+  },
+  {
+   "id": "support-services_data_purpose_us",
+   "type": "multicheckbox"
+  },
+  {
+   "id": "legal-obligations_data_purpose_us",
+   "type": "multicheckbox"
+  },
+  {
+   "id": "statistics_data_purpose_us",
+   "type": "multicheckbox"
+  },
+  {
+   "id": "offer-personalized-products_data_purpose_us",
+   "type": "multicheckbox"
+  },
+  {
+   "id": "selling-data-thirdparty_data_purpose_us",
+   "type": "multicheckbox",
+   "options": {
+    "first-lastname": "A first and last name",
+    "accountname-alias": "Account name or alias",
+    "address": "A home or other physical address, including street name and name of a city or town",
+    "email": "An email address",
+    "phone": "A telephone number",
+    "ip": "IP Address",
+    "internet": "Internet activity information, including, but not limited to, browsing history, search history, and information regarding a consumer's interaction with an Internet Web site, application, or advertisement",
+    "geo": "Geolocation data",
+    "marital-status": "Marital status",
+    "date-of-birth": "Date of birth",
+    "sex": "Sex",
+    "photos": "Photos",
+    "social-media": "Social Media accounts",
+    "social-security": "A social security number",
+    "signature": "A signature",
+    "physical-characteristic": "Physical characteristics or description",
+    "passport": "Passport number",
+    "drivers-license": "Driver's license",
+    "state-id": "State identification card number",
+    "insurance-policy": "Insurance policy number",
+    "education": "Education information",
+    "employment": "Professional or employment-related information",
+    "employment-history": "Employment history",
+    "financial-information": "Financial information such as bank account number or credit card number",
+    "medical": "Medical information",
+    "health-insurcance": "Health insurance information",
+    "commercial": "Commercial information, including records of personal property, products or services purchased, obtained, or considered",
+    "biometric": "Biometric information",
+    "audio": "Audio, electronic, visual, thermal, olfactory, or similar information"
+   }
+  },
+  {
+   "id": "deliveries_data_purpose_us",
+   "type": "multicheckbox"
+  },
+  {
+   "id": "cookie_scan",
+   "type": "cookie_scan"
+  },
+  {
+   "id": "compile_statistics",
+   "type": "radio"
+  },
+  {
+   "id": "compile_statistics_more_info",
+   "type": "multicheckbox"
+  },
+  {
+   "id": "compile_statistics_more_info_tag_manager",
+   "type": "multicheckbox"
+  },
+  {
+   "id": "gtg_deployment_steps_notice",
+   "type": "hidden"
+  },
+  {
+   "id": "compile_statistics_more_info_gtg",
+   "type": "radio"
+  },
+  {
+   "id": "matomo_anonymized",
+   "type": "select"
+  },
+  {
+   "id": "consent_for_anonymous_stats",
+   "type": "radio"
+  },
+  {
+   "id": "script_center_button",
+   "type": "button"
+  },
+  {
+   "id": "configuration_by_complianz",
+   "type": "radio"
+  },
+  {
+   "id": "consent-mode",
+   "type": "radio"
+  },
+  {
+   "id": "gtag-basic-consent-mode",
+   "type": "radio"
+  },
+  {
+   "id": "cmplz-gtag-urlpassthrough",
+   "type": "radio"
+  },
+  {
+   "id": "cmplz-gtag-ads_data_redaction",
+   "type": "radio"
+  },
+  {
+   "id": "cmplz-tm-template",
+   "type": "radio"
+  },
+  {
+   "id": "ua_code",
+   "type": "text"
+  },
+  {
+   "id": "additional_gtags_stats",
+   "type": "text"
+  },
+  {
+   "id": "gtm_code",
+   "type": "text"
+  },
+  {
+   "id": "gtm_code_head",
+   "type": "radio"
+  },
+  {
+   "id": "aw_code",
+   "type": "text"
+  },
+  {
+   "id": "additional_gtags_marketing",
+   "type": "text"
+  },
+  {
+   "id": "matomo_url",
+   "type": "url"
+  },
+  {
+   "id": "matomo_site_id",
+   "type": "number"
+  },
+  {
+   "id": "matomo_tag_url",
+   "type": "url"
+  },
+  {
+   "id": "matomo_container_id",
+   "type": "text"
+  },
+  {
+   "id": "clicky_site_id",
+   "type": "number"
+  },
+  {
+   "id": "yandex_id",
+   "type": "number"
+  },
+  {
+   "id": "clarity_consent_mode",
+   "type": "radio"
+  },
+  {
+   "id": "clarity_id",
+   "type": "text"
+  },
+  {
+   "id": "yandex_ecommerce",
+   "type": "radio"
+  },
+  {
+   "id": "consent_per_service",
+   "type": "radio"
+  },
+  {
+   "id": "uses_thirdparty_services",
+   "type": "radio"
+  },
+  {
+   "id": "thirdparty_services_on_site",
+   "type": "multicheckbox"
+  },
+  {
+   "id": "block_recaptcha_service",
+   "type": "radio"
+  },
+  {
+   "id": "self_host_google_fonts",
+   "type": "radio"
+  },
+  {
+   "id": "block_hubspot_service",
+   "type": "radio"
+  },
+  {
+   "id": "hotjar_privacyfriendly",
+   "type": "radio"
+  },
+  {
+   "id": "uses_social_media",
+   "type": "radio"
+  },
+  {
+   "id": "socialmedia_on_site",
+   "type": "multicheckbox",
+   "options": {
+    "facebook": "Facebook",
+    "twitter": "X (Formerly Twitter)",
+    "linkedin": "LinkedIn",
+    "whatsapp": "WhatsApp",
+    "instagram": "Instagram",
+    "tiktok": "TikTok",
+    "disqus": "Disqus",
+    "pinterest": "Pinterest",
+    "snapchat": "Snapchat"
+   }
+  },
+  {
+   "id": "uses_firstparty_marketing_cookies",
+   "type": "radio"
+  },
+  {
+   "id": "uses_ad_cookies",
+   "type": "radio"
+  },
+  {
+   "id": "uses_ad_cookies_personalized",
+   "type": "radio"
+  },
+  {
+   "id": "enable_amazon_consent_signal",
+   "type": "radio"
+  },
+  {
+   "id": "uses_wordpress_comments",
+   "type": "radio"
+  },
+  {
+   "id": "block_wordpress_comment_cookies",
+   "type": "radio"
+  },
+  {
+   "id": "plugins_overviews",
+   "type": "plugins_overview"
+  },
+  {
+   "id": "cookiedatabase_sync",
+   "type": "cookiedatabase_sync"
+  },
+  {
+   "id": "create-documents",
+   "type": "create-documents"
+  },
+  {
+   "id": "region_redirect",
+   "type": "radio"
+  },
+  {
+   "id": "add_pages_to_menu",
+   "type": "documents_menu"
+  },
+  {
+   "id": "add_pages_to_menu_region_redirected",
+   "type": "documents_menu_region_redirect"
+  },
+  {
+   "id": "cookie_banner_required",
+   "type": "hidden"
+  },
+  {
+   "id": "last-step-feedback",
+   "type": "finish"
+  },
+  {
+   "id": "enable_cookie_banner",
+   "type": "radio"
+  },
+  {
+   "id": "enable_cookie_blocker",
+   "type": "radio"
+  },
+  {
+   "id": "use_country",
+   "type": "checkbox"
+  },
+  {
+   "id": "use_cdb_api",
+   "type": "radio"
+  },
+  {
+   "id": "use_cdb_links",
+   "type": "radio"
+  },
+  {
+   "id": "send_notifications_email",
+   "type": "checkbox"
+  },
+  {
+   "id": "notifications_email_address",
+   "type": "email"
+  },
+  {
+   "id": "disable_notifications",
+   "type": "checkbox"
+  },
+  {
+   "id": "restart_tour",
+   "type": "button"
+  },
+  {
+   "id": "cookie_expiry",
+   "type": "number"
+  },
+  {
+   "id": "disable_automatic_cookiescan",
+   "type": "checkbox"
+  },
+  {
+   "id": "enable_cookieblocker_ajax",
+   "type": "checkbox"
+  },
+  {
+   "id": "enable_scan_column",
+   "type": "checkbox"
+  },
+  {
+   "id": "set_cookies_on_root",
+   "type": "checkbox"
+  },
+  {
+   "id": "cookie_domain",
+   "type": "text"
+  },
+  {
+   "id": "enable_iapi_navigation",
+   "type": "checkbox"
+  },
+  {
+   "id": "a_b_testing",
+   "type": "checkbox"
+  },
+  {
+   "id": "a_b_testing_buttons",
+   "type": "checkbox"
+  },
+  {
+   "id": "a_b_testing_duration",
+   "type": "number"
+  },
+  {
+   "id": "statistics-feedback",
+   "type": "statistics-feedback"
+  },
+  {
+   "id": "statistics_overview",
+   "type": "statistics"
+  },
+  {
+   "id": "dont_use_placeholders",
+   "type": "checkbox"
+  },
+  {
+   "id": "blocked_content_text",
+   "type": "text"
+  },
+  {
+   "id": "blocked_content_text_per_service",
+   "type": "text"
+  },
+  {
+   "id": "agree_text_per_service",
+   "type": "text"
+  },
+  {
+   "id": "placeholder_style",
+   "type": "select"
+  },
+  {
+   "id": "placeholder_preview",
+   "type": "placeholder_preview"
+  },
+  {
+   "id": "google-maps-format",
+   "type": "select"
+  },
+  {
+   "id": "create-processing-agreements",
+   "type": "create-processing-agreements"
+  },
+  {
+   "id": "processing_agreements",
+   "type": "processing-agreements"
+  },
+  {
+   "id": "create-data-breach-reports",
+   "type": "create-data-breach-reports"
+  },
+  {
+   "id": "data_breach_reports",
+   "type": "data-breach-reports"
+  },
+  {
+   "id": "safe_mode",
+   "type": "checkbox"
+  },
+  {
+   "id": "debug_data",
+   "type": "debug-data"
+  },
+  {
+   "id": "system_status",
+   "type": "button"
+  },
+  {
+   "id": "support_form",
+   "type": "support"
+  },
+  {
+   "id": "install-really-simple-ssl",
+   "type": "install-plugin"
+  },
+  {
+   "id": "security-rsssl",
+   "type": "security_measures"
+  },
+  {
+   "id": "use_document_css",
+   "type": "checkbox"
+  },
+  {
+   "id": "use_custom_document_css",
+   "type": "checkbox"
+  },
+  {
+   "id": "custom_document_css",
+   "type": "css"
+  },
+  {
+   "id": "export_settings",
+   "type": "export"
+  },
+  {
+   "id": "import_settings",
+   "type": "import"
+  },
+  {
+   "id": "reset_settings",
+   "type": "button"
+  },
+  {
+   "id": "clear_data_on_uninstall",
+   "type": "checkbox"
+  },
+  {
+   "id": "integrations-services",
+   "type": "integrations-services"
+  },
+  {
+   "id": "integrations-plugins",
+   "type": "integrations-plugins"
+  },
+  {
+   "id": "integrations-script-center",
+   "type": "integrations-script-center"
+  },
+  {
+   "id": "datarequest-entries",
+   "type": "datarequests"
+  },
+  {
+   "id": "export-personal-data",
+   "type": "button"
+  },
+  {
+   "id": "erase-personal-data",
+   "type": "button"
+  },
+  {
+   "id": "export-datarequests",
+   "type": "export-datarequests"
+  },
+  {
+   "id": "notification_from_email",
+   "type": "email"
+  },
+  {
+   "id": "notification_email_subject",
+   "type": "text"
+  },
+  {
+   "id": "notification_email_content",
+   "type": "editor"
+  },
+  {
+   "id": "create-proof_of_consent",
+   "type": "create-proof-of-consent"
+  },
+  {
+   "id": "proof_of_consent",
+   "type": "proof-of-consent"
+  },
+  {
+   "id": "create-records_of_consent",
+   "type": "create-proof-of-consent"
+  },
+  {
+   "id": "export-records_of_consent",
+   "type": "export-records-of-consent"
+  },
+  {
+   "id": "records_of_consent_overview",
+   "type": "records-of-consent"
+  }
+ ]
+}

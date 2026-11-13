@@ -55,6 +55,8 @@ def normalize(text, port):
     text = re.sub(r'(<div class="powered-by">).*?(</div>)', r'\1\2', text, flags=re.S)
     text = re.sub(r'(<p class="powered-by-wordpress">).*?(</p>)', r'\1\2', text, flags=re.S)
     text = re.sub(r'(_wp_unfiltered_html_comment_disabled" value=")[0-9a-f]{10}', r'N', text)
+    # antispambot() picks entities at random: the e-mail addresses of Complianz's documents are compared decoded.
+    text = re.sub(r'<span class="cmplz-obfuscate">.*?</span>[^<]*</span>', lambda m: re.sub(r'&#(\d+);', lambda e: chr(int(e.group(1))), m.group(0)), text)
     return text
 
 

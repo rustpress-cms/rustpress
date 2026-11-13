@@ -349,6 +349,8 @@ pub async fn render(theme: &Theme, site: &Site, q: &QueryResult, registry: &Regi
             body.push_str(&format!("<link rel='stylesheet' id='{handle}-css' href='{includes_url}/blocks/{slug}/style.min.css?ver={version}' media='all' />\n"));
         }
     }
+    // `wp_print_footer_scripts` (priority 10) runs before the emoji loader, which `wp_head` queued.
+    body.push_str(&site.plugins.print_footer_scripts_early(site, q));
     body.push_str(&emoji_detection_script(site, wp_root, &version));
 
     let mut classes = body_classes(theme, site, q).await?;
