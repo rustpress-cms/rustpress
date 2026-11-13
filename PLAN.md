@@ -82,6 +82,8 @@ The reference stack, the tools and the working rules are in [AGENTS.md](AGENTS.m
     notification e-mails, also on read-only sites; not the administration (forms are made in WordPress).
   - Disable Comments 2.9.1 – comments and pings off everywhere, per post type or by rule, on the website and in the
     REST API; not the administration.
+  - WP Mail SMTP 4.10.4 – the SMTP server and the sender of its settings for every `wp_mail()`; not the web API
+    mailers, the log or the administration.
 - **Following WordPress** – `WORDPRESS_VERSION` is the target; a daily workflow opens an issue per release with the
   report of `dev/wp-diff.sh`; `dev/wp-bump.sh` moves the reference. 7.1.4 was followed (issue #9).
 - **Review** – the security and robustness findings of the review of 2026-10-26 (A1, A2) are fixed except S12; the
@@ -176,6 +178,8 @@ The reference stack, the tools and the working rules are in [AGENTS.md](AGENTS.m
   the administration.
 - WPForms Lite: the form builder and the rest of the administration; CAPTCHAs (reCAPTCHA, hCaptcha, Turnstile),
   Akismet, the legacy e-mail template, theme overrides of the e-mail templates, sending without JavaScript (see below).
+- WP Mail SMTP: the mailers of web APIs (SendGrid, Mailgun, Brevo, Gmail, Outlook, ...), Pepipost, the email log
+  and the reports, the administration (settings, setup wizard, test e-mail).
 - Disable Comments: the settings and tools pages, the changes of the administration and the editor, the Abilities API,
   the counter of blocked attempts, the blocklist of comment types, WooCommerce reviews, network settings.
 - Next: Polylang (needs the language per request). Following plugin releases (`PLUGIN_VERSIONS` and the diff report).
@@ -1458,3 +1462,37 @@ published as well; WordPress leaves it as "Missed schedule". Not ported: the plu
 `transition_post_status` and `publish_post` on publishing from cron, `_publish_post_hook()` (`_pingme`,
 `_encloseme`, `do_pings`; RustPress sends no pings), and every other cron hook (`wp-cron.php` itself is not
 answered).
+
+### WP Mail SMTP 4.10.4 (2026-11-13)
+
+The module `wp_mail_smtp` (the plugin with the most installs among those that matter to a served site: 4 million).
+It reads `wp_mail_smtp`, `wp_mail_smtp_mail_key` and the `WPMS_*` constants of `wp-config.php` once per snapshot
+and hands the server `native::MailSettings` through the new hook `ActivePlugin::mail_settings` (`phpmailer_init`,
+`wp_mail_from`, `wp_mail_from_name`); `rustpress-mail` gained `Mailer::configured()` with an SMTP route, a filter of
+the sender and the blocked switch.
+
+- `WPMailSMTP\Options::get()`: the constants (only with `WPMS_ON === true`, each with its `is_const_defined()` rule:
+  truthy, `=== 'true'`, or merely defined), the stored value with `stripslashes()`, `postprocess_key_defaults()`;
+  `Crypto::decrypt()` of the password (XSalsa20-Poly1305 of `sodium_crypto_secretbox()`, the nonce in front,
+  `base64_decode()` without strict mode; the stored text itself when it cannot be decrypted).
+- `Processor::phpmailer_init()`: nothing without a mailer or for `smtp` without a host; `smtp` with host, port,
+  `ssl` (TLS from the start), `tls` (STARTTLS required), otherwise STARTTLS when offered unless auto TLS is off,
+  and the credentials with authentication; `mail` and the untouched PHPMailer use RustPress's own transport
+  (`RUSTPRESS_SMTP_URL`, else `sendmail`).
+- `filter_mail_from_email()`/`filter_mail_from_name()` with the default address, the forced address and name, and
+  `allow_setting_original_from_email_to_reply_to()`; `X-Mailer: WPMailSMTP/Mailer/<mailer> 4.10.4`;
+  `general.do_not_send` fails every message.
+- With the plugin the `From` header's address is kept (as `wp_mail()` does); without it RustPress still keeps the
+  site's address and takes only the name.
+
+Goldens: `dev/wp-mail-smtp-golden.sh` has the plugin set up PHPMailer for 13 configurations (TLS, SSL with forced
+sender and return path, no encryption with and without auto TLS, no host, a plain and an undecryptable password, an
+empty sender, `mail`, the defaults, "do not send", SendGrid, the constants) times 4 header sets and records the state
+right before sending (`tests/data/wp-mail-smtp/cases.json`, 52 cases, all equal; the 6 cases PHPMailer refuses
+because `wordpress@localhost` has no dot are checked to fail on the reference). Live: a lost-password e-mail on the
+reference and on RustPress with the plugin set to `dev/smtp-sink.py` reached the sink with the same envelope, `From`
+and `X-Mailer`.
+
+Not ported: the web API mailers (RustPress sends their messages its own way, with the plugin's sender), Pepipost,
+the return path for `mail()` (lettre always passes `-f` with the sender), the email log, reports, the backup
+connection and the queue of Pro, the administration.

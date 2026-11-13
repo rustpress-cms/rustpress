@@ -1,0 +1,1247 @@
+[
+    {
+        "name": "smtp-tls/none",
+        "option": "a:2:{s:4:\"mail\";a:6:{s:10:\"from_email\";s:16:\"site@example.org\";s:9:\"from_name\";s:9:\"Die Seite\";s:6:\"mailer\";s:4:\"smtp\";s:11:\"return_path\";b:0;s:16:\"from_email_force\";b:0;s:15:\"from_name_force\";b:0;}s:4:\"smtp\";a:7:{s:4:\"host\";s:16:\"smtp.example.org\";s:4:\"port\";i:587;s:10:\"encryption\";s:3:\"tls\";s:4:\"auth\";b:1;s:7:\"autotls\";b:1;s:4:\"user\";s:22:\"postmaster@example.org\";s:4:\"pass\";s:68:\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBhZuQ93uxSA5UHkGZxKpiG+6OKrtHrd7GBWE=\";}}",
+        "mail_key": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
+        "constants": {},
+        "headers": [],
+        "sent": false,
+        "error": "golden",
+        "expected": {
+            "Mailer": "smtp",
+            "Host": "smtp.example.org",
+            "Port": 587,
+            "SMTPSecure": "tls",
+            "SMTPAutoTLS": true,
+            "SMTPAuth": true,
+            "Username": "postmaster@example.org",
+            "Password": "geheim \"1\"",
+            "From": "site@example.org",
+            "FromName": "Die Seite",
+            "Sender": "",
+            "ReplyTo": [],
+            "XMailer": "WPMailSMTP/Mailer/smtp 4.10.4"
+        }
+    },
+    {
+        "name": "smtp-tls/from",
+        "option": "a:2:{s:4:\"mail\";a:6:{s:10:\"from_email\";s:16:\"site@example.org\";s:9:\"from_name\";s:9:\"Die Seite\";s:6:\"mailer\";s:4:\"smtp\";s:11:\"return_path\";b:0;s:16:\"from_email_force\";b:0;s:15:\"from_name_force\";b:0;}s:4:\"smtp\";a:7:{s:4:\"host\";s:16:\"smtp.example.org\";s:4:\"port\";i:587;s:10:\"encryption\";s:3:\"tls\";s:4:\"auth\";b:1;s:7:\"autotls\";b:1;s:4:\"user\";s:22:\"postmaster@example.org\";s:4:\"pass\";s:68:\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBhZuQ93uxSA5UHkGZxKpiG+6OKrtHrd7GBWE=\";}}",
+        "mail_key": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
+        "constants": {},
+        "headers": [
+            "From: Jemand <jemand@example.net>"
+        ],
+        "sent": false,
+        "error": "golden",
+        "expected": {
+            "Mailer": "smtp",
+            "Host": "smtp.example.org",
+            "Port": 587,
+            "SMTPSecure": "tls",
+            "SMTPAutoTLS": true,
+            "SMTPAuth": true,
+            "Username": "postmaster@example.org",
+            "Password": "geheim \"1\"",
+            "From": "jemand@example.net",
+            "FromName": "Jemand",
+            "Sender": "",
+            "ReplyTo": [],
+            "XMailer": "WPMailSMTP/Mailer/smtp 4.10.4"
+        }
+    },
+    {
+        "name": "smtp-tls/fromname",
+        "option": "a:2:{s:4:\"mail\";a:6:{s:10:\"from_email\";s:16:\"site@example.org\";s:9:\"from_name\";s:9:\"Die Seite\";s:6:\"mailer\";s:4:\"smtp\";s:11:\"return_path\";b:0;s:16:\"from_email_force\";b:0;s:15:\"from_name_force\";b:0;}s:4:\"smtp\";a:7:{s:4:\"host\";s:16:\"smtp.example.org\";s:4:\"port\";i:587;s:10:\"encryption\";s:3:\"tls\";s:4:\"auth\";b:1;s:7:\"autotls\";b:1;s:4:\"user\";s:22:\"postmaster@example.org\";s:4:\"pass\";s:68:\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBhZuQ93uxSA5UHkGZxKpiG+6OKrtHrd7GBWE=\";}}",
+        "mail_key": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
+        "constants": {},
+        "headers": [
+            "From: Nur Name <wordpress@localhost>"
+        ],
+        "sent": false,
+        "error": "golden",
+        "expected": {
+            "Mailer": "smtp",
+            "Host": "smtp.example.org",
+            "Port": 587,
+            "SMTPSecure": "tls",
+            "SMTPAutoTLS": true,
+            "SMTPAuth": true,
+            "Username": "postmaster@example.org",
+            "Password": "geheim \"1\"",
+            "From": "site@example.org",
+            "FromName": "Nur Name",
+            "Sender": "",
+            "ReplyTo": [],
+            "XMailer": "WPMailSMTP/Mailer/smtp 4.10.4"
+        }
+    },
+    {
+        "name": "smtp-tls/reply",
+        "option": "a:2:{s:4:\"mail\";a:6:{s:10:\"from_email\";s:16:\"site@example.org\";s:9:\"from_name\";s:9:\"Die Seite\";s:6:\"mailer\";s:4:\"smtp\";s:11:\"return_path\";b:0;s:16:\"from_email_force\";b:0;s:15:\"from_name_force\";b:0;}s:4:\"smtp\";a:7:{s:4:\"host\";s:16:\"smtp.example.org\";s:4:\"port\";i:587;s:10:\"encryption\";s:3:\"tls\";s:4:\"auth\";b:1;s:7:\"autotls\";b:1;s:4:\"user\";s:22:\"postmaster@example.org\";s:4:\"pass\";s:68:\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBhZuQ93uxSA5UHkGZxKpiG+6OKrtHrd7GBWE=\";}}",
+        "mail_key": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
+        "constants": {},
+        "headers": [
+            "From: Jemand <jemand@example.net>",
+            "Reply-To: antwort@example.com"
+        ],
+        "sent": false,
+        "error": "golden",
+        "expected": {
+            "Mailer": "smtp",
+            "Host": "smtp.example.org",
+            "Port": 587,
+            "SMTPSecure": "tls",
+            "SMTPAutoTLS": true,
+            "SMTPAuth": true,
+            "Username": "postmaster@example.org",
+            "Password": "geheim \"1\"",
+            "From": "jemand@example.net",
+            "FromName": "Jemand",
+            "Sender": "",
+            "ReplyTo": [
+                "antwort@example.com"
+            ],
+            "XMailer": "WPMailSMTP/Mailer/smtp 4.10.4"
+        }
+    },
+    {
+        "name": "smtp-ssl-forced/none",
+        "option": "a:2:{s:4:\"mail\";a:6:{s:10:\"from_email\";s:16:\"site@example.org\";s:9:\"from_name\";s:9:\"Die Seite\";s:6:\"mailer\";s:4:\"smtp\";s:11:\"return_path\";b:1;s:16:\"from_email_force\";b:1;s:15:\"from_name_force\";b:1;}s:4:\"smtp\";a:7:{s:4:\"host\";s:16:\"smtp.example.org\";s:4:\"port\";s:3:\"465\";s:10:\"encryption\";s:3:\"ssl\";s:4:\"auth\";b:1;s:7:\"autotls\";b:1;s:4:\"user\";s:22:\"postmaster@example.org\";s:4:\"pass\";s:68:\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBhZuQ93uxSA5UHkGZxKpiG+6OKrtHrd7GBWE=\";}}",
+        "mail_key": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
+        "constants": {},
+        "headers": [],
+        "sent": false,
+        "error": "golden",
+        "expected": {
+            "Mailer": "smtp",
+            "Host": "smtp.example.org",
+            "Port": "465",
+            "SMTPSecure": "ssl",
+            "SMTPAutoTLS": true,
+            "SMTPAuth": true,
+            "Username": "postmaster@example.org",
+            "Password": "geheim \"1\"",
+            "From": "site@example.org",
+            "FromName": "Die Seite",
+            "Sender": "site@example.org",
+            "ReplyTo": [],
+            "XMailer": "WPMailSMTP/Mailer/smtp 4.10.4"
+        }
+    },
+    {
+        "name": "smtp-ssl-forced/from",
+        "option": "a:2:{s:4:\"mail\";a:6:{s:10:\"from_email\";s:16:\"site@example.org\";s:9:\"from_name\";s:9:\"Die Seite\";s:6:\"mailer\";s:4:\"smtp\";s:11:\"return_path\";b:1;s:16:\"from_email_force\";b:1;s:15:\"from_name_force\";b:1;}s:4:\"smtp\";a:7:{s:4:\"host\";s:16:\"smtp.example.org\";s:4:\"port\";s:3:\"465\";s:10:\"encryption\";s:3:\"ssl\";s:4:\"auth\";b:1;s:7:\"autotls\";b:1;s:4:\"user\";s:22:\"postmaster@example.org\";s:4:\"pass\";s:68:\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBhZuQ93uxSA5UHkGZxKpiG+6OKrtHrd7GBWE=\";}}",
+        "mail_key": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
+        "constants": {},
+        "headers": [
+            "From: Jemand <jemand@example.net>"
+        ],
+        "sent": false,
+        "error": "golden",
+        "expected": {
+            "Mailer": "smtp",
+            "Host": "smtp.example.org",
+            "Port": "465",
+            "SMTPSecure": "ssl",
+            "SMTPAutoTLS": true,
+            "SMTPAuth": true,
+            "Username": "postmaster@example.org",
+            "Password": "geheim \"1\"",
+            "From": "site@example.org",
+            "FromName": "Die Seite",
+            "Sender": "site@example.org",
+            "ReplyTo": [
+                "jemand@example.net"
+            ],
+            "XMailer": "WPMailSMTP/Mailer/smtp 4.10.4"
+        }
+    },
+    {
+        "name": "smtp-ssl-forced/fromname",
+        "option": "a:2:{s:4:\"mail\";a:6:{s:10:\"from_email\";s:16:\"site@example.org\";s:9:\"from_name\";s:9:\"Die Seite\";s:6:\"mailer\";s:4:\"smtp\";s:11:\"return_path\";b:1;s:16:\"from_email_force\";b:1;s:15:\"from_name_force\";b:1;}s:4:\"smtp\";a:7:{s:4:\"host\";s:16:\"smtp.example.org\";s:4:\"port\";s:3:\"465\";s:10:\"encryption\";s:3:\"ssl\";s:4:\"auth\";b:1;s:7:\"autotls\";b:1;s:4:\"user\";s:22:\"postmaster@example.org\";s:4:\"pass\";s:68:\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBhZuQ93uxSA5UHkGZxKpiG+6OKrtHrd7GBWE=\";}}",
+        "mail_key": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
+        "constants": {},
+        "headers": [
+            "From: Nur Name <wordpress@localhost>"
+        ],
+        "sent": false,
+        "error": "golden",
+        "expected": {
+            "Mailer": "smtp",
+            "Host": "smtp.example.org",
+            "Port": "465",
+            "SMTPSecure": "ssl",
+            "SMTPAutoTLS": true,
+            "SMTPAuth": true,
+            "Username": "postmaster@example.org",
+            "Password": "geheim \"1\"",
+            "From": "site@example.org",
+            "FromName": "Die Seite",
+            "Sender": "site@example.org",
+            "ReplyTo": [],
+            "XMailer": "WPMailSMTP/Mailer/smtp 4.10.4"
+        }
+    },
+    {
+        "name": "smtp-ssl-forced/reply",
+        "option": "a:2:{s:4:\"mail\";a:6:{s:10:\"from_email\";s:16:\"site@example.org\";s:9:\"from_name\";s:9:\"Die Seite\";s:6:\"mailer\";s:4:\"smtp\";s:11:\"return_path\";b:1;s:16:\"from_email_force\";b:1;s:15:\"from_name_force\";b:1;}s:4:\"smtp\";a:7:{s:4:\"host\";s:16:\"smtp.example.org\";s:4:\"port\";s:3:\"465\";s:10:\"encryption\";s:3:\"ssl\";s:4:\"auth\";b:1;s:7:\"autotls\";b:1;s:4:\"user\";s:22:\"postmaster@example.org\";s:4:\"pass\";s:68:\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBhZuQ93uxSA5UHkGZxKpiG+6OKrtHrd7GBWE=\";}}",
+        "mail_key": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
+        "constants": {},
+        "headers": [
+            "From: Jemand <jemand@example.net>",
+            "Reply-To: antwort@example.com"
+        ],
+        "sent": false,
+        "error": "golden",
+        "expected": {
+            "Mailer": "smtp",
+            "Host": "smtp.example.org",
+            "Port": "465",
+            "SMTPSecure": "ssl",
+            "SMTPAutoTLS": true,
+            "SMTPAuth": true,
+            "Username": "postmaster@example.org",
+            "Password": "geheim \"1\"",
+            "From": "site@example.org",
+            "FromName": "Die Seite",
+            "Sender": "site@example.org",
+            "ReplyTo": [
+                "antwort@example.com"
+            ],
+            "XMailer": "WPMailSMTP/Mailer/smtp 4.10.4"
+        }
+    },
+    {
+        "name": "smtp-none-noauto/none",
+        "option": "a:2:{s:4:\"mail\";a:6:{s:10:\"from_email\";s:16:\"site@example.org\";s:9:\"from_name\";s:9:\"Die Seite\";s:6:\"mailer\";s:4:\"smtp\";s:11:\"return_path\";b:0;s:16:\"from_email_force\";b:0;s:15:\"from_name_force\";b:0;}s:4:\"smtp\";a:7:{s:4:\"host\";s:16:\"smtp.example.org\";s:4:\"port\";i:587;s:10:\"encryption\";s:4:\"none\";s:4:\"auth\";b:0;s:7:\"autotls\";b:0;s:4:\"user\";s:22:\"postmaster@example.org\";s:4:\"pass\";s:68:\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBhZuQ93uxSA5UHkGZxKpiG+6OKrtHrd7GBWE=\";}}",
+        "mail_key": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
+        "constants": {},
+        "headers": [],
+        "sent": false,
+        "error": "golden",
+        "expected": {
+            "Mailer": "smtp",
+            "Host": "smtp.example.org",
+            "Port": 587,
+            "SMTPSecure": "",
+            "SMTPAutoTLS": false,
+            "SMTPAuth": false,
+            "Username": "",
+            "Password": "",
+            "From": "site@example.org",
+            "FromName": "Die Seite",
+            "Sender": "",
+            "ReplyTo": [],
+            "XMailer": "WPMailSMTP/Mailer/smtp 4.10.4"
+        }
+    },
+    {
+        "name": "smtp-none-noauto/from",
+        "option": "a:2:{s:4:\"mail\";a:6:{s:10:\"from_email\";s:16:\"site@example.org\";s:9:\"from_name\";s:9:\"Die Seite\";s:6:\"mailer\";s:4:\"smtp\";s:11:\"return_path\";b:0;s:16:\"from_email_force\";b:0;s:15:\"from_name_force\";b:0;}s:4:\"smtp\";a:7:{s:4:\"host\";s:16:\"smtp.example.org\";s:4:\"port\";i:587;s:10:\"encryption\";s:4:\"none\";s:4:\"auth\";b:0;s:7:\"autotls\";b:0;s:4:\"user\";s:22:\"postmaster@example.org\";s:4:\"pass\";s:68:\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBhZuQ93uxSA5UHkGZxKpiG+6OKrtHrd7GBWE=\";}}",
+        "mail_key": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
+        "constants": {},
+        "headers": [
+            "From: Jemand <jemand@example.net>"
+        ],
+        "sent": false,
+        "error": "golden",
+        "expected": {
+            "Mailer": "smtp",
+            "Host": "smtp.example.org",
+            "Port": 587,
+            "SMTPSecure": "",
+            "SMTPAutoTLS": false,
+            "SMTPAuth": false,
+            "Username": "",
+            "Password": "",
+            "From": "jemand@example.net",
+            "FromName": "Jemand",
+            "Sender": "",
+            "ReplyTo": [],
+            "XMailer": "WPMailSMTP/Mailer/smtp 4.10.4"
+        }
+    },
+    {
+        "name": "smtp-none-noauto/fromname",
+        "option": "a:2:{s:4:\"mail\";a:6:{s:10:\"from_email\";s:16:\"site@example.org\";s:9:\"from_name\";s:9:\"Die Seite\";s:6:\"mailer\";s:4:\"smtp\";s:11:\"return_path\";b:0;s:16:\"from_email_force\";b:0;s:15:\"from_name_force\";b:0;}s:4:\"smtp\";a:7:{s:4:\"host\";s:16:\"smtp.example.org\";s:4:\"port\";i:587;s:10:\"encryption\";s:4:\"none\";s:4:\"auth\";b:0;s:7:\"autotls\";b:0;s:4:\"user\";s:22:\"postmaster@example.org\";s:4:\"pass\";s:68:\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBhZuQ93uxSA5UHkGZxKpiG+6OKrtHrd7GBWE=\";}}",
+        "mail_key": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
+        "constants": {},
+        "headers": [
+            "From: Nur Name <wordpress@localhost>"
+        ],
+        "sent": false,
+        "error": "golden",
+        "expected": {
+            "Mailer": "smtp",
+            "Host": "smtp.example.org",
+            "Port": 587,
+            "SMTPSecure": "",
+            "SMTPAutoTLS": false,
+            "SMTPAuth": false,
+            "Username": "",
+            "Password": "",
+            "From": "site@example.org",
+            "FromName": "Nur Name",
+            "Sender": "",
+            "ReplyTo": [],
+            "XMailer": "WPMailSMTP/Mailer/smtp 4.10.4"
+        }
+    },
+    {
+        "name": "smtp-none-noauto/reply",
+        "option": "a:2:{s:4:\"mail\";a:6:{s:10:\"from_email\";s:16:\"site@example.org\";s:9:\"from_name\";s:9:\"Die Seite\";s:6:\"mailer\";s:4:\"smtp\";s:11:\"return_path\";b:0;s:16:\"from_email_force\";b:0;s:15:\"from_name_force\";b:0;}s:4:\"smtp\";a:7:{s:4:\"host\";s:16:\"smtp.example.org\";s:4:\"port\";i:587;s:10:\"encryption\";s:4:\"none\";s:4:\"auth\";b:0;s:7:\"autotls\";b:0;s:4:\"user\";s:22:\"postmaster@example.org\";s:4:\"pass\";s:68:\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBhZuQ93uxSA5UHkGZxKpiG+6OKrtHrd7GBWE=\";}}",
+        "mail_key": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
+        "constants": {},
+        "headers": [
+            "From: Jemand <jemand@example.net>",
+            "Reply-To: antwort@example.com"
+        ],
+        "sent": false,
+        "error": "golden",
+        "expected": {
+            "Mailer": "smtp",
+            "Host": "smtp.example.org",
+            "Port": 587,
+            "SMTPSecure": "",
+            "SMTPAutoTLS": false,
+            "SMTPAuth": false,
+            "Username": "",
+            "Password": "",
+            "From": "jemand@example.net",
+            "FromName": "Jemand",
+            "Sender": "",
+            "ReplyTo": [
+                "antwort@example.com"
+            ],
+            "XMailer": "WPMailSMTP/Mailer/smtp 4.10.4"
+        }
+    },
+    {
+        "name": "smtp-none-auto/none",
+        "option": "a:2:{s:4:\"mail\";a:6:{s:10:\"from_email\";s:16:\"site@example.org\";s:9:\"from_name\";s:9:\"Die Seite\";s:6:\"mailer\";s:4:\"smtp\";s:11:\"return_path\";b:0;s:16:\"from_email_force\";b:0;s:15:\"from_name_force\";b:0;}s:4:\"smtp\";a:7:{s:4:\"host\";s:16:\"smtp.example.org\";s:4:\"port\";i:587;s:10:\"encryption\";s:4:\"none\";s:4:\"auth\";b:1;s:7:\"autotls\";b:1;s:4:\"user\";s:22:\"postmaster@example.org\";s:4:\"pass\";s:68:\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBhZuQ93uxSA5UHkGZxKpiG+6OKrtHrd7GBWE=\";}}",
+        "mail_key": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
+        "constants": {},
+        "headers": [],
+        "sent": false,
+        "error": "golden",
+        "expected": {
+            "Mailer": "smtp",
+            "Host": "smtp.example.org",
+            "Port": 587,
+            "SMTPSecure": "",
+            "SMTPAutoTLS": true,
+            "SMTPAuth": true,
+            "Username": "postmaster@example.org",
+            "Password": "geheim \"1\"",
+            "From": "site@example.org",
+            "FromName": "Die Seite",
+            "Sender": "",
+            "ReplyTo": [],
+            "XMailer": "WPMailSMTP/Mailer/smtp 4.10.4"
+        }
+    },
+    {
+        "name": "smtp-none-auto/from",
+        "option": "a:2:{s:4:\"mail\";a:6:{s:10:\"from_email\";s:16:\"site@example.org\";s:9:\"from_name\";s:9:\"Die Seite\";s:6:\"mailer\";s:4:\"smtp\";s:11:\"return_path\";b:0;s:16:\"from_email_force\";b:0;s:15:\"from_name_force\";b:0;}s:4:\"smtp\";a:7:{s:4:\"host\";s:16:\"smtp.example.org\";s:4:\"port\";i:587;s:10:\"encryption\";s:4:\"none\";s:4:\"auth\";b:1;s:7:\"autotls\";b:1;s:4:\"user\";s:22:\"postmaster@example.org\";s:4:\"pass\";s:68:\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBhZuQ93uxSA5UHkGZxKpiG+6OKrtHrd7GBWE=\";}}",
+        "mail_key": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
+        "constants": {},
+        "headers": [
+            "From: Jemand <jemand@example.net>"
+        ],
+        "sent": false,
+        "error": "golden",
+        "expected": {
+            "Mailer": "smtp",
+            "Host": "smtp.example.org",
+            "Port": 587,
+            "SMTPSecure": "",
+            "SMTPAutoTLS": true,
+            "SMTPAuth": true,
+            "Username": "postmaster@example.org",
+            "Password": "geheim \"1\"",
+            "From": "jemand@example.net",
+            "FromName": "Jemand",
+            "Sender": "",
+            "ReplyTo": [],
+            "XMailer": "WPMailSMTP/Mailer/smtp 4.10.4"
+        }
+    },
+    {
+        "name": "smtp-none-auto/fromname",
+        "option": "a:2:{s:4:\"mail\";a:6:{s:10:\"from_email\";s:16:\"site@example.org\";s:9:\"from_name\";s:9:\"Die Seite\";s:6:\"mailer\";s:4:\"smtp\";s:11:\"return_path\";b:0;s:16:\"from_email_force\";b:0;s:15:\"from_name_force\";b:0;}s:4:\"smtp\";a:7:{s:4:\"host\";s:16:\"smtp.example.org\";s:4:\"port\";i:587;s:10:\"encryption\";s:4:\"none\";s:4:\"auth\";b:1;s:7:\"autotls\";b:1;s:4:\"user\";s:22:\"postmaster@example.org\";s:4:\"pass\";s:68:\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBhZuQ93uxSA5UHkGZxKpiG+6OKrtHrd7GBWE=\";}}",
+        "mail_key": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
+        "constants": {},
+        "headers": [
+            "From: Nur Name <wordpress@localhost>"
+        ],
+        "sent": false,
+        "error": "golden",
+        "expected": {
+            "Mailer": "smtp",
+            "Host": "smtp.example.org",
+            "Port": 587,
+            "SMTPSecure": "",
+            "SMTPAutoTLS": true,
+            "SMTPAuth": true,
+            "Username": "postmaster@example.org",
+            "Password": "geheim \"1\"",
+            "From": "site@example.org",
+            "FromName": "Nur Name",
+            "Sender": "",
+            "ReplyTo": [],
+            "XMailer": "WPMailSMTP/Mailer/smtp 4.10.4"
+        }
+    },
+    {
+        "name": "smtp-none-auto/reply",
+        "option": "a:2:{s:4:\"mail\";a:6:{s:10:\"from_email\";s:16:\"site@example.org\";s:9:\"from_name\";s:9:\"Die Seite\";s:6:\"mailer\";s:4:\"smtp\";s:11:\"return_path\";b:0;s:16:\"from_email_force\";b:0;s:15:\"from_name_force\";b:0;}s:4:\"smtp\";a:7:{s:4:\"host\";s:16:\"smtp.example.org\";s:4:\"port\";i:587;s:10:\"encryption\";s:4:\"none\";s:4:\"auth\";b:1;s:7:\"autotls\";b:1;s:4:\"user\";s:22:\"postmaster@example.org\";s:4:\"pass\";s:68:\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBhZuQ93uxSA5UHkGZxKpiG+6OKrtHrd7GBWE=\";}}",
+        "mail_key": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
+        "constants": {},
+        "headers": [
+            "From: Jemand <jemand@example.net>",
+            "Reply-To: antwort@example.com"
+        ],
+        "sent": false,
+        "error": "golden",
+        "expected": {
+            "Mailer": "smtp",
+            "Host": "smtp.example.org",
+            "Port": 587,
+            "SMTPSecure": "",
+            "SMTPAutoTLS": true,
+            "SMTPAuth": true,
+            "Username": "postmaster@example.org",
+            "Password": "geheim \"1\"",
+            "From": "jemand@example.net",
+            "FromName": "Jemand",
+            "Sender": "",
+            "ReplyTo": [
+                "antwort@example.com"
+            ],
+            "XMailer": "WPMailSMTP/Mailer/smtp 4.10.4"
+        }
+    },
+    {
+        "name": "smtp-no-host/none",
+        "option": "a:2:{s:4:\"mail\";a:6:{s:10:\"from_email\";s:16:\"site@example.org\";s:9:\"from_name\";s:9:\"Die Seite\";s:6:\"mailer\";s:4:\"smtp\";s:11:\"return_path\";b:0;s:16:\"from_email_force\";b:0;s:15:\"from_name_force\";b:0;}s:4:\"smtp\";a:7:{s:4:\"host\";s:0:\"\";s:4:\"port\";i:587;s:10:\"encryption\";s:3:\"tls\";s:4:\"auth\";b:1;s:7:\"autotls\";b:1;s:4:\"user\";s:22:\"postmaster@example.org\";s:4:\"pass\";s:68:\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBhZuQ93uxSA5UHkGZxKpiG+6OKrtHrd7GBWE=\";}}",
+        "mail_key": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
+        "constants": {},
+        "headers": [],
+        "sent": false,
+        "error": "golden",
+        "expected": {
+            "Mailer": "mail",
+            "Host": "localhost",
+            "Port": 25,
+            "SMTPSecure": "",
+            "SMTPAutoTLS": true,
+            "SMTPAuth": false,
+            "Username": "",
+            "Password": "",
+            "From": "site@example.org",
+            "FromName": "Die Seite",
+            "Sender": "",
+            "ReplyTo": [],
+            "XMailer": "WPMailSMTP/Mailer/smtp 4.10.4"
+        }
+    },
+    {
+        "name": "smtp-no-host/from",
+        "option": "a:2:{s:4:\"mail\";a:6:{s:10:\"from_email\";s:16:\"site@example.org\";s:9:\"from_name\";s:9:\"Die Seite\";s:6:\"mailer\";s:4:\"smtp\";s:11:\"return_path\";b:0;s:16:\"from_email_force\";b:0;s:15:\"from_name_force\";b:0;}s:4:\"smtp\";a:7:{s:4:\"host\";s:0:\"\";s:4:\"port\";i:587;s:10:\"encryption\";s:3:\"tls\";s:4:\"auth\";b:1;s:7:\"autotls\";b:1;s:4:\"user\";s:22:\"postmaster@example.org\";s:4:\"pass\";s:68:\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBhZuQ93uxSA5UHkGZxKpiG+6OKrtHrd7GBWE=\";}}",
+        "mail_key": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
+        "constants": {},
+        "headers": [
+            "From: Jemand <jemand@example.net>"
+        ],
+        "sent": false,
+        "error": "golden",
+        "expected": {
+            "Mailer": "mail",
+            "Host": "localhost",
+            "Port": 25,
+            "SMTPSecure": "",
+            "SMTPAutoTLS": true,
+            "SMTPAuth": false,
+            "Username": "",
+            "Password": "",
+            "From": "jemand@example.net",
+            "FromName": "Jemand",
+            "Sender": "",
+            "ReplyTo": [],
+            "XMailer": "WPMailSMTP/Mailer/smtp 4.10.4"
+        }
+    },
+    {
+        "name": "smtp-no-host/fromname",
+        "option": "a:2:{s:4:\"mail\";a:6:{s:10:\"from_email\";s:16:\"site@example.org\";s:9:\"from_name\";s:9:\"Die Seite\";s:6:\"mailer\";s:4:\"smtp\";s:11:\"return_path\";b:0;s:16:\"from_email_force\";b:0;s:15:\"from_name_force\";b:0;}s:4:\"smtp\";a:7:{s:4:\"host\";s:0:\"\";s:4:\"port\";i:587;s:10:\"encryption\";s:3:\"tls\";s:4:\"auth\";b:1;s:7:\"autotls\";b:1;s:4:\"user\";s:22:\"postmaster@example.org\";s:4:\"pass\";s:68:\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBhZuQ93uxSA5UHkGZxKpiG+6OKrtHrd7GBWE=\";}}",
+        "mail_key": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
+        "constants": {},
+        "headers": [
+            "From: Nur Name <wordpress@localhost>"
+        ],
+        "sent": false,
+        "error": "golden",
+        "expected": {
+            "Mailer": "mail",
+            "Host": "localhost",
+            "Port": 25,
+            "SMTPSecure": "",
+            "SMTPAutoTLS": true,
+            "SMTPAuth": false,
+            "Username": "",
+            "Password": "",
+            "From": "site@example.org",
+            "FromName": "Nur Name",
+            "Sender": "",
+            "ReplyTo": [],
+            "XMailer": "WPMailSMTP/Mailer/smtp 4.10.4"
+        }
+    },
+    {
+        "name": "smtp-no-host/reply",
+        "option": "a:2:{s:4:\"mail\";a:6:{s:10:\"from_email\";s:16:\"site@example.org\";s:9:\"from_name\";s:9:\"Die Seite\";s:6:\"mailer\";s:4:\"smtp\";s:11:\"return_path\";b:0;s:16:\"from_email_force\";b:0;s:15:\"from_name_force\";b:0;}s:4:\"smtp\";a:7:{s:4:\"host\";s:0:\"\";s:4:\"port\";i:587;s:10:\"encryption\";s:3:\"tls\";s:4:\"auth\";b:1;s:7:\"autotls\";b:1;s:4:\"user\";s:22:\"postmaster@example.org\";s:4:\"pass\";s:68:\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBhZuQ93uxSA5UHkGZxKpiG+6OKrtHrd7GBWE=\";}}",
+        "mail_key": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
+        "constants": {},
+        "headers": [
+            "From: Jemand <jemand@example.net>",
+            "Reply-To: antwort@example.com"
+        ],
+        "sent": false,
+        "error": "golden",
+        "expected": {
+            "Mailer": "mail",
+            "Host": "localhost",
+            "Port": 25,
+            "SMTPSecure": "",
+            "SMTPAutoTLS": true,
+            "SMTPAuth": false,
+            "Username": "",
+            "Password": "",
+            "From": "jemand@example.net",
+            "FromName": "Jemand",
+            "Sender": "",
+            "ReplyTo": [
+                "antwort@example.com"
+            ],
+            "XMailer": "WPMailSMTP/Mailer/smtp 4.10.4"
+        }
+    },
+    {
+        "name": "smtp-plain-pass/none",
+        "option": "a:2:{s:4:\"mail\";a:6:{s:10:\"from_email\";s:16:\"site@example.org\";s:9:\"from_name\";s:9:\"Die Seite\";s:6:\"mailer\";s:4:\"smtp\";s:11:\"return_path\";b:0;s:16:\"from_email_force\";b:0;s:15:\"from_name_force\";b:0;}s:4:\"smtp\";a:7:{s:4:\"host\";s:16:\"smtp.example.org\";s:4:\"port\";i:587;s:10:\"encryption\";s:3:\"tls\";s:4:\"auth\";b:1;s:7:\"autotls\";b:1;s:4:\"user\";s:22:\"postmaster@example.org\";s:4:\"pass\";s:11:\"klartext\\'s\";}}",
+        "mail_key": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
+        "constants": {},
+        "headers": [],
+        "sent": false,
+        "error": "golden",
+        "expected": {
+            "Mailer": "smtp",
+            "Host": "smtp.example.org",
+            "Port": 587,
+            "SMTPSecure": "tls",
+            "SMTPAutoTLS": true,
+            "SMTPAuth": true,
+            "Username": "postmaster@example.org",
+            "Password": "klartext's",
+            "From": "site@example.org",
+            "FromName": "Die Seite",
+            "Sender": "",
+            "ReplyTo": [],
+            "XMailer": "WPMailSMTP/Mailer/smtp 4.10.4"
+        }
+    },
+    {
+        "name": "smtp-plain-pass/from",
+        "option": "a:2:{s:4:\"mail\";a:6:{s:10:\"from_email\";s:16:\"site@example.org\";s:9:\"from_name\";s:9:\"Die Seite\";s:6:\"mailer\";s:4:\"smtp\";s:11:\"return_path\";b:0;s:16:\"from_email_force\";b:0;s:15:\"from_name_force\";b:0;}s:4:\"smtp\";a:7:{s:4:\"host\";s:16:\"smtp.example.org\";s:4:\"port\";i:587;s:10:\"encryption\";s:3:\"tls\";s:4:\"auth\";b:1;s:7:\"autotls\";b:1;s:4:\"user\";s:22:\"postmaster@example.org\";s:4:\"pass\";s:11:\"klartext\\'s\";}}",
+        "mail_key": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
+        "constants": {},
+        "headers": [
+            "From: Jemand <jemand@example.net>"
+        ],
+        "sent": false,
+        "error": "golden",
+        "expected": {
+            "Mailer": "smtp",
+            "Host": "smtp.example.org",
+            "Port": 587,
+            "SMTPSecure": "tls",
+            "SMTPAutoTLS": true,
+            "SMTPAuth": true,
+            "Username": "postmaster@example.org",
+            "Password": "klartext's",
+            "From": "jemand@example.net",
+            "FromName": "Jemand",
+            "Sender": "",
+            "ReplyTo": [],
+            "XMailer": "WPMailSMTP/Mailer/smtp 4.10.4"
+        }
+    },
+    {
+        "name": "smtp-plain-pass/fromname",
+        "option": "a:2:{s:4:\"mail\";a:6:{s:10:\"from_email\";s:16:\"site@example.org\";s:9:\"from_name\";s:9:\"Die Seite\";s:6:\"mailer\";s:4:\"smtp\";s:11:\"return_path\";b:0;s:16:\"from_email_force\";b:0;s:15:\"from_name_force\";b:0;}s:4:\"smtp\";a:7:{s:4:\"host\";s:16:\"smtp.example.org\";s:4:\"port\";i:587;s:10:\"encryption\";s:3:\"tls\";s:4:\"auth\";b:1;s:7:\"autotls\";b:1;s:4:\"user\";s:22:\"postmaster@example.org\";s:4:\"pass\";s:11:\"klartext\\'s\";}}",
+        "mail_key": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
+        "constants": {},
+        "headers": [
+            "From: Nur Name <wordpress@localhost>"
+        ],
+        "sent": false,
+        "error": "golden",
+        "expected": {
+            "Mailer": "smtp",
+            "Host": "smtp.example.org",
+            "Port": 587,
+            "SMTPSecure": "tls",
+            "SMTPAutoTLS": true,
+            "SMTPAuth": true,
+            "Username": "postmaster@example.org",
+            "Password": "klartext's",
+            "From": "site@example.org",
+            "FromName": "Nur Name",
+            "Sender": "",
+            "ReplyTo": [],
+            "XMailer": "WPMailSMTP/Mailer/smtp 4.10.4"
+        }
+    },
+    {
+        "name": "smtp-plain-pass/reply",
+        "option": "a:2:{s:4:\"mail\";a:6:{s:10:\"from_email\";s:16:\"site@example.org\";s:9:\"from_name\";s:9:\"Die Seite\";s:6:\"mailer\";s:4:\"smtp\";s:11:\"return_path\";b:0;s:16:\"from_email_force\";b:0;s:15:\"from_name_force\";b:0;}s:4:\"smtp\";a:7:{s:4:\"host\";s:16:\"smtp.example.org\";s:4:\"port\";i:587;s:10:\"encryption\";s:3:\"tls\";s:4:\"auth\";b:1;s:7:\"autotls\";b:1;s:4:\"user\";s:22:\"postmaster@example.org\";s:4:\"pass\";s:11:\"klartext\\'s\";}}",
+        "mail_key": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
+        "constants": {},
+        "headers": [
+            "From: Jemand <jemand@example.net>",
+            "Reply-To: antwort@example.com"
+        ],
+        "sent": false,
+        "error": "golden",
+        "expected": {
+            "Mailer": "smtp",
+            "Host": "smtp.example.org",
+            "Port": 587,
+            "SMTPSecure": "tls",
+            "SMTPAutoTLS": true,
+            "SMTPAuth": true,
+            "Username": "postmaster@example.org",
+            "Password": "klartext's",
+            "From": "jemand@example.net",
+            "FromName": "Jemand",
+            "Sender": "",
+            "ReplyTo": [
+                "antwort@example.com"
+            ],
+            "XMailer": "WPMailSMTP/Mailer/smtp 4.10.4"
+        }
+    },
+    {
+        "name": "smtp-wrong-key/none",
+        "option": "a:2:{s:4:\"mail\";a:6:{s:10:\"from_email\";s:16:\"site@example.org\";s:9:\"from_name\";s:9:\"Die Seite\";s:6:\"mailer\";s:4:\"smtp\";s:11:\"return_path\";b:0;s:16:\"from_email_force\";b:0;s:15:\"from_name_force\";b:0;}s:4:\"smtp\";a:7:{s:4:\"host\";s:16:\"smtp.example.org\";s:4:\"port\";i:587;s:10:\"encryption\";s:3:\"tls\";s:4:\"auth\";b:1;s:7:\"autotls\";b:1;s:4:\"user\";s:22:\"postmaster@example.org\";s:4:\"pass\";s:68:\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBhZuQ93uxSA5UHkGZxKpiG+6OKrtHrd7GBWE=\";}}",
+        "mail_key": "CQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQk=",
+        "constants": {},
+        "headers": [],
+        "sent": false,
+        "error": "golden",
+        "expected": {
+            "Mailer": "smtp",
+            "Host": "smtp.example.org",
+            "Port": 587,
+            "SMTPSecure": "tls",
+            "SMTPAutoTLS": true,
+            "SMTPAuth": true,
+            "Username": "postmaster@example.org",
+            "Password": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBhZuQ93uxSA5UHkGZxKpiG+6OKrtHrd7GBWE=",
+            "From": "site@example.org",
+            "FromName": "Die Seite",
+            "Sender": "",
+            "ReplyTo": [],
+            "XMailer": "WPMailSMTP/Mailer/smtp 4.10.4"
+        }
+    },
+    {
+        "name": "smtp-wrong-key/from",
+        "option": "a:2:{s:4:\"mail\";a:6:{s:10:\"from_email\";s:16:\"site@example.org\";s:9:\"from_name\";s:9:\"Die Seite\";s:6:\"mailer\";s:4:\"smtp\";s:11:\"return_path\";b:0;s:16:\"from_email_force\";b:0;s:15:\"from_name_force\";b:0;}s:4:\"smtp\";a:7:{s:4:\"host\";s:16:\"smtp.example.org\";s:4:\"port\";i:587;s:10:\"encryption\";s:3:\"tls\";s:4:\"auth\";b:1;s:7:\"autotls\";b:1;s:4:\"user\";s:22:\"postmaster@example.org\";s:4:\"pass\";s:68:\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBhZuQ93uxSA5UHkGZxKpiG+6OKrtHrd7GBWE=\";}}",
+        "mail_key": "CQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQk=",
+        "constants": {},
+        "headers": [
+            "From: Jemand <jemand@example.net>"
+        ],
+        "sent": false,
+        "error": "golden",
+        "expected": {
+            "Mailer": "smtp",
+            "Host": "smtp.example.org",
+            "Port": 587,
+            "SMTPSecure": "tls",
+            "SMTPAutoTLS": true,
+            "SMTPAuth": true,
+            "Username": "postmaster@example.org",
+            "Password": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBhZuQ93uxSA5UHkGZxKpiG+6OKrtHrd7GBWE=",
+            "From": "jemand@example.net",
+            "FromName": "Jemand",
+            "Sender": "",
+            "ReplyTo": [],
+            "XMailer": "WPMailSMTP/Mailer/smtp 4.10.4"
+        }
+    },
+    {
+        "name": "smtp-wrong-key/fromname",
+        "option": "a:2:{s:4:\"mail\";a:6:{s:10:\"from_email\";s:16:\"site@example.org\";s:9:\"from_name\";s:9:\"Die Seite\";s:6:\"mailer\";s:4:\"smtp\";s:11:\"return_path\";b:0;s:16:\"from_email_force\";b:0;s:15:\"from_name_force\";b:0;}s:4:\"smtp\";a:7:{s:4:\"host\";s:16:\"smtp.example.org\";s:4:\"port\";i:587;s:10:\"encryption\";s:3:\"tls\";s:4:\"auth\";b:1;s:7:\"autotls\";b:1;s:4:\"user\";s:22:\"postmaster@example.org\";s:4:\"pass\";s:68:\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBhZuQ93uxSA5UHkGZxKpiG+6OKrtHrd7GBWE=\";}}",
+        "mail_key": "CQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQk=",
+        "constants": {},
+        "headers": [
+            "From: Nur Name <wordpress@localhost>"
+        ],
+        "sent": false,
+        "error": "golden",
+        "expected": {
+            "Mailer": "smtp",
+            "Host": "smtp.example.org",
+            "Port": 587,
+            "SMTPSecure": "tls",
+            "SMTPAutoTLS": true,
+            "SMTPAuth": true,
+            "Username": "postmaster@example.org",
+            "Password": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBhZuQ93uxSA5UHkGZxKpiG+6OKrtHrd7GBWE=",
+            "From": "site@example.org",
+            "FromName": "Nur Name",
+            "Sender": "",
+            "ReplyTo": [],
+            "XMailer": "WPMailSMTP/Mailer/smtp 4.10.4"
+        }
+    },
+    {
+        "name": "smtp-wrong-key/reply",
+        "option": "a:2:{s:4:\"mail\";a:6:{s:10:\"from_email\";s:16:\"site@example.org\";s:9:\"from_name\";s:9:\"Die Seite\";s:6:\"mailer\";s:4:\"smtp\";s:11:\"return_path\";b:0;s:16:\"from_email_force\";b:0;s:15:\"from_name_force\";b:0;}s:4:\"smtp\";a:7:{s:4:\"host\";s:16:\"smtp.example.org\";s:4:\"port\";i:587;s:10:\"encryption\";s:3:\"tls\";s:4:\"auth\";b:1;s:7:\"autotls\";b:1;s:4:\"user\";s:22:\"postmaster@example.org\";s:4:\"pass\";s:68:\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBhZuQ93uxSA5UHkGZxKpiG+6OKrtHrd7GBWE=\";}}",
+        "mail_key": "CQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQk=",
+        "constants": {},
+        "headers": [
+            "From: Jemand <jemand@example.net>",
+            "Reply-To: antwort@example.com"
+        ],
+        "sent": false,
+        "error": "golden",
+        "expected": {
+            "Mailer": "smtp",
+            "Host": "smtp.example.org",
+            "Port": 587,
+            "SMTPSecure": "tls",
+            "SMTPAutoTLS": true,
+            "SMTPAuth": true,
+            "Username": "postmaster@example.org",
+            "Password": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBhZuQ93uxSA5UHkGZxKpiG+6OKrtHrd7GBWE=",
+            "From": "jemand@example.net",
+            "FromName": "Jemand",
+            "Sender": "",
+            "ReplyTo": [
+                "antwort@example.com"
+            ],
+            "XMailer": "WPMailSMTP/Mailer/smtp 4.10.4"
+        }
+    },
+    {
+        "name": "smtp-empty-from/none",
+        "option": "a:2:{s:4:\"mail\";a:6:{s:10:\"from_email\";s:0:\"\";s:9:\"from_name\";s:0:\"\";s:6:\"mailer\";s:4:\"smtp\";s:11:\"return_path\";b:0;s:16:\"from_email_force\";b:0;s:15:\"from_name_force\";b:0;}s:4:\"smtp\";a:7:{s:4:\"host\";s:16:\"smtp.example.org\";s:4:\"port\";i:587;s:10:\"encryption\";s:3:\"tls\";s:4:\"auth\";b:1;s:7:\"autotls\";b:1;s:4:\"user\";s:22:\"postmaster@example.org\";s:4:\"pass\";s:68:\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBhZuQ93uxSA5UHkGZxKpiG+6OKrtHrd7GBWE=\";}}",
+        "mail_key": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
+        "constants": {},
+        "headers": [],
+        "sent": false,
+        "error": "Invalid address:  (From): wordpress@localhost",
+        "expected": null
+    },
+    {
+        "name": "smtp-empty-from/from",
+        "option": "a:2:{s:4:\"mail\";a:6:{s:10:\"from_email\";s:0:\"\";s:9:\"from_name\";s:0:\"\";s:6:\"mailer\";s:4:\"smtp\";s:11:\"return_path\";b:0;s:16:\"from_email_force\";b:0;s:15:\"from_name_force\";b:0;}s:4:\"smtp\";a:7:{s:4:\"host\";s:16:\"smtp.example.org\";s:4:\"port\";i:587;s:10:\"encryption\";s:3:\"tls\";s:4:\"auth\";b:1;s:7:\"autotls\";b:1;s:4:\"user\";s:22:\"postmaster@example.org\";s:4:\"pass\";s:68:\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBhZuQ93uxSA5UHkGZxKpiG+6OKrtHrd7GBWE=\";}}",
+        "mail_key": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
+        "constants": {},
+        "headers": [
+            "From: Jemand <jemand@example.net>"
+        ],
+        "sent": false,
+        "error": "golden",
+        "expected": {
+            "Mailer": "smtp",
+            "Host": "smtp.example.org",
+            "Port": 587,
+            "SMTPSecure": "tls",
+            "SMTPAutoTLS": true,
+            "SMTPAuth": true,
+            "Username": "postmaster@example.org",
+            "Password": "geheim \"1\"",
+            "From": "jemand@example.net",
+            "FromName": "Jemand",
+            "Sender": "",
+            "ReplyTo": [],
+            "XMailer": "WPMailSMTP/Mailer/smtp 4.10.4"
+        }
+    },
+    {
+        "name": "smtp-empty-from/fromname",
+        "option": "a:2:{s:4:\"mail\";a:6:{s:10:\"from_email\";s:0:\"\";s:9:\"from_name\";s:0:\"\";s:6:\"mailer\";s:4:\"smtp\";s:11:\"return_path\";b:0;s:16:\"from_email_force\";b:0;s:15:\"from_name_force\";b:0;}s:4:\"smtp\";a:7:{s:4:\"host\";s:16:\"smtp.example.org\";s:4:\"port\";i:587;s:10:\"encryption\";s:3:\"tls\";s:4:\"auth\";b:1;s:7:\"autotls\";b:1;s:4:\"user\";s:22:\"postmaster@example.org\";s:4:\"pass\";s:68:\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBhZuQ93uxSA5UHkGZxKpiG+6OKrtHrd7GBWE=\";}}",
+        "mail_key": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
+        "constants": {},
+        "headers": [
+            "From: Nur Name <wordpress@localhost>"
+        ],
+        "sent": false,
+        "error": "Invalid address:  (From): wordpress@localhost",
+        "expected": null
+    },
+    {
+        "name": "smtp-empty-from/reply",
+        "option": "a:2:{s:4:\"mail\";a:6:{s:10:\"from_email\";s:0:\"\";s:9:\"from_name\";s:0:\"\";s:6:\"mailer\";s:4:\"smtp\";s:11:\"return_path\";b:0;s:16:\"from_email_force\";b:0;s:15:\"from_name_force\";b:0;}s:4:\"smtp\";a:7:{s:4:\"host\";s:16:\"smtp.example.org\";s:4:\"port\";i:587;s:10:\"encryption\";s:3:\"tls\";s:4:\"auth\";b:1;s:7:\"autotls\";b:1;s:4:\"user\";s:22:\"postmaster@example.org\";s:4:\"pass\";s:68:\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBhZuQ93uxSA5UHkGZxKpiG+6OKrtHrd7GBWE=\";}}",
+        "mail_key": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
+        "constants": {},
+        "headers": [
+            "From: Jemand <jemand@example.net>",
+            "Reply-To: antwort@example.com"
+        ],
+        "sent": false,
+        "error": "golden",
+        "expected": {
+            "Mailer": "smtp",
+            "Host": "smtp.example.org",
+            "Port": 587,
+            "SMTPSecure": "tls",
+            "SMTPAutoTLS": true,
+            "SMTPAuth": true,
+            "Username": "postmaster@example.org",
+            "Password": "geheim \"1\"",
+            "From": "jemand@example.net",
+            "FromName": "Jemand",
+            "Sender": "",
+            "ReplyTo": [
+                "antwort@example.com"
+            ],
+            "XMailer": "WPMailSMTP/Mailer/smtp 4.10.4"
+        }
+    },
+    {
+        "name": "mail/none",
+        "option": "a:1:{s:4:\"mail\";a:3:{s:6:\"mailer\";s:4:\"mail\";s:10:\"from_email\";s:16:\"post@example.org\";s:9:\"from_name\";s:4:\"Post\";}}",
+        "mail_key": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
+        "constants": {},
+        "headers": [],
+        "sent": false,
+        "error": "golden",
+        "expected": {
+            "Mailer": "mail",
+            "Host": "localhost",
+            "Port": 25,
+            "SMTPSecure": "",
+            "SMTPAutoTLS": true,
+            "SMTPAuth": false,
+            "Username": "",
+            "Password": "",
+            "From": "post@example.org",
+            "FromName": "Post",
+            "Sender": "",
+            "ReplyTo": [],
+            "XMailer": "WPMailSMTP/Mailer/mail 4.10.4"
+        }
+    },
+    {
+        "name": "mail/from",
+        "option": "a:1:{s:4:\"mail\";a:3:{s:6:\"mailer\";s:4:\"mail\";s:10:\"from_email\";s:16:\"post@example.org\";s:9:\"from_name\";s:4:\"Post\";}}",
+        "mail_key": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
+        "constants": {},
+        "headers": [
+            "From: Jemand <jemand@example.net>"
+        ],
+        "sent": false,
+        "error": "golden",
+        "expected": {
+            "Mailer": "mail",
+            "Host": "localhost",
+            "Port": 25,
+            "SMTPSecure": "",
+            "SMTPAutoTLS": true,
+            "SMTPAuth": false,
+            "Username": "",
+            "Password": "",
+            "From": "jemand@example.net",
+            "FromName": "Jemand",
+            "Sender": "",
+            "ReplyTo": [],
+            "XMailer": "WPMailSMTP/Mailer/mail 4.10.4"
+        }
+    },
+    {
+        "name": "mail/fromname",
+        "option": "a:1:{s:4:\"mail\";a:3:{s:6:\"mailer\";s:4:\"mail\";s:10:\"from_email\";s:16:\"post@example.org\";s:9:\"from_name\";s:4:\"Post\";}}",
+        "mail_key": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
+        "constants": {},
+        "headers": [
+            "From: Nur Name <wordpress@localhost>"
+        ],
+        "sent": false,
+        "error": "golden",
+        "expected": {
+            "Mailer": "mail",
+            "Host": "localhost",
+            "Port": 25,
+            "SMTPSecure": "",
+            "SMTPAutoTLS": true,
+            "SMTPAuth": false,
+            "Username": "",
+            "Password": "",
+            "From": "post@example.org",
+            "FromName": "Nur Name",
+            "Sender": "",
+            "ReplyTo": [],
+            "XMailer": "WPMailSMTP/Mailer/mail 4.10.4"
+        }
+    },
+    {
+        "name": "mail/reply",
+        "option": "a:1:{s:4:\"mail\";a:3:{s:6:\"mailer\";s:4:\"mail\";s:10:\"from_email\";s:16:\"post@example.org\";s:9:\"from_name\";s:4:\"Post\";}}",
+        "mail_key": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
+        "constants": {},
+        "headers": [
+            "From: Jemand <jemand@example.net>",
+            "Reply-To: antwort@example.com"
+        ],
+        "sent": false,
+        "error": "golden",
+        "expected": {
+            "Mailer": "mail",
+            "Host": "localhost",
+            "Port": 25,
+            "SMTPSecure": "",
+            "SMTPAutoTLS": true,
+            "SMTPAuth": false,
+            "Username": "",
+            "Password": "",
+            "From": "jemand@example.net",
+            "FromName": "Jemand",
+            "Sender": "",
+            "ReplyTo": [
+                "antwort@example.com"
+            ],
+            "XMailer": "WPMailSMTP/Mailer/mail 4.10.4"
+        }
+    },
+    {
+        "name": "mail-defaults/none",
+        "option": "a:0:{}",
+        "mail_key": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
+        "constants": {},
+        "headers": [],
+        "sent": false,
+        "error": "Invalid address:  (From): wordpress@localhost",
+        "expected": null
+    },
+    {
+        "name": "mail-defaults/from",
+        "option": "a:0:{}",
+        "mail_key": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
+        "constants": {},
+        "headers": [
+            "From: Jemand <jemand@example.net>"
+        ],
+        "sent": false,
+        "error": "golden",
+        "expected": {
+            "Mailer": "mail",
+            "Host": "localhost",
+            "Port": 25,
+            "SMTPSecure": null,
+            "SMTPAutoTLS": false,
+            "SMTPAuth": false,
+            "Username": "",
+            "Password": "",
+            "From": "jemand@example.net",
+            "FromName": "Jemand",
+            "Sender": "",
+            "ReplyTo": [],
+            "XMailer": "WPMailSMTP/Mailer/mail 4.10.4"
+        }
+    },
+    {
+        "name": "mail-defaults/fromname",
+        "option": "a:0:{}",
+        "mail_key": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
+        "constants": {},
+        "headers": [
+            "From: Nur Name <wordpress@localhost>"
+        ],
+        "sent": false,
+        "error": "Invalid address:  (From): wordpress@localhost",
+        "expected": null
+    },
+    {
+        "name": "mail-defaults/reply",
+        "option": "a:0:{}",
+        "mail_key": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
+        "constants": {},
+        "headers": [
+            "From: Jemand <jemand@example.net>",
+            "Reply-To: antwort@example.com"
+        ],
+        "sent": false,
+        "error": "golden",
+        "expected": {
+            "Mailer": "mail",
+            "Host": "localhost",
+            "Port": 25,
+            "SMTPSecure": null,
+            "SMTPAutoTLS": false,
+            "SMTPAuth": false,
+            "Username": "",
+            "Password": "",
+            "From": "jemand@example.net",
+            "FromName": "Jemand",
+            "Sender": "",
+            "ReplyTo": [
+                "antwort@example.com"
+            ],
+            "XMailer": "WPMailSMTP/Mailer/mail 4.10.4"
+        }
+    },
+    {
+        "name": "blocked/none",
+        "option": "a:3:{s:4:\"mail\";a:6:{s:10:\"from_email\";s:16:\"site@example.org\";s:9:\"from_name\";s:9:\"Die Seite\";s:6:\"mailer\";s:4:\"smtp\";s:11:\"return_path\";b:0;s:16:\"from_email_force\";b:0;s:15:\"from_name_force\";b:0;}s:4:\"smtp\";a:7:{s:4:\"host\";s:16:\"smtp.example.org\";s:4:\"port\";i:587;s:10:\"encryption\";s:3:\"tls\";s:4:\"auth\";b:1;s:7:\"autotls\";b:1;s:4:\"user\";s:22:\"postmaster@example.org\";s:4:\"pass\";s:68:\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBhZuQ93uxSA5UHkGZxKpiG+6OKrtHrd7GBWE=\";}s:7:\"general\";a:1:{s:11:\"do_not_send\";b:1;}}",
+        "mail_key": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
+        "constants": {},
+        "headers": [],
+        "sent": false,
+        "error": null,
+        "expected": null
+    },
+    {
+        "name": "blocked/from",
+        "option": "a:3:{s:4:\"mail\";a:6:{s:10:\"from_email\";s:16:\"site@example.org\";s:9:\"from_name\";s:9:\"Die Seite\";s:6:\"mailer\";s:4:\"smtp\";s:11:\"return_path\";b:0;s:16:\"from_email_force\";b:0;s:15:\"from_name_force\";b:0;}s:4:\"smtp\";a:7:{s:4:\"host\";s:16:\"smtp.example.org\";s:4:\"port\";i:587;s:10:\"encryption\";s:3:\"tls\";s:4:\"auth\";b:1;s:7:\"autotls\";b:1;s:4:\"user\";s:22:\"postmaster@example.org\";s:4:\"pass\";s:68:\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBhZuQ93uxSA5UHkGZxKpiG+6OKrtHrd7GBWE=\";}s:7:\"general\";a:1:{s:11:\"do_not_send\";b:1;}}",
+        "mail_key": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
+        "constants": {},
+        "headers": [
+            "From: Jemand <jemand@example.net>"
+        ],
+        "sent": false,
+        "error": null,
+        "expected": null
+    },
+    {
+        "name": "blocked/fromname",
+        "option": "a:3:{s:4:\"mail\";a:6:{s:10:\"from_email\";s:16:\"site@example.org\";s:9:\"from_name\";s:9:\"Die Seite\";s:6:\"mailer\";s:4:\"smtp\";s:11:\"return_path\";b:0;s:16:\"from_email_force\";b:0;s:15:\"from_name_force\";b:0;}s:4:\"smtp\";a:7:{s:4:\"host\";s:16:\"smtp.example.org\";s:4:\"port\";i:587;s:10:\"encryption\";s:3:\"tls\";s:4:\"auth\";b:1;s:7:\"autotls\";b:1;s:4:\"user\";s:22:\"postmaster@example.org\";s:4:\"pass\";s:68:\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBhZuQ93uxSA5UHkGZxKpiG+6OKrtHrd7GBWE=\";}s:7:\"general\";a:1:{s:11:\"do_not_send\";b:1;}}",
+        "mail_key": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
+        "constants": {},
+        "headers": [
+            "From: Nur Name <wordpress@localhost>"
+        ],
+        "sent": false,
+        "error": null,
+        "expected": null
+    },
+    {
+        "name": "blocked/reply",
+        "option": "a:3:{s:4:\"mail\";a:6:{s:10:\"from_email\";s:16:\"site@example.org\";s:9:\"from_name\";s:9:\"Die Seite\";s:6:\"mailer\";s:4:\"smtp\";s:11:\"return_path\";b:0;s:16:\"from_email_force\";b:0;s:15:\"from_name_force\";b:0;}s:4:\"smtp\";a:7:{s:4:\"host\";s:16:\"smtp.example.org\";s:4:\"port\";i:587;s:10:\"encryption\";s:3:\"tls\";s:4:\"auth\";b:1;s:7:\"autotls\";b:1;s:4:\"user\";s:22:\"postmaster@example.org\";s:4:\"pass\";s:68:\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBhZuQ93uxSA5UHkGZxKpiG+6OKrtHrd7GBWE=\";}s:7:\"general\";a:1:{s:11:\"do_not_send\";b:1;}}",
+        "mail_key": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
+        "constants": {},
+        "headers": [
+            "From: Jemand <jemand@example.net>",
+            "Reply-To: antwort@example.com"
+        ],
+        "sent": false,
+        "error": null,
+        "expected": null
+    },
+    {
+        "name": "sendgrid/none",
+        "option": "a:2:{s:4:\"mail\";a:1:{s:6:\"mailer\";s:8:\"sendgrid\";}s:8:\"sendgrid\";a:1:{s:7:\"api_key\";s:1:\"x\";}}",
+        "mail_key": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
+        "constants": {},
+        "headers": [],
+        "sent": false,
+        "error": "Invalid address:  (From): wordpress@localhost",
+        "expected": null
+    },
+    {
+        "name": "sendgrid/from",
+        "option": "a:2:{s:4:\"mail\";a:1:{s:6:\"mailer\";s:8:\"sendgrid\";}s:8:\"sendgrid\";a:1:{s:7:\"api_key\";s:1:\"x\";}}",
+        "mail_key": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
+        "constants": {},
+        "headers": [
+            "From: Jemand <jemand@example.net>"
+        ],
+        "sent": false,
+        "error": "http_request_failed: [&quot;A valid URL was not provided.&quot;]\r\n",
+        "expected": null
+    },
+    {
+        "name": "sendgrid/fromname",
+        "option": "a:2:{s:4:\"mail\";a:1:{s:6:\"mailer\";s:8:\"sendgrid\";}s:8:\"sendgrid\";a:1:{s:7:\"api_key\";s:1:\"x\";}}",
+        "mail_key": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
+        "constants": {},
+        "headers": [
+            "From: Nur Name <wordpress@localhost>"
+        ],
+        "sent": false,
+        "error": "Invalid address:  (From): wordpress@localhost",
+        "expected": null
+    },
+    {
+        "name": "sendgrid/reply",
+        "option": "a:2:{s:4:\"mail\";a:1:{s:6:\"mailer\";s:8:\"sendgrid\";}s:8:\"sendgrid\";a:1:{s:7:\"api_key\";s:1:\"x\";}}",
+        "mail_key": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
+        "constants": {},
+        "headers": [
+            "From: Jemand <jemand@example.net>",
+            "Reply-To: antwort@example.com"
+        ],
+        "sent": false,
+        "error": "http_request_failed: [&quot;A valid URL was not provided.&quot;]\r\n",
+        "expected": null
+    },
+    {
+        "name": "constants/none",
+        "option": "a:2:{s:4:\"mail\";a:6:{s:10:\"from_email\";s:16:\"site@example.org\";s:9:\"from_name\";s:9:\"Die Seite\";s:6:\"mailer\";s:4:\"smtp\";s:11:\"return_path\";b:0;s:16:\"from_email_force\";b:0;s:15:\"from_name_force\";b:0;}s:4:\"smtp\";a:7:{s:4:\"host\";s:16:\"smtp.example.org\";s:4:\"port\";i:587;s:10:\"encryption\";s:3:\"tls\";s:4:\"auth\";b:1;s:7:\"autotls\";b:1;s:4:\"user\";s:22:\"postmaster@example.org\";s:4:\"pass\";s:68:\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBhZuQ93uxSA5UHkGZxKpiG+6OKrtHrd7GBWE=\";}}",
+        "mail_key": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
+        "constants": {
+            "WPMS_ON": true,
+            "WPMS_SMTP_HOST": "mx.example.com",
+            "WPMS_SMTP_PORT": 2525,
+            "WPMS_SSL": "",
+            "WPMS_SMTP_AUTH": true,
+            "WPMS_SMTP_AUTOTLS": false,
+            "WPMS_SMTP_USER": "konst",
+            "WPMS_SMTP_PASS": "konst-pass",
+            "WPMS_MAIL_FROM": "konst@example.com",
+            "WPMS_MAIL_FROM_FORCE": true,
+            "WPMS_MAIL_FROM_NAME": "Konstante"
+        },
+        "headers": [],
+        "sent": false,
+        "error": "golden",
+        "expected": {
+            "Mailer": "smtp",
+            "Host": "mx.example.com",
+            "Port": 2525,
+            "SMTPSecure": "",
+            "SMTPAutoTLS": false,
+            "SMTPAuth": true,
+            "Username": "konst",
+            "Password": "konst-pass",
+            "From": "konst@example.com",
+            "FromName": "Konstante",
+            "Sender": "",
+            "ReplyTo": [],
+            "XMailer": "WPMailSMTP/Mailer/smtp 4.10.4"
+        }
+    },
+    {
+        "name": "constants/from",
+        "option": "a:2:{s:4:\"mail\";a:6:{s:10:\"from_email\";s:16:\"site@example.org\";s:9:\"from_name\";s:9:\"Die Seite\";s:6:\"mailer\";s:4:\"smtp\";s:11:\"return_path\";b:0;s:16:\"from_email_force\";b:0;s:15:\"from_name_force\";b:0;}s:4:\"smtp\";a:7:{s:4:\"host\";s:16:\"smtp.example.org\";s:4:\"port\";i:587;s:10:\"encryption\";s:3:\"tls\";s:4:\"auth\";b:1;s:7:\"autotls\";b:1;s:4:\"user\";s:22:\"postmaster@example.org\";s:4:\"pass\";s:68:\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBhZuQ93uxSA5UHkGZxKpiG+6OKrtHrd7GBWE=\";}}",
+        "mail_key": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
+        "constants": {
+            "WPMS_ON": true,
+            "WPMS_SMTP_HOST": "mx.example.com",
+            "WPMS_SMTP_PORT": 2525,
+            "WPMS_SSL": "",
+            "WPMS_SMTP_AUTH": true,
+            "WPMS_SMTP_AUTOTLS": false,
+            "WPMS_SMTP_USER": "konst",
+            "WPMS_SMTP_PASS": "konst-pass",
+            "WPMS_MAIL_FROM": "konst@example.com",
+            "WPMS_MAIL_FROM_FORCE": true,
+            "WPMS_MAIL_FROM_NAME": "Konstante"
+        },
+        "headers": [
+            "From: Jemand <jemand@example.net>"
+        ],
+        "sent": false,
+        "error": "golden",
+        "expected": {
+            "Mailer": "smtp",
+            "Host": "mx.example.com",
+            "Port": 2525,
+            "SMTPSecure": "",
+            "SMTPAutoTLS": false,
+            "SMTPAuth": true,
+            "Username": "konst",
+            "Password": "konst-pass",
+            "From": "konst@example.com",
+            "FromName": "Jemand",
+            "Sender": "",
+            "ReplyTo": [
+                "jemand@example.net"
+            ],
+            "XMailer": "WPMailSMTP/Mailer/smtp 4.10.4"
+        }
+    },
+    {
+        "name": "constants/fromname",
+        "option": "a:2:{s:4:\"mail\";a:6:{s:10:\"from_email\";s:16:\"site@example.org\";s:9:\"from_name\";s:9:\"Die Seite\";s:6:\"mailer\";s:4:\"smtp\";s:11:\"return_path\";b:0;s:16:\"from_email_force\";b:0;s:15:\"from_name_force\";b:0;}s:4:\"smtp\";a:7:{s:4:\"host\";s:16:\"smtp.example.org\";s:4:\"port\";i:587;s:10:\"encryption\";s:3:\"tls\";s:4:\"auth\";b:1;s:7:\"autotls\";b:1;s:4:\"user\";s:22:\"postmaster@example.org\";s:4:\"pass\";s:68:\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBhZuQ93uxSA5UHkGZxKpiG+6OKrtHrd7GBWE=\";}}",
+        "mail_key": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
+        "constants": {
+            "WPMS_ON": true,
+            "WPMS_SMTP_HOST": "mx.example.com",
+            "WPMS_SMTP_PORT": 2525,
+            "WPMS_SSL": "",
+            "WPMS_SMTP_AUTH": true,
+            "WPMS_SMTP_AUTOTLS": false,
+            "WPMS_SMTP_USER": "konst",
+            "WPMS_SMTP_PASS": "konst-pass",
+            "WPMS_MAIL_FROM": "konst@example.com",
+            "WPMS_MAIL_FROM_FORCE": true,
+            "WPMS_MAIL_FROM_NAME": "Konstante"
+        },
+        "headers": [
+            "From: Nur Name <wordpress@localhost>"
+        ],
+        "sent": false,
+        "error": "golden",
+        "expected": {
+            "Mailer": "smtp",
+            "Host": "mx.example.com",
+            "Port": 2525,
+            "SMTPSecure": "",
+            "SMTPAutoTLS": false,
+            "SMTPAuth": true,
+            "Username": "konst",
+            "Password": "konst-pass",
+            "From": "konst@example.com",
+            "FromName": "Nur Name",
+            "Sender": "",
+            "ReplyTo": [],
+            "XMailer": "WPMailSMTP/Mailer/smtp 4.10.4"
+        }
+    },
+    {
+        "name": "constants/reply",
+        "option": "a:2:{s:4:\"mail\";a:6:{s:10:\"from_email\";s:16:\"site@example.org\";s:9:\"from_name\";s:9:\"Die Seite\";s:6:\"mailer\";s:4:\"smtp\";s:11:\"return_path\";b:0;s:16:\"from_email_force\";b:0;s:15:\"from_name_force\";b:0;}s:4:\"smtp\";a:7:{s:4:\"host\";s:16:\"smtp.example.org\";s:4:\"port\";i:587;s:10:\"encryption\";s:3:\"tls\";s:4:\"auth\";b:1;s:7:\"autotls\";b:1;s:4:\"user\";s:22:\"postmaster@example.org\";s:4:\"pass\";s:68:\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBhZuQ93uxSA5UHkGZxKpiG+6OKrtHrd7GBWE=\";}}",
+        "mail_key": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
+        "constants": {
+            "WPMS_ON": true,
+            "WPMS_SMTP_HOST": "mx.example.com",
+            "WPMS_SMTP_PORT": 2525,
+            "WPMS_SSL": "",
+            "WPMS_SMTP_AUTH": true,
+            "WPMS_SMTP_AUTOTLS": false,
+            "WPMS_SMTP_USER": "konst",
+            "WPMS_SMTP_PASS": "konst-pass",
+            "WPMS_MAIL_FROM": "konst@example.com",
+            "WPMS_MAIL_FROM_FORCE": true,
+            "WPMS_MAIL_FROM_NAME": "Konstante"
+        },
+        "headers": [
+            "From: Jemand <jemand@example.net>",
+            "Reply-To: antwort@example.com"
+        ],
+        "sent": false,
+        "error": "golden",
+        "expected": {
+            "Mailer": "smtp",
+            "Host": "mx.example.com",
+            "Port": 2525,
+            "SMTPSecure": "",
+            "SMTPAutoTLS": false,
+            "SMTPAuth": true,
+            "Username": "konst",
+            "Password": "konst-pass",
+            "From": "konst@example.com",
+            "FromName": "Jemand",
+            "Sender": "",
+            "ReplyTo": [
+                "antwort@example.com"
+            ],
+            "XMailer": "WPMailSMTP/Mailer/smtp 4.10.4"
+        }
+    }
+]

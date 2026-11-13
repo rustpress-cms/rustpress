@@ -27,6 +27,7 @@ rand.workspace = true
 chrono.workspace = true
 flate2 = "1"
 xmlparser = "0.13"
+crypto_secretbox = "0.1"
 
 [dev-dependencies]
 tokio.workspace = true

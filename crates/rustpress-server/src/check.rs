@@ -29,7 +29,6 @@ pub struct Item {
 
 /// Plugins that need no module because RustPress does their job itself or because they only matter to PHP.
 const NOT_NEEDED: &[(&str, &str)] = &[
-    ("wp-mail-smtp/wp_mail_smtp.php", "not needed: RustPress sends mail itself (sendmail of the host, or RUSTPRESS_SMTP_URL)"),
     ("wp-super-cache/wp-cache.php", "not needed: a page cache for PHP"),
     ("w3-total-cache/w3-total-cache.php", "not needed: a page cache for PHP"),
     ("wp-fastest-cache/wpFastestCache.php", "not needed: a page cache for PHP"),
