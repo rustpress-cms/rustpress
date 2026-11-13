@@ -154,6 +154,13 @@ const DEFAULTS: &[(&str, Default)] = &[
     ("placeholder_style", Default::Str("minimal")),
     ("google-maps-format", Default::Str("1280x920")),
     ("safe_mode", Default::False),
+    ("use_cdb_api", Default::Str("yes")),
+    ("use_cdb_links", Default::Str("yes")),
+    ("organisation_name", Default::Str("")),
+    ("address_company", Default::Str("")),
+    ("email_company", Default::Str("")),
+    ("telephone_company", Default::Str("")),
+    ("purpose_personaldata", Default::Str("")),
     ("use_document_css", Default::True),
     ("use_custom_document_css", Default::False),
 ];
@@ -172,6 +179,9 @@ pub struct Options {
     cached_blocked_scripts: bool,
     translate: Box<dyn Fn(&str) -> String + Send + Sync>,
     translate_x: Box<dyn Fn(&str, &str) -> String + Send + Sync>,
+    translate_n: Box<dyn Fn(&str, &str, i64) -> String + Send + Sync>,
+    /// `__( $text )` of the default text domain.
+    translate_core: Box<dyn Fn(&str) -> String + Send + Sync>,
 }
 
 /// `get_option( $name )`, also of an option that is not autoloaded; `None` when it does not exist.
@@ -206,7 +216,15 @@ impl Options {
                 let i18n = i18n.clone();
                 move |text| i18n.gettext("complianz-gdpr", text)
             }),
-            translate_x: Box::new(move |text, context| i18n.pgettext("complianz-gdpr", context, text)),
+            translate_x: Box::new({
+                let i18n = i18n.clone();
+                move |text, context| i18n.pgettext("complianz-gdpr", context, text)
+            }),
+            translate_n: Box::new({
+                let i18n = i18n.clone();
+                move |single, plural, n| i18n.ngettext("complianz-gdpr", single, plural, n)
+            }),
+            translate_core: Box::new(move |text| i18n.gettext("default", text)),
         }
     }
 
@@ -222,6 +240,8 @@ impl Options {
             cached_blocked_scripts: false,
             translate: Box::new(str::to_owned),
             translate_x: Box::new(|text, _| text.to_owned()),
+            translate_n: Box::new(|single, plural, n| if n == 1 { single.to_owned() } else { plural.to_owned() }),
+            translate_core: Box::new(str::to_owned),
         }
     }
 
@@ -240,6 +260,11 @@ impl Options {
             Default::Int(n) => Value::Int(*n),
         };
         self.set_default(id, default)
+    }
+
+    /// `cmplz_get_option( $id, false )`: the stored value, `false` when there is none (no default).
+    pub fn stored(&self, id: &str) -> Value {
+        self.stored.iter().find(|(k, _)| k == id).map(|(_, v)| v.clone()).unwrap_or(Value::Bool(false))
     }
 
     /// `cmplz_set_default()`, the `cmplz_default_value` filter, for the fields the website reads.
@@ -314,6 +339,16 @@ impl Options {
     /// `_x( $text, $context, 'complianz-gdpr' )`.
     pub fn tr_x(&self, text: &str, context: &str) -> String {
         (self.translate_x)(text, context)
+    }
+
+    /// `_n( $single, $plural, $number, 'complianz-gdpr' )`.
+    pub fn tr_n(&self, single: &str, plural: &str, n: i64) -> String {
+        (self.translate_n)(single, plural, n)
+    }
+
+    /// `__( $text )` of WordPress itself.
+    pub fn tr_core(&self, text: &str) -> String {
+        (self.translate_core)(text)
     }
 
     /// `in_array( $value, cmplz_get_option( $id ) )` of an option that holds a list.

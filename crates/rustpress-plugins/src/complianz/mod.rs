@@ -1,14 +1,16 @@
 //! Complianz – GDPR/CCPA Cookie Consent 7.5.6, the website part: the cookie banner and its settings
 //! (`cmplz_banner_loader`), the statistics scripts, the cookie blocker (`cmplz_cookie_blocker`), the public REST
-//! routes and the small shortcodes of `cmplz_document`.
+//! routes, the shortcodes of `cmplz_document` and the generated legal documents (`[cmplz-document]`, the
+//! `complianz/document` block, `[cmplz-cookies]`, see `documents.rs`) with the form of `cmplz_DNSMPD`.
 //!
 //! The settings live in the option `cmplz_options`, the banners in the table `{prefix}cmplz_cookiebanners`, the
-//! plugin's own transients in the option `cmplz_transients`. The generated legal documents (`[cmplz-document]`, the
-//! `complianz/document` block, the cookie policy) and the consent area are not ported yet (see PLAN.md), nor is the
-//! admin side: the settings are made in a WordPress installation.
+//! cookies and services in `{prefix}cmplz_cookies` and `{prefix}cmplz_services`, the plugin's own transients in the
+//! option `cmplz_transients`. The consent area and the submission of data requests are not ported yet (see PLAN.md),
+//! nor is the admin side: the settings are made in a WordPress installation.
 
 mod banner;
 mod blocker;
+mod documents;
 #[cfg(test)]
 mod golden;
 mod options;
@@ -87,6 +89,8 @@ struct DocumentPage {
     region: &'static str,
     /// `None`: no page (the plugin then links to `get_permalink( false )`).
     page: Option<(u64, String, String)>,
+    /// The `post_title` of the page (`get_document_title()`).
+    post_title: Option<String>,
 }
 
 /// A custom page of a document type (`cmplz_{type}_custom_page`): its permalink and title.
@@ -95,6 +99,8 @@ struct CustomPage {
     id: u64,
     permalink: Option<String>,
     title: String,
+    /// The `post_title` of the page, if it exists.
+    post_title: Option<String>,
 }
 
 struct Active {
@@ -126,6 +132,13 @@ struct Active {
     script_version: String,
     general_version: String,
     document_version: String,
+    /// The rows of `{prefix}cmplz_cookies` and `{prefix}cmplz_services` (empty without the tables).
+    cookies: Vec<documents::Row>,
+    services: Vec<documents::Row>,
+    /// The options `cmplz_publish_date`, `cmplz_documents_update_date` and `cmplz_last_cookie_sync`.
+    publish_date: Value,
+    documents_update_date: Value,
+    last_cookie_sync: Value,
 }
 
 fn filemtime(path: &Path) -> String {
@@ -210,7 +223,9 @@ impl Active {
         };
         let banner = rows.iter().find(|row| row.iter().any(|(c, v)| c == "ID" && v.as_deref() == Some(banner_id.as_str()))).map(|row| Banner::from_row(row, &options));
 
-        let shares_cookies = if option(site, "cmplz_cookietable_version").await.is_some_and(|v| truthy(&v)) { site.db.complianz_cookies_share_data().await.unwrap_or(false) } else { false };
+        let cookie_table = option(site, "cmplz_cookietable_version").await.is_some_and(|v| truthy(&v));
+        let shares_cookies = if cookie_table { site.db.complianz_cookies_share_data().await.unwrap_or(false) } else { false };
+        let (cookies, services) = if cookie_table { (site.db.complianz_cookies().await.unwrap_or_default(), site.db.complianz_services().await.unwrap_or_default()) } else { (Vec::new(), Vec::new()) };
         let documents = document_pages(site, &transients).await?;
         let mut custom_pages = Vec::new();
         for kind in ["cookie-statement", "privacy-statement", "impressum"] {
@@ -224,7 +239,8 @@ impl Active {
                 None => None,
             };
             let title = post.as_ref().map(|p| rustpress_blocks::content::the_title_for(site, p)).unwrap_or_default();
-            custom_pages.push(CustomPage { kind, id, permalink, title });
+            let post_title = post.as_ref().map(|p| p.post_title.clone());
+            custom_pages.push(CustomPage { kind, id, permalink, title, post_title });
         }
         let mut custom_urls = Vec::new();
         for kind in ["cookie-statement", "privacy-statement", "impressum"] {
@@ -251,6 +267,11 @@ impl Active {
             script_version: filemtime(&plugin_dir.join("cookiebanner/js/complianz.min.js")),
             general_version: filemtime(&plugin_dir.join("assets/css/cookieblocker.min.css")),
             document_version: String::new(),
+            cookies,
+            services,
+            publish_date: option(site, "cmplz_publish_date").await.unwrap_or(Value::Bool(false)),
+            documents_update_date: option(site, "cmplz_documents_update_date").await.unwrap_or(Value::Bool(false)),
+            last_cookie_sync: option(site, "cmplz_last_cookie_sync").await.unwrap_or(Value::Bool(false)),
             plugin_dir,
             plugin_url,
             theme_dir,
@@ -548,6 +569,143 @@ impl Active {
         }
     }
 
+    /// `get_document_title( $type, $region )`.
+    fn document_title(&self, kind: &str, region: &str) -> String {
+        let title = match self.options.string(kind).as_str() {
+            "custom" => self.custom_pages.iter().find(|p| p.kind == kind).and_then(|p| p.post_title.clone()),
+            "generated" => self.documents.iter().find(|d| d.kind == kind && d.region == region).and_then(|d| d.post_title.clone()),
+            _ => None,
+        };
+        title.unwrap_or_else(|| kind.replace('-', " "))
+    }
+
+    /// `site_needs_cookie_warning( $region )` for the request.
+    fn site_needs_cookie_warning_in(&self, region: &str, query: &QueryResult) -> bool {
+        let needs = if !self.options.has_region(region) {
+            false
+        } else if region == "us" && self.options.has_region("us") {
+            true
+        } else {
+            self.site_shares_data() || self.cookie_warning_required_stats(None)
+        };
+        let uri = sanitize_text_field(&request_uri(query));
+        needs && !self.excluded_posts.iter().any(|slug| uri.contains(slug.as_str()))
+    }
+
+    fn cookie_data(&self) -> documents::CookieData<'_> {
+        documents::CookieData {
+            options: &self.options,
+            cookies: &self.cookies,
+            services: &self.services,
+            locale: self.options.locale(),
+            shredder_list: self.transient("cmplz_cookie_shredder_list"),
+            plugin_url: &self.plugin_url,
+        }
+    }
+
+    /// `uses_non_functional_cookies()`.
+    fn uses_non_functional_cookies(&self) -> bool {
+        self.options.is("compile_statistics", "google-tag-manager") || documents::uses_non_functional_cookies(&self.cookie_data(), self.statistics_privacy_friendly())
+    }
+
+    /// The functions of the documents' `callback_condition`s.
+    fn document_callback(&self, name: &str, query: &QueryResult) -> Option<bool> {
+        Some(match name {
+            "cmplz_uses_only_functional_cookies" => !self.uses_non_functional_cookies(),
+            "cmplz_cookie_warning_required_stats_eu" => self.cookie_warning_required_stats(Some("eu")),
+            "cmplz_cookie_warning_required_stats_uk" => self.cookie_warning_required_stats(Some("uk")),
+            "cmplz_cookie_warning_required_stats_za" => self.cookie_warning_required_stats(Some("za")),
+            "cmplz_uses_marketing_cookies" => self.options.uses_marketing_cookies(),
+            // Without a banner the defaults apply (`view-preferences`).
+            "cmplz_site_uses_cookie_warning_cats" => self.banner.as_ref().is_none_or(|b| !matches!(b.value("use_categories"), Value::Str(v) if v == b"no")),
+            "cmplz_eu_site_needs_cookie_warning" => self.site_needs_cookie_warning_in("eu", query),
+            "cmplz_uk_site_needs_cookie_warning" => self.site_needs_cookie_warning_in("uk", query),
+            "cmplz_za_site_needs_cookie_warning" => self.site_needs_cookie_warning_in("za", query),
+            "cmplz_tcf_active" => false,
+            "cmplz_cdb_reference_in_policy" => !self.options.is("use_cdb_api", "no"),
+            "cmplz_sells_personal_data" => item(&self.options.get("purpose_personaldata"), "selling-data-thirdparty").is_some_and(truthy),
+            "cmplz_site_shares_data" => self.site_shares_data(),
+            "cmplz_uses_statistics" => !self.options.is("compile_statistics", "no"),
+            _ => return None,
+        })
+    }
+
+    /// `get_document_html( $type, $region )`, `post` being `global $post`.
+    async fn document_html(&self, site: &Site, query: &QueryResult, services: &dyn rustpress_core::native::PageServices, post: Option<&Post>, kind: &str, region: &str) -> Result<String> {
+        let global_link = match post {
+            Some(post) => Some(site.permalink(post).await?),
+            None => None,
+        };
+        let html = self.document_html_sync(site, query, global_link.as_deref(), kind, region);
+        services.do_shortcode(post, &html).await
+    }
+
+    /// The part of [`Self::document_html`] before `do_shortcode()`.
+    fn document_html_sync(&self, site: &Site, query: &QueryResult, global_link: Option<&str>, kind: &str, region: &str) -> String {
+        let date_format = site.options.string("date_format", "F j, Y");
+        let localize = |value: &Value| documents::localize_date(php_string(value).trim().parse().unwrap_or(0), &date_format, &|t| self.options.tr_core(t));
+        let defaults;
+        let banner = match &self.banner {
+            Some(banner) => banner,
+            None => {
+                defaults = Banner::defaults(&self.options);
+                &defaults
+            }
+        };
+        let banner_text = |name: &str| banner.string(name);
+        let callback = |name: &str| self.document_callback(name, query);
+        let page_url = |kind: &str, region: &str| self.page_link(kind, region, global_link).map_or_else(|| "#".to_owned(), |(_, url)| url);
+        let document_title = |kind: &str, region: &str| self.document_title(kind, region);
+        let used_cookies = || documents::used_cookies(&self.cookie_data());
+        let inputs = documents::Inputs {
+            options: &self.options,
+            callback: &callback,
+            page_url: &page_url,
+            document_title: &document_title,
+            used_cookies: &used_cookies,
+            antispambot: &documents::antispambot,
+            accept_text: banner_text("accept"),
+            save_preferences_text: banner_text("save_preferences"),
+            home_url: site.home_url(""),
+            site_url: site.site_url(""),
+            publish_date: localize(&self.publish_date),
+            checked_date: localize(&self.documents_update_date),
+            sync_date: if truthy(&self.last_cookie_sync) { localize(&self.last_cookie_sync) } else { self.options.tr("(not synced yet)") },
+        };
+        documents::document_html(kind, region, &inputs)
+    }
+
+    /// `cmplz_DNSMPD::datarequest_form()`, with the request types of `datarequest_options()`.
+    fn datarequest_form(&self) -> String {
+        use rustpress_core::formatting::{esc_attr, esc_html};
+        const TYPES: [(&str, &str); 6] = [
+            ("global_optout", "Global opt-out from selling and sharing my personal information and limiting the use or disclosure of sensitive personal information."),
+            ("cross_context", "Do not sell my personal information for cross-context behavioral advertising"),
+            ("limit_sensitive", "Limit the use of my sensitive personal information"),
+            ("request_for_access", "Request for access"),
+            ("right_to_be_forgotten", "Right to be Forgotten"),
+            ("right_to_data_portability", "Right to Data Portability"),
+        ];
+        let o = &self.options;
+        let mut html = format!(
+            "\t\t\t<div class=\"cmplz-datarequest cmplz-alert\">\n\t\t\t\t<span class=\"cmplz-close\">&times;</span>\n\t\t\t\t<span id=\"cmplz-message\"></span>\n\t\t\t</div>\n\t\t\t<form id=\"cmplz-datarequest-form\">\n\t\t\t\t<input type=\"hidden\" required value=\"us\" name=\"cmplz_datarequest_region\" id=\"cmplz_datarequest_region\">\n\n\t\t\t\t<label for=\"cmplz_datarequest_firstname\" class=\"cmplz-first-name\">{name}<input type=\"search\" class=\"dnsmpd-firstname\" value=\"\" placeholder=\"your first name\" id=\"cmplz_datarequest_firstname\" name=\"cmplz_datarequest_firstname\"></label>\n\t\t\t\t<div>\n\t\t\t\t\t<label for=\"cmplz_datarequest_name\">{name}</label>\n\t\t\t\t\t<input type=\"text\" required value=\"\" placeholder=\"{your_name}\" id=\"cmplz_datarequest_name\" name=\"cmplz_datarequest_name\">\n\t\t\t\t</div>\n\t\t\t\t<div>\n\t\t\t\t\t<label for=\"cmplz_datarequest_email\">{email}</label>\n\t\t\t\t\t<input type=\"email\" required value=\"\" placeholder=\"email@email.com\" id=\"cmplz_datarequest_email\" name=\"cmplz_datarequest_email\">\n\t\t\t\t</div>\n\n",
+            name = esc_html(&o.tr("Name")),
+            your_name = esc_attr(&o.tr("Your name")),
+            email = esc_html(&o.tr("Email")),
+        );
+        for (id, long) in TYPES {
+            html.push_str(&format!(
+                "\t\t\t\t\t\t\t\t\t<div class=\"cmplz_datarequest cmplz_datarequest_{id}\">\n\t\t\t\t\t\t<label for=\"cmplz_datarequest_{id}\">\n\t\t\t\t\t\t\t<input type=\"checkbox\" value=\"1\" name=\"cmplz_datarequest_{id}\" id=\"cmplz_datarequest_{id}\"/>\n\t\t\t\t\t\t\t{}\t\t\t\t\t\t</label>\n\t\t\t\t\t</div>\n",
+                esc_html(&o.tr(long))
+            ));
+        }
+        html.push_str(&format!(
+            "\t\t\t\t\t\t\t\t<input type=\"button\" id=\"cmplz-datarequest-submit\" name=\"cmplz-datarequest-submit\" value=\"{}\">\n\t\t\t</form>\n\n\t\t\t<style>\n\t\t\t\t/* first-name is honeypot */\n\t\t\t\t.cmplz-first-name {{\n\t\t\t\t\tposition: absolute !important;\n\t\t\t\t\tleft: -5000px !important;\n\t\t\t\t}}\n\t\t\t</style>\n\t\t\t",
+            esc_html(&o.tr("Send"))
+        ));
+        html
+    }
+
     fn custom_url(&self, kind: &str) -> String {
         self.custom_urls.iter().find(|(k, _)| *k == kind).map(|(_, v)| v.clone()).unwrap_or_default()
     }
@@ -766,14 +924,14 @@ async fn document_pages(site: &Site, transients: &[Transient]) -> Result<Vec<Doc
                     find_document_page(pages.as_deref().unwrap_or_default(), kind, region)
                 }
             };
-            let page = match id {
+            let (page, post_title) = match id {
                 Some(id) => match site.db.post(id).await? {
-                    Some(post) => Some((id, site.permalink(&post).await?, rustpress_blocks::content::the_title_for(site, &post))),
-                    None => None,
+                    Some(post) => (Some((id, site.permalink(&post).await?, rustpress_blocks::content::the_title_for(site, &post))), Some(post.post_title.clone())),
+                    None => (None, None),
                 },
-                None => None,
+                None => (None, None),
             };
-            out.push(DocumentPage { kind, region, page });
+            out.push(DocumentPage { kind, region, page, post_title });
         }
     }
     Ok(out)
@@ -818,6 +976,14 @@ impl ActivePlugin for Active {
             }
             if !matches!(self.options.get("disable_cookie_block"), Value::Int(1)) {
                 assets.style("cmplz-general", format!("{}assets/css/cookieblocker.min.css", self.plugin_url), &[], &self.general_version, "all");
+            }
+            // cmplz_DNSMPD::enqueue_assets(): the script of the data request form, on the plugin's pages (and where
+            // there is no `global $post`).
+            let post = global_post(query);
+            if (post.is_none() || self.is_complianz_page(post)) && (self.options.has_region("us") || self.options.is("datarequest", "yes")) {
+                let version = filemtime(&self.plugin_dir.join("DNSMPD/script.min.js"));
+                let script = assets.script("cmplz-dnsmpd", format!("{}DNSMPD/script.min.js", self.plugin_url), &[], &version, true);
+                script.extra = Some(localize("cmplz_datarequests", &json!({ "url": site.rest_url("complianz/v1/datarequests") })));
             }
             if !self.banner_active(query) {
                 return Ok(());
@@ -876,17 +1042,20 @@ impl ActivePlugin for Active {
         })
     }
 
-    fn print_footer_scripts(&self, _site: &Site, query: &QueryResult) -> String {
-        if self.pagebuilder_preview(query) {
+    /// `inline_cookie_script_no_warning()` at priority 10, before the emoji script.
+    fn print_footer_scripts_early(&self, _site: &Site, query: &QueryResult) -> String {
+        if self.pagebuilder_preview(query) || (self.wizard_completed && self.needs_warning_for(query)) {
             return String::new();
         }
-        if self.wizard_completed && self.needs_warning_for(query) {
-            if self.options.is("gtm_code_head", "yes") {
-                return String::new();
-            }
-            return self.stats().inline_cookie_script();
-        }
         self.stats().inline_cookie_script_no_warning()
+    }
+
+    /// `inline_cookie_script()` at `PHP_INT_MAX - 50`.
+    fn print_footer_scripts(&self, _site: &Site, query: &QueryResult) -> String {
+        if self.pagebuilder_preview(query) || !(self.wizard_completed && self.needs_warning_for(query)) || self.options.is("gtm_code_head", "yes") {
+            return String::new();
+        }
+        self.stats().inline_cookie_script()
     }
 
     fn body_class<'a>(&'a self, _site: &'a Site, query: &'a QueryResult) -> BoxFuture<'a, Result<Vec<String>>> {
@@ -901,13 +1070,42 @@ impl ActivePlugin for Active {
     }
 
     fn shortcode_tags(&self) -> &'static [&'static str] {
-        &["cmplz-manage-consent", "cmplz-revoke-link", "cmplz-accept-link"]
+        // cmplz_DNSMPD adds its form only for a site that targets the US.
+        if self.options.has_region("us") {
+            &["cmplz-document", "cmplz-cookies", "cmplz-manage-consent", "cmplz-revoke-link", "cmplz-accept-link", "cmplz-dnsmpi-request"]
+        } else {
+            &["cmplz-document", "cmplz-cookies", "cmplz-manage-consent", "cmplz-revoke-link", "cmplz-accept-link"]
+        }
     }
 
-    fn shortcode<'a>(&'a self, tag: &'a str, atts: &'a Atts, _content: Option<&'a str>, _ctx: &'a ShortcodeContext<'a>) -> BoxFuture<'a, Result<String>> {
+    fn shortcode<'a>(&'a self, tag: &'a str, atts: &'a Atts, _content: Option<&'a str>, ctx: &'a ShortcodeContext<'a>) -> BoxFuture<'a, Result<String>> {
         Box::pin(async move {
-            let text = atts.named.iter().rev().find(|(k, _)| k.eq_ignore_ascii_case("text")).map(|(_, v)| v.clone()).filter(|v| !v.is_empty() && v != "0");
+            let att = |name: &str| atts.named.iter().rev().find(|(k, _)| k.eq_ignore_ascii_case(name)).map(|(_, v)| v.clone());
+            let text = att("text").filter(|v| !v.is_empty() && v != "0");
             Ok(match tag {
+                // load_document(): the document through wp_kses() once more.
+                "cmplz-document" => {
+                    let kind = rustpress_core::slug::sanitize_title(&att("type").unwrap_or_default());
+                    let region = rustpress_core::slug::sanitize_title(&att("region").unwrap_or_default());
+                    if kind.is_empty() || kind == "0" {
+                        return Ok(String::new());
+                    }
+                    let fetched;
+                    let post = match ctx.query.posts.iter().find(|p| Some(p.id) == ctx.global_post) {
+                        Some(post) => Some(post),
+                        None => {
+                            fetched = match ctx.global_post {
+                                Some(id) => ctx.site.db.post(id).await?,
+                                None => None,
+                            };
+                            fetched.as_ref()
+                        }
+                    };
+                    let html = self.document_html(ctx.site, ctx.query, ctx.services, post, &kind, &region).await?;
+                    documents::kses(&html)
+                }
+                "cmplz-cookies" => documents::used_cookies(&self.cookie_data()),
+                "cmplz-dnsmpi-request" => self.datarequest_form(),
                 "cmplz-manage-consent" => format!(
                     "<div id=\"cmplz-manage-consent-container-nojavascript\">{}&nbsp;{}</div><div id=\"cmplz-manage-consent-container\" name=\"cmplz-manage-consent-container\" class=\"cmplz-manage-consent-container\"></div>",
                     self.options.tr_x("You have loaded the Cookie Policy without javascript support.", "cookie policy"),
@@ -928,6 +1126,33 @@ impl ActivePlugin for Active {
                     format!("<div class=\"cmplz-custom-accept-btn cmplz-accept\"><a href=\"#\">{}</a></div>", rustpress_core::formatting::esc_html(&text))
                 }
             })
+        })
+    }
+
+    fn block_names(&self) -> &'static [&'static str] {
+        &["complianz/document"]
+    }
+
+    /// `cmplz_render_document_block()`.
+    fn render_block<'a>(&'a self, _name: &'a str, attrs: &'a Map<String, Json>, ctx: &'a rustpress_core::native::BlockContext<'a>) -> BoxFuture<'a, Result<String>> {
+        Box::pin(async move {
+            let text = |key: &str| match attrs.get(key) {
+                None | Some(Json::Null) => None,
+                Some(Json::String(s)) => Some(s.clone()),
+                Some(Json::Bool(b)) => Some(if *b { "1".to_owned() } else { String::new() }),
+                Some(other) => Some(other.to_string()),
+            };
+            let Some(selected) = text("selectedDocument") else {
+                return Ok(String::new());
+            };
+            if text("documentSyncStatus").as_deref() == Some("unlink")
+                && let Some(custom) = text("customDocument")
+            {
+                return Ok(rustpress_core::kses::kses_post(&custom));
+            }
+            let region = documents::region_from_legacy_type(&selected);
+            let kind = selected.replace(&format!("-{region}"), "");
+            self.document_html(ctx.site, ctx.query, ctx.services, ctx.post, &kind, &region).await
         })
     }
 

@@ -86,6 +86,13 @@ pub trait ActivePlugin: Send + Sync {
         Box::pin(async { Ok(()) })
     }
 
+    /// `wp_print_footer_scripts` at priority 10 by an action the plugin adds when it loads: after
+    /// `_wp_footer_scripts()`, before the emoji detection script (`print_emoji_detection_script()` adds its action on
+    /// `wp_head`).
+    fn print_footer_scripts_early(&self, _site: &Site, _query: &crate::QueryResult) -> String {
+        String::new()
+    }
+
     /// `wp_print_footer_scripts` after `_wp_footer_scripts()` (and after the scripts of
     /// [PluginState::footer_scripts]): the last thing before `</body>`.
     fn print_footer_scripts(&self, _site: &Site, _query: &crate::QueryResult) -> String {
@@ -2652,6 +2659,11 @@ impl Plugins {
             out.push_str(&plugin.wp_footer_query(site, query).await?);
         }
         Ok(out)
+    }
+
+    /// What the plugins print on `wp_print_footer_scripts` before the emoji detection script.
+    pub fn print_footer_scripts_early(&self, site: &Site, query: &crate::QueryResult) -> String {
+        self.hooks().map(|plugin| plugin.print_footer_scripts_early(site, query)).collect()
     }
 
     /// What the plugins print on `wp_print_footer_scripts` after the scripts of the footer.

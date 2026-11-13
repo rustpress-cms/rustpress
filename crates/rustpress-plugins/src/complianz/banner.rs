@@ -130,6 +130,12 @@ impl Banner {
         banner
     }
 
+    /// `new CMPLZ_COOKIEBANNER( 0 )`, the banner without a row: every field at its default.
+    pub fn defaults(options: &Options) -> Self {
+        let row: Vec<(String, Option<String>)> = FIELDS.iter().map(|(name, _)| ((*name).to_owned(), None)).collect();
+        Self::from_row(&row, options)
+    }
+
     fn set(&mut self, name: &str, value: Value) {
         match self.values.iter_mut().find(|(n, _)| n == name) {
             Some((_, slot)) => *slot = value,

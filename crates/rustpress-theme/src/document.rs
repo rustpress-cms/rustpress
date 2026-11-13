@@ -1149,6 +1149,7 @@ pub async fn render_document_with(theme: &Theme, site: &Site, query: &QueryResul
         footer_scripts.push_str(&format!("<script async data-wp-strategy=\"async\" fetchpriority=\"low\" id=\"comment-reply-js\" src=\"{includes_url}/js/comment-reply.min.js?ver={version}\"></script>\n"));
     }
     footer_scripts.push_str(&printer.scripts(&plugin_assets.scripts, true));
+    footer_scripts.push_str(&site.plugins.print_footer_scripts_early(site, query));
     footer_scripts.push_str(&emoji_detection_script(site, wp_root, &version));
     // `wp_print_footer_scripts` after `_wp_footer_scripts()`.
     footer_scripts.push_str(&state.plugins.footer_scripts.concat());

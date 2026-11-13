@@ -8,8 +8,23 @@ impl Db {
     /// The rows of `{prefix}cmplz_cookiebanners` in the order of the table, each as its columns and their values as
     /// `$wpdb` returns them (strings, `NULL` as `None`). Empty when the table does not exist.
     pub async fn complianz_banners(&self) -> Result<Vec<Vec<(String, Option<String>)>>> {
-        let table = self.prefix.table("cmplz_cookiebanners");
-        let columns: Vec<String> = match sqlx::query_scalar(AssertSqlSafe(format!("SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '{}cmplz_cookiebanners' ORDER BY ORDINAL_POSITION", self.prefix.as_str()))).fetch_all(&self.pool).await {
+        self.complianz_rows("cmplz_cookiebanners").await
+    }
+
+    /// The rows of `{prefix}cmplz_cookies` (`select * from {prefix}cmplz_cookies`), like
+    /// [`complianz_banners()`](Self::complianz_banners).
+    pub async fn complianz_cookies(&self) -> Result<Vec<Vec<(String, Option<String>)>>> {
+        self.complianz_rows("cmplz_cookies").await
+    }
+
+    /// The rows of `{prefix}cmplz_services`, like [`complianz_banners()`](Self::complianz_banners).
+    pub async fn complianz_services(&self) -> Result<Vec<Vec<(String, Option<String>)>>> {
+        self.complianz_rows("cmplz_services").await
+    }
+
+    async fn complianz_rows(&self, name: &str) -> Result<Vec<Vec<(String, Option<String>)>>> {
+        let table = self.prefix.table(name);
+        let columns: Vec<String> = match sqlx::query_scalar(AssertSqlSafe(format!("SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '{}{name}' ORDER BY ORDINAL_POSITION", self.prefix.as_str()))).fetch_all(&self.pool).await {
             Ok(columns) => columns,
             Err(_) => return Ok(Vec::new()),
         };

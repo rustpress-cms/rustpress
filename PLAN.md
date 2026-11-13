@@ -75,7 +75,8 @@ The reference stack, the tools and the working rules are in [AGENTS.md](AGENTS.m
     their Ajax, the tools (export as JSON and PHP, import), the options pages preview.
   - Classic Editor 1.7.0 – complete except the frontend toolbar link (see below).
   - Complianz – GDPR/CCPA Cookie Consent 7.5.6 – stage 1, the website: banner, statistics, cookie blocker, REST,
-    the consent shortcodes. Stage 2, the legal documents, is open (see below).
+    the consent shortcodes; stage 2, the legal documents: the cookie policies of every region, the cookie list, the
+    do-not-sell form. The consent area and sending data requests are open (see below).
   - Site Kit by Google 1.191.0 – the tags on the website (Analytics with consent mode, site verification), not the dashboard.
   - WPCode Lite 2.4.1 – the global header, body and footer scripts and the site-wide snippets with their conditions, not PHP.
   - WPForms Lite 2.0.4 – forms on the website (shortcode, block), submitting with validation, confirmations and the
@@ -156,13 +157,12 @@ The reference stack, the tools and the working rules are in [AGENTS.md](AGENTS.m
 - The dashboard and the block editor are still slower than the reference.
 
 **Native plugins**
-- Complianz, stage 2 – the legal documents: the shortcode `[cmplz-document]` and the block `complianz/document`
-  (`cmplz_document::get_document_html()` with the document elements of `config/documents/*.php`, the conditions on the
-  wizard's answers, the cookie list of `cmplz_cookies`/`cmplz_services` per service and purpose), the cookie policy with
-  `[cmplz-cookies]`, the consent area (`[cmplz-consent-area]`, the block `complianz/consent-area` and the REST route
-  `consent-area/<post>/<block>`), the REST route `documents`, the document CSS for a page that holds a document (the
-  body class and the stylesheet are already there), the do-not-sell page of the US region, and the snapshots of the
-  documents. After that, maybe: A/B tests and records of consent (Premium only), the integrations with other plugins.
+- Complianz, stage 3: the consent area (`[cmplz-consent-area]`, the block `complianz/consent-area` and the REST route
+  `consent-area/<post>/<block>`), sending data requests (the REST route `datarequests` with its rate limits, the table
+  `cmplz_dnsmpd` and the mails by cron), the REST route `documents` (used by the block editor), the custom document
+  CSS (`inline_styles()` on `wp_head` at priority 100, off by default), documents unlinked in the classic editor
+  (`revert_divs_to_summary()`). After that, maybe: A/B tests and records of consent (Premium only), the integrations
+  with other plugins.
 - Contact Form 7: the configuration check (`WPCF7_ConfigValidator`), setting up the services, `action=validate`, the
   REST routes to read, create, change and delete forms, the block `contact-form-7/contact-form-selector`.
 - Yoast SEO: FAQ/HowTo blocks in the schema, the admin bar, signed-in viewers, the administration.
@@ -1383,6 +1383,55 @@ say `module`, the module is not printed), the Do Not Track signal in `manage_con
 the browser's header there), computing the cookie shredder list, overrides of the banner templates in a theme, the
 `is_ssl()` normalization of the plugin URLs, and the administration (wizard, scan, banner editor): settings are made in
 WordPress.
+
+### Complianz – GDPR/CCPA Cookie Consent 7.5.6, stage 2: the legal documents (2026-11-13)
+
+`crates/rustpress-plugins/src/complianz/documents.rs`: `cmplz_document::get_document_html()` and
+`cmplz_used_cookies()`.
+
+- **Documents:** the shortcode `[cmplz-document type region]` (`load_document()`, with the second `wp_kses()`) and the
+  block `complianz/document` (`selectedDocument` with the legacy region suffix, an unlinked `customDocument` through
+  `wp_kses_post()`). The cookie policies of all seven regions come from `config/documents/cookie-policy-*.php`:
+  `dev/complianz-documents.sh` writes them to `documents.json` with the translatable strings kept as calls (`__`,
+  `_x`, `_n` with `cmplz_count_socialmedia()`, `cmplz_sprintf()` with its placeholder check), so they are translated
+  with the plugin's language pack at runtime. The premium documents (privacy statements, imprint) have no elements in
+  the free plugin and print the wrapper alone, as WordPress does; a region that is not active prints "Region %1$s not
+  activated for %2$s.". Numbering of titles and subtitles, `wrap_header()`/`wrap_content()` (`<p >`), the
+  conditions on the answers (read without defaults, as `cmplz_get_option( $id, false )` does: an unanswered
+  `uses_ad_cookies_personalized` passes `NOT no`), the callback conditions (only functional cookies, statistics
+  consent per region, cookie warning per region with the excluded pages, categories of the banner, the cookie
+  database reference, selling data, sharing data), `replace_fields()` with the banner's button texts, the dates
+  through `cmplz_localize_date()` (month and weekday names of the core language pack), the page URLs and titles of
+  the documents, the contact fields (`nl2br()`, the country names, the phone label, the obfuscated e-mail, the lists
+  and the comma variant with "and"), the comment and wrapper, `wp_kses()` with `cmplz_allowed_html()` and
+  `do_shortcode()`. The banner without a row takes its defaults (`new CMPLZ_COOKIEBANNER( 0 )`).
+- **Cookie list** (`[cmplz-cookies]`, the callback of "Placed cookies"): `get_cookies_by_service()` on the rows of
+  `cmplz_cookies` (language of the locale, shown on the policy, not ignored, deleted or members only unless
+  `wp_admin_access_users`), grouped by service and purpose with the normalization map of translated purposes and the
+  miscellaneous group last, the values of translations falling back to their original, the retention of Complianz's
+  own cookies, the services of `cmplz_services` (with the same fallback), the sharing text, the cookie database links
+  and the top category of the cookie shredder list (the transient, or computed as `load_cookie_data()` does). The
+  templates of `templates/cookiepolicy/` are built in.
+- **US:** the form `[cmplz-dnsmpi-request]` of `cmplz_DNSMPD` (registered only with the US region) and its script
+  `cmplz-dnsmpd` with `cmplz_datarequests` on the plugin's pages and pages without a post. Sending a request is not
+  ported (stage 3): the route `complianz/v1/datarequests` does not answer yet.
+- **Framework:** `ActivePlugin::print_footer_scripts_early`, `wp_print_footer_scripts` at priority 10 before the emoji
+  script; Complianz's statistics script without a cookie warning moved there (it printed after the emoji script).
+
+Goldens: `dev/complianz-document-golden.sh` has the plugin render its documents in 11 scenarios (every region, with
+and without company data, social media, advertising, US states and selling data, Québec, statistics tools, consent
+per service, cookie database links, members-only cookies; 14 seeded cookies and 6 services with translations,
+entities, empty and Complianz cookies) – 53 documents, the cookie lists and the localized dates, all equal
+(`tests/data/complianz/documents.json`). `dev/complianz-document-compare.sh` compares a page with the block, one with
+the shortcode and one with `[cmplz-cookies]` for each scenario on the reference and RustPress: 33 of 33 pages equal.
+`antispambot()` picks entities at random, so the e-mail addresses are compared decoded (in the golden test and in
+`dev/front-compare.py`); RustPress obfuscates at random as well.
+
+**Not ported (stage 2):** the consent area, sending data requests, the REST route `documents`, the custom document
+CSS, unlinked classic documents and documents stored in post meta (`cmplz_custom_document_data()`), the premium
+documents and their annexes, dropdowns and loops, overrides of the cookie policy templates in a theme, self-hosted
+Google Fonts (`CMPLZ_SELF_HOSTED_PLUGIN_ACTIVE`), WPML/Polylang (`cmplz_translate()`), the "(Translation error)" link
+`cmplz_sprintf()` adds for administrators, and the `cmplz_cookies` transient (the table is read).
 
 ### WPForms Lite 2.0.4 (2026-11-08)
 

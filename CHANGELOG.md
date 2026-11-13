@@ -4,6 +4,11 @@ All notable changes to RustPress. Each release names the WordPress release it fo
 
 ## Unreleased
 
+- Native plugin module **Complianz** 7.5.6, stage 2: the legal documents. The cookie policy of every region (EU, US,
+  UK, Canada, Australia, South Africa, Brazil) through `[cmplz-document]` and the block `complianz/document`, with
+  the plugin's numbering, conditions, company details and translations, the list of cookies per service and purpose
+  (`[cmplz-cookies]`) from the plugin's tables, and the do-not-sell form of the US policy (sending a request follows).
+  Plugins can now print on `wp_print_footer_scripts` before the emoji script.
 - **Twenty Twenty** 3.3 rebuilt natively, the third classic theme: all templates including the cover and full width
   page templates, the search and menu modals, the primary, expanded, mobile, footer and social menus with sub-menu
   toggles and social icons, the page list fallback, the footer widgets, the retina logo, the accent colors of the
