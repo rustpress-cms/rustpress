@@ -48,7 +48,13 @@ pub struct RegisteredSidebar {
 /// block theme kept from the theme before it (`_wp_block_theme_register_classic_sidebars()`).
 pub fn registered_sidebars(theme: &crate::theme::Theme, site: &Site) -> Vec<RegisteredSidebar> {
     if super::is_ported(theme) {
-        return if super::is_twentyone(theme) { super::twentyone::registered_sidebars(site) } else { super::seventeen::registered_sidebars(site) };
+        return if super::is_twentyone(theme) {
+            super::twentyone::registered_sidebars(site)
+        } else if super::is_twentytwenty(theme) {
+            super::twenty::registered_sidebars(site)
+        } else {
+            super::seventeen::registered_sidebars(site)
+        };
     }
     let mods = super::menu::theme_mod(site, &theme.stylesheet);
     let Some(list) = mods.get("wp_classic_sidebars").and_then(Value::as_array) else { return Vec::new() };

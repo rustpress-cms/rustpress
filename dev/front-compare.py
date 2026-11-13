@@ -51,8 +51,9 @@ def normalize(text, port):
     text = re.sub(r'(_wpnonce|nonce)(["\':= ]+)[0-9a-f]{10}', r'\1\2N', text)
     text = re.sub(r'(_wpnonce=)[0-9a-f]{10}', r'\1N', text)
     text = re.sub(r'"time":"\d+"', '"time":"T"', text)
-    # The footer credit of Twenty Twenty-One names RustPress on purpose.
+    # The footer credits of Twenty Twenty-One and Twenty Twenty name RustPress on purpose.
     text = re.sub(r'(<div class="powered-by">).*?(</div>)', r'\1\2', text, flags=re.S)
+    text = re.sub(r'(<p class="powered-by-wordpress">).*?(</p>)', r'\1\2', text, flags=re.S)
     text = re.sub(r'(_wp_unfiltered_html_comment_disabled" value=")[0-9a-f]{10}', r'N', text)
     return text
 

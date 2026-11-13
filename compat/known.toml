@@ -34,6 +34,11 @@ path = '^/(\?s=test&feed=rss2|search/test/feed/rss2/)$'
 aspect = "bytes"
 reason = "The search results sort by title match and date only, and dev/seed_patterns.sh creates many pattern pages in the same second; their order is not defined in MariaDB and depends on the query plan."
 
+[[deviation]]
+path = '^/(comments/feed/(atom/)?|[?]feed=comments-(rss2|atom))$'
+aspect = "bytes"
+reason = "The comment feeds sort by comment_date_gmt only (WP_Query's comment_feed_orderby), and the seed stores two comments in the same second; their order is not defined in MariaDB and depends on the query plan."
+
 # --- Sites with plain permalinks (dev/up-soli.sh, the copy of a real site) ---
 
 [[deviation]]

@@ -240,7 +240,7 @@ pub struct FrontContext {
     pub site_icon: Option<(String, String)>,
     /// `wp_is_block_theme()` is false: widgets and menus in the site menu, the Customizer.
     pub classic_theme: bool,
-    /// `current_theme_supports( 'custom-background' )` of a classic theme (Twenty Twenty-One).
+    /// `current_theme_supports( 'custom-background' )` of a classic theme (Twenty Twenty and Twenty Twenty-One).
     pub custom_background: bool,
     /// The address of the page, for the Customizer to come back to.
     pub current_url: String,

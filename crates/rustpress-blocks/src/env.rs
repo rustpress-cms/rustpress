@@ -61,8 +61,12 @@ pub trait ThemeAccess: Send + Sync {
         None
     }
     /// The `the_content_more_link` filter of the theme: the link to the rest of a post after its `<!--more-->` teaser,
-    /// for the escaped permalink, the post's id and its title.
-    fn content_more_link(&self, _permalink: &str, _post_id: u64, _title: &str) -> Option<String> {
+    /// for the escaped permalink, the post's id, its title and the text of the link.
+    fn content_more_link(&self, _permalink: &str, _post_id: u64, _title: &str, _text: &str) -> Option<String> {
+        None
+    }
+    /// The `$more_link_text` the theme's templates pass to `the_content()`, when they pass one.
+    fn more_link_text(&self) -> Option<String> {
         None
     }
     /// The `the_password_form` filter of the theme: the form for a password protected post.

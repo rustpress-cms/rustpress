@@ -55,7 +55,7 @@ const MISSING_BEHIND_THE_SCENES: &[(&str, &str)] = &[
 ];
 
 /// Classic themes with a Rust port (keep in step with `rustpress_theme::classic`).
-const PORTED_THEMES: &[&str] = &["twentyseventeen", "twentytwentyone"];
+const PORTED_THEMES: &[&str] = &["twentyseventeen", "twentytwenty", "twentytwentyone"];
 
 /// Checks the theme, a child theme's parent and the active plugins of the site.
 pub async fn check(config: &Config) -> Result<Vec<Item>, String> {

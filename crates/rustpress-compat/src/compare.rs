@@ -88,8 +88,11 @@ fn unbrand(html: &str) -> String {
     static CREDIT: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| regex::Regex::new(r#"(?s)<a href="[^"]*" class="imprint">.*?</a>"#).unwrap());
     // Twenty Twenty-One: `Proudly powered by <a href="https://wordpress.org/">WordPress</a>.`
     static POWERED: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| regex::Regex::new(r#"(?s)(<div class="powered-by">).*?(</div>)"#).unwrap());
+    // Twenty Twenty: `<a href="https://wordpress.org/">Powered by WordPress</a>`.
+    static POWERED_BY: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| regex::Regex::new(r#"(?s)(<p class="powered-by-wordpress">).*?(</p>)"#).unwrap());
     let html = CREDIT.replace_all(html, "<a class=\"imprint\"></a>");
-    POWERED.replace_all(&html, "$1$2").into_owned()
+    let html = POWERED.replace_all(&html, "$1$2");
+    POWERED_BY.replace_all(&html, "$1$2").into_owned()
 }
 
 fn show(value: &Option<String>) -> String {

@@ -9,8 +9,10 @@ mod media_widgets;
 pub mod menu;
 pub mod seventeen;
 pub mod tags;
+pub mod twenty;
 pub mod twentyone;
 mod twentyone_icons;
+mod twentytwenty_icons;
 pub mod widgets;
 
 use rustpress_blocks::{Env, Registry};
@@ -23,7 +25,7 @@ use crate::document::Document;
 use crate::theme::Theme;
 
 /// Slugs of the classic themes that exist as Rust ports.
-pub const PORTS: &[&str] = &["twentyseventeen", "twentytwentyone"];
+pub const PORTS: &[&str] = &["twentyseventeen", "twentytwenty", "twentytwentyone"];
 
 /// Whether the active theme is a classic theme with a port (a theme without `theme.json`).
 pub fn is_ported(theme: &Theme) -> bool {
@@ -77,6 +79,8 @@ pub fn post_formats(theme: &str) -> &'static [&'static str] {
     match theme {
         "twentyseventeen" => &["aside", "image", "video", "quote", "link", "gallery", "audio"],
         "twentytwentyone" => &["link", "aside", "gallery", "image", "quote", "status", "video", "audio", "chat"],
+        // Twenty Twenty does not support post formats.
+        "twentytwenty" => &[],
         _ => &["aside", "audio", "chat", "gallery", "image", "link", "quote", "status", "video"],
     }
 }
@@ -87,6 +91,8 @@ pub fn content_width(theme: &str) -> Option<u64> {
         "twentyseventeen" => Some(525),
         // `twenty_twenty_one_content_width()`.
         "twentytwentyone" => Some(750),
+        // `twentytwenty_theme_support()`.
+        "twentytwenty" => Some(580),
         _ => None,
     }
 }
@@ -135,12 +141,20 @@ pub async fn add_body_classes(theme: &Theme, site: &Site, q: &QueryResult, regis
     if is_twentyone(theme) {
         return twentyone::add_body_classes(&ctx, classes).await;
     }
+    if is_twentytwenty(theme) {
+        return twenty::add_body_classes(&ctx, classes).await;
+    }
     seventeen::add_body_classes(&ctx, classes).await
 }
 
-/// Whether the ported theme is Twenty Twenty-One (else it is Twenty Seventeen).
+/// Whether the ported theme is Twenty Twenty-One.
 pub fn is_twentyone(theme: &Theme) -> bool {
     theme.template == "twentytwentyone"
+}
+
+/// Whether the ported theme is Twenty Twenty.
+pub fn is_twentytwenty(theme: &Theme) -> bool {
+    theme.template == "twentytwenty"
 }
 
 /// Renders a request with the ported theme.
@@ -151,6 +165,9 @@ pub async fn legacy_widget_preview(theme: &Theme, site: &Site, q: &QueryResult, 
     let ctx = Ctx { theme, site, q, env, mods };
     if is_twentyone(theme) {
         return twentyone::legacy_widget_preview(&ctx, registry, id_base, instance).await;
+    }
+    if is_twentytwenty(theme) {
+        return twenty::legacy_widget_preview(&ctx, registry, id_base, instance).await;
     }
     seventeen::legacy_widget_preview(&ctx, registry, id_base, instance).await
 }
@@ -171,7 +188,13 @@ pub async fn render_partials(theme: &Theme, site: &Site, q: &QueryResult, regist
         let mut rendered = Vec::new();
         let mut missing = false;
         for placement in placements {
-            let partial = if is_twentyone(theme) { twentyone::render_partial(&ctx, id, placement).await? } else { seventeen::render_partial(&ctx, id, placement).await? };
+            let partial = if is_twentyone(theme) {
+                twentyone::render_partial(&ctx, id, placement).await?
+            } else if is_twentytwenty(theme) {
+                twenty::render_partial(&ctx, id, placement).await?
+            } else {
+                seventeen::render_partial(&ctx, id, placement).await?
+            };
             match partial {
                 Some(value) => rendered.push(value),
                 None => missing = true,
@@ -179,7 +202,7 @@ pub async fn render_partials(theme: &Theme, site: &Site, q: &QueryResult, regist
         }
         contents.insert(id.clone(), if missing { serde_json::Value::Null } else { serde_json::Value::Array(rendered) });
     }
-    let header = if !is_twentyone(theme) && partials.iter().any(|(id, _)| id == "custom_header") { Some(seventeen::header_video_export(&ctx).await?) } else { None };
+    let header = if theme.template == "twentyseventeen" && partials.iter().any(|(id, _)| id == "custom_header") { Some(seventeen::header_video_export(&ctx).await?) } else { None };
     Ok((contents, header))
 }
 
@@ -190,16 +213,19 @@ pub async fn render_document(theme: &Theme, site: &Site, q: &QueryResult, regist
     if is_twentyone(theme) {
         return twentyone::render(&ctx, registry, extras).await;
     }
+    if is_twentytwenty(theme) {
+        return twenty::render(&ctx, registry, extras).await;
+    }
     seventeen::render(&ctx, registry, extras).await
 }
 
 /// What `WP_Theme_JSON_Resolver::get_theme_data()` makes of the theme supports of a ported classic theme without a
 /// `theme.json`: `WP_Theme_JSON::get_from_editor_settings( get_classic_theme_supports_block_editor_settings() )` and the
 /// defaults it adds for classic themes.
-pub fn theme_supports_json(template: &str, i18n: &rustpress_core::i18n::I18n) -> Option<serde_json::Value> {
+pub fn theme_supports_json(template: &str, i18n: &rustpress_core::i18n::I18n, mods: &Value) -> Option<serde_json::Value> {
     use serde_json::json;
     // Twenty Seventeen was compared without this layer; it adds no presets.
-    if template != "twentytwentyone" {
+    if template != "twentytwentyone" && template != "twentytwenty" {
         return None;
     }
     // `get_theme_support( 'disable-custom-colors' )` and the others are `false` when not supported, which `isset()`
@@ -208,6 +234,11 @@ pub fn theme_supports_json(template: &str, i18n: &rustpress_core::i18n::I18n) ->
         "color": { "custom": true, "customGradient": true },
         "typography": { "customFontSize": true },
     });
+    if template == "twentytwenty" {
+        let (palette, sizes) = twenty::editor_presets(i18n, mods);
+        settings["color"]["palette"] = palette;
+        settings["typography"]["fontSizes"] = sizes;
+    }
     if template == "twentytwentyone" {
         let t = |text: &str| rustpress_core::formatting::esc_html(&i18n.gettext(template, text));
         // `twenty_twenty_one_setup()`.

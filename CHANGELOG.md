@@ -4,6 +4,11 @@ All notable changes to RustPress. Each release names the WordPress release it fo
 
 ## Unreleased
 
+- **Twenty Twenty** 3.3 rebuilt natively, the third classic theme: all templates including the cover and full width
+  page templates, the search and menu modals, the primary, expanded, mobile, footer and social menus with sub-menu
+  toggles and social icons, the page list fallback, the footer widgets, the retina logo, the accent colors of the
+  Customizer and the post meta. On the way: the password form of classic themes has no block button, and a page
+  template in a folder gets a body class for each part of its path.
 - Native plugin module **WP Mail SMTP** 4.10.4: the site's e-mail goes through the SMTP server of the plugin's
   settings or of the `WPMS_*` constants (host, port, SSL/TLS/auto TLS, authentication with the encrypted password),
   with the sender of the settings ("force from email/name", the original sender as `Reply-To`), the `X-Mailer` of

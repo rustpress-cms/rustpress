@@ -93,8 +93,14 @@ pub async fn body_classes(theme: &Theme, site: &Site, q: &QueryResult) -> Result
             match custom {
                 Some(template) => {
                     c.push(format!("{}-template", post.post_type));
-                    let stem = template.rsplit('/').next().unwrap_or(&template).trim_end_matches(".php").replace(['.', '/'], "-");
-                    c.push(format!("{}-template-{}", post.post_type, html_class(&stem)));
+                    // One class for each part of the path, as `basename( $part, '.php' )`.
+                    for part in template.split('/') {
+                        let stem = match part.strip_suffix(".php") {
+                            Some(stem) if !stem.is_empty() => stem,
+                            _ => part,
+                        };
+                        c.push(format!("{}-template-{}", post.post_type, html_class(&stem.replace(['.', '/'], "-"))));
+                    }
                     c.push(format!("{}-template-{}", post.post_type, html_class(&template.replace('.', "-"))));
                 }
                 None => c.push(format!("{}-template-default", post.post_type)),
@@ -166,6 +172,9 @@ pub async fn body_classes(theme: &Theme, site: &Site, q: &QueryResult) -> Result
     }
     // `custom-background` for the ported themes that support it with a default color.
     if crate::classic::is_twentyone(theme) && crate::classic::twentyone::has_custom_background(&crate::classic::menu::theme_mod(site, &theme.stylesheet)) {
+        c.push("custom-background".into());
+    }
+    if crate::classic::is_twentytwenty(theme) && crate::classic::twenty::has_custom_background(&crate::classic::menu::theme_mod(site, &theme.stylesheet)) {
         c.push("custom-background".into());
     }
     if rustpress_blocks::images::custom_logo_id(site).await? != 0 {

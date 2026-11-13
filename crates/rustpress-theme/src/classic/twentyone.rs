@@ -1031,7 +1031,7 @@ async fn comments_template(ctx: &Ctx<'_>, post: &Arc<Post>) -> Result<String> {
             sprintf(&esc_html(&template), &[&esc_html(&site.number_i18n(count.max(0) as u64))])
         };
         out.push_str(&format!("\t\t<h2 class=\"comments-title\">\n\t\t\t\t\t\t\t{title}\t\t\t\t\t</h2><!-- .comments-title -->\n\n\t\t<ol class=\"comment-list\">\n\t\t\t"));
-        let args = comments::ListArgs { avatar_size: 60, reply_text: site.trx("Reply", "verb"), short_ping: true, cpage: Some(page.page) };
+        let args = comments::ListArgs { avatar_size: 60, reply_text: site.trx("Reply", "verb"), short_ping: true, cpage: Some(page.page), ..Default::default() };
         out.push_str(&rustpress_blocks::legacy_comments::list_comments(site, env, post, &page.comments, &args).await?);
         let rtl = site.is_rtl();
         let prev = format!("{} <span class=\"nav-prev-text\">{}</span>", ui(if rtl { "arrow_right" } else { "arrow_left" }), th(ctx, "Older comments"));
@@ -1043,7 +1043,7 @@ async fn comments_template(ctx: &Ctx<'_>, post: &Arc<Post>) -> Result<String> {
         }
         out.push('\t');
     }
-    let form = rustpress_blocks::legacy_comments::FormArgs { title_reply: th(ctx, "Leave a comment"), title_reply_before: "<h2 id=\"reply-title\" class=\"comment-reply-title\">".into(), title_reply_after: "</h2>".into(), rows: 5 };
+    let form = rustpress_blocks::legacy_comments::FormArgs { title_reply: th(ctx, "Leave a comment"), title_reply_before: "<h2 id=\"reply-title\" class=\"comment-reply-title\">".into(), title_reply_after: "</h2>".into(), rows: 5, ..Default::default() };
     out.push_str(&format!("\n\t{}\n</div><!-- #comments -->\n", rustpress_blocks::legacy_comments::comment_form_with(site, ctx.q.viewer.as_ref(), post, &request_uri, false, &form).await?));
     Ok(out)
 }
