@@ -88,6 +88,21 @@ The plugins that people need most are ported next: ask for one with a [port requ
 
 The runs cover what visitors and API clients see: pages, feeds, sitemaps, the REST API, redirects and files. They run RustPress without `allow_writes`; sign-in, `wp-admin`, the installer and the native plugin modules are compared with their own golden tests and scripts in [`dev/`](dev). Accepted differences are listed with their reason in [`compat/known.toml`](compat/known.toml); [compat/reports/README.md](compat/reports/README.md) says which run each report comes from. The times in the reports come from one local run and are no benchmark.
 
+## How it compares
+
+Other projects also try to take WordPress sites somewhere new. They answer different questions:
+
+| Project | Approach | Uses the existing database and `wp-content/` | How compatibility is checked |
+|---|---|---|---|
+| **RustPress** | WordPress core, block themes, three classic themes and selected plugins ported to Rust; no PHP | yes, unchanged | byte for byte against a real WordPress: golden tests and `rustpress-compat` runs; every accepted difference is listed with its reason |
+| [WpDotNet](https://github.com/iolevel/wpdotnet-sdk) (PeachPie) | compiles WordPress's own PHP to .NET | yes; PHP plugins and themes generally run | it is WordPress's code |
+| [LegacyToRustProject/RustPress](https://github.com/LegacyToRustProject/RustPress) (same name, unrelated) | a Rust CMS on the `wp_*` tables; themes and plugins converted with AI | yes | "visual parity" with WordPress, according to its README |
+| [OxidePress](https://github.com/Vabian124/OxidePress) | a fork of the project above; runs PHP plugins in a `php` CLI worker | yes | |
+| [Daypress](https://github.com/Trooper-lab/Daypress) | a Rust CMS with its own SQLite database and part of the `wp/v2` REST API | imports a WXR export | |
+| [EmDash](https://github.com/emdash-cms/emdash) (Cloudflare) | a TypeScript CMS on Astro | imports a WXR export; blocks become Portable Text | |
+
+In short: if you need every PHP plugin, WpDotNet runs WordPress itself. If you want a new CMS, EmDash and Daypress import your content. RustPress is for keeping a WordPress site exactly as it is, database and files included, and serving it without PHP; what it supports answers like WordPress down to the byte, and what it does not support, `rustpress check` tells you before you switch. The descriptions of the other projects are taken from their own pages (November 2026).
+
 ## Getting started
 
 Every [release](https://github.com/rustpress-cms/rustpress/releases) carries ready-made builds: static Linux binaries (x86_64, aarch64, armv7, armv6, i686) also as `.deb`, `.rpm` and `.apk` packages, plus macOS (Intel and Apple Silicon), Windows (x64, x86, ARM64) and FreeBSD. The container image is `ghcr.io/rustpress-cms/rustpress` for amd64, arm64, arm/v7, arm/v6 and 386. From source:

@@ -41,6 +41,21 @@ Fehlt ein Plugin, hilft eine [Port-Anfrage](https://github.com/rustpress-cms/rus
 - Statische Dateien aus `wp-content/` und `wp-includes/`
 - Alle Sprachen, für die WordPress ein Sprachpaket hat (siehe [Sprachen](#sprachen))
 
+## Abgrenzung zu ähnlichen Projekten
+
+Auch andere Projekte wollen WordPress-Seiten woanders hinbringen. Sie beantworten andere Fragen:
+
+| Projekt | Ansatz | Nutzt die bestehende Datenbank und `wp-content/` | Wie die Kompatibilität geprüft wird |
+|---|---|---|---|
+| **RustPress** | WordPress-Kern, Block-Themes, drei klassische Themes und ausgewählte Plugins in Rust nachgebaut; kein PHP | ja, unverändert | Byte für Byte gegen ein echtes WordPress: Golden-Tests und `rustpress-compat`-Läufe; jede akzeptierte Abweichung steht mit Begründung in einer Liste |
+| [WpDotNet](https://github.com/iolevel/wpdotnet-sdk) (PeachPie) | kompiliert das PHP von WordPress selbst nach .NET | ja; PHP-Plugins und -Themes laufen grundsätzlich | es ist der Code von WordPress |
+| [LegacyToRustProject/RustPress](https://github.com/LegacyToRustProject/RustPress) (gleicher Name, anderes Projekt) | ein Rust-CMS auf den `wp_*`-Tabellen; Themes und Plugins per KI konvertiert | ja | „visuelle Parität“ mit WordPress, laut seiner README |
+| [OxidePress](https://github.com/Vabian124/OxidePress) | ein Fork des Projekts darüber; führt PHP-Plugins in einem `php`-CLI-Prozess aus | ja | |
+| [Daypress](https://github.com/Trooper-lab/Daypress) | ein Rust-CMS mit eigener SQLite-Datenbank und einem Teil der REST-API `wp/v2` | importiert einen WXR-Export | |
+| [EmDash](https://github.com/emdash-cms/emdash) (Cloudflare) | ein TypeScript-CMS auf Astro | importiert einen WXR-Export; Blöcke werden zu Portable Text | |
+
+Kurz: Wer jedes PHP-Plugin braucht, fährt mit WpDotNet WordPress selbst. Wer ein neues CMS will, importiert seine Inhalte in EmDash oder Daypress. RustPress ist dafür da, eine WordPress-Seite genau so zu behalten, wie sie ist, mit Datenbank und Dateien, und sie ohne PHP auszuliefern; was es unterstützt, antwortet bis aufs Byte wie WordPress, und was nicht, sagt `rustpress check` vor dem Umstieg. Die Angaben zu den anderen Projekten stammen von deren eigenen Seiten (November 2026).
+
 ## Starten
 
 Jedes [Release](https://github.com/rustpress-cms/rustpress/releases) enthält fertige Builds: statische Linux-Binaries (x86_64, aarch64, armv7, armv6, i686), auch als `.deb`, `.rpm` und `.apk`, dazu macOS (Intel und Apple Silicon), Windows (x64, x86, ARM64) und FreeBSD. Das Container-Image ist `ghcr.io/rustpress-cms/rustpress` für amd64, arm64, arm/v7, arm/v6 und 386. Aus den Quellen:

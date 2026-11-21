@@ -131,7 +131,28 @@
   </div>
 </section>
 
-<section id="plugins">
+<section id="compare">
+  <div class="wrap">
+    <h2>Abgrenzung zu ähnlichen Projekten</h2>
+    <p class="intro">Auch andere Projekte wollen WordPress-Seiten woanders hinbringen. Sie beantworten andere Fragen.</p>
+    <div class="table-scroll">
+      <table class="text">
+        <thead><tr><th>Projekt</th><th>Ansatz</th><th>Bestehende Datenbank und <code>wp-content/</code></th></tr></thead>
+        <tbody>
+          <tr><td><strong>RustPress</strong></td><td>WordPress-Kern, Block-Themes, drei klassische Themes und ausgewählte Plugins in Rust nachgebaut und Byte für Byte gegen ein echtes WordPress geprüft; kein PHP</td><td>werden so genutzt, wie sie sind</td></tr>
+          <tr><td><a href="https://github.com/iolevel/wpdotnet-sdk">WpDotNet</a> (PeachPie)</td><td>kompiliert das PHP von WordPress selbst nach .NET, PHP-Plugins und -Themes laufen deshalb grundsätzlich</td><td>werden so genutzt, wie sie sind</td></tr>
+          <tr><td><a href="https://github.com/LegacyToRustProject/RustPress">LegacyToRustProject/RustPress</a> (gleicher Name, anderes Projekt)</td><td>ein Rust-CMS auf den <code>wp_*</code>-Tabellen; Themes und Plugins per KI konvertiert, Ziel ist visuelle Parität</td><td>werden genutzt</td></tr>
+          <tr><td><a href="https://github.com/Vabian124/OxidePress">OxidePress</a></td><td>ein Fork des Projekts darüber, der PHP-Plugins in einem <code>php</code>-CLI-Prozess ausführt</td><td>werden genutzt</td></tr>
+          <tr><td><a href="https://github.com/Trooper-lab/Daypress">Daypress</a></td><td>ein Rust-CMS mit eigener SQLite-Datenbank und einem Teil der REST-API <code>wp/v2</code></td><td>Inhalte werden aus einem WXR-Export importiert</td></tr>
+          <tr><td><a href="https://github.com/emdash-cms/emdash">EmDash</a> (Cloudflare)</td><td>ein TypeScript-CMS auf Astro; Blöcke werden zu Portable Text</td><td>Inhalte werden aus einem WXR-Export importiert</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">Wer jedes PHP-Plugin braucht, fährt mit WpDotNet WordPress selbst. Wer ein neues CMS will, importiert seine Inhalte in EmDash oder Daypress. RustPress behält eine WordPress-Seite genau so, wie sie ist, und liefert sie ohne PHP aus; was es noch nicht unterstützt, sagt <code>rustpress check</code> vor dem Umstieg. Die Angaben zu den anderen Projekten stammen von deren eigenen Seiten (November 2026).</p>
+  </div>
+</section>
+
+<section id="plugins" class="alt">
   <div class="wrap">
     <h2>Plugins als native Module</h2>
     <p class="intro">PHP-Plugins laufen nicht. Wichtige Plugins werden stattdessen in Rust nachgebaut und übernehmen, solange das Plugin in WordPress aktiv ist, mit denselben Einstellungen, derselben Ausgabe und demselben Verhalten. Die Dateien des Plugins bleiben einfach in <code>wp-content/plugins</code>.</p>
