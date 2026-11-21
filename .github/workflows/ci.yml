@@ -44,16 +44,17 @@ jobs:
           echo "$PWD/dev/ci" >> "$GITHUB_PATH"
           export PATH="$PWD/dev/ci:$PATH"
           dev/up.sh
-          until podman exec rustpress-db mariadb-admin ping -uroot -prustpress --silent; do sleep 2; done
+          # The entrypoint first runs a temporary server without networking: wait for the real one.
+          until podman exec rustpress-db mariadb -h127.0.0.1 -uwordpress -pwordpress -e "SELECT 1" wordpress >/dev/null 2>&1; do sleep 2; done
           until curl -so /dev/null http://127.0.0.1:8080/; do sleep 2; done
+          # The seeds (dev/seed_patterns.sh) and the tests read the WordPress files of the Docker volume.
+          sudo chmod o+x /var/lib/docker /var/lib/docker/volumes
       - name: Seed the reference
         run: |
           dev/seed.sh
           # For crates/rustpress-core/tests/i18n_coverage.rs; installed, not activated (the site stays en_US).
           dev/wp.sh language core install de_DE
           dev/wp.sh core version
-          # The test process reads the WordPress files of the Docker volume.
-          sudo chmod o+x /var/lib/docker /var/lib/docker/volumes
       - name: Golden tests
         run: dev/test.sh --locked --no-fail-fast
       - name: Compat run
