@@ -2,8 +2,16 @@
 
 All notable changes to RustPress. Each release names the WordPress release it follows.
 
-## Unreleased
+## 0.4.0 (2026-11-21)
 
+Follows WordPress 7.1.5.
+
+- Follows **WordPress 7.1.5**, a security release ([#90](https://github.com/rustpress-cms/rustpress/issues/90)):
+  shortcode attributes no longer decode escapes to `<`, `>`, `"` or `'`; editing a comment in the administration
+  checks a change of its post and refuses a change of its type (a permitted move now really moves the comment);
+  the REST API lets only moderators attribute a comment to another existing user and keeps the author's details
+  when the current author is sent again; `show_on_front` takes only `page` or `posts`; the Customizer preview
+  sanitizes the site options and the logo like WordPress. The installer downloads WordPress 7.1.5.
 - Native plugin module **Complianz** 7.5.6, stage 3: the consent area. `[cmplz-consent-area]` shows its content once
   the visitor consented to the service or category (read from the consent cookies of the request) and a placeholder
   otherwise; the block `complianz/consent-area` and the REST route that loads its content, and the REST route

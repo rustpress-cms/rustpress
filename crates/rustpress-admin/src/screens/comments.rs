@@ -902,8 +902,12 @@ pub async fn comment_php(ctx: &Ctx<'_>) -> AdminResponse {
         "editcomment" => edit_form(ctx, &comment).await,
         "editedcomment" => {
             let status = request.post_field("comment_status");
+            let post_id = match super::ajax_comments::check_edit_target(ctx.env, &ctx.user, &comment, request.post_field("comment_type"), request.post_field("comment_post_ID")).await {
+                Ok(post_id) => post_id,
+                Err(message) => return die(ctx.env, 500, "WordPress &rsaquo; Error", &message),
+            };
             if let Some(parent) = request.post_field("comment_parent").and_then(|p| p.trim().parse::<i64>().ok())
-                && let Err(message) = super::ajax_comments::check_new_parent(ctx.env, &comment, parent.max(0) as u64, status).await
+                && let Err(message) = super::ajax_comments::check_new_parent(ctx.env, &comment, post_id, parent.max(0) as u64, status).await
             {
                 return die(ctx.env, 500, "WordPress &rsaquo; Error", &message);
             }
@@ -923,6 +927,7 @@ pub async fn comment_php(ctx: &Ctx<'_>) -> AdminResponse {
                 date: date.filter(|d| crate::content::valid_date(d)),
             };
             content.update_comment(id, &update).await.or_log();
+            super::ajax_comments::move_comment(&content, &comment, post_id).await;
             if let Some(parent) = field("comment_parent").and_then(|p| p.parse::<u64>().ok()) {
                 writer.update_rows("comments", "comment_ID", id, &[("comment_parent", rustpress_db::Val::Int(parent as i64))]).await.or_log();
             }
@@ -936,7 +941,7 @@ pub async fn comment_php(ctx: &Ctx<'_>) -> AdminResponse {
                     Err(e) => tracing::error!(error = %e, "a plugin failed on edit_comment"),
                 }
             }
-            redirect(&ctx.admin_url(&format!("edit-comments.php?p={}#comment-{id}", comment.comment_post_id)))
+            redirect(&ctx.admin_url(&format!("edit-comments.php?p={post_id}#comment-{id}")))
         }
         "approvecomment" | "unapprovecomment" | "spamcomment" | "unspamcomment" | "trashcomment" | "untrashcomment" | "deletecomment" => {
             let Some(writer) = ctx.env.writer else { return read_only(ctx) };

@@ -64,8 +64,65 @@ pub fn filter_admin_comment(env: &AdminEnv<'_>, request: &AdminRequest, user: &C
     rustpress_core::kses::comment_content_filter(content, &env.site.settings.home, !unfiltered)
 }
 
-/// The checks of `edit_comment()` for a new `comment_parent`.
-pub async fn check_new_parent(env: &AdminEnv<'_>, comment: &Comment, parent_id: u64, new_status: Option<&str>) -> Result<(), String> {
+/// `(int)` of a posted value: the leading number after white space, 0 without one.
+fn php_int(value: &str) -> i64 {
+    let text = value.trim_start_matches([' ', '\t', '\n', '\r', '\x0B', '\x0C']);
+    let (negative, digits) = match text.strip_prefix('-') {
+        Some(rest) => (true, rest),
+        None => (false, text.strip_prefix('+').unwrap_or(text)),
+    };
+    let end = digits.find(|c: char| !c.is_ascii_digit()).unwrap_or(digits.len());
+    let number = digits[..end].parse::<i64>().unwrap_or(if end > 0 { i64::MAX } else { 0 });
+    if negative { -number } else { number }
+}
+
+/// The checks of `edit_comment()` that WordPress 7.1.5 added before those of the parent: the comment type cannot
+/// change, and moving the comment to another post (`$_POST['comment_post_ID']`) needs the rights on that post
+/// (`_wp_check_comment_target_post()`). The post the comment is on after the edit.
+pub async fn check_edit_target(env: &AdminEnv<'_>, user: &CurrentUser, comment: &Comment, posted_type: Option<&str>, posted_post: Option<&str>) -> Result<u64, String> {
+    let tr = |s: &str| env.site.tr(s);
+    if posted_type.is_some_and(|t| t != comment.comment_type) {
+        return Err(tr("The comment type cannot be changed."));
+    }
+    let Some(target) = posted_post.map(php_int) else { return Ok(comment.comment_post_id) };
+    if target == comment.comment_post_id as i64 {
+        return Ok(comment.comment_post_id);
+    }
+    let post = if target > 0 { env.db.post(target as u64).await.ok().flatten() } else { None };
+    let Some(post) = post else { return Err(tr("Invalid post ID.")) };
+    let not_allowed = || tr("Sorry, you are not allowed to move this comment to that post.");
+    // Notes are editorial content: only a post the user can edit.
+    let is_note = comment.comment_type.eq_ignore_ascii_case("note");
+    let allowed = if is_note { user.can_edit_post(&post) } else { user.can("moderate_comments") || user.can_edit_post(&post) };
+    if !allowed {
+        return Err(not_allowed());
+    }
+    if !is_note {
+        return Ok(post.id);
+    }
+    // `'editor' => array( 'notes' => true )` is the support of posts and pages.
+    if !matches!(post.post_type.as_str(), "post" | "page") {
+        return Err(tr("Sorry, this post type does not support notes."));
+    }
+    if post.post_status == "trash" || !user.can_read_post(&post) {
+        return Err(not_allowed());
+    }
+    Ok(post.id)
+}
+
+/// `wp_update_comment()` with a `comment_post_ID`: the comment moves, and the counts of both posts follow.
+pub async fn move_comment(content: &Content<'_>, comment: &Comment, post_id: u64) {
+    if post_id == comment.comment_post_id {
+        return;
+    }
+    content.writer.update_rows("comments", "comment_ID", comment.comment_id, &[("comment_post_ID", rustpress_db::Val::Int(post_id as i64))]).await.or_log();
+    content.update_comment_count(comment.comment_post_id).await.or_log();
+    content.update_comment_count(post_id).await.or_log();
+}
+
+/// The checks of `edit_comment()` for a new `comment_parent`, which must be on `post_id`, the post the comment is on
+/// after the edit.
+pub async fn check_new_parent(env: &AdminEnv<'_>, comment: &Comment, post_id: u64, parent_id: u64, new_status: Option<&str>) -> Result<(), String> {
     let tr = |s: &str| env.site.tr(s);
     if parent_id == 0 || parent_id == comment.comment_parent {
         return Ok(());
@@ -79,7 +136,7 @@ pub async fn check_new_parent(env: &AdminEnv<'_>, comment: &Comment, parent_id: 
     let parent = env.db.comment_any(parent_id).await.ok().flatten();
     let parent_status = parent.as_ref().map(|p| status_name(&p.comment_approved));
     let approved = matches!(new_status.unwrap_or(&comment.comment_approved), "1" | "approve");
-    let Some(parent) = parent.filter(|p| p.comment_post_id == comment.comment_post_id && p.comment_type == comment.comment_type && !matches!(parent_status, Some("spam" | "trash")) && (!approved || parent_status == Some("approved"))) else {
+    let Some(parent) = parent.filter(|p| p.comment_post_id == post_id && p.comment_type == comment.comment_type && !matches!(parent_status, Some("spam" | "trash")) && (!approved || parent_status == Some("approved"))) else {
         return Err(tr("Invalid parent comment."));
     };
     // The ancestors of the new parent: the comment must not become a reply to one of its own replies.
@@ -275,8 +332,12 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUs
                 return text(200, &tr("Please type your comment text."));
             }
             let status = request.request("status").or(request.request("comment_status"));
+            let post_id = match check_edit_target(env, user, &comment, request.post_field("comment_type"), request.post_field("comment_post_ID")).await {
+                Ok(post_id) => post_id,
+                Err(message) => return text(200, &message),
+            };
             if let Some(parent) = request.request("comment_parent").and_then(|p| p.trim().parse::<i64>().ok())
-                && let Err(message) = check_new_parent(env, &comment, parent.max(0) as u64, status).await
+                && let Err(message) = check_new_parent(env, &comment, post_id, parent.max(0) as u64, status).await
             {
                 return text(200, &message);
             }
@@ -292,6 +353,7 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUs
             if let Err(e) = content.update_comment(id, &update).await {
                 return text(200, &e.to_string());
             }
+            move_comment(&content, &comment, post_id).await;
             let Some(updated) = env.db.comment_any(id).await.ok().flatten() else { return text(200, "-1") };
             // `$_POST['checkbox']` of 1 is a row of the comments screen, anything else one of the box of the edit form.
             let html = if request.post_field("checkbox") == Some("1") {

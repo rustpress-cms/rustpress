@@ -1630,7 +1630,7 @@ async fn nav_menu_partial(ctx: &Ctx<'_>, args: &serde_json::Value) -> Result<Opt
     let mut sorted: Vec<(&String, &serde_json::Value)> = map.iter().filter(|(k, _)| *k != "args_hmac").collect();
     sorted.sort_by(|a, b| a.0.cmp(b.0));
     let php = rustpress_phpser::Value::Array(sorted.iter().map(|(k, v)| (rustpress_phpser::Key::Str(k.as_bytes().to_vec()), menu::json_to_php(v))).collect());
-    let expected = rustpress_blocks::commenter::wp_hash(&String::from_utf8_lossy(&rustpress_phpser::serialize(&php)), "auth");
+    let expected = menu::hash_nav_menu_args(&php);
     if !rustpress_core::hash_equals(&expected, hmac) {
         return Ok(None);
     }

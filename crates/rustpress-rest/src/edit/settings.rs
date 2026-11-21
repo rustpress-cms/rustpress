@@ -93,6 +93,8 @@ impl Rest<'_> {
                     (Kind::Text, _) => args.str(name).unwrap_or_default(),
                 };
                 let stored = if *option == "blogname" || *option == "blogdescription" { rustpress_core::formatting::esc_html(&stored) } else { stored };
+                // `sanitize_option( 'show_on_front' )` (WordPress 7.1.5): anything but 'page' is 'posts'.
+                let stored = if *option == "show_on_front" && stored != "page" { "posts".to_owned() } else { stored };
                 if let Err(e) = writer.update_option(option, &stored).await {
                     return Ok(Err(RestError::new("rest_cannot_update", &e.to_string(), 500)));
                 }

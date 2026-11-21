@@ -125,8 +125,8 @@ Abweichungen, die verstanden und bewusst akzeptiert sind, stehen mit Begründung
 `WORDPRESS_VERSION` nennt die Version, der RustPress folgt; der Installer lädt sie herunter, und `dev/up.sh` hält das Referenz-WordPress auf ihr (automatische Updates aus). Ein täglicher Workflow eröffnet für jede neuere Version ein Issue mit dem geänderten PHP-Code, den RustPress-Dateien, die ihm folgen, und den Schritten für den Umstieg:
 
 ```sh
-dev/wp-diff.sh 7.1.3 7.1.4    # derselbe Bericht lokal, dazu der vollständige PHP-Diff
-dev/wp-bump.sh 7.1.4          # neue Version setzen und das Referenz-WordPress darauf bringen
+dev/wp-diff.sh 7.1.4 7.1.5    # derselbe Bericht lokal, dazu der vollständige PHP-Diff
+dev/wp-bump.sh 7.1.5          # neue Version setzen und das Referenz-WordPress darauf bringen
 ```
 
 ## Crates
