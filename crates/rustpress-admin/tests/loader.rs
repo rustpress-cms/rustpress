@@ -10,6 +10,7 @@ fn env() -> Option<LoaderEnv> {
     let includes = std::path::Path::new(&root).join("wp-includes");
     if !includes.join("script-loader.php").is_file() {
         eprintln!("no WordPress files at {root}, skipping");
+        assert!(std::env::var_os("RUSTPRESS_REQUIRE_REFERENCE").is_none(), "RUSTPRESS_REQUIRE_REFERENCE is set, so this test must not skip itself");
         return None;
     }
     Some(LoaderEnv { includes, site_url: "http://localhost:8080".into(), content_url: "http://localhost:8080/wp-content".into(), version: rustpress_core::WP_VERSION.into(), rtl: false, separate_block_assets: true, compressed_tinymce: false, nonce: None, messages: None })

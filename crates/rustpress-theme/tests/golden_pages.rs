@@ -82,6 +82,7 @@ async fn setup() -> Option<(Site, Theme, Registry)> {
     let root = PathBuf::from(std::env::var("RUSTPRESS_WP_ROOT").unwrap_or_else(|_| DEFAULT_ROOT.into()));
     if !root.join("wp-includes").is_dir() {
         eprintln!("WordPress files not found at {}, skipping", root.display());
+        assert!(std::env::var_os("RUSTPRESS_REQUIRE_REFERENCE").is_none(), "RUSTPRESS_REQUIRE_REFERENCE is set, so this test must not skip itself");
         return None;
     }
     let url = std::env::var("RUSTPRESS_TEST_DB").unwrap_or_else(|_| "mysql://wordpress:wordpress@127.0.0.1:3306/wordpress".into());

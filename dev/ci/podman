@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Lets the dev/ scripts, written for Podman, run on Docker (GitHub Actions has Docker, not rootless Podman):
+# `container exists` and `volume exists` become `inspect`, everything else goes to docker unchanged.
+# CI puts dev/ci on the PATH; a host with Podman never needs this.
+set -euo pipefail
+case "${1:-} ${2:-}" in
+  "container exists") exec docker container inspect "$3" >/dev/null 2>&1 ;;
+  "volume exists") exec docker volume inspect "$3" >/dev/null 2>&1 ;;
+esac
+exec docker "$@"

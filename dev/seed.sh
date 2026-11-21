@@ -23,6 +23,9 @@ if ! wp core is-installed 2>/dev/null; then
     --admin_email=admin@example.com --skip-email >/dev/null
   fresh=1
 fi
+# The image brings the newest WordPress: seed with the release in WORDPRESS_VERSION (dev/up.sh could not pin it before
+# the installation).
+./wp-reference.sh
 
 seed_base() {
 wp rewrite structure '/%postname%/' >/dev/null

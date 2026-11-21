@@ -12,6 +12,7 @@ async fn db() -> Option<Db> {
         Ok(db) => Some(db),
         Err(e) => {
             eprintln!("no test database ({e}), skipping");
+            assert!(std::env::var_os("RUSTPRESS_REQUIRE_REFERENCE").is_none(), "RUSTPRESS_REQUIRE_REFERENCE is set, so this test must not skip itself");
             None
         }
     }

@@ -17,6 +17,7 @@ async fn generated_rules_equal_the_stored_ones() {
     let url = std::env::var("RUSTPRESS_TEST_DB").unwrap_or_else(|_| "mysql://wordpress:wordpress@127.0.0.1:3306/wordpress".into());
     let Ok(db) = Db::connect(&url, "wp_").await else {
         eprintln!("no test database, skipping");
+        assert!(std::env::var_os("RUSTPRESS_REQUIRE_REFERENCE").is_none(), "RUSTPRESS_REQUIRE_REFERENCE is set, so this test must not skip itself");
         return;
     };
     let site = Site::load(db).await.unwrap();

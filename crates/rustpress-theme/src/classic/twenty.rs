@@ -887,7 +887,7 @@ async fn comments_template(ctx: &Ctx<'_>, post: &Arc<Post>) -> Result<String> {
             awaiting: t(ctx, "Your comment is awaiting moderation."),
             by_post_author: t(ctx, "By Post Author"),
         };
-        let args = rustpress_blocks::legacy_comments::ListArgs { avatar_size: 120, reply_text: site.tr("Reply"), short_ping: false, cpage: Some(page.page), div_style: true, twentytwenty: Some(texts) };
+        let args = rustpress_blocks::legacy_comments::ListArgs { avatar_size: 120, reply_text: site.trx("Reply", "verb"), short_ping: false, cpage: Some(page.page), div_style: true, twentytwenty: Some(texts) };
         let list = rustpress_blocks::legacy_comments::list_comments(site, env, post, &page.comments, &args).await?;
         let links = tags::paginate_comments_links(
             site,

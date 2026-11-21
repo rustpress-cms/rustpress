@@ -189,7 +189,6 @@ The reference stack, the tools and the working rules are in [AGENTS.md](AGENTS.m
 - The rest of P14/P15 (synchronous file access in the administration).
 - Phase 4 of the review: merging duplicates, removing dead code, splitting long functions; test suites (database
   schema, a role matrix, hostile inputs); the small deviations listed in A4.
-- Golden tests and `rustpress-compat` in CI against a reference in service containers (CI skips them today).
 - `rustpress-auth/tests/oracle.rs` depends on session tokens in the shared database (create the fixture again first).
 - Compat: more third-party block themes (see Website), a run with the release build.
 
@@ -498,7 +497,7 @@ A complete review of the code base (five passes over all crates, ~77,000 lines).
 6. **Batch helpers in `rustpress-db`** (`post_meta_many`, `terms_for_posts`, use `users_by_ids`, `revision_count_and_latest`, count queries) and LIMIT/search in SQL instead of in Rust.
 7. **`spawn_blocking`** around image, ZIP and directory work.
 8. **Shared helpers** (`validate_redirect`, `origin`, `esc_textarea`, `sticky_ids`, `sanitize_key`, LIKE escaping, one comment form function).
-9. **Tests**: (a) a database suite with a seeded schema (`sqlx::test`), (b) a role matrix per admin/Ajax/REST action (subscriber/contributor/author/editor/admin → the expected WP answer, no write access), (c) hostile inputs (attributes, cycles, depth, overflow), (d) golden tests in CI with the reference, or `#[ignore]` instead of silently skipping.
+9. **Tests**: (a) a database suite with a seeded schema (`sqlx::test`), (b) a role matrix per admin/Ajax/REST action (subscriber/contributor/author/editor/admin → the expected WP answer, no write access), (c) hostile inputs (attributes, cycles, depth, overflow), (d) golden tests in CI with the reference, or `#[ignore]` instead of silently skipping (d done 2026-11-21: CI job `golden`, `RUSTPRESS_REQUIRE_REFERENCE`).
 10. **Lint configuration** in the workspace (`[workspace.lints.clippy]`) for the rules above; `cargo clippy` in the dev scripts.
 
 ---
@@ -582,7 +581,7 @@ Measurement afterwards (release, `RUSTPRESS_RELOAD_SECS=1`, median / minimum of 
 - Detection: `.github/workflows/wordpress.yml` asks `api.wordpress.org/core/version-check/1.7/` daily and opens an issue "Follow WordPress X" (label `wordpress`) for every newer release with the report of `dev/wp-diff.sh`; the full PHP diff is attached to the run.
 - Report: `dev/wp-diff.sh OLD NEW` downloads both packages, lists the changed PHP files with the changed functions and the RustPress files that follow them (class, block `core/x`, file name, function names), plus JSON and assets, and a checklist.
 - Switching: `dev/wp-bump.sh NEW` sets `WORDPRESS_VERSION` and the READMEs and raises the reference; then port the changes, bake the data again (`dev/bake-*.py`, `dev/gen-*.py`, kses goldens), tests and compat runs, PR, release tag. The release notes name the WordPress version.
-- Next extension: golden tests and `rustpress-compat` in CI against a reference in service containers (needs `dev/seed.sh` without WSL/Podman), so that a version PR shows its own differences.
+- ✅ **Golden tests and `rustpress-compat` in CI (2026-11-21):** the job `golden` in `.github/workflows/ci.yml` starts the reference with `dev/up.sh` on the runner's Docker (`dev/ci/podman` maps `container exists`/`volume exists` and passes everything else on), seeds it with `dev/seed.sh` (which now pins `WORDPRESS_VERSION` right after the installation, before any seed), installs the German core pack for `i18n_coverage` without activating it, and runs `dev/test.sh --no-fail-fast` with `RUSTPRESS_REQUIRE_REFERENCE=1`, under which every test that would skip itself for a missing reference, PHP or language pack fails instead. Then `rustpress-compat` runs against it; the report goes to the job summary and the artifact `compat-report`, and unexpected differences fail the job. So a version PR shows its own differences. Still only local: the auth oracle (its fixture is tied to one installation's salts) and the goldens of plugins the CI reference does not install (WPForms e-mails and the plugin compare scripts in `dev/`). Found on the first run: `i18n_coverage` had not passed for a while, since it also took the plugin modules' own `tr()` (plugin text domains) for core texts; it now checks only `site.tr*` there. And Twenty Twenty's reply links used `__('Reply')` instead of `_x('Reply', 'verb')`, which stays untranslated in German.
 - 7.1.4 (the first case): 32 PHP files, among them `kses.php`, `class-wp-block-parser.php`, the Interactivity API, the blocks categories/image/playlist/post-navigation-link/comments-pagination, the privacy tables, REST comments.
 - **7.1.4 followed (2026-10-30, issue #9):** a security release. Ported: kses removes `data-wp-bind--…` on `object` except for attributes that are allowed there with any value (`_wp_kses_directive_binds_value_restricted_attribute`); the Interactivity API removes such bindings while rendering (`is_bindable_object_attribute`); block delimiters only with `[ \t\n]` (no vertical tab); `esc_html` for the label of the comment pagination, `wp_kses_post` for that of `core/post-navigation-link` (and, as WordPress already did before, for `core/categories`); notes in REST only with the permission to edit the post (also `targetHints`); the e-mail in the privacy table and the display name in "Log %s out" escaped; the installer never writes a `wp-config.php` from the package. The user list, admin bar and delete confirmation already escaped in RustPress. Not affected: Multisite, the Customizer, lightbox and playlist (they do not exist), the upgrader's working directory (RustPress unpacks in memory). `about.json` baked again. The asset versions come from disk.
 - Development environment: Windows reads file times over `\\wsl.localhost` in 100 ns steps; after a core update the Apache ETag therefore differed by 1 µs. `dev/wp-reference.sh` cuts the times of freshly written files to whole microseconds.
@@ -629,7 +628,7 @@ Measurement afterwards (release, `RUSTPRESS_RELOAD_SECS=1`, median / minimum of 
 
 #### Phase 4 – maintainability and tests
 16. Merge duplicates, remove dead code, split long functions (A4).
-17. Test suites (B9): database schema tests, a role matrix, hostile inputs, golden tests in CI.
+17. Test suites (B9): database schema tests, a role matrix, hostile inputs, golden tests in CI (the last one done 2026-11-21).
 18. Catch up on the small WP deviations from A4 (each by an oracle comparison).
 
 #### Phase 5 – missing features (wp-admin and REST)

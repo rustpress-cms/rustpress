@@ -41,8 +41,10 @@ cargo clippy --workspace --all-targets   # CI fails on new warnings
 ```
 
 CI runs the same commands with `--locked`. Without the reference stack, the tests that need it print a note and skip
-themselves. That is how CI runs them, so a green CI does not mean the goldens were compared. Run them locally when you
-change behaviour.
+themselves; with `RUSTPRESS_REQUIRE_REFERENCE=1` they fail instead. The CI job `golden` starts the reference on the
+runner's Docker (`dev/ci/podman` stands in for Podman), seeds it, runs the whole suite with that variable set and then
+`rustpress-compat` (the report is in the job summary and its artifact). Run them locally as well when you change
+behaviour, since the plugin goldens need plugins the CI reference does not have.
 
 Some tests recurse deeply; if a test overflows its stack, set `RUST_MIN_STACK=16777216`.
 
