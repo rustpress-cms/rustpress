@@ -295,6 +295,7 @@ pub(super) async fn comment_content(bc: &BlockCtx<'_>) -> Result<String> {
     Ok(format!("<div {wrapper}>{note}{text}</div>"))
 }
 
+/// `render_block_core_comment_date()`; the date is escaped with `esc_html()` with and without a link (WordPress 7.1.5).
 pub(super) async fn comment_date(bc: &BlockCtx<'_>) -> Result<String> {
     let Some(comment) = current_comment(bc).await? else { return Ok(String::new()) };
     let site = bc.env.site;

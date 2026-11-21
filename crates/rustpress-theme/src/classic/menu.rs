@@ -549,7 +549,7 @@ impl NavArgs {
     }
 
     /// `WP_Customize_Nav_Menus::filter_wp_nav_menu_args()`: the arguments exported to the preview, sorted by key, and
-    /// their `args_hmac` (`wp_hash( serialize( $args ) )`). The menus here are echoed, have a location or a menu and a
+    /// their `args_hmac` (`wp_hash( 'customize_nav_menu_args|' . serialize( $args ) )`, prefixed since WordPress 7.1.5). The menus here are echoed, have a location or a menu and a
     /// container, so they can always be refreshed on their own.
     fn exported(&self) -> (String, serde_json::Value) {
         use rustpress_phpser::{Key, Value as Php};
@@ -580,7 +580,7 @@ impl NavArgs {
             ("walker", text("")),
         ];
         let array = Php::Array(pairs.iter().map(|(k, v)| (Key::Str(k.as_bytes().to_vec()), v.clone())).collect());
-        let hmac = rustpress_blocks::commenter::wp_hash(&String::from_utf8_lossy(&rustpress_phpser::serialize(&array)), "auth");
+        let hmac = hash_nav_menu_args(&array);
         let mut json = serde_json::Map::new();
         for (key, value) in pairs {
             let value = match value {
@@ -735,6 +735,12 @@ fn walk(
         }
         out.push_str("</li>\n");
     }
+}
+
+/// `WP_Customize_Nav_Menus::hash_nav_menu_args()`: `wp_hash( 'customize_nav_menu_args|' . serialize( $args ) )`; the
+/// prefix is new in WordPress 7.1.5.
+pub(crate) fn hash_nav_menu_args(args: &rustpress_phpser::Value) -> String {
+    rustpress_blocks::commenter::wp_hash(&format!("customize_nav_menu_args|{}", String::from_utf8_lossy(&rustpress_phpser::serialize(args))), "auth")
 }
 
 #[cfg(test)]

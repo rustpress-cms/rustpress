@@ -443,8 +443,13 @@ pub async fn apply(site: &rustpress_core::Site, template: &str, values: &[(Strin
             continue;
         }
         match id.as_str() {
-            "blogname" | "blogdescription" | "show_on_front" | "page_on_front" | "page_for_posts" | "site_icon" => out.options.push((id.clone(), text(value))),
-            "custom_logo" => set_mod(&mut mods, &mut mods_changed, id, to_php(value)),
+            // WordPress 7.1.5 also sanitizes the previewed value of an option setting with `sanitize_option()`
+            // (`WP_Customize_Setting::sanitize_option_value()`).
+            "blogname" | "blogdescription" => out.options.push((id.clone(), rustpress_core::formatting::esc_html(&text(value)))),
+            "show_on_front" => out.options.push((id.clone(), (if text(value) == "page" { "page" } else { "posts" }).to_owned())),
+            "page_on_front" | "page_for_posts" | "site_icon" => out.options.push((id.clone(), intval(value).unsigned_abs().to_string())),
+            // The `absint` sanitize callback of WordPress 7.1.5.
+            "custom_logo" => set_mod(&mut mods, &mut mods_changed, id, Php::Int(intval(value).abs())),
             "header_textcolor" => {
                 let color = text(value);
                 // An invalid color becomes the theme's `default-text-color`, which Twenty Seventeen does not set.

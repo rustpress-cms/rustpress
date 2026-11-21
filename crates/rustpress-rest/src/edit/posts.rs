@@ -449,9 +449,10 @@ impl Rest<'_> {
 
     /// The references of `prepare_item_for_database()` and `handle_featured_media()`: the author, the parent and
     /// the featured image must exist. (WordPress checks the image after saving the post; here nothing is saved.)
-    async fn check_references(&self, args: &Args) -> Result<Option<RestError>> {
+    /// The author may also stay the post's current one (`is_user_member_of_blog()`, WordPress 7.1.5).
+    async fn check_references(&self, args: &Args, current_author: u64) -> Result<Option<RestError>> {
         let me = self.user().map_or(0, |u| u.id);
-        if let Some(author) = args.u64("author").filter(|a| *a != 0 && *a != me)
+        if let Some(author) = args.u64("author").filter(|a| *a != 0 && *a != me && *a != current_author)
             && self.site.db.user(author).await?.is_none()
         {
             return Ok(Some(RestError::new("rest_invalid_author", "Invalid author ID.", 400)));
@@ -484,7 +485,7 @@ impl Rest<'_> {
             Ok(d) => d,
             Err(e) => return Ok(Err(e)),
         };
-        if let Some(e) = self.check_references(args).await? {
+        if let Some(e) = self.check_references(args, 0).await? {
             return Ok(Err(e));
         }
         if data.post_status.is_none() {
@@ -526,7 +527,7 @@ impl Rest<'_> {
             Ok(d) => d,
             Err(e) => return Ok(Err(e)),
         };
-        if let Some(e) = self.check_references(args).await? {
+        if let Some(e) = self.check_references(args, post.post_author).await? {
             return Ok(Err(e));
         }
         // An auto draft that is saved becomes a draft.

@@ -107,15 +107,26 @@ impl Rest<'_> {
         Ok(None)
     }
 
-    /// `prepare_item_for_database()`.
-    async fn prepare_comment_for_database(&self, args: &Args) -> Result<std::result::Result<Prepared, RestError>> {
+    /// `check_assign_author_permission()` (WordPress 7.1.5): moderators, and only for a user of the site
+    /// (`is_user_member_of_blog()`, which takes 0 for the signed-in user).
+    async fn check_assign_author(&self, author: u64) -> Result<bool> {
+        let Some(user) = self.user().filter(|u| u.id != 0) else { return Ok(false) };
+        if !user.can("moderate_comments") {
+            return Ok(false);
+        }
+        Ok(author == 0 || self.site.db.user(author).await?.is_some())
+    }
+
+    /// `prepare_item_for_database()`; `keep_author` is the `author` of an update that names the comment's own user,
+    /// which WordPress 7.1.5 drops from the request so that the author's details are not refreshed.
+    async fn prepare_comment_for_database(&self, args: &Args, keep_author: bool) -> Result<std::result::Result<Prepared, RestError>> {
         let content = match args.get("content") {
             Some(Value::String(content)) => Some(content.trim().to_owned()),
             Some(Value::Object(object)) => object.get("raw").and_then(Value::as_str).map(|raw| raw.trim().to_owned()),
             _ => None,
         };
         let mut prepared = Prepared { content, post_id: args.u64("post"), parent: args.u64("parent"), ..Prepared::default() };
-        if args.has("author") {
+        if args.has("author") && !keep_author {
             let user = match args.u64("author").filter(|id| *id != 0) {
                 Some(id) => self.site.db.user(id).await?,
                 None => None,
@@ -268,7 +279,7 @@ impl Rest<'_> {
         };
         let moderator = user.can("moderate_comments");
         let post_id = args.u64("post").unwrap_or(0);
-        if args.has("author") && args.u64("author") != Some(user.id) && !moderator {
+        if args.has("author") && args.u64("author") != Some(user.id) && !self.check_assign_author(args.u64("author").unwrap_or(0)).await? {
             bail!(self.forbidden("rest_comment_invalid_author", "Sorry, you are not allowed to edit 'author' for comments."));
         }
         if let Some(ip) = args.str("author_ip")
@@ -326,7 +337,7 @@ impl Rest<'_> {
         if !matches!(kind.as_str(), "comment" | "note") {
             bail!(RestError::new("rest_invalid_comment_type", "Cannot create a comment with that type.", 400));
         }
-        let prepared = match self.prepare_comment_for_database(args).await? {
+        let prepared = match self.prepare_comment_for_database(args, false).await? {
             Ok(p) => p,
             Err(e) => bail!(e),
         };
@@ -431,6 +442,15 @@ impl Rest<'_> {
         if !self.check_edit_comment(&comment).await? {
             bail!(self.forbidden("rest_cannot_edit", "Sorry, you are not allowed to edit this comment."));
         }
+        // Reassigning a comment copies the new author's email address onto it (WordPress 7.1.5).
+        let author = args.has("author").then(|| args.u64("author").unwrap_or(0));
+        if let Some(author) = author
+            && author != comment.user_id
+            && self.user().map_or(0, |u| u.id) != author
+            && !self.check_assign_author(author).await?
+        {
+            bail!(self.forbidden("rest_comment_invalid_author", "Sorry, you are not allowed to edit 'author' for comments."));
+        }
         if let Some(post) = args.u64("post")
             && post != comment.comment_post_id
             && let Some(error) = self.check_target_post(post, params, comment.comment_type == "note").await?
@@ -441,7 +461,7 @@ impl Rest<'_> {
         if args.str("type").is_some_and(|t| t != current_type) {
             bail!(RestError::new("rest_comment_invalid_type", "Sorry, you are not allowed to change the comment type.", 404));
         }
-        let prepared = match self.prepare_comment_for_database(args).await? {
+        let prepared = match self.prepare_comment_for_database(args, author == Some(comment.user_id)).await? {
             Ok(p) => p,
             Err(e) => bail!(e),
         };

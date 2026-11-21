@@ -228,15 +228,18 @@ impl Atts {
 }
 
 /// `stripcslashes()`.
+#[cfg(test)]
 fn stripcslashes(s: &str) -> String {
-    let bytes = s.as_bytes();
+    String::from_utf8_lossy(&stripcslashes_bytes(s.as_bytes())).into_owned()
+}
+
+/// `stripcslashes()` on bytes.
+fn stripcslashes_bytes(bytes: &[u8]) -> Vec<u8> {
     let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
     let mut i = 0;
     while i < bytes.len() {
         if bytes[i] != b'\\' || i + 1 >= bytes.len() {
-            if bytes[i] != b'\\' {
-                out.push(bytes[i]);
-            }
+            out.push(bytes[i]);
             i += 1;
             continue;
         }
@@ -274,6 +277,42 @@ fn stripcslashes(s: &str) -> String {
         }
         i += 1;
     }
+    out
+}
+
+/// The `$decode` closure of `shortcode_parse_atts()` (WordPress 7.1.5): decodes like `stripcslashes()`, except that a
+/// hex or octal escape (`\\(?:x[0-9A-Fa-f]{1,2}|[0-7]{1,3}|.)`, longer than two bytes) that decodes to `<`, `>`, `"` or
+/// `'` produces `&lt;`, `&gt;`, `&quot;` or `&#039;`.
+fn decode_att(s: &str) -> String {
+    if !s.contains('\\') {
+        return s.to_owned();
+    }
+    let bytes = s.as_bytes();
+    let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] != b'\\' || i + 1 >= bytes.len() {
+            out.push(bytes[i]);
+            i += 1;
+            continue;
+        }
+        let len = match bytes[i + 1] {
+            b'x' if bytes.get(i + 2).is_some_and(u8::is_ascii_hexdigit) => 3 + usize::from(bytes.get(i + 3).is_some_and(u8::is_ascii_hexdigit)),
+            b'0'..=b'7' => 2 + bytes[i + 2..].iter().take(2).take_while(|b| (b'0'..=b'7').contains(*b)).count(),
+            _ => 2,
+        };
+        let token = &bytes[i..i + len];
+        let decoded = stripcslashes_bytes(token);
+        let structural: &[u8] = match decoded.as_slice() {
+            b"<" if len > 2 => b"&lt;",
+            b">" if len > 2 => b"&gt;",
+            b"\"" if len > 2 => b"&quot;",
+            b"'" if len > 2 => b"&#039;",
+            other => other,
+        };
+        out.extend_from_slice(structural);
+        i += len;
+    }
     String::from_utf8_lossy(&out).into_owned()
 }
 
@@ -306,17 +345,17 @@ pub fn parse_atts(text: &str) -> Atts {
     for m in PATTERN.captures_iter(&text) {
         let group = |i: usize| m.get(i).map(|g| g.as_str());
         if let Some(key) = group(1).filter(|k| !k.is_empty()) {
-            atts.set(&key.to_lowercase(), &stripcslashes(group(2).unwrap_or("")));
+            atts.set(&key.to_lowercase(), &decode_att(group(2).unwrap_or("")));
         } else if let Some(key) = group(3).filter(|k| !k.is_empty()) {
-            atts.set(&key.to_lowercase(), &stripcslashes(group(4).unwrap_or("")));
+            atts.set(&key.to_lowercase(), &decode_att(group(4).unwrap_or("")));
         } else if let Some(key) = group(5).filter(|k| !k.is_empty()) {
-            atts.set(&key.to_lowercase(), &stripcslashes(group(6).unwrap_or("")));
+            atts.set(&key.to_lowercase(), &decode_att(group(6).unwrap_or("")));
         } else if let Some(v) = group(7).filter(|v| !v.is_empty()) {
-            atts.positional.push(stripcslashes(v));
+            atts.positional.push(decode_att(v));
         } else if let Some(v) = group(8).filter(|v| !v.is_empty()) {
-            atts.positional.push(stripcslashes(v));
+            atts.positional.push(decode_att(v));
         } else if let Some(v) = group(9) {
-            atts.positional.push(stripcslashes(v));
+            atts.positional.push(decode_att(v));
         }
     }
     // Reject any unclosed HTML elements.
@@ -411,6 +450,35 @@ mod tests {
         assert_eq!(atts.get("width"), Some("300"));
         assert_eq!(atts.positional, ["single", "flag", "x='a'b'"]);
         assert_eq!(atts.get("caption"), Some("Its"));
+    }
+
+    #[test]
+    fn decodes_escapes_like_wordpress_7_1_5() {
+        // Expected values from the `$decode` closure of WordPress 7.1.5 run in PHP 8.3.
+        let cases = [
+            (r"a\x3cb", "a&lt;b"),
+            (r"\74script\76", "&lt;script&gt;"),
+            (r"\x22\x27", "&quot;&#039;"),
+            (r"\x3", "\u{3}"),
+            (r#"\"\'"#, "\"'"),
+            ("tail\\", "tail\\"),
+            (r"\x", "x"),
+            (r"\xg", "xg"),
+            (r"\n\t", "\n\t"),
+            (r"\0", "\0"),
+            (r"\074", "&lt;"),
+            (r"\0743", "&lt;3"),
+            (r"\x3c3", "&lt;3"),
+            ("ä\\ü", "äü"),
+            (r"\\x3c", r"\x3c"),
+            (r"\400", "\0"),
+            ("plain", "plain"),
+        ];
+        for (input, want) in cases {
+            assert_eq!(decode_att(input), want, "{input:?}");
+        }
+        assert_eq!(stripcslashes("a\\"), "a\\");
+        assert_eq!(parse_atts(r#"title="\x3cb\x3e""#).get("title"), Some("&lt;b&gt;"));
     }
 
     #[test]

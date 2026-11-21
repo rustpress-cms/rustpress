@@ -87,6 +87,8 @@ fn sanitize(ctx: &Ctx<'_>, option: &str, value: &str) -> Result<String, String> 
             if value == "0" || value.is_empty() { "closed".to_owned() } else { value.to_owned() }
         }
         "blogname" | "blogdescription" => esc_html(value),
+        // WordPress 7.1.5: any value other than 'page' is treated as 'posts'.
+        "show_on_front" => (if value == "page" { "page" } else { "posts" }).to_owned(),
         "blog_public" => value.trim().parse::<i64>().unwrap_or(1).to_string(),
         "date_format" | "time_format" | "mailserver_url" | "mailserver_login" | "mailserver_pass" | "upload_path" => strip_tags(value),
         "gmt_offset" => {

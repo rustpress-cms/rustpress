@@ -860,6 +860,12 @@ impl Rest<'_> {
             data.tax_input.push(("wp_template_part_area".into(), vec![TermRef::Name(area)]));
         }
         if let Some(author) = args.u64("author").filter(|a| *a > 0) {
+            // `prepare_item_for_database()`: a user of the site, unless it is the signed-in user or the template's
+            // current author (`is_user_member_of_blog()`, WordPress 7.1.5).
+            let current_author = existing.as_ref().map_or(0, |t| t.author);
+            if author != self.user().map_or(0, |u| u.id) && author != current_author && self.site.db.user(author).await?.is_none() {
+                return Ok(Err(RestError::new("rest_invalid_author", "Invalid author ID.", 400)));
+            }
             data.post_author = Some(author);
         }
         let post_id = match content.insert_post(&data).await {

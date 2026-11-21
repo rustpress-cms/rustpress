@@ -10,7 +10,7 @@
 [![License: GPL v2+](https://img.shields.io/badge/license-GPL--2.0--or--later-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-stable-orange.svg?logo=rust)](https://www.rust-lang.org)
 [![Edition 2024](https://img.shields.io/badge/edition-2024-orange.svg?logo=rust)](https://doc.rust-lang.org/edition-guide/rust-2024/)
-[![WordPress](https://img.shields.io/badge/WordPress-7.1.4_compatible-21759b.svg?logo=wordpress)](compat/reports)
+[![WordPress](https://img.shields.io/badge/WordPress-7.1.5_compatible-21759b.svg?logo=wordpress)](compat/reports)
 [![PHP](https://img.shields.io/badge/PHP-not_required-777bb4.svg?logo=php&logoColor=white)](#how-it-works)
 [![Database](https://img.shields.io/badge/MySQL%20%7C%20MariaDB-supported-4479a1.svg?logo=mariadb&logoColor=white)](#getting-started)
 [![Docker](https://img.shields.io/badge/docker-ready-2496ed.svg?logo=docker&logoColor=white)](#docker)
@@ -77,7 +77,7 @@ The plugins that people need most are ported next: ask for one with a [port requ
 
 ## Compatibility
 
-`rustpress-compat` crawls a reference WordPress 7.1.4 and RustPress side by side and compares status, headers and bodies. Latest runs ([reports](compat/reports)):
+`rustpress-compat` crawls a reference WordPress 7.1.5 and RustPress side by side and compares status, headers and bodies. Latest runs ([reports](compat/reports)):
 
 | Theme | URLs compared | identical | known, documented differences | unexpected |
 |---|---:|---:|---:|---:|
@@ -138,7 +138,7 @@ Then open the site in the browser and follow the installer, or point `WORDPRESS_
 
 ## Shared hosting (CGI)
 
-On hosts that only offer Apache with CGI, RustPress runs as a single static binary in `cgi-bin/`. It detects CGI mode by itself (`GATEWAY_INTERFACE`), reads the database settings from `wp-config.php` and takes over the site through `.htaccess`. On an empty webspace the installer downloads WordPress 7.1.4 from wordpress.org (checksum-verified) for the theme files and translations. The binary (`rustpress-<target>`, e.g. `rustpress-x86_64-unknown-linux-musl`) is built by CI and attached to every [release](https://github.com/rustpress-cms/rustpress/releases).
+On hosts that only offer Apache with CGI, RustPress runs as a single static binary in `cgi-bin/`. It detects CGI mode by itself (`GATEWAY_INTERFACE`), reads the database settings from `wp-config.php` and takes over the site through `.htaccess`. On an empty webspace the installer downloads WordPress 7.1.5 from wordpress.org (checksum-verified) for the theme files and translations. The binary (`rustpress-<target>`, e.g. `rustpress-x86_64-unknown-linux-musl`) is built by CI and attached to every [release](https://github.com/rustpress-cms/rustpress/releases).
 
 Each request starts a new process, so RustPress keeps the theme and WordPress files it reads in `cgi-bin/rustpress-cache.bin` for the next one (a file that changed is read again). Delete it at any time; the next request writes it again.
 
@@ -165,8 +165,8 @@ cargo run -p rustpress-compat -- --report compat/reports/twentytwentyfive.md
 `WORDPRESS_VERSION` names the release RustPress follows; the installer downloads it, and `dev/up.sh` keeps the reference WordPress at it with automatic updates off. A daily workflow opens an issue for each newer release, with the changed PHP code, the RustPress files that follow it and the steps to move over:
 
 ```sh
-dev/wp-diff.sh 7.1.3 7.1.4    # the same report locally, plus the full PHP diff
-dev/wp-bump.sh 7.1.4          # set the new version and bring the reference WordPress to it
+dev/wp-diff.sh 7.1.4 7.1.5    # the same report locally, plus the full PHP diff
+dev/wp-bump.sh 7.1.5          # set the new version and bring the reference WordPress to it
 ```
 
 ### Crates
@@ -189,7 +189,7 @@ dev/wp-bump.sh 7.1.4          # set the new version and bring the reference Word
 
 ## Status
 
-RustPress is experimental. It is tested against WordPress 7.1.4 and runs a real site in production, but expect rough edges, and keep a backup of your database and the WordPress files before pointing it at a live site.
+RustPress is experimental. It is tested against WordPress 7.1.5 and runs a real site in production, but expect rough edges, and keep a backup of your database and the WordPress files before pointing it at a live site.
 
 ## Contributing
 
