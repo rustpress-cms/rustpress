@@ -131,7 +131,28 @@
   </div>
 </section>
 
-<section id="plugins">
+<section id="compare">
+  <div class="wrap">
+    <h2>How it compares</h2>
+    <p class="intro">Other projects also try to take WordPress sites somewhere new. They answer different questions.</p>
+    <div class="table-scroll">
+      <table class="text">
+        <thead><tr><th>Project</th><th>Approach</th><th>Existing database and <code>wp-content/</code></th></tr></thead>
+        <tbody>
+          <tr><td><strong>RustPress</strong></td><td>WordPress core, block themes, three classic themes and selected plugins ported to Rust and checked byte for byte against a real WordPress; no PHP</td><td>used as they are</td></tr>
+          <tr><td><a href="https://github.com/iolevel/wpdotnet-sdk">WpDotNet</a> (PeachPie)</td><td>compiles WordPress's own PHP to .NET, so PHP plugins and themes generally run</td><td>used as they are</td></tr>
+          <tr><td><a href="https://github.com/LegacyToRustProject/RustPress">LegacyToRustProject/RustPress</a> (same name, unrelated)</td><td>a Rust CMS on the <code>wp_*</code> tables; themes and plugins converted with AI, aiming for visual parity</td><td>used</td></tr>
+          <tr><td><a href="https://github.com/Vabian124/OxidePress">OxidePress</a></td><td>a fork of the project above that runs PHP plugins in a <code>php</code> CLI worker</td><td>used</td></tr>
+          <tr><td><a href="https://github.com/Trooper-lab/Daypress">Daypress</a></td><td>a Rust CMS with its own SQLite database and part of the <code>wp/v2</code> REST API</td><td>content imported from a WXR export</td></tr>
+          <tr><td><a href="https://github.com/emdash-cms/emdash">EmDash</a> (Cloudflare)</td><td>a TypeScript CMS on Astro; blocks become Portable Text</td><td>content imported from a WXR export</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">If you need every PHP plugin, WpDotNet runs WordPress itself. If you want a new CMS, EmDash and Daypress import your content. RustPress keeps a WordPress site exactly as it is and serves it without PHP; what it does not support yet, <code>rustpress check</code> tells you before you switch. The other projects are described from their own pages (November 2026).</p>
+  </div>
+</section>
+
+<section id="plugins" class="alt">
   <div class="wrap">
     <h2>Plugins as native modules</h2>
     <p class="intro">PHP plugins do not run. Important plugins are rebuilt in Rust instead and take over while the plugin is active in WordPress, with the same settings, the same output and the same behaviour. The plugin's files simply stay in <code>wp-content/plugins</code>.</p>
