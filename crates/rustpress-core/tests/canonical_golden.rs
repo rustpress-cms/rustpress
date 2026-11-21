@@ -14,6 +14,7 @@ async fn canonical_redirects_match_wordpress() {
     let url = std::env::var("RUSTPRESS_TEST_DB").unwrap_or_else(|_| "mysql://wordpress:wordpress@127.0.0.1:3306/wordpress".into());
     let Ok(db) = Db::connect(&url, "wp_").await else {
         eprintln!("reference DB not available, skipping");
+        assert!(std::env::var_os("RUSTPRESS_REQUIRE_REFERENCE").is_none(), "RUSTPRESS_REQUIRE_REFERENCE is set, so this test must not skip itself");
         return;
     };
     let site = Site::load_at(db, std::path::Path::new(&std::env::var("RUSTPRESS_WP_ROOT").unwrap_or_else(|_| DEFAULT_ROOT.into()))).await.unwrap();

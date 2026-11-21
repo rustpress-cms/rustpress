@@ -59,6 +59,7 @@ fn php_serialize(bin: &str, expr: &str) -> Vec<u8> {
 fn php_output_round_trips_byte_exact() {
     let Some(bin) = php() else {
         eprintln!("php not found, skipping compatibility test");
+        assert!(std::env::var_os("RUSTPRESS_REQUIRE_REFERENCE").is_none(), "RUSTPRESS_REQUIRE_REFERENCE is set, so this test must not skip itself");
         return;
     };
     for expr in CASES {

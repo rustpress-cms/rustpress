@@ -128,6 +128,7 @@ async fn site() -> Option<Site> {
 async fn main_query_matches_wordpress() {
     let Some(site) = site().await else {
         eprintln!("reference WordPress/database not reachable, skipping");
+        assert!(std::env::var_os("RUSTPRESS_REQUIRE_REFERENCE").is_none(), "RUSTPRESS_REQUIRE_REFERENCE is set, so this test must not skip itself");
         return;
     };
     let id_of = |name: &str| {

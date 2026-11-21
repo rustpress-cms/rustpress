@@ -79,10 +79,12 @@ async fn global_styles_match_wordpress() {
     let url = std::env::var("RUSTPRESS_TEST_DB").unwrap_or_else(|_| "mysql://wordpress:wordpress@127.0.0.1:3306/wordpress".into());
     let (Ok(db), true) = (Db::connect(&url, "wp_").await, root.join("wp-includes").is_dir()) else {
         eprintln!("reference stack not available, skipping");
+        assert!(std::env::var_os("RUSTPRESS_REQUIRE_REFERENCE").is_none(), "RUSTPRESS_REQUIRE_REFERENCE is set, so this test must not skip itself");
         return;
     };
     let Ok(page) = fetch("/ueber-uns/") else {
         eprintln!("WordPress not reachable, skipping");
+        assert!(std::env::var_os("RUSTPRESS_REQUIRE_REFERENCE").is_none(), "RUSTPRESS_REQUIRE_REFERENCE is set, so this test must not skip itself");
         return;
     };
     let reference = style_block(&page, "global-styles-inline-css").expect("global styles in reference page");

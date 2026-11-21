@@ -32,6 +32,8 @@ const OWN_MESSAGES: &[&str] = &[
     "Your site does not need loopback requests",
     // Only in `admin-network-<locale>.mo`, which WordPress does not load for network.php either.
     "You must define the %1$s constant as true in your %2$s file to allow creation of a Network.",
+    // A plugin route's message, already translated in the plugin's text domain, passed through as is.
+    "%s",
 ];
 
 fn rust_files(dir: &Path, out: &mut Vec<PathBuf>) {
@@ -77,6 +79,7 @@ fn every_message_id_exists_in_wordpress() {
     let root = PathBuf::from(std::env::var("RUSTPRESS_WP_ROOT").unwrap_or_else(|_| DEFAULT_ROOT.into()));
     if !root.join("wp-content/languages/de_DE.mo").exists() {
         eprintln!("skipped: no de_DE language pack in {}", root.display());
+        assert!(std::env::var_os("RUSTPRESS_REQUIRE_REFERENCE").is_none(), "RUSTPRESS_REQUIRE_REFERENCE is set, so this test must not skip itself");
         return;
     }
     let i18n = I18n::load(&root, "de_DE", &[]);
@@ -87,9 +90,11 @@ fn every_message_id_exists_in_wordpress() {
     rust_files(crates, &mut files);
 
     let text = r#""((?:[^"\\]|\\.)*)""#;
-    let plain = Regex::new(&format!(r"\.tr\(\s*{text}\s*\)")).unwrap();
-    let with_context = Regex::new(&format!(r"\.trx\(\s*{text}\s*,\s*{text}\s*\)")).unwrap();
-    let plural = Regex::new(&format!(r"\.trn\(\s*{text}\s*,\s*{text}\s*,")).unwrap();
+    // Group 1 is the receiver: in the native plugin modules only `site` translates in WordPress' own text domain;
+    // the modules' own `tr()` methods use the plugin's domain, whose language packs the reference does not have.
+    let plain = Regex::new(&format!(r"(\w+)\.tr\(\s*{text}\s*\)")).unwrap();
+    let with_context = Regex::new(&format!(r"(\w+)\.trx\(\s*{text}\s*,\s*{text}\s*\)")).unwrap();
+    let plural = Regex::new(&format!(r"(\w+)\.trn\(\s*{text}\s*,\s*{text}\s*,")).unwrap();
     // REST errors carry their message id as a literal and are translated when serialized.
     let rest_messages = [
         Regex::new(&format!(r"RestError::new\(\s*{text}\s*,\s*{text}")).unwrap(),
@@ -103,20 +108,22 @@ fn every_message_id_exists_in_wordpress() {
         let source = std::fs::read_to_string(&file).unwrap();
         let source = source.split("#[cfg(test)]").next().unwrap_or_default();
         let name = file.strip_prefix(crates).unwrap_or(&file).display().to_string();
+        let plugin_module = name.starts_with("rustpress-plugins");
+        let core_domain = |c: &regex::Captures| !plugin_module || &c[1] == "site";
         let mut check = |context: Option<String>, id: String| {
             checked += 1;
             if !OWN_MESSAGES.contains(&id.as_str()) && !i18n.has("default", context.as_deref(), &id) {
                 missing.push(format!("{name}: {:?} {id:?}", context));
             }
         };
-        for c in plain.captures_iter(source) {
-            check(None, unescape(&c[1]));
+        for c in plain.captures_iter(source).filter(core_domain) {
+            check(None, unescape(&c[2]));
         }
-        for c in with_context.captures_iter(source) {
-            check(Some(unescape(&c[2])), unescape(&c[1]));
+        for c in with_context.captures_iter(source).filter(core_domain) {
+            check(Some(unescape(&c[3])), unescape(&c[2]));
         }
-        for c in plural.captures_iter(source) {
-            check(None, unescape(&c[1]));
+        for c in plural.captures_iter(source).filter(core_domain) {
+            check(None, unescape(&c[2]));
         }
         for re in &rest_messages {
             for c in re.captures_iter(source) {

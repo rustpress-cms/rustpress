@@ -24,8 +24,52 @@ jobs:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      # Without the reference WordPress stack (dev/up.sh) the golden tests skip themselves.
+      # Without the reference WordPress stack the golden tests skip themselves here; the job golden runs them.
       - run: cargo test --workspace --locked
+
+  golden:
+    name: Golden tests and compat run
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      # The tests that compare with WordPress fail instead of skipping themselves when the reference is missing.
+      RUSTPRESS_REQUIRE_REFERENCE: "1"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Start the reference stack (MariaDB + WordPress)
+        run: |
+          # The dev/ scripts are written for Podman; dev/ci/podman runs them on the runner's Docker.
+          echo "$PWD/dev/ci" >> "$GITHUB_PATH"
+          export PATH="$PWD/dev/ci:$PATH"
+          dev/up.sh
+          # The entrypoint first runs a temporary server without networking: wait for the real one.
+          until podman exec rustpress-db mariadb -h127.0.0.1 -uwordpress -pwordpress -e "SELECT 1" wordpress >/dev/null 2>&1; do sleep 2; done
+          until curl -so /dev/null http://127.0.0.1:8080/; do sleep 2; done
+          # The seeds (dev/seed_patterns.sh) and the tests read the WordPress files of the Docker volume.
+          sudo chmod o+x /var/lib/docker /var/lib/docker/volumes
+      - name: Seed the reference
+        run: |
+          dev/seed.sh
+          # For crates/rustpress-core/tests/i18n_coverage.rs; installed, not activated (the site stays en_US).
+          dev/wp.sh language core install de_DE
+          dev/wp.sh core version
+      - name: Golden tests
+        run: dev/test.sh --locked --no-fail-fast
+      - name: Compat run
+        run: |
+          cargo run --locked -p rustpress-compat -- --wp-root "$(podman volume inspect rustpress-wp -f '{{.Mountpoint}}')" \
+            --report compat/reports/ci.md
+      - name: Compat report
+        if: always()
+        run: test -f compat/reports/ci.md && cat compat/reports/ci.md >> "$GITHUB_STEP_SUMMARY" || true
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: compat-report
+          path: compat/reports/ci.md
+          if-no-files-found: ignore
 
   clippy:
     name: Clippy

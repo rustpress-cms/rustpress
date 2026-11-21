@@ -43,6 +43,7 @@ async fn app() -> Option<std::sync::Arc<App>> {
     let root = PathBuf::from(std::env::var("RUSTPRESS_WP_ROOT").unwrap_or_else(|_| DEFAULT_ROOT.into()));
     if !root.join("wp-includes").is_dir() || fetch("/").is_err() {
         eprintln!("reference stack not available, skipping");
+        assert!(std::env::var_os("RUSTPRESS_REQUIRE_REFERENCE").is_none(), "RUSTPRESS_REQUIRE_REFERENCE is set, so this test must not skip itself");
         return None;
     }
     let config = Config {

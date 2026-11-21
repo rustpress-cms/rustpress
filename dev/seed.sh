@@ -5,8 +5,8 @@
 #
 # Dates: the fixtures were recorded with content created on 2026-10-24 (archives /2026/10/24/, uploads in
 # /2026/10/). A fresh seed is therefore moved to that day: uploads go to 2026/10, and at the end every date
-# written during this run is shifted so that the installation happened at 2026-10-24 14:00:00, keeping the
-# order and spacing of everything. Dates a seed sets on purpose (2026-01-01, 2030-01-01) stay.
+# written during this run is moved so that the installation happened at 2026-10-24 14:00:00, keeping the order of
+# everything (one second apart, see the end). Dates a seed sets on purpose (2026-01-01, 2030-01-01) stay.
 set -euo pipefail
 cd "$(dirname "$0")"
 wp() { ./wp.sh "$@"; }
@@ -23,6 +23,9 @@ if ! wp core is-installed 2>/dev/null; then
     --admin_email=admin@example.com --skip-email >/dev/null
   fresh=1
 fi
+# The image brings the newest WordPress: seed with the release in WORDPRESS_VERSION (dev/up.sh could not pin it before
+# the installation).
+./wp-reference.sh
 
 seed_base() {
 wp rewrite structure '/%postname%/' >/dev/null
@@ -158,20 +161,36 @@ fi
 ./seed_blocks3.sh
 
 # Moves a fresh installation to 2026-10-24 (see the top). Only the dates written since the installation
-# are shifted; a database that was seeded before keeps its dates.
+# are moved; a database that was seeded before keeps its dates. They are not shifted but laid out again one second
+# apart in the order they were written (post dates, comment dates and changed modification dates, ties by ID):
+# WP-CLI writes several rows in the same second, and rows with the same date have no defined order in MariaDB, so
+# RustPress and WordPress could list them differently (feeds, archives). Ties a seed makes on purpose (2026-01-01)
+# lie outside the installation's dates and stay.
 if [ "$fresh" = 1 ]; then
   sql <<'SQL'
-SET @from_gmt = (SELECT post_date_gmt FROM wp_posts WHERE ID = 1);
 SET @from = (SELECT post_date FROM wp_posts WHERE ID = 1);
-SET @shift = TIMESTAMPDIFF(SECOND, @from, '2026-10-24 14:00:00');
+SET @offset = TIMESTAMPDIFF(SECOND, (SELECT post_date_gmt FROM wp_posts WHERE ID = 1), @from);
 SET @to = DATE_ADD(UTC_TIMESTAMP(), INTERVAL 1 DAY);
-UPDATE wp_posts SET post_date = DATE_ADD(post_date, INTERVAL @shift SECOND) WHERE post_date BETWEEN @from AND @to;
-UPDATE wp_posts SET post_date_gmt = DATE_ADD(post_date_gmt, INTERVAL @shift SECOND) WHERE post_date_gmt BETWEEN @from_gmt AND @to;
-UPDATE wp_posts SET post_modified = DATE_ADD(post_modified, INTERVAL @shift SECOND) WHERE post_modified BETWEEN @from AND @to;
-UPDATE wp_posts SET post_modified_gmt = DATE_ADD(post_modified_gmt, INTERVAL @shift SECOND) WHERE post_modified_gmt BETWEEN @from_gmt AND @to;
-UPDATE wp_comments SET comment_date = DATE_ADD(comment_date, INTERVAL @shift SECOND) WHERE comment_date BETWEEN @from AND @to;
-UPDATE wp_comments SET comment_date_gmt = DATE_ADD(comment_date_gmt, INTERVAL @shift SECOND) WHERE comment_date_gmt BETWEEN @from_gmt AND @to;
-UPDATE wp_users SET user_registered = DATE_ADD(user_registered, INTERVAL @shift SECOND) WHERE user_registered BETWEEN @from_gmt AND @to;
+SET @base = '2026-10-24 14:00:00';
+SET @shift = TIMESTAMPDIFF(SECOND, @from, @base);
+DROP TABLE IF EXISTS rustpress_seed_dates;
+CREATE TABLE rustpress_seed_dates AS
+  SELECT kind, id, same, DATE_ADD(@base, INTERVAL ROW_NUMBER() OVER (ORDER BY d, kind, id) - 1 SECOND) AS at FROM (
+    SELECT 0 AS kind, ID AS id, post_modified = post_date AS same, post_date AS d FROM wp_posts WHERE post_date BETWEEN @from AND @to
+    UNION ALL SELECT 1, comment_ID, 0, comment_date FROM wp_comments WHERE comment_date BETWEEN @from AND @to
+    UNION ALL SELECT 2, ID, 0, post_modified FROM wp_posts
+      WHERE post_modified BETWEEN @from AND @to AND NOT (post_modified = post_date AND post_date BETWEEN @from AND @to)
+  ) AS written;
+UPDATE wp_posts p JOIN rustpress_seed_dates e ON e.kind = 0 AND e.id = p.ID
+  SET p.post_modified = IF(e.same, e.at, p.post_modified), p.post_modified_gmt = IF(e.same, DATE_SUB(e.at, INTERVAL @offset SECOND), p.post_modified_gmt),
+      p.post_date = e.at, p.post_date_gmt = DATE_SUB(e.at, INTERVAL @offset SECOND);
+UPDATE wp_posts p JOIN rustpress_seed_dates e ON e.kind = 2 AND e.id = p.ID
+  SET p.post_modified = e.at, p.post_modified_gmt = DATE_SUB(e.at, INTERVAL @offset SECOND);
+UPDATE wp_comments c JOIN rustpress_seed_dates e ON e.kind = 1 AND e.id = c.comment_ID
+  SET c.comment_date = e.at, c.comment_date_gmt = DATE_SUB(e.at, INTERVAL @offset SECOND);
+DROP TABLE rustpress_seed_dates;
+UPDATE wp_users SET user_registered = DATE_ADD(user_registered, INTERVAL @shift SECOND)
+  WHERE user_registered BETWEEN DATE_SUB(@from, INTERVAL @offset SECOND) AND @to;
 SQL
   echo "dates moved to 2026-10-24"
 fi
