@@ -2,7 +2,7 @@
 
 All notable changes to RustPress. Each release names the WordPress release it follows.
 
-## Unreleased
+## 0.4.0 (2026-11-21)
 
 Follows WordPress 7.1.5.
 
