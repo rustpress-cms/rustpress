@@ -30,7 +30,7 @@ fn every_password_format_of_wordpress_is_accepted() {
 
 fn wp_config_path() -> std::path::PathBuf {
     std::env::var("RUSTPRESS_TEST_WP_CONFIG").map(Into::into).unwrap_or_else(|_| {
-        r"\\wsl.localhost\Debian\home\yoshi\.local\share\containers\storage\volumes\rustpress-wp\_data\wp-config.php".into()
+        concat!(env!("CARGO_MANIFEST_DIR"), "/../../wordpress/wp-config.php").into()
     })
 }
 

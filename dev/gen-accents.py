@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""Writes crates/rustpress-core/src/accents_table.rs from `remove_accents()` of the reference's formatting.php.
+"""Writes crates/rustpress-core/src/accents_table.rs from `remove_accents()` of the reference's formatting.php
+(RUSTPRESS_WP_ROOT is the folder with the WordPress files of the reference).
 
     python dev/gen-accents.py"""
+import os
 import re
 
-SOURCE = r'\\wsl.localhost\Debian\home\yoshi\.local\share\containers\storage\volumes\rustpress-wp\_data\wp-includes\formatting.php'
+SOURCE = os.path.join(os.environ['RUSTPRESS_WP_ROOT'], 'wp-includes', 'formatting.php')
 TARGET = 'crates/rustpress-core/src/accents_table.rs'
 
 php = open(SOURCE, encoding='utf-8').read()

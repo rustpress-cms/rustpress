@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Runs the workspace tests against the reference stack on Linux (dev/up.sh, dev/seed.sh), with the paths
-# the golden tests otherwise take from the Windows development machine:
+# the golden tests otherwise look for in RUSTPRESS_WP_ROOT (default: wordpress/ in the repository):
 #   dev/test.sh [cargo test arguments]   e.g. dev/test.sh --release --no-fail-fast
 # The authentication oracle (crates/rustpress-auth/tests/oracle.rs) also needs RUSTPRESS_TEST_WP_CONFIG; its
 # fixture holds cookies and nonces made with the salts of the installation it was recorded on, so set it only

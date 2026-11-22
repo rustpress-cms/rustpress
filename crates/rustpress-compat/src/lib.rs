@@ -56,7 +56,7 @@ impl Default for Options {
             reference: "127.0.0.1:8080".into(),
             host: "localhost:8080".into(),
             database_url: "mysql://wordpress:wordpress@127.0.0.1:3306/wordpress".into(),
-            wp_root: PathBuf::from(r"\\wsl.localhost\Debian\home\yoshi\.local\share\containers\storage\volumes\rustpress-wp\_data"),
+            wp_root: std::env::var_os("RUSTPRESS_WP_ROOT").map_or_else(|| PathBuf::from("wordpress"), PathBuf::from),
             limit: 1500,
             concurrency: 4,
             only: None,

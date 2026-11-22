@@ -18,7 +18,7 @@ use crate::site::Site;
 use crate::urls::{trailingslashit, untrailingslashit};
 
 fn re(cell: &'static OnceLock<Regex>, pattern: &str) -> &'static Regex {
-    cell.get_or_init(|| Regex::new(pattern).expect("valid regex"))
+    cell.get_or_init(|| crate::formatting::pcre(pattern).expect("valid regex"))
 }
 
 /// Splits `scheme://host/path?query#fragment` (or a bare `/path?query`) into path and query.

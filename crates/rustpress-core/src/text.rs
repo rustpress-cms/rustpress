@@ -9,7 +9,7 @@ use crate::formatting::{esc_attr, esc_url};
 macro_rules! re {
     ($pattern:expr) => {{
         static RE: OnceLock<Regex> = OnceLock::new();
-        RE.get_or_init(|| Regex::new($pattern).expect("valid regex"))
+        RE.get_or_init(|| crate::formatting::pcre($pattern).expect("valid regex"))
     }};
 }
 

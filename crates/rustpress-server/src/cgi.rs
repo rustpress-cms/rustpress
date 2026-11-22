@@ -198,16 +198,33 @@ fn request_from_env() -> std::io::Result<Request<Body>> {
     if std::env::var_os("HTTP_AUTHORIZATION").is_none() && let Some(value) = var("REDIRECT_HTTP_AUTHORIZATION").and_then(|v| HeaderValue::from_str(&v).ok()) {
         builder = builder.header(header::AUTHORIZATION, value);
     }
-    let length: usize = var("CONTENT_LENGTH").and_then(|v| v.parse().ok()).unwrap_or(0);
-    let mut body = Vec::with_capacity(length);
-    std::io::stdin().take(length as u64).read_to_end(&mut body)?;
+    let length: u64 = var("CONTENT_LENGTH").and_then(|v| v.parse().ok()).unwrap_or(0);
     let ip = var("REMOTE_ADDR").and_then(|v| v.parse::<IpAddr>().ok()).unwrap_or(IpAddr::V4(Ipv4Addr::LOCALHOST));
     let port = var("REMOTE_PORT").and_then(|v| v.parse().ok()).unwrap_or(0);
     builder
         .extension(ConnectInfo(SocketAddr::new(ip, port)))
         .extension(crate::client::ServerHttps(https()))
-        .body(Body::from(body))
+        .body(stdin_body(length))
         .map_err(|e| invalid(e.to_string()))
+}
+
+/// The body on stdin, read as the request handler asks for it: a handler stops at its own limit (a visitor's form,
+/// an upload of a signed-in user) instead of the whole `CONTENT_LENGTH` being in memory before anybody looked at
+/// the request. Reading blocks its thread, which the one request of the process can afford.
+fn stdin_body(length: u64) -> Body {
+    const CHUNK: u64 = 64 * 1024;
+    Body::from_stream(futures::stream::unfold(length, |left| async move {
+        if left == 0 {
+            return None;
+        }
+        let mut chunk = Vec::new();
+        match std::io::stdin().take(left.min(CHUNK)).read_to_end(&mut chunk) {
+            // The web server closed stdin before `CONTENT_LENGTH` bytes came.
+            Ok(0) => None,
+            Ok(read) => Some((Ok(chunk), left - read as u64)),
+            Err(e) => Some((Err(e), 0)),
+        }
+    }))
 }
 
 /// The response in CGI form: a `Status:` line, the headers, a blank line and the body.
@@ -244,6 +261,11 @@ pub fn write_failure(message: &str) {
     let _ = std::io::stdout().lock().write_all(b"Status: 500 Internal Server Error\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nRustPress could not start. The error log of the web server has the details.\n");
 }
 
+/// Seconds since the Unix epoch, enough to order the lines of the error log.
+fn unix_seconds() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -259,9 +281,4 @@ mod tests {
         assert_eq!(translate(Path::new("/a/x"), Path::new("/a/cgi-bin"), Path::new("/b/other")), None);
         assert_eq!(translate(Path::new("/elsewhere/x"), Path::new("/a/cgi-bin"), Path::new("/b/cgi-bin")), None);
     }
-}
-
-/// Seconds since the Unix epoch, enough to order the lines of the error log.
-fn unix_seconds() -> u64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
 }

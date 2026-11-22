@@ -543,7 +543,7 @@ fn attribute(tag: &str, name: &str) -> String {
 
 /// `parse_galleries()`: the image attachments of every `[gallery]`, each once.
 async fn gallery_attachments(site: &Site, content: &str, post_id: u64) -> Result<Vec<u64>> {
-    static GALLERY: LazyLock<fancy_regex::Regex> = LazyLock::new(|| fancy_regex::Regex::new(r"(?s)\[(\[?)(gallery)(?![\w-])([^\]\/]*(?:\/(?!\])[^\]\/]*)*?)(?:(\/)\]|\](?:([^\[]*+(?:\[(?!\/\2\])[^\[]*+)*+)\[\/\2\])?)(\]?)").expect("valid pattern"));
+    static GALLERY: LazyLock<fancy_regex::Regex> = LazyLock::new(|| rustpress_core::formatting::pcre(r"(?s)\[(\[?)(gallery)(?![\w-])([^\]\/]*(?:\/(?!\])[^\]\/]*)*?)(?:(\/)\]|\](?:([^\[]*+(?:\[(?!\/\2\])[^\[]*+)*+)\[\/\2\])?)(\]?)").expect("valid pattern"));
     let mut all: Vec<u64> = Vec::new();
     let ids = |list: &str| list.split([',', ' ']).filter_map(|s| s.trim().parse::<u64>().ok()).filter(|id| *id != 0).collect::<Vec<u64>>();
     for caps in GALLERY.captures_iter(content).filter_map(|c| c.ok()) {

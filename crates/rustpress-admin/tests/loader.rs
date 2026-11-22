@@ -1,12 +1,12 @@
 //! Compares the registered scripts and styles with what the reference WordPress registers
 //! (`dev/loader_oracle.sh` writes `tests/fixtures/loader.json`). The WordPress files come from
-//! `RUSTPRESS_TEST_WP_ROOT` (default: the copy this repository is developed against).
+//! `RUSTPRESS_TEST_WP_ROOT` (default: `wordpress/` in the repository, which is not checked in).
 
 use rustpress_admin::registry::{LoaderEnv, default_scripts, default_styles};
 use serde_json::Value;
 
 fn env() -> Option<LoaderEnv> {
-    let root = std::env::var("RUSTPRESS_TEST_WP_ROOT").unwrap_or_else(|_| r"C:\work\claude\rustpress\wp".into());
+    let root = std::env::var("RUSTPRESS_TEST_WP_ROOT").unwrap_or_else(|_| concat!(env!("CARGO_MANIFEST_DIR"), "/../../wordpress").into());
     let includes = std::path::Path::new(&root).join("wp-includes");
     if !includes.join("script-loader.php").is_file() {
         eprintln!("no WordPress files at {root}, skipping");

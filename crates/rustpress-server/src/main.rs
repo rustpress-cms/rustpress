@@ -20,7 +20,14 @@ fn main() {
         std::process::exit(code);
     }
     let task = if cgi { runtime.spawn(run_cgi()) } else { runtime.spawn(run_server()) };
-    runtime.block_on(async { task.await.expect("server task") });
+    if runtime.block_on(task).is_err() {
+        // The task panicked outside of a request handler (those answer with a 500 themselves): the web server
+        // still gets an answer in CGI, and the error log its line.
+        if cgi {
+            rustpress_server::cgi::write_failure("panicked while starting; the message is in the error log of the web server");
+        }
+        std::process::exit(1);
+    }
 }
 
 /// One request from the web server (CGI); log lines go to its error log.

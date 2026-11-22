@@ -262,7 +262,7 @@ async fn attachment_url_to_postid(page: &Page<'_>, url: &str) -> Result<u64> {
 /// `WPSEO_Content_Images::get_images_from_content()`, first image: the first `src` of an `<img>` that is a URL.
 pub fn first_content_image(content: &str) -> Option<String> {
     static IMG: LazyLock<regex::Regex> = LazyLock::new(|| regex::Regex::new(r"<img [^>]+>").expect("valid pattern"));
-    static SRC: LazyLock<fancy_regex::Regex> = LazyLock::new(|| fancy_regex::Regex::new(r#"src=(["'])(.*?)\1"#).expect("valid pattern"));
+    static SRC: LazyLock<fancy_regex::Regex> = LazyLock::new(|| rustpress_core::formatting::pcre(r#"src=(["'])(.*?)\1"#).expect("valid pattern"));
     if !content.contains("<img") {
         return None;
     }

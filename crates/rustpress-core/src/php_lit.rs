@@ -84,14 +84,20 @@ pub struct Parser<'a> {
     plural: Option<PluralTranslator<'a>>,
     /// Inside the middle part of `? :`, where a `:` ends the expression.
     colon_stops: u32,
+    /// How deep `expr()` and `primary()` are nested.
+    depth: u32,
 }
+
+/// Nested deeper than this, the rest of the text is given up as unknown: the parser recurses, and code nested
+/// thousands of levels deep (no real theme or plugin has it) would overflow the stack.
+const MAX_DEPTH: u32 = 256;
 
 /// Functions whose first argument is the text they translate.
 const TRANSLATION: [&str; 7] = ["__", "_x", "esc_html__", "esc_attr__", "esc_html_x", "esc_attr_x", "_e"];
 
 impl<'a> Parser<'a> {
     pub fn new(text: &'a str, at: usize, vars: &'a Vars) -> Self {
-        Self { text, at, vars, hooks: None, translator: None, plural: None, colon_stops: 0 }
+        Self { text, at, vars, hooks: None, translator: None, plural: None, colon_stops: 0, depth: 0 }
     }
 
     /// A parser whose translation calls return the translation instead of the message id.
@@ -175,6 +181,22 @@ impl<'a> Parser<'a> {
 
     /// A value, including `.` concatenation, followed by whatever stays of the expression.
     pub fn expr(&mut self) -> Lit {
+        self.nested(Self::expr_at)
+    }
+
+    /// Runs `parse` one level deeper, or gives the rest of the text up at `MAX_DEPTH`.
+    fn nested(&mut self, parse: fn(&mut Self) -> Lit) -> Lit {
+        if self.depth >= MAX_DEPTH {
+            self.at = self.text.len();
+            return Lit::Unknown;
+        }
+        self.depth += 1;
+        let value = parse(self);
+        self.depth -= 1;
+        value
+    }
+
+    fn expr_at(&mut self) -> Lit {
         let mut value = self.primary();
         loop {
             self.skip_space();
@@ -225,6 +247,10 @@ impl<'a> Parser<'a> {
     }
 
     fn primary(&mut self) -> Lit {
+        self.nested(Self::primary_at)
+    }
+
+    fn primary_at(&mut self) -> Lit {
         self.skip_space();
         let Some(c) = self.peek() else { return Lit::Unknown };
         match c {
@@ -589,6 +615,19 @@ pub fn parse(text: &str) -> Lit {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn deep_nesting_is_unknown_not_a_stack_overflow() {
+        let nested = "array(".repeat(100_000) + &")".repeat(100_000);
+        let _ = parse(&nested);
+        let brackets = "[".repeat(100_000);
+        let _ = parse(&brackets);
+        let ternaries = "1 ? ".repeat(100_000);
+        let _ = parse(&ternaries);
+        // What real code nests is still read.
+        let value = parse("array( 'a' => array( 'b' => array( 'c' => 'd' ) ) )");
+        assert_eq!(value.get("a").and_then(|a| a.get("b")).and_then(|b| b.get("c")), Some(&Lit::Str("d".into())));
+    }
 
     #[test]
     fn translator_and_sprintf() {

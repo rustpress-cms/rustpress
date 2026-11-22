@@ -56,7 +56,7 @@ fn all_tags(content: &str) -> Vec<(String, String)> {
 /// `SmartTag::get_attributes()`.
 fn attributes(tag: &str) -> Vec<(String, String)> {
     static RE: std::sync::OnceLock<fancy_regex::Regex> = std::sync::OnceLock::new();
-    let re = RE.get_or_init(|| fancy_regex::Regex::new(r#"(\w+)=(["'])(.+?)\2"#).expect("valid regex"));
+    let re = RE.get_or_init(|| rustpress_core::formatting::pcre(r#"(\w+)=(["'])(.+?)\2"#).expect("valid regex"));
     let decoded = decode_quotes(&rustpress_core::formatting::html_entity_decode(tag));
     let mut out: Vec<(String, String)> = Vec::new();
     for c in re.captures_iter(&decoded).flatten() {

@@ -170,7 +170,7 @@ impl App {
     }
 
     pub fn router(self: &Arc<Self>) -> Router {
-        Router::new().fallback(handle).with_state(self.clone()).layer(TraceLayer::new_for_http())
+        Router::new().fallback(handle).with_state(self.clone()).layer(TraceLayer::new_for_http()).layer(tower_http::catch_panic::CatchPanicLayer::custom(panicked))
     }
 }
 
@@ -208,6 +208,13 @@ fn cron_disabled(config: &Config) -> bool {
         let value = value.split(')').next().unwrap_or_default().trim().to_ascii_lowercase();
         !matches!(value.as_str(), "false" | "0" | "''" | "\"\"" | "'0'" | "\"0\"" | "null")
     })
+}
+
+/// A request whose handler panicked: the answer of a failed request instead of a dropped connection, and a line in
+/// the log (the panic message itself is printed by the panic hook).
+pub(crate) fn panicked(_: Box<dyn std::any::Any + Send + 'static>) -> Response<Body> {
+    tracing::error!("a request handler panicked");
+    text(StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error\n")
 }
 
 /// What `wp-cron.php` does for content: publish scheduled posts, empty old auto-drafts and the trash.
@@ -313,7 +320,10 @@ async fn handle_request(axum::extract::State(app): axum::extract::State<Arc<App>
     let (parts, body) = request.into_parts();
     let client = crate::client::Client::of(&app.config, &parts, &app.current().await.site.settings.siteurl);
     let form = if post {
-        let form = match axum::body::to_bytes(body, FORM_BODY_LIMIT).await {
+        // Only a signed-in user previews in the Customizer; a visitor's POST gets the small limit before it is refused.
+        let loaded = app.current().await;
+        let limit = if crate::admin::frontend_user(&loaded, &headers).await.is_some() { FORM_BODY_LIMIT } else { VISITOR_BODY_LIMIT };
+        let form = match axum::body::to_bytes(body, limit).await {
             Ok(bytes) => crate::admin::pairs_of_public(&String::from_utf8_lossy(&bytes)),
             Err(_) => return text(StatusCode::PAYLOAD_TOO_LARGE, "Payload Too Large\n"),
         };
@@ -428,6 +438,7 @@ async fn visitor_ajax(app: &Arc<App>, request: Request<Body>) -> Response<Body> 
     let query = request.uri().query().unwrap_or("").to_owned();
     let request_uri = request.uri().path_and_query().map(|p| p.as_str().to_owned()).unwrap_or_default();
     let (parts, body) = request.into_parts();
+    let _large = large_form(&parts.headers).await;
     let bytes = match axum::body::to_bytes(body, FORM_BODY_LIMIT).await {
         Ok(bytes) => bytes,
         Err(_) => return text(StatusCode::PAYLOAD_TOO_LARGE, "Payload Too Large\n"),
@@ -441,6 +452,19 @@ const UPLOAD_BODY_LIMIT: usize = 256 * 1024 * 1024;
 const VISITOR_BODY_LIMIT: usize = 64 * 1024;
 /// What a visitor may send to a plugin's route: a contact form with its files (Contact Form 7 attaches up to 25 MB).
 const FORM_BODY_LIMIT: usize = 32 * 1024 * 1024;
+/// How many forms of visitors that are larger than `VISITOR_BODY_LIMIT` (or of unknown size) are held in memory at a
+/// time; the next one waits. Without it, anybody could have the server buffer `FORM_BODY_LIMIT` per connection.
+const LARGE_FORMS: usize = 8;
+
+/// The permit of a visitor's form that may be large, held until the request is answered; `None` for a small one.
+async fn large_form(headers: &axum::http::HeaderMap) -> Option<tokio::sync::SemaphorePermit<'static>> {
+    static PERMITS: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(LARGE_FORMS);
+    let declared = headers.get(header::CONTENT_LENGTH).and_then(|v| v.to_str().ok()).and_then(|v| v.parse::<usize>().ok());
+    if declared.is_some_and(|length| length <= VISITOR_BODY_LIMIT) {
+        return None;
+    }
+    PERMITS.acquire().await.ok()
+}
 
 /// `index.php` for `wp-admin/`, the file name for `wp-admin/<file>.php`; `None` for anything else
 /// (static files, `load-styles.php`, sub-directories).
@@ -949,6 +973,7 @@ async fn rest_edit_route(app: &Arc<App>, request: Request<Body>) -> std::result:
     } else {
         VISITOR_BODY_LIMIT
     };
+    let _large = if limit == FORM_BODY_LIMIT { large_form(&parts.headers).await } else { None };
     let bytes = match axum::body::to_bytes(body, limit).await {
         Ok(bytes) => bytes,
         Err(_) => return Ok(text(StatusCode::PAYLOAD_TOO_LARGE, "Payload Too Large\n")),

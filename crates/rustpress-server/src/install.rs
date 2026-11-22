@@ -7,7 +7,7 @@ use std::sync::Arc;
 use axum::Router;
 use axum::body::Body;
 use axum::http::{HeaderValue, Method, Request, Response, StatusCode, header};
-use rustpress_admin::install::{InstallEnv, InstallRequest, fetch};
+use rustpress_admin::install::{InstallEnv, InstallRequest, BlogState, fetch};
 use rustpress_admin::login::LoginResponse;
 use rustpress_db::Writer;
 
@@ -22,6 +22,8 @@ enum Stage {
     NoConfig,
     /// A database, but no site in it: `install.php` creates the tables.
     NoTables { writer: Writer, server_version: String },
+    /// Tables, but no `siteurl` that can be read (`is_blog_installed()`): `dead_db()` instead of the installer.
+    Damaged,
 }
 
 pub struct Installer {
@@ -41,10 +43,6 @@ fn local_package(wp_root: &Path) -> Option<String> {
     (!value.is_empty()).then(|| value.to_owned())
 }
 
-/// `is_blog_installed()`: the options table has a `siteurl`.
-async fn is_installed(writer: &Writer) -> bool {
-    writer.column_string(&format!("SELECT option_value FROM {} WHERE option_name = 'siteurl' LIMIT 1", writer.table("options"))).await.is_ok_and(|rows| !rows.is_empty())
-}
 
 impl Installer {
     /// The installer `config` needs, or `None` when the site is set up (or its database cannot be reached: that
@@ -63,14 +61,15 @@ impl Installer {
         }
         let writer = Writer::connect(&config.database_url, &config.table_prefix).await.ok()?;
         let server_version = writer.column_string("SELECT VERSION()").await.ok()?.into_iter().next().unwrap_or_default();
-        if is_installed(&writer).await {
-            return None;
+        match rustpress_admin::install::blog_state(&writer).await {
+            BlogState::Yes => None,
+            BlogState::No => new(Stage::NoTables { writer, server_version }),
+            BlogState::Damaged => new(Stage::Damaged),
         }
-        new(Stage::NoTables { writer, server_version })
     }
 
     pub fn router(self: &Arc<Self>) -> Router {
-        Router::new().fallback(handle).with_state(self.clone())
+        Router::new().fallback(handle).with_state(self.clone()).layer(tower_http::catch_panic::CatchPanicLayer::custom(crate::app::panicked))
     }
 
     fn env(&self, url: String) -> InstallEnv {
@@ -154,10 +153,15 @@ async fn handle(axum::extract::State(installer): axum::extract::State<Arc<Instal
         Stage::NoTables { .. } if setup => env.config_exists(),
         Stage::NoTables { writer, server_version } if install => {
             let reply = env.install(&install_request, writer, server_version, crate::admin::now()).await;
-            if is_installed(writer).await {
+            if rustpress_admin::install::blog_state(writer).await == BlogState::Yes {
                 installer.finished.store(true, std::sync::atomic::Ordering::Release);
             }
             reply
+        }
+        // The database is looked at again with the next request (it may have been repaired).
+        Stage::Damaged => {
+            installer.finished.store(true, std::sync::atomic::Ordering::Release);
+            env.dead_db(install)
         }
         // `wp_not_installed()`.
         Stage::NoTables { .. } => rustpress_admin::install::redirect(&format!("{url}/wp-admin/install.php"), true),

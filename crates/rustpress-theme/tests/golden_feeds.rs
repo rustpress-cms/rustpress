@@ -11,7 +11,8 @@ use rustpress_core::Site;
 use rustpress_db::Db;
 use rustpress_theme::{Theme, render_feed};
 
-const DEFAULT_ROOT: &str = r"\\wsl.localhost\Debian\home\yoshi\.local\share\containers\storage\volumes\rustpress-wp\_data";
+/// Where the WordPress files are when `RUSTPRESS_WP_ROOT` is not set: `wordpress/` in the repository (not checked in).
+const DEFAULT_ROOT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../wordpress");
 const URLS: &[&str] = &[
     "/feed/", "/feed/atom/", "/?feed=rss2", "/category/uncategorized/feed/", "/category/news/feed/atom/", "/tag/alpha/feed/", "/author/admin/feed/",
     "/search/Beitrag/feed/", "/2026/10/feed/", "/testbeitrag-1/feed/", "/testbeitrag-1/feed/atom/", "/hello-world/feed/", "/geschuetzt/feed/",

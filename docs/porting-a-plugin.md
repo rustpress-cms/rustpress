@@ -111,7 +111,7 @@ tests run without the reference stack, so CI checks them too.
 
 - Deactivate the plugin in the reference again and remove every test post, option, user and upload you created;
   then `cargo test --workspace` must be green with the reference stack running.
-- Run `cargo clippy --workspace --all-targets`.
+- Run `cargo clippy --workspace --all-targets -- -D warnings`.
 - Update PLAN.md (the state of the stage, what is open), the plugin list in README.md and README.de.md, the website
   (`site/index.html`, `site/de/index.html`) and CHANGELOG.md.
 - In `crates/rustpress-server/src/check.rs` nothing changes: `rustpress check` lists every registered module by

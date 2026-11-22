@@ -121,7 +121,7 @@ def main():
     win = lambda p: '/mnt/' + p[0].lower() + p[2:].replace('\\', '/')
     script = (
         f'podman cp {win(os.path.join(tmp, "phpq", "kses-cases.json"))} rustpress-wp:/tmp/kses-cases.json && '
-        f'bash /mnt/c/work/experimental/rustpress/dev/php.sh {win(os.path.join(tmp, "phpq", "kses.php"))}'
+        f'bash {win(os.path.join(here, "php.sh"))} {win(os.path.join(tmp, "phpq", "kses.php"))}'
     )
     env = dict(os.environ, MSYS_NO_PATHCONV='1')
     result = subprocess.run(['wsl.exe', '-d', 'Debian', '--', 'bash', '-c', script], capture_output=True, text=True, encoding='utf-8', env=env)

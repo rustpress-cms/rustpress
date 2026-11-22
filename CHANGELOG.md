@@ -2,6 +2,20 @@
 
 All notable changes to RustPress. Each release names the WordPress release it follows.
 
+## Unreleased
+
+- **Hardening** after a second code review:
+  a request path with raw UTF-8 no longer makes a site in a subdirectory panic; a panic answers 500 instead of
+  closing the connection (in CGI mode too); a database with tables but without `siteurl` answers "Error establishing
+  a database connection" like WordPress instead of opening the installer; a POST of a visitor who is not signed in
+  is read up to 64 KiB, the number of large forms buffered at a time is limited, and CGI mode streams the request
+  body; deeply nested arrays in a theme's `functions.php` and large posts (regex backtracking) no longer panic.
+- Dependencies: lettre 0.11.24 (six advisories about SMTP), url 2.5.9 and rustix 1.1.6.
+- CI fails on clippy warnings and audits the dependencies (`cargo audit`); a test runs random and deeply nested
+  input through the text functions.
+- The golden tests and `rustpress-compat` look for the WordPress files in `RUSTPRESS_WP_ROOT` (default: `wordpress/`
+  in the repository) instead of a path of the development machine.
+
 ## 0.4.0 (2026-11-21)
 
 Follows WordPress 7.1.5.

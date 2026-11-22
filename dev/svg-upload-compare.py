@@ -20,7 +20,7 @@ lc = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(lc)
 
 UPLOADS = {
-    8080: r'\\wsl.localhost\Debian\home\yoshi\.local\share\containers\storage\volumes\rustpress-wp\_data\wp-content\uploads',
+    8080: os.path.join(os.environ.get('RUSTPRESS_WP_ROOT', os.path.join(HERE, '..', 'wordpress')), 'wp-content', 'uploads'),
     3001: os.path.join(HERE, '..', '..', 'wp-local', 'wp-content', 'uploads'),
 }
 

@@ -460,7 +460,7 @@ impl Blocker {
     fn markers(&self, output: &mut String) {
         for marker in &self.markers {
             for class in marker.placeholder_class.split(',').map(str::trim) {
-                let Ok(re) = fancy_regex::Regex::new(&format!(r#"(?is)<([a-zA-Z][a-zA-Z0-9-]*)[^>]*(id|class)=['" ]*[^>]*({class})['" ].*?>"#)) else { continue };
+                let Ok(re) = rustpress_core::formatting::pcre(&format!(r#"(?is)<([a-zA-Z][a-zA-Z0-9-]*)[^>]*(id|class)=['" ]*[^>]*({class})['" ].*?>"#)) else { continue };
                 let matches: Vec<(String, String)> = re.captures_iter(output.as_str()).filter_map(Result::ok).map(|c| (c[0].to_owned(), c[1].to_owned())).collect();
                 for (html, el) in matches {
                     let image = self.placeholders.placeholder(Some(&marker.placeholder), class);
@@ -575,7 +575,7 @@ pub fn add_data(html: &str, el: &str, id: &str, content: &str) -> String {
     let content = esc_attr(content);
     let id = esc_attr(id);
     let pattern = format!(r#"(?i)<{}[^>].*?(data-{}=['|"]{}['|"])(?=.*>)"#, preg_quote(el), preg_quote(&id), preg_quote(&content));
-    let exists = fancy_regex::Regex::new(&pattern).ok().and_then(|re| re.is_match(html).ok()).unwrap_or(false);
+    let exists = rustpress_core::formatting::pcre(&pattern).ok().and_then(|re| re.is_match(html).ok()).unwrap_or(false);
     if exists {
         return html.to_owned();
     }
@@ -612,7 +612,7 @@ pub fn set_javascript_to_plain(script: &str) -> String {
     }
     static JS: OnceLock<fancy_regex::Regex> = OnceLock::new();
     static MODULE: OnceLock<Regex> = OnceLock::new();
-    let js = JS.get_or_init(|| fancy_regex::Regex::new(r#"(?i)(<script[^>].*?)(type=['|"]text/javascript['|"])(?=.*>)"#).expect("valid regex"));
+    let js = JS.get_or_init(|| rustpress_core::formatting::pcre(r#"(?i)(<script[^>].*?)(type=['|"]text/javascript['|"])(?=.*>)"#).expect("valid regex"));
     if js.is_match(script).unwrap_or(false) {
         return js.replacen(script, 1, "${1}type=\"text/plain\"").into_owned();
     }
