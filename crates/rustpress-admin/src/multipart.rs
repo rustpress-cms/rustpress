@@ -18,12 +18,13 @@ fn find(haystack: &[u8], needle: &[u8], from: usize) -> Option<usize> {
 
 /// The `boundary` parameter of a `Content-Type` header.
 pub fn boundary(content_type: &str) -> Option<String> {
-    let lower = content_type.to_lowercase();
+    // ASCII lowercase keeps every byte offset of the header.
+    let lower = content_type.to_ascii_lowercase();
     if !lower.starts_with("multipart/form-data") {
         return None;
     }
     let start = lower.find("boundary=")? + "boundary=".len();
-    let rest = &content_type[start..];
+    let rest = content_type.get(start..)?;
     let value = rest.split(';').next()?.trim().trim_matches('"');
     (!value.is_empty()).then(|| value.to_owned())
 }
@@ -142,6 +143,15 @@ pub fn parse(boundary: &str, body: &[u8]) -> (Vec<(String, String)>, Vec<FilePar
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn boundary_of_a_header_with_other_letters() {
+        assert_eq!(boundary("multipart/form-data; boundary=XX").as_deref(), Some("XX"));
+        assert_eq!(boundary("Multipart/Form-Data; charset=x; Boundary=\"a b\"; x=1").as_deref(), Some("a b"));
+        // `İ` is longer in lowercase: the offset must still be one of the header itself.
+        assert_eq!(boundary("multipart/form-data; x=İİİİ; boundary=é").as_deref(), Some("é"));
+        assert_eq!(boundary("text/plain; boundary=XX"), None);
+    }
 
     #[test]
     fn fields_and_files_are_split() {

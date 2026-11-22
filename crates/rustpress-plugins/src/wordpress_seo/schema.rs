@@ -963,7 +963,7 @@ async fn person_logo_meta(page: &Page<'_>) -> Result<Option<ImageData>> {
 /// `str_word_count()` (with the Cyrillic letters when the text has some).
 fn word_count(content: &str, title: &str) -> usize {
     use std::sync::LazyLock;
-    static CODE: LazyLock<fancy_regex::Regex> = LazyLock::new(|| fancy_regex::Regex::new(r"(?si)<(pre|code)[^>]*?>.*?</\1>").expect("valid pattern"));
+    static CODE: LazyLock<fancy_regex::Regex> = LazyLock::new(|| rustpress_core::formatting::pcre(r"(?si)<(pre|code)[^>]*?>.*?</\1>").expect("valid pattern"));
     static ENTITY: LazyLock<regex::Regex> = LazyLock::new(|| regex::Regex::new(r"(?i)&[a-z0-9]+;").expect("valid pattern"));
     static CYRILLIC: LazyLock<regex::Regex> = LazyLock::new(|| regex::Regex::new(r"(?i)[а-я]").expect("valid pattern"));
     let text = format!("{title} {content}");

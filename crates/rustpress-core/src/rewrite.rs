@@ -287,16 +287,25 @@ fn substitute(query: &str, caps: &[Vec<u8>]) -> QueryVars {
     QueryVars::parse(&String::from_utf8_lossy(&out))
 }
 
+/// `text` without `prefix`, compared like `stripos( $text, $prefix ) === 0`. The bytes are compared, so a prefix
+/// that would end inside a character of `text` (a path with raw UTF-8) does not match instead of being cut there.
+pub fn strip_prefix_ignore_ascii_case<'t>(text: &'t str, prefix: &str) -> Option<&'t str> {
+    let head = text.as_bytes().get(..prefix.len())?;
+    if !head.eq_ignore_ascii_case(prefix.as_bytes()) {
+        return None;
+    }
+    text.get(prefix.len()..)
+}
+
 /// The part of the URL path WordPress matches against its rules: the home
 /// path prefix and surrounding slashes are removed, and a bare `index.php`
 /// is the front page.
 pub fn request_path(url_path: &str, home_path: &str) -> String {
     let path = url_path.split('?').next().unwrap_or("").trim_matches('/');
     let home = home_path.trim_matches('/');
-    let path = if !home.is_empty() && path.len() >= home.len() && path[..home.len()].eq_ignore_ascii_case(home) {
-        path[home.len()..].trim_matches('/')
-    } else {
-        path
+    let path = match strip_prefix_ignore_ascii_case(path, home) {
+        Some(rest) if !home.is_empty() => rest.trim_matches('/'),
+        _ => path,
     };
     // `PATH_INFO`: the part after `index.php/` is the request.
     if path == "index.php" {
@@ -402,5 +411,17 @@ mod tests {
         assert_eq!(request_path("/hello/", ""), "hello");
         assert_eq!(request_path("/index.php", ""), "");
         assert_eq!(request_path("/", ""), "");
+    }
+
+    #[test]
+    fn request_path_with_raw_utf8_beside_the_home_path() {
+        // The home path ends inside the `é`: no match, and no panic.
+        assert_eq!(request_path("/aaaé", "/blog"), "aaaé");
+        assert_eq!(request_path("/aaa€/x", "/blog"), "aaa€/x");
+        assert_eq!(request_path("/blo\u{308}g/", "/blog"), "blo\u{308}g");
+        assert_eq!(request_path("/blog/é/", "/blog"), "é");
+        assert_eq!(request_path("/é", "/é"), "");
+        assert_eq!(strip_prefix_ignore_ascii_case("BLOG/x", "blog"), Some("/x"));
+        assert_eq!(strip_prefix_ignore_ascii_case("bl", "blog"), None);
     }
 }

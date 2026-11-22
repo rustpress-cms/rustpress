@@ -4,7 +4,7 @@
 $repo = Split-Path -Parent $PSScriptRoot
 Get-Process rustpress-server -ErrorAction SilentlyContinue | Where-Object { $_.Path -like '*golden*' } | Stop-Process -Force -ErrorAction SilentlyContinue
 $env:RUSTPRESS_DATABASE_URL = 'mysql://wordpress:wordpress@127.0.0.1:3306/soli_ref'
-$env:RUSTPRESS_WP_ROOT = '\\wsl.localhost\Debian\home\yoshi\.local\share\containers\storage\volumes\rustpress-wp-soli\_data'
+$env:RUSTPRESS_WP_ROOT = & "$PSScriptRoot\wp-root.ps1" rustpress-wp-soli
 $env:RUSTPRESS_LISTEN = '127.0.0.1:3002'
 $env:RUSTPRESS_SITE_URL = 'http://localhost:3002'
 $env:RUSTPRESS_RELOAD_SECS = '1'

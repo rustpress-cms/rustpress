@@ -482,7 +482,7 @@ pub fn sha256_hex(text: &str) -> String {
 
 /// `wpcf7_autop( $input )`.
 pub fn autop(input: &str) -> String {
-    static EMBEDDED: LazyLock<fancy_regex::Regex> = LazyLock::new(|| fancy_regex::Regex::new(r"(?is)<(math|svg).*?</\1>").unwrap());
+    static EMBEDDED: LazyLock<fancy_regex::Regex> = LazyLock::new(|| rustpress_core::formatting::pcre(r"(?is)<(math|svg).*?</\1>").unwrap());
     let mut placeholders: Vec<(String, String)> = Vec::new();
     let mut replaced = String::with_capacity(input.len());
     let mut at = 0;

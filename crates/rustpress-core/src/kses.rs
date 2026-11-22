@@ -172,7 +172,7 @@ fn bad_protocol_once(content: &str, allowed: &[&str], count: u32) -> String {
     static COLON_ENTITY: OnceLock<FancyRegex> = OnceLock::new();
     static SPLIT: OnceLock<Regex> = OnceLock::new();
     static QUERY: OnceLock<Regex> = OnceLock::new();
-    let colon = COLON_ENTITY.get_or_init(|| FancyRegex::new(r"(?i)(&#0*58(?![;0-9])|&#x0*3a(?![;a-f0-9]))").expect("pattern"));
+    let colon = COLON_ENTITY.get_or_init(|| crate::formatting::pcre(r"(?i)(&#0*58(?![;0-9])|&#x0*3a(?![;a-f0-9]))").expect("pattern"));
     let content = colon.replace_all(content, "${1};").into_owned();
     let split = re(&SPLIT, r"(?i):|&#0*58;|&#x0*3a;|&colon;");
     let Some(found) = split.find(&content) else { return content };
@@ -533,7 +533,7 @@ fn split(content: &str, allowed: &Allowed) -> String {
 /// `wp_pre_kses_less_than()`: a `<` that no `>` closes is text.
 pub fn pre_kses_less_than(content: &str) -> String {
     static CELL: OnceLock<FancyRegex> = OnceLock::new();
-    let pattern = CELL.get_or_init(|| FancyRegex::new(r"<[^>]*?((?=<)|>|$)").expect("pattern"));
+    let pattern = CELL.get_or_init(|| crate::formatting::pcre(r"<[^>]*?((?=<)|>|$)").expect("pattern"));
     pattern
         .replace_all(content, |caps: &fancy_regex::Captures<str>| {
             let found = &caps[0];

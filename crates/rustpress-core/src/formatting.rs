@@ -8,8 +8,20 @@ use fancy_regex::Regex;
 macro_rules! re {
     ($pattern:expr) => {{
         static RE: OnceLock<Regex> = OnceLock::new();
-        RE.get_or_init(|| Regex::new($pattern).expect("valid regex"))
+        RE.get_or_init(|| pcre($pattern).expect("valid regex"))
     }};
+}
+
+/// How far a pattern may backtrack before `fancy-regex` gives up. Its own limit of a million is reached by any
+/// pattern on about a megabyte of text (every position it tries counts), and `replace_all()` then panics: a long
+/// post could not be rendered. PCRE with its JIT, as PHP runs it, has no such limit on these patterns, so this one
+/// only stops a pattern that really runs away.
+const BACKTRACK_LIMIT: usize = 500_000_000;
+
+/// A pattern with look-around or back references (`fancy-regex`), compiled with [`BACKTRACK_LIMIT`]. Every such
+/// pattern that runs on text of visitors or authors is compiled here.
+pub fn pcre(pattern: &str) -> Result<Regex, fancy_regex::Error> {
+    fancy_regex::RegexBuilder::new(pattern).backtrack_limit(BACKTRACK_LIMIT).build()
 }
 
 // ---------------------------------------------------------------- escaping
@@ -241,7 +253,7 @@ impl LazyRegex {
     }
 
     fn get(&self) -> &Regex {
-        self.regex.get_or_init(|| Regex::new(&self.pattern).expect("valid texturize regex"))
+        self.regex.get_or_init(|| pcre(&self.pattern).expect("valid texturize regex"))
     }
 }
 
@@ -560,9 +572,9 @@ pub fn cached_regex(pattern: &str) -> &'static Regex {
     if let Some(found) = cache.lock().expect("regex cache").get(pattern) {
         return found;
     }
-    let compiled = Regex::new(pattern).unwrap_or_else(|error| {
+    let compiled = pcre(pattern).unwrap_or_else(|error| {
         tracing::error!(%error, pattern, "invalid regex");
-        Regex::new(r"(?!)").expect("never matches")
+        pcre(r"(?!)").expect("never matches")
     });
     let compiled: &'static Regex = Box::leak(Box::new(compiled));
     cache.lock().expect("regex cache").entry(pattern.to_owned()).or_insert(compiled)
@@ -852,7 +864,7 @@ pub fn strip_tags(text: &str) -> String {
 /// `wp_strip_all_tags( $text )`: script/style blocks go with their content.
 pub fn wp_strip_all_tags(text: &str) -> String {
     static SCRIPT: std::sync::OnceLock<fancy_regex::Regex> = std::sync::OnceLock::new();
-    let re = SCRIPT.get_or_init(|| fancy_regex::Regex::new(r"(?is)<(script|style)[^>]*?>.*?</\1>").expect("valid regex"));
+    let re = SCRIPT.get_or_init(|| pcre(r"(?is)<(script|style)[^>]*?>.*?</\1>").expect("valid regex"));
     php_trim(&strip_tags(&re.replace_all(text, ""))).to_owned()
 }
 
@@ -864,7 +876,7 @@ pub fn php_trim(text: &str) -> &str {
 /// `ent2ncr()`: named entities become numeric character references.
 pub fn ent2ncr(text: &str) -> String {
     static ENTITY: std::sync::OnceLock<fancy_regex::Regex> = std::sync::OnceLock::new();
-    let re = ENTITY.get_or_init(|| fancy_regex::Regex::new(r"&(\w+);").expect("valid regex"));
+    let re = ENTITY.get_or_init(|| pcre(r"&(\w+);").expect("valid regex"));
     re.replace_all(text, |caps: &fancy_regex::Captures<'_, str>| {
         let name = &caps[1];
         match crate::entities::ENTITIES.iter().find(|(n, _)| *n == name) {
@@ -924,7 +936,7 @@ pub fn esc_js(text: &str) -> String {
 /// `html_entity_decode( $text, ENT_COMPAT )`: double quotes and `&amp;` are decoded, single quotes are not.
 pub fn html_entity_decode(text: &str) -> String {
     static ENTITY: std::sync::OnceLock<fancy_regex::Regex> = std::sync::OnceLock::new();
-    let re = ENTITY.get_or_init(|| fancy_regex::Regex::new(r"&(#[0-9]+|#[xX][0-9a-fA-F]+|\w+);").expect("valid regex"));
+    let re = ENTITY.get_or_init(|| pcre(r"&(#[0-9]+|#[xX][0-9a-fA-F]+|\w+);").expect("valid regex"));
     re.replace_all(text, |caps: &fancy_regex::Captures<'_, str>| {
         let body = &caps[1];
         let code = if let Some(hex) = body.strip_prefix("#x").or_else(|| body.strip_prefix("#X")) {

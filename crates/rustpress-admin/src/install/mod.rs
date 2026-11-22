@@ -74,6 +74,38 @@ fn response(status: u16, body: String) -> LoginResponse {
     LoginResponse { status, headers: headers("utf-8"), cookies: Vec::new(), body, bytes: Vec::new() }
 }
 
+/// What `is_blog_installed()` finds in the database.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlogState {
+    /// The options have a `siteurl`.
+    Yes,
+    /// None of the tables of WordPress exist: a scratch installation is allowed.
+    No,
+    /// No `siteurl` can be read, but tables exist: WordPress answers with `dead_db()` instead of the installer,
+    /// which would otherwise let any visitor set up an administrator on a site whose options table is damaged.
+    Damaged,
+}
+
+/// The tables of `$wpdb->tables()` for a single site.
+const TABLES: [&str; 12] = ["posts", "comments", "links", "options", "postmeta", "terms", "term_taxonomy", "term_relationships", "termmeta", "commentmeta", "users", "usermeta"];
+
+/// `is_blog_installed()`. Differs: the tables are looked up in one query on `information_schema` instead of a
+/// `DESCRIBE` each, and `CUSTOM_USER_TABLE`/`CUSTOM_USER_META_TABLE` are not read.
+pub async fn blog_state(writer: &rustpress_db::Writer) -> BlogState {
+    let siteurl = writer.column_string(&format!("SELECT option_value FROM {} WHERE option_name = 'siteurl' LIMIT 1", writer.table("options"))).await;
+    // `! empty( $installed )`
+    if siteurl.is_ok_and(|rows| rows.first().is_some_and(|value| !value.is_empty() && value != "0")) {
+        return BlogState::Yes;
+    }
+    let prefix = writer.table_prefix();
+    let names: Vec<String> = TABLES.iter().map(|table| format!("'{prefix}{table}'")).collect();
+    let existing = writer.column_u64(&format!("SELECT CAST(COUNT(*) AS UNSIGNED) FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN ({})", names.join(", "))).await;
+    match existing {
+        Ok(rows) if rows.first().is_some_and(|count| *count > 0) => BlogState::Damaged,
+        _ => BlogState::No,
+    }
+}
+
 /// `wp_die()` of the installer.
 fn die(site: &Site, status: u16, message: &str) -> LoginResponse {
     let body = crate::die::page_with_robots(site, &site.tr("WordPress &rsaquo; Error"), message, "noindex, nofollow");
@@ -374,6 +406,19 @@ impl InstallEnv {
         die(&site, 409, &message)
     }
 
+    /// `dead_db()` after `is_blog_installed()` found tables without a readable `siteurl`: the verbose message while
+    /// installing (`wp_installing()`, `install.php`), the terse one everywhere else. Differs: a `db-error.php` in
+    /// `wp-content` is PHP and is not shown.
+    pub fn dead_db(&self, installing: bool) -> LoginResponse {
+        let site = self.site("en_US");
+        if installing {
+            let message = sprintf(&site.tr("One or more database tables are unavailable. The database may need to be <a href=\"%s\">repaired</a>."), &["maint/repair.php?referrer=is_blog_installed"]);
+            return die(&site, 500, &message);
+        }
+        let body = crate::die::page_with_robots(&site, &site.tr("Database Error"), &format!("<h1>{}</h1>", site.tr("Error establishing a database connection")), "noindex, nofollow");
+        LoginResponse { status: 500, headers: headers("UTF-8"), cookies: Vec::new(), body, bytes: Vec::new() }
+    }
+
     // ------------------------------------------------------------------ install.php
 
     /// `display_header()` of `install.php`.
@@ -470,7 +515,10 @@ impl InstallEnv {
     /// `server_version` is `wpdb::db_version()`.
     pub async fn install(&self, request: &InstallRequest<'_>, writer: &rustpress_db::Writer, server_version: &str, now: i64) -> LoginResponse {
         let english = self.site("en_US");
-        let installed = writer.column_string(&format!("SELECT option_value FROM {} WHERE option_name = 'siteurl' LIMIT 1", writer.table("options"))).await.is_ok_and(|rows| !rows.is_empty());
+        let installed = match blog_state(writer).await {
+            BlogState::Damaged => return self.dead_db(true),
+            state => state == BlogState::Yes,
+        };
         if installed {
             let mut body = self.install_header(&english, "");
             body.push_str(&format!(

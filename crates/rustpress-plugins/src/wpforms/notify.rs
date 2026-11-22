@@ -435,7 +435,7 @@ struct Exclude {
 fn parse_exclude(params: &str) -> Option<Exclude> {
     static RE: std::sync::OnceLock<fancy_regex::Regex> = std::sync::OnceLock::new();
     static ID: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
-    let re = RE.get_or_init(|| fancy_regex::Regex::new(r#"(?:^|\s)exclude=(?:(["'])(.+?)\1|([^\s"'}]+))"#).expect("valid regex"));
+    let re = RE.get_or_init(|| rustpress_core::formatting::pcre(r#"(?:^|\s)exclude=(?:(["'])(.+?)\1|([^\s"'}]+))"#).expect("valid regex"));
     let id_re = ID.get_or_init(|| regex::Regex::new(r"^\d+(?:_\d+)?$").expect("valid regex"));
     let c = re.captures(params).ok().flatten()?;
     let list = c.get(3).or_else(|| c.get(2)).map_or("", |m| m.as_str());

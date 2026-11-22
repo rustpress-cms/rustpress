@@ -9,7 +9,8 @@ use std::path::{Path, PathBuf};
 use regex::Regex;
 use rustpress_core::i18n::I18n;
 
-const DEFAULT_ROOT: &str = r"\\wsl.localhost\Debian\home\yoshi\.local\share\containers\storage\volumes\rustpress-wp\_data";
+/// Where the WordPress files are when `RUSTPRESS_WP_ROOT` is not set: `wordpress/` in the repository (not checked in).
+const DEFAULT_ROOT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../wordpress");
 
 /// Texts that are not part of WordPress' own catalogs (RustPress additions) and so cannot be checked.
 const OWN_MESSAGES: &[&str] = &[

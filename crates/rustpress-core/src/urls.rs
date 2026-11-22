@@ -410,10 +410,9 @@ impl Site {
         let request = remove_query_arg(request_uri, "paged");
         let home_root = self.settings.home_path();
         let home_root = home_root.trim_end_matches('/');
-        let mut request = if !home_root.is_empty() && request.len() >= home_root.len() && request[..home_root.len()].eq_ignore_ascii_case(home_root) {
-            request[home_root.len()..].to_owned()
-        } else {
-            request
+        let mut request = match crate::rewrite::strip_prefix_ignore_ascii_case(&request, home_root) {
+            Some(rest) if !home_root.is_empty() => rest.to_owned(),
+            _ => request,
         };
         request = request.trim_start_matches('/').to_owned();
         let base = trailingslashit(&self.home_url(""));

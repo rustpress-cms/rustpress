@@ -286,7 +286,7 @@ fn strip_quote(text: &str) -> String {
 /// `parse_atts()`: `(options, values)`, or `None` when the text is not in that syntax.
 fn parse_atts(text: &str) -> Option<(Vec<String>, Vec<String>)> {
     static PATTERN: LazyLock<FancyRegex> = LazyLock::new(|| {
-        FancyRegex::new(&format!(
+        rustpress_core::formatting::pcre(&format!(
             r#"^([-+*=0-9a-zA-Z:.!?#$&@_/|%{UNICODE_WS}]*?)((?:[{UNICODE_WS}]*"[^"]*"|[{UNICODE_WS}]*'[^']*')*)$"#
         ))
         .unwrap()
@@ -324,7 +324,7 @@ pub struct TagMatch<'a> {
 fn tag_regex() -> &'static FancyRegex {
     static REGEX: LazyLock<FancyRegex> = LazyLock::new(|| {
         let types = TAG_TYPES.iter().map(|(t, _)| fancy_regex::escape(t).into_owned()).collect::<Vec<_>>().join("|");
-        FancyRegex::new(&format!(r"(?s)(\[?)\[({types})(?:[{UNICODE_WS}]+(.*?))?(?:[{UNICODE_WS}]+(/))?\](?:([^\[]*?)\[/\2\])?(\]?)")).unwrap()
+        rustpress_core::formatting::pcre(&format!(r"(?s)(\[?)\[({types})(?:[{UNICODE_WS}]+(.*?))?(?:[{UNICODE_WS}]+(/))?\](?:([^\[]*?)\[/\2\])?(\]?)")).unwrap()
     });
     &REGEX
 }

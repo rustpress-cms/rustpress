@@ -15,7 +15,8 @@ use rustpress_db::Db;
 use rustpress_theme::{Theme, render_body};
 use rustpress_theme::global_styles::GlobalStyles;
 
-const DEFAULT_ROOT: &str = r"\\wsl.localhost\Debian\home\yoshi\.local\share\containers\storage\volumes\rustpress-wp\_data";
+/// Where the WordPress files are when `RUSTPRESS_WP_ROOT` is not set: `wordpress/` in the repository (not checked in).
+const DEFAULT_ROOT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../wordpress");
 
 fn fetch(path: &str) -> std::io::Result<String> {
     let mut stream = TcpStream::connect("127.0.0.1:8080")?;

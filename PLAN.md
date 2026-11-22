@@ -188,7 +188,9 @@ The reference stack, the tools and the working rules are in [AGENTS.md](AGENTS.m
 - S12: the CSS of global styles is stored unfiltered (only relevant with custom roles without `unfiltered_html`).
 - The rest of P14/P15 (synchronous file access in the administration).
 - Phase 4 of the review: merging duplicates, removing dead code, splitting long functions; test suites (database
-  schema, a role matrix, hostile inputs); the small deviations listed in A4.
+  schema, a role matrix); the small deviations listed in A4.
+- `wpautop()` is slower than linear on very large input (5 MB of text: 14 s; 300,000 `<div>` in a row: 25 s in a
+  release build). Posts of a realistic size are not affected (1 MB: 0.5 s); see "Hardening after the second review".
 - `rustpress-auth/tests/oracle.rs` depends on session tokens in the shared database (create the fixture again first).
 - Compat: more third-party block themes (see Website), a run with the release build.
 
@@ -571,7 +573,7 @@ Measurement afterwards (release, `RUSTPRESS_RELOAD_SECS=1`, median / minimum of 
 - Result, static musl binary as on shared hosting (before → after): `/` 77 → 43 ms, `/testbeitrag-1/` 140 → 58, `/category/news/` 67 → 37, `/feed/` 77 → 41; glibc: `/testbeitrag-1/` 96 → 50. Server (8 clients): `/` 265 → 354 req/s, `/wp-json/wp/v2/posts` 282 → 475; the reference WordPress (PHP 8.3, OPcache) manages 55–80 req/s and 50–80 ms per page with one client, so even the CGI mode answers faster than it.
 - Open: the single post still takes 20 ms in the server (the comment template); a CGI process still parses `theme.json`, ~85 `block.json` and the style variations (~10 ms; a snapshot of the parsed theme would remove that); ~40 more regexes in `wpautop()`/`wptexturize()` cost ~7 ms per process (round 2: partly); prepared statements cost a round trip each in a one-request process (round 2: done).
 - Round 2: in one-request mode (CGI) the statements of `rustpress-db` go out over the text protocol with their values written in (`sql::Sql`: numbers as digits, strings as `_utf8mb4 X'…'`, which cannot break out of the literal and take the column's collation like a parameter), as `wpdb` sends them; the server keeps bound parameters and its statement cache. A single post needs 1 prepare instead of 27, one round trip less per statement. The patterns of `wptexturize()` are compiled when first used, and `wpautop()` only runs a substitution when the text contains its literal (`<br`, `<hr`, `</div>`, `<li`, `<blockquote`, `<script`/`<style`/`<svg`/`<math`). Rewrite rules use the `regex-automata` meta engine without the lazy DFA and one-pass engines and without Unicode (their compile cost dominated a process that uses a rule once). `Server-Timing` in CGI mode now reports `db` (time in statements and their count). Locally (glibc, database on the same host): `/` 47 → 44 ms, `/testbeitrag-1/` 53 → 48, `/category/news/` 36 → 33, `/feed/` 37 → 36; with the database on another host, as on shared hosting, every saved round trip counts its network latency. 29 URLs (search terms with quotes, backslashes, umlauts; REST; sitemaps) answer byte for byte as before in CGI mode; compat 375/375 without unexpected differences.
-- First measurement on Strato after #42/#44 (2026-11-05, soliconcuba-heidelberg.de, Twenty Seventeen, 10 or 5 requests): front page `app` 248–735 ms (median ~410), `load` 105–397 (median ~190), `db` 51–121 ms for 78 statements; a single post 183–369 ms (median ~245), `load` 73–152, `db` 54–104 for 77 statements. On 2026-10-28 it was 360–480 ms with `load` 160–260. The spread of the same page is wider than any lever left, so `Server-Timing` now breaks a CGI request down further: `connect` (the database connection), `stat` and `read` (time and number of calls through `rustpress_core::files`), `cpu` (processor time of the process, `getrusage()`) besides `load`, `db` and `app`; descriptions are tokens because Strato's proxy turned the quotes of `desc="78 queries"` into `&#34;`.
+- First measurement on Strato after #42/#44 (2026-11-05, the maintainer's own site, Twenty Seventeen, 10 or 5 requests): front page `app` 248–735 ms (median ~410), `load` 105–397 (median ~190), `db` 51–121 ms for 78 statements; a single post 183–369 ms (median ~245), `load` 73–152, `db` 54–104 for 77 statements. On 2026-10-28 it was 360–480 ms with `load` 160–260. The spread of the same page is wider than any lever left, so `Server-Timing` now breaks a CGI request down further: `connect` (the database connection), `stat` and `read` (time and number of calls through `rustpress_core::files`), `cpu` (processor time of the process, `getrusage()`) besides `load`, `db` and `app`; descriptions are tokens because Strato's proxy turned the quotes of `desc="78 queries"` into `&#34;`.
 - Found with the fully seeded database: `GET /wp/v2/<taxonomy>?post=` did not check the post (`get_items_permissions_check()`): a missing post now answers 400 `rest_post_invalid_id`, a post of another type or one a visitor cannot see 401 `rest_forbidden_context`. The loader golden (`rustpress-admin/tests/loader.rs`) still expected the 7.1.3 versions of two packages and now takes the version from `WORDPRESS_VERSION`. Open: `rustpress-compat`'s URL list names post IDs of the original seed (`/wp/v2/book/276`), which a seed with fewer pattern pages assigns differently.
 - Not ported, found on the way: `esc_url()` rejects any text before the first colon that `wp_kses_bad_protocol()` does not allow (`abc_1://x`, `?a=b:c`); RustPress only checks schemes made of letters, digits, `+`, `-` and `.`.
 
@@ -1616,3 +1618,39 @@ and `X-Mailer`.
 Not ported: the web API mailers (RustPress sends their messages its own way, with the plugin's sender), Pepipost,
 the return path for `mail()` (lettre always passes `-f` with the sender), the email log, reports, the backup
 connection and the queue of Pro, the administration.
+
+### Hardening after the second review (2026-11-22)
+
+A second review of `main` (0.4.0) looked for input that makes the server panic or spend memory, and at what CI checks.
+
+- **Paths with raw UTF-8** (sites in a subdirectory): `rewrite::request_path` and `urls::pagenum_link` cut the request
+  path at the byte length of the home path, which panics inside a multibyte character (`/aaaé` on a site at `/blog`).
+  `rewrite::strip_prefix_ignore_ascii_case` compares bytes and cuts only at the end of a match. The boundary of a
+  multipart header had the same fault (`to_lowercase()` can change the byte length; now `to_ascii_lowercase()`).
+- **Panics** no longer close the connection: `CatchPanicLayer` answers 500 and logs it (also in the installer). In CGI
+  mode a failed request prints a 500 response and exits with 1.
+- **Installer:** `is_blog_installed()` is ported completely (`install::blog_state`). An empty `siteurl` together with
+  existing tables is a damaged database: `install.php` answers like `dead_db()` in WordPress ("One or more database
+  tables are unavailable..."), every other request with "Error establishing a database connection" and status 500.
+  Before, such a state opened the installer and could create a second administrator.
+- **Request bodies:** a POST to a page by a visitor who is not signed in is read up to 64 KiB (it was 32 MiB), and at
+  most 8 large forms (admin-ajax, REST edits) are buffered at a time. CGI mode streams the body from stdin instead of
+  reading `CONTENT_LENGTH` bytes at once.
+- **`php_lit`** (theme `functions.php`): nesting deeper than 256 is `Lit::Unknown` instead of a stack overflow.
+- **Regular expressions:** `fancy-regex` gives up after one million backtracking steps and `replace_all` panics then;
+  a post of 100 KB reached that in `wp_kses_bad_protocol()`, `wpautop()` and `wptexturize()`. `formatting::pcre` builds
+  every pattern that runs on content with a limit of 500 million steps, which is closer to PCRE with its JIT (no
+  practical limit). The Redirection module keeps the default, since its patterns come from the administration and
+  errors are handled there.
+- **Test:** `crates/rustpress-admin/tests/hostile_input.rs` runs 4,000 seeded random inputs (HTML, shortcode, block,
+  URL and PHP fragments) and deep or long inputs through the text functions that see visitor input, and fails on a
+  panic or a call slower than 5 s.
+- **CI:** clippy fails on warnings (`-D warnings`), and the job `audit` runs `cargo audit` on `Cargo.lock`. lettre
+  0.11.24, url 2.5.9 and rustix 1.1.6 close the advisories it found.
+- **Private details:** the paths of the development machine are gone from the tests, `rustpress-compat` and the dev
+  scripts. The WordPress files are found through `RUSTPRESS_WP_ROOT` (default: `wordpress/` in the repository);
+  `dev/wp-root.ps1` asks WSL for the volume of the reference.
+
+Checked over HTTP against MariaDB 10.11 with WordPress 7.1.5 files: a raw UTF-8 path on a site in `/blog` answers 404,
+an anonymous POST of 1 MiB answers 413, and a database without `siteurl` answers 500 on every path while the number
+of users stays the same.

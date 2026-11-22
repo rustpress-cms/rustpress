@@ -20,6 +20,7 @@ rustpress-phpser.workspace = true
 rustpress-mail.workspace = true
 rustpress-plugins.workspace = true
 axum.workspace = true
+futures.workspace = true
 mimalloc.workspace = true
 base64.workspace = true
 serde.workspace = true

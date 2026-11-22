@@ -6,7 +6,7 @@ $repo = Split-Path -Parent $PSScriptRoot
 Set-Location $repo
 cargo build --release -q -p rustpress-server
 if ($LASTEXITCODE -ne 0) { exit 1 }
-$root = '\\wsl.localhost\Debian\home\yoshi\.local\share\containers\storage\volumes\rustpress-wp\_data'
+$root = & "$PSScriptRoot\wp-root.ps1"
 $local = Join-Path (Split-Path -Parent $repo) 'wp-local'
 if (Test-Path (Join-Path $local 'wp-includes')) { $root = $local }
 $env:RUSTPRESS_DATABASE_URL = 'mysql://wordpress:wordpress@127.0.0.1:3306/wordpress'
