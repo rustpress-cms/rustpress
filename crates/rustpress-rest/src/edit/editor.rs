@@ -145,6 +145,13 @@ impl Rest<'_> {
     }
 
     /// Everything that is not a post, a term, a user, media or a setting.
+    /// Whether the user may edit posts of a type that is shown in the REST API, or the theme: the check of the routes
+    /// the block editor reads for everybody who writes (`current_user_can( 'edit_posts' )`, then every
+    /// `$post_type->cap->edit_posts`; `edit_theme_options` is the capability of the types of the site editor).
+    pub(crate) fn edits_something(&self) -> bool {
+        self.can("edit_posts") || self.can("edit_pages") || self.can("edit_theme_options") || self.site.types.post_types.iter().any(|t| t.show_in_rest && self.can(&rustpress_auth::meta_caps::TypeCaps::of(&t.name).edit_posts))
+    }
+
     pub(crate) async fn editor_route(&self, segments: &[&str], method: &str, args: &Args, params: &Params) -> Result<Option<Outcome>> {
         let get = method == "GET";
         // The revisions and autosaves of an item that is not there (or of another type) have no parent.
@@ -204,13 +211,23 @@ impl Rest<'_> {
                 }
             }
             ["wp", "v2", "block-directory", "search"] if get && args.str("term").is_none() => Err(RestError::missing_params(&["term"])),
+            // `WP_REST_Block_Directory_Controller::get_items_permissions_check()`.
+            ["wp", "v2", "block-directory", "search"] if get && !(self.can("install_plugins") && self.can("activate_plugins")) => Err(self.forbidden("rest_block_directory_cannot_view", "Sorry, you are not allowed to browse the block directory.")),
+            // `check_has_read_only_access()` of the menu controllers: menus and their items for everybody who edits
+            // something, the locations for `edit_theme_options`.
+            ["wp", "v2", "menus"] if get && !self.edits_something() => Err(self.forbidden("rest_cannot_view", "Sorry, you are not allowed to view menus.")),
+            ["wp", "v2", "menu-items"] if get && !self.edits_something() => Err(self.forbidden("rest_cannot_view", "Sorry, you are not allowed to view menu items.")),
+            ["wp", "v2", "menu-locations"] if get && !self.can("edit_theme_options") => Err(self.forbidden("rest_cannot_view", "Sorry, you are not allowed to view menu locations.")),
+            // `WP_REST_Block_Patterns_Controller::get_items_permissions_check()` and that of the categories.
+            ["wp", "v2", "block-patterns", "patterns"] if get && !self.edits_something() => Err(self.forbidden("rest_cannot_view", "Sorry, you are not allowed to view the registered block patterns.")),
+            ["wp", "v2", "block-patterns", "categories"] if get && !self.edits_something() => Err(self.forbidden("rest_cannot_view", "Sorry, you are not allowed to view the registered block pattern categories.")),
             ["wp-block-editor", "v1", "export"] if get => self.export_theme().await?,
             ["wp", "v2", "pattern-directory", "patterns"] if get && self.can("edit_posts") => Ok(Resp::item(Value::Array(self.directory_items(params).await))),
             ["wp", "v2", "plugins"] | ["wp", "v2", "menus"] | ["wp", "v2", "menu-items"] | ["wp", "v2", "menu-locations"] | ["wp", "v2", "block-directory", "search"] if get => empty_list(),
             ["wp", "v2", "block-patterns", "patterns"] if get => Ok(Resp::item(self.patterns_json())),
             ["wp", "v2", "block-patterns", "categories"] if get => Ok(Resp::item(self.pattern_categories())),
-            ["wp", "v2", "global-styles", "themes", stylesheet] if get && self.can("edit_theme_options") => Ok(Resp::item(self.global_styles_theme(stylesheet))),
-            ["wp", "v2", "global-styles", "themes", stylesheet, "variations"] if get && self.can("edit_theme_options") => {
+            ["wp", "v2", "global-styles", "themes", stylesheet] if get && self.edits_something() => Ok(Resp::item(self.global_styles_theme(stylesheet))),
+            ["wp", "v2", "global-styles", "themes", stylesheet, "variations"] if get && self.edits_something() => {
                 if *stylesheet != self.theme.stylesheet {
                     Err(RestError::new("rest_theme_not_found", "Theme not found.", 404))
                 } else {

@@ -85,12 +85,13 @@ impl Rest<'_> {
         let Ok(id) = id.parse::<u64>() else {
             return Ok(Err(RestError::new("rest_no_route", "No route was found matching the URL and request method.", 404)));
         };
-        if params.get("context") == Some("edit") {
-            return Ok(Err(RestError::new("rest_forbidden_context", "Sorry, you are not allowed to list users.", 401)));
-        }
         let Some(user) = self.site.db.user(id).await? else {
             return Ok(Err(RestError::new("rest_user_invalid_id", "Invalid user ID.", 404)));
         };
+        // `WP_REST_Users_Controller::get_item_permissions_check()`: the user is looked up first.
+        if params.get("context") == Some("edit") {
+            return Ok(Err(RestError::new("rest_forbidden_context", "Sorry, you are not allowed to edit this user.", 401)));
+        }
         let published = self.site.db.users_with_published_posts(AUTHOR_TYPES, 1_000_000, 0).await?;
         if !published.iter().any(|u| u.id == user.id) {
             return Ok(Err(RestError::new("rest_user_cannot_view", "Sorry, you are not allowed to list users.", 401)));

@@ -347,7 +347,7 @@ pub fn request_origin(env: &AdminEnv<'_>, request: &AdminRequest) -> String {
 }
 
 /// `auth_redirect()` for somebody who is not signed in.
-fn auth_redirect(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse {
+pub(crate) fn auth_redirect(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse {
     let current = format!("{}{}", request_origin(env, request), request.request_uri);
     let login = format!("{}?redirect_to={}&reauth=1", env.site.site_url("wp-login.php"), rustpress_core::canonical::php_urlencode(&current));
     redirect(&login)

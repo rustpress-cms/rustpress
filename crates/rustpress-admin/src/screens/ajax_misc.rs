@@ -95,8 +95,9 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUs
         "ajax-tag-search" => {
             let Some(tax) = request.get("tax") else { return text(200, "0") };
             let Some(info) = tax_info(&ctx, &sanitize_key(tax), None) else { return text(200, "0") };
+            // `wp_die( -1 )` of an Ajax action answers with status 200.
             if !user.can("edit_posts") {
-                return text(403, "-1");
+                return text(200, "-1");
             }
             let mut search = request.get("q").unwrap_or_default().to_owned();
             if let Some((_, last)) = search.rsplit_once(',') {

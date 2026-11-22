@@ -34,11 +34,11 @@ fn invalid_name(name: &str) -> Option<RestError> {
 impl Rest<'_> {
     /// `get_user()` of the controller: the user the route is about, or the error WordPress answers with.
     async fn app_password_user(&self, id: &str) -> std::result::Result<u64, RestError> {
-        let Some(me) = self.user() else { return Err(RestError::new("rest_not_logged_in", "You are not currently logged in.", 401)) };
         if !self.site.app_passwords_available() {
             return Err(RestError::new("application_passwords_disabled", "Application passwords are not available.", 501));
         }
         let target = if id == "me" {
+            let Some(me) = self.user() else { return Err(RestError::new("rest_not_logged_in", "You are not currently logged in.", 401)) };
             me.id
         } else {
             let Ok(number) = id.parse::<u64>() else { return Err(RestError::new("rest_user_invalid_id", "Invalid user ID.", 404)) };

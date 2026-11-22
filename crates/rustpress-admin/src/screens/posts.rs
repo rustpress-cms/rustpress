@@ -436,7 +436,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     };
     let edit_cap = if info.name == "page" { "edit_pages" } else { "edit_posts" };
     if !ctx.can(edit_cap) {
-        return super::die(ctx.env, 403, "WordPress &rsaquo; Error", &format!("<h1>{}</h1><p>{}</p>", tr("You need a higher level of permission."), if info.name == "page" { tr("Sorry, you are not allowed to edit pages.") } else { tr("Sorry, you are not allowed to edit posts.") }));
+        return super::die(ctx.env, 403, "WordPress &rsaquo; Error", &format!("<h1>{}</h1><p>{}</p>", tr("You need a higher level of permission."), tr("Sorry, you are not allowed to edit posts in this post type.")));
     }
     // `current_screen` of the plugins.
     if !site.plugins.is_empty() {

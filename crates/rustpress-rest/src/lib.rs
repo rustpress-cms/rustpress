@@ -221,7 +221,14 @@ impl<'a> Rest<'a> {
                 Some(outcome) => outcome,
                 // A write that no handler takes is no read: WordPress has no route for it.
                 None if !matches!(self.method(), "GET" | "HEAD") => Err(crate::error::RestError::new("rest_no_route", "No route was found matching the URL and request method.", 404)),
-                None => self.dispatch(route, &params).await?,
+                // The read-only endpoints answer a visitor; `rest_authorization_required_code()` is 403 for
+                // somebody who is signed in.
+                None => self.dispatch(route, &params).await?.map_err(|mut error| {
+                    if error.status == 401 && self.user().is_some() {
+                        error.status = 403;
+                    }
+                    error
+                }),
             },
             None => self.dispatch(route, &params).await?,
             },
@@ -390,6 +397,8 @@ impl<'a> Rest<'a> {
             ["wp", "v2", "wp_pattern_category", id] => self.terms_item(&terms::Tax::pattern_category(), id, params).await,
             ["wp", "v2", "users"] => self.users_collection(params).await,
             ["wp", "v2", "users", "me"] => Ok(Err(RestError::new("rest_not_logged_in", "You are not currently logged in.", 401))),
+            ["wp", "v2", "users", id, "application-passwords"] => self.app_passwords_route(id, None, "GET", &edit::Args::default()).await,
+            ["wp", "v2", "users", id, "application-passwords", uuid] => self.app_passwords_route(id, Some(uuid), "GET", &edit::Args::default()).await,
             ["wp", "v2", "users", id] => self.users_item(id, params).await,
             ["wp", "v2", "comments"] => self.comments_collection(params).await,
             ["wp", "v2", "comments", id] => self.comments_item(id, params).await,

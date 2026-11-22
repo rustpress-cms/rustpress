@@ -187,8 +187,10 @@ The reference stack, the tools and the working rules are in [AGENTS.md](AGENTS.m
 **Review and tests**
 - S12: the CSS of global styles is stored unfiltered (only relevant with custom roles without `unfiltered_html`).
 - The rest of P14/P15 (synchronous file access in the administration).
-- Phase 4 of the review: merging duplicates, removing dead code, splitting long functions; test suites (database
-  schema, a role matrix); the small deviations listed in A4.
+- Phase 4 of the review: merging duplicates, removing dead code, splitting long functions; a test suite for the database
+  schema; the small deviations listed in A4.
+- The role matrix (`crates/rustpress-server/tests/roles.rs`) does not send writes with a valid nonce to the screens of
+  the administration and to `admin-ajax.php` yet, and leaves out plugins, media uploads and custom post types.
 - `wpautop()` is slower than linear on very large input (5 MB of text: 14 s; 300,000 `<div>` in a row: 25 s in a
   release build). Posts of a realistic size are not affected (1 MB: 0.5 s); see "Hardening after the second review".
 - `rustpress-auth/tests/oracle.rs` depends on session tokens in the shared database (create the fixture again first).
@@ -1654,3 +1656,40 @@ A second review of `main` (0.4.0) looked for input that makes the server panic o
 Checked over HTTP against MariaDB 10.11 with WordPress 7.1.5 files: a raw UTF-8 path on a site in `/blog` answers 404,
 an anonymous POST of 1 MiB answers 413, and a database without `siteurl` answers 500 on every path while the number
 of users stays the same.
+
+### The role matrix (2026-11-22)
+
+`crates/rustpress-server/tests/roles.rs` sends about 180 requests as a visitor, a subscriber, a contributor, an
+author, an editor and an administrator to the reference and to RustPress and compares the status, the code and
+message of a REST error, the message of `wp_die()`, the target of a redirect and the short answers of
+`admin-ajax.php` (1,057 answers). It covers reading and writing through the REST API, the screens of the
+administration, forms sent without a nonce, and the Ajax actions. The test signs in on the reference (the cookies and
+the REST nonce are valid on both sides, since they share the database and the salts), creates its users, posts, page
+and comment through the REST API of the reference and removes them at the end, also after a failed comparison. Its
+writes give the same answer when sent twice. It runs with the golden tests (`dev/test.sh`, the CI job `golden`).
+Each run leaves two sessions in the `session_tokens` of `admin`.
+
+The first run found 106 different answers; all are equal now:
+
+- **REST, creating and updating posts:** the order of `create_item_permissions_check()` and
+  `update_item_permissions_check()` (another author, then sticky, then creating). `sticky` by somebody who may not
+  publish and edit the posts of others is refused (`rest_cannot_assign_sticky`); it was ignored silently. The message
+  for a refused page is the one for posts.
+- **REST, reading:** `context=edit` of a post is checked before reading it; of the categories and tags it needs
+  `manage_categories` (it was answered like `view`); of the taxonomies it needs `edit_posts`. A user who is signed in
+  gets 403 where a visitor gets 401 on every read-only route (`rest_authorization_required_code()`). The settings
+  answer `rest_forbidden`. Menus, menu items, block patterns and their categories need a user who edits something,
+  menu locations `edit_theme_options`, the block directory `install_plugins` and `activate_plugins`; the global styles
+  of a theme are open to everybody who edits posts (they needed `edit_theme_options`).
+- **REST, terms and users:** a tag is created with `assign_terms` (`edit_posts`), so authors and contributors can
+  add tags in the editor again; an empty name answers `empty_term_name` with 500 and an existing user name 500, as
+  errors without a status do. `users/me` and the application passwords answer a visitor like WordPress.
+- **Administration:** `post.php` prints its refusal without a paragraph, `edit.php` names "posts in this post type"
+  for every type, `user-edit.php` checks the nonce before the permission, and `async-upload.php` sends a visitor to
+  the sign-in.
+- **Ajax:** `ajax-tag-search` refuses with status 200, the heartbeat of a visitor answers `wp-auth-check` and
+  `server_time`, and `wp-compression-test` is ported (`manage_options`, the nonce for `yes` and `no`; `test=2`
+  answers `-1` like a PHP without zlib, since RustPress does not concatenate scripts).
+
+Not compared, because the answer depends on a connection to WordPress.org: the pattern and block directories for
+those who may use them, `query-themes`, and `url-details` with a URL.

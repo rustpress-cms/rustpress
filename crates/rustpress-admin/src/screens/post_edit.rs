@@ -1306,16 +1306,16 @@ pub async fn post_php(ctx: &Ctx<'_>) -> AdminResponse {
             }
             if post.post_type == "attachment" {
                 if !(ctx.user.can_edit_post(&post)) {
-                    return die(ctx.env, 403, "WordPress &rsaquo; Error", &format!("<p>{}</p>", tr("Sorry, you are not allowed to edit this item.")));
+                    return die(ctx.env, 403, "WordPress &rsaquo; Error", &tr("Sorry, you are not allowed to edit this item."));
                 }
                 return super::attachment_edit::form(ctx, &post).await;
             }
             let Some(info) = type_info(ctx, &post.post_type) else {
-                return die(ctx.env, 403, "WordPress &rsaquo; Error", &format!("<p>{}</p>", tr("Sorry, you are not allowed to edit posts in this post type.")));
+                return die(ctx.env, 403, "WordPress &rsaquo; Error", &tr("Sorry, you are not allowed to edit posts in this post type."));
             };
             let may_edit = ctx.user.can_edit_post(&post);
             if !may_edit {
-                return die(ctx.env, 403, "WordPress &rsaquo; Error", &format!("<p>{}</p>", tr("Sorry, you are not allowed to edit this item.")));
+                return die(ctx.env, 403, "WordPress &rsaquo; Error", &tr("Sorry, you are not allowed to edit this item."));
             }
             if post.post_status == "trash" {
                 return die(ctx.env, 409, "WordPress &rsaquo; Error", &tr("You cannot edit this item because it is in the Trash. Please restore it and try again."));

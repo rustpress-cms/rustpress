@@ -696,6 +696,11 @@ pub async fn user_edit(ctx: &Ctx<'_>) -> AdminResponse {
     if id == 0 {
         return super::common::die_plain(ctx, "Invalid user ID.");
     }
+    let update = ctx.request.post && ctx.request.post_field("action") == Some("update");
+    // `check_admin_referer()` comes before the permission when the form is sent.
+    if update && !ctx.verify_nonce(&format!("update-user_{id}")) {
+        return super::die(ctx.env, 403, &ctx.tr("An error occurred."), &ctx.tr("The link you followed has expired."));
+    }
     if id != ctx.user.id && !ctx.can("edit_users") {
         return super::common::die_plain(ctx, "Sorry, you are not allowed to edit this user.");
     }
@@ -703,7 +708,7 @@ pub async fn user_edit(ctx: &Ctx<'_>) -> AdminResponse {
         return super::common::die_plain(ctx, "Invalid user ID.");
     };
     let own = id == ctx.user.id;
-    if ctx.request.post && ctx.request.post_field("action") == Some("update") {
+    if update {
         return save(ctx, id, own, "user-edit.php").await;
     }
     // The own profile on `user-edit.php` is the profile page with the toolbar entry "View User".

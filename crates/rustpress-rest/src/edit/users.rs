@@ -153,6 +153,10 @@ impl Rest<'_> {
 
     pub(crate) async fn users_me(&self, method: &str, args: &Args) -> Result<Outcome> {
         let Some(me) = self.user() else {
+            // Writing looks the user 0 up (`update_current_item_permissions_check()`); reading asks to sign in.
+            if method != "GET" {
+                return Ok(Err(RestError::new("rest_user_invalid_id", "Invalid user ID.", 404)));
+            }
             return Ok(Err(RestError::new("rest_not_logged_in", "You are not currently logged in.", 401)));
         };
         let Some(user) = self.site.db.user(me.id).await? else {
@@ -316,7 +320,8 @@ impl Rest<'_> {
                 .iter()
                 .find(|(text, _)| self.site.tr(text) == message)
                 .map_or("rest_user_create", |(_, code)| code);
-                return Ok(Err(RestError::new(code, &message, 400)));
+                // The error of `wp_insert_user()` has no status, so the REST API answers 500.
+                return Ok(Err(RestError::new(code, &message, 500).after_permission_check()));
             }
         };
         let Some(user) = self.site.db.user(id).await? else { return Ok(Err(RestError::new("rest_user_create", "Error creating new user.", 500))) };
