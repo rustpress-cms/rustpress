@@ -49,6 +49,33 @@ pub fn text(status: u16, body: &str) -> AdminResponse {
     AdminResponse { status, headers: headers("text/html; charset=UTF-8"), cookies: Vec::new(), body: body.to_owned(), bytes: Vec::new() }
 }
 
+/// What `wp_ajax_wp_compression_test()` echoes for `test=1`.
+const COMPRESSION_TEST: &str = r#""wpCompressionTest Lorem ipsum dolor sit amet consectetuer mollis sapien urna ut a. Eu nonummy condimentum fringilla tempor pretium platea vel nibh netus Maecenas. Hac molestie amet justo quis pellentesque est ultrices interdum nibh Morbi. Cras mattis pretium Phasellus ante ipsum ipsum ut sociis Suspendisse Lorem. Ante et non molestie. Porta urna Vestibulum egestas id congue nibh eu risus gravida sit. Ac augue auctor Ut et non a elit massa id sodales. Elit eu Nulla at nibh adipiscing mattis lacus mauris at tempus. Netus nibh quis suscipit nec feugiat eget sed lorem et urna. Pellentesque lacus at ut massa consectetuer ligula ut auctor semper Pellentesque. Ut metus massa nibh quam Curabitur molestie nec mauris congue. Volutpat molestie elit justo facilisis neque ac risus Ut nascetur tristique. Vitae sit lorem tellus et quis Phasellus lacus tincidunt nunc Fusce. Pharetra wisi Suspendisse mus sagittis libero lacinia Integer consequat ac Phasellus. Et urna ac cursus tortor aliquam Aliquam amet tellus volutpat Vestibulum. Justo interdum condimentum In augue congue tellus sollicitudin Quisque quis nibh.""#;
+
+/// `wp_ajax_wp_compression_test()`: the script loader asks whether compressed scripts arrive. `test=2` (the same text
+/// deflated) answers `-1` like a WordPress whose PHP cannot compress, since RustPress never concatenates scripts.
+async fn compression_test(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUser, token: &str) -> AdminResponse {
+    if !user.can("manage_options") {
+        return text(200, "-1");
+    }
+    match request.get("test") {
+        Some("1") => AdminResponse { status: 200, headers: headers("application/javascript; charset=UTF-8"), cookies: Vec::new(), body: COMPRESSION_TEST.to_owned(), bytes: Vec::new() },
+        Some("2") => text(200, "-1"),
+        Some(answer @ ("no" | "yes")) => {
+            // `check_ajax_referer( 'update_can_compress_scripts' )`.
+            let nonce = request.request("_ajax_nonce").or(request.request("_wpnonce")).unwrap_or_default();
+            if env.auth.verify_nonce(nonce, "update_can_compress_scripts", user.id, token, env.now).is_none() {
+                return text(403, "-1");
+            }
+            if let Some(writer) = env.writer {
+                writer.update_option("can_compress_scripts", if answer == "yes" { "1" } else { "0" }).await.or_log();
+            }
+            text(200, "0")
+        }
+        _ => text(200, "0"),
+    }
+}
+
 /// The `data[...]` fields of a heartbeat request, as a tree.
 fn heartbeat_data(request: &AdminRequest) -> Map<String, Json> {
     let mut root = Map::new();
@@ -214,6 +241,10 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse
         None => None,
     };
     let Some(session) = session else {
+        // `async-upload.php` loads `wp-admin/admin.php`, which sends a visitor to the sign-in.
+        if request.file == "async-upload.php" {
+            return super::auth_redirect(env, request);
+        }
         // `wp_ajax_nopriv_{$action}` of the plugins.
         let visitor = Visitor { site: env.site, writer: env.writer, auth: env.auth, now: env.now, wp_version: &env.loader.version, wp_root: env.loader.includes.parent().unwrap_or(&env.loader.includes), mailer: env.plugin_mailer.as_deref() };
         if let Some(answer) = plugin_nopriv(&visitor, request, &action, super::request_origin(env, request)).await {
@@ -221,7 +252,8 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse
         }
         // `wp_ajax_nopriv_heartbeat` and `wp_ajax_nopriv_generate_password` are the actions for visitors.
         return match action.as_str() {
-            "heartbeat" if registered(request, &action) => json(200, &json!({"nonces_expired": true})),
+            // `wp_ajax_nopriv_heartbeat()` with `wp_auth_check()` on `heartbeat_nopriv_send`.
+            "heartbeat" if registered(request, &action) => json(200, &json!({"wp-auth-check": false, "server_time": env.now})),
             "generate-password" if registered(request, &action) => json(200, &json!({"success": true, "data": crate::sanitize::random_password(24, true)})),
             _ => text(400, "0"),
         };
@@ -399,7 +431,8 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse
             let format = rustpress_core::formatting::strip_tags(request.post_field("date").unwrap_or_default());
             text(200, &env.site.date(&format, env.now))
         }
-        "wp-compression-test" | "logged-in" => text(200, "1"),
+        "logged-in" => text(200, "1"),
+        "wp-compression-test" => compression_test(env, request, &user, &session.token).await,
         _ => text(400, "0"),
     }
 }

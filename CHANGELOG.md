@@ -10,6 +10,12 @@ All notable changes to RustPress. Each release names the WordPress release it fo
   a database connection" like WordPress instead of opening the installer; a POST of a visitor who is not signed in
   is read up to 64 KiB, the number of large forms buffered at a time is limited, and CGI mode streams the request
   body; deeply nested arrays in a theme's `functions.php` and large posts (regex backtracking) no longer panic.
+- A **role matrix** test compares about 1,000 answers for a visitor and the five roles with WordPress (REST API,
+  administration, Ajax). It found and fixed: `sticky` sent by an author or contributor is refused instead of ignored;
+  authors and contributors can create tags through the REST API; `context=edit` of categories, tags and taxonomies
+  and the menus, block patterns and block directory are refused for those who may not use them; the global styles of
+  the theme are readable for everybody who edits posts; signed-in users get 403 instead of 401 on read-only routes;
+  several messages and status codes of the administration and of `admin-ajax.php`.
 - Dependencies: lettre 0.11.24 (six advisories about SMTP), url 2.5.9 and rustix 1.1.6.
 - CI fails on clippy warnings and audits the dependencies (`cargo audit`); a test runs random and deeply nested
   input through the text functions.

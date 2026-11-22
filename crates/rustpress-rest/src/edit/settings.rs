@@ -76,7 +76,7 @@ impl Rest<'_> {
 
     pub(crate) async fn settings(&self, method: &str, args: &Args) -> Result<Outcome> {
         if !self.can("manage_options") {
-            return Ok(Err(self.forbidden("rest_cannot_view", "Sorry, you are not allowed to do that.")));
+            return Ok(Err(self.forbidden("rest_forbidden", "Sorry, you are not allowed to do that.")));
         }
         if matches!(method, "POST" | "PUT" | "PATCH") {
             let writer = match self.writer() {

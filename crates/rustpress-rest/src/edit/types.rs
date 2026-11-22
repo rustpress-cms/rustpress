@@ -297,6 +297,10 @@ impl Rest<'_> {
     pub(crate) fn taxonomies_list_edit(&self, args: &Args) -> Outcome {
         let context = args.str("context").unwrap_or_else(|| "view".to_owned());
         let wanted = args.str("type").filter(|t| !t.is_empty());
+        // `WP_REST_Taxonomies_Controller::get_items_permissions_check()`: `assign_terms` of one of the taxonomies.
+        if context == "edit" && !(self.can("edit_posts") && self.taxonomy_entries().iter().any(|entry| wanted.as_ref().is_none_or(|t| entry.types.iter().any(|x| x == t)))) {
+            return Err(self.forbidden("rest_cannot_view", "Sorry, you are not allowed to manage terms in this taxonomy."));
+        }
         let mut data = Map::new();
         for entry in self.taxonomy_entries() {
             if wanted.as_ref().is_some_and(|t| !entry.types.iter().any(|x| x == t)) {

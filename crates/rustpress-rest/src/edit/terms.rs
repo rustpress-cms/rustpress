@@ -29,6 +29,8 @@ impl Rest<'_> {
             p
         };
         match (method, id) {
+            // `WP_REST_Terms_Controller::get_items_permissions_check()`.
+            ("GET", None) if params.get("context") == Some("edit") && !self.can_manage_terms(tax) => Ok(Err(self.forbidden("rest_forbidden_context", "Sorry, you are not allowed to edit terms in this taxonomy."))),
             ("GET", None) => {
                 let mut outcome = self.terms_collection(tax, &view).await?;
                 if let Ok(resp) = &mut outcome {
@@ -37,6 +39,10 @@ impl Rest<'_> {
                 Ok(outcome)
             }
             ("GET", Some(id)) => {
+                // `get_item_permissions_check()`: the term has to be there before the context is refused.
+                if params.get("context") == Some("edit") && !self.can_manage_terms(tax) && self.site.db.term_by_id(Some(&tax.name), id.parse().unwrap_or(0)).await?.is_some() {
+                    return Ok(Err(self.forbidden("rest_forbidden_context", "Sorry, you are not allowed to edit this term.")));
+                }
                 let mut outcome = self.terms_item(tax, id, &view).await?;
                 if let Ok(resp) = &mut outcome {
                     resp.allow = Some(if self.can_manage_terms(tax) { "GET, POST, PUT, PATCH, DELETE" } else { "GET" }.to_owned());
@@ -45,12 +51,17 @@ impl Rest<'_> {
                 Ok(outcome)
             }
             ("POST", None) => {
-                if !self.can_manage_terms(tax) {
+                // `create_item_permissions_check()`: `edit_terms` in a hierarchical taxonomy, `assign_terms` in a flat one.
+                if !(if tax.hierarchical { self.can_manage_terms(tax) } else { self.can("edit_posts") }) {
                     return Ok(Err(self.forbidden("rest_cannot_create", "Sorry, you are not allowed to create terms in this taxonomy.")));
                 }
-                let Some(name) = args.str("name").filter(|n| !n.trim().is_empty()) else {
+                let Some(name) = args.str("name") else {
                     return Ok(Err(RestError::missing_params(&["name"])));
                 };
+                // `wp_insert_term()`; its error has no status, so the REST API answers 500.
+                if name.trim().is_empty() {
+                    return Ok(Err(RestError::new("empty_term_name", "A name is required for this term.", 500).after_permission_check()));
+                }
                 let content = match self.content() {
                     Ok(c) => c,
                     Err(e) => return Ok(Err(e)),

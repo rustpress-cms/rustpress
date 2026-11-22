@@ -29,9 +29,9 @@ pub(super) fn allow_for(can_edit: bool, can_delete: bool) -> String {
 }
 
 impl Rest<'_> {
-    fn type_not_allowed(&self, kind: Kind<'_>) -> RestError {
-        let message = if kind == Kind::Page { "Sorry, you are not allowed to create pages as this user." } else { "Sorry, you are not allowed to create posts as this user." };
-        self.forbidden("rest_cannot_create", message)
+    /// The refusal of `WP_REST_Posts_Controller::create_item_permissions_check()`, whatever the type is.
+    fn type_not_allowed(&self) -> RestError {
+        self.forbidden("rest_cannot_create", "Sorry, you are not allowed to create posts as this user.")
     }
 
     pub(crate) async fn custom_edit_route(&self, base: &str, id: Option<&str>, method: &str, args: &Args, params: &Params) -> Result<Outcome> {
@@ -128,12 +128,13 @@ impl Rest<'_> {
         let Some(post) = self.site.db.post(id).await?.filter(|p| p.post_type == kind.name()) else {
             return Ok(Err(RestError::new("rest_post_invalid_id", "Invalid post ID.", 404)));
         };
-        if !self.check_read_permission(&post).await {
-            return Ok(Err(self.forbidden("rest_forbidden", "Sorry, you are not allowed to view this post.")));
-        }
+        // The order of `WP_REST_Posts_Controller::get_item_permissions_check()`: the context, then reading.
         let context = args.str("context").unwrap_or_else(|| "view".to_owned());
         if context == "edit" && !self.can_edit_post(&post) {
             return Ok(Err(self.forbidden("rest_forbidden_context", "Sorry, you are not allowed to edit this post.")));
+        }
+        if !self.check_read_permission(&post).await {
+            return Ok(Err(self.forbidden("rest_forbidden", "Sorry, you are not allowed to do that.")));
         }
         if let Some(given) = params.get("password").filter(|p| !p.is_empty())
             && !rustpress_core::hash_equals(&post.post_password, given)
@@ -478,8 +479,16 @@ impl Rest<'_> {
         if args.has("id") {
             return Ok(Err(RestError::new("rest_post_exists", "Cannot create existing post.", 400)));
         }
+        // The order of `WP_REST_Posts_Controller::create_item_permissions_check()`.
+        let caps = TypeCaps::of(kind.name());
+        if args.u64("author").is_some_and(|author| author != 0 && author != self.user().map_or(0, |u| u.id)) && !self.can(&caps.edit_others) {
+            return Ok(Err(self.forbidden("rest_cannot_edit_others", "Sorry, you are not allowed to create posts as this user.")));
+        }
+        if args.bool("sticky") == Some(true) && !(self.can(&caps.edit_others) && self.can(&caps.publish)) {
+            return Ok(Err(self.forbidden("rest_cannot_assign_sticky", "Sorry, you are not allowed to make posts sticky.")));
+        }
         if !self.can_create(kind.name()) {
-            return Ok(Err(self.type_not_allowed(kind)));
+            return Ok(Err(self.type_not_allowed()));
         }
         let mut data = match self.post_data(kind, args, None) {
             Ok(d) => d,
@@ -522,6 +531,14 @@ impl Rest<'_> {
         };
         if !self.can_edit_post(&post) {
             return Ok(Err(self.forbidden("rest_cannot_edit", "Sorry, you are not allowed to edit this post.")));
+        }
+        // As in `WP_REST_Posts_Controller::update_item_permissions_check()`.
+        let caps = TypeCaps::of(kind.name());
+        if args.u64("author").is_some_and(|author| author != 0 && author != self.user().map_or(0, |u| u.id)) && !self.can(&caps.edit_others) {
+            return Ok(Err(self.forbidden("rest_cannot_edit_others", "Sorry, you are not allowed to update posts as this user.")));
+        }
+        if args.bool("sticky").is_some_and(|sticky| sticky != self.site.settings.sticky_posts.contains(&post.id)) && !(self.can(&caps.edit_others) && self.can(&caps.publish)) {
+            return Ok(Err(self.forbidden("rest_cannot_assign_sticky", "Sorry, you are not allowed to make posts sticky.")));
         }
         let mut data = match self.post_data(kind, args, Some(&post)) {
             Ok(d) => d,
