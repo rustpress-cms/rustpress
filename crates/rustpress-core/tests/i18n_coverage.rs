@@ -25,12 +25,23 @@ const OWN_MESSAGES: &[&str] = &[
     "The requested page does not exist.",
     "The uploaded file could not be moved to the fonts directory.",
     "The plugin status could not be changed.",
+    "Could not save password reset key to database.",
+    "Application passwords could not be saved.",
+    "Unknown error.",
+    // WordPress only hides the link to delete the active theme; RustPress refuses the request as well.
+    "You cannot delete the active theme.",
     // Site Health: what RustPress does instead of updating itself and talking to WordPress.org.
     "RustPress does not communicate with WordPress.org",
     "RustPress does not contact the WordPress servers: updates are installed by replacing its program, and themes and plugins are installed from ZIP files.",
     "RustPress does not use background updates",
     "RustPress is a single program and does not update itself; install a new version to update it.",
     "Your site does not need loopback requests",
+    "RustPress does not contact WordPress.org to look up events.",
+    "RustPress does not install, update or fetch anything from WordPress.org.",
+    // The confirmation form of `users.php?action=delete` is still the one of older releases (see PLAN.md).
+    "What should be done with content owned by these users?",
+    "What should be done with content owned by this user?",
+    "Attribute all content to:",
     // Only in `admin-network-<locale>.mo`, which WordPress does not load for network.php either.
     "You must define the %1$s constant as true in your %2$s file to allow creation of a Network.",
     // A plugin route's message, already translated in the plugin's text domain, passed through as is.
@@ -112,9 +123,11 @@ fn every_message_id_exists_in_wordpress() {
     let text = r#""((?:[^"\\]|\\.)*)""#;
     // Group 1 is the receiver: in the native plugin modules only `site` translates in WordPress' own text domain;
     // the modules' own `tr()` methods use the plugin's domain, whose language packs the reference does not have.
-    let plain = Regex::new(&format!(r"(\w+)\.tr\(\s*{text}\s*\)")).unwrap();
-    let with_context = Regex::new(&format!(r"(\w+)\.trx\(\s*{text}\s*,\s*{text}\s*\)")).unwrap();
-    let plural = Regex::new(&format!(r"(\w+)\.trn\(\s*{text}\s*,\s*{text}\s*,")).unwrap();
+    // A screen's `let tr = |s: &str| ctx.tr(s);` is called without a receiver; group 1 is then empty.
+    let plain = Regex::new(&format!(r"(?:(\w+)\.|\b)tr\(\s*{text}\s*\)")).unwrap();
+    let with_context =
+        Regex::new(&format!(r"(?:(\w+)\.|\b)trx\(\s*{text}\s*,\s*{text}\s*\)")).unwrap();
+    let plural = Regex::new(&format!(r"(?:(\w+)\.|\b)trn\(\s*{text}\s*,\s*{text}\s*,")).unwrap();
     // REST errors carry their message id as a literal and are translated when serialized.
     let rest_messages = [
         Regex::new(&format!(r"RestError::new\(\s*{text}\s*,\s*{text}")).unwrap(),
@@ -136,7 +149,8 @@ fn every_message_id_exists_in_wordpress() {
             .display()
             .to_string();
         let plugin_module = name.starts_with("rustpress-plugins");
-        let core_domain = |c: &regex::Captures| !plugin_module || &c[1] == "site";
+        let core_domain =
+            |c: &regex::Captures| !plugin_module || c.get(1).is_some_and(|r| r.as_str() == "site");
         let mut check = |context: Option<String>, id: String| {
             checked += 1;
             if !OWN_MESSAGES.contains(&id.as_str()) && !i18n.has("default", context.as_deref(), &id)

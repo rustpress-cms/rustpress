@@ -110,7 +110,6 @@ pub fn classic_editor(
     rich_editing: Option<&str>,
 ) -> Editor {
     let site = ctx.site();
-    let tr = |s: &str| ctx.tr(s);
     let rich = can_richedit(ctx, rich_editing);
     let default_editor = if rich {
         user_setting(ctx, "editor")
@@ -225,7 +224,6 @@ pub fn classic_editor(
     if rich {
         scripts.push("wp-tinymce".to_owned());
     }
-    let _ = (esc_attr(""), tr(""));
     Editor {
         html,
         preinit,

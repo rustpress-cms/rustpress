@@ -520,7 +520,7 @@ async fn list_mode(ctx: &Ctx<'_>, title: String) -> AdminResponse {
         } else {
             ""
         },
-        tr("Unattached")
+        ctx.site().trx("Unattached", "media items")
     ));
     options.push_str(&format!(
         "\t<option value=\"mine\"{}>{}</option>\n",
@@ -529,7 +529,7 @@ async fn list_mode(ctx: &Ctx<'_>, title: String) -> AdminResponse {
         } else {
             ""
         },
-        tr("Mine")
+        ctx.site().trx("Mine", "media items")
     ));
     // `months_dropdown()`: `selected()` gives ` selected='selected'` or nothing.
     let mut months = format!(
@@ -679,7 +679,11 @@ fn notice(ctx: &Ctx<'_>) -> String {
             tr("Media file attached.")
         } else {
             sprintf(
-                &tr("%s media files attached."),
+                &site.trn(
+                    "%s media file attached.",
+                    "%s media files attached.",
+                    n,
+                ),
                 &[&site.number_i18n(n as u64)],
             )
         };
@@ -689,7 +693,11 @@ fn notice(ctx: &Ctx<'_>) -> String {
             tr("Media file detached.")
         } else {
             sprintf(
-                &tr("%s media files detached."),
+                &site.trn(
+                    "%s media file detached.",
+                    "%s media files detached.",
+                    n,
+                ),
                 &[&site.number_i18n(n as u64)],
             )
         };
@@ -699,7 +707,11 @@ fn notice(ctx: &Ctx<'_>) -> String {
             tr("Media file permanently deleted.")
         } else {
             sprintf(
-                &tr("%s media files permanently deleted."),
+                &site.trn(
+                    "%s media file permanently deleted.",
+                    "%s media files permanently deleted.",
+                    n,
+                ),
                 &[&site.number_i18n(n as u64)],
             )
         };
@@ -737,7 +749,6 @@ async fn row(ctx: &Ctx<'_>, post: &Post, detached: bool) -> String {
     } else {
         title
     };
-    let quote = format!("&#8220;{}&#8221;", esc_html(&title));
     let edit_url = super::common::edit_post_link(ctx, post.id, false).await;
     // The icon: a 60x60 thumbnail for images.
     let icon = if kind == "image" && !attached.is_empty() {
@@ -814,7 +825,7 @@ async fn row(ctx: &Ctx<'_>, post: &Post, detached: bool) -> String {
         format!(
             "<a href=\"{}\" aria-label=\"{}\" rel=\"bookmark\">{}</a>",
             esc_url(&permalink),
-            esc_attr(&sprintf(&tr("View %s"), &[&quote])),
+            esc_attr(&sprintf(&tr("View &#8220;%s&#8221;"), &[&esc_html(&title)])),
             tr("View")
         ),
     ));
@@ -862,8 +873,8 @@ async fn row(ctx: &Ctx<'_>, post: &Post, detached: bool) -> String {
                     post.id,
                     ctx.create_nonce("bulk-media"),
                     esc_attr(&sprintf(
-                        &tr("Detach from %s"),
-                        &[&format!("&#8220;{}&#8221;", esc_html(&parent_title))]
+                        &tr("Detach from &#8220;%s&#8221;"),
+                        &[&esc_html(&parent_title)]
                     )),
                     tr("Detach")
                 )

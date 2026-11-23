@@ -1510,3 +1510,26 @@ The workspace was written with lines of up to 200 characters and never run throu
 with the default style (415 files, the Rust code grows from about 167,000 to 260,000 lines, nothing else changes);
 `.git-blame-ignore-revs` names it so that `git blame` looks through it, and the CI job `Clippy` runs
 `cargo fmt --all --check`.
+
+### Untranslated admin texts (2026-11-23)
+
+On a German site, Plugins > Add New showed its introduction and the error about WordPress.org in English. Both texts
+were written with the URL already filled in, while WordPress translates them with a `%s` placeholder
+(`'... <a href="%s">WordPress Plugin Directory</a> ...'`, `'... <a href="%s">support forums</a>.'`) and fills in the
+translated URL, so no language pack had the message id. The guard `i18n_coverage.rs` should have caught this, but it
+only matched calls with a receiver (`ctx.tr("...")`), not the `let tr = |s| ctx.tr(s)` closures most screens use. It
+now matches both (also for `trx` and `trn`), which brought up 25 more texts:
+
+- Message ids that need a context or a plural form: the admin bar's Background and Header, Most Used in the term boxes
+  (`labels->most_used`), Unattached and Mine in the media filter, the counts of attached, detached and deleted media,
+  Pattern Categories.
+- Texts WordPress builds with `sprintf()`: Detach from / View &#8220;%s&#8221; in the media list, the comment date
+  (`'%1$s at %2$s'` with the publish box formats), the window title and labels of the block editor (now
+  `labels->edit_item` and `'%1$s &#8220;%2$s&#8221;'` like the classic editor, and the post type only when the post
+  has a title).
+- Texts that changed in WordPress: the reasons a theme upload is refused (`The %s stylesheet does not contain a valid
+  theme header.`, the longer Template text, shown `esc_html( strip_tags() )`ed like `WP_Upgrader_Skin::error()`;
+  `block-templates/index.html` counts as an index file), `err_admin_role` on users.php; `newuseremail` is no message
+  of users.php anymore.
+- RustPress' own texts (database failures, read-only sites, the delete form of users.php, see PLAN.md) are listed in
+  `OWN_MESSAGES`.

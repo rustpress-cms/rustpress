@@ -128,6 +128,8 @@ The reference stack, the tools and the working rules are in [AGENTS.md](AGENTS.m
 - JavaScript translations on the front end (Interactivity texts), hot reload of language packs, variants such as
   `de_DE_formal`, a command `rustpress i18n install <locale>`.
 - Screens of a translated site: `dev/nav-menus-compare.py` still compares from the `body` on.
+- `users.php?action=delete` still shows the confirmation form of older releases (one choice for all users, not one per
+  user with `%1$s (ID #%2$s): ...`); its three texts are listed in `OWN_MESSAGES` of `i18n_coverage.rs` until it is ported.
 - Not equal on the copy of the real site: `credits.php` (what `wp_credits()` gets from api.wordpress.org depends on the
   language, the bake is the English answer), `plugin-install.php` (RustPress asks api.wordpress.org nothing), the tests of
   `site-health.php` that are about PHP (RustPress has none) and the `Info` tab, which reports its own environment.
