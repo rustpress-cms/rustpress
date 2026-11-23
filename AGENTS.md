@@ -1,8 +1,8 @@
 # Working on RustPress
 
 Notes for coding agents and new contributors. [README.md](README.md) explains what RustPress is and how to run it.
-[PLAN.md](PLAN.md) holds the plan, the status of every area and what is still open; read the part about
-the area you touch before you start.
+[PLAN.md](PLAN.md) holds the plan, the status of every area and what is still open; [HISTORY.md](HISTORY.md) has the
+details of every step. Read the parts about the area you touch before you start.
 
 ## The one rule: WordPress is the oracle
 
@@ -14,7 +14,8 @@ same HTML, headers, feeds, REST JSON, redirects and stored rows. So:
 - Check every change against a real WordPress: a golden test, a compare script in `dev/`, or a `rustpress-compat`
   run. A change counts as done when the output is equal, not when it merely looks right.
 - When a difference is unavoidable (randomness, environment, deliberately unsupported features), document it with its
-  reason: in [`compat/known.toml`](compat/known.toml) for the compat runs, in PLAN.md for everything else.
+  reason: in [`compat/known.toml`](compat/known.toml) for the compat runs, in PLAN.md or the entry in HISTORY.md for everything
+  else.
 - PHP quirks are part of the behaviour: loose comparisons, `(int)` casts of strings, array key order, `trim()`
   character sets, PCRE semantics (`\s` without `/u`, `$` before a trailing newline), `esc_html()` not double
   encoding. The goldens usually find them; keep them in the port.
@@ -98,7 +99,7 @@ is how the diff report finds what to update.
 
 ## Conventions
 
-- **Language:** everything in the repository is in English (code, comments, PLAN.md, reports, `compat/known.toml`,
+- **Language:** everything in the repository is in English (code, comments, PLAN.md, HISTORY.md, reports, `compat/known.toml`,
   commit messages and PR descriptions), except the German translations README.de.md and `site/de/`.
 - **Code:** match the surrounding code in naming, comment density and idiom. Doc comments name the PHP function or
   hook a function stands for and say what differs, if anything. Prefer small, exact ports over general frameworks.
@@ -106,7 +107,8 @@ is how the diff report finds what to update.
   them, and mind PCRE's character classes.
 - **Line ends:** text files are LF (`.gitattributes`). Golden data that must keep its bytes is marked `-text`. On
   Windows, write files without newline translation; in Python, use `open(..., newline='')`.
-- **Docs:** after a change, update the status in PLAN.md, and the README or website when something user-visible changed.
+- **Docs:** after a change, update the status in PLAN.md, add what you did to HISTORY.md (a new entry at the end, or
+  the entry of the area), and update the README or website when something user-visible changed.
 - **Git:** `main` is protected; every change goes through a pull request with green CI. Releases are tags `v*` and
   build every package and image (`.github/workflows/release.yml`).
 

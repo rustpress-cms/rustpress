@@ -22,7 +22,7 @@
 //! administration (menus, dashboard, discussion settings, the editor's blocks), the Abilities API, the counter of
 //! blocked attempts (written on `shutdown`), the blocklist of comment types (`blocked_comment_types`, which refuses
 //! submissions), XML-RPC (`remove_xmlrpc_comments`; RustPress has no `xmlrpc.php`), WooCommerce reviews and network
-//! (multisite) settings. See the Disable Comments section of PLAN.md.
+//! (multisite) settings. See the Disable Comments section of HISTORY.md.
 
 use std::collections::{HashMap, HashSet};
 

@@ -58,7 +58,7 @@ Kurz: Wer jedes PHP-Plugin braucht, fährt mit WpDotNet WordPress selbst. Wer ei
 
 ## Starten
 
-Jedes [Release](https://github.com/rustpress-cms/rustpress/releases) enthält fertige Builds: statische Linux-Binaries (x86_64, aarch64, armv7, armv6, i686), auch als `.deb`, `.rpm` und `.apk`, dazu macOS (Intel und Apple Silicon), Windows (x64, x86, ARM64) und FreeBSD. Das Container-Image ist `ghcr.io/rustpress-cms/rustpress` für amd64, arm64, arm/v7, arm/v6 und 386. Aus den Quellen:
+Jedes [Release](https://github.com/rustpress-cms/rustpress/releases) enthält fertige Builds: statische Linux-Binaries (x86_64, aarch64, armv7, armv6, i686), auch als `.deb`, `.rpm` und `.apk`, dazu macOS (Intel und Apple Silicon), Windows (x64, x86, ARM64) und FreeBSD. Das Container-Image ist `ghcr.io/rustpress-cms/rustpress` für amd64, arm64, arm/v7, arm/v6 und 386. Getestet wird in der CI auf x86_64-Linux, für Windows wird dort gebaut; die übrigen Ziele sind cross-kompiliert und ungetestet, Fehlerberichte dazu sind willkommen. Aus den Quellen:
 
 ```sh
 cargo run --release -p rustpress-server
@@ -78,15 +78,22 @@ reload_secs  = 60                # Optionen und Theme werden so oft neu gelesen
 
 ## Mit Docker betreiben
 
-Das `Dockerfile` baut ein kleines Alpine-Image mit einem statisch gelinkten `rustpress`; `compose.yaml` startet es zusammen mit MariaDB. Für eine bestehende WordPress-Seite zeigt `WORDPRESS_DIR` in `.env` auf den WordPress-Ordner (mit `wp-config.php`) und der Datenbank-Dump wird in den `db`-Container importiert. Eine neue Seite lässt sich mit dem eingebauten Installer im Browser einrichten oder mit WP-CLI:
+Das `Dockerfile` baut ein kleines Alpine-Image mit einem statisch gelinkten `rustpress`; `compose.yaml` startet es zusammen mit MariaDB. Aus einem leeren Ordner:
 
 ```sh
 cp .env.example .env          # Passwort und Adresse eintragen
 docker compose up -d          # legt ./wordpress mit den WordPress-Dateien an
-docker compose run --rm wp config create --dbname=wordpress --dbuser=wordpress --dbpass=<DB_PASSWORD> --dbhost=db
-docker compose run --rm wp core install --url=<SITE_URL> --title="Meine Seite" --admin_user=admin --admin_email=ich@example.com --prompt=admin_password
-docker compose restart rustpress
 ```
+
+Danach die Seite im Browser öffnen und dem Installer folgen. Für eine bestehende Seite zeigt `WORDPRESS_DIR` in `.env` auf ihren WordPress-Ordner, und ihr Datenbank-Dump wird vor dem ersten Start eingespielt:
+
+```sh
+docker compose up -d db
+docker compose exec -T db sh -c 'mariadb -uwordpress -p"$MARIADB_PASSWORD" wordpress' < dump.sql
+docker compose up -d
+```
+
+Die Seite behält die Adresse aus dem Dump (`siteurl` und `home`).
 
 RustPress lauscht auf Port 3000; TLS übernimmt ein vorgeschalteter Proxy.
 

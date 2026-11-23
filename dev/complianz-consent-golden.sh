@@ -8,7 +8,7 @@
 #   dev/complianz-consent-golden.sh
 #
 # Needs the reference (dev/up.sh) with complianz-gdpr 7.5.6 active. It changes the plugin's settings; deactivate and
-# remove the plugin afterwards (see PLAN.md, Complianz).
+# remove the plugin afterwards (see HISTORY.md, Complianz).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 out=crates/rustpress-plugins/tests/data/complianz/consent.json

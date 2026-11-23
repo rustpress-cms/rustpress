@@ -18,7 +18,7 @@
 //! (Tag Manager, AdSense, Ads, Reader Revenue Manager, Sign in with Google); custom dimensions (`availableCustomDimensions`),
 //! the Google tag gateway (a feature flag), conversion tracking of other plugins' events, `?tagverify=1`
 //! (`Tag_Verify_Guard`), the `googlesitekit-setup` meta tag of a setup in progress and the translations of the
-//! consent mode script. See the Site Kit section of PLAN.md.
+//! consent mode script. See the Site Kit section of HISTORY.md.
 
 use futures::future::BoxFuture;
 use rustpress_core::formatting::{esc_attr, esc_html};

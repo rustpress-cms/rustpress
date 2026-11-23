@@ -15,7 +15,7 @@
 //! around the content, excerpts and posts (`WPCode_Auto_Insert_Single`, `_Archive`), the PHP-only locations, the
 //! administration with the snippet editor and the library, the toolbar menu and the footer data of
 //! `WPCode_Admin_Bar_Info` for signed-in administrators, safe mode (`?wpcode-safe-mode=1`) and the preview of the
-//! snippet editor. See the WPCode section of PLAN.md.
+//! snippet editor. See the WPCode section of HISTORY.md.
 
 mod rules;
 

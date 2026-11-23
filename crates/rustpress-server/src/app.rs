@@ -72,6 +72,9 @@ impl App {
         let db = Db::connect(&config.database_url, &config.table_prefix).await?;
         crate::cgi::note_connect(connecting.elapsed());
         let writer = if config.allow_writes { Some(rustpress_db::Writer::connect(&config.database_url, &config.table_prefix).await?) } else { None };
+        if let Some(writer) = &writer {
+            crate::admin::store_missing_salts(&config, &db, writer).await;
+        }
         let loaded = Self::load(&config, &db).await?;
         let app = Arc::new(Self {
             statics: Statics::new(&config.wp_root),

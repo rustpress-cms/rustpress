@@ -7,7 +7,7 @@
 #   dev/complianz-blocker-golden.sh
 #
 # Needs the reference (dev/up.sh) with complianz-gdpr 7.5.6 active and its wizard finished. It changes the
-# plugin's settings; deactivate and remove the plugin afterwards (see PLAN.md, Complianz).
+# plugin's settings; deactivate and remove the plugin afterwards (see HISTORY.md, Complianz).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 data=crates/rustpress-plugins/tests/data/complianz

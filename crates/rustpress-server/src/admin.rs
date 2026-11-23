@@ -122,6 +122,26 @@ pub async fn load_salts(config: &Config, site: &Site) -> Salts {
     Salts::new(constants, options)
 }
 
+/// The part of `wp_salt()` that writes: a key or salt that neither `wp-config.php` nor the options have
+/// is made up and stored, so that cookies and nonces work on a site without keys in its configuration
+/// (a database given by `RUSTPRESS_DATABASE_URL` and no `wp-config.php`). WordPress does this for a
+/// scheme when it is first used; here all four are filled in when the site is loaded.
+pub async fn store_missing_salts(config: &Config, db: &rustpress_db::Db, writer: &rustpress_db::Writer) {
+    let constants = config_path(config).and_then(|path| std::fs::read_to_string(path).ok()).map(|text| rustpress_auth::salts::parse_config_constants(&text)).unwrap_or_default();
+    // The usual case costs no query: `wp-config.php` has every key.
+    if Salts::new(constants.clone(), std::collections::HashMap::new()).missing().is_empty() {
+        return;
+    }
+    let names = Salts::option_names();
+    let names: Vec<&str> = names.iter().map(String::as_str).collect();
+    let Ok(options) = db.options_named(&names).await else { return };
+    for name in Salts::new(constants, options.into_iter().collect()).missing() {
+        if let Err(error) = writer.update_option(&name, &rustpress_auth::salts::generate_salt()).await {
+            tracing::warn!(%error, option = %name, "could not store a key for cookies and nonces");
+        }
+    }
+}
+
 impl AdminParts {
     pub async fn load(config: &Config, site: &Site, salts: Salts) -> AdminParts {
         let auth = Auth::new(salts, &site.settings.siteurl);
