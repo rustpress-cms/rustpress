@@ -30,7 +30,16 @@ impl Db {
         let collation: Option<String> = sqlx::query_scalar(AssertSqlSafe("SELECT TABLE_COLLATION FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?".to_owned())).bind(&table).fetch_optional(&self.pool).await?;
         let collation = collation.unwrap_or_default();
         let charset = collation.split('_').next().unwrap_or_default().to_owned();
-        Ok(ServerInfo { version: row.0, user: row.1, host: row.2, name: row.3.unwrap_or_default(), charset, collation, max_allowed_packet: row.4, max_connections: row.5 })
+        Ok(ServerInfo {
+            version: row.0,
+            user: row.1,
+            host: row.2,
+            name: row.3.unwrap_or_default(),
+            charset,
+            collation,
+            max_allowed_packet: row.4,
+            max_connections: row.5,
+        })
     }
 
     /// The size of the tables of the site (`WP_Debug_Data::get_database_size()`).

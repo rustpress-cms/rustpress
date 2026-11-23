@@ -25,36 +25,62 @@ fn root_context(bc: &BlockCtx<'_>) -> Context {
 }
 
 pub(super) async fn template_part(bc: &BlockCtx<'_>) -> Result<String> {
-    let Some(slug) = bc.attr_str("slug") else { return Ok(String::new()) };
+    let Some(slug) = bc.attr_str("slug") else {
+        return Ok(String::new());
+    };
     let stylesheet = &bc.env.site.settings.stylesheet;
     if bc.attr_str("theme").is_some_and(|t| t != stylesheet) {
         return Ok(String::new());
     }
     let id = format!("{stylesheet}//{slug}");
-    let Some(part) = bc.env.theme.template_part(slug) else { return Ok(String::new()) };
+    let Some(part) = bc.env.theme.template_part(slug) else {
+        return Ok(String::new());
+    };
 
     // An area that `get_allowed_block_template_part_areas()` does not list becomes `uncategorized`.
     let theme_tag = bc.env.theme.template_part_area_tag(&part.area);
-    let area = if matches!(part.area.as_str(), "header" | "footer" | "navigation-overlay" | "uncategorized") || theme_tag.is_some() { part.area.clone() } else { "uncategorized".to_owned() };
-    let fresh = bc.env.with_state(|s| s.active_patterns.insert(format!("part:{id}")));
+    let area = if matches!(
+        part.area.as_str(),
+        "header" | "footer" | "navigation-overlay" | "uncategorized"
+    ) || theme_tag.is_some()
+    {
+        part.area.clone()
+    } else {
+        "uncategorized".to_owned()
+    };
+    let fresh = bc
+        .env
+        .with_state(|s| s.active_patterns.insert(format!("part:{id}")));
     if !fresh {
         return Ok(String::new());
     }
     let rendered = bc.env.render_markup(&part.content, &root_context(bc)).await;
-    bc.env.with_state(|s| s.active_patterns.remove(&format!("part:{id}")));
+    bc.env
+        .with_state(|s| s.active_patterns.remove(&format!("part:{id}")));
     let content = bc.env.site.texturize(&rendered?);
-    let content = crate::images::filter_content_tags(bc.env, &content, &format!("template_part_{area}")).await?;
+    let content =
+        crate::images::filter_content_tags(bc.env, &content, &format!("template_part_{area}"))
+            .await?;
 
-    let requested = bc.attr_str("tagName").filter(|t| !t.is_empty() && t.chars().all(|c| c.is_ascii_alphanumeric()));
-    let tag = requested.map_or_else(|| theme_tag.unwrap_or_else(|| area_tag(&area)).to_owned(), esc_attr);
+    let requested = bc
+        .attr_str("tagName")
+        .filter(|t| !t.is_empty() && t.chars().all(|c| c.is_ascii_alphanumeric()));
+    let tag = requested.map_or_else(
+        || theme_tag.unwrap_or_else(|| area_tag(&area)).to_owned(),
+        esc_attr,
+    );
     let wrapper = bc.wrapper_attributes(&[]);
     let content = content.replace("]]>", "]]&gt;");
     Ok(format!("<{tag} {wrapper}>{content}</{tag}>"))
 }
 
 pub(super) async fn pattern(bc: &BlockCtx<'_>) -> Result<String> {
-    let Some(slug) = bc.attr_str("slug").filter(|s| !s.is_empty()) else { return Ok(String::new()) };
-    let Some(markup) = bc.env.theme.pattern(slug) else { return Ok(String::new()) };
+    let Some(slug) = bc.attr_str("slug").filter(|s| !s.is_empty()) else {
+        return Ok(String::new());
+    };
+    let Some(markup) = bc.env.theme.pattern(slug) else {
+        return Ok(String::new());
+    };
     let key = format!("pattern:{slug}");
     if !bc.env.with_state(|s| s.active_patterns.insert(key.clone())) {
         return Ok(String::new());

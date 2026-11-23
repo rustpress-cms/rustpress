@@ -135,7 +135,11 @@ fn at<'a>(v: &'a Value, key: &str) -> Option<&'a Value> {
 fn pairs(v: &Value) -> Vec<(String, Value)> {
     match v {
         Value::Object(m) => m.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
-        Value::Array(a) => a.iter().enumerate().map(|(k, v)| (k.to_string(), v.clone())).collect(),
+        Value::Array(a) => a
+            .iter()
+            .enumerate()
+            .map(|(k, v)| (k.to_string(), v.clone()))
+            .collect(),
         _ => Vec::new(),
     }
 }
@@ -172,7 +176,11 @@ pub fn sanitize_textarea(v: &Value) -> String {
 
 /// `sanitize_text_field()` of a value (an array is `''`).
 fn stf(v: &Value) -> String {
-    if is_arr(v) { String::new() } else { text_field(&s(v)) }
+    if is_arr(v) {
+        String::new()
+    } else {
+        text_field(&s(v))
+    }
 }
 
 /// `wpforms_sanitize_array_combine()` of a list: `None` for an empty array.
@@ -187,7 +195,8 @@ fn combine(items: &[Value]) -> Option<String> {
 pub fn decode_string(text: &str) -> String {
     let deep = |t: &str| sanitize_textarea(&Value::String(t.to_owned()));
     let text = deep(text);
-    let decoded = super::smart_tags::decode_quotes(&rustpress_core::formatting::html_entity_decode(&text));
+    let decoded =
+        super::smart_tags::decode_quotes(&rustpress_core::formatting::html_entity_decode(&text));
     deep(&rustpress_core::kses::decode_entities(&decoded))
 }
 
@@ -200,7 +209,9 @@ pub fn is_email(email: &str) -> bool {
         return false;
     }
     let parts: Vec<&str> = email.split('@').collect();
-    let [local, domain] = parts[..] else { return false };
+    let [local, domain] = parts[..] else {
+        return false;
+    };
     if local.len() > 63 {
         return false;
     }
@@ -210,14 +221,18 @@ pub fn is_email(email: &str) -> bool {
             return false;
         }
     }
-    let Some(encoded) = super::punycode::encode(domain) else { return false };
+    let Some(encoded) = super::punycode::encode(domain) else {
+        return false;
+    };
     rustpress_content::sanitize::is_email(&format!("{local}@{encoded}"))
 }
 
 /// `wpforms_is_email( $email )`: a smart tag passes.
 fn is_email_or_tag(email: &str) -> bool {
     static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
-    RE.get_or_init(|| regex::Regex::new(r"\{.+?\}").expect("valid regex")).is_match(email) || is_email(email)
+    RE.get_or_init(|| regex::Regex::new(r"\{.+?\}").expect("valid regex"))
+        .is_match(email)
+        || is_email(email)
 }
 
 /// `WPForms_Field_Email::transform_punycode()`: every part between `*`, `@` and `.` through the library.
@@ -264,7 +279,11 @@ fn email_encode_punycode(email: &Value) -> String {
         return String::new();
     }
     let encoded = encode_punycode(&s(email));
-    if decode_punycode(&encoded).is_empty() { String::new() } else { encoded }
+    if decode_punycode(&encoded).is_empty() {
+        String::new()
+    } else {
+        encoded
+    }
 }
 
 /// `sanitize_part_pattern()`: the characters outside the class go, smart tags stay.
@@ -285,15 +304,23 @@ fn sanitize_part_pattern(part: &str, class: &regex::Regex) -> String {
 
 /// `get_pattern()`: `implode( '@', array_filter( [ $local, $domain ] ) )`.
 fn get_pattern(local: &str, domain: &str) -> String {
-    [local, domain].into_iter().filter(|p| !p.is_empty() && *p != "0").collect::<Vec<_>>().join("@")
+    [local, domain]
+        .into_iter()
+        .filter(|p| !p.is_empty() && *p != "0")
+        .collect::<Vec<_>>()
+        .join("@")
 }
 
 /// `WPForms_Field_Email::is_email_pattern()`.
 fn is_email_pattern(pattern: &str) -> Option<String> {
     static LOCAL: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
     static DOMAIN: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
-    let local_re = LOCAL.get_or_init(|| regex::Regex::new(r"[^a-zA-Z0-9\x{0080}-\x{0FFF}!#$%&'*+/=?^_`{|}~.\-]").expect("valid regex"));
-    let domain_re = DOMAIN.get_or_init(|| regex::Regex::new(r"[^a-z0-9\x{0080}-\x{FFFF}\-.*]").expect("valid regex"));
+    let local_re = LOCAL.get_or_init(|| {
+        regex::Regex::new(r"[^a-zA-Z0-9\x{0080}-\x{0FFF}!#$%&'*+/=?^_`{|}~.\-]")
+            .expect("valid regex")
+    });
+    let domain_re = DOMAIN
+        .get_or_init(|| regex::Regex::new(r"[^a-z0-9\x{0080}-\x{FFFF}\-.*]").expect("valid regex"));
     if pattern.is_empty() || pattern == "0" {
         return None;
     }
@@ -304,7 +331,9 @@ fn is_email_pattern(pattern: &str) -> Option<String> {
         if !local.contains('*') {
             return None;
         }
-        if is_email_or_tag(&get_pattern(&local, "a.me")) || is_email_or_tag(&get_pattern("a", &local.replace('*', ""))) {
+        if is_email_or_tag(&get_pattern(&local, "a.me"))
+            || is_email_or_tag(&get_pattern("a", &local.replace('*', "")))
+        {
             return Some(get_pattern(&local, ""));
         }
         return None;
@@ -317,7 +346,11 @@ fn is_email_pattern(pattern: &str) -> Option<String> {
     }
     for (i, template) in ["a", "me"].iter().enumerate() {
         let t = trim(&subs[i]).to_owned();
-        subs[i] = if t.is_empty() || t == "0" { (*template).to_owned() } else { t };
+        subs[i] = if t.is_empty() || t == "0" {
+            (*template).to_owned()
+        } else {
+            t
+        };
     }
     let check = subs.join(".");
     is_email_or_tag(&get_pattern(&local, &check)).then(|| get_pattern(&local, &domain))
@@ -334,7 +367,11 @@ fn email_allowed(email: &str, field: &Value) -> bool {
         return false;
     }
     let domain = email.split('@').nth(1).unwrap_or_default();
-    let email = if domain.starts_with("xn--") { decode_punycode(&email) } else { email };
+    let email = if domain.starts_with("xn--") {
+        decode_punycode(&email)
+    } else {
+        email
+    };
     if email.is_empty() {
         return false;
     }
@@ -356,7 +393,10 @@ fn email_allowed(email: &str, field: &Value) -> bool {
     let allowlist = filter == "allowlist";
     for p in patterns {
         let p = decode_punycode(&p);
-        let regex = format!("^{}$", p.replace('.', "\\.").replace('*', ".*").replace('/', "\\/"));
+        let regex = format!(
+            "^{}$",
+            p.replace('.', "\\.").replace('*', ".*").replace('/', "\\/")
+        );
         if regex::Regex::new(&regex).is_ok_and(|re| re.is_match(&email)) {
             return allowlist;
         }
@@ -403,7 +443,10 @@ impl Process<'_> {
     }
 
     fn field(&self, field_id: &str) -> Value {
-        self.form_data["fields"].get(field_id).cloned().unwrap_or(Value::Null)
+        self.form_data["fields"]
+            .get(field_id)
+            .cloned()
+            .unwrap_or(Value::Null)
     }
 
     /// `WPForms_Field::validate()`.
@@ -419,7 +462,11 @@ impl Process<'_> {
         let show_values = set(field, "show_values");
         let mut list = Vec::new();
         let mut has_other = false;
-        let choices = if set(field, "choices") && is_arr(&field["choices"]) { pairs(&field["choices"]) } else { Vec::new() };
+        let choices = if set(field, "choices") && is_arr(&field["choices"]) {
+            pairs(&field["choices"])
+        } else {
+            Vec::new()
+        };
         for (key, choice) in choices {
             if set(&choice, "other") {
                 has_other = true;
@@ -437,16 +484,28 @@ impl Process<'_> {
     /// `WPForms_Field::validate_choices_allowlist()`.
     fn validate_choices_allowlist(&mut self, field_id: &str, submit: &Value) {
         let field = self.field(field_id);
-        if empty(Some(&field)) || is_empty_string(Some(submit)) || submit.is_null() || (is_arr(submit) && values(submit).is_empty()) || set(&field, "dynamic_choices") {
+        if empty(Some(&field))
+            || is_empty_string(Some(submit))
+            || submit.is_null()
+            || (is_arr(submit) && values(submit).is_empty())
+            || set(&field, "dynamic_choices")
+        {
             return;
         }
         let (list, has_other) = self.allowlist(&field);
         let valueless = |v: &Value| is_empty_string(Some(v)) || v.is_null();
         let known = |v: &Value| list.iter().any(|a| *a == trim(&s(v)));
         let reject = if is_arr(submit) && set(submit, "other") {
-            !has_other || pairs(submit).iter().any(|(k, item)| k != "other" && !valueless(item) && !known(item))
+            !has_other
+                || pairs(submit)
+                    .iter()
+                    .any(|(k, item)| k != "other" && !valueless(item) && !known(item))
         } else {
-            let items = if is_arr(submit) { values(submit) } else { vec![submit.clone()] };
+            let items = if is_arr(submit) {
+                values(submit)
+            } else {
+                vec![submit.clone()]
+            };
             items.iter().any(|item| !valueless(item) && !known(item))
         };
         if reject {
@@ -461,7 +520,9 @@ impl Process<'_> {
         if set(&field, "read_only") || !is_arr(submit) {
             return;
         }
-        let Some(other) = at(submit, "other").filter(|o| !o.is_null() && !is_arr(o)) else { return };
+        let Some(other) = at(submit, "other").filter(|o| !o.is_null() && !is_arr(o)) else {
+            return;
+        };
         if !self.allowlist(&field).1 || !trim(&s(other)).is_empty() {
             return;
         }
@@ -471,13 +532,20 @@ impl Process<'_> {
 
     /// `WPForms_Field::sanitize_choices_submission()`.
     fn sanitize_choices(&self, submit: &Value, field: &Value) -> Value {
-        if set(field, "dynamic_choices") || is_empty_string(Some(submit)) || (is_arr(submit) && values(submit).is_empty()) {
+        if set(field, "dynamic_choices")
+            || is_empty_string(Some(submit))
+            || (is_arr(submit) && values(submit).is_empty())
+        {
             return submit.clone();
         }
         let (list, has_other) = self.allowlist(field);
         let known = |v: &Value| list.iter().any(|a| *a == trim(&s(v)));
         if !is_arr(submit) {
-            return if known(submit) { submit.clone() } else { json!("") };
+            return if known(submit) {
+                submit.clone()
+            } else {
+                json!("")
+            };
         }
         let mut out = Map::new();
         for (key, item) in pairs(submit) {
@@ -499,7 +567,11 @@ impl Process<'_> {
         if (set(field, "choices_icons") || set(field, "choices_images")) && label.is_empty() {
             return String::new();
         }
-        if label.is_empty() { self.tr("Choice %d").replace("%d", &key.to_string()) } else { label }
+        if label.is_empty() {
+            self.tr("Choice %d").replace("%d", &key.to_string())
+        } else {
+            label
+        }
     }
 
     /// `wpforms_process_validate_{$type}`.
@@ -514,7 +586,14 @@ impl Process<'_> {
                 let value = if ty == "text" {
                     stf(submit)
                 } else if is_arr(submit) {
-                    sanitize_textarea(&json!(values(submit).iter().filter(|v| !empty(Some(v))).map(s).collect::<Vec<_>>().join("\r\n")))
+                    sanitize_textarea(&json!(
+                        values(submit)
+                            .iter()
+                            .filter(|v| !empty(Some(v)))
+                            .map(s)
+                            .collect::<Vec<_>>()
+                            .join("\r\n")
+                    ))
                 } else {
                     sanitize_textarea(submit)
                 };
@@ -546,16 +625,23 @@ impl Process<'_> {
                     self.error(field_id, Value::Object(map));
                 }
                 if first {
-                    self.errors.get_mut(field_id).and_then(Value::as_object_mut).map(|m| m.insert("first".into(), json!(label.clone())));
+                    self.errors
+                        .get_mut(field_id)
+                        .and_then(Value::as_object_mut)
+                        .map(|m| m.insert("first".into(), json!(label.clone())));
                 }
                 if last {
-                    self.errors.get_mut(field_id).and_then(Value::as_object_mut).map(|m| m.insert("last".into(), json!(label)));
+                    self.errors
+                        .get_mut(field_id)
+                        .and_then(Value::as_object_mut)
+                        .map(|m| m.insert("last".into(), json!(label)));
                 }
             }
             "number" => {
                 let value = number_value(submit);
                 let v = Value::String(value.clone());
-                if set(&field, "required") && empty(Some(&v)) && php::numeric_str(&value).is_none() {
+                if set(&field, "required") && empty(Some(&v)) && php::numeric_str(&value).is_none()
+                {
                     let label = required(self.request);
                     self.error(field_id, label);
                 }
@@ -591,14 +677,34 @@ impl Process<'_> {
                 } else {
                     json!({"0": submit})
                 };
-                let choices: Vec<(String, Value)> = pairs(&submit).into_iter().filter(|(k, _)| k != "other").collect();
-                let limit = if field.get("choice_limit").is_some_and(|v| !v.is_null()) { php::int(field.get("choice_limit")) } else { 0 };
+                let choices: Vec<(String, Value)> = pairs(&submit)
+                    .into_iter()
+                    .filter(|(k, _)| k != "other")
+                    .collect();
+                let limit = if field.get("choice_limit").is_some_and(|v| !v.is_null()) {
+                    php::int(field.get("choice_limit"))
+                } else {
+                    0
+                };
                 if limit != 0 && choices.len() as i64 > limit {
-                    let message = self.request.settings.string("validation-check-limit", &esc_html(&self.tr("You have exceeded the number of allowed selections: {#}."))).replace("{#}", &limit.to_string());
+                    let message =
+                        self.request
+                            .settings
+                            .string(
+                                "validation-check-limit",
+                                &esc_html(&self.tr(
+                                    "You have exceeded the number of allowed selections: {#}.",
+                                )),
+                            )
+                            .replace("{#}", &limit.to_string());
                     self.error(field_id, message);
                 }
                 let all = pairs(&submit);
-                if set(&field, "required") && (all.is_empty() || (all.len() == 1 && at(&submit, "0").is_none_or(|v| v.is_null() || s(v).is_empty()))) {
+                if set(&field, "required")
+                    && (all.is_empty()
+                        || (all.len() == 1
+                            && at(&submit, "0").is_none_or(|v| v.is_null() || s(v).is_empty())))
+                {
                     let label = required(self.request);
                     self.error(field_id, label);
                 }
@@ -623,24 +729,53 @@ impl Process<'_> {
             }
             return;
         }
-        let words = set(field, "limit_mode") && super::fields::sanitize_key(&str_of(field, "limit_mode")) != "characters";
-        let length = if words { count_words(value) } else { value.replace("\r\n", "\n").chars().count() as i64 };
+        let words = set(field, "limit_mode")
+            && super::fields::sanitize_key(&str_of(field, "limit_mode")) != "characters";
+        let length = if words {
+            count_words(value)
+        } else {
+            value.replace("\r\n", "\n").chars().count() as i64
+        };
         let r = self.request;
         let message = if max > 0 && length > max {
             if words {
-                (r.trn)("Text can't exceed %d word.", "Text can't exceed %d words.", max).replace("%d", &max.to_string())
+                (r.trn)(
+                    "Text can't exceed %d word.",
+                    "Text can't exceed %d words.",
+                    max,
+                )
+                .replace("%d", &max.to_string())
             } else {
-                (r.trn)("Text can't exceed %d character.", "Text can't exceed %d characters.", max).replace("%d", &max.to_string())
+                (r.trn)(
+                    "Text can't exceed %d character.",
+                    "Text can't exceed %d characters.",
+                    max,
+                )
+                .replace("%d", &max.to_string())
             }
         } else if length >= min {
             return;
         } else {
             let template = if words {
-                r.settings.string("validation-word-minimum", &esc_html(&(r.tr)("Minimum is %1$s words. Words needed: %2$s.")).replace("%1$s", "{min}").replace("%2$s", "{needed}"))
+                r.settings.string(
+                    "validation-word-minimum",
+                    &esc_html(&(r.tr)("Minimum is %1$s words. Words needed: %2$s."))
+                        .replace("%1$s", "{min}")
+                        .replace("%2$s", "{needed}"),
+                )
             } else {
-                r.settings.string("validation-character-minimum", &esc_html(&(r.tr)("Minimum is %1$s characters. Characters needed: %2$s.")).replace("%1$s", "{min}").replace("%2$s", "{needed}"))
+                r.settings.string(
+                    "validation-character-minimum",
+                    &esc_html(&(r.tr)(
+                        "Minimum is %1$s characters. Characters needed: %2$s.",
+                    ))
+                    .replace("%1$s", "{min}")
+                    .replace("%2$s", "{needed}"),
+                )
             };
-            template.replace("{min}", &min.to_string()).replace("{needed}", &(min - length).to_string())
+            template
+                .replace("{min}", &min.to_string())
+                .replace("{needed}", &(min - length).to_string())
         };
         self.error(field_id, message);
     }
@@ -648,7 +783,11 @@ impl Process<'_> {
     /// `WPForms_Field_Email::validate()`.
     fn validate_email(&mut self, field_id: &str, submit: &Value, field: &Value) {
         self.validate_base(field_id, submit);
-        let submit = if !is_arr(submit) && !empty(Some(submit)) { json!({"primary": submit}) } else { submit.clone() };
+        let submit = if !is_arr(submit) && !empty(Some(submit)) {
+            json!({"primary": submit})
+        } else {
+            submit.clone()
+        };
         if empty(at(&submit, "primary")) {
             return;
         }
@@ -658,7 +797,12 @@ impl Process<'_> {
             self.error(field_id, invalid);
             return;
         }
-        let restricted = || self.request.settings.string("validation-email-restricted", &esc_html(&self.tr("This email address is not allowed.")));
+        let restricted = || {
+            self.request.settings.string(
+                "validation-email-restricted",
+                &esc_html(&self.tr("This email address is not allowed.")),
+            )
+        };
         let confirmation = field.get("confirmation").is_some_and(|v| !v.is_null());
         if confirmation && !empty(at(&submit, "secondary")) {
             let secondary = email_encode_punycode(at(&submit, "secondary").unwrap_or(&Value::Null));
@@ -686,43 +830,103 @@ impl Process<'_> {
     /// `wpforms_process_format_{$type}`.
     fn format(&mut self, ty: &str, field_id: &str, submit: &Value) {
         let field = self.field(field_id);
-        let label = || if set(&field, "label") { text_field(&str_of(&field, "label")) } else { String::new() };
+        let label = || {
+            if set(&field, "label") {
+                text_field(&str_of(&field, "label"))
+            } else {
+                String::new()
+            }
+        };
         let id = json!(php::leading_int(field_id).abs());
         let data = match ty {
             "text" => json!({"name": label(), "value": stf(submit), "id": id, "type": ty}),
             "textarea" => {
-                let submit = if is_arr(submit) { json!(values(submit).iter().filter(|v| !empty(Some(v))).map(s).collect::<Vec<_>>().join("\r\n")) } else { submit.clone() };
+                let submit = if is_arr(submit) {
+                    json!(
+                        values(submit)
+                            .iter()
+                            .filter(|v| !empty(Some(v)))
+                            .map(s)
+                            .collect::<Vec<_>>()
+                            .join("\r\n")
+                    )
+                } else {
+                    submit.clone()
+                };
                 json!({"name": label(), "value": sanitize_textarea(&submit), "id": id, "type": ty})
             }
             "email" => {
-                let value = if is_arr(submit) { at(submit, "primary").filter(|v| !empty(Some(v))).cloned().unwrap_or(json!("")) } else if empty(Some(submit)) { json!("") } else { submit.clone() };
+                let value = if is_arr(submit) {
+                    at(submit, "primary")
+                        .filter(|v| !empty(Some(v)))
+                        .cloned()
+                        .unwrap_or(json!(""))
+                } else if empty(Some(submit)) {
+                    json!("")
+                } else {
+                    submit.clone()
+                };
                 let truthy = !empty(Some(&value));
-                let decoded = if truthy && !is_arr(&value) && is_email(&s(&value)) { decode_punycode(&s(&value)) } else { String::new() };
+                let decoded = if truthy && !is_arr(&value) && is_email(&s(&value)) {
+                    decode_punycode(&s(&value))
+                } else {
+                    String::new()
+                };
                 if truthy && decoded.is_empty() {
                     let message = esc_html(&self.tr("The provided email is not valid."));
                     self.error(field_id, message);
                     return;
                 }
-                let name = if set(&field, "label") { str_of(&field, "label") } else { String::new() };
+                let name = if set(&field, "label") {
+                    str_of(&field, "label")
+                } else {
+                    String::new()
+                };
                 json!({"name": text_field(&name), "value": text_field(&decoded), "id": id, "type": ty})
             }
             "name" => {
-                let name = field.get("label").filter(|l| !l.is_null() && !is_empty_string(Some(l))).map(s).unwrap_or_default();
-                let part = |key: &str| if is_arr(submit) { at(submit, key).filter(|v| !is_empty_string(Some(v))).cloned().unwrap_or(json!("")) } else { json!("") };
+                let name = field
+                    .get("label")
+                    .filter(|l| !l.is_null() && !is_empty_string(Some(l)))
+                    .map(s)
+                    .unwrap_or_default();
+                let part = |key: &str| {
+                    if is_arr(submit) {
+                        at(submit, key)
+                            .filter(|v| !is_empty_string(Some(v)))
+                            .cloned()
+                            .unwrap_or(json!(""))
+                    } else {
+                        json!("")
+                    }
+                };
                 let (first, middle, last) = (part("first"), part("middle"), part("last"));
                 let value = if is_arr(submit) {
-                    [&first, &middle, &last].into_iter().filter(|v| !empty(Some(v))).map(s).collect::<Vec<_>>().join(" ")
+                    [&first, &middle, &last]
+                        .into_iter()
+                        .filter(|v| !empty(Some(v)))
+                        .map(s)
+                        .collect::<Vec<_>>()
+                        .join(" ")
                 } else {
                     s(submit)
                 };
                 json!({"name": text_field(&name), "value": text_field(&value), "id": id, "type": ty, "first": stf(&first), "middle": stf(&middle), "last": stf(&last)})
             }
             "number" => {
-                let name = if set(&field, "label") { str_of(&field, "label") } else { String::new() };
+                let name = if set(&field, "label") {
+                    str_of(&field, "label")
+                } else {
+                    String::new()
+                };
                 json!({"name": text_field(&name), "value": number_value(submit), "id": id, "type": ty})
             }
             "number-slider" => {
-                let name = if set(&field, "label") { str_of(&field, "label") } else { String::new() };
+                let name = if set(&field, "label") {
+                    str_of(&field, "label")
+                } else {
+                    String::new()
+                };
                 let value = slider_value(submit);
                 let raw = json!({
                     "value": value,
@@ -743,7 +947,18 @@ impl Process<'_> {
             }),
             _ => {
                 // `WPForms_Field::format()`.
-                let submit = if is_arr(submit) { json!(values(submit).iter().filter(|v| !empty(Some(v))).map(s).collect::<Vec<_>>().join("\r\n")) } else { submit.clone() };
+                let submit = if is_arr(submit) {
+                    json!(
+                        values(submit)
+                            .iter()
+                            .filter(|v| !empty(Some(v)))
+                            .map(s)
+                            .collect::<Vec<_>>()
+                            .join("\r\n")
+                    )
+                } else {
+                    submit.clone()
+                };
                 json!({"name": label(), "value": sanitize_textarea(&submit), "id": id, "type": ty})
             }
         };
@@ -752,7 +967,11 @@ impl Process<'_> {
 
     /// `WPForms_Field_Select::format()` (static choices).
     fn format_select(&self, field: &Value, submit: &Value, id: Value) -> Value {
-        let submit = if is_arr(submit) { submit.clone() } else { json!({"0": submit}) };
+        let submit = if is_arr(submit) {
+            submit.clone()
+        } else {
+            json!({"0": submit})
+        };
         let submit = self.sanitize_choices(&submit, field);
         let items = values(&submit);
         let raw = combine(&items).unwrap_or_default();
@@ -762,7 +981,11 @@ impl Process<'_> {
             for item in &items {
                 for (key, choice) in pairs(&field["choices"]) {
                     if choice.get("value").is_some_and(|v| v == item) {
-                        let label = self.choices_label(choice.get("label").unwrap_or(&json!("")), php::leading_int(&key), field);
+                        let label = self.choices_label(
+                            choice.get("label").unwrap_or(&json!("")),
+                            php::leading_int(&key),
+                            field,
+                        );
                         if !label.is_empty() {
                             labels.push(json!(label));
                         }
@@ -780,7 +1003,11 @@ impl Process<'_> {
     /// `WPForms_Field_Radio::format()` (static choices).
     fn format_radio(&self, field: &Value, submit: &Value, id: Value) -> Value {
         let submit = self.sanitize_choices(submit, field);
-        let raw = if is_arr(&submit) { String::new() } else { stf(&submit) };
+        let raw = if is_arr(&submit) {
+            String::new()
+        } else {
+            stf(&submit)
+        };
         let mut data = json!({"name": text_field(&str_of(field, "label")), "value": "", "value_raw": raw, "id": id, "type": "radio"});
         let mut choice_key = String::new();
         if set(field, "show_values") {
@@ -794,7 +1021,11 @@ impl Process<'_> {
         } else {
             data["value"] = json!(raw);
             for (key, choice) in pairs(&field["choices"]) {
-                let label = choice.get("label").filter(|l| !l.is_null()).cloned().unwrap_or(json!(""));
+                let label = choice
+                    .get("label")
+                    .filter(|l| !l.is_null())
+                    .cloned()
+                    .unwrap_or(json!(""));
                 if submit == label || raw == self.tr("Choice %s").replace("%s", &key) {
                     choice_key = key;
                     break;
@@ -802,7 +1033,11 @@ impl Process<'_> {
             }
         }
         if !choice_key.is_empty() && choice_key != "0" && set(field, "choices_images") {
-            let image = field["choices"].get(&choice_key).filter(|c| set(c, "image")).map(|c| esc_url_raw(&str_of(c, "image"))).unwrap_or_default();
+            let image = field["choices"]
+                .get(&choice_key)
+                .filter(|c| set(c, "image"))
+                .map(|c| esc_url_raw(&str_of(c, "image")))
+                .unwrap_or_default();
             data["image"] = json!(image);
         }
         if is_arr(&submit) && set(&submit, "other") {
@@ -811,7 +1046,12 @@ impl Process<'_> {
             for (_, choice) in pairs(&field["choices"]) {
                 if choice.get("other").is_some_and(|o| !o.is_null()) {
                     data["value_raw"] = choice.get("label").cloned().unwrap_or(json!(""));
-                    data["image"] = json!(if set(field, "choices_images") && set(&choice, "image") { esc_url_raw(&str_of(&choice, "image")) } else { String::new() });
+                    data["image"] =
+                        json!(if set(field, "choices_images") && set(&choice, "image") {
+                            esc_url_raw(&str_of(&choice, "image"))
+                        } else {
+                            String::new()
+                        });
                     break;
                 }
             }
@@ -821,11 +1061,26 @@ impl Process<'_> {
 
     /// `WPForms_Field_Checkbox::format()` (static choices) with `format_other_option()`.
     fn format_checkbox(&self, field: &Value, submit: &Value, id: Value) -> Value {
-        let submit = if is_arr(submit) { submit.clone() } else { json!({"0": submit}) };
+        let submit = if is_arr(submit) {
+            submit.clone()
+        } else {
+            json!({"0": submit})
+        };
         let submit = self.sanitize_choices(&submit, field);
-        let submit = if is_arr(&submit) { submit } else { json!({"0": submit}) };
-        let other_raw = at(&submit, "other").filter(|o| !o.is_null() && !is_arr(o)).map(|o| super::fields::stripslashes(&s(o))).unwrap_or_default();
-        let items: Vec<Value> = pairs(&submit).into_iter().filter(|(k, _)| k != "other").map(|(_, v)| v).collect();
+        let submit = if is_arr(&submit) {
+            submit
+        } else {
+            json!({"0": submit})
+        };
+        let other_raw = at(&submit, "other")
+            .filter(|o| !o.is_null() && !is_arr(o))
+            .map(|o| super::fields::stripslashes(&s(o)))
+            .unwrap_or_default();
+        let items: Vec<Value> = pairs(&submit)
+            .into_iter()
+            .filter(|(k, _)| k != "other")
+            .map(|(_, v)| v)
+            .collect();
         let raw = combine(&items).unwrap_or_default();
         let mut data = json!({"name": text_field(&str_of(field, "label")), "value": "", "value_raw": raw, "id": id, "type": "checkbox"});
         let mut keys: Vec<String> = Vec::new();
@@ -834,9 +1089,16 @@ impl Process<'_> {
             for item in &items {
                 for (key, choice) in pairs(&field["choices"]) {
                     let value = choice.get("value").cloned().unwrap_or(Value::Null);
-                    let by_number = empty(Some(&value)) && php::leading_int(&s(item).replace("Choice ", "")) == php::leading_int(&key) && key.parse::<i64>().is_ok();
+                    let by_number = empty(Some(&value))
+                        && php::leading_int(&s(item).replace("Choice ", ""))
+                            == php::leading_int(&key)
+                        && key.parse::<i64>().is_ok();
                     if (!empty(Some(item)) && *item == value) || by_number {
-                        let label = self.choices_label(choice.get("label").unwrap_or(&json!("")), php::leading_int(&key), field);
+                        let label = self.choices_label(
+                            choice.get("label").unwrap_or(&json!("")),
+                            php::leading_int(&key),
+                            field,
+                        );
                         if !label.is_empty() {
                             labels.push(json!(label));
                         }
@@ -850,7 +1112,11 @@ impl Process<'_> {
             data["value"] = json!(raw);
             for item in &items {
                 for (key, choice) in pairs(&field["choices"]) {
-                    let label = choice.get("label").filter(|l| !l.is_null()).cloned().unwrap_or(json!(""));
+                    let label = choice
+                        .get("label")
+                        .filter(|l| !l.is_null())
+                        .cloned()
+                        .unwrap_or(json!(""));
                     if *item == label || *item == json!(self.tr("Choice %s").replace("%s", &key)) {
                         keys.push(key);
                         break;
@@ -859,10 +1125,24 @@ impl Process<'_> {
             }
         }
         if !keys.is_empty() && set(field, "choices_images") {
-            data["images"] = Value::Array(keys.iter().map(|k| json!(field["choices"].get(k).filter(|c| set(c, "image")).map(|c| esc_url_raw(&str_of(c, "image"))).unwrap_or_default())).collect());
+            data["images"] = Value::Array(
+                keys.iter()
+                    .map(|k| {
+                        json!(
+                            field["choices"]
+                                .get(k)
+                                .filter(|c| set(c, "image"))
+                                .map(|c| esc_url_raw(&str_of(c, "image")))
+                                .unwrap_or_default()
+                        )
+                    })
+                    .collect(),
+            );
         }
         // `format_other_option()`.
-        let other = pairs(&field["choices"]).into_iter().find(|(_, c)| set(c, "other"));
+        let other = pairs(&field["choices"])
+            .into_iter()
+            .find(|(_, c)| set(c, "other"));
         if let Some((_, choice)) = other
             && !other_raw.is_empty()
         {
@@ -882,7 +1162,10 @@ impl Process<'_> {
             data["value"] = json!(if current.is_empty() {
                 formatted
             } else {
-                let mut parts: Vec<&str> = current.split('\n').filter(|p| trim(p) != other_label).collect();
+                let mut parts: Vec<&str> = current
+                    .split('\n')
+                    .filter(|p| trim(p) != other_label)
+                    .collect();
                 parts.push(&formatted);
                 parts.join("\n")
             });
@@ -894,13 +1177,20 @@ impl Process<'_> {
 /// `WPForms_Field_Number::sanitize_value()`.
 fn number_value(value: &Value) -> String {
     if is_arr(value) {
-        return if values(value).is_empty() { String::new() } else { "Array".into() };
+        return if values(value).is_empty() {
+            String::new()
+        } else {
+            "Array".into()
+        };
     }
     let text = s(value);
     if empty(Some(value)) && php::numeric_str(&text).is_none() {
         return String::new();
     }
-    let signed: String = text.chars().filter(|c| c.is_ascii_digit() || *c == '-' || *c == '.').collect();
+    let signed: String = text
+        .chars()
+        .filter(|c| c.is_ascii_digit() || *c == '-' || *c == '.')
+        .collect();
     let abs = signed.replace('-', "");
     // `$signed_value < 0`: numeric strings compare as numbers, others as strings with "0".
     let negative = match php::numeric_str(&signed) {
@@ -912,9 +1202,18 @@ fn number_value(value: &Value) -> String {
 
 /// `(float) WPForms_Field_Number_Slider::sanitize_value()`.
 fn slider_value(value: &Value) -> f64 {
-    let signed: String = s(value).chars().filter(|c| c.is_ascii_digit() || *c == '-' || *c == '.').collect();
-    let Some(n) = php::numeric_str(&signed) else { return 0.0 };
-    if signed.starts_with('-') { -n.abs() } else { n.abs() }
+    let signed: String = s(value)
+        .chars()
+        .filter(|c| c.is_ascii_digit() || *c == '-' || *c == '.')
+        .collect();
+    let Some(n) = php::numeric_str(&signed) else {
+        return 0.0;
+    };
+    if signed.starts_with('-') {
+        -n.abs()
+    } else {
+        n.abs()
+    }
 }
 
 /// `wpforms_count_words()`.
@@ -935,7 +1234,10 @@ fn count_words(text: &str) -> i64 {
     for re in res {
         text = re.replace_all(&text, "$1, $2").into_owned();
     }
-    text.split([' ', '\t', '\n', '\r', '\u{b}', '\u{c}']).collect::<Vec<_>>().len() as i64 - count_merged(&text)
+    text.split([' ', '\t', '\n', '\r', '\u{b}', '\u{c}'])
+        .collect::<Vec<_>>()
+        .len() as i64
+        - count_merged(&text)
 }
 
 /// `preg_split( '/[\s]+/' )` treats a run of whitespace as one separator.
@@ -955,7 +1257,13 @@ fn count_merged(text: &str) -> i64 {
 
 /// `Token::get_error_message()`.
 fn token_error(r: &Request<'_>, text: &str) -> String {
-    let text = format!("{} {}", esc_html(&(r.tr)(text)), esc_html(&(r.tr)("Please reload the page and try submitting the form again.")));
+    let text = format!(
+        "{} {}",
+        esc_html(&(r.tr)(text)),
+        esc_html(&(r.tr)(
+            "Please reload the page and try submitting the form again."
+        ))
+    );
     if !r.can_manage {
         return text;
     }
@@ -979,7 +1287,10 @@ pub struct Form<'a> {
 pub fn ajax_submit<'f>(forms: &dyn Fn(u64) -> Option<Form<'f>>, r: &Request<'_>) -> Outcome {
     let wpforms = r.post.get("wpforms").cloned().unwrap_or(Value::Null);
     let form_id = php::int(at(&wpforms, "id")).max(0) as u64;
-    let fail = || Outcome { body: "{\"success\":false}".into(), ..Outcome::default() };
+    let fail = || Outcome {
+        body: "{\"success\":false}".into(),
+        ..Outcome::default()
+    };
     if form_id == 0 {
         return fail();
     }
@@ -1004,53 +1315,113 @@ pub fn ajax_submit<'f>(forms: &dyn Fn(u64) -> Option<Form<'f>>, r: &Request<'_>)
     if let Some(url) = p.redirect.take() {
         // `ajax_process_redirect()` on `wp_redirect` with `maybe_open_in_new_tab()`.
         let mut data = json!({"form_id": form_id, "redirect_url": url});
-        if p.confirmation.as_ref().is_some_and(|c| set(c, "redirect_new_tab")) {
+        if p.confirmation
+            .as_ref()
+            .is_some_and(|c| set(c, "redirect_new_tab"))
+        {
             data["new_tab"] = json!(true);
         }
-        return Outcome { body: super::encode(&json!({"success": true, "data": data})), emails: p.emails, saved: p.saved, complete: p.complete };
+        return Outcome {
+            body: super::encode(&json!({"success": true, "data": data})),
+            emails: p.emails,
+            saved: p.saved,
+            complete: p.complete,
+        };
     }
     let form_data = if empty(Some(&p.form_data)) {
-        form.as_ref().map(|f| f.data.clone()).unwrap_or(Value::Bool(false))
+        form.as_ref()
+            .map(|f| f.data.clone())
+            .unwrap_or(Value::Bool(false))
     } else {
         p.form_data.clone()
     };
     if !p.errors.is_empty() {
         let body = errors_response(&p, &form_data);
-        return Outcome { body, emails: p.emails, saved: p.saved, complete: p.complete };
+        return Outcome {
+            body,
+            emails: p.emails,
+            saved: p.saved,
+            complete: p.complete,
+        };
     }
     // `Frontend::confirmation()`.
     let mut confirmation = String::new();
-    if let (Some(_), Some(message)) = (&p.confirmation, p.confirmation_message.as_ref().filter(|m| !m.is_empty() && *m != "0")) {
+    if let (Some(_), Some(message)) = (
+        &p.confirmation,
+        p.confirmation_message
+            .as_ref()
+            .filter(|m| !m.is_empty() && *m != "0"),
+    ) {
         let fields = Value::Object(p.fields.clone());
-        let tags = Tags { request: r, form_data: &form_data, fields: &fields, entry_meta: form_data.get("entry_meta"), notification: p.notification, recipients_can: false };
+        let tags = Tags {
+            request: r,
+            form_data: &form_data,
+            fields: &fields,
+            entry_meta: form_data.get("entry_meta"),
+            notification: p.notification,
+            recipients_can: false,
+        };
         let message = wpautop(&tags.process(message, "confirmation", false));
         if !message.is_empty() {
-            let mut class = if super::render::disable_css(r.settings) == 1 { "wpforms-confirmation-container-full".to_owned() } else { "wpforms-confirmation-container".to_owned() };
+            let mut class = if super::render::disable_css(r.settings) == 1 {
+                "wpforms-confirmation-container-full".to_owned()
+            } else {
+                "wpforms-confirmation-container".to_owned()
+            };
             if p.scroll {
                 class.push_str(" wpforms-confirmation-scroll");
             }
-            confirmation = format!("<div class=\"{}\" id=\"wpforms-confirmation-{}\" tabindex=\"-1\">{}</div>", php::sanitize_class_string(&class), php::int(form_data.get("id")).abs(), message);
+            confirmation = format!(
+                "<div class=\"{}\" id=\"wpforms-confirmation-{}\" tabindex=\"-1\">{}</div>",
+                php::sanitize_class_string(&class),
+                php::int(form_data.get("id")).abs(),
+                message
+            );
         }
     }
-    Outcome { body: super::encode(&json!({"success": true, "data": {"confirmation": confirmation}})), emails: p.emails, saved: p.saved, complete: p.complete }
+    Outcome {
+        body: super::encode(&json!({"success": true, "data": {"confirmation": confirmation}})),
+        emails: p.emails,
+        saved: p.saved,
+        complete: p.complete,
+    }
 }
 
 /// `WPForms_Process::ajax_process_errors()`.
 fn errors_response(p: &Process<'_>, form_data: &Value) -> String {
     let r = p.request;
     let modern = super::render::modern(r.settings);
-    let id = form_data.get("id").map(string).unwrap_or_else(|| "0".into());
+    let id = form_data
+        .get("id")
+        .map(string)
+        .unwrap_or_else(|| "0".into());
     let mut general = Map::new();
     for (key, error) in &p.errors {
-        if matches!(key.as_str(), "header" | "footer" | "header_styled" | "footer_styled" | "recaptcha") {
-            general.insert(key.clone(), json!(super::render::form_error_html(key, &s(error), &id, r.tr, modern)));
+        if matches!(
+            key.as_str(),
+            "header" | "footer" | "header_styled" | "footer_styled" | "recaptcha"
+        ) {
+            general.insert(
+                key.clone(),
+                json!(super::render::form_error_html(
+                    key,
+                    &s(error),
+                    &id,
+                    r.tr,
+                    modern
+                )),
+            );
         }
     }
     let fields = form_data.get("fields").cloned().unwrap_or(Value::Null);
     let mut field_errors = Map::new();
     for (key, error) in &p.errors {
-        let Some(field) = at(&fields, key) else { continue };
-        if let Some(name) = error_field_name(field, form_data, error, r).filter(|n| !n.is_empty() && n != "0") {
+        let Some(field) = at(&fields, key) else {
+            continue;
+        };
+        if let Some(name) =
+            error_field_name(field, form_data, error, r).filter(|n| !n.is_empty() && n != "0")
+        {
             field_errors.insert(name, error.clone());
         }
     }
@@ -1068,12 +1439,23 @@ fn errors_response(p: &Process<'_>, form_data: &Value) -> String {
 }
 
 /// `WPForms_Field::ajax_error_field_name()`: the name of the input the error belongs to.
-fn error_field_name(field: &Value, form_data: &Value, error: &Value, r: &Request<'_>) -> Option<String> {
+fn error_field_name(
+    field: &Value,
+    form_data: &Value,
+    error: &Value,
+    r: &Request<'_>,
+) -> Option<String> {
     let props = super::render::field_props(field, form_data, r.settings, r.tr);
     let inputs = props.get("inputs").cloned().unwrap_or(Value::Null);
     let input = match error {
-        Value::Object(m) if m.keys().next().is_some_and(|k| inputs.get(k).is_some()) => inputs.get(m.keys().next()?.as_str()).cloned(),
-        _ => inputs.get("primary").cloned().or_else(|| inputs.as_object().and_then(|m| m.values().next_back().cloned())),
+        Value::Object(m) if m.keys().next().is_some_and(|k| inputs.get(k).is_some()) => {
+            inputs.get(m.keys().next()?.as_str()).cloned()
+        }
+        _ => inputs.get("primary").cloned().or_else(|| {
+            inputs
+                .as_object()
+                .and_then(|m| m.values().next_back().cloned())
+        }),
     };
     input.and_then(|i| i.get("attr").and_then(|a| a.get("name")).map(string))
 }
@@ -1089,7 +1471,9 @@ fn process(p: &mut Process<'_>, form: Option<&Form<'_>>, mut entry: Value) {
     };
     p.form_data = before_form_data(form.data.clone(), r);
     // `is_valid_ajax_submit_action()`: the form is sent to `admin-ajax.php` with `$_POST['action']`.
-    if !empty(p.form_data["settings"].get("ajax_submit")) && r.post.get("action").and_then(Value::as_str) != Some("wpforms_submit") {
+    if !empty(p.form_data["settings"].get("ajax_submit"))
+        && r.post.get("action").and_then(Value::as_str) != Some("wpforms_submit")
+    {
         let message = esc_html(&p.tr("Attempt to submit corrupted post data."));
         p.error("header", message);
         return;
@@ -1112,7 +1496,9 @@ fn process(p: &mut Process<'_>, form: Option<&Form<'_>>, mut entry: Value) {
             entry["fields"] = Value::Object(kept);
         }
         if !valid {
-            let message = esc_html(&p.tr("Anti-spam Honeypot V2 verification was failed, please try again later."));
+            let message = esc_html(
+                &p.tr("Anti-spam Honeypot V2 verification was failed, please try again later."),
+            );
             p.spam_errors.insert("header".into(), json!(message));
             p.spam_reason = Some("Honeypot V2".into());
             if !store_spam {
@@ -1120,32 +1506,51 @@ fn process(p: &mut Process<'_>, form: Option<&Form<'_>>, mut entry: Value) {
             }
         }
     }
-    if p.form_data.get("fields").is_none_or(Value::is_null) || p.form_data.get("id").is_none_or(Value::is_null) {
-        let message = esc_html(&p.tr("Your form has not been submitted because data is missing from the entry."));
+    if p.form_data.get("fields").is_none_or(Value::is_null)
+        || p.form_data.get("id").is_none_or(Value::is_null)
+    {
+        let message = esc_html(
+            &p.tr("Your form has not been submitted because data is missing from the entry."),
+        );
         p.errors.clear();
         p.error("header", message);
         return;
     }
     let field_list: Vec<Value> = values(&p.form_data["fields"]);
     let submitted = entry.get("fields").cloned().unwrap_or(Value::Null);
-    let submit_of = |field: &Value| at(&submitted, &s(field.get("id").unwrap_or(&Value::Null))).cloned().unwrap_or(json!(""));
+    let submit_of = |field: &Value| {
+        at(&submitted, &s(field.get("id").unwrap_or(&Value::Null)))
+            .cloned()
+            .unwrap_or(json!(""))
+    };
     for field in &field_list {
         let ty = str_of(field, "type");
         if super::fields::is_known(&ty) && (ty != "gdpr-checkbox" || r.settings.set("gdpr")) {
-            p.validate(&ty, &s(field.get("id").unwrap_or(&Value::Null)), &submit_of(field));
+            p.validate(
+                &ty,
+                &s(field.get("id").unwrap_or(&Value::Null)),
+                &submit_of(field),
+            );
         }
     }
     if !p.errors.is_empty() {
-        if !p.errors.contains_key("header") && !p.errors.contains_key("footer") || (empty(p.errors.get("header")) && empty(p.errors.get("footer"))) {
-            let message = esc_html(&p.tr("Form has not been submitted, please see the errors below."));
+        if !p.errors.contains_key("header") && !p.errors.contains_key("footer")
+            || (empty(p.errors.get("header")) && empty(p.errors.get("footer")))
+        {
+            let message =
+                esc_html(&p.tr("Form has not been submitted, please see the errors below."));
             p.error("header", message);
         }
         return;
     }
     if r.user.is_some() {
         let nonce = at(&entry, "nonce").map(s).unwrap_or_default();
-        if nonce.is_empty() || nonce == "0" || !(r.verify_nonce)(&nonce, &format!("wpforms::form_{form_id}")) {
-            let message = esc_html(&p.tr("The form could not be submitted due to a security issue."));
+        if nonce.is_empty()
+            || nonce == "0"
+            || !(r.verify_nonce)(&nonce, &format!("wpforms::form_{form_id}"))
+        {
+            let message =
+                esc_html(&p.tr("The form could not be submitted due to a security issue."));
             p.error("footer_styled", message);
             return;
         }
@@ -1153,7 +1558,11 @@ fn process(p: &mut Process<'_>, form: Option<&Form<'_>>, mut entry: Value) {
     for field in &field_list {
         let ty = str_of(field, "type");
         if super::fields::is_known(&ty) && (ty != "gdpr-checkbox" || r.settings.set("gdpr")) {
-            p.format(&ty, &s(field.get("id").unwrap_or(&Value::Null)), &submit_of(field));
+            p.format(
+                &ty,
+                &s(field.get("id").unwrap_or(&Value::Null)),
+                &submit_of(field),
+            );
         }
     }
     // `Honeypot::validate()`: the old honeypot fails silently.
@@ -1164,18 +1573,33 @@ fn process(p: &mut Process<'_>, form: Option<&Form<'_>>, mut entry: Value) {
     let settings = p.form_data["settings"].clone();
     if settings.get("antispam").and_then(Value::as_str) == Some("1") {
         let token = at(&entry, "token").map(s);
-        let valid = token.is_some_and(|t| super::token::verify(&t, &str_of(&p.form_data, "id"), r.secret, r.now));
+        let valid = token.is_some_and(|t| {
+            super::token::verify(&t, &str_of(&p.form_data, "id"), r.secret, r.now)
+        });
         if !valid {
             p.error("header", token_error(r, "Antispam token is invalid."));
             return;
         }
     }
     // `time_limit_check()`.
-    let limit = settings.get("anti_spam").and_then(|a| a.get("time_limit")).cloned().unwrap_or(Value::Null);
-    let duration = if set(&limit, "duration") { php::int(limit.get("duration")).abs() } else { 0 };
+    let limit = settings
+        .get("anti_spam")
+        .and_then(|a| a.get("time_limit"))
+        .cloned()
+        .unwrap_or(Value::Null);
+    let duration = if set(&limit, "duration") {
+        php::int(limit.get("duration")).abs()
+    } else {
+        0
+    };
     if set(&limit, "enable") && duration > 0 {
         let token = at(&entry, "time_token").map(stf).unwrap_or_default();
-        let start = super::token::verify_time_token(&token, php::int(p.form_data.get("id")).abs(), r.secret, r.now);
+        let start = super::token::verify_time_token(
+            &token,
+            php::int(p.form_data.get("id")).abs(),
+            r.secret,
+            r.now,
+        );
         if start == 0 || r.now - start < duration {
             let message = esc_html(&p.tr("Please wait a little longer before submitting. We’re running a quick security check."));
             p.error("header", message);
@@ -1190,12 +1614,17 @@ fn process(p: &mut Process<'_>, form: Option<&Form<'_>>, mut entry: Value) {
     p.form_data["created"] = json!(form.post_date);
     if !p.errors.is_empty() {
         if empty(p.errors.get("header")) && empty(p.errors.get("footer")) {
-            let message = esc_html(&p.tr("Form has not been submitted, please see the errors below."));
+            let message =
+                esc_html(&p.tr("Form has not been submitted, please see the errors below."));
             p.error("header", message);
         }
         return;
     }
-    let page_url = r.post.get("page_url").map(|u| esc_url_raw(&s(u))).unwrap_or_default();
+    let page_url = r
+        .post
+        .get("page_url")
+        .map(|u| esc_url_raw(&s(u)))
+        .unwrap_or_default();
     p.form_data["post_data_raw"] = json!({"page_url": page_url});
     // `entry_save()` (Lite keeps no entries; `update_entry_count()` counts it).
     p.saved = p.spam_reason.is_none();
@@ -1221,16 +1650,23 @@ fn before_form_data(mut form_data: Value, r: &Request<'_>) -> Value {
     if let Some(Value::Object(fields)) = form_data.get_mut("fields") {
         fields.retain(|_, f| str_of(f, "type") != "internal-information");
         for field in fields.values_mut() {
-            if !set(field, "choices") || !matches!(str_of(field, "type").as_str(), "radio" | "checkbox") {
+            if !set(field, "choices")
+                || !matches!(str_of(field, "type").as_str(), "radio" | "checkbox")
+            {
                 continue;
             }
             if let Some(Value::Object(choices)) = field.get_mut("choices") {
                 for (key, choice) in choices.iter_mut() {
-                    let has_value = choice.get("value").is_some_and(|v| !v.is_null() && !trim(&s(v)).is_empty());
+                    let has_value = choice
+                        .get("value")
+                        .is_some_and(|v| !v.is_null() && !trim(&s(v)).is_empty());
                     if has_value || !set(choice, "image") {
                         continue;
                     }
-                    choice["value"] = json!(esc_html(&(r.tr)("Choice %d")).replace("%d", &php::leading_int(key).to_string()));
+                    choice["value"] = json!(
+                        esc_html(&(r.tr)("Choice %d"))
+                            .replace("%d", &php::leading_int(key).to_string())
+                    );
                 }
             }
         }
@@ -1243,7 +1679,13 @@ fn confirmation_redirect(p: &mut Process<'_>) {
     let r = p.request;
     let settings = p.form_data["settings"].clone();
     if empty(settings.get("confirmations")) {
-        let pick = |key: &str, default: Value| if set(&settings, key) { settings[key].clone() } else { default };
+        let pick = |key: &str, default: Value| {
+            if set(&settings, key) {
+                settings[key].clone()
+            } else {
+                default
+            }
+        };
         let confirmation = json!({
             "type": pick("confirmation_type", json!("message")),
             "message": pick("confirmation_message", json!(esc_html(&p.tr("Thanks for contacting us! We will be in touch with you shortly.")))),
@@ -1260,7 +1702,11 @@ fn confirmation_redirect(p: &mut Process<'_>) {
     // `krsort()` and `get_confirmation_id()`: the highest valid confirmation, else the lowest key.
     let mut list = pairs(&confirmations);
     list.sort_by(|a, b| php_key_cmp(&b.0, &a.0));
-    let default = list.iter().map(|(k, _)| k.clone()).min_by(|a, b| php_key_cmp(a, b)).unwrap_or_default();
+    let default = list
+        .iter()
+        .map(|(k, _)| k.clone())
+        .min_by(|a, b| php_key_cmp(a, b))
+        .unwrap_or_default();
     let mut chosen = String::new();
     for (key, confirmation) in &list {
         chosen = key.clone();
@@ -1268,28 +1714,55 @@ fn confirmation_redirect(p: &mut Process<'_>) {
             break;
         }
         let ty = str_of(confirmation, "type");
-        if set(confirmation, "type") && confirmation.get(&ty).is_some_and(|v| !v.is_null() && !is_empty_string(Some(v))) {
+        if set(confirmation, "type")
+            && confirmation
+                .get(&ty)
+                .is_some_and(|v| !v.is_null() && !is_empty_string(Some(v)))
+        {
             break;
         }
     }
-    let confirmation = list.iter().find(|(k, _)| *k == chosen).map(|(_, c)| c.clone()).unwrap_or(json!({}));
+    let confirmation = list
+        .iter()
+        .find(|(k, _)| *k == chosen)
+        .map(|(_, c)| c.clone())
+        .unwrap_or(json!({}));
     p.confirmation = Some(confirmation.clone());
     let ty = str_of(&confirmation, "type");
     let fields = Value::Object(p.fields.clone());
     let mut url = String::new();
     if set(&confirmation, "type") && ty != "message" {
-        let tags = Tags { request: r, form_data: &p.form_data, fields: &fields, entry_meta: p.form_data.get("entry_meta"), notification: p.notification, recipients_can: false };
+        let tags = Tags {
+            request: r,
+            form_data: &p.form_data,
+            fields: &fields,
+            entry_meta: p.form_data.get("entry_meta"),
+            notification: p.notification,
+            recipients_can: false,
+        };
         if ty == "redirect" {
-            url = tags.process(&str_of(&confirmation, "redirect"), "confirmation_redirect", true);
+            url = tags.process(
+                &str_of(&confirmation, "redirect"),
+                "confirmation_redirect",
+                true,
+            );
         }
         if ty == "page" && set(&confirmation, "page") {
             let page = str_of(&confirmation, "page");
             let base = if page != "previous_page" {
                 let id = php::leading_int(&page);
-                r.permalinks.iter().find(|(i, _)| *i == id).map(|(_, u)| u.clone()).unwrap_or_default()
+                r.permalinks
+                    .iter()
+                    .find(|(i, _)| *i == id)
+                    .map(|(_, u)| u.clone())
+                    .unwrap_or_default()
             } else {
                 let referer = tags.process("{url_referer}", "confirmation_redirect", false);
-                if !referer.is_empty() && validate_redirect(&referer, r) { referer } else { r.home_url.clone() }
+                if !referer.is_empty() && validate_redirect(&referer, r) {
+                    referer
+                } else {
+                    r.home_url.clone()
+                }
             };
             url = add_url_params(&confirmation, &base);
         }
@@ -1320,12 +1793,21 @@ fn php_key_cmp(a: &str, b: &str) -> std::cmp::Ordering {
 fn validate_redirect(url: &str, r: &Request<'_>) -> bool {
     let url = url.trim();
     let rest = match url.split_once("://") {
-        Some((scheme, rest)) if scheme.eq_ignore_ascii_case("http") || scheme.eq_ignore_ascii_case("https") => rest,
+        Some((scheme, rest))
+            if scheme.eq_ignore_ascii_case("http") || scheme.eq_ignore_ascii_case("https") =>
+        {
+            rest
+        }
         Some(_) => return false,
         None => return !url.starts_with("//"),
     };
     let host = rest.split(['/', '?', '#']).next().unwrap_or_default();
-    let host = host.rsplit_once('@').map_or(host, |(_, h)| h).split(':').next().unwrap_or_default();
+    let host = host
+        .rsplit_once('@')
+        .map_or(host, |(_, h)| h)
+        .split(':')
+        .next()
+        .unwrap_or_default();
     host.eq_ignore_ascii_case(&r.home_host)
 }
 
@@ -1344,13 +1826,24 @@ fn add_url_params(confirmation: &Value, url: &str) -> String {
     let (path, query) = before.split_once('?').unwrap_or((before, ""));
     let mut args: Vec<(String, Vec<String>)> = rustpress_core::canonical::parse_qs(query)
         .into_iter()
-        .map(|(k, v)| (k.clone(), vec![format!("{}={}", k.replace('[', "%5B").replace(']', "%5D"), rustpress_core::canonical::php_urlencode(&v))]))
+        .map(|(k, v)| {
+            (
+                k.clone(),
+                vec![format!(
+                    "{}={}",
+                    k.replace('[', "%5B").replace(']', "%5D"),
+                    rustpress_core::canonical::php_urlencode(&v)
+                )],
+            )
+        })
         .collect();
     fn flatten(prefix: &str, param: &Param, out: &mut Vec<String>) {
         match param {
             Param::Null => {}
             Param::Str(v) => out.push(format!("{prefix}={v}")),
-            Param::Arr(items) => items.iter().for_each(|(k, v)| flatten(&format!("{prefix}%5B{k}%5D"), v, out)),
+            Param::Arr(items) => items
+                .iter()
+                .for_each(|(k, v)| flatten(&format!("{prefix}%5B{k}%5D"), v, out)),
         }
     }
     for (key, param) in &params {
@@ -1361,10 +1854,21 @@ fn add_url_params(confirmation: &Value, url: &str) -> String {
             None => args.push((key.clone(), parts)),
         }
     }
-    let query = args.into_iter().flat_map(|(_, p)| p).collect::<Vec<_>>().join("&");
+    let query = args
+        .into_iter()
+        .flat_map(|(_, p)| p)
+        .collect::<Vec<_>>()
+        .join("&");
     static EMPTY: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
-    let query = EMPTY.get_or_init(|| regex::Regex::new("=(&|$)").expect("valid regex")).replace_all(&query, "$1").into_owned();
-    let mut out = if query.is_empty() { path.to_owned() } else { format!("{path}?{query}") };
+    let query = EMPTY
+        .get_or_init(|| regex::Regex::new("=(&|$)").expect("valid regex"))
+        .replace_all(&query, "$1")
+        .into_owned();
+    let mut out = if query.is_empty() {
+        path.to_owned()
+    } else {
+        format!("{path}?{query}")
+    };
     if let Some(f) = fragment {
         out.push('#');
         out.push_str(f);
@@ -1376,31 +1880,63 @@ fn add_url_params(confirmation: &Value, url: &str) -> String {
 pub fn ajax_get_token(r: &Request<'_>) -> String {
     let id = r.post.get("formId").map(s).unwrap_or_default();
     let id = trim(&id);
-    let valid = !id.is_empty() && id.trim_start_matches(['+', '-']).bytes().all(|b| b.is_ascii_digit()) && id.parse::<i64>().is_ok_and(|n| n >= 1);
+    let valid = !id.is_empty()
+        && id
+            .trim_start_matches(['+', '-'])
+            .bytes()
+            .all(|b| b.is_ascii_digit())
+        && id.parse::<i64>().is_ok_and(|n| n >= 1);
     if !valid {
         return "{\"success\":false}".into();
     }
     let n: i64 = id.parse().unwrap_or(0);
-    super::encode(&json!({"success": true, "data": {"token": super::token::get(r.now, &n.to_string(), r.secret), "time_token": super::token::time_token(r.now, n, r.secret)}}))
+    super::encode(
+        &json!({"success": true, "data": {"token": super::token::get(r.now, &n.to_string(), r.secret), "time_token": super::token::time_token(r.now, n, r.secret)}}),
+    )
 }
 
 /// `WPForms_Field_Email::ajax_check_restricted_email()`.
-pub fn ajax_restricted_email<'f>(r: &Request<'_>, forms: &dyn Fn(u64) -> Option<Form<'f>>) -> String {
+pub fn ajax_restricted_email<'f>(
+    r: &Request<'_>,
+    forms: &dyn Fn(u64) -> Option<Form<'f>>,
+) -> String {
     let fail = "{\"success\":false}".to_owned();
-    let form_id: String = r.post.get("form_id").map(s).unwrap_or_default().chars().filter(|c| c.is_ascii_digit() || *c == '+' || *c == '-').collect();
-    let field_id = php::leading_int(&full_special_chars(&r.post.get("field_id").map(s).unwrap_or_default())).abs();
-    let email = full_special_chars(&r.post.get("email").map(s).unwrap_or_default()).replace("&amp;", "&");
+    let form_id: String = r
+        .post
+        .get("form_id")
+        .map(s)
+        .unwrap_or_default()
+        .chars()
+        .filter(|c| c.is_ascii_digit() || *c == '+' || *c == '-')
+        .collect();
+    let field_id = php::leading_int(&full_special_chars(
+        &r.post.get("field_id").map(s).unwrap_or_default(),
+    ))
+    .abs();
+    let email =
+        full_special_chars(&r.post.get("email").map(s).unwrap_or_default()).replace("&amp;", "&");
     if form_id.is_empty() || form_id == "0" || field_id == 0 || email.is_empty() || email == "0" {
         return fail;
     }
-    let Some(form) = forms(php::leading_int(&form_id).max(0) as u64) else { return fail };
-    let Some(field) = form.data.get("fields").and_then(|f| at(f, &field_id.to_string())).filter(|f| !empty(Some(f))) else { return fail };
+    let Some(form) = forms(php::leading_int(&form_id).max(0) as u64) else {
+        return fail;
+    };
+    let Some(field) = form
+        .data
+        .get("fields")
+        .and_then(|f| at(f, &field_id.to_string()))
+        .filter(|f| !empty(Some(f)))
+    else {
+        return fail;
+    };
     super::encode(&json!({"success": true, "data": email_allowed(&email, field)}))
 }
 
 /// `FILTER_SANITIZE_FULL_SPECIAL_CHARS` with `FILTER_FLAG_NO_ENCODE_QUOTES`.
 fn full_special_chars(text: &str) -> String {
-    text.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
 }
 
 #[cfg(test)]

@@ -14,33 +14,380 @@ use std::collections::{HashMap, HashSet};
 
 /// `AllowedTags::getTags()`, lower case.
 const TAGS: &[&str] = &[
-    "a", "font", "image", "style", "svg", "altglyph", "altglyphdef", "altglyphitem", "animatecolor", "animatemotion", "animatetransform", "circle", "clippath", "defs", "desc", "ellipse", "filter", "g", "glyph",
-    "glyphref", "hkern", "line", "lineargradient", "marker", "mask", "metadata", "mpath", "path", "pattern", "polygon", "polyline", "radialgradient", "rect", "stop", "switch", "symbol", "text", "textpath", "title",
-    "tref", "tspan", "use", "view", "vkern", "feblend", "fecolormatrix", "fecomponenttransfer", "fecomposite", "feconvolvematrix", "fediffuselighting", "fedisplacementmap", "fedistantlight", "feflood", "fefunca",
-    "fefuncb", "fefuncg", "fefuncr", "fegaussianblur", "femerge", "femergenode", "femorphology", "feoffset", "fepointlight", "fespecularlighting", "fespotlight", "fetile", "feturbulence", "#text",
+    "a",
+    "font",
+    "image",
+    "style",
+    "svg",
+    "altglyph",
+    "altglyphdef",
+    "altglyphitem",
+    "animatecolor",
+    "animatemotion",
+    "animatetransform",
+    "circle",
+    "clippath",
+    "defs",
+    "desc",
+    "ellipse",
+    "filter",
+    "g",
+    "glyph",
+    "glyphref",
+    "hkern",
+    "line",
+    "lineargradient",
+    "marker",
+    "mask",
+    "metadata",
+    "mpath",
+    "path",
+    "pattern",
+    "polygon",
+    "polyline",
+    "radialgradient",
+    "rect",
+    "stop",
+    "switch",
+    "symbol",
+    "text",
+    "textpath",
+    "title",
+    "tref",
+    "tspan",
+    "use",
+    "view",
+    "vkern",
+    "feblend",
+    "fecolormatrix",
+    "fecomponenttransfer",
+    "fecomposite",
+    "feconvolvematrix",
+    "fediffuselighting",
+    "fedisplacementmap",
+    "fedistantlight",
+    "feflood",
+    "fefunca",
+    "fefuncb",
+    "fefuncg",
+    "fefuncr",
+    "fegaussianblur",
+    "femerge",
+    "femergenode",
+    "femorphology",
+    "feoffset",
+    "fepointlight",
+    "fespecularlighting",
+    "fespotlight",
+    "fetile",
+    "feturbulence",
+    "#text",
 ];
 
 /// `AllowedAttributes::getAttributes()`, lower case.
 const ATTRIBUTES: &[&str] = &[
-    "about", "accept", "action", "align", "alt", "autocomplete", "background", "bgcolor", "border", "cellpadding", "cellspacing", "checked", "cite", "class", "clear", "color", "cols", "colspan", "coords",
-    "crossorigin", "datetime", "default", "dir", "disabled", "download", "enctype", "encoding", "face", "for", "headers", "height", "hidden", "high", "href", "hreflang", "id", "integrity", "ismap", "label", "lang",
-    "list", "loop", "low", "max", "maxlength", "media", "method", "min", "multiple", "name", "noshade", "novalidate", "nowrap", "open", "optimum", "pattern", "placeholder", "poster", "preload", "pubdate",
-    "radiogroup", "readonly", "rel", "required", "rev", "reversed", "role", "rows", "rowspan", "spellcheck", "scope", "selected", "shape", "size", "sizes", "span", "srclang", "start", "src", "srcset", "step",
-    "style", "summary", "tabindex", "title", "type", "usemap", "valign", "value", "version", "width", "xmlns", "accent-height", "accumulate", "additivive", "alignment-baseline", "ascent", "attributename",
-    "attributetype", "azimuth", "basefrequency", "baseline-shift", "begin", "bias", "by", "clip", "clip-path", "clip-rule", "color-interpolation", "color-interpolation-filters", "color-profile",
-    "color-rendering", "cx", "cy", "d", "dx", "dy", "diffuseconstant", "direction", "display", "divisor", "dominant-baseline", "dur", "edgemode", "elevation", "end", "fill", "fill-opacity", "fill-rule", "filter",
-    "filterunits", "flood-color", "flood-opacity", "font-family", "font-size", "font-size-adjust", "font-stretch", "font-style", "font-variant", "font-weight", "fx", "fy", "g1", "g2", "glyph-name", "glyphref",
-    "gradientunits", "gradienttransform", "image-rendering", "in", "in2", "k", "k1", "k2", "k3", "k4", "kerning", "keypoints", "keysplines", "keytimes", "lengthadjust", "letter-spacing", "kernelmatrix",
-    "kernelunitlength", "lighting-color", "local", "marker-end", "marker-mid", "marker-start", "markerheight", "markerunits", "markerwidth", "maskcontentunits", "maskunits", "mask", "mode", "numoctaves",
-    "offset", "operator", "opacity", "order", "orient", "orientation", "origin", "overflow", "paint-order", "path", "pathlength", "patterncontentunits", "patterntransform", "patternunits", "points",
-    "preservealpha", "preserveaspectratio", "r", "rx", "ry", "radius", "refx", "refy", "repeatcount", "repeatdur", "restart", "result", "rotate", "scale", "seed", "shape-rendering", "specularconstant",
-    "specularexponent", "spreadmethod", "stddeviation", "stitchtiles", "stop-color", "stop-opacity", "stroke-dasharray", "stroke-dashoffset", "stroke-linecap", "stroke-linejoin", "stroke-miterlimit",
-    "stroke-opacity", "stroke", "stroke-width", "surfacescale", "targetx", "targety", "transform", "text-anchor", "text-decoration", "text-rendering", "textlength", "u1", "u2", "unicode", "values", "viewbox",
-    "visibility", "vector-effect", "vert-adv-y", "vert-origin-x", "vert-origin-y", "word-spacing", "wrap", "writing-mode", "xchannelselector", "ychannelselector", "x", "x1", "x2", "y", "y1", "y2", "z",
-    "zoomandpan", "accent", "accentunder", "bevelled", "close", "columnsalign", "columnlines", "columnspan", "denomalign", "depth", "displaystyle", "fence", "frame", "largeop", "length", "linethickness",
-    "lspace", "lquote", "mathbackground", "mathcolor", "mathsize", "mathvariant", "maxsize", "minsize", "movablelimits", "notation", "numalign", "rowalign", "rowlines", "rowspacing", "rspace", "rquote",
-    "scriptlevel", "scriptminsize", "scriptsizemultiplier", "selection", "separator", "separators", "slope", "stretchy", "subscriptshift", "supscriptshift", "symmetric", "voffset", "xlink:href", "xml:id",
-    "xlink:title", "xml:space", "xmlns:xlink",
+    "about",
+    "accept",
+    "action",
+    "align",
+    "alt",
+    "autocomplete",
+    "background",
+    "bgcolor",
+    "border",
+    "cellpadding",
+    "cellspacing",
+    "checked",
+    "cite",
+    "class",
+    "clear",
+    "color",
+    "cols",
+    "colspan",
+    "coords",
+    "crossorigin",
+    "datetime",
+    "default",
+    "dir",
+    "disabled",
+    "download",
+    "enctype",
+    "encoding",
+    "face",
+    "for",
+    "headers",
+    "height",
+    "hidden",
+    "high",
+    "href",
+    "hreflang",
+    "id",
+    "integrity",
+    "ismap",
+    "label",
+    "lang",
+    "list",
+    "loop",
+    "low",
+    "max",
+    "maxlength",
+    "media",
+    "method",
+    "min",
+    "multiple",
+    "name",
+    "noshade",
+    "novalidate",
+    "nowrap",
+    "open",
+    "optimum",
+    "pattern",
+    "placeholder",
+    "poster",
+    "preload",
+    "pubdate",
+    "radiogroup",
+    "readonly",
+    "rel",
+    "required",
+    "rev",
+    "reversed",
+    "role",
+    "rows",
+    "rowspan",
+    "spellcheck",
+    "scope",
+    "selected",
+    "shape",
+    "size",
+    "sizes",
+    "span",
+    "srclang",
+    "start",
+    "src",
+    "srcset",
+    "step",
+    "style",
+    "summary",
+    "tabindex",
+    "title",
+    "type",
+    "usemap",
+    "valign",
+    "value",
+    "version",
+    "width",
+    "xmlns",
+    "accent-height",
+    "accumulate",
+    "additivive",
+    "alignment-baseline",
+    "ascent",
+    "attributename",
+    "attributetype",
+    "azimuth",
+    "basefrequency",
+    "baseline-shift",
+    "begin",
+    "bias",
+    "by",
+    "clip",
+    "clip-path",
+    "clip-rule",
+    "color-interpolation",
+    "color-interpolation-filters",
+    "color-profile",
+    "color-rendering",
+    "cx",
+    "cy",
+    "d",
+    "dx",
+    "dy",
+    "diffuseconstant",
+    "direction",
+    "display",
+    "divisor",
+    "dominant-baseline",
+    "dur",
+    "edgemode",
+    "elevation",
+    "end",
+    "fill",
+    "fill-opacity",
+    "fill-rule",
+    "filter",
+    "filterunits",
+    "flood-color",
+    "flood-opacity",
+    "font-family",
+    "font-size",
+    "font-size-adjust",
+    "font-stretch",
+    "font-style",
+    "font-variant",
+    "font-weight",
+    "fx",
+    "fy",
+    "g1",
+    "g2",
+    "glyph-name",
+    "glyphref",
+    "gradientunits",
+    "gradienttransform",
+    "image-rendering",
+    "in",
+    "in2",
+    "k",
+    "k1",
+    "k2",
+    "k3",
+    "k4",
+    "kerning",
+    "keypoints",
+    "keysplines",
+    "keytimes",
+    "lengthadjust",
+    "letter-spacing",
+    "kernelmatrix",
+    "kernelunitlength",
+    "lighting-color",
+    "local",
+    "marker-end",
+    "marker-mid",
+    "marker-start",
+    "markerheight",
+    "markerunits",
+    "markerwidth",
+    "maskcontentunits",
+    "maskunits",
+    "mask",
+    "mode",
+    "numoctaves",
+    "offset",
+    "operator",
+    "opacity",
+    "order",
+    "orient",
+    "orientation",
+    "origin",
+    "overflow",
+    "paint-order",
+    "path",
+    "pathlength",
+    "patterncontentunits",
+    "patterntransform",
+    "patternunits",
+    "points",
+    "preservealpha",
+    "preserveaspectratio",
+    "r",
+    "rx",
+    "ry",
+    "radius",
+    "refx",
+    "refy",
+    "repeatcount",
+    "repeatdur",
+    "restart",
+    "result",
+    "rotate",
+    "scale",
+    "seed",
+    "shape-rendering",
+    "specularconstant",
+    "specularexponent",
+    "spreadmethod",
+    "stddeviation",
+    "stitchtiles",
+    "stop-color",
+    "stop-opacity",
+    "stroke-dasharray",
+    "stroke-dashoffset",
+    "stroke-linecap",
+    "stroke-linejoin",
+    "stroke-miterlimit",
+    "stroke-opacity",
+    "stroke",
+    "stroke-width",
+    "surfacescale",
+    "targetx",
+    "targety",
+    "transform",
+    "text-anchor",
+    "text-decoration",
+    "text-rendering",
+    "textlength",
+    "u1",
+    "u2",
+    "unicode",
+    "values",
+    "viewbox",
+    "visibility",
+    "vector-effect",
+    "vert-adv-y",
+    "vert-origin-x",
+    "vert-origin-y",
+    "word-spacing",
+    "wrap",
+    "writing-mode",
+    "xchannelselector",
+    "ychannelselector",
+    "x",
+    "x1",
+    "x2",
+    "y",
+    "y1",
+    "y2",
+    "z",
+    "zoomandpan",
+    "accent",
+    "accentunder",
+    "bevelled",
+    "close",
+    "columnsalign",
+    "columnlines",
+    "columnspan",
+    "denomalign",
+    "depth",
+    "displaystyle",
+    "fence",
+    "frame",
+    "largeop",
+    "length",
+    "linethickness",
+    "lspace",
+    "lquote",
+    "mathbackground",
+    "mathcolor",
+    "mathsize",
+    "mathvariant",
+    "maxsize",
+    "minsize",
+    "movablelimits",
+    "notation",
+    "numalign",
+    "rowalign",
+    "rowlines",
+    "rowspacing",
+    "rspace",
+    "rquote",
+    "scriptlevel",
+    "scriptminsize",
+    "scriptsizemultiplier",
+    "selection",
+    "separator",
+    "separators",
+    "slope",
+    "stretchy",
+    "subscriptshift",
+    "supscriptshift",
+    "symmetric",
+    "voffset",
+    "xlink:href",
+    "xml:id",
+    "xlink:title",
+    "xml:space",
+    "xmlns:xlink",
 ];
 
 const XLINK: &str = "http://www.w3.org/1999/xlink";
@@ -64,7 +411,11 @@ struct Attr {
 impl Attr {
     /// `$attr->nodeName`.
     fn name(&self) -> String {
-        if self.prefix.is_empty() { self.local.clone() } else { format!("{}:{}", self.prefix, self.local) }
+        if self.prefix.is_empty() {
+            self.local.clone()
+        } else {
+            format!("{}:{}", self.prefix, self.local)
+        }
     }
 }
 
@@ -82,7 +433,10 @@ struct Element {
 
 impl Element {
     fn attr(&self, name: &str) -> Option<&str> {
-        self.attrs.iter().find(|a| a.name() == name).map(|a| a.value.as_str())
+        self.attrs
+            .iter()
+            .find(|a| a.name() == name)
+            .map(|a| a.value.as_str())
     }
 
     fn remove_attr(&mut self, name: &str) {
@@ -93,7 +447,12 @@ impl Element {
 
     /// `Helper::getElementHref()`.
     fn href(&self) -> Option<&str> {
-        self.attr("href").or_else(|| self.attrs.iter().find(|a| a.namespace.as_deref() == Some(XLINK) && a.local == "href").map(|a| a.value.as_str()))
+        self.attr("href").or_else(|| {
+            self.attrs
+                .iter()
+                .find(|a| a.namespace.as_deref() == Some(XLINK) && a.local == "href")
+                .map(|a| a.value.as_str())
+        })
     }
 }
 
@@ -195,7 +554,17 @@ fn attribute_value(raw: &str, entities: &HashMap<String, String>) -> Result<Attr
     if raw.contains('<') {
         return Err(Invalid);
     }
-    let normalize = |text: &str| text.chars().map(|c| if matches!(c, '\t' | '\n' | '\r') { ' ' } else { c }).collect::<String>();
+    let normalize = |text: &str| {
+        text.chars()
+            .map(|c| {
+                if matches!(c, '\t' | '\n' | '\r') {
+                    ' '
+                } else {
+                    c
+                }
+            })
+            .collect::<String>()
+    };
     let mut value = String::new();
     let mut literal = String::new();
     let mut written = String::new();
@@ -229,7 +598,11 @@ fn attribute_value(raw: &str, entities: &HashMap<String, String>) -> Result<Attr
     value.push_str(&text);
     literal.push_str(&text);
     escape_attribute(&text, &mut written);
-    Ok(AttrValue { value, literal, written: refers.then_some(written) })
+    Ok(AttrValue {
+        value,
+        literal,
+        written: refers.then_some(written),
+    })
 }
 
 /// An element being parsed.
@@ -244,7 +617,12 @@ struct Open {
 /// `DOMDocument::loadXML()` with `preserveWhiteSpace = false`.
 fn parse(text: &str) -> Result<Document, Invalid> {
     use xmlparser::{ElementEnd, EntityDefinition, Token, Tokenizer};
-    let mut doc = Document { version: "1.0".into(), encoding: None, standalone: None, children: Vec::new() };
+    let mut doc = Document {
+        version: "1.0".into(),
+        encoding: None,
+        standalone: None,
+        children: Vec::new(),
+    };
     let mut entities: HashMap<String, String> = HashMap::new();
     let mut stack: Vec<Open> = Vec::new();
     let mut scopes: Vec<(String, String)> = vec![("xml".into(), XML_NS.into())];
@@ -252,19 +630,34 @@ fn parse(text: &str) -> Result<Document, Invalid> {
     let mut root_seen = false;
     // The start tag being read: name, attributes as written.
     let mut pending: Option<(String, String, Vec<(String, String, String)>)> = None;
-    let lookup = |scopes: &[(String, String)], prefix: &str| scopes.iter().rev().find(|(p, _)| p == prefix).map(|(_, uri)| uri.clone());
-    let tokens: Vec<Token<'_>> = Tokenizer::from(text).collect::<Result<Vec<_>, _>>().map_err(|_| Invalid)?;
+    let lookup = |scopes: &[(String, String)], prefix: &str| {
+        scopes
+            .iter()
+            .rev()
+            .find(|(p, _)| p == prefix)
+            .map(|(_, uri)| uri.clone())
+    };
+    let tokens: Vec<Token<'_>> = Tokenizer::from(text)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| Invalid)?;
     let mut index = 0;
     while index < tokens.len() {
         let token = &tokens[index];
         index += 1;
         match token {
-            Token::Declaration { version, encoding, standalone, .. } => {
+            Token::Declaration {
+                version,
+                encoding,
+                standalone,
+                ..
+            } => {
                 doc.version = version.as_str().to_owned();
                 doc.encoding = encoding.map(|e| e.as_str().to_owned());
                 doc.standalone = *standalone;
             }
-            Token::EntityDeclaration { name, definition, .. } => {
+            Token::EntityDeclaration {
+                name, definition, ..
+            } => {
                 if let EntityDefinition::EntityValue(value) = definition {
                     let mut decoded = String::new();
                     for piece in pieces(value.as_str(), &HashMap::new()).unwrap_or_default() {
@@ -285,28 +678,55 @@ fn parse(text: &str) -> Result<Document, Invalid> {
                 if stack.is_empty() && root_seen {
                     return Err(Invalid);
                 }
-                pending = Some((prefix.as_str().to_owned(), local.as_str().to_owned(), Vec::new()));
+                pending = Some((
+                    prefix.as_str().to_owned(),
+                    local.as_str().to_owned(),
+                    Vec::new(),
+                ));
             }
-            Token::Attribute { prefix, local, value, .. } => {
-                let Some((_, _, attrs)) = pending.as_mut() else { return Err(Invalid) };
-                attrs.push((prefix.as_str().to_owned(), local.as_str().to_owned(), value.as_str().to_owned()));
+            Token::Attribute {
+                prefix,
+                local,
+                value,
+                ..
+            } => {
+                let Some((_, _, attrs)) = pending.as_mut() else {
+                    return Err(Invalid);
+                };
+                attrs.push((
+                    prefix.as_str().to_owned(),
+                    local.as_str().to_owned(),
+                    value.as_str().to_owned(),
+                ));
             }
             Token::ElementEnd { end, .. } => match end {
                 ElementEnd::Open | ElementEnd::Empty => {
-                    let Some((prefix, local, raw_attrs)) = pending.take() else { return Err(Invalid) };
+                    let Some((prefix, local, raw_attrs)) = pending.take() else {
+                        return Err(Invalid);
+                    };
                     // Namespace declarations first, then the attributes resolve against them.
                     let mut scope = Vec::new();
                     let mut ns_decls = Vec::new();
                     let mut names = HashSet::new();
                     let mut values = Vec::new();
                     for (attr_prefix, attr_local, raw) in &raw_attrs {
-                        let qualified = if attr_prefix.is_empty() { attr_local.clone() } else { format!("{attr_prefix}:{attr_local}") };
+                        let qualified = if attr_prefix.is_empty() {
+                            attr_local.clone()
+                        } else {
+                            format!("{attr_prefix}:{attr_local}")
+                        };
                         if !names.insert(qualified.clone()) {
                             return Err(Invalid);
                         }
                         let parsed = attribute_value(raw, &entities)?;
-                        if (attr_prefix.is_empty() && attr_local == "xmlns") || attr_prefix == "xmlns" {
-                            let prefix = if attr_prefix.is_empty() { String::new() } else { attr_local.clone() };
+                        if (attr_prefix.is_empty() && attr_local == "xmlns")
+                            || attr_prefix == "xmlns"
+                        {
+                            let prefix = if attr_prefix.is_empty() {
+                                String::new()
+                            } else {
+                                attr_local.clone()
+                            };
                             let mut shown = String::new();
                             escape_attribute(&parsed.value, &mut shown);
                             ns_decls.push((qualified, parsed.written.clone().unwrap_or(shown)));
@@ -321,25 +741,62 @@ fn parse(text: &str) -> Result<Document, Invalid> {
                         .map(|(attr_prefix, attr_local, parsed)| {
                             let (value, written) = (parsed.value, parsed.written);
                             if attr_prefix.is_empty() {
-                                return Attr { prefix: String::new(), local: attr_local, namespace: None, value, written };
+                                return Attr {
+                                    prefix: String::new(),
+                                    local: attr_local,
+                                    namespace: None,
+                                    value,
+                                    written,
+                                };
                             }
                             match lookup(&scopes, &attr_prefix) {
-                                Some(uri) => Attr { prefix: attr_prefix, local: attr_local, namespace: Some(uri), value, written },
+                                Some(uri) => Attr {
+                                    prefix: attr_prefix,
+                                    local: attr_local,
+                                    namespace: Some(uri),
+                                    value,
+                                    written,
+                                },
                                 // An unbound prefix stays part of the name.
-                                None => Attr { prefix: String::new(), local: format!("{attr_prefix}:{attr_local}"), namespace: None, value, written },
+                                None => Attr {
+                                    prefix: String::new(),
+                                    local: format!("{attr_prefix}:{attr_local}"),
+                                    namespace: None,
+                                    value,
+                                    written,
+                                },
                             }
                         })
                         .collect();
-                    let name = if prefix.is_empty() { local.clone() } else { format!("{prefix}:{local}") };
+                    let name = if prefix.is_empty() {
+                        local.clone()
+                    } else {
+                        format!("{prefix}:{local}")
+                    };
                     let namespace = lookup(&scopes, &prefix).filter(|uri| !uri.is_empty());
-                    let preserve = match attrs.iter().find(|a| a.namespace.as_deref() == Some(XML_NS) && a.local == "space").map(|a| a.value.as_str()) {
+                    let preserve = match attrs
+                        .iter()
+                        .find(|a| a.namespace.as_deref() == Some(XML_NS) && a.local == "space")
+                        .map(|a| a.value.as_str())
+                    {
                         Some("preserve") => true,
                         Some("default") => false,
                         _ => stack.last().is_some_and(|o| o.preserve),
                     };
-                    let element = Element { uid: next_uid, name, namespace, ns_decls, attrs, children: Vec::new() };
+                    let element = Element {
+                        uid: next_uid,
+                        name,
+                        namespace,
+                        ns_decls,
+                        attrs,
+                        children: Vec::new(),
+                    };
                     next_uid += 1;
-                    let open = Open { element, scope, preserve };
+                    let open = Open {
+                        element,
+                        scope,
+                        preserve,
+                    };
                     if matches!(end, ElementEnd::Empty) {
                         close(open, &mut stack, &mut scopes, &mut doc, &mut root_seen);
                     } else {
@@ -347,8 +804,14 @@ fn parse(text: &str) -> Result<Document, Invalid> {
                     }
                 }
                 ElementEnd::Close(prefix, local) => {
-                    let Some(open) = stack.pop() else { return Err(Invalid) };
-                    let written = if prefix.as_str().is_empty() { local.as_str().to_owned() } else { format!("{}:{}", prefix.as_str(), local.as_str()) };
+                    let Some(open) = stack.pop() else {
+                        return Err(Invalid);
+                    };
+                    let written = if prefix.as_str().is_empty() {
+                        local.as_str().to_owned()
+                    } else {
+                        format!("{}:{}", prefix.as_str(), local.as_str())
+                    };
                     if written != open.element.name {
                         return Err(Invalid);
                     }
@@ -364,7 +827,13 @@ fn parse(text: &str) -> Result<Document, Invalid> {
                     }
                     return Err(Invalid);
                 };
-                let followed_by_end = matches!(tokens.get(index), Some(Token::ElementEnd { end: ElementEnd::Close(..), .. }));
+                let followed_by_end = matches!(
+                    tokens.get(index),
+                    Some(Token::ElementEnd {
+                        end: ElementEnd::Close(..),
+                        ..
+                    })
+                );
                 let parts = pieces(raw, &entities)?;
                 let count = parts.len();
                 for (i, part) in parts.into_iter().enumerate() {
@@ -372,7 +841,12 @@ fn parse(text: &str) -> Result<Document, Invalid> {
                         Piece::Entity => open.element.children.push(Node::Other),
                         Piece::Chars(chars, literal) => {
                             let last = i + 1 == count;
-                            if literal && last && chars.chars().all(is_blank) && !open.preserve && is_ignorable(&open.element, followed_by_end) {
+                            if literal
+                                && last
+                                && chars.chars().all(is_blank)
+                                && !open.preserve
+                                && is_ignorable(&open.element, followed_by_end)
+                            {
                                 continue;
                             }
                             match open.element.children.last_mut() {
@@ -384,8 +858,12 @@ fn parse(text: &str) -> Result<Document, Invalid> {
                 }
             }
             Token::Cdata { text, .. } => {
-                let Some(open) = stack.last_mut() else { return Err(Invalid) };
-                open.element.children.push(Node::Cdata(text.as_str().to_owned()));
+                let Some(open) = stack.last_mut() else {
+                    return Err(Invalid);
+                };
+                open.element
+                    .children
+                    .push(Node::Cdata(text.as_str().to_owned()));
             }
         }
     }
@@ -407,7 +885,13 @@ fn is_ignorable(parent: &Element, followed_by_end: bool) -> bool {
     }
 }
 
-fn close(open: Open, stack: &mut [Open], scopes: &mut Vec<(String, String)>, doc: &mut Document, root_seen: &mut bool) {
+fn close(
+    open: Open,
+    stack: &mut [Open],
+    scopes: &mut Vec<(String, String)>,
+    doc: &mut Document,
+    root_seen: &mut bool,
+) {
     scopes.truncate(scopes.len() - open.scope.len());
     match stack.last_mut() {
         Some(parent) => parent.element.children.push(Node::Element(open.element)),
@@ -432,7 +916,13 @@ struct Subject {
 
 /// `Resolver::collect()`: the `use` elements to remove; `None` where the library fails (a self reference).
 fn resolve(doc: &Document) -> Option<(Vec<Subject>, HashSet<usize>)> {
-    let root = doc.children.iter().find_map(|n| if let Node::Element(e) = n { Some(e) } else { None })?;
+    let root = doc.children.iter().find_map(|n| {
+        if let Node::Element(e) = n {
+            Some(e)
+        } else {
+            None
+        }
+    })?;
     // `XPath::handleDefaultNamespace()`: exactly one root named `svg`.
     if root.name.rsplit(':').next() != Some("svg") {
         return None;
@@ -451,7 +941,12 @@ fn resolve(doc: &Document) -> Option<(Vec<Subject>, HashSet<usize>)> {
     walk(root, &mut elements);
     for element in &elements {
         if let Some(id) = element.attr("id") {
-            let subject = Subject { id: id.to_owned(), uid: element.uid, href: element.href().map(str::to_owned), uses: Vec::new() };
+            let subject = Subject {
+                id: id.to_owned(),
+                uid: element.uid,
+                href: element.href().map(str::to_owned),
+                uses: Vec::new(),
+            };
             match subjects.iter().position(|s| s.id == id) {
                 Some(index) => subjects[index] = subject,
                 None => subjects.push(subject),
@@ -462,17 +957,30 @@ fn resolve(doc: &Document) -> Option<(Vec<Subject>, HashSet<usize>)> {
     for index in 0..subjects.len() {
         let element = by_uid[&subjects[index].uid];
         for child in &element.children {
-            let Node::Element(child) = child else { continue };
+            let Node::Element(child) = child else {
+                continue;
+            };
             let is_use = match &default_ns {
-                Some(ns) => child.namespace.as_deref() == Some(ns.as_str()) && child.name.rsplit(':').next() == Some("use"),
+                Some(ns) => {
+                    child.namespace.as_deref() == Some(ns.as_str())
+                        && child.name.rsplit(':').next() == Some("use")
+                }
                 None => child.name == "use" && child.namespace.is_none(),
             };
-            let has_href = child.attr("href").is_some() || child.attrs.iter().any(|a| a.namespace.as_deref() == Some(XLINK) && a.local == "href");
+            let has_href = child.attr("href").is_some()
+                || child
+                    .attrs
+                    .iter()
+                    .any(|a| a.namespace.as_deref() == Some(XLINK) && a.local == "href");
             if !is_use || !has_href {
                 continue;
             }
-            let Some(target_id) = child.href().and_then(|h| h.strip_prefix('#')) else { continue };
-            let Some(target) = subjects.iter().position(|s| s.id == target_id) else { continue };
+            let Some(target_id) = child.href().and_then(|h| h.strip_prefix('#')) else {
+                continue;
+            };
+            let Some(target) = subjects.iter().position(|s| s.id == target_id) else {
+                continue;
+            };
             if target == index {
                 // `Subject::addUse()` throws for a self usage.
                 return None;
@@ -484,7 +992,12 @@ fn resolve(doc: &Document) -> Option<(Vec<Subject>, HashSet<usize>)> {
         }
     }
     let mut remove: HashSet<usize> = HashSet::new();
-    fn has_infinite_loop(subjects: &[Subject], index: usize, visited: &mut Vec<usize>, level: usize) -> Result<bool, usize> {
+    fn has_infinite_loop(
+        subjects: &[Subject],
+        index: usize,
+        visited: &mut Vec<usize>,
+        level: usize,
+    ) -> Result<bool, usize> {
         if level > USE_NESTING_LIMIT {
             return Err(subjects[index].uid);
         }
@@ -505,7 +1018,11 @@ fn resolve(doc: &Document) -> Option<(Vec<Subject>, HashSet<usize>)> {
         if !remove.is_empty() {
             continue;
         }
-        let own = subjects[index].href.as_deref().and_then(|h| h.strip_prefix('#')).map(str::to_owned);
+        let own = subjects[index]
+            .href
+            .as_deref()
+            .and_then(|h| h.strip_prefix('#'))
+            .map(str::to_owned);
         let invalid = if own.as_deref() == Some(subjects[index].id.as_str()) {
             true
         } else {
@@ -527,7 +1044,11 @@ fn resolve(doc: &Document) -> Option<(Vec<Subject>, HashSet<usize>)> {
 
 /// `Subject::countUse()`.
 fn count_use(subjects: &[Subject], index: usize) -> u64 {
-    subjects[index].uses.iter().map(|&(target, count)| count * count_use(subjects, target).max(1)).sum()
+    subjects[index]
+        .uses
+        .iter()
+        .map(|&(target, count)| count * count_use(subjects, target).max(1))
+        .sum()
 }
 
 // ------------------------------------------------------------------ cleaning
@@ -537,11 +1058,27 @@ fn is_href_safe(value: &str) -> bool {
     if value.is_empty() || value == "0" {
         return true;
     }
-    if value.starts_with('#') || value.starts_with('/') || value.starts_with("https://") || value.starts_with("http://") {
+    if value.starts_with('#')
+        || value.starts_with('/')
+        || value.starts_with("https://")
+        || value.starts_with("http://")
+    {
         return true;
     }
-    let images = ["data:image/png", "data:image/gif", "data:image/jpg", "data:image/jpe", "data:image/pjp"];
-    let short = ["data:img/png", "data:img/gif", "data:img/jpg", "data:img/jpe", "data:img/pjp"];
+    let images = [
+        "data:image/png",
+        "data:image/gif",
+        "data:image/jpg",
+        "data:image/jpe",
+        "data:image/pjp",
+    ];
+    let short = [
+        "data:img/png",
+        "data:img/gif",
+        "data:img/jpg",
+        "data:img/jpe",
+        "data:img/pjp",
+    ];
     images.iter().any(|p| value.starts_with(p)) || short.iter().any(|p| value.starts_with(p))
 }
 
@@ -550,14 +1087,23 @@ fn has_remote_reference(value: &str) -> bool {
     let printable: String = value.chars().filter(|c| (' '..='~').contains(c)).collect();
     let value = printable.trim_matches([' ', '\t', '\n', '\r', '\0', '\x0B']);
     let lower = value.to_ascii_lowercase();
-    let Some(inner) = lower.strip_prefix("url(").and_then(|r| r.strip_suffix(')')) else { return false };
+    let Some(inner) = lower.strip_prefix("url(").and_then(|r| r.strip_suffix(')')) else {
+        return false;
+    };
     let inner = inner.trim_matches(|c: char| c.is_ascii_whitespace());
-    let quoted = (inner.starts_with('\'') || inner.starts_with('"')) && (inner.ends_with('\'') || inner.ends_with('"')) && inner.len() >= 2;
+    let quoted = (inner.starts_with('\'') || inner.starts_with('"'))
+        && (inner.ends_with('\'') || inner.ends_with('"'))
+        && inner.len() >= 2;
     if !quoted {
         return false;
     }
-    let target = inner[1..inner.len() - 1].trim_matches(|c: char| c.is_ascii_whitespace()).trim_matches(['\'', '"']);
-    let after_scheme = ["https:", "http:", "ftp:", "file:"].iter().find_map(|s| target.strip_prefix(s)).unwrap_or(target);
+    let target = inner[1..inner.len() - 1]
+        .trim_matches(|c: char| c.is_ascii_whitespace())
+        .trim_matches(['\'', '"']);
+    let after_scheme = ["https:", "http:", "ftp:", "file:"]
+        .iter()
+        .find_map(|s| target.strip_prefix(s))
+        .unwrap_or(target);
     after_scheme.starts_with("//")
 }
 
@@ -600,7 +1146,9 @@ impl Cleaner<'_> {
         }
         self.clean_hrefs(element, "");
         // `cleanXlinkHrefs()`: an `xlink:href` whose prefix is not bound goes.
-        element.attrs.retain(|a| !(a.prefix.is_empty() && a.local.to_lowercase() == "xlink:href"));
+        element
+            .attrs
+            .retain(|a| !(a.prefix.is_empty() && a.local.to_lowercase() == "xlink:href"));
         self.clean_hrefs(element, "xlink");
         // `cleanAttributesOnWhitelist()`, from the last attribute to the first.
         let mut x = element.attrs.len();
@@ -609,7 +1157,10 @@ impl Cleaner<'_> {
             let name = element.attrs[x].name();
             let lower = name.to_lowercase();
             let mut removed = false;
-            if !ATTRIBUTES.contains(&lower.as_str()) && !lower.starts_with("aria-") && !lower.starts_with("data-") {
+            if !ATTRIBUTES.contains(&lower.as_str())
+                && !lower.starts_with("aria-")
+                && !lower.starts_with("data-")
+            {
                 element.remove_attr(&name);
                 removed = true;
             }
@@ -622,13 +1173,28 @@ impl Cleaner<'_> {
             }
         }
         if lower == "use" {
-            let dirty = element.href().is_some_and(|h| !h.is_empty() && !h.starts_with('#'));
-            let exceeding = element.href().and_then(|h| h.strip_prefix('#')).is_some_and(|id| self.subjects.iter().enumerate().any(|(i, s)| s.id == id && count_use(self.subjects, i) >= USE_THRESHOLD));
+            let dirty = element
+                .href()
+                .is_some_and(|h| !h.is_empty() && !h.starts_with('#'));
+            let exceeding = element
+                .href()
+                .and_then(|h| h.strip_prefix('#'))
+                .is_some_and(|id| {
+                    self.subjects
+                        .iter()
+                        .enumerate()
+                        .any(|(i, s)| s.id == id && count_use(self.subjects, i) >= USE_THRESHOLD)
+                });
             if dirty || exceeding {
                 return false;
             }
         }
-        if lower == "font" && element.attrs.iter().any(|a| matches!(a.name().to_lowercase().as_str(), "face" | "color" | "size")) {
+        if lower == "font"
+            && element
+                .attrs
+                .iter()
+                .any(|a| matches!(a.name().to_lowercase().as_str(), "face" | "color" | "size"))
+        {
             return false;
         }
         self.clean(&mut element.children);
@@ -637,7 +1203,12 @@ impl Cleaner<'_> {
 
     /// `cleanHrefAttributes( $element, $prefix )`.
     fn clean_hrefs(&self, element: &mut Element, prefix: &str) {
-        let relevant: Vec<Attr> = element.attrs.iter().filter(|a| a.local.to_lowercase() == "href" && a.prefix.to_lowercase() == prefix).cloned().collect();
+        let relevant: Vec<Attr> = element
+            .attrs
+            .iter()
+            .filter(|a| a.local.to_lowercase() == "href" && a.prefix.to_lowercase() == prefix)
+            .cloned()
+            .collect();
         for attr in relevant {
             let name = attr.name();
             if !is_href_safe(&attr.value) {
@@ -651,7 +1222,13 @@ impl Cleaner<'_> {
                     Some((p, l)) if !attr.prefix.is_empty() => (p.to_owned(), l.to_owned()),
                     _ => (String::new(), lower.clone()),
                 };
-                element.attrs.push(Attr { prefix: new_prefix, local: new_local, namespace: attr.namespace.clone(), value: attr.value.clone(), written: attr.written.clone() });
+                element.attrs.push(Attr {
+                    prefix: new_prefix,
+                    local: new_local,
+                    namespace: attr.namespace.clone(),
+                    value: attr.value.clone(),
+                    written: attr.written.clone(),
+                });
             }
         }
     }
@@ -773,7 +1350,10 @@ pub fn sanitize(dirty: &str, minify: bool) -> Option<String> {
     let text = strip_php(dirty).replace("\r\n", "\n").replace('\r', "\n");
     let mut doc = parse(&text).ok()?;
     let (subjects, remove_uses) = resolve(&doc)?;
-    let cleaner = Cleaner { subjects: &subjects, remove_uses: &remove_uses };
+    let cleaner = Cleaner {
+        subjects: &subjects,
+        remove_uses: &remove_uses,
+    };
     cleaner.clean(&mut doc.children);
     let clean = Writer.document(&doc, !minify);
     if minify {
@@ -804,7 +1384,9 @@ mod tests {
         let dirty = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!-- c -->\n<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"10\" onload=\"alert(1)\"><script>alert(2)</script>\n  <rect x=\"1\" y=\"2\"/>\n  <a href=\"javascript:alert(3)\"><path d=\"M0 0\"/></a>\n</svg>\n";
         assert_eq!(
             sanitize(dirty, false).as_deref(),
-            Some("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"10\">\n  <rect x=\"1\" y=\"2\"></rect>\n  <a>\n    <path d=\"M0 0\"></path>\n  </a>\n</svg>\n")
+            Some(
+                "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"10\">\n  <rect x=\"1\" y=\"2\"></rect>\n  <a>\n    <path d=\"M0 0\"></path>\n  </a>\n</svg>\n"
+            )
         );
     }
 
@@ -818,25 +1400,47 @@ mod tests {
     /// The cases of `tests/data/svg-sanitize` against what the PHP library made of them (`dev/svg-sanitize-golden.sh`).
     #[test]
     fn golden_cases() {
-        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("svg-sanitize");
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests")
+            .join("data")
+            .join("svg-sanitize");
         let mut cases = 0;
         let mut failures = Vec::new();
         for entry in std::fs::read_dir(&dir).expect("golden directory") {
             let path = entry.expect("entry").path();
-            let Some(name) = path.file_name().and_then(|n| n.to_str()).and_then(|n| n.strip_suffix(".in.svg")).map(str::to_owned) else { continue };
+            let Some(name) = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .and_then(|n| n.strip_suffix(".in.svg"))
+                .map(str::to_owned)
+            else {
+                continue;
+            };
             let dirty = std::fs::read_to_string(&path).expect("input");
             for (minify, suffix) in [(false, "out"), (true, "min")] {
-                let expected = std::fs::read_to_string(dir.join(format!("{name}.{suffix}"))).expect("expected output");
+                let expected = std::fs::read_to_string(dir.join(format!("{name}.{suffix}")))
+                    .expect("expected output");
                 // The PHP script writes `FALSE` for a file the library refuses.
-                let expected = if expected == "FALSE" { None } else { Some(expected) };
+                let expected = if expected == "FALSE" {
+                    None
+                } else {
+                    Some(expected)
+                };
                 cases += 1;
                 let actual = sanitize(&dirty, minify);
                 if actual != expected {
-                    failures.push(format!("{name}.{suffix}:\n  expected {expected:?}\n  actual   {actual:?}"));
+                    failures.push(format!(
+                        "{name}.{suffix}:\n  expected {expected:?}\n  actual   {actual:?}"
+                    ));
                 }
             }
         }
         assert!(cases > 0, "no golden cases");
-        assert!(failures.is_empty(), "{} of {cases} differ:\n{}", failures.len(), failures.join("\n"));
+        assert!(
+            failures.is_empty(),
+            "{} of {cases} differ:\n{}",
+            failures.len(),
+            failures.join("\n")
+        );
     }
 }

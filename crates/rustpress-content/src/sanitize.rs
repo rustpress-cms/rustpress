@@ -60,11 +60,18 @@ fn single_line(text: &str, keep_newlines: bool) -> String {
 /// The first `%` with two hexadecimal digits (`/%[a-f0-9]{2}/i`).
 fn percent_octet(text: &str) -> Option<String> {
     let bytes = text.as_bytes();
-    (0..bytes.len().saturating_sub(2)).find(|&i| bytes[i] == b'%' && bytes[i + 1].is_ascii_hexdigit() && bytes[i + 2].is_ascii_hexdigit()).map(|i| text[i..i + 3].to_owned())
+    (0..bytes.len().saturating_sub(2))
+        .find(|&i| {
+            bytes[i] == b'%' && bytes[i + 1].is_ascii_hexdigit() && bytes[i + 2].is_ascii_hexdigit()
+        })
+        .map(|i| text[i..i + 3].to_owned())
 }
 
 fn collapse_spaces(line: &str) -> String {
-    line.split([' ', '\t']).filter(|p| !p.is_empty()).collect::<Vec<_>>().join(" ")
+    line.split([' ', '\t'])
+        .filter(|p| !p.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// `sanitize_user( $username, $strict )`.
@@ -75,7 +82,10 @@ pub fn user_login(login: &str, strict: bool) -> String {
     let chars: Vec<char> = stripped.chars().collect();
     let mut i = 0;
     while i < chars.len() {
-        if chars[i] == '%' && chars.get(i + 1).is_some_and(char::is_ascii_hexdigit) && chars.get(i + 2).is_some_and(char::is_ascii_hexdigit) {
+        if chars[i] == '%'
+            && chars.get(i + 1).is_some_and(char::is_ascii_hexdigit)
+            && chars.get(i + 2).is_some_and(char::is_ascii_hexdigit)
+        {
             i += 3;
             continue;
         }
@@ -83,25 +93,45 @@ pub fn user_login(login: &str, strict: bool) -> String {
         i += 1;
     }
     let out = out.replace("&amp;", "").replace(['<', '>'], "");
-    let out: String = if strict { out.chars().filter(|c| c.is_ascii_alphanumeric() || matches!(c, ' ' | '_' | '.' | '-' | '*' | '@')).collect() } else { out };
+    let out: String = if strict {
+        out.chars()
+            .filter(|c| c.is_ascii_alphanumeric() || matches!(c, ' ' | '_' | '.' | '-' | '*' | '@'))
+            .collect()
+    } else {
+        out
+    };
     collapse_spaces(out.trim())
 }
 
 /// `sanitize_key( $key )`.
 pub fn key(key: &str) -> String {
-    key.to_lowercase().chars().filter(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '_' | '-')).collect()
+    key.to_lowercase()
+        .chars()
+        .filter(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '_' | '-'))
+        .collect()
 }
 
 /// `sanitize_file_name( $filename )` up to the extensions, which `mark_inner_extensions()` looks at once the allowed
 /// types are known. The extension is lowercased, as `wp_unique_filename()` does afterwards.
 pub fn file_name(name: &str, locale: &str) -> String {
     const SPECIAL: [char; 33] = [
-        '?', '[', ']', '/', '\\', '=', '<', '>', ':', ';', ',', '\'', '"', '&', '$', '#', '*', '(', ')', '|', '~', '`', '!', '{', '}', '%', '+', '\u{2019}', '\u{ab}', '\u{bb}', '\u{201d}', '\u{201c}', '\0',
+        '?', '[', ']', '/', '\\', '=', '<', '>', ':', ';', ',', '\'', '"', '&', '$', '#', '*', '(',
+        ')', '|', '~', '`', '!', '{', '}', '%', '+', '\u{2019}', '\u{ab}', '\u{bb}', '\u{201d}',
+        '\u{201c}', '\0',
     ];
     // `\p{Zs}` becomes a space.
-    let is_space = |c: char| matches!(c, '\u{a0}' | '\u{1680}' | '\u{2000}'..='\u{200a}' | '\u{202f}' | '\u{205f}' | '\u{3000}');
+    let is_space = |c: char| {
+        matches!(
+            c,
+            '\u{a0}' | '\u{1680}' | '\u{2000}'..='\u{200a}' | '\u{202f}' | '\u{205f}' | '\u{3000}'
+        )
+    };
     let plain = rustpress_core::slug::remove_accents(name, locale);
-    let cleaned: String = plain.chars().map(|c| if is_space(c) { ' ' } else { c }).filter(|c| !SPECIAL.contains(c)).collect();
+    let cleaned: String = plain
+        .chars()
+        .map(|c| if is_space(c) { ' ' } else { c })
+        .filter(|c| !SPECIAL.contains(c))
+        .collect();
     // `/\.{2,}/` and `/[\r\n\t -]+/`.
     let mut collapsed = String::with_capacity(cleaned.len());
     let mut last = None;
@@ -119,7 +149,9 @@ pub fn file_name(name: &str, locale: &str) -> String {
     let collapsed = collapsed.trim_matches(['.', '-', '_']).to_owned();
     if !collapsed.contains('.') {
         // A file called `jpg` would pass for a file without a name.
-        if let Some((ext, _)) = crate::media::check_filetype(&format!("test.{collapsed}")).filter(|(ext, _)| *ext == collapsed) {
+        if let Some((ext, _)) = crate::media::check_filetype(&format!("test.{collapsed}"))
+            .filter(|(ext, _)| *ext == collapsed)
+        {
             return format!("unnamed-file.{ext}");
         }
     }
@@ -131,19 +163,26 @@ pub fn file_name(name: &str, locale: &str) -> String {
 
 /// `esc_textarea()`.
 pub fn esc_textarea(text: &str) -> String {
-    text.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;").replace('\'', "&#039;")
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#039;")
 }
 
 /// `wp_generate_password( $length, $special_chars, false )`.
 pub fn random_password(length: usize, special: bool) -> String {
     use rand::Rng;
-    let mut alphabet = String::from("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789");
+    let mut alphabet =
+        String::from("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789");
     if special {
         alphabet.push_str("!@#$%^&*()");
     }
     let alphabet: Vec<char> = alphabet.chars().collect();
     let mut rng = rand::rng();
-    (0..length).map(|_| alphabet[rng.random_range(0..alphabet.len())]).collect()
+    (0..length)
+        .map(|_| alphabet[rng.random_range(0..alphabet.len())])
+        .collect()
 }
 
 /// `is_email()`: the shape WordPress accepts.
@@ -151,18 +190,28 @@ pub fn is_email(email: &str) -> bool {
     if email.len() < 6 || email.len() > 254 {
         return false;
     }
-    let Some((local, domain)) = email.split_once('@') else { return false };
+    let Some((local, domain)) = email.split_once('@') else {
+        return false;
+    };
     if local.is_empty() || domain.contains('@') {
         return false;
     }
-    if !local.chars().all(|c| c.is_ascii_alphanumeric() || "!#$%&'*+/=?^_`{|}~.-".contains(c)) {
+    if !local
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || "!#$%&'*+/=?^_`{|}~.-".contains(c))
+    {
         return false;
     }
     let parts: Vec<&str> = domain.split('.').collect();
     if parts.len() < 2 {
         return false;
     }
-    parts.iter().all(|p| !p.is_empty() && !p.starts_with('-') && !p.ends_with('-') && p.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'))
+    parts.iter().all(|p| {
+        !p.is_empty()
+            && !p.starts_with('-')
+            && !p.ends_with('-')
+            && p.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+    })
 }
 
 /// `sanitize_email()`: the cleaned address, or an empty string when nothing valid is left.
@@ -171,12 +220,26 @@ pub fn sanitize_email(email: &str) -> String {
     if email.len() < 6 {
         return String::new();
     }
-    let Some((local, domain)) = email.split_once('@') else { return String::new() };
-    let local: String = local.chars().filter(|c| c.is_ascii_alphanumeric() || "!#$%&'*+/=?^_`{|}~.-".contains(*c)).collect();
+    let Some((local, domain)) = email.split_once('@') else {
+        return String::new();
+    };
+    let local: String = local
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || "!#$%&'*+/=?^_`{|}~.-".contains(*c))
+        .collect();
     if local.is_empty() {
         return String::new();
     }
-    let parts: Vec<String> = domain.split('.').map(|p| p.trim_matches('-').chars().filter(|c| c.is_ascii_alphanumeric() || *c == '-').collect::<String>()).filter(|p: &String| !p.is_empty()).collect();
+    let parts: Vec<String> = domain
+        .split('.')
+        .map(|p| {
+            p.trim_matches('-')
+                .chars()
+                .filter(|c| c.is_ascii_alphanumeric() || *c == '-')
+                .collect::<String>()
+        })
+        .filter(|p: &String| !p.is_empty())
+        .collect();
     if parts.len() < 2 {
         return String::new();
     }
@@ -219,7 +282,10 @@ mod tests {
         assert_eq!(text_field("100%25 sure %e2%80%99"), "100 sure");
         assert_eq!(text_field("%2%41"), "%2");
         assert_eq!(text_field("\u{a0}nbsp\u{a0}"), "\u{a0}nbsp\u{a0}");
-        assert_eq!(textarea_field("line one\n  line  two "), "line one\n  line  two");
+        assert_eq!(
+            textarea_field("line one\n  line  two "),
+            "line one\n  line  two"
+        );
         assert_eq!(text_field("<script>alert(1)</script>ok"), "ok");
     }
 }

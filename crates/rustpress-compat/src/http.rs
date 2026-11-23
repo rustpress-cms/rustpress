@@ -15,7 +15,10 @@ pub struct Response {
 
 impl Response {
     pub fn header(&self, name: &str) -> Option<&str> {
-        self.headers.iter().find(|(n, _)| n == name).map(|(_, v)| v.as_str())
+        self.headers
+            .iter()
+            .find(|(n, _)| n == name)
+            .map(|(_, v)| v.as_str())
     }
 
     pub fn text(&self) -> String {
@@ -24,7 +27,13 @@ impl Response {
 
     /// The media type without parameters.
     pub fn media_type(&self) -> String {
-        self.header("content-type").unwrap_or_default().split(';').next().unwrap_or_default().trim().to_ascii_lowercase()
+        self.header("content-type")
+            .unwrap_or_default()
+            .split(';')
+            .next()
+            .unwrap_or_default()
+            .trim()
+            .to_ascii_lowercase()
     }
 }
 
@@ -40,7 +49,10 @@ pub struct Reference {
 
 impl Reference {
     pub fn new(addr: &str, host: &str) -> Self {
-        Self { addr: addr.to_owned(), host: host.to_owned() }
+        Self {
+            addr: addr.to_owned(),
+            host: host.to_owned(),
+        }
     }
 
     /// `GET path`.
@@ -53,7 +65,10 @@ impl Reference {
 pub fn get(addr: &str, host: &str, path: &str) -> std::io::Result<Response> {
     let mut stream = TcpStream::connect(addr)?;
     stream.set_read_timeout(Some(Duration::from_secs(60)))?;
-    write!(stream, "GET {path} HTTP/1.0\r\nHost: {host}\r\nAccept: */*\r\nConnection: close\r\n\r\n")?;
+    write!(
+        stream,
+        "GET {path} HTTP/1.0\r\nHost: {host}\r\nAccept: */*\r\nConnection: close\r\n\r\n"
+    )?;
     let mut raw = Vec::new();
     stream.read_to_end(&mut raw)?;
     Ok(parse(&raw))
@@ -67,9 +82,20 @@ pub fn parse(raw: &[u8]) -> Response {
     };
     let head = String::from_utf8_lossy(head);
     let mut lines = head.lines();
-    let status = lines.next().and_then(|l| l.split_whitespace().nth(1)).and_then(|s| s.parse().ok()).unwrap_or(0);
-    let headers = lines.filter_map(|l| l.split_once(':')).map(|(n, v)| (n.trim().to_ascii_lowercase(), v.trim().to_owned())).collect();
-    Response { status, headers, body: body.to_vec() }
+    let status = lines
+        .next()
+        .and_then(|l| l.split_whitespace().nth(1))
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
+    let headers = lines
+        .filter_map(|l| l.split_once(':'))
+        .map(|(n, v)| (n.trim().to_ascii_lowercase(), v.trim().to_owned()))
+        .collect();
+    Response {
+        status,
+        headers,
+        body: body.to_vec(),
+    }
 }
 
 #[cfg(test)]

@@ -49,8 +49,15 @@ fn read_theme(dir: &Path) -> Option<ThemeInfo> {
         return None;
     }
     let template = file_header(&head, "Template");
-    let tags: Vec<String> = plain(&file_header(&head, "Tags")).split(',').map(|t| t.trim().to_owned()).filter(|t| !t.is_empty()).collect();
-    let screenshot = ["png", "gif", "jpg", "jpeg", "webp", "avif"].iter().map(|ext| format!("screenshot.{ext}")).find(|f| dir.join(f).is_file());
+    let tags: Vec<String> = plain(&file_header(&head, "Tags"))
+        .split(',')
+        .map(|t| t.trim().to_owned())
+        .filter(|t| !t.is_empty())
+        .collect();
+    let screenshot = ["png", "gif", "jpg", "jpeg", "webp", "avif"]
+        .iter()
+        .map(|ext| format!("screenshot.{ext}"))
+        .find(|f| dir.join(f).is_file());
     Some(ThemeInfo {
         name,
         theme_uri: file_header(&head, "Theme URI"),
@@ -58,7 +65,11 @@ fn read_theme(dir: &Path) -> Option<ThemeInfo> {
         author: plain(&file_header(&head, "Author")),
         author_uri: file_header(&head, "Author URI"),
         version: plain(&file_header(&head, "Version")),
-        template: if template.is_empty() { stylesheet.clone() } else { template },
+        template: if template.is_empty() {
+            stylesheet.clone()
+        } else {
+            template
+        },
         tags,
         text_domain: file_header(&head, "Text Domain"),
         requires_wp: file_header(&head, "Requires at least"),
@@ -72,8 +83,14 @@ fn read_theme(dir: &Path) -> Option<ThemeInfo> {
 
 /// The installed themes by name (`wp_get_themes()`).
 pub fn installed(wp_root: &Path) -> Vec<ThemeInfo> {
-    let Ok(entries) = std::fs::read_dir(wp_root.join("wp-content").join("themes")) else { return Vec::new() };
-    let mut themes: Vec<ThemeInfo> = entries.flatten().filter(|e| e.path().is_dir()).filter_map(|e| read_theme(&e.path())).collect();
+    let Ok(entries) = std::fs::read_dir(wp_root.join("wp-content").join("themes")) else {
+        return Vec::new();
+    };
+    let mut themes: Vec<ThemeInfo> = entries
+        .flatten()
+        .filter(|e| e.path().is_dir())
+        .filter_map(|e| read_theme(&e.path()))
+        .collect();
     themes.sort_by_key(|t| t.name.to_lowercase());
     themes
 }

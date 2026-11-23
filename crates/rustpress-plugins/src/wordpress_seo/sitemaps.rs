@@ -16,7 +16,11 @@ const MAX_ENTRIES: u64 = 1000;
 
 /// `WPSEO_Sitemaps::get_post_statuses()`: `publish`, and `inherit` for the index and attachments.
 fn statuses(index_or_attachment: bool) -> Vec<&'static str> {
-    if index_or_attachment { vec!["publish", "inherit"] } else { vec!["publish"] }
+    if index_or_attachment {
+        vec!["publish", "inherit"]
+    } else {
+        vec!["publish"]
+    }
 }
 
 /// What a request asks for.
@@ -28,12 +32,22 @@ enum Request {
 /// `WPSEO_Sitemaps_Router::add_rewrite_rules()` and the query variables `sitemap`, `sitemap_n` and
 /// `yoast-sitemap-xsl`.
 fn parse(path: &str, query: &str) -> Option<Request> {
-    static TYPE: LazyLock<regex::Regex> = LazyLock::new(|| regex::Regex::new(r"^([^/]+?)-sitemap([0-9]+)?\.xml$").expect("valid pattern"));
-    static XSL: LazyLock<regex::Regex> = LazyLock::new(|| regex::Regex::new(r"^([a-z]+)?-?sitemap\.xsl$").expect("valid pattern"));
+    static TYPE: LazyLock<regex::Regex> = LazyLock::new(|| {
+        regex::Regex::new(r"^([^/]+?)-sitemap([0-9]+)?\.xml$").expect("valid pattern")
+    });
+    static XSL: LazyLock<regex::Regex> =
+        LazyLock::new(|| regex::Regex::new(r"^([a-z]+)?-?sitemap\.xsl$").expect("valid pattern"));
     let path = path.strip_prefix("index.php/").unwrap_or(path);
     let vars = query_pairs(query);
-    let var = |name: &str| vars.iter().rev().find(|(k, _)| k == name).map(|(_, v)| v.clone()).unwrap_or_default();
-    let (mut sitemap, mut n, mut xsl) = (var("sitemap"), var("sitemap_n"), var("yoast-sitemap-xsl"));
+    let var = |name: &str| {
+        vars.iter()
+            .rev()
+            .find(|(k, _)| k == name)
+            .map(|(_, v)| v.clone())
+            .unwrap_or_default()
+    };
+    let (mut sitemap, mut n, mut xsl) =
+        (var("sitemap"), var("sitemap_n"), var("yoast-sitemap-xsl"));
     if path == "sitemap_index.xml" {
         sitemap = "1".into();
     } else if path.starts_with("sitemap.xml") {
@@ -52,14 +66,22 @@ fn parse(path: &str, query: &str) -> Option<Request> {
 }
 
 /// The sitemap and stylesheet requests (`WPSEO_Sitemaps::redirect()` on `pre_get_posts`).
-pub async fn serve(site: &Site, options: &Options, request: &ServeRequest<'_>) -> Result<Option<Serve>> {
-    let Some(asked) = parse(request.path, request.query) else { return Ok(None) };
+pub async fn serve(
+    site: &Site,
+    options: &Options,
+    request: &ServeRequest<'_>,
+) -> Result<Option<Serve>> {
+    let Some(asked) = parse(request.path, request.query) else {
+        return Ok(None);
+    };
     let (kind, n) = match asked {
         Request::Xsl(name) => {
             if name != "main" {
                 return Ok(Some(Serve::NotFound));
             }
-            let file = request.wp_root.join("wp-content/plugins/wordpress-seo/css/main-sitemap.xsl");
+            let file = request
+                .wp_root
+                .join("wp-content/plugins/wordpress-seo/css/main-sitemap.xsl");
             let body = std::fs::read_to_string(file).unwrap_or_default();
             let expires = chrono::Utc::now() + chrono::Duration::seconds(31_536_000);
             let headers = vec![
@@ -68,40 +90,81 @@ pub async fn serve(site: &Site, options: &Options, request: &ServeRequest<'_>) -
                 ("Content-Type".into(), "text/xml;charset=UTF-8".into()),
                 ("Pragma".into(), "public".into()),
                 ("Cache-Control".into(), "max-age=31536000".into()),
-                ("Expires".into(), expires.format("%a, %d %b %Y %H:%M:%S GMT").to_string()),
+                (
+                    "Expires".into(),
+                    expires.format("%a, %d %b %Y %H:%M:%S GMT").to_string(),
+                ),
             ];
-            return Ok(Some(Serve::Response(PluginResponse { status: 200, headers, body })));
+            return Ok(Some(Serve::Response(PluginResponse {
+                status: 200,
+                headers,
+                body,
+            })));
         }
         Request::Sitemap(kind, n) => (kind, n),
     };
     if n == "1" || n == "0" {
         let location = site.home_url(&format!("/{kind}-sitemap.xml"));
-        let headers = vec![("Location".into(), location), ("X-Redirect-By".into(), "Yoast SEO".into()), ("Content-Type".into(), "text/html; charset=UTF-8".into())];
-        return Ok(Some(Serve::Response(PluginResponse { status: 301, headers, body: String::new() })));
+        let headers = vec![
+            ("Location".into(), location),
+            ("X-Redirect-By".into(), "Yoast SEO".into()),
+            ("Content-Type".into(), "text/html; charset=UTF-8".into()),
+        ];
+        return Ok(Some(Serve::Response(PluginResponse {
+            status: 301,
+            headers,
+            body: String::new(),
+        })));
     }
     let page = super::php_int(&n).max(1) as u64;
-    let built = if kind == "1" { index(site, options).await? } else { sitemap(site, options, &kind, page).await? };
-    let Some(xml) = built else { return Ok(Some(Serve::NotFound)) };
-    let stylesheet = format!("<?xml-stylesheet type=\"text/xsl\" href=\"{}\"?>", rustpress_core::formatting::esc_url(&xsl_url(site)));
-    let body = format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?>{stylesheet}\n{xml}\n<!-- XML Sitemap generated by Yoast SEO -->");
-    let headers = vec![("X-Robots-Tag".into(), "noindex, follow".into()), ("Content-Type".into(), "text/xml; charset=UTF-8".into())];
-    Ok(Some(Serve::Response(PluginResponse { status: 200, headers, body })))
+    let built = if kind == "1" {
+        index(site, options).await?
+    } else {
+        sitemap(site, options, &kind, page).await?
+    };
+    let Some(xml) = built else {
+        return Ok(Some(Serve::NotFound));
+    };
+    let stylesheet = format!(
+        "<?xml-stylesheet type=\"text/xsl\" href=\"{}\"?>",
+        rustpress_core::formatting::esc_url(&xsl_url(site))
+    );
+    let body = format!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>{stylesheet}\n{xml}\n<!-- XML Sitemap generated by Yoast SEO -->"
+    );
+    let headers = vec![
+        ("X-Robots-Tag".into(), "noindex, follow".into()),
+        ("Content-Type".into(), "text/xml; charset=UTF-8".into()),
+    ];
+    Ok(Some(Serve::Response(PluginResponse {
+        status: 200,
+        headers,
+        body,
+    })))
 }
 
 /// `WPSEO_Sitemaps_Renderer::get_xsl_url()` without its scheme.
 fn xsl_url(site: &Site) -> String {
     let home = site.home_url("");
-    let url = if home != site.site_url("") || !site.site_url("wp-content/plugins").starts_with(&home) {
-        site.home_url("main-sitemap.xsl")
-    } else {
-        site.site_url("wp-content/plugins/wordpress-seo/css/main-sitemap.xsl")
-    };
-    url.strip_prefix("https:").or_else(|| url.strip_prefix("http:")).unwrap_or(&url).to_owned()
+    let url =
+        if home != site.site_url("") || !site.site_url("wp-content/plugins").starts_with(&home) {
+            site.home_url("main-sitemap.xsl")
+        } else {
+            site.site_url("wp-content/plugins/wordpress-seo/css/main-sitemap.xsl")
+        };
+    url.strip_prefix("https:")
+        .or_else(|| url.strip_prefix("http:"))
+        .unwrap_or(&url)
+        .to_owned()
 }
 
 /// `WPSEO_Sitemaps_Router::get_base_url()`.
 fn base_url(site: &Site, page: &str) -> String {
-    let base = if site.using_index_permalinks() { "index.php/" } else { "/" };
+    let base = if site.using_index_permalinks() {
+        "index.php/"
+    } else {
+        "/"
+    };
     site.home_url(&format!("{base}{page}"))
 }
 
@@ -112,7 +175,10 @@ fn w3c(date: &str) -> String {
 
 /// `htmlspecialchars( $text, ENT_COMPAT, 'UTF-8', false )`.
 fn specialchars(text: &str) -> String {
-    static ENTITY: LazyLock<regex::Regex> = LazyLock::new(|| regex::Regex::new(r"^&(?:[A-Za-z][A-Za-z0-9]*|#[0-9]+|#[xX][0-9a-fA-F]+);").expect("valid pattern"));
+    static ENTITY: LazyLock<regex::Regex> = LazyLock::new(|| {
+        regex::Regex::new(r"^&(?:[A-Za-z][A-Za-z0-9]*|#[0-9]+|#[xX][0-9a-fA-F]+);")
+            .expect("valid pattern")
+    });
     let mut out = String::with_capacity(text.len());
     for (i, c) in text.char_indices() {
         match c {
@@ -131,20 +197,50 @@ fn specialchars(text: &str) -> String {
 fn encode_and_escape(url: &str) -> String {
     let mut url = url.to_owned();
     if !super::images::filter_validate_url(&url) {
-        let rest_start = url.find("://").map_or(0, |i| url[i + 3..].find('/').map_or(url.len(), |j| i + 3 + j));
-        let end = url[rest_start..].find(['?', '#']).map_or(url.len(), |j| rest_start + j);
+        let rest_start = url.find("://").map_or(0, |i| {
+            url[i + 3..].find('/').map_or(url.len(), |j| i + 3 + j)
+        });
+        let end = url[rest_start..]
+            .find(['?', '#'])
+            .map_or(url.len(), |j| rest_start + j);
         let path = url[rest_start..end].to_owned();
         if !path.is_empty() && path != "/" {
-            let encoded: Vec<String> = path.split('/').map(|seg| rustpress_core::canonical::rawurlencode(&String::from_utf8_lossy(&rustpress_core::rewrite::urldecode(seg.replace('+', "%2B").as_bytes())))).collect();
+            let encoded: Vec<String> = path
+                .split('/')
+                .map(|seg| {
+                    rustpress_core::canonical::rawurlencode(&String::from_utf8_lossy(
+                        &rustpress_core::rewrite::urldecode(seg.replace('+', "%2B").as_bytes()),
+                    ))
+                })
+                .collect();
             url = url.replacen(&path, &encoded.join("/"), 1);
         }
-        if let Some(q) = url.split_once('?').map(|(_, q)| q.split('#').next().unwrap_or_default().to_owned()).filter(|q| !q.is_empty()) {
-            let built: Vec<String> = query_pairs(&q).iter().map(|(k, v)| format!("{}={}", rustpress_core::canonical::rawurlencode(k), rustpress_core::canonical::rawurlencode(v))).collect();
+        if let Some(q) = url
+            .split_once('?')
+            .map(|(_, q)| q.split('#').next().unwrap_or_default().to_owned())
+            .filter(|q| !q.is_empty())
+        {
+            let built: Vec<String> = query_pairs(&q)
+                .iter()
+                .map(|(k, v)| {
+                    format!(
+                        "{}={}",
+                        rustpress_core::canonical::rawurlencode(k),
+                        rustpress_core::canonical::rawurlencode(v)
+                    )
+                })
+                .collect();
             url = url.replacen(&q, &built.join("&amp;"), 1);
         }
     }
-    let url = rustpress_core::formatting::esc_url(&url).replace("&#038;", "&amp;").replace("&#039;", "&apos;");
-    if url.starts_with("//") { format!("http:{url}") } else { url }
+    let url = rustpress_core::formatting::esc_url(&url)
+        .replace("&#038;", "&amp;")
+        .replace("&#039;", "&apos;");
+    if url.starts_with("//") {
+        format!("http:{url}")
+    } else {
+        url
+    }
 }
 
 /// A `<url>` of a sitemap.
@@ -158,10 +254,16 @@ struct Link {
 fn render_url(link: &Link) -> String {
     let mut out = format!("\t<url>\n\t\t<loc>{}</loc>\n", encode_and_escape(&link.loc));
     if let Some(date) = link.modified.as_deref().filter(|d| !d.is_empty()) {
-        out.push_str(&format!("\t\t<lastmod>{}</lastmod>\n", specialchars(&w3c(date))));
+        out.push_str(&format!(
+            "\t\t<lastmod>{}</lastmod>\n",
+            specialchars(&w3c(date))
+        ));
     }
     for src in link.images.iter().filter(|s| !s.is_empty()) {
-        out.push_str(&format!("\t\t<image:image>\n\t\t\t<image:loc>{}</image:loc>\n\t\t</image:image>\n", encode_and_escape(src)));
+        out.push_str(&format!(
+            "\t\t<image:image>\n\t\t\t<image:loc>{}</image:loc>\n\t\t</image:image>\n",
+            encode_and_escape(src)
+        ));
     }
     out.push_str("\t</url>\n");
     out
@@ -171,12 +273,22 @@ const URLSET: &str = "<urlset xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-insta
 
 /// `WPSEO_Post_Type::get_accessible_post_types()` filtered by `is_valid_post_type()`.
 fn sitemap_post_types(site: &Site, options: &Options) -> Vec<String> {
-    site.types.public_post_types().into_iter().filter(|t| site.is_post_type_viewable(t)).filter(|t| post_type_indexable(options, t)).map(str::to_owned).collect()
+    site.types
+        .public_post_types()
+        .into_iter()
+        .filter(|t| site.is_post_type_viewable(t))
+        .filter(|t| post_type_indexable(options, t))
+        .map(str::to_owned)
+        .collect()
 }
 
 /// `Post_Type_Helper::is_indexable()`.
 fn post_type_indexable(options: &Options, post_type: &str) -> bool {
-    !options.truthy(&format!("disable-{post_type}")) && matches!(options.get(&format!("noindex-{post_type}")), None | Some(rustpress_phpser::Value::Bool(false)))
+    !options.truthy(&format!("disable-{post_type}"))
+        && matches!(
+            options.get(&format!("noindex-{post_type}")),
+            None | Some(rustpress_phpser::Value::Bool(false))
+        )
 }
 
 /// `WPSEO_Taxonomy_Sitemap_Provider::is_valid_taxonomy()` for the public taxonomies.
@@ -184,7 +296,12 @@ fn sitemap_taxonomies(site: &Site, options: &Options) -> Vec<String> {
     super::options::public_taxonomies(site)
         .into_iter()
         .filter(|t| !options.is_true(&format!("noindex-tax-{t}")))
-        .filter(|t| !matches!(t.as_str(), "link_category" | "nav_menu" | "wp_pattern_category"))
+        .filter(|t| {
+            !matches!(
+                t.as_str(),
+                "link_category" | "nav_menu" | "wp_pattern_category"
+            )
+        })
         .filter(|t| !(t == "post_format" && options.truthy("disable-post_format")))
         .collect()
 }
@@ -194,10 +311,24 @@ fn object_types(site: &Site, taxonomy: &str) -> Vec<String> {
     match taxonomy {
         "category" | "post_tag" | "post_format" => {
             let mut types = vec!["post".to_owned()];
-            types.extend(site.types.post_types.iter().filter(|t| site.types.taxonomy(taxonomy).is_some_and(|tx| tx.object_types.contains(&t.name))).map(|t| t.name.clone()));
+            types.extend(
+                site.types
+                    .post_types
+                    .iter()
+                    .filter(|t| {
+                        site.types
+                            .taxonomy(taxonomy)
+                            .is_some_and(|tx| tx.object_types.contains(&t.name))
+                    })
+                    .map(|t| t.name.clone()),
+            );
             types
         }
-        other => site.types.taxonomy(other).map(|t| t.object_types.clone()).unwrap_or_default(),
+        other => site
+            .types
+            .taxonomy(other)
+            .map(|t| t.object_types.clone())
+            .unwrap_or_default(),
     }
 }
 
@@ -232,18 +363,44 @@ async fn index(site: &Site, options: &Options) -> Result<Option<String>> {
     let types = sitemap_post_types(site, options);
     let refs: Vec<&str> = types.iter().map(String::as_str).collect();
     let index_statuses = statuses(true);
-    let last_modified = site.db.last_modified_by_type(&refs, &index_statuses).await?;
+    let last_modified = site
+        .db
+        .last_modified_by_type(&refs, &index_statuses)
+        .await?;
     for post_type in &types {
-        let count = site.db.sitemap_post_count(post_type, &statuses(post_type == "attachment")).await?;
+        let count = site
+            .db
+            .sitemap_post_count(post_type, &statuses(post_type == "attachment"))
+            .await?;
         if count == 0 {
             continue;
         }
         let pages = count.div_ceil(MAX_ENTRIES).max(1);
-        let dates = if pages > 1 { site.db.sitemap_page_dates(post_type, &statuses(post_type == "attachment"), MAX_ENTRIES).await? } else { Vec::new() };
+        let dates = if pages > 1 {
+            site.db
+                .sitemap_page_dates(post_type, &statuses(post_type == "attachment"), MAX_ENTRIES)
+                .await?
+        } else {
+            Vec::new()
+        };
         for counter in 0..pages {
-            let suffix = if counter == 0 { String::new() } else { (counter + 1).to_string() };
-            let date = if counter == 0 || counter + 1 == pages { last_modified.iter().find(|(t, _)| t == post_type).map(|(_, d)| d.clone()) } else { dates.get(counter as usize).cloned() };
-            links.push((base_url(site, &format!("{post_type}-sitemap{suffix}.xml")), date));
+            let suffix = if counter == 0 {
+                String::new()
+            } else {
+                (counter + 1).to_string()
+            };
+            let date = if counter == 0 || counter + 1 == pages {
+                last_modified
+                    .iter()
+                    .find(|(t, _)| t == post_type)
+                    .map(|(_, d)| d.clone())
+            } else {
+                dates.get(counter as usize).cloned()
+            };
+            links.push((
+                base_url(site, &format!("{post_type}-sitemap{suffix}.xml")),
+                date,
+            ));
         }
     }
     // Taxonomies.
@@ -257,31 +414,61 @@ async fn index(site: &Site, options: &Options) -> Result<Option<String>> {
             continue;
         }
         let object_refs: Vec<&str> = objects.iter().map(String::as_str).collect();
-        let fallback = site.db.last_modified_by_type(&object_refs, &index_statuses).await?.into_iter().map(|(_, d)| d).max();
+        let fallback = site
+            .db
+            .last_modified_by_type(&object_refs, &index_statuses)
+            .await?
+            .into_iter()
+            .map(|(_, d)| d)
+            .max();
         for (counter, chunk) in terms.chunks(MAX_ENTRIES as usize).enumerate() {
-            let suffix = if counter == 0 { String::new() } else { (counter + 1).to_string() };
+            let suffix = if counter == 0 {
+                String::new()
+            } else {
+                (counter + 1).to_string()
+            };
             let ids: Vec<u64> = chunk.iter().map(|t| t.term_id).collect();
-            let date = site.db.latest_modified_in_terms(&object_refs, &taxonomy, &ids).await?.or_else(|| fallback.clone());
-            links.push((base_url(site, &format!("{taxonomy}-sitemap{suffix}.xml")), date));
+            let date = site
+                .db
+                .latest_modified_in_terms(&object_refs, &taxonomy, &ids)
+                .await?
+                .or_else(|| fallback.clone());
+            links.push((
+                base_url(site, &format!("{taxonomy}-sitemap{suffix}.xml")),
+                date,
+            ));
         }
     }
     // Authors.
     if author_sitemap_on(options) {
         let users = author_users(site, options).await?;
         for (counter, chunk) in users.chunks(MAX_ENTRIES as usize).enumerate() {
-            let suffix = if counter == 0 { String::new() } else { (counter + 1).to_string() };
-            let date = chunk.first().map(|(_, ts)| rustpress_core::datetime::SiteTimezone::utc().format("Y-m-d\\TH:i:sP", *ts));
+            let suffix = if counter == 0 {
+                String::new()
+            } else {
+                (counter + 1).to_string()
+            };
+            let date = chunk.first().map(|(_, ts)| {
+                rustpress_core::datetime::SiteTimezone::utc().format("Y-m-d\\TH:i:sP", *ts)
+            });
             links.push((base_url(site, &format!("author-sitemap{suffix}.xml")), date));
         }
     }
     if links.is_empty() {
         return Ok(None);
     }
-    let mut xml = String::from("<sitemapindex xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">\n");
+    let mut xml =
+        String::from("<sitemapindex xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">\n");
     for (loc, date) in links {
-        xml.push_str(&format!("\t<sitemap>\n\t\t<loc>{}</loc>\n", specialchars(&loc)));
+        xml.push_str(&format!(
+            "\t<sitemap>\n\t\t<loc>{}</loc>\n",
+            specialchars(&loc)
+        ));
         if let Some(date) = date.filter(|d| !d.is_empty()) {
-            xml.push_str(&format!("\t\t<lastmod>{}</lastmod>\n", specialchars(&w3c(&date))));
+            xml.push_str(&format!(
+                "\t\t<lastmod>{}</lastmod>\n",
+                specialchars(&w3c(&date))
+            ));
         }
         xml.push_str("\t</sitemap>\n");
     }
@@ -297,9 +484,22 @@ fn author_sitemap_on(options: &Options) -> bool {
 /// `get_users()` of the author provider, newest profile first. A user the plugin has not stamped yet
 /// (`update_user_meta()` writes the current time) counts as changed now; the stamp is not written.
 async fn author_users(site: &Site, options: &Options) -> Result<Vec<(u64, i64)>> {
-    let with_posts: &[&str] = if options.get("noindex-author-noposts-wpseo").is_none_or(super::options::truthy) { &["post"] } else { &[] };
+    let with_posts: &[&str] = if options
+        .get("noindex-author-noposts-wpseo")
+        .is_none_or(super::options::truthy)
+    {
+        &["post"]
+    } else {
+        &[]
+    };
     let now = chrono::Utc::now().timestamp();
-    let mut users: Vec<(u64, i64)> = site.db.author_sitemap_users(with_posts).await?.into_iter().map(|(id, ts)| (id, ts.unwrap_or(now))).collect();
+    let mut users: Vec<(u64, i64)> = site
+        .db
+        .author_sitemap_users(with_posts)
+        .await?
+        .into_iter()
+        .map(|(id, ts)| (id, ts.unwrap_or(now)))
+        .collect();
     users.sort_by_key(|(id, ts)| (std::cmp::Reverse(*ts), *id));
     Ok(users)
 }
@@ -308,7 +508,12 @@ async fn author_users(site: &Site, options: &Options) -> Result<Vec<(u64, i64)>>
 async fn sitemap(site: &Site, options: &Options, kind: &str, page: u64) -> Result<Option<String>> {
     let links = if site.types.is_post_type(kind) {
         post_type_links(site, options, kind, page).await?
-    } else if site.types.is_taxonomy(kind) && super::options::public_taxonomies(site).iter().any(|t| t == kind) && sitemap_taxonomies(site, options).iter().any(|t| t == kind) {
+    } else if site.types.is_taxonomy(kind)
+        && super::options::public_taxonomies(site)
+            .iter()
+            .any(|t| t == kind)
+        && sitemap_taxonomies(site, options).iter().any(|t| t == kind)
+    {
         taxonomy_links(site, options, kind, page).await?
     } else if kind == "author" && author_sitemap_on(options) {
         author_links(site, options, page).await?
@@ -325,13 +530,24 @@ async fn sitemap(site: &Site, options: &Options, kind: &str, page: u64) -> Resul
 }
 
 /// `WPSEO_Post_Type_Sitemap_Provider::get_sitemap_links()`.
-async fn post_type_links(site: &Site, options: &Options, post_type: &str, page: u64) -> Result<Option<Vec<Link>>> {
-    if !sitemap_post_types(site, options).iter().any(|t| t == post_type) {
+async fn post_type_links(
+    site: &Site,
+    options: &Options,
+    post_type: &str,
+    page: u64,
+) -> Result<Option<Vec<Link>>> {
+    if !sitemap_post_types(site, options)
+        .iter()
+        .any(|t| t == post_type)
+    {
         return Ok(None);
     }
     let post_statuses = statuses(post_type == "attachment");
     let offset = (page - 1) * MAX_ENTRIES;
-    let entries = site.db.sitemap_post_count(post_type, &post_statuses).await?;
+    let entries = site
+        .db
+        .sitemap_post_count(post_type, &post_statuses)
+        .await?;
     let total = (offset + MAX_ENTRIES).min(entries);
     let mut links = Vec::new();
     if page == 1 {
@@ -346,15 +562,24 @@ async fn post_type_links(site: &Site, options: &Options, post_type: &str, page: 
     let settings = &site.settings;
     let mut excluded: Vec<u64> = Vec::new();
     if post_type == "page" {
-        excluded.extend([settings.page_on_front, settings.page_for_posts].into_iter().filter(|id| *id > 0));
+        excluded.extend(
+            [settings.page_on_front, settings.page_for_posts]
+                .into_iter()
+                .filter(|id| *id > 0),
+        );
     }
     let steps = MAX_ENTRIES.min(100);
     let mut at = offset;
     while total > at {
-        let posts = site.db.sitemap_posts(post_type, &post_statuses, steps, at).await?;
+        let posts = site
+            .db
+            .sitemap_posts(post_type, &post_statuses, steps, at)
+            .await?;
         at += steps;
         for post in posts {
-            if excluded.contains(&post.id) || meta(site, post.id, "meta-robots-noindex").await? == "1" {
+            if excluded.contains(&post.id)
+                || meta(site, post.id, "meta-robots-noindex").await? == "1"
+            {
                 continue;
             }
             if let Some(link) = post_url(site, &post).await? {
@@ -366,7 +591,11 @@ async fn post_type_links(site: &Site, options: &Options, post_type: &str, page: 
 }
 
 async fn meta(site: &Site, post_id: u64, key: &str) -> Result<String> {
-    Ok(site.db.post_meta_value(post_id, &format!("_yoast_wpseo_{key}")).await?.unwrap_or_default())
+    Ok(site
+        .db
+        .post_meta_value(post_id, &format!("_yoast_wpseo_{key}"))
+        .await?
+        .unwrap_or_default())
 }
 
 /// `get_first_links()`: the front page in the page sitemap, the archive in the others.
@@ -380,12 +609,18 @@ async fn first_links(site: &Site, options: &Options, post_type: &str) -> Result<
         {
             front = post_url(site, &page).await?;
         }
-        return Ok(vec![front.unwrap_or_else(|| Link { loc: home(site), modified: None, images: Vec::new() })]);
+        return Ok(vec![front.unwrap_or_else(|| Link {
+            loc: home(site),
+            modified: None,
+            images: Vec::new(),
+        })]);
     }
     let archive = if post_type == "post" {
         if !static_front {
             Some(home(site))
-        } else if settings.page_for_posts > 0 && archive_indexable(site, options, post_type, settings.page_for_posts).await? {
+        } else if settings.page_for_posts > 0
+            && archive_indexable(site, options, post_type, settings.page_for_posts).await?
+        {
             site.post_type_archive_link(post_type)
         } else {
             None
@@ -395,15 +630,29 @@ async fn first_links(site: &Site, options: &Options, post_type: &str) -> Result<
     } else {
         None
     };
-    let Some(loc) = archive.filter(|l| !l.is_empty()) else { return Ok(Vec::new()) };
-    let modified = site.db.last_modified_by_type(&[post_type], &statuses(true)).await?.into_iter().map(|(_, d)| d).next();
-    Ok(vec![Link { loc, modified, images: Vec::new() }])
+    let Some(loc) = archive.filter(|l| !l.is_empty()) else {
+        return Ok(Vec::new());
+    };
+    let modified = site
+        .db
+        .last_modified_by_type(&[post_type], &statuses(true))
+        .await?
+        .into_iter()
+        .map(|(_, d)| d)
+        .next();
+    Ok(vec![Link {
+        loc,
+        modified,
+        images: Vec::new(),
+    }])
 }
 
 /// `Url_Helper::home()`.
 fn home(site: &Site) -> String {
     let home = site.home_url("");
-    let path = home.split_once("://").map_or("", |(_, rest)| rest.find('/').map_or("", |i| &rest[i..]));
+    let path = home
+        .split_once("://")
+        .map_or("", |(_, rest)| rest.find('/').map_or("", |i| &rest[i..]));
     if path == "/" {
         home
     } else if path.is_empty() {
@@ -414,7 +663,12 @@ fn home(site: &Site) -> String {
 }
 
 /// `is_post_type_archive_indexable()`.
-async fn archive_indexable(site: &Site, options: &Options, post_type: &str, archive_page: u64) -> Result<bool> {
+async fn archive_indexable(
+    site: &Site,
+    options: &Options,
+    post_type: &str,
+    archive_page: u64,
+) -> Result<bool> {
     if options.truthy(&format!("noindex-ptarchive-{post_type}")) {
         return Ok(false);
     }
@@ -436,16 +690,29 @@ async fn post_url(site: &Site, post: &Post) -> Result<Option<Link>> {
         return Ok(None);
     }
     let images = post_images(site, post).await?;
-    Ok(Some(Link { loc, modified, images }))
+    Ok(Some(Link {
+        loc,
+        modified,
+        images,
+    }))
 }
 
 fn host(url: &str) -> String {
-    url.split_once("://").map_or("", |(_, r)| r).split(['/', ':', '?', '#']).next().unwrap_or_default().to_ascii_lowercase()
+    url.split_once("://")
+        .map_or("", |(_, r)| r)
+        .split(['/', ':', '?', '#'])
+        .next()
+        .unwrap_or_default()
+        .to_ascii_lowercase()
 }
 
 /// `WPSEO_Sitemap_Image_Parser::image_url()`.
 async fn image_url(site: &Site, id: u64) -> Result<String> {
-    let file = site.db.post_meta_value(id, "_wp_attached_file").await?.unwrap_or_default();
+    let file = site
+        .db
+        .post_meta_value(id, "_wp_attached_file")
+        .await?
+        .unwrap_or_default();
     if file.is_empty() {
         return Ok(String::new());
     }
@@ -462,10 +729,19 @@ fn absolute(site: &Site, src: &str) -> String {
         return String::new();
     }
     if !src.starts_with("http") && !src.starts_with("//") {
-        return if src.starts_with('/') { format!("{}{src}", site.home_url("")) } else { src.to_owned() };
+        return if src.starts_with('/') {
+            format!("{}{src}", site.home_url(""))
+        } else {
+            src.to_owned()
+        };
     }
     if !src.starts_with("http") {
-        let scheme = site.home_url("").split("://").next().unwrap_or("http").to_owned();
+        let scheme = site
+            .home_url("")
+            .split("://")
+            .next()
+            .unwrap_or("http")
+            .to_owned();
         return format!("{scheme}:{src}");
     }
     src.to_owned()
@@ -475,7 +751,12 @@ fn absolute(site: &Site, src: &str) -> String {
 /// the attachment itself.
 async fn post_images(site: &Site, post: &Post) -> Result<Vec<String>> {
     let mut images = Vec::new();
-    let thumbnail = site.db.post_meta_value(post.id, "_thumbnail_id").await?.and_then(|v| v.trim().parse::<u64>().ok()).unwrap_or(0);
+    let thumbnail = site
+        .db
+        .post_meta_value(post.id, "_thumbnail_id")
+        .await?
+        .and_then(|v| v.trim().parse::<u64>().ok())
+        .unwrap_or(0);
     if thumbnail != 0 {
         images.push(absolute(site, &image_url(site, thumbnail).await?));
     }
@@ -493,9 +774,12 @@ async fn post_images(site: &Site, post: &Post) -> Result<Vec<String>> {
 /// `parse_html_images()`: the `src` of every `<img>` (as libxml's HTML parser reads it), upsized to the full image
 /// for WordPress images that are not `size-full`, on the site's host only.
 async fn html_images(site: &Site, content: &str) -> Result<Vec<String>> {
-    static COMMENT: LazyLock<regex::Regex> = LazyLock::new(|| regex::Regex::new(r"(?s)<!--.*?-->").expect("valid pattern"));
-    static IMG: LazyLock<regex::Regex> = LazyLock::new(|| regex::Regex::new(r"(?is)<img\b[^>]*>").expect("valid pattern"));
-    static WP_IMAGE: LazyLock<regex::Regex> = LazyLock::new(|| regex::Regex::new(r"wp-image-(\d+)").expect("valid pattern"));
+    static COMMENT: LazyLock<regex::Regex> =
+        LazyLock::new(|| regex::Regex::new(r"(?s)<!--.*?-->").expect("valid pattern"));
+    static IMG: LazyLock<regex::Regex> =
+        LazyLock::new(|| regex::Regex::new(r"(?is)<img\b[^>]*>").expect("valid pattern"));
+    static WP_IMAGE: LazyLock<regex::Regex> =
+        LazyLock::new(|| regex::Regex::new(r"wp-image-(\d+)").expect("valid pattern"));
     let mut images = Vec::new();
     if content.is_empty() {
         return Ok(images);
@@ -516,7 +800,9 @@ async fn html_images(site: &Site, content: &str) -> Result<Vec<String>> {
             && let Ok(id) = c[1].parse::<u64>()
             && site.db.post(id).await?.is_some()
         {
-            let query = src.split_once('?').map(|(_, q)| q.split('#').next().unwrap_or_default().to_owned());
+            let query = src
+                .split_once('?')
+                .map(|(_, q)| q.split('#').next().unwrap_or_default().to_owned());
             src = image_url(site, id).await?;
             if let Some(query) = query.filter(|q| !q.is_empty()) {
                 src = format!("{src}?{query}");
@@ -533,26 +819,48 @@ async fn html_images(site: &Site, content: &str) -> Result<Vec<String>> {
 
 /// An attribute of a tag, entities decoded (`DOMElement::getAttribute()`).
 fn attribute(tag: &str, name: &str) -> String {
-    let pattern = format!(r#"(?is)\s{}\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))"#, regex::escape(name));
-    let Ok(re) = regex::Regex::new(&pattern) else { return String::new() };
+    let pattern = format!(
+        r#"(?is)\s{}\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))"#,
+        regex::escape(name)
+    );
+    let Ok(re) = regex::Regex::new(&pattern) else {
+        return String::new();
+    };
     match re.captures(tag) {
-        Some(c) => rustpress_core::formatting::html_entity_decode(c.get(1).or(c.get(2)).or(c.get(3)).map_or("", |m| m.as_str())),
+        Some(c) => rustpress_core::formatting::html_entity_decode(
+            c.get(1)
+                .or(c.get(2))
+                .or(c.get(3))
+                .map_or("", |m| m.as_str()),
+        ),
         None => String::new(),
     }
 }
 
 /// `parse_galleries()`: the image attachments of every `[gallery]`, each once.
 async fn gallery_attachments(site: &Site, content: &str, post_id: u64) -> Result<Vec<u64>> {
-    static GALLERY: LazyLock<fancy_regex::Regex> = LazyLock::new(|| rustpress_core::formatting::pcre(r"(?s)\[(\[?)(gallery)(?![\w-])([^\]\/]*(?:\/(?!\])[^\]\/]*)*?)(?:(\/)\]|\](?:([^\[]*+(?:\[(?!\/\2\])[^\[]*+)*+)\[\/\2\])?)(\]?)").expect("valid pattern"));
+    static GALLERY: LazyLock<fancy_regex::Regex> = LazyLock::new(|| {
+        rustpress_core::formatting::pcre(r"(?s)\[(\[?)(gallery)(?![\w-])([^\]\/]*(?:\/(?!\])[^\]\/]*)*?)(?:(\/)\]|\](?:([^\[]*+(?:\[(?!\/\2\])[^\[]*+)*+)\[\/\2\])?)(\]?)").expect("valid pattern")
+    });
     let mut all: Vec<u64> = Vec::new();
-    let ids = |list: &str| list.split([',', ' ']).filter_map(|s| s.trim().parse::<u64>().ok()).filter(|id| *id != 0).collect::<Vec<u64>>();
+    let ids = |list: &str| {
+        list.split([',', ' '])
+            .filter_map(|s| s.trim().parse::<u64>().ok())
+            .filter(|id| *id != 0)
+            .collect::<Vec<u64>>()
+    };
     for caps in GALLERY.captures_iter(content).filter_map(|c| c.ok()) {
         let atts = rustpress_core::shortcodes::parse_atts(caps.get(3).map_or("", |m| m.as_str()));
         let mut parent = post_id;
         if let Some(id) = atts.get("id").map(super::php_int).filter(|id| *id != 0) {
             parent = id.max(0) as u64;
         }
-        let include = atts.get("ids").filter(|v| !v.is_empty()).or_else(|| atts.get("include").filter(|v| !v.is_empty())).map(ids).unwrap_or_default();
+        let include = atts
+            .get("ids")
+            .filter(|v| !v.is_empty())
+            .or_else(|| atts.get("include").filter(|v| !v.is_empty()))
+            .map(ids)
+            .unwrap_or_default();
         let found = if !include.is_empty() {
             site.db.gallery_attachments(&include, 0, &[]).await?
         } else if parent != 0 {
@@ -571,17 +879,31 @@ async fn gallery_attachments(site: &Site, content: &str, post_id: u64) -> Result
 }
 
 /// `WPSEO_Taxonomy_Sitemap_Provider::get_sitemap_links()`.
-async fn taxonomy_links(site: &Site, options: &Options, taxonomy: &str, page: u64) -> Result<Option<Vec<Link>>> {
+async fn taxonomy_links(
+    site: &Site,
+    options: &Options,
+    taxonomy: &str,
+    page: u64,
+) -> Result<Option<Vec<Link>>> {
     let terms = shown_terms(site, taxonomy).await?;
     let offset = ((page - 1) * MAX_ENTRIES) as usize;
-    let terms: Vec<&Term> = terms.iter().skip(offset).take(MAX_ENTRIES as usize).collect();
+    let terms: Vec<&Term> = terms
+        .iter()
+        .skip(offset)
+        .take(MAX_ENTRIES as usize)
+        .collect();
     if terms.is_empty() {
         return Ok(None);
     }
     let mut links = Vec::new();
     for term in terms {
         let meta = options.term_meta(taxonomy, term.term_id);
-        let get = |key: &str| meta.iter().find(|(k, _)| k == key).map(|(_, v)| v.clone()).unwrap_or_default();
+        let get = |key: &str| {
+            meta.iter()
+                .find(|(k, _)| k == key)
+                .map(|(_, v)| v.clone())
+                .unwrap_or_default()
+        };
         if get("wpseo_noindex") == "noindex" {
             continue;
         }
@@ -590,12 +912,19 @@ async fn taxonomy_links(site: &Site, options: &Options, taxonomy: &str, page: u6
         if !canonical.is_empty() && canonical != loc {
             continue;
         }
-        let modified = site.db.term_last_modified(taxonomy, term.term_id, &statuses(true)).await?;
+        let modified = site
+            .db
+            .term_last_modified(taxonomy, term.term_id, &statuses(true))
+            .await?;
         let mut images = html_images(site, &term.description).await?;
         for id in gallery_attachments(site, &term.description, 0).await? {
             images.push(absolute(site, &image_url(site, id).await?));
         }
-        links.push(Link { loc, modified, images });
+        links.push(Link {
+            loc,
+            modified,
+            images,
+        });
     }
     Ok(Some(links))
 }
@@ -603,18 +932,30 @@ async fn taxonomy_links(site: &Site, options: &Options, taxonomy: &str, page: u6
 /// `WPSEO_Author_Sitemap_Provider::get_sitemap_links()`.
 async fn author_links(site: &Site, options: &Options, page: u64) -> Result<Option<Vec<Link>>> {
     let users = author_users(site, options).await?;
-    let users: Vec<&(u64, i64)> = users.iter().skip(((page - 1) * MAX_ENTRIES) as usize).take(MAX_ENTRIES as usize).collect();
+    let users: Vec<&(u64, i64)> = users
+        .iter()
+        .skip(((page - 1) * MAX_ENTRIES) as usize)
+        .take(MAX_ENTRIES as usize)
+        .collect();
     if users.is_empty() {
         return Ok(None);
     }
     let mut links = Vec::new();
     for (id, ts) in users {
-        let Some(user) = site.db.user(*id).await? else { continue };
+        let Some(user) = site.db.user(*id).await? else {
+            continue;
+        };
         let loc = site.author_url(&user);
         if loc.is_empty() {
             continue;
         }
-        links.push(Link { loc, modified: Some(rustpress_core::datetime::SiteTimezone::utc().format("Y-m-d\\TH:i:sP", *ts)), images: Vec::new() });
+        links.push(Link {
+            loc,
+            modified: Some(
+                rustpress_core::datetime::SiteTimezone::utc().format("Y-m-d\\TH:i:sP", *ts),
+            ),
+            images: Vec::new(),
+        });
     }
     Ok(Some(links))
 }
@@ -622,10 +963,19 @@ async fn author_links(site: &Site, options: &Options, page: u64) -> Result<Optio
 /// `Disable_Core_Sitemaps::template_redirect()` and `WPSEO_Sitemaps_Router::template_redirect()`: the addresses of
 /// the sitemaps of WordPress and `/sitemap.xml` lead to the plugin's.
 pub fn core_sitemap_redirect(site: &Site, query: &rustpress_core::QueryResult) -> Option<String> {
-    static TYPED: LazyLock<regex::Regex> = LazyLock::new(|| regex::Regex::new(r"^/wp-sitemap-(posts|taxonomies)-(\w+)-(\d+)\.xml$").expect("valid pattern"));
-    static USERS: LazyLock<regex::Regex> = LazyLock::new(|| regex::Regex::new(r"^/wp-sitemap-users-(\d+)\.xml$").expect("valid pattern"));
+    static TYPED: LazyLock<regex::Regex> = LazyLock::new(|| {
+        regex::Regex::new(r"^/wp-sitemap-(posts|taxonomies)-(\w+)-(\d+)\.xml$")
+            .expect("valid pattern")
+    });
+    static USERS: LazyLock<regex::Regex> = LazyLock::new(|| {
+        regex::Regex::new(r"^/wp-sitemap-users-(\d+)\.xml$").expect("valid pattern")
+    });
     let path = urldecode(&query.url_path);
-    let request = if query.raw_query.is_empty() { path.clone() } else { format!("{path}?{}", query.raw_query) };
+    let request = if query.raw_query.is_empty() {
+        path.clone()
+    } else {
+        format!("{path}?{}", query.raw_query)
+    };
     if query.flags.is_404 && (path == "/sitemap.xml" && query.raw_query.is_empty()) {
         return Some(site.home_url("/sitemap_index.xml"));
     }
@@ -634,7 +984,11 @@ pub fn core_sitemap_redirect(site: &Site, query: &rustpress_core::QueryResult) -
     }
     let page = |n: &str| {
         let index = super::php_int(n) - 1;
-        if index == 0 { String::new() } else { index.to_string() }
+        if index == 0 {
+            String::new()
+        } else {
+            index.to_string()
+        }
     };
     let target = if request == "/wp-sitemap.xml" {
         "/sitemap_index.xml".to_owned()

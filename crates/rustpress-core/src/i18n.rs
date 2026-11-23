@@ -87,8 +87,17 @@ impl ExprParser<'_> {
     }
 
     fn binary(&mut self, level: usize) -> Option<Expr> {
-        const LEVELS: &[&[&str]] = &[&["||"], &["&&"], &["==", "!="], &["<=", ">=", "<", ">"], &["+", "-"], &["*", "/", "%"]];
-        let Some(operators) = LEVELS.get(level) else { return self.unary() };
+        const LEVELS: &[&[&str]] = &[
+            &["||"],
+            &["&&"],
+            &["==", "!="],
+            &["<=", ">=", "<", ">"],
+            &["+", "-"],
+            &["*", "/", "%"],
+        ];
+        let Some(operators) = LEVELS.get(level) else {
+            return self.unary();
+        };
         let mut left = self.binary(level + 1)?;
         'outer: loop {
             for op in *operators {
@@ -120,7 +129,11 @@ impl ExprParser<'_> {
         while self.src.get(self.pos).is_some_and(u8::is_ascii_digit) {
             self.pos += 1;
         }
-        std::str::from_utf8(&self.src[start..self.pos]).ok()?.parse().ok().map(Expr::Num)
+        std::str::from_utf8(&self.src[start..self.pos])
+            .ok()?
+            .parse()
+            .ok()
+            .map(Expr::Num)
     }
 }
 
@@ -135,7 +148,11 @@ pub struct Catalog {
 
 fn read_u32(bytes: &[u8], at: usize, big: bool) -> Option<u32> {
     let raw: [u8; 4] = bytes.get(at..at + 4)?.try_into().ok()?;
-    Some(if big { u32::from_be_bytes(raw) } else { u32::from_le_bytes(raw) })
+    Some(if big {
+        u32::from_be_bytes(raw)
+    } else {
+        u32::from_le_bytes(raw)
+    })
 }
 
 impl Catalog {
@@ -156,7 +173,11 @@ impl Catalog {
         };
         let mut catalog = Catalog::default();
         for i in 0..count {
-            let (Some(original), Some(translation)) = (string(originals, i), string(translations, i)) else { continue };
+            let (Some(original), Some(translation)) =
+                (string(originals, i), string(translations, i))
+            else {
+                continue;
+            };
             let original = String::from_utf8_lossy(original).into_owned();
             let translation = String::from_utf8_lossy(translation).into_owned();
             if original.is_empty() {
@@ -165,20 +186,27 @@ impl Catalog {
             }
             // Plural entries are `singular\0plural`; the lookup key is the singular.
             let key = original.split('\0').next().unwrap_or_default().to_owned();
-            catalog.entries.insert(key, translation.split('\0').map(str::to_owned).collect());
+            catalog
+                .entries
+                .insert(key, translation.split('\0').map(str::to_owned).collect());
         }
         Some(catalog)
     }
 
     fn read_header(&mut self, header: &str) {
         for line in header.lines() {
-            let Some(rest) = line.strip_prefix("Plural-Forms:") else { continue };
+            let Some(rest) = line.strip_prefix("Plural-Forms:") else {
+                continue;
+            };
             for part in rest.split(';') {
                 let part = part.trim();
                 if let Some(n) = part.strip_prefix("nplurals=") {
                     self.plural_count = n.trim().parse().unwrap_or(2);
                 } else if let Some(expr) = part.strip_prefix("plural=") {
-                    let mut parser = ExprParser { src: expr.as_bytes(), pos: 0 };
+                    let mut parser = ExprParser {
+                        src: expr.as_bytes(),
+                        pos: 0,
+                    };
                     self.plural = parser.ternary();
                 }
             }
@@ -190,7 +218,11 @@ impl Catalog {
             Some(c) => format!("{c}\u{4}{text}"),
             None => text.to_owned(),
         };
-        self.entries.get(&key).and_then(|forms| forms.first()).map(String::as_str).filter(|t| !t.is_empty())
+        self.entries
+            .get(&key)
+            .and_then(|forms| forms.first())
+            .map(String::as_str)
+            .filter(|t| !t.is_empty())
     }
 
     /// Whether the catalog has an entry (translated or not) for this message.
@@ -208,10 +240,15 @@ impl Catalog {
         };
         let forms = self.entries.get(&key)?;
         let index = match &self.plural {
-            Some(expr) => usize::try_from(expr.eval(n)).unwrap_or(0).min(forms.len().saturating_sub(1)),
+            Some(expr) => usize::try_from(expr.eval(n))
+                .unwrap_or(0)
+                .min(forms.len().saturating_sub(1)),
             None => usize::from(n != 1),
         };
-        forms.get(index).map(String::as_str).filter(|t| !t.is_empty())
+        forms
+            .get(index)
+            .map(String::as_str)
+            .filter(|t| !t.is_empty())
     }
 }
 
@@ -248,18 +285,25 @@ impl I18n {
     /// Loads the core catalog, the one of the administration and those of `themes` (`(slug, directory)`) for `locale`.
     pub fn load(wp_root: &Path, locale: &str, themes: &[(String, std::path::PathBuf)]) -> Self {
         let languages = wp_root.join("wp-content").join("languages");
-        let mut i18n = Self { locale: locale.to_owned(), languages: languages.clone(), ..Self::default() };
+        let mut i18n = Self {
+            locale: locale.to_owned(),
+            languages: languages.clone(),
+            ..Self::default()
+        };
         if locale.is_empty() || locale == "en_US" || locale.contains(['/', '\\', '.']) {
             return i18n;
         }
-        let read = |path: std::path::PathBuf| crate::files::read_bytes(&path).and_then(|b| Catalog::parse(&b));
+        let read = |path: std::path::PathBuf| {
+            crate::files::read_bytes(&path).and_then(|b| Catalog::parse(&b))
+        };
         if let Some(core) = read(languages.join(format!("{locale}.mo"))) {
             i18n.domains.insert("default".to_owned(), Arc::new(core));
         }
         i18n.admin = read(languages.join(format!("admin-{locale}.mo"))).map(Arc::new);
         for (slug, dir) in themes {
             // The language pack in wp-content/languages wins over the theme's bundled files.
-            let catalog = read(languages.join("themes").join(format!("{slug}-{locale}.mo"))).or_else(|| read(dir.join("languages").join(format!("{locale}.mo"))));
+            let catalog = read(languages.join("themes").join(format!("{slug}-{locale}.mo")))
+                .or_else(|| read(dir.join("languages").join(format!("{locale}.mo"))));
             if let Some(catalog) = catalog {
                 i18n.domains.insert(slug.clone(), Arc::new(catalog));
             }
@@ -272,7 +316,11 @@ impl I18n {
         if self.locale.is_empty() || self.locale == "en_US" || domain.contains(['/', '\\', '.']) {
             return;
         }
-        let path = wp_root.join("wp-content").join("languages").join("plugins").join(format!("{domain}-{}.mo", self.locale));
+        let path = wp_root
+            .join("wp-content")
+            .join("languages")
+            .join("plugins")
+            .join(format!("{domain}-{}.mo", self.locale));
         if let Some(catalog) = crate::files::read_bytes(&path).and_then(|b| Catalog::parse(&b)) {
             self.domains.insert(domain.to_owned(), Arc::new(catalog));
         }
@@ -282,15 +330,36 @@ impl I18n {
     /// load the language of first, whether the extension is active or not. `kind` is the folder of the language packs
     /// (`themes`, `plugins`, `.` for `continents-cities`), which win over `own`, the file the extension brings along.
     pub fn header(&self, kind: &str, domain: &str, own: &Path, text: &str) -> String {
-        if text.is_empty() || domain.is_empty() || self.locale.is_empty() || self.locale == "en_US" || domain.contains(['/', '\\', '.']) {
+        if text.is_empty()
+            || domain.is_empty()
+            || self.locale.is_empty()
+            || self.locale == "en_US"
+            || domain.contains(['/', '\\', '.'])
+        {
             return text.to_owned();
         }
-        let mut headers = self.headers.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-        let catalog = headers.entry(format!("{kind}/{domain}")).or_insert_with(|| {
-            let read = |path: &Path| crate::files::read_bytes(path).and_then(|b| Catalog::parse(&b));
-            read(&self.languages.join(kind).join(format!("{domain}-{}.mo", self.locale))).or_else(|| read(own)).map(Arc::new)
-        });
-        catalog.as_ref().and_then(|catalog| catalog.get(None, text)).map_or_else(|| text.to_owned(), str::to_owned)
+        let mut headers = self
+            .headers
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let catalog = headers
+            .entry(format!("{kind}/{domain}"))
+            .or_insert_with(|| {
+                let read =
+                    |path: &Path| crate::files::read_bytes(path).and_then(|b| Catalog::parse(&b));
+                read(
+                    &self
+                        .languages
+                        .join(kind)
+                        .join(format!("{domain}-{}.mo", self.locale)),
+                )
+                .or_else(|| read(own))
+                .map(Arc::new)
+            });
+        catalog
+            .as_ref()
+            .and_then(|catalog| catalog.get(None, text))
+            .map_or_else(|| text.to_owned(), str::to_owned)
     }
 
     /// The rules of `wptexturize()` with this language's quotes and dashes, built once.
@@ -320,19 +389,33 @@ impl I18n {
     /// Whether the `domain` catalogs know this message (for checking message ids against a language pack); for
     /// `default` the administration's pack counts as well.
     pub fn has(&self, domain: &str, context: Option<&str>, text: &str) -> bool {
-        self.domains.get(domain).is_some_and(|c| c.contains(context, text)) || (domain == "default" && self.admin.as_ref().is_some_and(|c| c.contains(context, text)))
+        self.domains
+            .get(domain)
+            .is_some_and(|c| c.contains(context, text))
+            || (domain == "default"
+                && self
+                    .admin
+                    .as_ref()
+                    .is_some_and(|c| c.contains(context, text)))
     }
 
     /// The catalogs of `domain` in the order `WP_Translation_Controller` asks them: WordPress' own, then (in a
     /// request of the administration) `admin-{locale}.mo`. The first translation wins.
     fn catalogs<'a>(&'a self, domain: &str) -> impl Iterator<Item = &'a Catalog> + 'a {
-        let admin = (domain == "default" && is_admin_request()).then_some(self.admin.as_deref()).flatten();
-        self.domains.get(domain).map(Arc::as_ref).into_iter().chain(admin)
+        let admin = (domain == "default" && is_admin_request())
+            .then_some(self.admin.as_deref())
+            .flatten();
+        self.domains
+            .get(domain)
+            .map(Arc::as_ref)
+            .into_iter()
+            .chain(admin)
     }
 
     /// The names and conventions of the locale (`WP_Locale`), read from the catalog once.
     pub fn locale_data(&self) -> &crate::locale::LocaleData {
-        self.data.get_or_init(|| crate::locale::LocaleData::from_i18n(self))
+        self.data
+            .get_or_init(|| crate::locale::LocaleData::from_i18n(self))
     }
 
     pub fn is_translated(&self) -> bool {
@@ -341,24 +424,43 @@ impl I18n {
 
     /// `__( $text, $domain )`.
     pub fn gettext(&self, domain: &str, text: &str) -> String {
-        self.catalogs(domain).find_map(|c| c.get(None, text)).unwrap_or(text).to_owned()
+        self.catalogs(domain)
+            .find_map(|c| c.get(None, text))
+            .unwrap_or(text)
+            .to_owned()
     }
 
     /// `_x( $text, $context, $domain )`.
     pub fn pgettext(&self, domain: &str, context: &str, text: &str) -> String {
-        self.catalogs(domain).find_map(|c| c.get(Some(context), text)).unwrap_or(text).to_owned()
+        self.catalogs(domain)
+            .find_map(|c| c.get(Some(context), text))
+            .unwrap_or(text)
+            .to_owned()
     }
 
     /// `_n( $single, $plural, $number, $domain )`.
     pub fn ngettext(&self, domain: &str, singular: &str, plural: &str, n: i64) -> String {
         let fallback = if n == 1 { singular } else { plural };
-        self.catalogs(domain).find_map(|c| c.get_plural(None, singular, n)).unwrap_or(fallback).to_owned()
+        self.catalogs(domain)
+            .find_map(|c| c.get_plural(None, singular, n))
+            .unwrap_or(fallback)
+            .to_owned()
     }
 
     /// `_nx( $single, $plural, $number, $context, $domain )`.
-    pub fn npgettext(&self, domain: &str, context: &str, singular: &str, plural: &str, n: i64) -> String {
+    pub fn npgettext(
+        &self,
+        domain: &str,
+        context: &str,
+        singular: &str,
+        plural: &str,
+        n: i64,
+    ) -> String {
         let fallback = if n == 1 { singular } else { plural };
-        self.catalogs(domain).find_map(|c| c.get_plural(Some(context), singular, n)).unwrap_or(fallback).to_owned()
+        self.catalogs(domain)
+            .find_map(|c| c.get_plural(Some(context), singular, n))
+            .unwrap_or(fallback)
+            .to_owned()
     }
 }
 
@@ -474,25 +576,45 @@ mod tests {
 
     #[test]
     fn plural_expressions_are_evaluated() {
-        let eval = |expr: &str, n: i64| ExprParser { src: expr.as_bytes(), pos: 0 }.ternary().expect("parses").eval(n);
+        let eval = |expr: &str, n: i64| {
+            ExprParser {
+                src: expr.as_bytes(),
+                pos: 0,
+            }
+            .ternary()
+            .expect("parses")
+            .eval(n)
+        };
         assert_eq!(eval("n != 1", 1), 0);
         assert_eq!(eval("n != 1", 2), 1);
         // Polish.
         let polish = "(n==1 ? 0 : n%10>=2 && n%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2)";
-        assert_eq!([1, 2, 5, 22, 25, 112].map(|n| eval(polish, n)), [0, 1, 2, 1, 2, 2]);
+        assert_eq!(
+            [1, 2, 5, 22, 25, 112].map(|n| eval(polish, n)),
+            [0, 1, 2, 1, 2, 2]
+        );
         // French.
         assert_eq!([0, 1, 2].map(|n| eval("n > 1", n)), [0, 0, 1]);
     }
 
     #[test]
     fn untranslated_text_falls_back_to_english() {
-        let mut i18n = I18n { locale: "de_DE".into(), ..I18n::default() };
+        let mut i18n = I18n {
+            locale: "de_DE".into(),
+            ..I18n::default()
+        };
         i18n.domains.insert("default".into(), Arc::new(catalog()));
         assert_eq!(i18n.gettext("default", "Comments"), "Kommentare");
         assert_eq!(i18n.gettext("default", "Other"), "Other");
         assert_eq!(i18n.gettext("unknown-domain", "Comments"), "Comments");
-        assert_eq!(i18n.ngettext("default", "One comment", "%s comments", 1), "Ein Kommentar");
-        assert_eq!(I18n::default().ngettext("default", "One", "Many", 2), "Many");
+        assert_eq!(
+            i18n.ngettext("default", "One comment", "%s comments", 1),
+            "Ein Kommentar"
+        );
+        assert_eq!(
+            I18n::default().ngettext("default", "One", "Many", 2),
+            "Many"
+        );
     }
 
     #[test]

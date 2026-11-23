@@ -15,15 +15,60 @@ use crate::sanitize::{self, esc_textarea};
 
 /// The admin color schemes: `(slug, name, icon colors, shades)`.
 const SCHEMES: [(&str, &str, [&str; 3], &[&str]); 9] = [
-    ("modern", "Default", ["#f3f1f1", "#fff", "#fff"], &["#1e1e1e", "#3858e9", "#7b90ff"]),
-    ("fresh", "Fresh", ["#a7aaad", "#72aee6", "#fff"], &["#1d2327", "#2c3338", "#2271b1", "#72aee6"]),
-    ("light", "Light", ["#999", "#ccc", "#ccc"], &["#e5e5e5", "#6a6a6a", "#c64606", "#007cba"]),
-    ("blue", "Blue", ["#e5f8ff", "#fff", "#fff"], &["#183751", "#245278", "#437aa8", "#e1a948"]),
-    ("coffee", "Coffee", ["#f3f2f1", "#fff", "#fff"], &["#382e27", "#5c4c40", "#916745", "#9ea476"]),
-    ("ectoplasm", "Ectoplasm", ["#ece6f6", "#fff", "#fff"], &["#392751", "#4a3369", "#646c3e", "#d46f15"]),
-    ("midnight", "Midnight", ["#f1f2f3", "#fff", "#fff"], &["#232a2e", "#333c42", "#69a8bb", "#cf4339"]),
-    ("ocean", "Ocean", ["#f2fcff", "#fff", "#fff"], &["#2b3f44", "#39535a", "#567958", "#aa9d88"]),
-    ("sunrise", "Sunrise", ["#f3f1f1", "#fff", "#fff"], &["#6f2724", "#8a312d", "#ad631e", "#ccaf0b"]),
+    (
+        "modern",
+        "Default",
+        ["#f3f1f1", "#fff", "#fff"],
+        &["#1e1e1e", "#3858e9", "#7b90ff"],
+    ),
+    (
+        "fresh",
+        "Fresh",
+        ["#a7aaad", "#72aee6", "#fff"],
+        &["#1d2327", "#2c3338", "#2271b1", "#72aee6"],
+    ),
+    (
+        "light",
+        "Light",
+        ["#999", "#ccc", "#ccc"],
+        &["#e5e5e5", "#6a6a6a", "#c64606", "#007cba"],
+    ),
+    (
+        "blue",
+        "Blue",
+        ["#e5f8ff", "#fff", "#fff"],
+        &["#183751", "#245278", "#437aa8", "#e1a948"],
+    ),
+    (
+        "coffee",
+        "Coffee",
+        ["#f3f2f1", "#fff", "#fff"],
+        &["#382e27", "#5c4c40", "#916745", "#9ea476"],
+    ),
+    (
+        "ectoplasm",
+        "Ectoplasm",
+        ["#ece6f6", "#fff", "#fff"],
+        &["#392751", "#4a3369", "#646c3e", "#d46f15"],
+    ),
+    (
+        "midnight",
+        "Midnight",
+        ["#f1f2f3", "#fff", "#fff"],
+        &["#232a2e", "#333c42", "#69a8bb", "#cf4339"],
+    ),
+    (
+        "ocean",
+        "Ocean",
+        ["#f2fcff", "#fff", "#fff"],
+        &["#2b3f44", "#39535a", "#567958", "#aa9d88"],
+    ),
+    (
+        "sunrise",
+        "Sunrise",
+        ["#f3f1f1", "#fff", "#fff"],
+        &["#6f2724", "#8a312d", "#ad631e", "#ccaf0b"],
+    ),
 ];
 
 const APP_PASSWORDS_SECTION: &str = include_str!("../data/app_passwords_section.tpl");
@@ -34,7 +79,10 @@ async fn app_password_rows(ctx: &Ctx<'_>, user_id: u64) -> String {
     let tr = |s: &str| ctx.tr(s);
     let list = rustpress_auth::app_passwords::list(ctx.env.db, user_id).await;
     if list.is_empty() {
-        return format!("<tr class=\"no-items\"><td class=\"colspanchange\" colspan=\"5\">{}</td></tr>", tr("No items found."));
+        return format!(
+            "<tr class=\"no-items\"><td class=\"colspanchange\" colspan=\"5\">{}</td></tr>",
+            tr("No items found.")
+        );
     }
     let site = ctx.site();
     let dash = "&mdash;";
@@ -62,10 +110,24 @@ async fn app_password_rows(ctx: &Ctx<'_>, user_id: u64) -> String {
 
 fn color_picker(ctx: &Ctx<'_>, current: &str) -> String {
     let tr = |s: &str| ctx.tr(s);
-    let mut out = format!("\t\t\t\t\t\t\t\t<fieldset id=\"color-picker\" class=\"scheme-list\">\n\t\t<legend class=\"screen-reader-text\"><span>{}</span></legend>\n\t\t<input type=\"hidden\" id=\"color-nonce\" name=\"color-nonce\" value=\"{}\" />", tr("Administration Color Scheme"), ctx.create_nonce("save-color-scheme"));
+    let mut out = format!(
+        "\t\t\t\t\t\t\t\t<fieldset id=\"color-picker\" class=\"scheme-list\">\n\t\t<legend class=\"screen-reader-text\"><span>{}</span></legend>\n\t\t<input type=\"hidden\" id=\"color-nonce\" name=\"color-nonce\" value=\"{}\" />",
+        tr("Administration Color Scheme"),
+        ctx.create_nonce("save-color-scheme")
+    );
     for (slug, name, icons, shades) in SCHEMES {
-        let css = if slug == "fresh" { String::new() } else { format!("{}/wp-admin/css/colors/{slug}/colors.min.css", ctx.site().settings.siteurl.trim_end_matches('/')) };
-        let icon_json = format!("{{\"icons\":{{\"base\":\"{}\",\"focus\":\"{}\",\"current\":\"{}\"}}}}", icons[0], icons[1], icons[2]);
+        let css = if slug == "fresh" {
+            String::new()
+        } else {
+            format!(
+                "{}/wp-admin/css/colors/{slug}/colors.min.css",
+                ctx.site().settings.siteurl.trim_end_matches('/')
+            )
+        };
+        let icon_json = format!(
+            "{{\"icons\":{{\"base\":\"{}\",\"focus\":\"{}\",\"current\":\"{}\"}}}}",
+            icons[0], icons[1], icons[2]
+        );
         let is_current = slug == current;
         out.push_str(&format!(
             "\t\t\t<div class=\"color-option{}\">\n\t\t\t\t<input name=\"admin_color\" id=\"admin_color_{slug}\" type=\"radio\" value=\"{slug}\" {} />\n\t\t\t\t<input type=\"hidden\" class=\"css_url\" value=\"{css}\" />\n\t\t\t\t<input type=\"hidden\" class=\"icon_colors\" value=\"{}\" />\n\t\t\t\t<label for=\"admin_color_{slug}\">{}</label>\n\t\t\t\t<div class=\"color-palette\">\n",
@@ -84,41 +146,101 @@ fn color_picker(ctx: &Ctx<'_>, current: &str) -> String {
 }
 
 fn avatar(ctx: &Ctx<'_>, email: &str, size: u64) -> String {
-    let url = |s: u64| esc_url(&rustpress_blocks::content::avatar_url(&ctx.site().options, email, s));
-    format!("<img alt='' src='{}' srcset='{} 2x' class='avatar avatar-{size} photo' height='{size}' width='{size}' loading='lazy' decoding='async'/>", url(size), url(size * 2))
+    let url = |s: u64| {
+        esc_url(&rustpress_blocks::content::avatar_url(
+            &ctx.site().options,
+            email,
+            s,
+        ))
+    };
+    format!(
+        "<img alt='' src='{}' srcset='{} 2x' class='avatar avatar-{size} photo' height='{size}' width='{size}' loading='lazy' decoding='async'/>",
+        url(size),
+        url(size * 2)
+    )
 }
 
-fn language_select(ctx: &Ctx<'_>, current: &str, with_site_default: bool, show_available: bool) -> String {
-    let installed: Vec<&str> = ctx.env.languages.iter().map(|l| l.locale.as_str()).collect();
-    let available: Vec<&(String, String, String)> = if show_available && (ctx.can("update_core") || ctx.can("install_plugins") || ctx.can("install_themes")) { ctx.env.available_translations.iter().filter(|(locale, _, _)| !installed.contains(&locale.as_str())).collect() } else { Vec::new() };
+fn language_select(
+    ctx: &Ctx<'_>,
+    current: &str,
+    with_site_default: bool,
+    show_available: bool,
+) -> String {
+    let installed: Vec<&str> = ctx
+        .env
+        .languages
+        .iter()
+        .map(|l| l.locale.as_str())
+        .collect();
+    let available: Vec<&(String, String, String)> = if show_available
+        && (ctx.can("update_core") || ctx.can("install_plugins") || ctx.can("install_themes"))
+    {
+        ctx.env
+            .available_translations
+            .iter()
+            .filter(|(locale, _, _)| !installed.contains(&locale.as_str()))
+            .collect()
+    } else {
+        Vec::new()
+    };
     let groups = !available.is_empty();
     let mut options = String::new();
     if groups {
-        options.push_str(&format!("<optgroup label=\"{}\">
-", esc_attr(&ctx.site().trx("Installed", "translations"))));
+        options.push_str(&format!(
+            "<optgroup label=\"{}\">
+",
+            esc_attr(&ctx.site().trx("Installed", "translations"))
+        ));
     }
     if with_site_default {
-        options.push_str(&format!("<option value=\"site-default\" data-installed=\"1\"{}>{}</option>
-", selected(current == "site-default"), ctx.site().trx("Site Default", "default site language")));
+        options.push_str(&format!(
+            "<option value=\"site-default\" data-installed=\"1\"{}>{}</option>
+",
+            selected(current == "site-default"),
+            ctx.site().trx("Site Default", "default site language")
+        ));
     }
-    options.push_str(&format!("<option value=\"\" lang=\"en\" data-installed=\"1\"{}>English (United States)</option>
-", selected(current.is_empty())));
+    options.push_str(&format!(
+        "<option value=\"\" lang=\"en\" data-installed=\"1\"{}>English (United States)</option>
+",
+        selected(current.is_empty())
+    ));
     for language in &ctx.env.languages {
-        options.push_str(&format!("<option value=\"{}\" lang=\"{}\" data-installed=\"1\"{}>{}</option>
-", esc_attr(&language.locale), esc_attr(&language.lang), selected(language.locale == current), esc_html(&language.native_name)));
+        options.push_str(&format!(
+            "<option value=\"{}\" lang=\"{}\" data-installed=\"1\"{}>{}</option>
+",
+            esc_attr(&language.locale),
+            esc_attr(&language.lang),
+            selected(language.locale == current),
+            esc_html(&language.native_name)
+        ));
     }
     if groups {
-        options.push_str(&format!("</optgroup>
+        options.push_str(&format!(
+            "</optgroup>
 <optgroup label=\"{}\">
-", esc_attr(&ctx.site().trx("Available", "translations"))));
+",
+            esc_attr(&ctx.site().trx("Available", "translations"))
+        ));
         for (locale, native_name, lang) in available {
-            options.push_str(&format!("<option value=\"{}\" lang=\"{}\"{}>{}</option>
-", esc_attr(locale), esc_attr(lang), selected(locale == current), esc_html(native_name)));
+            options.push_str(&format!(
+                "<option value=\"{}\" lang=\"{}\"{}>{}</option>
+",
+                esc_attr(locale),
+                esc_attr(lang),
+                selected(locale == current),
+                esc_html(native_name)
+            ));
         }
-        options.push_str("</optgroup>
-");
+        options.push_str(
+            "</optgroup>
+",
+        );
     }
-    format!("<select name=\"locale\" id=\"locale\">{}</select>", options.trim_end_matches('\n'))
+    format!(
+        "<select name=\"locale\" id=\"locale\">{}</select>",
+        options.trim_end_matches('\n')
+    )
 }
 
 fn role_options(names: &[(String, String)], ctx: &Ctx<'_>, current: &str) -> String {
@@ -126,16 +248,28 @@ fn role_options(names: &[(String, String)], ctx: &Ctx<'_>, current: &str) -> Str
     for (slug, name) in names.iter().rev() {
         let label = ctx.site().trx(name, "User role");
         if slug == current {
-            out.push_str(&format!("\n\t<option selected='selected' value='{}'>{label}</option>", esc_attr(slug)));
+            out.push_str(&format!(
+                "\n\t<option selected='selected' value='{}'>{label}</option>",
+                esc_attr(slug)
+            ));
         } else {
-            out.push_str(&format!("\n\t<option value='{}'>{label}</option>", esc_attr(slug)));
+            out.push_str(&format!(
+                "\n\t<option value='{}'>{label}</option>",
+                esc_attr(slug)
+            ));
         }
     }
     out
 }
 
 async fn meta(ctx: &Ctx<'_>, user_id: u64, key: &str) -> String {
-    ctx.env.db.user_meta(user_id, key).await.ok().flatten().unwrap_or_default()
+    ctx.env
+        .db
+        .user_meta(user_id, key)
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or_default()
 }
 
 /// The profile form for `user`; `own` is true for `profile.php`.
@@ -144,7 +278,13 @@ async fn form(ctx: &Ctx<'_>, user: &User, own: bool, errors: &[String]) -> Admin
 }
 
 /// The form of a profile; `file` is the page it is shown on (`user-edit.php` shows the own profile, too).
-async fn form_on(ctx: &Ctx<'_>, user: &User, own: bool, errors: &[String], file: &str) -> AdminResponse {
+async fn form_on(
+    ctx: &Ctx<'_>,
+    user: &User,
+    own: bool,
+    errors: &[String],
+    file: &str,
+) -> AdminResponse {
     let tr = |s: &str| ctx.tr(s);
     let request = ctx.request;
     let id = user.id;
@@ -157,50 +297,126 @@ async fn form_on(ctx: &Ctx<'_>, user: &User, own: bool, errors: &[String], file:
         if c.is_empty() { "modern".to_owned() } else { c }
     };
     let locale = {
-        let l = ctx.env.db.user_meta(id, "locale").await.ok().flatten().unwrap_or_default();
-        if l.is_empty() { "site-default".to_owned() } else if l == "en_US" { String::new() } else { l }
+        let l = ctx
+            .env
+            .db
+            .user_meta(id, "locale")
+            .await
+            .ok()
+            .flatten()
+            .unwrap_or_default();
+        if l.is_empty() {
+            "site-default".to_owned()
+        } else if l == "en_US" {
+            String::new()
+        } else {
+            l
+        }
     };
     let bar_front = meta(ctx, id, "show_admin_bar_front").await;
     let comment_shortcuts = meta(ctx, id, "comment_shortcuts").await;
     let syntax = meta(ctx, id, "syntax_highlighting").await;
     let infinite = meta(ctx, id, "infinite_scrolling").await;
-    let heading = if own { tr("Profile") } else { sprintf(&tr("Edit User %s"), &[&esc_html(&user.display_name)]) };
+    let heading = if own {
+        tr("Profile")
+    } else {
+        sprintf(&tr("Edit User %s"), &[&esc_html(&user.display_name)])
+    };
     let action_url = ctx.admin_url(if own { "profile.php" } else { "user-edit.php" });
     // `$wp_http_referer`: where the list of users was, kept while the user is edited.
     let wp_http_referer = {
-        let raw = request.request("wp_http_referer").filter(|r| !r.is_empty()).map(rustpress_core::formatting::esc_url_raw).unwrap_or_default();
-        ["update", "delete_count", "user_id"].iter().fold(raw, |url, arg| rustpress_core::urls::remove_query_arg(&url, arg))
+        let raw = request
+            .request("wp_http_referer")
+            .filter(|r| !r.is_empty())
+            .map(rustpress_core::formatting::esc_url_raw)
+            .unwrap_or_default();
+        ["update", "delete_count", "user_id"]
+            .iter()
+            .fold(raw, |url, arg| {
+                rustpress_core::urls::remove_query_arg(&url, arg)
+            })
     };
     // The notices come before the wrap: the one of `new_user_email_admin_notice()`, then those of the page.
-    let notice = |message: &str, kind: &str, dismissible: bool, id: &str, extra: &[&str], paragraph: bool| super::notices::notice(message, kind, dismissible, id, extra, paragraph).trim_end().to_owned();
+    let notice = |message: &str,
+                  kind: &str,
+                  dismissible: bool,
+                  id: &str,
+                  extra: &[&str],
+                  paragraph: bool| {
+        super::notices::notice(message, kind, dismissible, id, extra, paragraph)
+            .trim_end()
+            .to_owned()
+    };
     let mut h = String::from("\t\t");
     let updated = request.get("updated").is_some();
-    if updated && own && let Some((_, new_email)) = pending_email(ctx, ctx.user.id).await {
-        let message = sprintf(&tr("Your email address has not been updated yet. Please check your inbox at %s for a confirmation email."), &[&format!("<code>{}</code>", esc_html(&new_email))]);
+    if updated
+        && own
+        && let Some((_, new_email)) = pending_email(ctx, ctx.user.id).await
+    {
+        let message = sprintf(
+            &tr(
+                "Your email address has not been updated yet. Please check your inbox at %s for a confirmation email.",
+            ),
+            &[&format!("<code>{}</code>", esc_html(&new_email))],
+        );
         h.push_str(&notice(&message, "info", false, "", &[], true));
     }
     if updated {
-        let mut message = format!("<p><strong>{}</strong></p>", if own { tr("Profile updated.") } else { tr("User updated.") });
-        if !own && let Some(referer) = request.get("wp_http_referer").filter(|r| !r.is_empty() && !r.contains("user-new.php")) {
-            message.push_str(&format!("<p><a href=\"{}\">{}</a></p>", esc_url(referer), tr("&larr; Go to Users")));
+        let mut message = format!(
+            "<p><strong>{}</strong></p>",
+            if own {
+                tr("Profile updated.")
+            } else {
+                tr("User updated.")
+            }
+        );
+        if !own
+            && let Some(referer) = request
+                .get("wp_http_referer")
+                .filter(|r| !r.is_empty() && !r.contains("user-new.php"))
+        {
+            message.push_str(&format!(
+                "<p><a href=\"{}\">{}</a></p>",
+                esc_url(referer),
+                tr("&larr; Go to Users")
+            ));
         }
         h.push_str(&notice(&message, "", true, "message", &["updated"], false));
     }
     if request.get("error") == Some("new-email") {
-        h.push_str(&notice(&tr("Error while saving the new email address. Please try again."), "error", false, "", &[], true));
+        h.push_str(&notice(
+            &tr("Error while saving the new email address. Please try again."),
+            "error",
+            false,
+            "",
+            &[],
+            true,
+        ));
     } else if request.get("error").is_some() {
         h.push_str(&notice("", "error", false, "", &[], true));
     }
     if !errors.is_empty() {
-        h.push_str(&notice(&errors.join("</p>\n<p>"), "", false, "", &["error"], true));
+        h.push_str(&notice(
+            &errors.join("</p>\n<p>"),
+            "",
+            false,
+            "",
+            &["error"],
+            true,
+        ));
     }
     h.push_str("\n\t\t<div class=\"wrap\" id=\"profile-page\">\n");
-    h.push_str(&format!("\t\t\t<h1 class=\"wp-heading-inline\">\n\t\t\t\t\t{heading}\t\t\t</h1>\n\n\t\t\t"));
+    h.push_str(&format!(
+        "\t\t\t<h1 class=\"wp-heading-inline\">\n\t\t\t\t\t{heading}\t\t\t</h1>\n\n\t\t\t"
+    ));
     // `if ( ! IS_PROFILE_PAGE )`: the indentation of the template's PHP lines stays.
     if !own {
         h.push_str("\t\t\t\t");
         if ctx.can("create_users") {
-            h.push_str(&format!("\t\t\t\t\t<a href=\"user-new.php\" class=\"page-title-action\">{}</a>\n\t\t\t\t", tr("Add User")));
+            h.push_str(&format!(
+                "\t\t\t\t\t<a href=\"user-new.php\" class=\"page-title-action\">{}</a>\n\t\t\t\t",
+                tr("Add User")
+            ));
         }
         h.push_str("\t\t\t");
     }
@@ -226,10 +442,16 @@ async fn form_on(ctx: &Ctx<'_>, user: &User, own: bool, errors: &[String], file:
     // `$show_syntax_highlighting_preference`: the edited user may edit the theme options, plugins or themes.
     let edited_can = {
         let loaded = match ctx.env.db.auth_user_by_id(id).await.ok().flatten() {
-            Some(auth_user) => rustpress_auth::CurrentUser::load(ctx.env.db, ctx.env.roles, &auth_user).await.ok(),
+            Some(auth_user) => {
+                rustpress_auth::CurrentUser::load(ctx.env.db, ctx.env.roles, &auth_user)
+                    .await
+                    .ok()
+            }
             None => None,
         };
-        loaded.is_some_and(|u| u.can("edit_theme_options") || u.can("edit_plugins") || u.can("edit_themes"))
+        loaded.is_some_and(|u| {
+            u.can("edit_theme_options") || u.can("edit_plugins") || u.can("edit_themes")
+        })
     };
     if edited_can {
         h.push_str(&format!(
@@ -269,17 +491,25 @@ async fn form_on(ctx: &Ctx<'_>, user: &User, own: bool, errors: &[String], file:
     if own && !ctx.site().plugins.is_empty() {
         let parts = ctx.plugin_parts();
         let plugin_ctx = ctx.plugin_context(&parts, file);
-        let personal = ctx.site().plugins.profile_personal_options(&plugin_ctx, id).await.unwrap_or_else(|e| {
-            tracing::error!(error = %e, "plugin profile_personal_options failed");
-            String::new()
-        });
+        let personal = ctx
+            .site()
+            .plugins
+            .profile_personal_options(&plugin_ctx, id)
+            .await
+            .unwrap_or_else(|e| {
+                tracing::error!(error = %e, "plugin profile_personal_options failed");
+                String::new()
+            });
         if !personal.is_empty() && h.ends_with('\n') {
             h.insert_str(h.len() - 1, &personal);
         }
     }
 
     // Name
-    h.push_str(&format!("\t\t\t\t<h2>{}</h2>\n\n\t\t\t\t<table class=\"form-table\" role=\"presentation\">\n", tr("Name")));
+    h.push_str(&format!(
+        "\t\t\t\t<h2>{}</h2>\n\n\t\t\t\t<table class=\"form-table\" role=\"presentation\">\n",
+        tr("Name")
+    ));
     h.push_str(&format!(
         "\t\t\t\t\t<tr class=\"user-user-login-wrap\">\n\t\t\t\t\t\t<th><label for=\"user_login\">{}</label></th>\n\t\t\t\t\t\t<td><input type=\"text\" name=\"user_login\" id=\"user_login\" value=\"{}\" readonly=\"readonly\" class=\"regular-text ltr\" /> <span class=\"description\">{}</span></td>\n\t\t\t\t\t</tr>\n\n",
         tr("Username"),
@@ -299,7 +529,13 @@ async fn form_on(ctx: &Ctx<'_>, user: &User, own: bool, errors: &[String], file:
         ));
     }
     h.push_str("\n\t\t\t\t\t\n");
-    let ac = |name: &str| if own { format!(" autocomplete=\"{name}\"") } else { String::new() };
+    let ac = |name: &str| {
+        if own {
+            format!(" autocomplete=\"{name}\"")
+        } else {
+            String::new()
+        }
+    };
     h.push_str(&format!(
         "\t\t\t\t\t<tr class=\"user-first-name-wrap\">\n\t\t\t\t\t\t<th><label for=\"first_name\">{}</label></th>\n\t\t\t\t\t\t<td>\n\t\t\t\t\t\t\t\t\t\t\t\t\t<input type=\"text\" name=\"first_name\" id=\"first_name\" value=\"{}\"{} class=\"regular-text\" />\n\t\t\t\t\t\t\t\t\t\t\t\t</td>\n\t\t\t\t\t</tr>\n\n",
         tr("First Name"),
@@ -321,7 +557,13 @@ async fn form_on(ctx: &Ctx<'_>, user: &User, own: bool, errors: &[String], file:
     ));
     // The display name choices.
     let mut choices: Vec<String> = vec![user.user_login.clone()];
-    for candidate in [nickname.clone(), first.clone(), last.clone(), format!("{first} {last}").trim().to_owned(), format!("{last} {first}").trim().to_owned()] {
+    for candidate in [
+        nickname.clone(),
+        first.clone(),
+        last.clone(),
+        format!("{first} {last}").trim().to_owned(),
+        format!("{last} {first}").trim().to_owned(),
+    ] {
         if !candidate.is_empty() && !choices.contains(&candidate) {
             choices.push(candidate);
         }
@@ -331,7 +573,15 @@ async fn form_on(ctx: &Ctx<'_>, user: &User, own: bool, errors: &[String], file:
     }
     let mut choice_html = String::new();
     for choice in &choices {
-        choice_html.push_str(&format!("\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<option {}>{}</option>\n", if *choice == user.display_name { " selected='selected'" } else { "" }, esc_html(choice)));
+        choice_html.push_str(&format!(
+            "\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<option {}>{}</option>\n",
+            if *choice == user.display_name {
+                " selected='selected'"
+            } else {
+                ""
+            },
+            esc_html(choice)
+        ));
     }
     h.push_str(&format!(
         "\t\t\t\t\t<tr class=\"user-display-name-wrap\">\n\t\t\t\t\t\t<th>\n\t\t\t\t\t\t\t<label for=\"display_name\">{}</label>\n\t\t\t\t\t\t</th>\n\t\t\t\t\t\t<td>\n\t\t\t\t\t\t\t<select name=\"display_name\" id=\"display_name\">\n\t\t\t\t\t\t\t\t{choice_html}\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t</select>\n\t\t\t\t\t\t</td>\n\t\t\t\t\t</tr>\n\t\t\t\t</table>\n\n",
@@ -339,11 +589,16 @@ async fn form_on(ctx: &Ctx<'_>, user: &User, own: bool, errors: &[String], file:
     ));
 
     // Contact info
-    h.push_str(&format!("\t\t\t\t<h2>{}</h2>\n\n\t\t\t\t<table class=\"form-table\" role=\"presentation\">\n", tr("Contact Info")));
+    h.push_str(&format!(
+        "\t\t\t\t<h2>{}</h2>\n\n\t\t\t\t<table class=\"form-table\" role=\"presentation\">\n",
+        tr("Contact Info")
+    ));
     let email_note = if own {
         format!(
             "\t\t\t\t\t\t\t\t<p class=\"description\" id=\"email-description\">\n\t\t\t\t\t\t\t\t\t{}\t\t\t\t\t\t\t\t</p>\n",
-            tr("If you change this, an email will be sent at your new address to confirm it. <strong>The new address will not become active until confirmed.</strong>")
+            tr(
+                "If you change this, an email will be sent at your new address to confirm it. <strong>The new address will not become active until confirmed.</strong>"
+            )
         )
     } else {
         String::new()
@@ -351,10 +606,17 @@ async fn form_on(ctx: &Ctx<'_>, user: &User, own: bool, errors: &[String], file:
     // `_new_email`: a change of the own address that waits for its link.
     let pending = match pending_email(ctx, ctx.user.id).await {
         Some((_, new_email)) if own && new_email != ctx.user.email => {
-            let cancel = ctx.admin_url(&format!("profile.php?dismiss={}_new_email&amp;_wpnonce={}", ctx.user.id, ctx.create_nonce(&format!("dismiss-{}_new_email", ctx.user.id))));
+            let cancel = ctx.admin_url(&format!(
+                "profile.php?dismiss={}_new_email&amp;_wpnonce={}",
+                ctx.user.id,
+                ctx.create_nonce(&format!("dismiss-{}_new_email", ctx.user.id))
+            ));
             format!(
                 "<div class=\"notice updated inline\"><p>{} <a href=\"{}\">{}</a></p></div>",
-                sprintf(&tr("There is a pending change of your email to %s."), &[&format!("<code>{}</code>", esc_html(&new_email))]),
+                sprintf(
+                    &tr("There is a pending change of your email to %s."),
+                    &[&format!("<code>{}</code>", esc_html(&new_email))]
+                ),
                 cancel,
                 tr("Cancel")
             )
@@ -376,7 +638,14 @@ async fn form_on(ctx: &Ctx<'_>, user: &User, own: bool, errors: &[String], file:
     ));
 
     // About
-    h.push_str(&format!("\t\t\t\t<h2>{}</h2>\n\n\t\t\t\t<table class=\"form-table\" role=\"presentation\">\n", if own { tr("About Yourself") } else { tr("About the user") }));
+    h.push_str(&format!(
+        "\t\t\t\t<h2>{}</h2>\n\n\t\t\t\t<table class=\"form-table\" role=\"presentation\">\n",
+        if own {
+            tr("About Yourself")
+        } else {
+            tr("About the user")
+        }
+    ));
     h.push_str(&format!(
         "\t\t\t\t\t<tr class=\"user-description-wrap\">\n\t\t\t\t\t\t<th><label for=\"description\">{}</label></th>\n\t\t\t\t\t\t<td><textarea name=\"description\" id=\"description\" rows=\"5\" cols=\"30\">{}</textarea>\n\t\t\t\t\t\t<p class=\"description\">{}</p></td>\n\t\t\t\t\t</tr>\n\n",
         tr("Biographical Info"),
@@ -452,7 +721,10 @@ async fn form_on(ctx: &Ctx<'_>, user: &User, own: bool, errors: &[String], file:
     let app_available = app_passwords && ctx.site().app_passwords_available();
     if app_available {
         let rows = app_password_rows(ctx, id).await;
-        h.push_str(&super::template_text::translate(ctx.site(), APP_PASSWORDS_SECTION).replace("{{ROWS}}", &rows));
+        h.push_str(
+            &super::template_text::translate(ctx.site(), APP_PASSWORDS_SECTION)
+                .replace("{{ROWS}}", &rows),
+        );
     } else if app_passwords {
         h.push_str(&format!(
             "\t\t\t\t\t\t\t\t\t\t\t<div class=\"application-passwords hide-if-no-js\" id=\"application-passwords-section\">\n\t\t\t\t\t\t\t<h2>{}</h2>\n\t\t\t\t\t\t\t<p>{}</p>\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<p>{}</p>\n\t\t\t\t\t\t\t\t<p>\n\t\t\t\t\t\t\t\t\t{}\t\t\t\t\t\t\t\t</p>\n\t\t\t\t\t\t\t\t\t\t\t\t\t</div>\n\t\t\t\t\t\n\t\t\t\t\t\n\t\t\t\t\t\n\t\t\t\t\n\t\t\t\t",
@@ -467,24 +739,47 @@ async fn form_on(ctx: &Ctx<'_>, user: &User, own: bool, errors: &[String], file:
     if !fields.html.is_empty()
         && let Some(at) = h.rfind("\t\t\t\t\t\n\t\t\t\t\t\n\t\t\t\t\t\n")
     {
-        h.replace_range(at..at + 18, &format!("\t\t\t\t\t\n\t\t\t\t\t{}\n\t\t\t\t\t\n", fields.html));
+        h.replace_range(
+            at..at + 18,
+            &format!("\t\t\t\t\t\n\t\t\t\t\t{}\n\t\t\t\t\t\n", fields.html),
+        );
     }
     h.push_str(&format!("<input type=\"hidden\" name=\"action\" value=\"update\" />\n\t\t\t\t<input type=\"hidden\" name=\"user_id\" id=\"user_id\" value=\"{id}\" />\n\n\t\t\t\t<p class=\"submit\"><input type=\"submit\" name=\"submit\" id=\"submit\" class=\"button button-primary\" value=\"{}\"  /></p>\n\t\t\t</form>\n\t\t</div>\n\t\t<script>\n\tif (window.location.hash == '#password') {{\n\t\tdocument.getElementById('pass1').focus();\n\t}}\n</script>\n\n<script>\n\tjQuery( function( $ ) {{\n\t\tvar languageSelect = $( '#locale' );\n\t\t$( 'form' ).on( 'submit', function() {{\n\t\t\t/*\n\t\t\t * Don't show a spinner for English and installed languages,\n\t\t\t * as there is nothing to download.\n\t\t\t */\n\t\t\tif ( ! languageSelect.find( 'option:selected' ).data( 'installed' ) ) {{\n\t\t\t\t$( '#submit', this ).after( '<span class=\"spinner language-install-spinner is-active\" />' );\n\t\t\t}}\n\t\t}});\n\t}} );\n</script>\n\n", if own { tr("Update Profile") } else { tr("Update User") }));
     if app_available {
         // The file ends with a line break of its own; the page ends right after the last template.
-        let templates = APP_PASSWORDS_TEMPLATES.strip_suffix('\n').unwrap_or(APP_PASSWORDS_TEMPLATES);
-        h.push_str(&super::template_text::translate(ctx.site(), templates).replace("{{SITE}}", ctx.site().settings.siteurl.trim_end_matches('/')));
+        let templates = APP_PASSWORDS_TEMPLATES
+            .strip_suffix('\n')
+            .unwrap_or(APP_PASSWORDS_TEMPLATES);
+        h.push_str(
+            &super::template_text::translate(ctx.site(), templates).replace(
+                "{{SITE}}",
+                ctx.site().settings.siteurl.trim_end_matches('/'),
+            ),
+        );
     }
-    let (parent_file, submenu_file) = if ctx.can("list_users") { ("users.php", if own { "profile.php" } else { "users.php" }) } else { ("profile.php", "profile.php") };
+    let (parent_file, submenu_file) = if ctx.can("list_users") {
+        ("users.php", if own { "profile.php" } else { "users.php" })
+    } else {
+        ("profile.php", "profile.php")
+    };
     let view_item = (!own || file == "user-edit.php").then(|| {
-        let url = if ctx.site().settings.permalink_structure.is_empty() { ctx.site().home_url(&format!("?author={id}")) } else { ctx.site().home_url(&format!("author/{}/", user.user_nicename)) };
+        let url = if ctx.site().settings.permalink_structure.is_empty() {
+            ctx.site().home_url(&format!("?author={id}"))
+        } else {
+            ctx.site()
+                .home_url(&format!("author/{}/", user.user_nicename))
+        };
         (tr("View User"), url)
     });
     let screen = Screen {
         file: file.to_owned(),
         parent_file: parent_file.into(),
         submenu_file: Some(submenu_file.into()),
-        title: if own { tr("Profile") } else { sprintf(&tr("Edit User %s"), &[&user.display_name]) },
+        title: if own {
+            tr("Profile")
+        } else {
+            sprintf(&tr("Edit User %s"), &[&user.display_name])
+        },
         help: Some(help(ctx)),
         view_item,
         ..Default::default()
@@ -494,9 +789,19 @@ async fn form_on(ctx: &Ctx<'_>, user: &User, own: bool, errors: &[String], file:
         scripts.push("application-passwords".into());
     }
     // `userProfileL10n` names the user of `?user_id=`.
-    let requested: u64 = request.get("user_id").map_or(0, |v| v.trim().parse().unwrap_or(0));
-    let localize = vec![("user-profile".to_owned(), "userProfileL10n".to_owned(), serde_json::json!({"user_id": requested, "nonce": ctx.create_nonce(&format!("reset-password-for-{requested}"))}))];
-    let mut assets = Assets { scripts, localize, ..Default::default() };
+    let requested: u64 = request
+        .get("user_id")
+        .map_or(0, |v| v.trim().parse().unwrap_or(0));
+    let localize = vec![(
+        "user-profile".to_owned(),
+        "userProfileL10n".to_owned(),
+        serde_json::json!({"user_id": requested, "nonce": ctx.create_nonce(&format!("reset-password-for-{requested}"))}),
+    )];
+    let mut assets = Assets {
+        scripts,
+        localize,
+        ..Default::default()
+    };
     super::meta_boxes::plugin_box_assets(ctx, &fields, &mut assets, Vec::new(), true, None).await;
     render(ctx, &screen, &h, &assets).await
 }
@@ -517,11 +822,17 @@ fn help(ctx: &Ctx<'_>) -> Help {
     .map(|p| format!("<p>{}</p>", tr(p)))
     .collect();
     Help {
-        tabs: vec![HelpTab { id: "overview".into(), title: tr("Overview"), content: overview }],
+        tabs: vec![HelpTab {
+            id: "overview".into(),
+            title: tr("Overview"),
+            content: overview,
+        }],
         sidebar: format!(
             "<p><strong>{}</strong></p><p>{}</p><p>{}</p>",
             tr("For more information:"),
-            tr("<a href=\"https://wordpress.org/documentation/article/users-your-profile-screen/\">Documentation on User Profiles</a>"),
+            tr(
+                "<a href=\"https://wordpress.org/documentation/article/users-your-profile-screen/\">Documentation on User Profiles</a>"
+            ),
             tr("<a href=\"https://wordpress.org/support/forums/\">Support forums</a>")
         ),
     }
@@ -598,20 +909,35 @@ async fn edit_user_errors(ctx: &Ctx<'_>, user: Option<&User>, email: Option<&str
         if super::options::is_email(email) {
             user_email = Some(email.to_owned());
         } else {
-            errors.push(("invalid_email", tr("<strong>Error:</strong> The email address is not correct.")));
+            errors.push((
+                "invalid_email",
+                tr("<strong>Error:</strong> The email address is not correct."),
+            ));
         }
     }
     if user_login.as_deref() == Some("") {
-        errors.push(("user_login", tr("<strong>Error:</strong> Please enter a username.")));
+        errors.push((
+            "user_login",
+            tr("<strong>Error:</strong> Please enter a username."),
+        ));
     }
     if user.is_some() && php_empty(&sanitize::text_field(field("nickname").unwrap_or_default())) {
-        errors.push(("nickname", tr("<strong>Error:</strong> Please enter a nickname.")));
+        errors.push((
+            "nickname",
+            tr("<strong>Error:</strong> Please enter a nickname."),
+        ));
     }
     if user.is_none() && php_empty(pass1) {
-        errors.push(("pass", tr("<strong>Error:</strong> Please enter a password.")));
+        errors.push((
+            "pass",
+            tr("<strong>Error:</strong> Please enter a password."),
+        ));
     }
     if pass1.contains('\\') {
-        errors.push(("pass", tr("<strong>Error:</strong> Passwords may not contain the character \"\\\".")));
+        errors.push((
+            "pass",
+            tr("<strong>Error:</strong> Passwords may not contain the character \"\\\"."),
+        ));
     }
     if (user.is_some() || !php_empty(pass1)) && pass1 != pass2 {
         errors.push(("pass", tr("<strong>Error:</strong> Passwords do not match. Please enter the same password in both password fields.")));
@@ -625,13 +951,23 @@ async fn edit_user_errors(ctx: &Ctx<'_>, user: Option<&User>, email: Option<&str
             }
         }
         if let Some(login) = user_login.as_deref().filter(|l| !l.is_empty())
-            && ctx.env.db.user_by_login(login).await.ok().flatten().is_some()
+            && ctx
+                .env
+                .db
+                .user_by_login(login)
+                .await
+                .ok()
+                .flatten()
+                .is_some()
         {
             errors.push(("user_login", tr("<strong>Error:</strong> This username is already registered. Please choose another one.")));
         }
     }
     match user_email.as_deref() {
-        None | Some("") | Some("0") => errors.push(("empty_email", tr("<strong>Error:</strong> Please enter an email address."))),
+        None | Some("") | Some("0") => errors.push((
+            "empty_email",
+            tr("<strong>Error:</strong> Please enter an email address."),
+        )),
         Some(email) => {
             if let Some(owner) = ctx.env.db.user_by_email(email).await.ok().flatten()
                 && user.is_none_or(|u| u.id != owner.id)
@@ -651,36 +987,61 @@ async fn edit_user_errors(ctx: &Ctx<'_>, user: Option<&User>, email: Option<&str
 }
 
 /// `show_user_profile`/`edit_user_profile` (with the user) and `user_new_form` of the plugins.
-async fn user_form(ctx: &Ctx<'_>, hook_suffix: &str, user_id: Option<u64>) -> rustpress_core::native::MetaBoxes {
+async fn user_form(
+    ctx: &Ctx<'_>,
+    hook_suffix: &str,
+    user_id: Option<u64>,
+) -> rustpress_core::native::MetaBoxes {
     if ctx.site().plugins.is_empty() {
         return Default::default();
     }
     let parts = ctx.plugin_parts();
     let plugin_ctx = ctx.plugin_context(&parts, hook_suffix);
-    ctx.site().plugins.user_form(&plugin_ctx, user_id).await.unwrap_or_else(|e| {
-        tracing::error!(error = %e, "plugin user form failed");
-        Default::default()
-    })
+    ctx.site()
+        .plugins
+        .user_form(&plugin_ctx, user_id)
+        .await
+        .unwrap_or_else(|e| {
+            tracing::error!(error = %e, "plugin user form failed");
+            Default::default()
+        })
 }
 
 /// `profile_update`/`user_register` of the plugins after a user was saved; a `wp_die()` of one of them.
-async fn saved_user(ctx: &Ctx<'_>, hook_suffix: &str, writer: &rustpress_db::Writer, user_id: u64, created: bool) -> Option<rustpress_core::native::Die> {
+async fn saved_user(
+    ctx: &Ctx<'_>,
+    hook_suffix: &str,
+    writer: &rustpress_db::Writer,
+    user_id: u64,
+    created: bool,
+) -> Option<rustpress_core::native::Die> {
     if ctx.site().plugins.is_empty() {
         return None;
     }
     let parts = ctx.plugin_parts();
     let plugin_ctx = ctx.plugin_context(&parts, hook_suffix);
-    let saved = rustpress_core::native::UserSaved { ctx: &plugin_ctx, writer, user_id, created };
-    ctx.site().plugins.saved_user(&saved).await.unwrap_or_else(|e| {
-        tracing::error!(error = %e, "a plugin failed on profile_update/user_register");
-        None
-    })
+    let saved = rustpress_core::native::UserSaved {
+        ctx: &plugin_ctx,
+        writer,
+        user_id,
+        created,
+    };
+    ctx.site()
+        .plugins
+        .saved_user(&saved)
+        .await
+        .unwrap_or_else(|e| {
+            tracing::error!(error = %e, "a plugin failed on profile_update/user_register");
+            None
+        })
 }
 
 /// `profile.php`.
 pub async fn profile(ctx: &Ctx<'_>) -> AdminResponse {
     let user = ctx.env.db.user(ctx.user.id).await.ok().flatten();
-    let Some(user) = user else { return forbidden(ctx, "Invalid user ID.") };
+    let Some(user) = user else {
+        return forbidden(ctx, "Invalid user ID.");
+    };
     if let Some(response) = new_email_links(ctx, &user).await {
         return response;
     }
@@ -692,14 +1053,23 @@ pub async fn profile(ctx: &Ctx<'_>) -> AdminResponse {
 
 /// `user-edit.php`.
 pub async fn user_edit(ctx: &Ctx<'_>) -> AdminResponse {
-    let id: u64 = ctx.request.request("user_id").and_then(|v| v.parse().ok()).unwrap_or(0);
+    let id: u64 = ctx
+        .request
+        .request("user_id")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
     if id == 0 {
         return super::common::die_plain(ctx, "Invalid user ID.");
     }
     let update = ctx.request.post && ctx.request.post_field("action") == Some("update");
     // `check_admin_referer()` comes before the permission when the form is sent.
     if update && !ctx.verify_nonce(&format!("update-user_{id}")) {
-        return super::die(ctx.env, 403, &ctx.tr("An error occurred."), &ctx.tr("The link you followed has expired."));
+        return super::die(
+            ctx.env,
+            403,
+            &ctx.tr("An error occurred."),
+            &ctx.tr("The link you followed has expired."),
+        );
     }
     if id != ctx.user.id && !ctx.can("edit_users") {
         return super::common::die_plain(ctx, "Sorry, you are not allowed to edit this user.");
@@ -717,14 +1087,40 @@ pub async fn user_edit(ctx: &Ctx<'_>) -> AdminResponse {
 
 /// The number of sessions of a user that have not ended (`WP_Session_Tokens::get_all()`).
 async fn session_count(ctx: &Ctx<'_>, user_id: u64) -> usize {
-    let Some(raw) = ctx.env.db.user_meta(user_id, "session_tokens").await.ok().flatten() else { return 0 };
-    let Ok(rustpress_phpser::Value::Array(tokens)) = rustpress_phpser::unserialize(raw.as_bytes()) else { return 0 };
-    tokens.iter().filter(|(_, session)| session.get("expiration").and_then(Value::as_i64).is_some_and(|expiration| expiration >= ctx.env.now)).count()
+    let Some(raw) = ctx
+        .env
+        .db
+        .user_meta(user_id, "session_tokens")
+        .await
+        .ok()
+        .flatten()
+    else {
+        return 0;
+    };
+    let Ok(rustpress_phpser::Value::Array(tokens)) = rustpress_phpser::unserialize(raw.as_bytes())
+    else {
+        return 0;
+    };
+    tokens
+        .iter()
+        .filter(|(_, session)| {
+            session
+                .get("expiration")
+                .and_then(Value::as_i64)
+                .is_some_and(|expiration| expiration >= ctx.env.now)
+        })
+        .count()
 }
 
 /// The pending change of the e-mail address: `_new_email` holds the hash and the address.
 async fn pending_email(ctx: &Ctx<'_>, user_id: u64) -> Option<(String, String)> {
-    let raw = ctx.env.db.user_meta(user_id, "_new_email").await.ok().flatten()?;
+    let raw = ctx
+        .env
+        .db
+        .user_meta(user_id, "_new_email")
+        .await
+        .ok()
+        .flatten()?;
     let value = rustpress_phpser::unserialize(raw.as_bytes()).ok()?;
     let text = |key: &str| value.get(key).and_then(|v| v.as_str()).map(str::to_owned);
     Some((text("hash")?, text("newemail")?))
@@ -735,39 +1131,107 @@ async fn new_email_links(ctx: &Ctx<'_>, user: &User) -> Option<AdminResponse> {
     let request = ctx.request;
     if let Some(hash) = request.get("newuseremail") {
         let writer = ctx.env.writer?;
-        return Some(match pending_email(ctx, user.id).await.filter(|(h, _)| h == hash) {
-            Some((_, email)) => {
-                let content = Content { site: ctx.site(), db: ctx.env.db, writer, user: &ctx.user, now: ctx.env.now };
-                content.insert_user(&UserData { id: Some(user.id), user_email: Some(rustpress_core::formatting::esc_html(email.trim())), ..Default::default() }).await.or_log();
-                writer.delete_user_meta(user.id, "_new_email").await.or_log();
-                redirect(&add_query_arg(&ctx.admin_url("profile.php"), "updated", "true"))
-            }
-            None => redirect(&add_query_arg(&ctx.admin_url("profile.php"), "error", "new-email")),
-        });
+        return Some(
+            match pending_email(ctx, user.id).await.filter(|(h, _)| h == hash) {
+                Some((_, email)) => {
+                    let content = Content {
+                        site: ctx.site(),
+                        db: ctx.env.db,
+                        writer,
+                        user: &ctx.user,
+                        now: ctx.env.now,
+                    };
+                    content
+                        .insert_user(&UserData {
+                            id: Some(user.id),
+                            user_email: Some(rustpress_core::formatting::esc_html(email.trim())),
+                            ..Default::default()
+                        })
+                        .await
+                        .or_log();
+                    writer
+                        .delete_user_meta(user.id, "_new_email")
+                        .await
+                        .or_log();
+                    redirect(&add_query_arg(
+                        &ctx.admin_url("profile.php"),
+                        "updated",
+                        "true",
+                    ))
+                }
+                None => redirect(&add_query_arg(
+                    &ctx.admin_url("profile.php"),
+                    "error",
+                    "new-email",
+                )),
+            },
+        );
     }
     if request.get("dismiss") == Some(&format!("{}_new_email", user.id)) {
         if !ctx.verify_nonce(&format!("dismiss-{}_new_email", user.id)) {
-            return Some(super::die(ctx.env, 403, &ctx.tr("An error occurred."), &ctx.tr("The link you followed has expired.")));
+            return Some(super::die(
+                ctx.env,
+                403,
+                &ctx.tr("An error occurred."),
+                &ctx.tr("The link you followed has expired."),
+            ));
         }
         let writer = ctx.env.writer?;
-        writer.delete_user_meta(user.id, "_new_email").await.or_log();
-        return Some(redirect(&add_query_arg(&ctx.admin_url("profile.php"), "updated", "true")));
+        writer
+            .delete_user_meta(user.id, "_new_email")
+            .await
+            .or_log();
+        return Some(redirect(&add_query_arg(
+            &ctx.admin_url("profile.php"),
+            "updated",
+            "true",
+        )));
     }
     None
 }
 
 /// `send_confirmation_on_profile_email()`: the new address gets a link; the address stays as it is until it is used.
 async fn send_confirmation_on_profile_email(ctx: &Ctx<'_>, user: &User, email: &str) -> bool {
-    let Some(writer) = ctx.env.writer else { return false };
+    let Some(writer) = ctx.env.writer else {
+        return false;
+    };
     use rand::Rng;
-    let hash = format!("{:x}", md5::compute(format!("{email}{}{}", ctx.env.now, rand::rng().random::<u32>())));
-    let stored = Value::Array(vec![(Key::Str(b"hash".to_vec()), Value::Str(hash.as_bytes().to_vec())), (Key::Str(b"newemail".to_vec()), Value::Str(email.as_bytes().to_vec()))]);
-    writer.update_user_meta(user.id, "_new_email", &String::from_utf8_lossy(&rustpress_phpser::serialize(&stored))).await.or_log();
+    let hash = format!(
+        "{:x}",
+        md5::compute(format!(
+            "{email}{}{}",
+            ctx.env.now,
+            rand::rng().random::<u32>()
+        ))
+    );
+    let stored = Value::Array(vec![
+        (
+            Key::Str(b"hash".to_vec()),
+            Value::Str(hash.as_bytes().to_vec()),
+        ),
+        (
+            Key::Str(b"newemail".to_vec()),
+            Value::Str(email.as_bytes().to_vec()),
+        ),
+    ]);
+    writer
+        .update_user_meta(
+            user.id,
+            "_new_email",
+            &String::from_utf8_lossy(&rustpress_phpser::serialize(&stored)),
+        )
+        .await
+        .or_log();
     let sitename = ctx.env.mail_ctx().sitename();
     let content = ctx
         .tr(crate::mail_texts::NEW_USER_EMAIL)
         .replace("###USERNAME###", &user.user_login)
-        .replace("###ADMIN_URL###", &rustpress_core::formatting::esc_url(&ctx.admin_url(&format!("profile.php?newuseremail={hash}"))))
+        .replace(
+            "###ADMIN_URL###",
+            &rustpress_core::formatting::esc_url(
+                &ctx.admin_url(&format!("profile.php?newuseremail={hash}")),
+            ),
+        )
         .replace("###EMAIL###", email)
         .replace("###SITENAME###", &sitename)
         .replace("###SITEURL###", &ctx.site().settings.home);
@@ -782,15 +1246,43 @@ async fn save(ctx: &Ctx<'_>, id: u64, own: bool, file: &str) -> AdminResponse {
     let request = ctx.request;
     let tr = |s: &str| ctx.tr(s);
     if !ctx.verify_nonce(&format!("update-user_{id}")) {
-        return super::die(ctx.env, 403, &tr("An error occurred."), &tr("The link you followed has expired."));
+        return super::die(
+            ctx.env,
+            403,
+            &tr("An error occurred."),
+            &tr("The link you followed has expired."),
+        );
     }
-    let Some(writer) = ctx.env.writer else { return read_only(ctx) };
-    let Some(user) = ctx.env.db.user(id).await.ok().flatten() else { return forbidden(ctx, "Invalid user ID.") };
-    let content = Content { site: ctx.site(), db: ctx.env.db, writer, user: &ctx.user, now: ctx.env.now };
+    let Some(writer) = ctx.env.writer else {
+        return read_only(ctx);
+    };
+    let Some(user) = ctx.env.db.user(id).await.ok().flatten() else {
+        return forbidden(ctx, "Invalid user ID.");
+    };
+    let content = Content {
+        site: ctx.site(),
+        db: ctx.env.db,
+        writer,
+        user: &ctx.user,
+        now: ctx.env.now,
+    };
     let field = |name: &str| request.post_field(name).map(str::to_owned);
     // `edit_user()` refuses a role the user may not give before it checks anything else.
-    if !own && ctx.can("promote_users") && let Some(role) = field("role") && !role.is_empty() && !ctx.env.roles.contains(&role) {
-        return super::die(ctx.env, 403, "WordPress &rsaquo; Error", &format!("<p>{}</p>", ctx.tr("Sorry, you are not allowed to give users that role.")));
+    if !own
+        && ctx.can("promote_users")
+        && let Some(role) = field("role")
+        && !role.is_empty()
+        && !ctx.env.roles.contains(&role)
+    {
+        return super::die(
+            ctx.env,
+            403,
+            "WordPress &rsaquo; Error",
+            &format!(
+                "<p>{}</p>",
+                ctx.tr("Sorry, you are not allowed to give users that role.")
+            ),
+        );
     }
     let nickname = field("nickname").unwrap_or_default();
     // `send_confirmation_on_profile_email()` on `personal_options_update`, before `edit_user()`: your own new address
@@ -798,7 +1290,15 @@ async fn save(ctx: &Ctx<'_>, id: u64, own: bool, file: &str) -> AdminResponse {
     let mut posted_email = field("email");
     if own && let Some(new_email) = posted_email.clone().filter(|e| *e != user.user_email) {
         if super::options::is_email(&new_email) {
-            if ctx.env.db.user_by_email(&new_email).await.ok().flatten().is_some() {
+            if ctx
+                .env
+                .db
+                .user_by_email(&new_email)
+                .await
+                .ok()
+                .flatten()
+                .is_some()
+            {
                 writer.delete_user_meta(id, "_new_email").await.or_log();
             } else {
                 send_confirmation_on_profile_email(ctx, &user, &new_email).await;
@@ -823,14 +1323,36 @@ async fn save(ctx: &Ctx<'_>, id: u64, own: bool, file: &str) -> AdminResponse {
         first_name: field("first_name"),
         last_name: field("last_name"),
         description: field("description"),
-        rich_editing: Some(if field("rich_editing").as_deref() == Some("false") { "false".into() } else { "true".into() }),
-        infinite_scrolling: Some(if field("infinite_scrolling").as_deref() == Some("false") { "false".into() } else { "true".into() }),
-        comment_shortcuts: Some(if field("comment_shortcuts").as_deref() == Some("true") { "true".into() } else { "false".into() }),
-        show_admin_bar_front: Some(if field("admin_bar_front").is_some() { "true".into() } else { "false".into() }),
+        rich_editing: Some(if field("rich_editing").as_deref() == Some("false") {
+            "false".into()
+        } else {
+            "true".into()
+        }),
+        infinite_scrolling: Some(if field("infinite_scrolling").as_deref() == Some("false") {
+            "false".into()
+        } else {
+            "true".into()
+        }),
+        comment_shortcuts: Some(if field("comment_shortcuts").as_deref() == Some("true") {
+            "true".into()
+        } else {
+            "false".into()
+        }),
+        show_admin_bar_front: Some(if field("admin_bar_front").is_some() {
+            "true".into()
+        } else {
+            "false".into()
+        }),
         ..Default::default()
     };
     // `edit_user()` takes it from the form for every user, shown or not.
-    data.syntax_highlighting = Some(if field("syntax_highlighting").as_deref() == Some("false") { "false".into() } else { "true".into() });
+    data.syntax_highlighting = Some(
+        if field("syntax_highlighting").as_deref() == Some("false") {
+            "false".into()
+        } else {
+            "true".into()
+        },
+    );
     if !pass1.is_empty() {
         data.user_pass = Some(pass1);
     }
@@ -838,26 +1360,58 @@ async fn save(ctx: &Ctx<'_>, id: u64, own: bool, file: &str) -> AdminResponse {
         data.admin_color = Some(scheme);
     }
     if let Some(locale) = field("locale") {
-        data.locale = Some(if locale == "site-default" { String::new() } else { locale });
+        data.locale = Some(if locale == "site-default" {
+            String::new()
+        } else {
+            locale
+        });
     }
-    if !own && ctx.can("promote_users") && let Some(role) = field("role") {
+    if !own
+        && ctx.can("promote_users")
+        && let Some(role) = field("role")
+    {
         // `get_editable_roles()`: a role that does not exist is refused.
         if !role.is_empty() && !ctx.env.roles.contains(&role) {
-            return super::die(ctx.env, 403, "WordPress &rsaquo; Error", &format!("<p>{}</p>", ctx.tr("Sorry, you are not allowed to give users that role.")));
+            return super::die(
+                ctx.env,
+                403,
+                "WordPress &rsaquo; Error",
+                &format!(
+                    "<p>{}</p>",
+                    ctx.tr("Sorry, you are not allowed to give users that role.")
+                ),
+            );
         }
         data.role = Some(role);
     }
     // `locale` "site-default" is stored as an empty string like WordPress.
     match content.insert_user(&data).await {
         Ok(_) => {}
-        Err(e) => return form_on(ctx, &user, own, &[format!("<strong>Error:</strong> {e}")], file).await,
+        Err(e) => {
+            return form_on(
+                ctx,
+                &user,
+                own,
+                &[format!("<strong>Error:</strong> {e}")],
+                file,
+            )
+            .await;
+        }
     }
     if let Some(failed) = saved_user(ctx, file, writer, id, false).await {
         return super::die(ctx.env, failed.status, &failed.title, &failed.message);
     }
     if data.user_pass.is_some() && own {
         // The session stays; the other ones end like in `wp_update_user()`.
-        rustpress_auth::session::destroy_other_sessions(ctx.env.db, writer, id, &ctx.token, ctx.env.now).await.or_log();
+        rustpress_auth::session::destroy_other_sessions(
+            ctx.env.db,
+            writer,
+            id,
+            &ctx.token,
+            ctx.env.now,
+        )
+        .await
+        .or_log();
     }
     // `wp_update_user()` tells the person about a new password and a new address.
     if ctx.env.mailer.is_some() {
@@ -866,23 +1420,62 @@ async fn save(ctx: &Ctx<'_>, id: u64, own: bool, file: &str) -> AdminResponse {
         let admin_email = ctx.site().options.string("admin_email", "");
         let home = ctx.site().settings.home.clone();
         if data.user_pass.is_some() {
-            let message = ctx.tr(crate::mail_texts::PASSWORD_CHANGED).replace("###USERNAME###", &old_login).replace("###ADMIN_EMAIL###", &admin_email).replace("###EMAIL###", &old_email).replace("###SITENAME###", &sitename).replace("###SITEURL###", &home);
+            let message = ctx
+                .tr(crate::mail_texts::PASSWORD_CHANGED)
+                .replace("###USERNAME###", &old_login)
+                .replace("###ADMIN_EMAIL###", &admin_email)
+                .replace("###EMAIL###", &old_email)
+                .replace("###SITENAME###", &sitename)
+                .replace("###SITEURL###", &home);
             // A mail that cannot be sent is no error of the request (as `wp_mail()` in WordPress).
-            let _ = mail.send(&old_email, &sprintf(&ctx.tr("[%s] Password Changed"), &[&sitename]), &message).await;
+            let _ = mail
+                .send(
+                    &old_email,
+                    &sprintf(&ctx.tr("[%s] Password Changed"), &[&sitename]),
+                    &message,
+                )
+                .await;
         }
         if email != old_email {
-            let message = ctx.tr(crate::mail_texts::EMAIL_CHANGED).replace("###USERNAME###", &old_login).replace("###ADMIN_EMAIL###", &admin_email).replace("###EMAIL###", &old_email).replace("###NEW_EMAIL###", &email).replace("###SITENAME###", &sitename).replace("###SITEURL###", &home);
+            let message = ctx
+                .tr(crate::mail_texts::EMAIL_CHANGED)
+                .replace("###USERNAME###", &old_login)
+                .replace("###ADMIN_EMAIL###", &admin_email)
+                .replace("###EMAIL###", &old_email)
+                .replace("###NEW_EMAIL###", &email)
+                .replace("###SITENAME###", &sitename)
+                .replace("###SITEURL###", &home);
             // A mail that cannot be sent is no error of the request (as `wp_mail()` in WordPress).
-            let _ = mail.send(&old_email, &sprintf(&ctx.tr("[%s] Email Changed"), &[&sitename]), &message).await;
+            let _ = mail
+                .send(
+                    &old_email,
+                    &sprintf(&ctx.tr("[%s] Email Changed"), &[&sitename]),
+                    &message,
+                )
+                .await;
         }
     }
-    let mut url = if own { ctx.admin_url("profile.php") } else { ctx.admin_url(&format!("user-edit.php?user_id={id}")) };
+    let mut url = if own {
+        ctx.admin_url("profile.php")
+    } else {
+        ctx.admin_url(&format!("user-edit.php?user_id={id}"))
+    };
     url = add_query_arg(&url, "updated", "1");
     // The list of users the editing started from is not forgotten.
-    if let Some(referer) = request.post_field("wp_http_referer").filter(|r| !r.is_empty()) {
-        let referer = ["update", "delete_count", "user_id"].iter().fold(rustpress_core::formatting::esc_url_raw(referer), |url, arg| rustpress_core::urls::remove_query_arg(&url, arg));
+    if let Some(referer) = request
+        .post_field("wp_http_referer")
+        .filter(|r| !r.is_empty())
+    {
+        let referer = ["update", "delete_count", "user_id"].iter().fold(
+            rustpress_core::formatting::esc_url_raw(referer),
+            |url, arg| rustpress_core::urls::remove_query_arg(&url, arg),
+        );
         if !referer.is_empty() {
-            url = add_query_arg(&url, "wp_http_referer", &rustpress_core::canonical::php_urlencode(&referer));
+            url = add_query_arg(
+                &url,
+                "wp_http_referer",
+                &rustpress_core::canonical::php_urlencode(&referer),
+            );
         }
     }
     redirect(&url)
@@ -892,22 +1485,54 @@ async fn save(ctx: &Ctx<'_>, id: u64, own: bool, file: &str) -> AdminResponse {
 pub async fn user_new(ctx: &Ctx<'_>) -> AdminResponse {
     let tr = |s: &str| ctx.tr(s);
     if !ctx.can("create_users") {
-        return super::common::forbidden_heading(ctx, "Sorry, you are not allowed to create users.");
+        return super::common::forbidden_heading(
+            ctx,
+            "Sorry, you are not allowed to create users.",
+        );
     }
     let request = ctx.request;
     let mut errors: Vec<String> = Vec::new();
     let submitted = |name: &str| request.post_field(name).unwrap_or_default().to_owned();
     if request.post && request.post_field("action") == Some("createuser") {
-        if request.post_field("_wpnonce_create-user").is_none_or(|n| ctx.env.auth.verify_nonce(n, "create-user", ctx.user.id, &ctx.token, ctx.env.now).is_none()) {
-            return super::die(ctx.env, 403, &tr("An error occurred."), &tr("The link you followed has expired."));
+        if request.post_field("_wpnonce_create-user").is_none_or(|n| {
+            ctx.env
+                .auth
+                .verify_nonce(n, "create-user", ctx.user.id, &ctx.token, ctx.env.now)
+                .is_none()
+        }) {
+            return super::die(
+                ctx.env,
+                403,
+                &tr("An error occurred."),
+                &tr("The link you followed has expired."),
+            );
         }
-        let Some(writer) = ctx.env.writer else { return read_only(ctx) };
-        let content = Content { site: ctx.site(), db: ctx.env.db, writer, user: &ctx.user, now: ctx.env.now };
+        let Some(writer) = ctx.env.writer else {
+            return read_only(ctx);
+        };
+        let content = Content {
+            site: ctx.site(),
+            db: ctx.env.db,
+            writer,
+            user: &ctx.user,
+            now: ctx.env.now,
+        };
         let login = submitted("user_login");
         let email = submitted("email");
         let pass1 = submitted("pass1").trim().to_owned();
-        if ctx.can("promote_users") && !submitted("role").is_empty() && !ctx.env.roles.contains(&submitted("role")) {
-            return super::die(ctx.env, 403, "WordPress &rsaquo; Error", &format!("<p>{}</p>", ctx.tr("Sorry, you are not allowed to give users that role.")));
+        if ctx.can("promote_users")
+            && !submitted("role").is_empty()
+            && !ctx.env.roles.contains(&submitted("role"))
+        {
+            return super::die(
+                ctx.env,
+                403,
+                "WordPress &rsaquo; Error",
+                &format!(
+                    "<p>{}</p>",
+                    ctx.tr("Sorry, you are not allowed to give users that role.")
+                ),
+            );
         }
         errors = edit_user_errors(ctx, None, request.post_field("email")).await;
         if errors.is_empty() {
@@ -928,13 +1553,22 @@ pub async fn user_new(ctx: &Ctx<'_>) -> AdminResponse {
             };
             match content.insert_user(&data).await {
                 Ok(new_id) => {
-                    if let Some(failed) = saved_user(ctx, "user-new.php", writer, new_id, true).await {
+                    if let Some(failed) =
+                        saved_user(ctx, "user-new.php", writer, new_id, true).await
+                    {
                         return super::die(ctx.env, failed.status, &failed.title, &failed.message);
                     }
                     // `WP_Internal_Pointers::dismiss_pointers_for_new_users()` on `user_register`, after the plugins.
-                    writer.update_user_meta(new_id, "dismissed_wp_pointers", "").await.or_log();
+                    writer
+                        .update_user_meta(new_id, "dismissed_wp_pointers", "")
+                        .await
+                        .or_log();
                     // `wp_redirect()` of the relative address.
-                    return redirect(&if ctx.can("list_users") { format!("users.php?update=add&id={new_id}") } else { "user-new.php?update=add".to_owned() });
+                    return redirect(&if ctx.can("list_users") {
+                        format!("users.php?update=add&id={new_id}")
+                    } else {
+                        "user-new.php?update=add".to_owned()
+                    });
                 }
                 Err(e) => errors.push(format!("<strong>Error:</strong> {e}")),
             }
@@ -942,21 +1576,50 @@ pub async fn user_new(ctx: &Ctx<'_>) -> AdminResponse {
     }
     // `$creating`: the sent values come back only when the form was sent with its button.
     let creating = request.post_field("createuser").is_some();
-    let shown = |name: &str| if creating { submitted(name) } else { String::new() };
+    let shown = |name: &str| {
+        if creating {
+            submitted(name)
+        } else {
+            String::new()
+        }
+    };
     let names = super::general::role_names(ctx).await;
     let default_role = {
         let r = shown("role");
-        if r.is_empty() { ctx.site().options.string("default_role", "subscriber") } else { r }
+        if r.is_empty() {
+            ctx.site().options.string("default_role", "subscriber")
+        } else {
+            r
+        }
     };
     // `?>` right before the page.
-    let mut h = format!("<div class=\"wrap\">\n<h1 id=\"add-new-user\">\n{}</h1>\n\n", tr("Add User"));
+    let mut h = format!(
+        "<div class=\"wrap\">\n<h1 id=\"add-new-user\">\n{}</h1>\n\n",
+        tr("Add User")
+    );
     // `$add_user_errors`: `wp_admin_notice()` with a paragraph per message.
     h.push('\n');
     if !errors.is_empty() {
-        h.push_str(super::notices::notice(&errors.iter().map(|e| format!("<p>{e}</p>\n")).collect::<String>(), "", false, "", &["error"], false).trim_end_matches('\n'));
+        h.push_str(
+            super::notices::notice(
+                &errors
+                    .iter()
+                    .map(|e| format!("<p>{e}</p>\n"))
+                    .collect::<String>(),
+                "",
+                false,
+                "",
+                &["error"],
+                false,
+            )
+            .trim_end_matches('\n'),
+        );
     }
     h.push_str("<div id=\"ajax-response\"></div>\n\n");
-    h.push_str(&format!("<p>{}</p>\n", tr("Create a brand new user and add them to this site.")));
+    h.push_str(&format!(
+        "<p>{}</p>\n",
+        tr("Create a brand new user and add them to this site.")
+    ));
     h.push_str("<form method=\"post\" name=\"createuser\" id=\"createuser\" class=\"validate\" novalidate=\"novalidate\"\n\t>\n<input name=\"action\" type=\"hidden\" value=\"createuser\" />\n");
     h.push_str(&format!("\t<input type=\"hidden\" id=\"_wpnonce_create-user\" name=\"_wpnonce_create-user\" value=\"{}\" /><input type=\"hidden\" name=\"_wp_http_referer\" value=\"{}\" />\t<table class=\"form-table\" role=\"presentation\">\n", ctx.create_nonce("create-user"), super::referer_field_value(&request.request_uri)));
     h.push_str(&format!("\t<tr class=\"form-field form-required\">\n\t\t<th scope=\"row\"><label for=\"user_login\">{} <span class=\"description\">{}</span></label></th>\n\t\t<td><input name=\"user_login\" type=\"text\" id=\"user_login\" class=\"ltr\" value=\"{}\" aria-required=\"true\" autocapitalize=\"none\" autocorrect=\"off\" autocomplete=\"off\" maxlength=\"60\" /></td>\n\t</tr>\n", tr("Username"), tr("(required)"), esc_attr(&shown("user_login"))));
@@ -991,10 +1654,24 @@ pub async fn user_new(ctx: &Ctx<'_>) -> AdminResponse {
     h.push_str(&format!("\t\t\t<tr class=\"form-field\">\n\t\t<th scope=\"row\"><label for=\"role\">{}</label></th>\n\t\t<td><select name=\"role\" id=\"role\">\n\t\t\t{}\t\t\t</select>\n\t\t</td>\n\t</tr>\n", tr("Role"), role_options(&names, ctx, &default_role)));
     // `user_new_form`.
     let fields = user_form(ctx, "user-new.php", None).await;
-    h.push_str(&format!("\t\t</table>\n\n\t{}\n\t<p class=\"submit\">", fields.html));
+    h.push_str(&format!(
+        "\t\t</table>\n\n\t{}\n\t<p class=\"submit\">",
+        fields.html
+    ));
     h.push_str(&format!("<input type=\"submit\" name=\"createuser\" id=\"createusersub\" class=\"button button-primary\" value=\"{}\"  /></p>\n</form>\n</div>\n", esc_attr(&tr("Add User"))));
-    let screen = Screen { file: "user-new.php".into(), parent_file: "users.php".into(), submenu_file: Some("user-new.php".into()), title: tr("Add User"), help: Some(new_help(ctx)), content_inline: true, ..Default::default() };
-    let mut assets = Assets { scripts: vec!["wp-ajax-response".into(), "user-profile".into()], ..Default::default() };
+    let screen = Screen {
+        file: "user-new.php".into(),
+        parent_file: "users.php".into(),
+        submenu_file: Some("user-new.php".into()),
+        title: tr("Add User"),
+        help: Some(new_help(ctx)),
+        content_inline: true,
+        ..Default::default()
+    };
+    let mut assets = Assets {
+        scripts: vec!["wp-ajax-response".into(), "user-profile".into()],
+        ..Default::default()
+    };
     super::meta_boxes::plugin_box_assets(ctx, &fields, &mut assets, Vec::new(), true, None).await;
     render(ctx, &screen, &h, &assets).await
 }

@@ -55,8 +55,31 @@ pub struct Rendered {
 }
 
 impl Preview {
-    pub fn new(uuid: &str, channel: &str, widgets: bool, selective_refresh_widgets: bool, can_customize: bool, autosaved: bool) -> Self {
-        Self { uuid: uuid.to_owned(), channel: channel.to_owned(), widgets, selective_refresh_widgets, can_customize, autosaved, dirty: Vec::new(), previewed: Vec::new(), known: Vec::new(), custom_css: None, theme: None, nav_menus: Vec::new(), nav_menu_items: Vec::new(), invalid: Vec::new(), rendered: Mutex::default() }
+    pub fn new(
+        uuid: &str,
+        channel: &str,
+        widgets: bool,
+        selective_refresh_widgets: bool,
+        can_customize: bool,
+        autosaved: bool,
+    ) -> Self {
+        Self {
+            uuid: uuid.to_owned(),
+            channel: channel.to_owned(),
+            widgets,
+            selective_refresh_widgets,
+            can_customize,
+            autosaved,
+            dirty: Vec::new(),
+            previewed: Vec::new(),
+            known: Vec::new(),
+            custom_css: None,
+            theme: None,
+            nav_menus: Vec::new(),
+            nav_menu_items: Vec::new(),
+            invalid: Vec::new(),
+            rendered: Mutex::default(),
+        }
     }
 
     /// The preview hooks of `WP_Customize_Widgets`, which it adds for a user who may `edit_theme_options` only: the
@@ -73,7 +96,10 @@ impl Preview {
 
     /// `validate_setting_values()` of a value: its error, or `true`.
     pub fn validity(&self, id: &str) -> serde_json::Value {
-        self.invalid.iter().find(|(i, _)| i == id).map_or(serde_json::Value::Bool(true), |(_, error)| error.clone())
+        self.invalid
+            .iter()
+            .find(|(i, _)| i == id)
+            .map_or(serde_json::Value::Bool(true), |(_, error)| error.clone())
     }
 
     /// What was recorded so far.
@@ -101,7 +127,9 @@ impl Preview {
 
     /// `start_dynamic_sidebar()`: the number of this call of `dynamic_sidebar()` for the sidebar.
     pub fn start_sidebar(&self, id: &str) -> u32 {
-        let Ok(mut rendered) = self.rendered.lock() else { return 1 };
+        let Ok(mut rendered) = self.rendered.lock() else {
+            return 1;
+        };
         match rendered.sidebar_instances.iter_mut().find(|(s, _)| s == id) {
             Some((_, count)) => {
                 *count += 1;
@@ -127,5 +155,8 @@ impl Preview {
 
 /// `start_dynamic_sidebar()` and `end_dynamic_sidebar()`: the comments around the widgets of a sidebar.
 pub fn sidebar_marker(edge: &str, id: &str, instance: u32) -> String {
-    format!("\n<!--dynamic_sidebar_{edge}:{}:{instance}-->\n", crate::formatting::esc_html(id))
+    format!(
+        "\n<!--dynamic_sidebar_{edge}:{}:{instance}-->\n",
+        crate::formatting::esc_html(id)
+    )
 }

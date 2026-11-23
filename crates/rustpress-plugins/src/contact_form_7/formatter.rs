@@ -12,28 +12,203 @@ const WS: &str = r"[\t\n\x0B\x0C\r ]";
 pub const PLACEHOLDER_BLOCK: &str = "placeholder:block";
 pub const PLACEHOLDER_INLINE: &str = "placeholder:inline";
 
-const VOID_ELEMENTS: &[&str] = &["area", "base", "br", "col", "embed", "hr", "img", "input", "keygen", "link", "meta", "param", "source", "track", "wbr", PLACEHOLDER_BLOCK, PLACEHOLDER_INLINE];
+const VOID_ELEMENTS: &[&str] = &[
+    "area",
+    "base",
+    "br",
+    "col",
+    "embed",
+    "hr",
+    "img",
+    "input",
+    "keygen",
+    "link",
+    "meta",
+    "param",
+    "source",
+    "track",
+    "wbr",
+    PLACEHOLDER_BLOCK,
+    PLACEHOLDER_INLINE,
+];
 
-const NESTABLE_ELEMENTS: &[&str] = &["article", "aside", "blockquote", "div", "fieldset", "section", "span"];
+const NESTABLE_ELEMENTS: &[&str] = &[
+    "article",
+    "aside",
+    "blockquote",
+    "div",
+    "fieldset",
+    "section",
+    "span",
+];
 
 const P_PARENT_ELEMENTS: &[&str] = &[
-    "address", "article", "aside", "blockquote", "body", "caption", "dd", "details", "dialog", "div", "dt", "fieldset", "figcaption", "figure", "footer", "form", "header", "li", "main", "nav", "section", "td", "th",
+    "address",
+    "article",
+    "aside",
+    "blockquote",
+    "body",
+    "caption",
+    "dd",
+    "details",
+    "dialog",
+    "div",
+    "dt",
+    "fieldset",
+    "figcaption",
+    "figure",
+    "footer",
+    "form",
+    "header",
+    "li",
+    "main",
+    "nav",
+    "section",
+    "td",
+    "th",
 ];
 
 const P_NONPARENT_ELEMENTS: &[&str] = &[
-    "colgroup", "dl", "h1", "h2", "h3", "h4", "h5", "h6", "head", "hgroup", "html", "legend", "menu", "ol", "pre", "style", "summary", "table", "tbody", "template", "tfoot", "thead", "title", "tr", "ul",
+    "colgroup", "dl", "h1", "h2", "h3", "h4", "h5", "h6", "head", "hgroup", "html", "legend",
+    "menu", "ol", "pre", "style", "summary", "table", "tbody", "template", "tfoot", "thead",
+    "title", "tr", "ul",
 ];
 
 const P_CHILD_ELEMENTS: &[&str] = &[
-    "a", "abbr", "area", "audio", "b", "bdi", "bdo", "br", "button", "canvas", "cite", "code", "data", "datalist", "del", "dfn", "em", "embed", "i", "iframe", "img", "input", "ins", "kbd", "keygen", "label", "link", "map",
-    "mark", "meta", "meter", "noscript", "object", "output", "picture", "progress", "q", "ruby", "s", "samp", "script", "select", "slot", "small", "span", "strong", "sub", "sup", "textarea", "time", "u", "var", "video", "wbr",
-    "optgroup", "option", "rp", "rt", PLACEHOLDER_INLINE,
+    "a",
+    "abbr",
+    "area",
+    "audio",
+    "b",
+    "bdi",
+    "bdo",
+    "br",
+    "button",
+    "canvas",
+    "cite",
+    "code",
+    "data",
+    "datalist",
+    "del",
+    "dfn",
+    "em",
+    "embed",
+    "i",
+    "iframe",
+    "img",
+    "input",
+    "ins",
+    "kbd",
+    "keygen",
+    "label",
+    "link",
+    "map",
+    "mark",
+    "meta",
+    "meter",
+    "noscript",
+    "object",
+    "output",
+    "picture",
+    "progress",
+    "q",
+    "ruby",
+    "s",
+    "samp",
+    "script",
+    "select",
+    "slot",
+    "small",
+    "span",
+    "strong",
+    "sub",
+    "sup",
+    "textarea",
+    "time",
+    "u",
+    "var",
+    "video",
+    "wbr",
+    "optgroup",
+    "option",
+    "rp",
+    "rt",
+    PLACEHOLDER_INLINE,
 ];
 
 const BR_PARENT_ELEMENTS: &[&str] = &[
-    "a", "abbr", "address", "article", "aside", "audio", "b", "bdi", "bdo", "blockquote", "button", "canvas", "caption", "cite", "code", "data", "datalist", "dd", "del", "details", "dfn", "dialog", "div", "dt", "em",
-    "fieldset", "figcaption", "figure", "footer", "form", "h1", "h2", "h3", "h4", "h5", "h6", "header", "i", "ins", "kbd", "label", "legend", "li", "main", "map", "mark", "meter", "nav", "noscript", "object", "output", "p",
-    "progress", "q", "rt", "ruby", "s", "samp", "section", "slot", "small", "span", "strong", "sub", "summary", "sup", "td", "th", "time", "u", "var", "video",
+    "a",
+    "abbr",
+    "address",
+    "article",
+    "aside",
+    "audio",
+    "b",
+    "bdi",
+    "bdo",
+    "blockquote",
+    "button",
+    "canvas",
+    "caption",
+    "cite",
+    "code",
+    "data",
+    "datalist",
+    "dd",
+    "del",
+    "details",
+    "dfn",
+    "dialog",
+    "div",
+    "dt",
+    "em",
+    "fieldset",
+    "figcaption",
+    "figure",
+    "footer",
+    "form",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "header",
+    "i",
+    "ins",
+    "kbd",
+    "label",
+    "legend",
+    "li",
+    "main",
+    "map",
+    "mark",
+    "meter",
+    "nav",
+    "noscript",
+    "object",
+    "output",
+    "p",
+    "progress",
+    "q",
+    "rt",
+    "ruby",
+    "s",
+    "samp",
+    "section",
+    "slot",
+    "small",
+    "span",
+    "strong",
+    "sub",
+    "summary",
+    "sup",
+    "td",
+    "th",
+    "time",
+    "u",
+    "var",
+    "video",
 ];
 
 /// The whitespace of `wpcf7_get_unicode_whitespaces()`.
@@ -120,17 +295,31 @@ pub fn php_float(f: f64) -> String {
     if (-5..15).contains(&exp) {
         let digits = (13 - exp).max(0) as usize;
         let fixed = format!("{f:.digits$}");
-        if fixed.contains('.') { fixed.trim_end_matches('0').trim_end_matches('.').to_owned() } else { fixed }
+        if fixed.contains('.') {
+            fixed.trim_end_matches('0').trim_end_matches('.').to_owned()
+        } else {
+            fixed
+        }
     } else {
-        let mantissa = if mantissa.contains('.') { mantissa.trim_end_matches('0').trim_end_matches('.') } else { mantissa };
-        format!("{mantissa}E{}{}", if exp < 0 { "-" } else { "+" }, exp.abs())
+        let mantissa = if mantissa.contains('.') {
+            mantissa.trim_end_matches('0').trim_end_matches('.')
+        } else {
+            mantissa
+        };
+        format!(
+            "{mantissa}E{}{}",
+            if exp < 0 { "-" } else { "+" },
+            exp.abs()
+        )
     }
 }
 
 /// `wpcf7_format_atts( $atts )`.
 pub fn format_atts(atts: &Atts) -> String {
     static NAME: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[a-z_:][a-z_:.0-9-]*$").unwrap());
-    const BOOLEAN: &[&str] = &["checked", "disabled", "inert", "multiple", "readonly", "required", "selected"];
+    const BOOLEAN: &[&str] = &[
+        "checked", "disabled", "inert", "multiple", "readonly", "required", "selected",
+    ];
     let mut filtered: Vec<(String, String)> = Vec::new();
     for (name, value) in &atts.0 {
         let name = php_trim(name).to_ascii_lowercase();
@@ -173,7 +362,8 @@ enum Kind {
 
 /// The pieces `separate_into_chunks()` cuts the input into.
 fn separate_into_chunks(input: &str) -> Vec<(Kind, String)> {
-    static TAG: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?is)(?:<!--.*?-->|</?[a-z].*?>)").unwrap());
+    static TAG: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"(?is)(?:<!--.*?-->|</?[a-z].*?>)").unwrap());
     let mut chunks = Vec::new();
     let mut position = 0;
     while position < input.len() {
@@ -200,7 +390,8 @@ fn separate_into_chunks(input: &str) -> Vec<(Kind, String)> {
 
 /// `normalize_start_tag()`: `(tag, tag name)`; a void element ends in ` />`.
 pub fn normalize_start_tag(tag: &str) -> (String, String) {
-    static NAME: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"<(.+?)[\t\n\x0B\x0C\r /> ]").unwrap());
+    static NAME: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"<(.+?)[\t\n\x0B\x0C\r /> ]").unwrap());
     static VOID_END: LazyLock<Regex> = LazyLock::new(|| Regex::new(&format!(r"{WS}*/?>")).unwrap());
     let (mut tag, name) = match NAME.captures(tag) {
         Some(c) => (tag.to_owned(), c[1].to_lowercase()),
@@ -219,7 +410,11 @@ pub fn normalize_start_tag(tag: &str) -> (String, String) {
 fn normalize_paragraph(paragraph: &str, auto_br: bool) -> String {
     static BR: LazyLock<Regex> = LazyLock::new(|| Regex::new(&format!(r"{WS}*\n{WS}*")).unwrap());
     static SPACES: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[ ]+").unwrap());
-    let paragraph = if auto_br { BR.replace_all(paragraph, "<br />\n").into_owned() } else { paragraph.to_owned() };
+    let paragraph = if auto_br {
+        BR.replace_all(paragraph, "<br />\n").into_owned()
+    } else {
+        paragraph.to_owned()
+    };
     SPACES.replace_all(&paragraph, " ").into_owned()
 }
 
@@ -237,12 +432,17 @@ pub struct HtmlFormatter {
 
 impl HtmlFormatter {
     pub fn new(auto_br: bool) -> Self {
-        Self { auto_br, stacked: Vec::new(), output: String::new() }
+        Self {
+            auto_br,
+            stacked: Vec::new(),
+            output: String::new(),
+        }
     }
 
     /// `format( separate_into_chunks( $input ) )`.
     pub fn format(&mut self, input: &str) -> String {
-        static BR_TAG: LazyLock<Regex> = LazyLock::new(|| Regex::new(&format!(r"(?i)^<br{WS}*/?>$")).unwrap());
+        static BR_TAG: LazyLock<Regex> =
+            LazyLock::new(|| Regex::new(&format!(r"(?i)^<br{WS}*/?>$")).unwrap());
         // pre_format() and concatenate_texts().
         let mut chunks: Vec<(Kind, String)> = Vec::new();
         for (mut kind, content) in separate_into_chunks(input) {
@@ -277,35 +477,47 @@ impl HtmlFormatter {
     }
 
     fn has_parent(&self, names: &[&str]) -> bool {
-        self.stacked.first().is_some_and(|e| names.contains(&e.as_str()))
+        self.stacked
+            .first()
+            .is_some_and(|e| names.contains(&e.as_str()))
     }
 
     /// `append_text()`.
     pub fn append_text(&mut self, content: &str) {
-        static STARTS_DOUBLE: LazyLock<Regex> = LazyLock::new(|| Regex::new(&format!(r"^{WS}*\n{WS}*\n{WS}*")).unwrap());
-        static ENDS_DOUBLE: LazyLock<Regex> = LazyLock::new(|| Regex::new(&format!(r"{WS}*\n{WS}*\n{WS}*$")).unwrap());
-        static SPLIT: LazyLock<Regex> = LazyLock::new(|| Regex::new(&format!(r"{WS}*\n{WS}*\n{WS}*")).unwrap());
-        static SINGLE: LazyLock<Regex> = LazyLock::new(|| Regex::new(&format!(r"^{WS}*\n{WS}*$")).unwrap());
+        static STARTS_DOUBLE: LazyLock<Regex> =
+            LazyLock::new(|| Regex::new(&format!(r"^{WS}*\n{WS}*\n{WS}*")).unwrap());
+        static ENDS_DOUBLE: LazyLock<Regex> =
+            LazyLock::new(|| Regex::new(&format!(r"{WS}*\n{WS}*\n{WS}*$")).unwrap());
+        static SPLIT: LazyLock<Regex> =
+            LazyLock::new(|| Regex::new(&format!(r"{WS}*\n{WS}*\n{WS}*")).unwrap());
+        static SINGLE: LazyLock<Regex> =
+            LazyLock::new(|| Regex::new(&format!(r"^{WS}*\n{WS}*$")).unwrap());
         if self.is_inside(&["pre", "template"]) {
             self.output.push_str(content);
             return;
         }
-        if self.stacked.is_empty() || self.has_parent(&["p"]) || self.has_parent(P_PARENT_ELEMENTS) {
+        if self.stacked.is_empty() || self.has_parent(&["p"]) || self.has_parent(P_PARENT_ELEMENTS)
+        {
             if STARTS_DOUBLE.is_match(content) {
                 self.end_tag("p");
             }
-            let paragraphs: Vec<&str> = SPLIT.split(content).filter(|p| !strip_whitespaces(p, Side::Both).is_empty()).collect();
+            let paragraphs: Vec<&str> = SPLIT
+                .split(content)
+                .filter(|p| !strip_whitespaces(p, Side::Both).is_empty())
+                .collect();
             let mut paragraphs = paragraphs.into_iter();
             if paragraphs.len() > 0 {
                 if self.is_inside(&["p"])
                     && let Some(first) = paragraphs.next()
                 {
-                    self.output.push_str(&normalize_paragraph(first, self.auto_br));
+                    self.output
+                        .push_str(&normalize_paragraph(first, self.auto_br));
                 }
                 for paragraph in paragraphs {
                     self.start_tag("p");
                     let paragraph = strip_whitespaces(paragraph, Side::Start);
-                    self.output.push_str(&normalize_paragraph(paragraph, self.auto_br));
+                    self.output
+                        .push_str(&normalize_paragraph(paragraph, self.auto_br));
                 }
             }
             if ENDS_DOUBLE.is_match(content) {
@@ -324,7 +536,11 @@ impl HtmlFormatter {
     /// `start_tag()`.
     pub fn start_tag(&mut self, tag: &str) {
         let (tag, name) = normalize_start_tag(tag);
-        if P_CHILD_ELEMENTS.contains(&name.as_str()) && !self.is_inside(&["p"]) && !self.is_inside(P_CHILD_ELEMENTS) && !self.has_parent(P_NONPARENT_ELEMENTS) {
+        if P_CHILD_ELEMENTS.contains(&name.as_str())
+            && !self.is_inside(&["p"])
+            && !self.is_inside(P_CHILD_ELEMENTS)
+            && !self.has_parent(P_NONPARENT_ELEMENTS)
+        {
             self.start_tag("p");
         }
         self.append_start_tag(&name, None, &tag);
@@ -332,11 +548,13 @@ impl HtmlFormatter {
 
     /// `append_start_tag( $tag_name, $atts, $tag )`: `tag` is the whole start tag, else one is made from `atts`.
     pub fn append_start_tag(&mut self, name: &str, atts: Option<&Atts>, tag: &str) {
-        static VALID: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[a-z][0-9a-z]*(?:[:][a-z][0-9a-z]*)?$").unwrap());
+        static VALID: LazyLock<Regex> =
+            LazyLock::new(|| Regex::new(r"^[a-z][0-9a-z]*(?:[:][a-z][0-9a-z]*)?$").unwrap());
         if !VALID.is_match(name) {
             return;
         }
-        if name == "p" || P_PARENT_ELEMENTS.contains(&name) || P_NONPARENT_ELEMENTS.contains(&name) {
+        if name == "p" || P_PARENT_ELEMENTS.contains(&name) || P_NONPARENT_ELEMENTS.contains(&name)
+        {
             self.end_tag("p");
         }
         if name == "dd" || name == "dt" {
@@ -383,7 +601,8 @@ impl HtmlFormatter {
                 self.output.truncate(kept);
                 self.output.push('\n');
             }
-            self.output.push_str(&indent(self.stacked.len().saturating_sub(1)));
+            self.output
+                .push_str(&indent(self.stacked.len().saturating_sub(1)));
         }
         if !tag.is_empty() {
             self.output.push_str(tag);
@@ -400,15 +619,26 @@ impl HtmlFormatter {
 
     /// `end_tag()`: closes the element and the open elements inside it.
     pub fn end_tag(&mut self, tag: &str) {
-        static END: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"</(.+?)(?:[\t\n\x0B\x0C\r ]|>)").unwrap());
+        static END: LazyLock<Regex> =
+            LazyLock::new(|| Regex::new(r"</(.+?)(?:[\t\n\x0B\x0C\r ]|>)").unwrap());
         let name = match END.captures(tag) {
             Some(c) => c[1].to_lowercase(),
             None => tag.to_lowercase(),
         };
-        let Some(position) = self.stacked.iter().position(|e| *e == name) else { return };
-        const FAMILIES: &[(&[&str], &[&str])] = &[(&["dl"], &["dd", "dt"]), (&["ol", "ul", "menu"], &["li"]), (&["table"], &["td", "th", "tr", "thead", "tbody", "tfoot"])];
+        let Some(position) = self.stacked.iter().position(|e| *e == name) else {
+            return;
+        };
+        const FAMILIES: &[(&[&str], &[&str])] = &[
+            (&["dl"], &["dd", "dt"]),
+            (&["ol", "ul", "menu"], &["li"]),
+            (&["table"], &["td", "th", "tr", "thead", "tbody", "tfoot"]),
+        ];
         for (ancestors, descendants) in FAMILIES {
-            if descendants.contains(&name.as_str()) && self.stacked[..position].iter().any(|e| ancestors.contains(&e.as_str())) {
+            if descendants.contains(&name.as_str())
+                && self.stacked[..position]
+                    .iter()
+                    .any(|e| ancestors.contains(&e.as_str()))
+            {
                 return;
             }
         }
@@ -422,8 +652,10 @@ impl HtmlFormatter {
     }
 
     fn append_end_tag(&mut self, name: &str) {
-        static TRAILING_BR: LazyLock<Regex> = LazyLock::new(|| Regex::new(&format!(r"{WS}*<br />{WS}*$")).unwrap());
-        static EMPTY_P: LazyLock<Regex> = LazyLock::new(|| Regex::new(&format!(r"<p>{WS}*</p>$")).unwrap());
+        static TRAILING_BR: LazyLock<Regex> =
+            LazyLock::new(|| Regex::new(&format!(r"{WS}*<br />{WS}*$")).unwrap());
+        static EMPTY_P: LazyLock<Regex> =
+            LazyLock::new(|| Regex::new(&format!(r"<p>{WS}*</p>$")).unwrap());
         if !P_CHILD_ELEMENTS.contains(&name) {
             self.output = TRAILING_BR.replace(&self.output, "").into_owned();
             let kept = strip_whitespaces(&self.output, Side::End).len();
@@ -450,7 +682,11 @@ impl HtmlFormatter {
 
     /// `append_start_tag( $name, $atts )` with the attributes given as pairs.
     pub fn open(&mut self, name: &str, atts: &[(&str, Att)]) {
-        let atts = Atts(atts.iter().map(|(k, v)| ((*k).to_owned(), v.clone())).collect());
+        let atts = Atts(
+            atts.iter()
+                .map(|(k, v)| ((*k).to_owned(), v.clone()))
+                .collect(),
+        );
         self.append_start_tag(name, Some(&atts), "");
     }
 
@@ -477,18 +713,26 @@ impl HtmlFormatter {
 /// `hash( 'sha256', $text )`.
 pub fn sha256_hex(text: &str) -> String {
     use sha2::Digest;
-    sha2::Sha256::digest(text.as_bytes()).iter().map(|b| format!("{b:02x}")).collect()
+    sha2::Sha256::digest(text.as_bytes())
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
 }
 
 /// `wpcf7_autop( $input )`.
 pub fn autop(input: &str) -> String {
-    static EMBEDDED: LazyLock<fancy_regex::Regex> = LazyLock::new(|| rustpress_core::formatting::pcre(r"(?is)<(math|svg).*?</\1>").unwrap());
+    static EMBEDDED: LazyLock<fancy_regex::Regex> =
+        LazyLock::new(|| rustpress_core::formatting::pcre(r"(?is)<(math|svg).*?</\1>").unwrap());
     let mut placeholders: Vec<(String, String)> = Vec::new();
     let mut replaced = String::with_capacity(input.len());
     let mut at = 0;
     while let Ok(Some(m)) = EMBEDDED.find_from_pos(input, at) {
         replaced.push_str(&input[at..m.start()]);
-        let placeholder = normalize_start_tag(&format!("<{PLACEHOLDER_INLINE} id=\"{}\" />", sha256_hex(m.as_str()))).0;
+        let placeholder = normalize_start_tag(&format!(
+            "<{PLACEHOLDER_INLINE} id=\"{}\" />",
+            sha256_hex(m.as_str())
+        ))
+        .0;
         replaced.push_str(&placeholder);
         placeholders.push((placeholder, m.as_str().to_owned()));
         at = m.end();
@@ -527,7 +771,10 @@ mod tests {
         atts.set("size", Att::Int(4));
         atts.set("checked", Att::str(""));
         atts.set("Bad Name", Att::str("x"));
-        assert_eq!(format_atts(&atts), r#"size="4" maxlength="400" multiple="multiple""#);
+        assert_eq!(
+            format_atts(&atts),
+            r#"size="4" maxlength="400" multiple="multiple""#
+        );
     }
 
     #[test]
@@ -541,11 +788,17 @@ mod tests {
         input.set("name", Att::str("_wpcf7"));
         input.set("value", Att::Int(5));
         f.append_start_tag("input", Some(&input), "");
-        assert_eq!(f.output(), "<fieldset class=\"hidden-fields-container\"><input type=\"hidden\" name=\"_wpcf7\" value=\"5\" />\n</fieldset>");
+        assert_eq!(
+            f.output(),
+            "<fieldset class=\"hidden-fields-container\"><input type=\"hidden\" name=\"_wpcf7\" value=\"5\" />\n</fieldset>"
+        );
     }
 
     #[test]
     fn autop_paragraphs() {
-        assert_eq!(autop("<label> Your name\n    [text]</label>\n\n[submit]"), "<p><label> Your name<br />\n[text]</label>\n</p>\n<p>[submit]\n</p>");
+        assert_eq!(
+            autop("<label> Your name\n    [text]</label>\n\n[submit]"),
+            "<p><label> Your name<br />\n[text]</label>\n</p>\n<p>[submit]\n</p>"
+        );
     }
 }

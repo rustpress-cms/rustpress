@@ -28,19 +28,29 @@ pub(crate) fn can_richedit(ctx: &Ctx<'_>, rich_editing: Option<&str>) -> bool {
     if rich_editing != Some("true") {
         return false;
     }
-    rustpress_core::formatting::browser_can_richedit(ctx.request.user_agent.as_deref().unwrap_or_default())
+    rustpress_core::formatting::browser_can_richedit(
+        ctx.request.user_agent.as_deref().unwrap_or_default(),
+    )
 }
 
 /// `get_user_setting( 'editor' )` from the `wp-settings-{id}` cookie.
 fn user_setting(ctx: &Ctx<'_>, name: &str) -> Option<String> {
-    let cookie = ctx.request.cookie(&format!("wp-settings-{}", ctx.user.id))?;
-    cookie.split('&').find_map(|pair| pair.split_once('=').filter(|(k, _)| *k == name).map(|(_, v)| v.to_owned()))
+    let cookie = ctx
+        .request
+        .cookie(&format!("wp-settings-{}", ctx.user.id))?;
+    cookie.split('&').find_map(|pair| {
+        pair.split_once('=')
+            .filter(|(k, _)| *k == name)
+            .map(|(_, v)| v.to_owned())
+    })
 }
 
 /// `add_editor_style()` calls with literal file names in the theme's PHP files.
 fn editor_styles(ctx: &Ctx<'_>) -> Vec<String> {
     let site = ctx.site();
-    let Some(root) = ctx.env.loader.includes.parent() else { return Vec::new() };
+    let Some(root) = ctx.env.loader.includes.parent() else {
+        return Vec::new();
+    };
     let themes = root.join("wp-content").join("themes");
     let mut out: Vec<String> = Vec::new();
     let mut slugs = vec![site.settings.template.clone()];
@@ -51,10 +61,17 @@ fn editor_styles(ctx: &Ctx<'_>) -> Vec<String> {
         let dir = themes.join(&slug);
         let mut files = vec![dir.join("functions.php")];
         if let Ok(entries) = std::fs::read_dir(dir.join("inc")) {
-            files.extend(entries.filter_map(|e| e.ok()).map(|e| e.path()).filter(|p| p.extension().is_some_and(|x| x == "php")));
+            files.extend(
+                entries
+                    .filter_map(|e| e.ok())
+                    .map(|e| e.path())
+                    .filter(|p| p.extension().is_some_and(|x| x == "php")),
+            );
         }
         for file in files {
-            let Ok(text) = std::fs::read_to_string(&file) else { continue };
+            let Ok(text) = std::fs::read_to_string(&file) else {
+                continue;
+            };
             let mut rest = text.as_str();
             while let Some(at) = rest.find("add_editor_style(") {
                 rest = &rest[at + "add_editor_style(".len()..];
@@ -63,7 +80,15 @@ fn editor_styles(ctx: &Ctx<'_>) -> Vec<String> {
                     if quoted.is_empty() || quoted.contains('$') || quoted.contains('(') {
                         continue;
                     }
-                    let url = if quoted.starts_with("http") { quoted.to_owned() } else { format!("{}/wp-content/themes/{slug}/{}", ctx.env.loader.site_url, quoted.trim_start_matches('/')) };
+                    let url = if quoted.starts_with("http") {
+                        quoted.to_owned()
+                    } else {
+                        format!(
+                            "{}/wp-content/themes/{slug}/{}",
+                            ctx.env.loader.site_url,
+                            quoted.trim_start_matches('/')
+                        )
+                    };
                     if !out.contains(&url) {
                         out.push(url);
                     }
@@ -76,11 +101,24 @@ fn editor_styles(ctx: &Ctx<'_>) -> Vec<String> {
 
 /// `wp_editor( $content, 'content' )` for the post body. `post_classes` is what the TinyMCE body class adds for the
 /// post after its type and status (` post-format-…`, ` page-template-…`).
-pub fn classic_editor(ctx: &Ctx<'_>, content: &str, post_type: &str, post_status: &str, post_classes: &str, rich_editing: Option<&str>) -> Editor {
+pub fn classic_editor(
+    ctx: &Ctx<'_>,
+    content: &str,
+    post_type: &str,
+    post_status: &str,
+    post_classes: &str,
+    rich_editing: Option<&str>,
+) -> Editor {
     let site = ctx.site();
     let tr = |s: &str| ctx.tr(s);
     let rich = can_richedit(ctx, rich_editing);
-    let default_editor = if rich { user_setting(ctx, "editor").filter(|e| e == "html" || e == "tinymce").unwrap_or_else(|| "tinymce".to_owned()) } else { "html".to_owned() };
+    let default_editor = if rich {
+        user_setting(ctx, "editor")
+            .filter(|e| e == "html" || e == "tinymce")
+            .unwrap_or_else(|| "tinymce".to_owned())
+    } else {
+        "html".to_owned()
+    };
     let tmce_active = rich && default_editor == "tinymce";
     let site_url = &ctx.env.loader.site_url;
     let version = {
@@ -92,8 +130,17 @@ pub fn classic_editor(ctx: &Ctx<'_>, content: &str, post_type: &str, post_status
     }
     .unwrap_or_default();
 
-    let escaped = if tmce_active { content.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;") } else { super::post_edit::esc_textarea_pub(content) };
-    let mut tools = String::from("<div id=\"wp-content-editor-tools\" class=\"wp-editor-tools hide-if-no-js\"><div class=\"wp-editor-tabs\">");
+    let escaped = if tmce_active {
+        content
+            .replace('&', "&amp;")
+            .replace('<', "&lt;")
+            .replace('>', "&gt;")
+    } else {
+        super::post_edit::esc_textarea_pub(content)
+    };
+    let mut tools = String::from(
+        "<div id=\"wp-content-editor-tools\" class=\"wp-editor-tools hide-if-no-js\"><div class=\"wp-editor-tabs\">",
+    );
     if rich {
         tools.push_str(&format!(
             "<button type=\"button\" id=\"content-tmce\"{} class=\"wp-switch-editor switch-tmce\" data-wp-editor-id=\"content\">{}</button>\n<button type=\"button\" id=\"content-html\"{} class=\"wp-switch-editor switch-html\" data-wp-editor-id=\"content\">{}</button>\n",
@@ -106,7 +153,11 @@ pub fn classic_editor(ctx: &Ctx<'_>, content: &str, post_type: &str, post_status
     tools.push_str("</div>\n</div>\n");
     let html = format!(
         "\t<div id=\"postdivrich\" class=\"postarea\">\n\t<div id=\"wp-content-wrap\" class=\"wp-core-ui wp-editor-wrap {}\"><link rel='stylesheet' id='editor-buttons-css' href='{site_url}/wp-includes/css/editor.min.css?ver={}' media='all' />\n{tools}<div id=\"wp-content-editor-container\" class=\"wp-editor-container\"><div id=\"ed_toolbar\" class=\"quicktags-toolbar hide-if-no-js\"></div><textarea class=\"wp-editor-area\" style=\"height: 300px\"{} cols=\"40\" name=\"content\" id=\"content\">{escaped}</textarea></div>\n</div>\n",
-        if tmce_active { "tmce-active" } else { "html-active" },
+        if tmce_active {
+            "tmce-active"
+        } else {
+            "html-active"
+        },
         ctx.env.loader.version,
         if rich { " autocomplete=\"off\"" } else { "" }
     );
@@ -115,11 +166,22 @@ pub fn classic_editor(ctx: &Ctx<'_>, content: &str, post_type: &str, post_status
     let mut mce_init = String::from("{}");
     let mut plugins = String::new();
     if rich {
-        let mut css = vec![format!("{site_url}/wp-includes/css/dashicons.min.css?ver={}", ctx.env.loader.version), format!("{site_url}/wp-includes/js/tinymce/skins/wordpress/wp-content.css?ver={}", ctx.env.loader.version)];
+        let mut css = vec![
+            format!(
+                "{site_url}/wp-includes/css/dashicons.min.css?ver={}",
+                ctx.env.loader.version
+            ),
+            format!(
+                "{site_url}/wp-includes/js/tinymce/skins/wordpress/wp-content.css?ver={}",
+                ctx.env.loader.version
+            ),
+        ];
         css.extend(editor_styles(ctx));
         let body_class = format!(
             "content post-type-{post_type} post-status-{post_status}{post_classes} locale-{}",
-            rustpress_core::formatting::sanitize_html_class(&site.locale().replace('_', "-").to_lowercase())
+            rustpress_core::formatting::sanitize_html_class(
+                &site.locale().replace('_', "-").to_lowercase()
+            )
         );
         let lang = site.locale().split('_').next().unwrap_or("en").to_owned();
         mce_init = MCE_INIT
@@ -130,13 +192,24 @@ pub fn classic_editor(ctx: &Ctx<'_>, content: &str, post_type: &str, post_status
             .replace("{LANG}", &lang)
             .replace("{LANG_ATTR}", &site.language_tag())
             // `'wpautop' => ! has_blocks()` of the content.
-            .replace("wpautop:false,indent:true", if content.contains("<!-- wp:") { "wpautop:false,indent:true" } else { "wpautop:true,indent:false" });
+            .replace(
+                "wpautop:false,indent:true",
+                if content.contains("<!-- wp:") {
+                    "wpautop:false,indent:true"
+                } else {
+                    "wpautop:true,indent:false"
+                },
+            );
         plugins = "charmap,colorpicker,hr,lists,media,paste,tabfocus,textcolor,fullscreen,wordpress,wpautoresize,wpeditimage,wpemoji,wpgallery,wplink,wpdialogs,wptextpattern,wpview".to_owned();
     }
     // `editor_js()`: the settings, then (with TinyMCE) its scripts, then the start of the editors.
     let mut preinit = format!(
         "\n\t\t<script>\n\t\ttinyMCEPreInit = {{\n\t\t\tbaseURL: \"{site_url}/wp-includes/js/tinymce\",\n\t\t\tsuffix: \".min\",\n\t\t\tdragDropUpload: true,\t\t\tmceInit: {mce_init},\n\t\t\tqtInit: {{{qt}}},\n\t\t\tref: {{plugins:\"{plugins}\",theme:\"modern\",language:\"{}\"}},\n\t\t\tload_ext: function(url,lang){{var sl=tinymce.ScriptLoader;sl.markDone(url+'/langs/'+lang+'.js');sl.markDone(url+'/langs/'+lang+'_dlg.js');}}\n\t\t}};\n\t\t</script>\n\t\t",
-        if rich { site.locale().split('_').next().unwrap_or("en").to_owned() } else { String::new() }
+        if rich {
+            site.locale().split('_').next().unwrap_or("en").to_owned()
+        } else {
+            String::new()
+        }
     );
     if rich {
         preinit.push_str(&tinymce_scripts(ctx));
@@ -144,19 +217,33 @@ pub fn classic_editor(ctx: &Ctx<'_>, content: &str, post_type: &str, post_status
     let init = INIT.to_owned();
     // The quicktags have a link button: `editor_js()` prints the link dialog after the script.
     let init = format!("{init}\t\t{}", link_dialog(ctx));
-    let mut scripts = vec!["quicktags".to_owned(), "editor".to_owned(), "wplink".to_owned()];
+    let mut scripts = vec![
+        "quicktags".to_owned(),
+        "editor".to_owned(),
+        "wplink".to_owned(),
+    ];
     if rich {
         scripts.push("wp-tinymce".to_owned());
     }
     let _ = (esc_attr(""), tr(""));
-    Editor { html, preinit, init, scripts, rich }
+    Editor {
+        html,
+        preinit,
+        init,
+        scripts,
+        rich,
+    }
 }
 
 /// `_WP_Editors::editor_js()` for editors with quicktags only (`'tinymce' => false`): `(id, buttons)` in the order
 /// they were printed. The link button brings the link dialog.
 pub fn quicktags_editor_js(ctx: &Ctx<'_>, editors: &[(&str, &str)]) -> String {
     let site_url = &ctx.env.loader.site_url;
-    let qt = editors.iter().map(|(id, buttons)| format!("'{id}':{{id:\"{id}\",buttons:\"{buttons}\"}}")).collect::<Vec<_>>().join(",");
+    let qt = editors
+        .iter()
+        .map(|(id, buttons)| format!("'{id}':{{id:\"{id}\",buttons:\"{buttons}\"}}"))
+        .collect::<Vec<_>>()
+        .join(",");
     format!(
         "\n\t\t<script>\n\t\ttinyMCEPreInit = {{\n\t\t\tbaseURL: \"{site_url}/wp-includes/js/tinymce\",\n\t\t\tsuffix: \".min\",\n\t\t\t\t\t\tmceInit: {{}},\n\t\t\tqtInit: {{{qt}}},\n\t\t\tref: {{plugins:\"\",theme:\"modern\",language:\"\"}},\n\t\t\tload_ext: function(url,lang){{var sl=tinymce.ScriptLoader;sl.markDone(url+'/langs/'+lang+'.js');sl.markDone(url+'/langs/'+lang+'_dlg.js');}}\n\t\t}};\n\t\t</script>\n\t\t{INIT}\t\t{}",
         link_dialog(ctx)
@@ -216,38 +303,69 @@ pub fn tinymce_scripts(ctx: &Ctx<'_>) -> String {
 fn mce_translation(ctx: &Ctx<'_>) -> String {
     let site = ctx.site();
     let locale = site.locale();
-    let mce_locale = if locale.is_empty() { "en".to_owned() } else { locale.chars().take(2).collect::<String>().to_lowercase() };
-    let source = rustpress_core::files::read_string(&ctx.env.loader.includes.join("class-wp-editor.php"));
+    let mce_locale = if locale.is_empty() {
+        "en".to_owned()
+    } else {
+        locale.chars().take(2).collect::<String>().to_lowercase()
+    };
+    let source =
+        rustpress_core::files::read_string(&ctx.env.loader.includes.join("class-wp-editor.php"));
     let translate = |text: &str, context: Option<&str>| match context {
         Some(context) => site.trx(text, context),
         None => site.tr(text),
     };
     let vars = rustpress_core::php_lit::Vars::new();
     let entries = match source.find("self::$translation = array(") {
-        Some(at) => rustpress_core::php_lit::Parser::new(&source, at + "self::$translation = ".len(), &vars).with_translator(&translate).expr(),
+        Some(at) => {
+            rustpress_core::php_lit::Parser::new(&source, at + "self::$translation = ".len(), &vars)
+                .with_translator(&translate)
+                .expr()
+        }
         None => rustpress_core::php_lit::Lit::Unknown,
     };
     let mut strings = serde_json::Map::new();
     if let rustpress_core::php_lit::Lit::Array(items) = entries {
         for (key, value) in items {
-            let Some(key) = key.as_ref().and_then(|k| k.as_str()).map(str::to_owned) else { continue };
+            let Some(key) = key.as_ref().and_then(|k| k.as_str()).map(str::to_owned) else {
+                continue;
+            };
             // `array( __( 'Bold' ), 'metaB' )`: the text with its shortcut.
             let value = match value {
-                rustpress_core::php_lit::Lit::Array(parts) => parts.into_iter().next().and_then(|(_, v)| v.as_str().map(str::to_owned)),
+                rustpress_core::php_lit::Lit::Array(parts) => parts
+                    .into_iter()
+                    .next()
+                    .and_then(|(_, v)| v.as_str().map(str::to_owned)),
                 other => other.as_str().map(str::to_owned),
             };
             // Strings the language leaves as they are are not sent.
-            let Some(value) = value.filter(|v| *v != key) else { continue };
-            let value = if value.contains('&') { rustpress_core::formatting::html_entity_decode(&value) } else { value };
+            let Some(value) = value.filter(|v| *v != key) else {
+                continue;
+            };
+            let value = if value.contains('&') {
+                rustpress_core::formatting::html_entity_decode(&value)
+            } else {
+                value
+            };
             strings.insert(key, serde_json::Value::from(value));
         }
     }
     if site.is_rtl() {
         strings.insert("_dir".into(), serde_json::Value::from("rtl"));
     }
-    let json = rustpress_blocks::php_json::encode_with(&serde_json::Value::Object(strings), rustpress_blocks::php_json::Flags { unescaped_slashes: false, unescaped_unicode: false });
-    let baseurl = format!("{}/wp-includes/js/tinymce", site.settings.siteurl.trim_end_matches('/'));
-    format!("tinymce.addI18n( '{mce_locale}', {json});\ntinymce.ScriptLoader.markDone( '{baseurl}/langs/{mce_locale}.js' );\n")
+    let json = rustpress_blocks::php_json::encode_with(
+        &serde_json::Value::Object(strings),
+        rustpress_blocks::php_json::Flags {
+            unescaped_slashes: false,
+            unescaped_unicode: false,
+        },
+    );
+    let baseurl = format!(
+        "{}/wp-includes/js/tinymce",
+        site.settings.siteurl.trim_end_matches('/')
+    );
+    format!(
+        "tinymce.addI18n( '{mce_locale}', {json});\ntinymce.ScriptLoader.markDone( '{baseurl}/langs/{mce_locale}.js' );\n"
+    )
 }
 
 /// The version TinyMCE's files are cached with (`$tinymce_version`, the version of `wp-tinymce-root`).
@@ -286,7 +404,12 @@ pub fn link_dialog(ctx: &Ctx<'_>) -> String {
 /// `_WP_Editors::editor()` of an editor with the default settings of `wp_editor( $content, $id )` (TinyMCE when the
 /// browser can, Quicktags, the media button when the user may upload, 20 rows): the markup and its entry for
 /// `editor_js()`. `buttons_css`: the first editor of the page links the stylesheet of the buttons.
-pub fn default_editor(ctx: &Ctx<'_>, id: &str, content: &str, buttons_css: bool) -> (String, EditorEntry) {
+pub fn default_editor(
+    ctx: &Ctx<'_>,
+    id: &str,
+    content: &str,
+    buttons_css: bool,
+) -> (String, EditorEntry) {
     default_editor_for(ctx, id, content, buttons_css, None)
 }
 
@@ -302,31 +425,84 @@ impl EditorPost {
     pub async fn of(ctx: &Ctx<'_>, post: &rustpress_db::Post) -> Self {
         use rustpress_core::formatting::sanitize_html_class;
         let db = ctx.env.db;
-        let mut classes = format!(" post-type-{} post-status-{}", sanitize_html_class(&post.post_type), sanitize_html_class(&post.post_status));
-        if ctx.site().post_type_supports(&post.post_type, "post-formats") {
-            let format = db.terms_for_post(post.id, Some("post_format")).await.unwrap_or_default().first().and_then(|t| t.slug.strip_prefix("post-format-").map(str::to_owned));
-            classes.push_str(&format!(" post-format-{}", sanitize_html_class(format.as_deref().unwrap_or("standard"))));
+        let mut classes = format!(
+            " post-type-{} post-status-{}",
+            sanitize_html_class(&post.post_type),
+            sanitize_html_class(&post.post_status)
+        );
+        if ctx
+            .site()
+            .post_type_supports(&post.post_type, "post-formats")
+        {
+            let format = db
+                .terms_for_post(post.id, Some("post_format"))
+                .await
+                .unwrap_or_default()
+                .first()
+                .and_then(|t| t.slug.strip_prefix("post-format-").map(str::to_owned));
+            classes.push_str(&format!(
+                " post-format-{}",
+                sanitize_html_class(format.as_deref().unwrap_or("standard"))
+            ));
         }
         // `get_page_template_slug()`.
-        let template = db.post_meta_value(post.id, "_wp_page_template").await.ok().flatten().filter(|t| !t.is_empty() && t != "default").unwrap_or_else(|| "default".to_owned());
-        let template = template.rsplit('/').next().unwrap_or_default().trim_end_matches(".php").replace('.', "-");
-        classes.push_str(&format!(" page-template-{}", sanitize_html_class(&template)));
-        Self { classes, has_blocks: post.post_content.contains("<!-- wp:") }
+        let template = db
+            .post_meta_value(post.id, "_wp_page_template")
+            .await
+            .ok()
+            .flatten()
+            .filter(|t| !t.is_empty() && t != "default")
+            .unwrap_or_else(|| "default".to_owned());
+        let template = template
+            .rsplit('/')
+            .next()
+            .unwrap_or_default()
+            .trim_end_matches(".php")
+            .replace('.', "-");
+        classes.push_str(&format!(
+            " page-template-{}",
+            sanitize_html_class(&template)
+        ));
+        Self {
+            classes,
+            has_blocks: post.post_content.contains("<!-- wp:"),
+        }
     }
 }
 
 /// [`default_editor`] on a page with a global `$post`.
-pub fn default_editor_for(ctx: &Ctx<'_>, id: &str, content: &str, buttons_css: bool, post: Option<&EditorPost>) -> (String, EditorEntry) {
+pub fn default_editor_for(
+    ctx: &Ctx<'_>,
+    id: &str,
+    content: &str,
+    buttons_css: bool,
+    post: Option<&EditorPost>,
+) -> (String, EditorEntry) {
     let site = ctx.site();
     let rich = can_richedit(ctx, Some("true"));
-    let default = if rich { user_setting(ctx, "editor").filter(|e| e == "html" || e == "tinymce").unwrap_or_else(|| "tinymce".to_owned()) } else { "html".to_owned() };
+    let default = if rich {
+        user_setting(ctx, "editor")
+            .filter(|e| e == "html" || e == "tinymce")
+            .unwrap_or_else(|| "tinymce".to_owned())
+    } else {
+        "html".to_owned()
+    };
     let tmce_active = rich && default == "tinymce";
     let site_url = &ctx.env.loader.site_url;
-    let mut out = format!("<div id=\"wp-{id}-wrap\" class=\"wp-core-ui wp-editor-wrap {}\">", if tmce_active { "tmce-active" } else { "html-active" });
+    let mut out = format!(
+        "<div id=\"wp-{id}-wrap\" class=\"wp-core-ui wp-editor-wrap {}\">",
+        if tmce_active {
+            "tmce-active"
+        } else {
+            "html-active"
+        }
+    );
     if buttons_css {
         out.push_str(&format!("<link rel='stylesheet' id='editor-buttons-css' href='{site_url}/wp-includes/css/editor.min.css?ver={}' media='all' />\n", ctx.env.loader.version));
     }
-    out.push_str(&format!("<div id=\"wp-{id}-editor-tools\" class=\"wp-editor-tools hide-if-no-js\">"));
+    out.push_str(&format!(
+        "<div id=\"wp-{id}-editor-tools\" class=\"wp-editor-tools hide-if-no-js\">"
+    ));
     if ctx.can("upload_files") {
         out.push_str(&format!(
             "<div id=\"wp-{id}-media-buttons\" class=\"wp-media-buttons\"><button type=\"button\" id=\"insert-media-button\" class=\"button insert-media add_media\" data-editor=\"{}\" aria-haspopup=\"dialog\" aria-controls=\"wp-media-modal\"><span class=\"wp-media-buttons-icon\" aria-hidden=\"true\"></span> {}</button></div>\n",
@@ -345,13 +521,27 @@ pub fn default_editor_for(ctx: &Ctx<'_>, id: &str, content: &str, buttons_css: b
     }
     out.push_str("</div>\n");
     // `format_for_editor()` for TinyMCE, `esc_textarea()` for the code editor.
-    let escaped = if tmce_active { content.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;") } else { super::post_edit::esc_textarea_pub(content) };
+    let escaped = if tmce_active {
+        content
+            .replace('&', "&amp;")
+            .replace('<', "&lt;")
+            .replace('>', "&gt;")
+    } else {
+        super::post_edit::esc_textarea_pub(content)
+    };
     out.push_str(&format!(
         "<div id=\"wp-{id}-editor-container\" class=\"wp-editor-container\"><div id=\"qt_{id}_toolbar\" class=\"quicktags-toolbar hide-if-no-js\"></div><textarea class=\"wp-editor-area\" rows=\"20\"{} cols=\"40\" name=\"{id}\" id=\"{id}\">{escaped}</textarea></div>\n</div>\n\n",
         if rich { " autocomplete=\"off\"" } else { "" }
     ));
     let mce = rich.then(|| default_mce_init(ctx, id, post));
-    (out, EditorEntry { id: id.to_owned(), quicktags: "strong,em,link,block,del,ins,img,ul,ol,li,code,more,close".to_owned(), tinymce: mce })
+    (
+        out,
+        EditorEntry {
+            id: id.to_owned(),
+            quicktags: "strong,em,link,block,del,ins,img,ul,ol,li,code,more,close".to_owned(),
+            tinymce: mce,
+        },
+    )
 }
 
 /// An editor of the page for `editor_js()`: its Quicktags buttons and, with TinyMCE, its settings.
@@ -368,10 +558,23 @@ fn default_mce_init(ctx: &Ctx<'_>, id: &str, post: Option<&EditorPost>) -> Strin
     let site = ctx.site();
     let site_url = &ctx.env.loader.site_url;
     let version = &ctx.env.loader.version;
-    let mut css = vec![format!("{site_url}/wp-includes/css/dashicons.min.css?ver={version}"), format!("{site_url}/wp-includes/js/tinymce/skins/wordpress/wp-content.css?ver={version}")];
+    let mut css = vec![
+        format!("{site_url}/wp-includes/css/dashicons.min.css?ver={version}"),
+        format!("{site_url}/wp-includes/js/tinymce/skins/wordpress/wp-content.css?ver={version}"),
+    ];
     css.extend(editor_styles(ctx));
-    let body_class = format!("{id}{} locale-{}", post.map_or("", |p| p.classes.as_str()), rustpress_core::formatting::sanitize_html_class(&site.locale().replace('_', "-").to_lowercase()));
-    let wpautop = if post.is_some_and(|p| p.has_blocks) { "wpautop:false,indent:true" } else { "wpautop:true,indent:false" };
+    let body_class = format!(
+        "{id}{} locale-{}",
+        post.map_or("", |p| p.classes.as_str()),
+        rustpress_core::formatting::sanitize_html_class(
+            &site.locale().replace('_', "-").to_lowercase()
+        )
+    );
+    let wpautop = if post.is_some_and(|p| p.has_blocks) {
+        "wpautop:false,indent:true"
+    } else {
+        "wpautop:true,indent:false"
+    };
     let lang = site.locale().split('_').next().unwrap_or("en").to_owned();
     let init = MCE_INIT
         .replace("{SITE}", site_url)
@@ -383,9 +586,16 @@ fn default_mce_init(ctx: &Ctx<'_>, id: &str, post: Option<&EditorPost>) -> Strin
         .replace("resize:false", "resize:\"vertical\"")
         .replace("selector:\"#content\"", &format!("selector:\"#{id}\""))
         .replace("wpautop:false,indent:true", wpautop)
-        .replace("spellchecker,wp_adv,dfw\"", "spellchecker,fullscreen,wp_adv\"")
+        .replace(
+            "spellchecker,wp_adv,dfw\"",
+            "spellchecker,fullscreen,wp_adv\"",
+        )
         .replace(",wp_autoresize_on:true,add_unload_trigger:false", "");
-    init.trim().strip_prefix("{'content':").and_then(|r| r.strip_suffix('}')).unwrap_or(&init).to_owned()
+    init.trim()
+        .strip_prefix("{'content':")
+        .and_then(|r| r.strip_suffix('}'))
+        .unwrap_or(&init)
+        .to_owned()
 }
 
 /// `_WP_Editors::editor_js()` for the editors of a page in the order they were printed: their settings, TinyMCE's
@@ -400,8 +610,16 @@ pub fn editors_js_with(ctx: &Ctx<'_>, editors: &[EditorEntry], scripts: bool) ->
     let site = ctx.site();
     let site_url = &ctx.env.loader.site_url;
     let rich = editors.iter().any(|e| e.tinymce.is_some());
-    let mce = editors.iter().filter_map(|e| e.tinymce.as_ref().map(|init| format!("'{}':{init}", e.id))).collect::<Vec<_>>().join(",");
-    let qt = editors.iter().map(|e| format!("'{}':{{id:\"{}\",buttons:\"{}\"}}", e.id, e.id, e.quicktags)).collect::<Vec<_>>().join(",");
+    let mce = editors
+        .iter()
+        .filter_map(|e| e.tinymce.as_ref().map(|init| format!("'{}':{init}", e.id)))
+        .collect::<Vec<_>>()
+        .join(",");
+    let qt = editors
+        .iter()
+        .map(|e| format!("'{}':{{id:\"{}\",buttons:\"{}\"}}", e.id, e.id, e.quicktags))
+        .collect::<Vec<_>>()
+        .join(",");
     let (plugins, lang) = if rich {
         ("charmap,colorpicker,hr,lists,media,paste,tabfocus,textcolor,fullscreen,wordpress,wpautoresize,wpeditimage,wpemoji,wpgallery,wplink,wpdialogs,wptextpattern,wpview".to_owned(), site.locale().split('_').next().unwrap_or("en").to_owned())
     } else {

@@ -26,7 +26,9 @@ struct Registered {
 fn php_json(value: Value) -> Value {
     match value {
         Value::Object(map) if map.is_empty() => Value::Array(Vec::new()),
-        Value::Object(map) => Value::Object(map.into_iter().map(|(k, v)| (k, php_json(v))).collect()),
+        Value::Object(map) => {
+            Value::Object(map.into_iter().map(|(k, v)| (k, php_json(v))).collect())
+        }
         Value::Array(items) => Value::Array(items.into_iter().map(php_json).collect()),
         other => other,
     }
@@ -53,7 +55,10 @@ fn has_support(supports: &Value, path: &[&str], default: bool) -> bool {
             Some(next) => current = next,
         }
     }
-    matches!(current, Value::Bool(true) | Value::Array(_) | Value::Object(_))
+    matches!(
+        current,
+        Value::Bool(true) | Value::Array(_) | Value::Object(_)
+    )
 }
 
 /// The attributes a block gets from its supports, in the order WordPress registers the supports.
@@ -67,7 +72,11 @@ fn add_support_attributes(attributes: &mut Map<String, Value>, supports: &Value)
     let string = || json!({"type": "string"});
     // align
     if has_support(supports, &["align"], false) {
-        add(attributes, "align", json!({"type": "string", "enum": ["left", "center", "right", "wide", "full", ""]}));
+        add(
+            attributes,
+            "align",
+            json!({"type": "string", "enum": ["left", "center", "right", "wide", "full", ""]}),
+        );
     }
     // custom-classname
     if has_support(supports, &["customClassName"], true) {
@@ -76,7 +85,13 @@ fn add_support_attributes(attributes: &mut Map<String, Value>, supports: &Value)
     // colors
     let color = supports.get("color");
     let is_array = matches!(color, Some(Value::Object(_) | Value::Array(_)));
-    let flag = |key: &str| if is_array { truthy(color.and_then(|c| c.get(key))) } else { false };
+    let flag = |key: &str| {
+        if is_array {
+            truthy(color.and_then(|c| c.get(key)))
+        } else {
+            false
+        }
+    };
     let set = |key: &str| color.and_then(|c| c.get(key)).is_some_and(|v| !v.is_null());
     let all = matches!(color, Some(Value::Bool(true)));
     let text = all || flag("text") || (is_array && !set("text"));
@@ -97,7 +112,20 @@ fn add_support_attributes(attributes: &mut Map<String, Value>, supports: &Value)
     // typography
     if let Some(typography) = supports.get("typography").filter(|t| truthy(Some(t))) {
         let has = |key: &str| truthy(typography.get(key));
-        let keys = ["__experimentalFontFamily", "fontSize", "__experimentalFontStyle", "__experimentalFontWeight", "__experimentalLetterSpacing", "lineHeight", "textAlign", "textColumns", "__experimentalTextDecoration", "__experimentalTextTransform", "textIndent", "__experimentalWritingMode"];
+        let keys = [
+            "__experimentalFontFamily",
+            "fontSize",
+            "__experimentalFontStyle",
+            "__experimentalFontWeight",
+            "__experimentalLetterSpacing",
+            "lineHeight",
+            "textAlign",
+            "textColumns",
+            "__experimentalTextDecoration",
+            "__experimentalTextTransform",
+            "textIndent",
+            "__experimentalWritingMode",
+        ];
         if keys.iter().any(|k| has(k)) {
             add(attributes, "style", object());
         }
@@ -112,15 +140,26 @@ fn add_support_attributes(attributes: &mut Map<String, Value>, supports: &Value)
     if has_support(supports, &["__experimentalBorder"], false) {
         add(attributes, "style", object());
     }
-    if matches!(supports.get("__experimentalBorder"), Some(Value::Bool(true))) || has_support(supports, &["__experimentalBorder", "color"], false) {
+    if matches!(
+        supports.get("__experimentalBorder"),
+        Some(Value::Bool(true))
+    ) || has_support(supports, &["__experimentalBorder", "color"], false)
+    {
         add(attributes, "borderColor", string());
     }
     // layout
-    if has_support(supports, &["layout"], false) || has_support(supports, &["__experimentalLayout"], false) {
+    if has_support(supports, &["layout"], false)
+        || has_support(supports, &["__experimentalLayout"], false)
+    {
         add(attributes, "layout", object());
     }
     // position, spacing, dimensions, duotone
-    for path in [&["position"][..], &["spacing"], &["dimensions"], &["filter", "duotone"]] {
+    for path in [
+        &["position"][..],
+        &["spacing"],
+        &["dimensions"],
+        &["filter", "duotone"],
+    ] {
         if has_support(supports, path, false) {
             add(attributes, "style", object());
         }
@@ -153,13 +192,21 @@ fn add_support_attributes(attributes: &mut Map<String, Value>, supports: &Value)
 
 /// The names in the lines of a `require-*-blocks.php` file.
 fn required_blocks(dir: &Path, file: &str, dynamic: bool) -> Vec<String> {
-    let Ok(text) = std::fs::read_to_string(dir.join(file)) else { return Vec::new() };
+    let Ok(text) = std::fs::read_to_string(dir.join(file)) else {
+        return Vec::new();
+    };
     text.lines()
         .filter_map(|line| {
             if dynamic {
-                line.split("/blocks/").nth(1).and_then(|l| l.split(".php").next()).map(str::to_owned)
+                line.split("/blocks/")
+                    .nth(1)
+                    .and_then(|l| l.split(".php").next())
+                    .map(str::to_owned)
             } else {
-                line.trim().strip_prefix('\'').and_then(|l| l.split('\'').next()).map(str::to_owned)
+                line.trim()
+                    .strip_prefix('\'')
+                    .and_then(|l| l.split('\'').next())
+                    .map(str::to_owned)
             }
         })
         .collect()
@@ -171,11 +218,22 @@ fn load_registered(dir: &Path) -> Vec<Registered> {
     // A block with a PHP file is dynamic when that file gives it a render callback.
     let read = |slug: &str, php: bool| -> Option<Registered> {
         let text = std::fs::read_to_string(dir.join(slug).join("block.json")).ok()?;
-        let Value::Object(json) = php_json(serde_json::from_str(&text).ok()?) else { return None };
-        let dynamic = php && std::fs::read_to_string(dir.join(format!("{slug}.php"))).is_ok_and(|code| code.contains("'render_callback'"));
-        Some(Registered { name: format!("core/{slug}"), json, dynamic })
+        let Value::Object(json) = php_json(serde_json::from_str(&text).ok()?) else {
+            return None;
+        };
+        let dynamic = php
+            && std::fs::read_to_string(dir.join(format!("{slug}.php")))
+                .is_ok_and(|code| code.contains("'render_callback'"));
+        Some(Registered {
+            name: format!("core/{slug}"),
+            json,
+            dynamic,
+        })
     };
-    let mut out: Vec<Registered> = ["legacy-widget", "widget-group"].iter().filter_map(|slug| read(slug, true)).collect();
+    let mut out: Vec<Registered> = ["legacy-widget", "widget-group"]
+        .iter()
+        .filter_map(|slug| read(slug, true))
+        .collect();
     for slug in required_blocks(dir, "require-dynamic-blocks.php", true) {
         if !out.iter().any(|b| b.name == format!("core/{slug}")) {
             out.extend(read(&slug, true));
@@ -190,8 +248,14 @@ fn load_registered(dir: &Path) -> Vec<Registered> {
 /// The registered blocks of a WordPress installation, read once.
 fn registered(dir: &Path) -> Arc<Vec<Registered>> {
     static CACHE: OnceLock<Mutex<HashMap<PathBuf, Arc<Vec<Registered>>>>> = OnceLock::new();
-    let mut cache = CACHE.get_or_init(Default::default).lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-    cache.entry(dir.to_path_buf()).or_insert_with(|| Arc::new(load_registered(dir))).clone()
+    let mut cache = CACHE
+        .get_or_init(Default::default)
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    cache
+        .entry(dir.to_path_buf())
+        .or_insert_with(|| Arc::new(load_registered(dir)))
+        .clone()
 }
 
 /// `generate_block_asset_handle()` of a core block.
@@ -219,7 +283,17 @@ fn script_handles(name: &str, json: &Map<String, Value>, field: &str) -> Vec<Str
         Some(Value::Array(a)) => a.iter().filter_map(Value::as_str).collect(),
         _ => Vec::new(),
     };
-    values.iter().enumerate().map(|(i, v)| if v.starts_with("file:") { asset_handle(name, field, i) } else { (*v).to_owned() }).collect()
+    values
+        .iter()
+        .enumerate()
+        .map(|(i, v)| {
+            if v.starts_with("file:") {
+                asset_handle(name, field, i)
+            } else {
+                (*v).to_owned()
+            }
+        })
+        .collect()
 }
 
 /// `register_block_style_handle()` of a core block: the first handle is the block's own (also when `block.json` names
@@ -227,7 +301,13 @@ fn script_handles(name: &str, json: &Map<String, Value>, field: &str) -> Vec<Str
 fn style_handles(name: &str, json: &Map<String, Value>, field: &str) -> Vec<String> {
     let mut handles = vec![asset_handle(name, field, 0)];
     if let Some(Value::Array(list)) = json.get(field) {
-        handles.extend(list.iter().skip(1).filter_map(Value::as_str).filter(|h| !h.starts_with("file:")).map(str::to_owned));
+        handles.extend(
+            list.iter()
+                .skip(1)
+                .filter_map(Value::as_str)
+                .filter(|h| !h.starts_with("file:"))
+                .map(str::to_owned),
+        );
     }
     handles
 }
@@ -239,18 +319,37 @@ impl Rest<'_> {
 
     /// The variations of `core/navigation-link` and `core/post-terms`, which follow the registered types.
     pub fn type_variations(&self) -> [(&'static str, Vec<Value>); 2] {
-        [("core/navigation-link", self.navigation_link_variations()), ("core/post-terms", self.post_terms_variations())]
+        [
+            ("core/navigation-link", self.navigation_link_variations()),
+            ("core/post-terms", self.post_terms_variations()),
+        ]
     }
 
     /// `block_core_navigation_link_build_variations()`.
     fn navigation_link_variations(&self) -> Vec<Value> {
         let variation = |name: &str, kind: &str, singular: &str| json!({"name": name, "title": rustpress_core::i18n::sprintf(&self.site.tr("%s link"), &[singular]), "description": " ", "attributes": {"type": name, "kind": kind}});
         let mut built_ins = vec![
-            variation("post", "post-type", &self.site.trx("Post", "post type singular name")),
-            variation("page", "post-type", &self.site.trx("Page", "post type singular name")),
-            variation("category", "taxonomy", &self.site.taxonomy_singular_label("category")),
+            variation(
+                "post",
+                "post-type",
+                &self.site.trx("Post", "post type singular name"),
+            ),
+            variation(
+                "page",
+                "post-type",
+                &self.site.trx("Page", "post type singular name"),
+            ),
+            variation(
+                "category",
+                "taxonomy",
+                &self.site.taxonomy_singular_label("category"),
+            ),
         ];
-        let mut tag = variation("post_tag", "taxonomy", &self.site.taxonomy_singular_label("post_tag"));
+        let mut tag = variation(
+            "post_tag",
+            "taxonomy",
+            &self.site.taxonomy_singular_label("post_tag"),
+        );
         tag["name"] = json!("tag");
         tag["attributes"] = json!({"type": "tag", "kind": "taxonomy"});
         built_ins.push(tag);
@@ -262,16 +361,46 @@ impl Rest<'_> {
         let types = &self.site.types;
         let registered = types.registered_types(false);
         for t in registered.iter().filter(|t| t.show_in_nav_menus) {
-            let singular = t.singular.clone().unwrap_or_else(|| self.site.trx(if t.hierarchical { "Page" } else { "Post" }, "post type singular name"));
+            let singular = t.singular.clone().unwrap_or_else(|| {
+                self.site.trx(
+                    if t.hierarchical { "Page" } else { "Post" },
+                    "post type singular name",
+                )
+            });
             built_ins.push(variation(&t.name, "post-type", &singular));
         }
-        built_ins.extend(types.post_types.iter().filter(|t| t.public && !matches!(t.name.as_str(), "post" | "page" | "attachment") && !registered.iter().any(|r| r.name == t.name)).map(|t| variation(&t.name, "post-type", &t.singular_label())));
+        built_ins.extend(
+            types
+                .post_types
+                .iter()
+                .filter(|t| {
+                    t.public
+                        && !matches!(t.name.as_str(), "post" | "page" | "attachment")
+                        && !registered.iter().any(|r| r.name == t.name)
+                })
+                .map(|t| variation(&t.name, "post-type", &t.singular_label())),
+        );
         let registered = types.registered_types(true);
         for t in registered.iter().filter(|t| t.show_in_nav_menus) {
-            let singular = t.singular.clone().unwrap_or_else(|| self.site.trx(if t.hierarchical { "Category" } else { "Tag" }, "taxonomy singular name"));
+            let singular = t.singular.clone().unwrap_or_else(|| {
+                self.site.trx(
+                    if t.hierarchical { "Category" } else { "Tag" },
+                    "taxonomy singular name",
+                )
+            });
             built_ins.push(variation(&t.name, "taxonomy", &singular));
         }
-        built_ins.extend(types.taxonomies.iter().filter(|t| t.public && !matches!(t.name.as_str(), "category" | "post_tag" | "post_format") && !registered.iter().any(|r| r.name == t.name)).map(|t| variation(&t.name, "taxonomy", &t.singular_label())));
+        built_ins.extend(
+            types
+                .taxonomies
+                .iter()
+                .filter(|t| {
+                    t.public
+                        && !matches!(t.name.as_str(), "category" | "post_tag" | "post_format")
+                        && !registered.iter().any(|r| r.name == t.name)
+                })
+                .map(|t| variation(&t.name, "taxonomy", &t.singular_label())),
+        );
         built_ins
     }
 
@@ -284,20 +413,48 @@ impl Rest<'_> {
             }
             v
         };
-        let mut out = vec![variation("category", self.site.taxonomy_label("category")), variation("post_tag", self.site.taxonomy_label("post_tag"))];
+        let mut out = vec![
+            variation("category", self.site.taxonomy_label("category")),
+            variation("post_tag", self.site.taxonomy_label("post_tag")),
+        ];
         // `get_taxonomies( [ 'publicly_queryable' => true, 'show_in_rest' => true ] )`: the registrations first.
         let registered = self.site.types.registered_types(true);
-        for t in registered.iter().filter(|t| t.publicly_queryable && t.show_in_rest) {
-            out.push(variation(&t.name, t.label.clone().unwrap_or_else(|| self.site.trx(if t.hierarchical { "Categories" } else { "Tags" }, "taxonomy general name"))));
+        for t in registered
+            .iter()
+            .filter(|t| t.publicly_queryable && t.show_in_rest)
+        {
+            out.push(variation(
+                &t.name,
+                t.label.clone().unwrap_or_else(|| {
+                    self.site.trx(
+                        if t.hierarchical { "Categories" } else { "Tags" },
+                        "taxonomy general name",
+                    )
+                }),
+            ));
         }
-        out.extend(self.site.types.taxonomies.iter().filter(|t| t.queryable && t.show_in_rest && !matches!(t.name.as_str(), "category" | "post_tag" | "post_format") && !registered.iter().any(|r| r.name == t.name)).map(|t| variation(&t.name, t.plural_label())));
+        out.extend(
+            self.site
+                .types
+                .taxonomies
+                .iter()
+                .filter(|t| {
+                    t.queryable
+                        && t.show_in_rest
+                        && !matches!(t.name.as_str(), "category" | "post_tag" | "post_format")
+                        && !registered.iter().any(|r| r.name == t.name)
+                })
+                .map(|t| variation(&t.name, t.plural_label())),
+        );
         out
     }
 
     /// `build_template_part_block_variations()`: the areas, then the template parts of the theme.
     async fn template_part_variations(&self) -> Result<Vec<Value>> {
         let areas = super::editor::PART_AREAS;
-        let parts = self.block_templates(TKind::Part, None, None, None, &[]).await?;
+        let parts = self
+            .block_templates(TKind::Part, None, None, None, &[])
+            .await?;
         let instances: Vec<Value> = parts
             .iter()
             .map(|part| {
@@ -330,13 +487,26 @@ impl Rest<'_> {
 
     /// The styles of a block: those of its `block.json`, then those the theme registers.
     fn block_styles(&self, name: &str, json: &Map<String, Value>, partials: bool) -> Vec<Value> {
-        let mut styles: Vec<Value> = json.get("styles").and_then(Value::as_array).cloned().unwrap_or_default();
+        let mut styles: Vec<Value> = json
+            .get("styles")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
         for style in &mut styles {
-            if let Some(label) = style.get("label").and_then(Value::as_str).map(|l| self.block_text(l, "block style label")) {
+            if let Some(label) = style
+                .get("label")
+                .and_then(Value::as_str)
+                .map(|l| self.block_text(l, "block style label"))
+            {
                 style["label"] = json!(label);
             }
         }
-        if let Some((_, registered)) = self.theme.registered_block_styles_with(partials).into_iter().find(|(block, _)| block == name) {
+        if let Some((_, registered)) = self
+            .theme
+            .registered_block_styles_with(partials)
+            .into_iter()
+            .find(|(block, _)| block == name)
+        {
             for (_, style, label, is_default) in registered {
                 let mut item = Map::new();
                 item.insert("name".into(), json!(style));
@@ -359,7 +529,11 @@ impl Rest<'_> {
         let json = &block.json;
         let name = block.name.as_str();
         let get = |key: &str| json.get(key).cloned().unwrap_or(Value::Null);
-        let mut attributes = json.get("attributes").and_then(Value::as_object).cloned().unwrap_or_default();
+        let mut attributes = json
+            .get("attributes")
+            .and_then(Value::as_object)
+            .cloned()
+            .unwrap_or_default();
         for global in ["lock", "metadata"] {
             if !attributes.contains_key(global) {
                 attributes.insert(global.into(), json!({"type": "object"}));
@@ -367,7 +541,16 @@ impl Rest<'_> {
         }
         let supports = get("supports");
         add_support_attributes(&mut attributes, &supports);
-        let keywords: Vec<String> = json.get("keywords").and_then(Value::as_array).map(|k| k.iter().filter_map(Value::as_str).map(|k| self.block_text(k, "block keyword")).collect()).unwrap_or_default();
+        let keywords: Vec<String> = json
+            .get("keywords")
+            .and_then(Value::as_array)
+            .map(|k| {
+                k.iter()
+                    .filter_map(Value::as_str)
+                    .map(|k| self.block_text(k, "block keyword"))
+                    .collect()
+            })
+            .unwrap_or_default();
         let variations = match name {
             "core/navigation-link" => self.navigation_link_variations(),
             "core/post-terms" => self.post_terms_variations(),
@@ -375,10 +558,17 @@ impl Rest<'_> {
             _ => Vec::new(),
         };
         let handles = |field: &str| script_handles(name, json, field);
-        let (editor_scripts, scripts, view_scripts) = (handles("editorScript"), handles("script"), handles("viewScript"));
+        let (editor_scripts, scripts, view_scripts) = (
+            handles("editorScript"),
+            handles("script"),
+            handles("viewScript"),
+        );
         let modules: Vec<String> = match json.get("viewScriptModule") {
             Some(Value::String(s)) => vec![s.clone()],
-            Some(Value::Array(a)) => a.iter().filter_map(|v| v.as_str().map(str::to_owned)).collect(),
+            Some(Value::Array(a)) => a
+                .iter()
+                .filter_map(|v| v.as_str().map(str::to_owned))
+                .collect(),
             _ => Vec::new(),
         };
         let editor_styles = style_handles(name, json, "editorStyle");
@@ -388,21 +578,55 @@ impl Rest<'_> {
         let mut data = Map::new();
         data.insert("attributes".into(), Value::Object(attributes));
         data.insert("is_dynamic".into(), json!(block.dynamic));
-        data.insert("api_version".into(), json.get("apiVersion").cloned().unwrap_or(json!(1)));
+        data.insert(
+            "api_version".into(),
+            json.get("apiVersion").cloned().unwrap_or(json!(1)),
+        );
         data.insert("name".into(), json!(name));
-        data.insert("title".into(), json!(json.get("title").and_then(Value::as_str).map(|t| self.block_text(t, "block title")).unwrap_or_default()));
-        data.insert("description".into(), json!(json.get("description").and_then(Value::as_str).map(|t| self.block_text(t, "block description")).unwrap_or_default()));
+        data.insert(
+            "title".into(),
+            json!(
+                json.get("title")
+                    .and_then(Value::as_str)
+                    .map(|t| self.block_text(t, "block title"))
+                    .unwrap_or_default()
+            ),
+        );
+        data.insert(
+            "description".into(),
+            json!(
+                json.get("description")
+                    .and_then(Value::as_str)
+                    .map(|t| self.block_text(t, "block description"))
+                    .unwrap_or_default()
+            ),
+        );
         data.insert("icon".into(), get("icon"));
         data.insert("category".into(), get("category"));
         data.insert("keywords".into(), json!(keywords));
         data.insert("parent".into(), get("parent"));
         data.insert("ancestor".into(), get("ancestor"));
         data.insert("allowed_blocks".into(), get("allowedBlocks"));
-        data.insert("provides_context".into(), json.get("providesContext").cloned().unwrap_or(json!([])));
-        data.insert("uses_context".into(), json.get("usesContext").cloned().unwrap_or(json!([])));
-        data.insert("selectors".into(), json.get("selectors").cloned().unwrap_or(json!([])));
-        data.insert("supports".into(), json.get("supports").cloned().unwrap_or(json!([])));
-        data.insert("styles".into(), json!(self.block_styles(name, json, partials || name == "core/template-part")));
+        data.insert(
+            "provides_context".into(),
+            json.get("providesContext").cloned().unwrap_or(json!([])),
+        );
+        data.insert(
+            "uses_context".into(),
+            json.get("usesContext").cloned().unwrap_or(json!([])),
+        );
+        data.insert(
+            "selectors".into(),
+            json.get("selectors").cloned().unwrap_or(json!([])),
+        );
+        data.insert(
+            "supports".into(),
+            json.get("supports").cloned().unwrap_or(json!([])),
+        );
+        data.insert(
+            "styles".into(),
+            json!(self.block_styles(name, json, partials || name == "core/template-part")),
+        );
         data.insert("textdomain".into(), Value::Null);
         data.insert("example".into(), get("example"));
         data.insert("editor_script_handles".into(), json!(editor_scripts));
@@ -413,7 +637,10 @@ impl Rest<'_> {
         data.insert("style_handles".into(), json!(styles));
         data.insert("view_style_handles".into(), json!(view_styles));
         data.insert("variations".into(), json!(variations));
-        data.insert("block_hooks".into(), json.get("blockHooks").cloned().unwrap_or(json!([])));
+        data.insert(
+            "block_hooks".into(),
+            json.get("blockHooks").cloned().unwrap_or(json!([])),
+        );
         data.insert("editor_script".into(), first(&editor_scripts));
         data.insert("script".into(), first(&scripts));
         data.insert("view_script".into(), first(&view_scripts));
@@ -428,9 +655,20 @@ impl Rest<'_> {
         let mut links = Links::new();
         links.add("collection", Vec::new(), self.rest_url("wp/v2/block-types"));
         links.push_raw("self", json!({"href": self.rest_url(&format!("wp/v2/block-types/{name}")), "targetHints": {"allow": ["GET"]}}));
-        links.add("up", Vec::new(), self.rest_url(&format!("wp/v2/block-types/{namespace}")));
+        links.add(
+            "up",
+            Vec::new(),
+            self.rest_url(&format!("wp/v2/block-types/{namespace}")),
+        );
         if dynamic {
-            links.add("wp:render-block", Vec::new(), format!("{}?context=edit", self.rest_url(&format!("wp/v2/block-renderer/{name}"))));
+            links.add(
+                "wp:render-block",
+                Vec::new(),
+                format!(
+                    "{}?context=edit",
+                    self.rest_url(&format!("wp/v2/block-renderer/{name}"))
+                ),
+            );
         }
         links.finish()
     }
@@ -446,7 +684,11 @@ impl Rest<'_> {
             "inserter": false
         });
         add_support_attributes(&mut attributes, &supports);
-        let styles = ["wp-block-post-comments", "wp-block-buttons", "wp-block-button"];
+        let styles = [
+            "wp-block-post-comments",
+            "wp-block-buttons",
+            "wp-block-button",
+        ];
         json!({
             "attributes": attributes, "is_dynamic": true, "api_version": 1, "name": "core/post-comments", "title": "", "description": "", "icon": null,
             "category": "theme", "keywords": [], "parent": null, "ancestor": null, "allowed_blocks": null, "provides_context": [], "uses_context": ["postId", "postType"],
@@ -458,11 +700,19 @@ impl Rest<'_> {
     }
 
     /// The routes below `wp/v2/block-types`.
-    pub(crate) async fn block_types_route(&self, segments: &[&str], args: &Args) -> Result<Outcome> {
+    pub(crate) async fn block_types_route(
+        &self,
+        segments: &[&str],
+        args: &Args,
+    ) -> Result<Outcome> {
         // `check_read_permission()`: editing posts of any type shown in the REST API.
-        let can_read = self.can("edit_posts") || self.can("edit_pages") || self.can("edit_theme_options");
+        let can_read =
+            self.can("edit_posts") || self.can("edit_pages") || self.can("edit_theme_options");
         if !can_read {
-            return Ok(Err(self.forbidden("rest_block_type_cannot_view", "Sorry, you are not allowed to manage block types.")));
+            return Ok(Err(self.forbidden(
+                "rest_block_type_cannot_view",
+                "Sorry, you are not allowed to manage block types.",
+            )));
         }
         let blocks = registered(self.registry.blocks_dir());
         let (namespace, wanted) = match segments {
@@ -486,7 +736,11 @@ impl Rest<'_> {
                     resp.allow = Some("GET".to_owned());
                     Ok(resp)
                 }
-                None => Err(RestError::new("rest_block_type_invalid", "Invalid block type.", 404)),
+                None => Err(RestError::new(
+                    "rest_block_type_invalid",
+                    "Invalid block type.",
+                    404,
+                )),
             });
         }
         let mut items = Vec::new();
@@ -494,7 +748,10 @@ impl Rest<'_> {
         // registers its style variations; the blocks after it have them.
         let mut partials = false;
         for block in blocks.iter() {
-            if namespace.as_deref().is_none_or(|ns| block.name.split('/').next() == Some(ns)) {
+            if namespace
+                .as_deref()
+                .is_none_or(|ns| block.name.split('/').next() == Some(ns))
+            {
                 items.push(self.prepare_block_type(block, partials).await?);
                 partials |= block.name == "core/template-part";
             }
@@ -518,24 +775,47 @@ mod tests {
         let supports = json!({"align": ["wide"], "color": {"gradients": true, "text": false}, "typography": {"fontSize": true}, "anchor": true});
         add_support_attributes(&mut attributes, &supports);
         let keys: Vec<&str> = attributes.keys().map(String::as_str).collect();
-        assert_eq!(keys, ["align", "className", "style", "backgroundColor", "gradient", "fontSize", "anchor"]);
+        assert_eq!(
+            keys,
+            [
+                "align",
+                "className",
+                "style",
+                "backgroundColor",
+                "gradient",
+                "fontSize",
+                "anchor"
+            ]
+        );
     }
 
     #[test]
     fn custom_css_and_class_names_can_be_switched_off() {
         let mut attributes = Map::new();
-        add_support_attributes(&mut attributes, &json!({"customClassName": false, "customCSS": false, "html": false}));
+        add_support_attributes(
+            &mut attributes,
+            &json!({"customClassName": false, "customCSS": false, "html": false}),
+        );
         assert!(attributes.is_empty());
     }
 
     #[test]
     fn empty_objects_become_arrays() {
-        assert_eq!(php_json(json!({"a": {}, "b": [{}], "c": {"d": 1}})), json!({"a": [], "b": [[]], "c": {"d": 1}}));
+        assert_eq!(
+            php_json(json!({"a": {}, "b": [{}], "c": {"d": 1}})),
+            json!({"a": [], "b": [[]], "c": {"d": 1}})
+        );
     }
 
     #[test]
     fn asset_handles_follow_the_field() {
-        assert_eq!(asset_handle("core/navigation", "viewScriptModule", 0), "wp-block-navigation-view-script-module");
-        assert_eq!(asset_handle("core/paragraph", "editorStyle", 1), "wp-block-paragraph-editor-2");
+        assert_eq!(
+            asset_handle("core/navigation", "viewScriptModule", 0),
+            "wp-block-navigation-view-script-module"
+        );
+        assert_eq!(
+            asset_handle("core/paragraph", "editorStyle", 1),
+            "wp-block-paragraph-editor-2"
+        );
     }
 }

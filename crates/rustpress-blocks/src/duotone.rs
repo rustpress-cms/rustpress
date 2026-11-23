@@ -40,14 +40,27 @@ fn filter_id(slug: &str) -> String {
 
 /// `get_slug_from_attribute()`.
 fn slug_from_attribute(attr: &str) -> String {
-    static PATTERN: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"var:preset\|duotone\|(\S+)|var\(--wp--preset--duotone--(\S+)\)").unwrap());
-    PATTERN.captures(attr).and_then(|c| c.get(1).or_else(|| c.get(2))).map(|m| m.as_str().to_owned()).unwrap_or_default()
+    static PATTERN: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"var:preset\|duotone\|(\S+)|var\(--wp--preset--duotone--(\S+)\)").unwrap()
+    });
+    PATTERN
+        .captures(attr)
+        .and_then(|c| c.get(1).or_else(|| c.get(2)))
+        .map(|m| m.as_str().to_owned())
+        .unwrap_or_default()
 }
 
 /// `get_all_global_styles_presets()`: filter id to `(slug, colors)`.
 fn global_presets(env: &Env<'_>) -> Vec<(String, String, Colors)> {
     let mut out: Vec<(String, String, Colors)> = Vec::new();
-    let Some(origins) = env.theme.global_settings().get("color").and_then(|c| c.get("duotone")) else { return out };
+    let Some(origins) = env
+        .theme
+        .global_settings()
+        .get("color")
+        .and_then(|c| c.get("duotone"))
+    else {
+        return out;
+    };
     let lists: Vec<&Value> = match origins {
         Value::Object(map) => map.values().collect(),
         Value::Array(_) => vec![origins],
@@ -55,9 +68,16 @@ fn global_presets(env: &Env<'_>) -> Vec<(String, String, Colors)> {
     };
     for list in lists {
         for preset in list.as_array().into_iter().flatten() {
-            let Some(slug) = preset.get("slug").and_then(Value::as_str) else { continue };
+            let Some(slug) = preset.get("slug").and_then(Value::as_str) else {
+                continue;
+            };
             let colors = match preset.get("colors") {
-                Some(Value::Array(a)) => Colors::List(a.iter().filter_map(Value::as_str).map(str::to_owned).collect()),
+                Some(Value::Array(a)) => Colors::List(
+                    a.iter()
+                        .filter_map(Value::as_str)
+                        .map(str::to_owned)
+                        .collect(),
+                ),
                 Some(Value::String(s)) => Colors::Css(s.clone()),
                 _ => continue,
             };
@@ -74,9 +94,22 @@ fn global_presets(env: &Env<'_>) -> Vec<(String, String, Colors)> {
 /// `get_all_global_style_block_names()`: blocks whose theme.json styles set a duotone preset.
 fn global_style_blocks(env: &Env<'_>) -> Vec<(String, String)> {
     let mut out = Vec::new();
-    let Some(blocks) = env.theme.global_styles().get("blocks").and_then(Value::as_object) else { return out };
+    let Some(blocks) = env
+        .theme
+        .global_styles()
+        .get("blocks")
+        .and_then(Value::as_object)
+    else {
+        return out;
+    };
     for (name, node) in blocks {
-        let Some(attr) = node.get("filter").and_then(|f| f.get("duotone")).and_then(Value::as_str) else { continue };
+        let Some(attr) = node
+            .get("filter")
+            .and_then(|f| f.get("duotone"))
+            .and_then(Value::as_str)
+        else {
+            continue;
+        };
         let slug = slug_from_attribute(attr);
         if !slug.is_empty() && slug != attr {
             out.push((name.clone(), slug));
@@ -87,7 +120,11 @@ fn global_style_blocks(env: &Env<'_>) -> Vec<(String, String)> {
 
 /// `WP_Theme_JSON::scope_selector( $scope, $selector )`.
 fn scope_selector(scope: &str, selector: &str) -> String {
-    selector.split(',').map(|part| format!("{} {}", scope.trim(), part.trim())).collect::<Vec<_>>().join(", ")
+    selector
+        .split(',')
+        .map(|part| format!("{} {}", scope.trim(), part.trim()))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 /// `get_selector()`: the CSS selector the filter applies to.
@@ -95,8 +132,21 @@ fn duotone_selector(bt: &BlockType) -> Option<String> {
     if !bt.has_support(&["filter", "duotone"], false) {
         return None;
     }
-    let root = bt.selectors.get("root").and_then(Value::as_str).map(str::to_owned).unwrap_or_else(|| format!(".wp-block-{}", bt.name.trim_start_matches("core/").replace('/', "-")));
-    if let Some(experimental) = bt.support(&["color", "__experimentalDuotone"]).filter(|v| !is_empty(v)) {
+    let root = bt
+        .selectors
+        .get("root")
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+        .unwrap_or_else(|| {
+            format!(
+                ".wp-block-{}",
+                bt.name.trim_start_matches("core/").replace('/', "-")
+            )
+        });
+    if let Some(experimental) = bt
+        .support(&["color", "__experimentalDuotone"])
+        .filter(|v| !is_empty(v))
+    {
         return Some(match experimental.as_str() {
             Some(selector) => scope_selector(&root, selector),
             None => root,
@@ -117,19 +167,48 @@ fn parse_color(input: &str) -> Option<(f64, f64, f64, f64)> {
             return None;
         }
         let expand = |s: &str| u8::from_str_radix(&s.repeat(2), 16).ok().map(f64::from);
-        let pair = |i: usize| u8::from_str_radix(hex.get(i..i + 2)?, 16).ok().map(f64::from);
+        let pair = |i: usize| {
+            u8::from_str_radix(hex.get(i..i + 2)?, 16)
+                .ok()
+                .map(f64::from)
+        };
         return match hex.len() {
-            3 => Some((expand(&hex[0..1])?, expand(&hex[1..2])?, expand(&hex[2..3])?, 1.0)),
-            4 => Some((expand(&hex[0..1])?, expand(&hex[1..2])?, expand(&hex[2..3])?, (expand(&hex[3..4])? / 255.0 * 100.0).round() / 100.0)),
+            3 => Some((
+                expand(&hex[0..1])?,
+                expand(&hex[1..2])?,
+                expand(&hex[2..3])?,
+                1.0,
+            )),
+            4 => Some((
+                expand(&hex[0..1])?,
+                expand(&hex[1..2])?,
+                expand(&hex[2..3])?,
+                (expand(&hex[3..4])? / 255.0 * 100.0).round() / 100.0,
+            )),
             6 => Some((pair(0)?, pair(2)?, pair(4)?, 1.0)),
-            8 => Some((pair(0)?, pair(2)?, pair(4)?, (pair(6)? / 255.0 * 100.0).round() / 100.0)),
+            8 => Some((
+                pair(0)?,
+                pair(2)?,
+                pair(4)?,
+                (pair(6)? / 255.0 * 100.0).round() / 100.0,
+            )),
             _ => None,
         };
     }
-    static RGB: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^rgba?\(\s*([\d.]+)\s*[, ]\s*([\d.]+)\s*[, ]\s*([\d.]+)\s*(?:[,/]\s*([\d.]+)\s*)?\)$").unwrap());
+    static RGB: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(
+            r"^rgba?\(\s*([\d.]+)\s*[, ]\s*([\d.]+)\s*[, ]\s*([\d.]+)\s*(?:[,/]\s*([\d.]+)\s*)?\)$",
+        )
+        .unwrap()
+    });
     let c = RGB.captures(input)?;
     let n = |i: usize| c.get(i).and_then(|m| m.as_str().parse::<f64>().ok());
-    Some((n(1)?.clamp(0.0, 255.0), n(2)?.clamp(0.0, 255.0), n(3)?.clamp(0.0, 255.0), n(4).unwrap_or(1.0).clamp(0.0, 1.0)))
+    Some((
+        n(1)?.clamp(0.0, 255.0),
+        n(2)?.clamp(0.0, 255.0),
+        n(3)?.clamp(0.0, 255.0),
+        n(4).unwrap_or(1.0).clamp(0.0, 1.0),
+    ))
 }
 
 /// `get_filter_svg()`.
@@ -172,11 +251,26 @@ pub fn global_styles_presets(state: &DuotoneState) -> String {
 }
 
 /// `WP_Duotone::render_duotone_support()`.
-pub fn render_duotone_support(env: &Env<'_>, bt: &BlockType, name: &str, attrs: &Map<String, Value>, content: String) -> String {
-    let Some(selector) = duotone_selector(bt) else { return content };
+pub fn render_duotone_support(
+    env: &Env<'_>,
+    bt: &BlockType,
+    name: &str,
+    attrs: &Map<String, Value>,
+    content: String,
+) -> String {
+    let Some(selector) = duotone_selector(bt) else {
+        return content;
+    };
     let global_blocks = global_style_blocks(env);
-    let attribute = attrs.get("style").and_then(|s| s.get("color")).and_then(|c| c.get("duotone")).filter(|v| !v.is_null());
-    let global = global_blocks.iter().find(|(n, _)| n == name).map(|(_, slug)| slug.clone());
+    let attribute = attrs
+        .get("style")
+        .and_then(|s| s.get("color"))
+        .and_then(|c| c.get("duotone"))
+        .filter(|v| !v.is_null());
+    let global = global_blocks
+        .iter()
+        .find(|(n, _)| n == name)
+        .map(|(_, slug)| slug.clone());
     if attribute.is_none() && global.is_none() {
         return content;
     }
@@ -186,14 +280,19 @@ pub fn render_duotone_support(env: &Env<'_>, bt: &BlockType, name: &str, attrs: 
         let (_, preset_slug, colors) = presets.iter().find(|(i, _, _)| *i == id)?.clone();
         env.with_state(|s| {
             if !s.duotone.presets.iter().any(|(i, _, _)| *i == id) {
-                s.duotone.presets.push((id.clone(), preset_slug, colors.clone()));
+                s.duotone
+                    .presets
+                    .push((id.clone(), preset_slug, colors.clone()));
             }
             if let Colors::List(list) = &colors
                 && !s.duotone.svgs.iter().any(|(i, _)| *i == id)
             {
                 s.duotone.svgs.push((id.clone(), list.clone()));
             }
-            s.duotone.css.push((scoped_duotone_selector(&id, &selector), format!("var(--wp--preset--duotone--{slug})")));
+            s.duotone.css.push((
+                scoped_duotone_selector(&id, &selector),
+                format!("var(--wp--preset--duotone--{slug})"),
+            ));
         });
         Some(id)
     };
@@ -207,17 +306,29 @@ pub fn render_duotone_support(env: &Env<'_>, bt: &BlockType, name: &str, attrs: 
                 } else {
                     let slug = env.with_state(|st| st.unique_id(&sanitize_key(&format!("{s}-"))));
                     let id = filter_id(&slug);
-                    env.with_state(|st| st.duotone.css.push((scoped_duotone_selector(&id, &selector), s.clone())));
+                    env.with_state(|st| {
+                        st.duotone
+                            .css
+                            .push((scoped_duotone_selector(&id, &selector), s.clone()))
+                    });
                     Some(id)
                 }
             }
             Value::Array(colors) => {
-                let list: Vec<String> = colors.iter().filter_map(Value::as_str).map(str::to_owned).collect();
-                let slug = env.with_state(|st| st.unique_id(&sanitize_key(&format!("{}-", list.join("-")))));
+                let list: Vec<String> = colors
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(str::to_owned)
+                    .collect();
+                let slug = env
+                    .with_state(|st| st.unique_id(&sanitize_key(&format!("{}-", list.join("-")))));
                 let id = filter_id(&slug);
                 env.with_state(|st| {
                     st.duotone.svgs.push((id.clone(), list));
-                    st.duotone.css.push((scoped_duotone_selector(&id, &selector), format!("url(#{id})")));
+                    st.duotone.css.push((
+                        scoped_duotone_selector(&id, &selector),
+                        format!("url(#{id})"),
+                    ));
                 });
                 Some(id)
             }
@@ -238,12 +349,20 @@ pub fn render_duotone_support(env: &Env<'_>, bt: &BlockType, name: &str, attrs: 
 
 /// `enqueue_block_css()`: the filter id class in front of every part of the selector.
 fn scoped_duotone_selector(id: &str, selector: &str) -> String {
-    selector.split(',').map(|part| format!(".{id}{}", part.trim())).collect::<Vec<_>>().join(", ")
+    selector
+        .split(',')
+        .map(|part| format!(".{id}{}", part.trim()))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 /// The footer markup: one SVG per filter used.
 pub fn footer_svgs(state: &DuotoneState) -> String {
-    state.svgs.iter().map(|(id, colors)| filter_svg(id, colors)).collect()
+    state
+        .svgs
+        .iter()
+        .map(|(id, colors)| filter_svg(id, colors))
+        .collect()
 }
 
 #[cfg(test)]
@@ -260,6 +379,9 @@ mod tests {
 
     #[test]
     fn selectors_are_scoped_per_part() {
-        assert_eq!(scoped_duotone_selector("f", ".a img, .a .b"), ".f.a img, .f.a .b");
+        assert_eq!(
+            scoped_duotone_selector("f", ".a img, .a .b"),
+            ".f.a img, .f.a .b"
+        );
     }
 }

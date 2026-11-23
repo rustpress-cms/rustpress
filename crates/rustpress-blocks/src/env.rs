@@ -48,12 +48,23 @@ pub trait ThemeAccess: Send + Sync {
         String::new()
     }
     /// The `wp_calculate_image_sizes` filter of the theme.
-    fn filter_calculated_sizes(&self, _site: &Site, _query: &QueryResult, sizes: Option<String>, _width: u64) -> Option<String> {
+    fn filter_calculated_sizes(
+        &self,
+        _site: &Site,
+        _query: &QueryResult,
+        sizes: Option<String>,
+        _width: u64,
+    ) -> Option<String> {
         sizes
     }
     /// The `wp_get_attachment_image_attributes` filter of the theme, for the `sizes` attribute:
     /// the replacement, if the theme sets one.
-    fn filter_attachment_sizes(&self, _site: &Site, _query: &QueryResult, _current: Option<&str>) -> Option<String> {
+    fn filter_attachment_sizes(
+        &self,
+        _site: &Site,
+        _query: &QueryResult,
+        _current: Option<&str>,
+    ) -> Option<String> {
         None
     }
     /// The `excerpt_more` filter of the theme as a template: `%1$s` is the permalink, `%2$s` the title.
@@ -62,7 +73,13 @@ pub trait ThemeAccess: Send + Sync {
     }
     /// The `the_content_more_link` filter of the theme: the link to the rest of a post after its `<!--more-->` teaser,
     /// for the escaped permalink, the post's id, its title and the text of the link.
-    fn content_more_link(&self, _permalink: &str, _post_id: u64, _title: &str, _text: &str) -> Option<String> {
+    fn content_more_link(
+        &self,
+        _permalink: &str,
+        _post_id: u64,
+        _title: &str,
+        _text: &str,
+    ) -> Option<String> {
         None
     }
     /// The `$more_link_text` the theme's templates pass to `the_content()`, when they pass one.
@@ -75,7 +92,13 @@ pub trait ThemeAccess: Send + Sync {
     }
     /// The `wp_get_attachment_image_attributes` filter of the theme for the other attributes: `full` is the size of the
     /// original image from its metadata, `requested` the size when it was asked for as `array( $width, $height )`.
-    fn filter_attachment_attributes(&self, _attrs: &mut Vec<(String, crate::images::AttrValue)>, _full: Option<(u64, u64)>, _requested: Option<(u64, u64)>) {}
+    fn filter_attachment_attributes(
+        &self,
+        _attrs: &mut Vec<(String, crate::images::AttrValue)>,
+        _full: Option<(u64, u64)>,
+        _requested: Option<(u64, u64)>,
+    ) {
+    }
     /// A size registered with `add_image_size()`: width and height.
     fn image_size(&self, _name: &str) -> Option<(u64, u64)> {
         None
@@ -121,18 +144,34 @@ pub struct CssStore {
 }
 
 impl CssStore {
-    pub fn add(&mut self, selector: &str, declarations: &[(String, String)], rules_group: Option<&str>) {
+    pub fn add(
+        &mut self,
+        selector: &str,
+        declarations: &[(String, String)],
+        rules_group: Option<&str>,
+    ) {
         // The style engine drops properties `safecss_filter_attr()` does not know (e.g. `box-sizing`).
-        let declarations: Vec<(String, String)> = declarations.iter().filter(|(property, _)| crate::safe_css::is_safe_property(property)).cloned().collect();
+        let declarations: Vec<(String, String)> = declarations
+            .iter()
+            .filter(|(property, _)| crate::safe_css::is_safe_property(property))
+            .cloned()
+            .collect();
         let declarations = declarations.as_slice();
         if selector.is_empty() || declarations.is_empty() {
             return;
         }
-        let existing = self.rules.iter_mut().find(|r| r.selector == selector && r.rules_group.as_deref() == rules_group);
+        let existing = self
+            .rules
+            .iter_mut()
+            .find(|r| r.selector == selector && r.rules_group.as_deref() == rules_group);
         let rule = match existing {
             Some(rule) => rule,
             None => {
-                self.rules.push(CssRule { selector: selector.to_owned(), rules_group: rules_group.map(str::to_owned), declarations: Vec::new() });
+                self.rules.push(CssRule {
+                    selector: selector.to_owned(),
+                    rules_group: rules_group.map(str::to_owned),
+                    declarations: Vec::new(),
+                });
                 self.rules.last_mut().expect("just pushed")
             }
         };
@@ -169,7 +208,11 @@ impl CssStore {
 
 fn rule_css(rule: &CssRule) -> String {
     let body = crate::style_engine::compile_declarations(&rule.declarations);
-    if body.is_empty() { String::new() } else { format!("{}{{{}}}", rule.selector, body) }
+    if body.is_empty() {
+        String::new()
+    } else {
+        format!("{}{{{}}}", rule.selector, body)
+    }
 }
 
 /// Script modules in the order they were enqueued.
@@ -305,9 +348,15 @@ impl State {
 
     /// `uniqid()`: seconds and microseconds in hexadecimal, different on every call.
     pub fn uniqid(&mut self) -> String {
-        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_micros());
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_micros());
         self.last_uniqid = now.max(self.last_uniqid + 1);
-        format!("{:08x}{:05x}", self.last_uniqid / 1_000_000, self.last_uniqid % 1_000_000)
+        format!(
+            "{:08x}{:05x}",
+            self.last_uniqid / 1_000_000,
+            self.last_uniqid % 1_000_000
+        )
     }
 
     /// wp_unique_prefixed_id(  ): a counter per prefix.
@@ -351,8 +400,19 @@ pub struct Env<'a> {
 }
 
 impl<'a> Env<'a> {
-    pub fn new(site: &'a Site, query: &'a QueryResult, theme: &'a dyn ThemeAccess, registry: &'a Registry) -> Self {
-        Self { site, query, theme, registry, state: Mutex::new(State::default()) }
+    pub fn new(
+        site: &'a Site,
+        query: &'a QueryResult,
+        theme: &'a dyn ThemeAccess,
+        registry: &'a Registry,
+    ) -> Self {
+        Self {
+            site,
+            query,
+            theme,
+            registry,
+            state: Mutex::new(State::default()),
+        }
     }
 
     /// Runs `f` with the shared state. The lock is never held across `.await`.
@@ -367,57 +427,84 @@ impl<'a> Env<'a> {
     /// `home_url( $path )`.
     pub fn home_url(&self, path: &str) -> String {
         let home = self.site.settings.home.trim_end_matches('/');
-        if path.is_empty() { home.to_owned() } else { format!("{home}/{}", path.trim_start_matches('/')) }
+        if path.is_empty() {
+            home.to_owned()
+        } else {
+            format!("{home}/{}", path.trim_start_matches('/'))
+        }
     }
 
     /// `global $post` for the root context, derived from the main query.
     pub fn root_context(&self) -> Context {
         let mut ctx = Context::default();
         if self.query.flags.is_singular()
-            && let Some(post) = self.query.queried_post() {
-                ctx.values.insert("postId".into(), Value::from(post.id));
-                ctx.values.insert("postType".into(), Value::from(post.post_type.clone()));
-                ctx.post = Some(Arc::new(post.clone()));
-            }
+            && let Some(post) = self.query.queried_post()
+        {
+            ctx.values.insert("postId".into(), Value::from(post.id));
+            ctx.values
+                .insert("postType".into(), Value::from(post.post_type.clone()));
+            ctx.post = Some(Arc::new(post.clone()));
+        }
         ctx
     }
 }
 
 /// What a plugin may ask of the rendering environment.
 impl rustpress_core::native::PageServices for Env<'_> {
-    fn excerpt<'a>(&'a self, post: &'a rustpress_db::Post) -> futures::future::BoxFuture<'a, rustpress_core::Result<String>> {
+    fn excerpt<'a>(
+        &'a self,
+        post: &'a rustpress_db::Post,
+    ) -> futures::future::BoxFuture<'a, rustpress_core::Result<String>> {
         Box::pin(async move {
             let post = std::sync::Arc::new(post.clone());
-            crate::excerpt::get_the_excerpt(self, &post).await.map_err(|e| match e {
-                crate::Error::Core(e) => e,
-                crate::Error::Db(e) => rustpress_core::Error::Db(e),
-            })
+            crate::excerpt::get_the_excerpt(self, &post)
+                .await
+                .map_err(|e| match e {
+                    crate::Error::Core(e) => e,
+                    crate::Error::Db(e) => rustpress_core::Error::Db(e),
+                })
         })
     }
 
     fn wp_root(&self) -> &std::path::Path {
         // The blocks live in `wp-includes/blocks`.
         let blocks = self.registry.blocks_dir();
-        blocks.parent().and_then(std::path::Path::parent).unwrap_or(blocks)
+        blocks
+            .parent()
+            .and_then(std::path::Path::parent)
+            .unwrap_or(blocks)
     }
 
-    fn content_filters<'a>(&'a self, post: Option<&'a rustpress_db::Post>, text: &'a str, context: &'a str) -> futures::future::BoxFuture<'a, rustpress_core::Result<String>> {
+    fn content_filters<'a>(
+        &'a self,
+        post: Option<&'a rustpress_db::Post>,
+        text: &'a str,
+        context: &'a str,
+    ) -> futures::future::BoxFuture<'a, rustpress_core::Result<String>> {
         Box::pin(async move {
             let post = post.map(|p| std::sync::Arc::new(p.clone()));
-            crate::content::content_filters(self, post.as_ref(), text, context).await.map_err(|e| match e {
-                crate::Error::Core(e) => e,
-                crate::Error::Db(e) => rustpress_core::Error::Db(e),
-            })
+            crate::content::content_filters(self, post.as_ref(), text, context)
+                .await
+                .map_err(|e| match e {
+                    crate::Error::Core(e) => e,
+                    crate::Error::Db(e) => rustpress_core::Error::Db(e),
+                })
         })
     }
 
-    fn do_shortcode<'a>(&'a self, post: Option<&'a rustpress_db::Post>, text: &'a str) -> futures::future::BoxFuture<'a, rustpress_core::Result<String>> {
+    fn do_shortcode<'a>(
+        &'a self,
+        post: Option<&'a rustpress_db::Post>,
+        text: &'a str,
+    ) -> futures::future::BoxFuture<'a, rustpress_core::Result<String>> {
         Box::pin(async move {
             let post = post.map(|p| std::sync::Arc::new(p.clone()));
-            crate::shortcodes::do_shortcode(self, post.as_ref(), text).await.map_err(|e| match e {
-                crate::Error::Core(e) => e,
-                crate::Error::Db(e) => rustpress_core::Error::Db(e),
-            })
+            crate::shortcodes::do_shortcode(self, post.as_ref(), text)
+                .await
+                .map_err(|e| match e {
+                    crate::Error::Core(e) => e,
+                    crate::Error::Db(e) => rustpress_core::Error::Db(e),
+                })
         })
     }
 
@@ -435,9 +522,20 @@ mod tests {
         let mut store = CssStore::default();
         store.add(".a", &[("color".into(), "1".into())], None);
         store.add(".b", &[("margin".into(), "2".into())], None);
-        store.add(".a", &[("color".into(), "3".into()), ("gap".into(), "4".into())], None);
-        store.add(".a", &[("padding".into(), "5".into())], Some("@media (min-width:600px)"));
-        assert_eq!(store.compile(), ".a{color:3;gap:4;}.b{margin:2;}@media (min-width:600px){.a{padding:5;}}");
+        store.add(
+            ".a",
+            &[("color".into(), "3".into()), ("gap".into(), "4".into())],
+            None,
+        );
+        store.add(
+            ".a",
+            &[("padding".into(), "5".into())],
+            Some("@media (min-width:600px)"),
+        );
+        assert_eq!(
+            store.compile(),
+            ".a{color:3;gap:4;}.b{margin:2;}@media (min-width:600px){.a{padding:5;}}"
+        );
     }
 
     #[test]
@@ -457,4 +555,3 @@ mod tests {
         assert_eq!(state.unique_prefixed_id("modal-"), "modal-1");
     }
 }
-

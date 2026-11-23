@@ -10,7 +10,10 @@ use crate::render::BlockCtx;
 use crate::supports::safecss_filter_attr;
 
 fn non_empty<'a>(attrs: &'a Map<String, Value>, key: &str) -> Option<&'a str> {
-    attrs.get(key).and_then(Value::as_str).filter(|s| !s.is_empty())
+    attrs
+        .get(key)
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
 }
 
 fn style_path<'a>(attrs: &'a Map<String, Value>, path: &[&str]) -> Option<&'a Value> {
@@ -25,7 +28,10 @@ fn style_attr(styles: &[String]) -> String {
     if styles.is_empty() {
         return String::new();
     }
-    format!(" style=\"{}\"", esc_attr(&safecss_filter_attr(&styles.join(" "))))
+    format!(
+        " style=\"{}\"",
+        esc_attr(&safecss_filter_attr(&styles.join(" ")))
+    )
 }
 
 struct Styles {
@@ -37,26 +43,49 @@ struct Styles {
 
 /// `styles_for_block_core_search` (borders, colors, typography, width).
 fn styles(attrs: &Map<String, Value>) -> Styles {
-    let (mut wrapper, mut button, mut input, mut label) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+    let (mut wrapper, mut button, mut input, mut label) =
+        (Vec::new(), Vec::new(), Vec::new(), Vec::new());
     let button_inside = non_empty(attrs, "buttonPosition") == Some("button-inside");
-    let show_label = attrs.get("showLabel").is_some_and(|v| v != &Value::Bool(false));
+    let show_label = attrs
+        .get("showLabel")
+        .is_some_and(|v| v != &Value::Bool(false));
 
-    if let (Some(width), Some(unit)) = (attrs.get("width").filter(|v| !crate::style_engine::is_empty(v)), non_empty(attrs, "widthUnit")) {
+    if let (Some(width), Some(unit)) = (
+        attrs
+            .get("width")
+            .filter(|v| !crate::style_engine::is_empty(v)),
+        non_empty(attrs, "widthUnit"),
+    ) {
         let n = width.as_f64().unwrap_or(0.0) as i64;
-        wrapper.push(format!("width: {}{};", esc_attr(&n.to_string()), esc_attr(unit)));
+        wrapper.push(format!(
+            "width: {}{};",
+            esc_attr(&n.to_string()),
+            esc_attr(unit)
+        ));
     }
     // Borders: `style.border.{width,color,style}` plus per-side values.
     for property in ["width", "color", "style"] {
-        for side in [None, Some("top"), Some("right"), Some("bottom"), Some("left")] {
+        for side in [
+            None,
+            Some("top"),
+            Some("right"),
+            Some("bottom"),
+            Some("left"),
+        ] {
             let mut path = vec!["border"];
             if let Some(s) = side {
                 path.push(s);
             }
             path.push(property);
-            let Some(value) = style_path(attrs, &path).and_then(Value::as_str) else { continue };
+            let Some(value) = style_path(attrs, &path).and_then(Value::as_str) else {
+                continue;
+            };
             let mut value = value.to_owned();
             if property == "color" && side.is_some() && value.contains("var:preset|color|") {
-                value = format!("var(--wp--preset--color--{})", value.rsplit('|').next().unwrap_or(""));
+                value = format!(
+                    "var(--wp--preset--color--{})",
+                    value.rsplit('|').next().unwrap_or("")
+                );
             }
             let name = match side {
                 Some(s) => format!("{s}-{property}"),
@@ -79,7 +108,10 @@ fn styles(attrs: &Map<String, Value>) -> Styles {
             _ => String::new(),
         };
         let radius = if radius.contains("var:preset|border-radius|") {
-            format!("var(--wp--preset--border-radius--{})", radius.rsplit('|').next().unwrap_or(""))
+            format!(
+                "var(--wp--preset--border-radius--{})",
+                radius.rsplit('|').next().unwrap_or("")
+            )
         } else {
             radius
         };
@@ -87,13 +119,27 @@ fn styles(attrs: &Map<String, Value>) -> Styles {
             let declaration = format!("border-radius: {};", esc_attr(&radius));
             input.push(declaration.clone());
             button.push(declaration);
-            if button_inside && (radius.trim_end_matches(|c: char| c.is_ascii_alphabetic() || c == '%').parse::<f64>() != Ok(0.0)) {
-                wrapper.push(format!("border-radius: calc({} + {default_padding});", esc_attr(&radius)));
+            if button_inside
+                && (radius
+                    .trim_end_matches(|c: char| c.is_ascii_alphabetic() || c == '%')
+                    .parse::<f64>()
+                    != Ok(0.0))
+            {
+                wrapper.push(format!(
+                    "border-radius: calc({} + {default_padding});",
+                    esc_attr(&radius)
+                ));
             }
         }
     }
     let use_input = non_empty(attrs, "buttonPosition") == Some("no-button");
-    let mut color_target = |declaration: String| if use_input { input.push(declaration) } else { button.push(declaration) };
+    let mut color_target = |declaration: String| {
+        if use_input {
+            input.push(declaration)
+        } else {
+            button.push(declaration)
+        }
+    };
     if let Some(c) = style_path(attrs, &["color", "text"]).and_then(Value::as_str) {
         color_target(format!("color: {c};"));
     }
@@ -117,7 +163,12 @@ fn styles(attrs: &Map<String, Value>) -> Styles {
             label.push(declaration);
         }
     }
-    Styles { input: style_attr(&input), button: style_attr(&button), wrapper: style_attr(&wrapper), label: style_attr(&label) }
+    Styles {
+        input: style_attr(&input),
+        button: style_attr(&button),
+        wrapper: style_attr(&wrapper),
+        label: style_attr(&label),
+    }
 }
 
 fn typography_styles(attrs: &Map<String, Value>) -> String {
@@ -171,7 +222,11 @@ fn color_classes(attrs: &Map<String, Value>) -> String {
     }
     let named_bg = non_empty(attrs, "backgroundColor");
     let named_gradient = non_empty(attrs, "gradient");
-    if named_bg.is_some() || style_path(attrs, &["color", "background"]).is_some() || named_gradient.is_some() || style_path(attrs, &["color", "gradient"]).is_some() {
+    if named_bg.is_some()
+        || style_path(attrs, &["color", "background"]).is_some()
+        || named_gradient.is_some()
+        || style_path(attrs, &["color", "gradient"]).is_some()
+    {
         classes.push("has-background".to_owned());
     }
     if let Some(c) = named_bg {
@@ -186,28 +241,45 @@ fn color_classes(attrs: &Map<String, Value>) -> String {
 pub(super) fn search(bc: &BlockCtx<'_>) -> Result<String> {
     let mut attrs = bc.attrs.clone();
     let search_word = bc.env.site.tr("Search");
-    attrs.entry("label".to_owned()).or_insert_with(|| Value::from(search_word.clone()));
-    attrs.entry("buttonText".to_owned()).or_insert_with(|| Value::from(search_word.clone()));
+    attrs
+        .entry("label".to_owned())
+        .or_insert_with(|| Value::from(search_word.clone()));
+    attrs
+        .entry("buttonText".to_owned())
+        .or_insert_with(|| Value::from(search_word.clone()));
     let attrs = &attrs;
 
-    let input_id = bc.env.with_state(|s| s.unique_id("wp-block-search__input-"));
+    let input_id = bc
+        .env
+        .with_state(|s| s.unique_id("wp-block-search__input-"));
     let position = non_empty(attrs, "buttonPosition");
     let mut classnames: Vec<&str> = Vec::new();
     match position {
         Some("button-inside") => classnames.push("wp-block-search__button-inside"),
         Some("button-outside") => classnames.push("wp-block-search__button-outside"),
         Some("no-button") => classnames.push("wp-block-search__no-button"),
-        Some("button-only") => classnames.push("wp-block-search__button-only wp-block-search__searchfield-hidden"),
+        Some("button-only") => {
+            classnames.push("wp-block-search__button-only wp-block-search__searchfield-hidden")
+        }
         _ => {}
     }
     if let (Some(use_icon), Some(p)) = (attrs.get("buttonUseIcon"), position)
-        && p != "no-button" {
-            classnames.push(if use_icon.as_bool() == Some(true) { "wp-block-search__icon-button" } else { "wp-block-search__text-button" });
-        }
+        && p != "no-button"
+    {
+        classnames.push(if use_icon.as_bool() == Some(true) {
+            "wp-block-search__icon-button"
+        } else {
+            "wp-block-search__text-button"
+        });
+    }
     let classnames = classnames.join(" ");
 
-    let show_label = attrs.get("showLabel").is_some_and(|v| !crate::style_engine::is_empty(v));
-    let use_icon = attrs.get("buttonUseIcon").is_some_and(|v| !crate::style_engine::is_empty(v));
+    let show_label = attrs
+        .get("showLabel")
+        .is_some_and(|v| !crate::style_engine::is_empty(v));
+    let use_icon = attrs
+        .get("buttonUseIcon")
+        .is_some_and(|v| !crate::style_engine::is_empty(v));
     let show_button = position != Some("no-button");
     let button_position = if show_button { position } else { None };
     let inline = styles(attrs);
@@ -218,7 +290,8 @@ pub(super) fn search(bc: &BlockCtx<'_>) -> Result<String> {
 
     // <label>
     let label_html = kses_post(non_empty(attrs, "label").unwrap_or(&search_word));
-    let mut label = TagEditor::first(&format!("<label {}>{}</label>", inline.label, label_html)).expect("label tag");
+    let mut label = TagEditor::first(&format!("<label {}>{}</label>", inline.label, label_html))
+        .expect("label tag");
     label.set_attribute("for", &input_id);
     label.add_class("wp-block-search__label");
     if show_label && non_empty(attrs, "label").is_some() {
@@ -231,7 +304,11 @@ pub(super) fn search(bc: &BlockCtx<'_>) -> Result<String> {
     let label = label.finish();
 
     // <input>
-    let mut input = TagEditor::first(&format!("<input type=\"search\" name=\"s\" required {}/>", inline.input)).expect("input tag");
+    let mut input = TagEditor::first(&format!(
+        "<input type=\"search\" name=\"s\" required {}/>",
+        inline.input
+    ))
+    .expect("input tag");
     let mut input_classes = vec!["wp-block-search__input".to_owned()];
     if !button_inside && !border_classes.is_empty() {
         input_classes.push(border_classes.clone());
@@ -245,10 +322,19 @@ pub(super) fn search(bc: &BlockCtx<'_>) -> Result<String> {
     input.add_class(&input_classes.join(" "));
     input.set_attribute("id", &input_id);
     input.set_attribute("value", bc.env.query.vars.get("s").unwrap_or(""));
-    input.set_attribute("placeholder", attrs.get("placeholder").and_then(Value::as_str).unwrap_or(""));
+    input.set_attribute(
+        "placeholder",
+        attrs
+            .get("placeholder")
+            .and_then(Value::as_str)
+            .unwrap_or(""),
+    );
     let expandable = button_position == Some("button-only");
     if expandable {
-        bc.env.with_state(|s| s.script_modules.insert("@wordpress/block-library/search/view".to_owned()));
+        bc.env.with_state(|s| {
+            s.script_modules
+                .insert("@wordpress/block-library/search/view".to_owned())
+        });
         input.set_attribute("data-wp-bind--aria-hidden", "!context.isSearchInputVisible");
         input.set_attribute("data-wp-bind--tabindex", "state.tabindex");
         input.set_attribute("aria-hidden", "true");
@@ -259,8 +345,15 @@ pub(super) fn search(bc: &BlockCtx<'_>) -> Result<String> {
     let mut query_params = String::new();
     if let Some(params) = attrs.get("query").and_then(Value::as_object) {
         for (name, value) in params {
-            let value = value.as_str().map(str::to_owned).unwrap_or_else(|| value.to_string());
-            query_params.push_str(&format!("<input type=\"hidden\" name=\"{}\" value=\"{}\" />", esc_attr(name), esc_attr(&value)));
+            let value = value
+                .as_str()
+                .map(str::to_owned)
+                .unwrap_or_else(|| value.to_string());
+            query_params.push_str(&format!(
+                "<input type=\"hidden\" name=\"{}\" value=\"{}\" />",
+                esc_attr(name),
+                esc_attr(&value)
+            ));
         }
     }
 
@@ -284,20 +377,38 @@ pub(super) fn search(bc: &BlockCtx<'_>) -> Result<String> {
             kses_post(non_empty(attrs, "buttonText").unwrap_or_default())
         };
         classes.push("wp-element-button".to_owned());
-        let mut editor = TagEditor::first(&format!("<button type=\"submit\" {}>{inner}</button>", inline.button)).expect("button tag");
+        let mut editor = TagEditor::first(&format!(
+            "<button type=\"submit\" {}>{inner}</button>",
+            inline.button
+        ))
+        .expect("button tag");
         editor.add_class(&classes.join(" "));
         if position == Some("button-only") {
             editor.set_attribute("data-wp-bind--aria-label", "state.ariaLabel");
             editor.set_attribute("data-wp-bind--aria-controls", "state.ariaControls");
-            editor.set_attribute("data-wp-bind--aria-expanded", "context.isSearchInputVisible");
+            editor.set_attribute(
+                "data-wp-bind--aria-expanded",
+                "context.isSearchInputVisible",
+            );
             editor.set_attribute("data-wp-bind--type", "state.type");
             editor.set_attribute("data-wp-on--click", "actions.openSearchInput");
             editor.set_attribute("aria-label", &bc.env.site.tr("Expand search field"));
-            editor.set_attribute("aria-controls", &format!("wp-block-search__input-{input_id}"));
+            editor.set_attribute(
+                "aria-controls",
+                &format!("wp-block-search__input-{input_id}"),
+            );
             editor.set_attribute("aria-expanded", "false");
             editor.set_attribute("type", "button");
         } else {
-            editor.set_attribute("aria-label", &strip_tags(attrs.get("buttonText").and_then(Value::as_str).unwrap_or("")));
+            editor.set_attribute(
+                "aria-label",
+                &strip_tags(
+                    attrs
+                        .get("buttonText")
+                        .and_then(Value::as_str)
+                        .unwrap_or(""),
+                ),
+            );
         }
         button = editor.finish();
     }
@@ -306,7 +417,12 @@ pub(super) fn search(bc: &BlockCtx<'_>) -> Result<String> {
     if button_inside && !border_classes.is_empty() {
         field_classes.push(border_classes);
     }
-    let field = format!("<div class=\"{}\" {}>{}</div>", esc_attr(&field_classes.join(" ")), inline.wrapper, format_args!("{input}{query_params}{button}"));
+    let field = format!(
+        "<div class=\"{}\" {}>{}</div>",
+        esc_attr(&field_classes.join(" ")),
+        inline.wrapper,
+        format_args!("{input}{query_params}{button}")
+    );
 
     let wrapper = bc.wrapper_attributes(&[("class", classnames)]);
     let mut directives = String::new();
@@ -323,12 +439,20 @@ pub(super) fn search(bc: &BlockCtx<'_>) -> Result<String> {
         );
     }
     let action = esc_url(&bc.env.site.home_url("/"));
-    let action = if action.ends_with('/') { action } else { format!("{action}/") };
+    let action = if action.ends_with('/') {
+        action
+    } else {
+        format!("{action}/")
+    };
     let tag_name = attrs.get("tagName").and_then(Value::as_str).unwrap_or("");
     if tag_name == "search" {
-        return Ok(format!("<search {wrapper} {directives}><form method=\"get\" action=\"{action}\">{label}{field}</form></search>"));
+        return Ok(format!(
+            "<search {wrapper} {directives}><form method=\"get\" action=\"{action}\">{label}{field}</form></search>"
+        ));
     }
-    Ok(format!("<form role=\"search\" method=\"get\" action=\"{action}\" {wrapper} {directives}>{label}{field}</form>"))
+    Ok(format!(
+        "<form role=\"search\" method=\"get\" action=\"{action}\" {wrapper} {directives}>{label}{field}</form>"
+    ))
 }
 
 fn strip_tags(text: &str) -> String {

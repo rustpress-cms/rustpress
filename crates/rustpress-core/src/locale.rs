@@ -4,13 +4,35 @@
 //! The English texts below are the `msgid`s WordPress uses, so any WordPress language pack
 //! (about 200 on translate.wordpress.org) works unchanged.
 
-
 use crate::datetime::SiteTimezone;
 use crate::i18n::I18n;
 
-const MONTHS: [&str; 12] = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-const MONTH_ABBREVIATIONS: [&str; 12] = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-const WEEKDAYS: [&str; 7] = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const MONTHS: [&str; 12] = [
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+];
+const MONTH_ABBREVIATIONS: [&str; 12] = [
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
+const WEEKDAYS: [&str; 7] = [
+    "Sunday",
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+];
 const WEEKDAY_ABBREVIATIONS: [&str; 7] = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 /// How words are counted when text is shortened (`WP_Locale::get_word_count_type()`).
@@ -54,9 +76,17 @@ impl LocaleData {
         let tr = |text: &str| i18n.gettext("default", text);
         let trx = |text: &str, context: &str| i18n.pgettext("default", context, text);
         let thousands_sep = tr("number_format_thousands_sep");
-        let thousands_sep = if thousands_sep == "number_format_thousands_sep" { ",".to_owned() } else { thousands_sep.replace(' ', "&nbsp;") };
+        let thousands_sep = if thousands_sep == "number_format_thousands_sep" {
+            ",".to_owned()
+        } else {
+            thousands_sep.replace(' ', "&nbsp;")
+        };
         let decimal_point = tr("number_format_decimal_point");
-        let decimal_point = if decimal_point == "number_format_decimal_point" { ".".to_owned() } else { decimal_point };
+        let decimal_point = if decimal_point == "number_format_decimal_point" {
+            ".".to_owned()
+        } else {
+            decimal_point
+        };
         let word_count_type = match trx("words", "Word count type. Do not translate!").as_str() {
             "characters_excluding_spaces" => WordCountType::CharactersExcludingSpaces,
             "characters_including_spaces" => WordCountType::CharactersIncludingSpaces,
@@ -64,8 +94,16 @@ impl LocaleData {
         };
         let language_tag = {
             let tag = tr("html_lang_attribute");
-            if tag == "html_lang_attribute" || tag.chars().any(|c| !(c.is_ascii_alphanumeric() || c == '-')) {
-                let locale = if i18n.locale.is_empty() { "en_US" } else { i18n.locale.as_str() };
+            if tag == "html_lang_attribute"
+                || tag
+                    .chars()
+                    .any(|c| !(c.is_ascii_alphanumeric() || c == '-'))
+            {
+                let locale = if i18n.locale.is_empty() {
+                    "en_US"
+                } else {
+                    i18n.locale.as_str()
+                };
                 locale.replace('_', "-")
             } else {
                 tag
@@ -73,11 +111,18 @@ impl LocaleData {
         };
         Self {
             weekday: WEEKDAYS.map(&tr),
-            weekday_initial: std::array::from_fn(|i| trx(&WEEKDAYS[i][..1], &format!("{} initial", WEEKDAYS[i]))),
+            weekday_initial: std::array::from_fn(|i| {
+                trx(&WEEKDAYS[i][..1], &format!("{} initial", WEEKDAYS[i]))
+            }),
             weekday_abbrev: std::array::from_fn(|i| tr(WEEKDAY_ABBREVIATIONS[i])),
             month: MONTHS.map(&tr),
             month_genitive: MONTHS.map(|m| trx(m, "genitive")),
-            month_abbrev: std::array::from_fn(|i| trx(MONTH_ABBREVIATIONS[i], &format!("{} abbreviation", MONTHS[i]))),
+            month_abbrev: std::array::from_fn(|i| {
+                trx(
+                    MONTH_ABBREVIATIONS[i],
+                    &format!("{} abbreviation", MONTHS[i]),
+                )
+            }),
             meridiem: ["am", "pm", "AM", "PM"].map(&tr),
             thousands_sep,
             decimal_point,
@@ -106,8 +151,24 @@ impl LocaleData {
     /// meridiems come from this locale, months are declined where the language needs it.
     pub fn date(&self, timezone: &SiteTimezone, format: &str, timestamp: i64) -> String {
         // Letters of a translation must not be read as format characters (`addcslashes`).
-        let literal = |text: &str| text.chars().map(|c| if c.is_ascii_alphabetic() || c == '\\' { format!("\\{c}") } else { c.to_string() }).collect::<String>();
-        let index = |code: &str, max: usize| timezone.format(code, timestamp).parse::<usize>().unwrap_or(0).min(max);
+        let literal = |text: &str| {
+            text.chars()
+                .map(|c| {
+                    if c.is_ascii_alphabetic() || c == '\\' {
+                        format!("\\{c}")
+                    } else {
+                        c.to_string()
+                    }
+                })
+                .collect::<String>()
+        };
+        let index = |code: &str, max: usize| {
+            timezone
+                .format(code, timestamp)
+                .parse::<usize>()
+                .unwrap_or(0)
+                .min(max)
+        };
         let month = index("n", 12).clamp(1, 12) - 1;
         let weekday = index("w", 6);
         let mut localized = String::new();
@@ -153,17 +214,26 @@ impl LocaleData {
             // "j F Y": the month after a day number.
             for (nominative, genitive) in self.month.iter().zip(&self.month_genitive) {
                 let re = cached(&format!(r" {}\b", regex::escape(nominative)));
-                date = re.replace_all(&date, regex::NoExpand(&format!(" {genitive}"))).into_owned();
+                date = re
+                    .replace_all(&date, regex::NoExpand(&format!(" {genitive}")))
+                    .into_owned();
             }
         }
         if cached(r"F [dj]").is_match(format) {
             // "F j": becomes "j F" with the declined month.
             for (nominative, genitive) in self.month.iter().zip(&self.month_genitive) {
                 {
-                    let re = cached(&format!(r"\b{} (\d{{1,2}})(st|nd|rd|th)?([-–]\d{{1,2}})?(st|nd|rd|th)?\b", regex::escape(nominative)));
+                    let re = cached(&format!(
+                        r"\b{} (\d{{1,2}})(st|nd|rd|th)?([-–]\d{{1,2}})?(st|nd|rd|th)?\b",
+                        regex::escape(nominative)
+                    ));
                     date = re
                         .replace_all(&date, |caps: &regex::Captures<'_>| {
-                            format!("{}{} {genitive}", caps.get(1).map_or("", |m| m.as_str()), caps.get(3).map_or("", |m| m.as_str()))
+                            format!(
+                                "{}{} {genitive}",
+                                caps.get(1).map_or("", |m| m.as_str()),
+                                caps.get(3).map_or("", |m| m.as_str())
+                            )
                         })
                         .into_owned();
                 }
@@ -221,8 +291,14 @@ mod tests {
     #[test]
     fn months_are_declined_after_a_day_number() {
         let data = russian();
-        assert_eq!(data.maybe_decline("24 октябрь 2026", "j F Y"), "24 октября 2026");
-        assert_eq!(data.maybe_decline("24. октябрь 2026", "j. F Y"), "24. октября 2026");
+        assert_eq!(
+            data.maybe_decline("24 октябрь 2026", "j F Y"),
+            "24 октября 2026"
+        );
+        assert_eq!(
+            data.maybe_decline("24. октябрь 2026", "j. F Y"),
+            "24. октября 2026"
+        );
         // Without a day in front of the month the nominative stays.
         assert_eq!(data.maybe_decline("октябрь 2026", "F Y"), "октябрь 2026");
         // "F j" becomes "j F" and loses the ordinal suffix.
@@ -233,7 +309,10 @@ mod tests {
     fn declension_is_off_unless_the_language_asks_for_it() {
         let mut data = russian();
         data.decline_months = false;
-        assert_eq!(data.maybe_decline("24 октябрь 2026", "j F Y"), "24 октябрь 2026");
+        assert_eq!(
+            data.maybe_decline("24 октябрь 2026", "j F Y"),
+            "24 октябрь 2026"
+        );
     }
 
     #[test]

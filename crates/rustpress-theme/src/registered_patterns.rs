@@ -41,16 +41,29 @@ const CORE_PATTERNS: &[&str] = &[
 /// A header of the pattern file as a list.
 fn list(text: &str) -> Vec<String> {
     // `wp_parse_list()`: commas and white space separate the items.
-    text.split(|c: char| c == ',' || c.is_whitespace()).filter(|s| !s.is_empty()).map(str::to_owned).collect()
+    text.split(|c: char| c == ',' || c.is_whitespace())
+        .filter(|s| !s.is_empty())
+        .map(str::to_owned)
+        .collect()
 }
 
 /// The strings of `array( 'a', 'b' )` after `key =>`.
 fn php_array(source: &str, key: &str) -> Vec<String> {
-    let Some(at) = source.find(&format!("'{key}'")) else { return Vec::new() };
+    let Some(at) = source.find(&format!("'{key}'")) else {
+        return Vec::new();
+    };
     let rest = &source[at..];
-    let Some(open) = rest.find("array(") else { return Vec::new() };
-    let Some(close) = rest[open..].find(')') else { return Vec::new() };
-    rest[open + 6..open + close].split(',').map(|s| s.trim().trim_matches('\'').trim_matches('"').to_owned()).filter(|s| !s.is_empty()).collect()
+    let Some(open) = rest.find("array(") else {
+        return Vec::new();
+    };
+    let Some(close) = rest[open..].find(')') else {
+        return Vec::new();
+    };
+    rest[open + 6..open + close]
+        .split(',')
+        .map(|s| s.trim().trim_matches('\'').trim_matches('"').to_owned())
+        .filter(|s| !s.is_empty())
+        .collect()
 }
 
 impl Theme {
@@ -59,7 +72,9 @@ impl Theme {
         let mut out: Vec<PatternEntry> = Vec::new();
         let dir = self.wp_root.join("wp-includes").join("block-patterns");
         for name in CORE_PATTERNS {
-            let Some(source) = rustpress_core::files::read(&dir.join(format!("{name}.php"))) else { continue };
+            let Some(source) = rustpress_core::files::read(&dir.join(format!("{name}.php"))) else {
+                continue;
+            };
             let title = source
                 .find("'title'")
                 .and_then(|at| source[at..].find("_x(").map(|x| &source[at + x + 3..]))
@@ -87,24 +102,45 @@ impl Theme {
         }
         for theme_dir in themes {
             let text_domain = crate::theme_headers::text_domain(&theme_dir);
-            let Ok(entries) = std::fs::read_dir(theme_dir.join("patterns")) else { continue };
-            let mut files: Vec<_> = entries.flatten().map(|e| e.path()).filter(|p| p.extension().and_then(|e| e.to_str()) == Some("php")).collect();
+            let Ok(entries) = std::fs::read_dir(theme_dir.join("patterns")) else {
+                continue;
+            };
+            let mut files: Vec<_> = entries
+                .flatten()
+                .map(|e| e.path())
+                .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("php"))
+                .collect();
             files.sort();
             for path in files {
-                let Some(source) = rustpress_core::files::read(&path) else { continue };
+                let Some(source) = rustpress_core::files::read(&path) else {
+                    continue;
+                };
                 let head: String = source.chars().take(8192).collect();
                 let header = |name: &str| rustpress_header(&head, name);
                 let (title, slug) = (header("Title"), header("Slug"));
                 if title.is_empty() || slug.is_empty() || out.iter().any(|p| p.name == slug) {
                     continue;
                 }
-                let content = if source.contains("return array(") && source.contains("'content'") { phpt::pattern_array_content(&source, self.host_ref()) } else { phpt::render(&source, self.host_ref()) }.unwrap_or_default();
+                let content = if source.contains("return array(") && source.contains("'content'") {
+                    phpt::pattern_array_content(&source, self.host_ref())
+                } else {
+                    phpt::render(&source, self.host_ref())
+                }
+                .unwrap_or_default();
                 let description = header("Description");
                 out.push(PatternEntry {
                     name: slug,
                     title: self.translate_with_context(&title, "Pattern title", &text_domain),
                     content,
-                    description: if description.is_empty() { String::new() } else { self.translate_with_context(&description, "Pattern description", &text_domain) },
+                    description: if description.is_empty() {
+                        String::new()
+                    } else {
+                        self.translate_with_context(
+                            &description,
+                            "Pattern description",
+                            &text_domain,
+                        )
+                    },
                     viewport_width: header("Viewport Width").parse().ok(),
                     inserter: match header("Inserter").to_lowercase().as_str() {
                         "" => None,
@@ -149,12 +185,16 @@ impl Theme {
         }
         let domain = crate::theme_headers::text_domain(self.stylesheet_dir());
         for dir in &dirs {
-            let Some(source) = rustpress_core::files::read(&dir.join("functions.php")) else { continue };
+            let Some(source) = rustpress_core::files::read(&dir.join("functions.php")) else {
+                continue;
+            };
             let domain = crate::theme_headers::text_domain(dir);
             let mut rest: &str = &source;
             while let Some(at) = rest.find("register_block_style(") {
                 rest = &rest[at + "register_block_style(".len()..];
-                let Some((block, after)) = php_literal(rest) else { continue };
+                let Some((block, after)) = php_literal(rest) else {
+                    continue;
+                };
                 let end = after.find("register_block_style(").unwrap_or(after.len());
                 let body = &after[..end];
                 let name = self.php_array_text(body, "name", &domain);
@@ -162,7 +202,12 @@ impl Theme {
                 if name.is_empty() {
                     continue;
                 }
-                let is_default = body.find("'is_default'").is_some_and(|i| body[i..].split(',').next().is_some_and(|v| v.contains("true")));
+                let is_default = body.find("'is_default'").is_some_and(|i| {
+                    body[i..]
+                        .split(',')
+                        .next()
+                        .is_some_and(|v| v.contains("true"))
+                });
                 flat.push((block, name, label, is_default));
             }
         }
@@ -205,7 +250,10 @@ impl Theme {
         if self.template_dir() != self.stylesheet_dir() {
             dirs.push(self.template_dir().to_path_buf());
         }
-        dirs.iter().filter_map(|dir| rustpress_core::files::read(&dir.join("functions.php"))).find_map(|php| crate::functions_php::theme_support_list(&php, "post-formats")).unwrap_or_default()
+        dirs.iter()
+            .filter_map(|dir| rustpress_core::files::read(&dir.join("functions.php")))
+            .find_map(|php| crate::functions_php::theme_support_list(&php, "post-formats"))
+            .unwrap_or_default()
     }
 
     /// The block bindings sources the theme and its parent register, the child's first.
@@ -214,7 +262,10 @@ impl Theme {
         if self.template_dir() != self.stylesheet_dir() {
             dirs.push(self.template_dir().to_path_buf());
         }
-        dirs.iter().filter_map(|dir| rustpress_core::files::read(&dir.join("functions.php"))).flat_map(|php| crate::functions_php::block_bindings_sources(&php)).collect()
+        dirs.iter()
+            .filter_map(|dir| rustpress_core::files::read(&dir.join("functions.php")))
+            .flat_map(|php| crate::functions_php::block_bindings_sources(&php))
+            .collect()
     }
 
     /// `current_theme_supports( $feature )` for what the `functions.php` of the theme (or its parent) adds.
@@ -223,7 +274,9 @@ impl Theme {
         if self.template_dir() != self.stylesheet_dir() {
             dirs.push(self.template_dir().to_path_buf());
         }
-        dirs.iter().filter_map(|dir| rustpress_core::files::read(&dir.join("functions.php"))).any(|php| crate::functions_php::adds_theme_support(&php, feature))
+        dirs.iter()
+            .filter_map(|dir| rustpress_core::files::read(&dir.join("functions.php")))
+            .any(|php| crate::functions_php::adds_theme_support(&php, feature))
     }
 }
 
@@ -271,12 +324,16 @@ impl Theme {
         }
         let mut out = Vec::new();
         for dir in &dirs {
-            let Some(source) = rustpress_core::files::read(&dir.join("functions.php")) else { continue };
+            let Some(source) = rustpress_core::files::read(&dir.join("functions.php")) else {
+                continue;
+            };
             let domain = crate::theme_headers::text_domain(dir);
             let mut rest: &str = &source;
             while let Some(at) = rest.find("register_block_style(") {
                 rest = &rest[at + "register_block_style(".len()..];
-                let Some((_, after)) = php_literal(rest) else { continue };
+                let Some((_, after)) = php_literal(rest) else {
+                    continue;
+                };
                 let end = after.find("register_block_style(").unwrap_or(after.len());
                 let inline = self.php_array_text(&after[..end], "inline_style", &domain);
                 if !inline.is_empty() {
@@ -289,8 +346,14 @@ impl Theme {
 
     /// The text of `'key' => __( 'text', 'domain' )`, `_x( 'text', 'context', 'domain' )` or `'text'` after `from`.
     fn php_array_text(&self, from: &str, key: &str, default_domain: &str) -> String {
-        let Some(at) = from.find(&format!("'{key}'")) else { return String::new() };
-        let value = from[at + key.len() + 2..].trim_start().strip_prefix("=>").unwrap_or_default().trim_start();
+        let Some(at) = from.find(&format!("'{key}'")) else {
+            return String::new();
+        };
+        let value = from[at + key.len() + 2..]
+            .trim_start()
+            .strip_prefix("=>")
+            .unwrap_or_default()
+            .trim_start();
         let (function, args) = if let Some(args) = value.strip_prefix("_x(") {
             ("_x", args)
         } else if let Some(args) = value.strip_prefix("__(") {
@@ -298,15 +361,21 @@ impl Theme {
         } else {
             ("", value)
         };
-        let Some((text, rest)) = php_literal(args) else { return String::new() };
+        let Some((text, rest)) = php_literal(args) else {
+            return String::new();
+        };
         match function {
             "_x" => {
-                let Some((context, rest)) = next_literal(rest) else { return text };
-                let domain = next_literal(rest).map_or_else(|| default_domain.to_owned(), |(d, _)| d);
+                let Some((context, rest)) = next_literal(rest) else {
+                    return text;
+                };
+                let domain =
+                    next_literal(rest).map_or_else(|| default_domain.to_owned(), |(d, _)| d);
                 self.translate_with_context(&text, &context, &domain)
             }
             "__" => {
-                let domain = next_literal(rest).map_or_else(|| default_domain.to_owned(), |(d, _)| d);
+                let domain =
+                    next_literal(rest).map_or_else(|| default_domain.to_owned(), |(d, _)| d);
                 self.host_ref().translate(&text, None, &domain)
             }
             _ => text,
@@ -317,12 +386,23 @@ impl Theme {
         let mut rest = source;
         while let Some(at) = rest.find("register_block_pattern_category(") {
             rest = &rest[at + "register_block_pattern_category(".len()..];
-            let Some((name, after)) = php_literal(rest) else { continue };
-            let end = after.find("register_block_pattern_category(").unwrap_or(after.len());
+            let Some((name, after)) = php_literal(rest) else {
+                continue;
+            };
+            let end = after
+                .find("register_block_pattern_category(")
+                .unwrap_or(after.len());
             let body = &after[..end];
-            let (label, description) = (self.php_array_text(body, "label", domain), self.php_array_text(body, "description", domain));
+            let (label, description) = (
+                self.php_array_text(body, "label", domain),
+                self.php_array_text(body, "description", domain),
+            );
             if !out.iter().any(|c| c.name == name) {
-                out.push(PatternCategory { name, label, description });
+                out.push(PatternCategory {
+                    name,
+                    label,
+                    description,
+                });
             }
         }
     }
@@ -331,7 +411,9 @@ impl Theme {
     /// its parent) registers in `functions.php`.
     pub fn pattern_categories(&self) -> Vec<PatternCategory> {
         let mut out = Vec::new();
-        if let Some(source) = rustpress_core::files::read(&self.wp_root.join("wp-includes").join("block-patterns.php")) {
+        if let Some(source) = rustpress_core::files::read(
+            &self.wp_root.join("wp-includes").join("block-patterns.php"),
+        ) {
             self.scan_pattern_categories(&source, "default", &mut out);
         }
         let mut dirs = vec![self.stylesheet_dir().to_path_buf()];
@@ -340,7 +422,11 @@ impl Theme {
         }
         for dir in dirs {
             if let Some(source) = rustpress_core::files::read(&dir.join("functions.php")) {
-                self.scan_pattern_categories(&source, &crate::theme_headers::text_domain(&dir), &mut out);
+                self.scan_pattern_categories(
+                    &source,
+                    &crate::theme_headers::text_domain(&dir),
+                    &mut out,
+                );
             }
         }
         out

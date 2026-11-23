@@ -66,14 +66,19 @@ pub enum ConfigError {
     Parse(String, toml::de::Error),
     #[error("`{0}` must be a number")]
     Number(&'static str),
-    #[error("no database configured: set `database_url` or RUSTPRESS_DATABASE_URL, or DB_NAME in a wp-config.php ({0})")]
+    #[error(
+        "no database configured: set `database_url` or RUSTPRESS_DATABASE_URL, or DB_NAME in a wp-config.php ({0})"
+    )]
     NoDatabase(String),
 }
 
 impl Config {
     /// File first, then environment.
     pub fn load() -> Result<Self, ConfigError> {
-        Self::load_with(std::env::var_os("RUSTPRESS_CONFIG").map(PathBuf::from), None)
+        Self::load_with(
+            std::env::var_os("RUSTPRESS_CONFIG").map(PathBuf::from),
+            None,
+        )
     }
 
     /// Like `load()` with the config file given, and a WordPress directory for when neither the file nor the
@@ -92,19 +97,25 @@ impl Config {
 
     /// Like `load_with()`, but a site that has no database yet is no error: its `database_url` is empty (the
     /// installer then sets it up).
-    pub fn load_without_database(file: Option<PathBuf>, wp_root: Option<PathBuf>) -> Result<Self, ConfigError> {
+    pub fn load_without_database(
+        file: Option<PathBuf>,
+        wp_root: Option<PathBuf>,
+    ) -> Result<Self, ConfigError> {
         let mut given = toml::Table::new();
         let mut config = match file {
             Some(path) => {
                 let shown = path.display().to_string();
-                let text = std::fs::read_to_string(&path).map_err(|e| ConfigError::Read(shown.clone(), e))?;
+                let text = std::fs::read_to_string(&path)
+                    .map_err(|e| ConfigError::Read(shown.clone(), e))?;
                 given = text.parse().unwrap_or_default();
                 toml::from_str(&text).map_err(|e| ConfigError::Parse(shown, e))?
             }
             None => Config::default(),
         };
-        let root_given = given.contains_key("wp_root") || std::env::var_os("RUSTPRESS_WP_ROOT").is_some();
-        let prefix_given = given.contains_key("table_prefix") || std::env::var_os("RUSTPRESS_TABLE_PREFIX").is_some();
+        let root_given =
+            given.contains_key("wp_root") || std::env::var_os("RUSTPRESS_WP_ROOT").is_some();
+        let prefix_given = given.contains_key("table_prefix")
+            || std::env::var_os("RUSTPRESS_TABLE_PREFIX").is_some();
         if let Ok(v) = std::env::var("RUSTPRESS_DATABASE_URL") {
             config.database_url = v;
         }
@@ -118,7 +129,9 @@ impl Config {
             config.listen = v;
         }
         if let Ok(v) = std::env::var("RUSTPRESS_RELOAD_SECS") {
-            config.reload_secs = v.parse().map_err(|_| ConfigError::Number("RUSTPRESS_RELOAD_SECS"))?;
+            config.reload_secs = v
+                .parse()
+                .map_err(|_| ConfigError::Number("RUSTPRESS_RELOAD_SECS"))?;
         }
         if let Ok(v) = std::env::var("RUSTPRESS_ALLOW_WRITES") {
             config.allow_writes = matches!(v.as_str(), "1" | "true" | "yes" | "on");
@@ -127,13 +140,21 @@ impl Config {
             config.wp_config = Some(v.into());
         }
         if let Ok(v) = std::env::var("RUSTPRESS_TRUSTED_PROXIES") {
-            config.trusted_proxies = v.split(',').map(str::trim).filter(|p| !p.is_empty()).map(str::to_owned).collect();
+            config.trusted_proxies = v
+                .split(',')
+                .map(str::trim)
+                .filter(|p| !p.is_empty())
+                .map(str::to_owned)
+                .collect();
         }
         if let Some(root) = wp_root.filter(|_| !root_given) {
             config.wp_root = root;
         }
         if config.database_url.is_empty() {
-            let text = config.wp_config_path().and_then(|path| std::fs::read_to_string(path).ok()).unwrap_or_default();
+            let text = config
+                .wp_config_path()
+                .and_then(|path| std::fs::read_to_string(path).ok())
+                .unwrap_or_default();
             if let Some((url, prefix)) = database_from_wp_config(&text) {
                 config.database_url = url;
                 if !prefix_given && let Some(prefix) = prefix {
@@ -166,22 +187,48 @@ impl Config {
 fn database_from_wp_config(config_php: &str) -> Option<(String, Option<String>)> {
     let constants = rustpress_auth::salts::parse_config_constants(config_php);
     let name = constants.get("DB_NAME").filter(|n| !n.is_empty())?;
-    let user = constants.get("DB_USER").map(String::as_str).unwrap_or_default();
-    let password = constants.get("DB_PASSWORD").map(String::as_str).unwrap_or_default();
-    let host = constants.get("DB_HOST").map(String::as_str).filter(|h| !h.is_empty()).unwrap_or("localhost");
+    let user = constants
+        .get("DB_USER")
+        .map(String::as_str)
+        .unwrap_or_default();
+    let password = constants
+        .get("DB_PASSWORD")
+        .map(String::as_str)
+        .unwrap_or_default();
+    let host = constants
+        .get("DB_HOST")
+        .map(String::as_str)
+        .filter(|h| !h.is_empty())
+        .unwrap_or("localhost");
     let (host, socket) = match host.split_once(':') {
         Some((host, socket)) if socket.starts_with('/') => (host, Some(socket)),
         _ => (host, None),
     };
-    let ssl = config_php.lines().any(|line| line.contains("MYSQL_CLIENT_FLAGS") && line.contains("MYSQLI_CLIENT_SSL") && !line.trim_start().starts_with("//"));
-    let mut url = format!("mysql://{}:{}@{}/{}?ssl-mode={}", encode(user), encode(password), host, encode(name), if ssl { "required" } else { "disabled" });
+    let ssl = config_php.lines().any(|line| {
+        line.contains("MYSQL_CLIENT_FLAGS")
+            && line.contains("MYSQLI_CLIENT_SSL")
+            && !line.trim_start().starts_with("//")
+    });
+    let mut url = format!(
+        "mysql://{}:{}@{}/{}?ssl-mode={}",
+        encode(user),
+        encode(password),
+        host,
+        encode(name),
+        if ssl { "required" } else { "disabled" }
+    );
     if let Some(socket) = socket {
         url.push_str("&socket=");
         url.push_str(&encode(socket));
     }
     // `$table_prefix = 'wp_';`
     let prefix = config_php.lines().find_map(|line| {
-        let value = line.trim_start().strip_prefix("$table_prefix")?.trim_start().strip_prefix('=')?.trim_start();
+        let value = line
+            .trim_start()
+            .strip_prefix("$table_prefix")?
+            .trim_start()
+            .strip_prefix('=')?
+            .trim_start();
         let quote = value.chars().next().filter(|c| matches!(c, '\'' | '"'))?;
         let rest = &value[1..];
         Some(rest[..rest.find(quote)?].to_owned())
@@ -208,7 +255,8 @@ mod tests {
 
     #[test]
     fn toml_overrides_defaults() {
-        let c: Config = toml::from_str("database_url = \"mysql://x\"\nlisten = \"0.0.0.0:80\"").unwrap();
+        let c: Config =
+            toml::from_str("database_url = \"mysql://x\"\nlisten = \"0.0.0.0:80\"").unwrap();
         assert_eq!(c.database_url, "mysql://x");
         assert_eq!(c.listen, "0.0.0.0:80");
         assert_eq!(c.table_prefix, "wp_");
@@ -219,12 +267,22 @@ mod tests {
     fn database_from_wp_config_php() {
         let php = "<?php\ndefine( 'DB_NAME', 'dbs123' );\ndefine( 'DB_USER', 'dbu123' );\ndefine( 'DB_PASSWORD', 'p@ss:w/rd' );\ndefine( 'DB_HOST', 'rdbms.example.de:3307' );\n$table_prefix = 'xyz_';\n";
         let (url, prefix) = database_from_wp_config(php).unwrap();
-        assert_eq!(url, "mysql://dbu123:p%40ss%3Aw%2Frd@rdbms.example.de:3307/dbs123?ssl-mode=disabled");
+        assert_eq!(
+            url,
+            "mysql://dbu123:p%40ss%3Aw%2Frd@rdbms.example.de:3307/dbs123?ssl-mode=disabled"
+        );
         assert_eq!(prefix.as_deref(), Some("xyz_"));
-        let socket = "define('DB_NAME', 'wp');\ndefine('DB_HOST', 'localhost:/run/mysqld/mysqld.sock');\n";
-        assert_eq!(database_from_wp_config(socket).unwrap().0, "mysql://:@localhost/wp?ssl-mode=disabled&socket=%2Frun%2Fmysqld%2Fmysqld.sock");
+        let socket =
+            "define('DB_NAME', 'wp');\ndefine('DB_HOST', 'localhost:/run/mysqld/mysqld.sock');\n";
+        assert_eq!(
+            database_from_wp_config(socket).unwrap().0,
+            "mysql://:@localhost/wp?ssl-mode=disabled&socket=%2Frun%2Fmysqld%2Fmysqld.sock"
+        );
         let tls = "define('DB_NAME', 'wp');\ndefine('MYSQL_CLIENT_FLAGS', MYSQLI_CLIENT_SSL);\n";
-        assert_eq!(database_from_wp_config(tls).unwrap().0, "mysql://:@localhost/wp?ssl-mode=required");
+        assert_eq!(
+            database_from_wp_config(tls).unwrap().0,
+            "mysql://:@localhost/wp?ssl-mode=required"
+        );
         assert!(database_from_wp_config("<?php // nothing").is_none());
     }
 }

@@ -31,7 +31,13 @@ impl Site {
             let taxonomies = site.db.used_taxonomies().await?;
             let relations = site.db.taxonomy_post_types().await?;
             let with_parents = site.db.taxonomies_with_parents().await?;
-            site.types = crate::types::Types::infer(&site.rewrite, &post_types, &taxonomies, &relations, &with_parents);
+            site.types = crate::types::Types::infer(
+                &site.rewrite,
+                &post_types,
+                &taxonomies,
+                &relations,
+                &with_parents,
+            );
         }
         Ok(site)
     }
@@ -43,13 +49,22 @@ impl Site {
         let plugins = site.active_plugins();
         let plain = site.rewrite.is_empty();
         let mut registrations = Vec::new();
-        for plugin in crate::native::registered().iter().filter(|p| plugins.iter().any(|f| f == p.file())) {
+        for plugin in crate::native::registered()
+            .iter()
+            .filter(|p| plugins.iter().any(|f| f == p.file()))
+        {
             match plugin.registrations(&site, wp_root).await {
                 Ok(found) => registrations.extend(found),
-                Err(e) => tracing::error!(plugin = plugin.file(), error = %e, "native plugin registrations failed"),
+                Err(e) => {
+                    tracing::error!(plugin = plugin.file(), error = %e, "native plugin registrations failed")
+                }
             }
         }
-        if plain || !registrations.is_empty() || !site.types.post_types.is_empty() || !site.types.taxonomies.is_empty() {
+        if plain
+            || !registrations.is_empty()
+            || !site.types.post_types.is_empty()
+            || !site.types.taxonomies.is_empty()
+        {
             let themes = wp_root.join("wp-content").join("themes");
             let mut dirs = vec![themes.join(&site.settings.stylesheet)];
             if site.settings.template != site.settings.stylesheet {
@@ -67,19 +82,34 @@ impl Site {
     pub fn active_plugins(&self) -> Vec<String> {
         self.options
             .value("active_plugins")
-            .and_then(|v| v.as_array().map(|items| items.iter().filter_map(|(_, p)| p.as_str().map(str::to_owned)).collect()))
+            .and_then(|v| {
+                v.as_array().map(|items| {
+                    items
+                        .iter()
+                        .filter_map(|(_, p)| p.as_str().map(str::to_owned))
+                        .collect()
+                })
+            })
             .unwrap_or_default()
     }
 
     /// `wp_is_application_passwords_available()`: HTTPS, or a local or development environment
     /// (`RUSTPRESS_ENVIRONMENT_TYPE`, the counterpart of `WP_ENVIRONMENT_TYPE`).
     pub fn app_passwords_available(&self) -> bool {
-        self.settings.siteurl.starts_with("https://") || self.settings.home.starts_with("https://") || matches!(std::env::var("RUSTPRESS_ENVIRONMENT_TYPE").as_deref(), Ok("local" | "development"))
+        self.settings.siteurl.starts_with("https://")
+            || self.settings.home.starts_with("https://")
+            || matches!(
+                std::env::var("RUSTPRESS_ENVIRONMENT_TYPE").as_deref(),
+                Ok("local" | "development")
+            )
     }
 
     /// `wp_get_environment_type()`.
     pub fn environment_type(&self) -> String {
-        std::env::var("RUSTPRESS_ENVIRONMENT_TYPE").ok().filter(|e| ["local", "development", "staging", "production"].contains(&e.as_str())).unwrap_or_else(|| "production".to_owned())
+        std::env::var("RUSTPRESS_ENVIRONMENT_TYPE")
+            .ok()
+            .filter(|e| ["local", "development", "staging", "production"].contains(&e.as_str()))
+            .unwrap_or_else(|| "production".to_owned())
     }
 
     /// `get_option( 'show_avatars' )`: avatars are on unless the option is switched off.
@@ -93,7 +123,16 @@ impl Site {
             "post" => self.trx("Posts", "post type general name"),
             "page" => self.trx("Pages", "post type general name"),
             "attachment" => self.trx("Media", "post type general name"),
-            other => self.types.post_type(other).or_else(|| self.types.rewrite_post_types().iter().find(|t| t.name == other)).map_or_else(|| other.to_owned(), |t| t.plural_label()),
+            other => self
+                .types
+                .post_type(other)
+                .or_else(|| {
+                    self.types
+                        .rewrite_post_types()
+                        .iter()
+                        .find(|t| t.name == other)
+                })
+                .map_or_else(|| other.to_owned(), |t| t.plural_label()),
         }
     }
 
@@ -113,17 +152,47 @@ impl Site {
 
     /// `post_type_supports( $post_type, $feature )`, after the plugins' `remove_post_type_support()`.
     pub fn post_type_supports(&self, post_type: &str, feature: &str) -> bool {
-        if matches!(feature, "comments" | "trackbacks") && self.plugins.removes_post_type_support(post_type, feature) {
+        if matches!(feature, "comments" | "trackbacks")
+            && self.plugins.removes_post_type_support(post_type, feature)
+        {
             return false;
         }
         match post_type {
-            "post" => matches!(feature, "title" | "editor" | "author" | "thumbnail" | "excerpt" | "trackbacks" | "custom-fields" | "comments" | "revisions" | "post-formats"),
-            "page" => matches!(feature, "title" | "editor" | "author" | "thumbnail" | "page-attributes" | "custom-fields" | "comments" | "revisions"),
+            "post" => matches!(
+                feature,
+                "title"
+                    | "editor"
+                    | "author"
+                    | "thumbnail"
+                    | "excerpt"
+                    | "trackbacks"
+                    | "custom-fields"
+                    | "comments"
+                    | "revisions"
+                    | "post-formats"
+            ),
+            "page" => matches!(
+                feature,
+                "title"
+                    | "editor"
+                    | "author"
+                    | "thumbnail"
+                    | "page-attributes"
+                    | "custom-fields"
+                    | "comments"
+                    | "revisions"
+            ),
             "attachment" => matches!(feature, "title" | "author" | "comments"),
             "wp_font_family" => feature == "title",
             "wp_font_face" => false,
-            "wp_block" => matches!(feature, "title" | "excerpt" | "editor" | "revisions" | "custom-fields"),
-            other => self.types.any_post_type(other).is_none_or(|t| t.supports(feature)),
+            "wp_block" => matches!(
+                feature,
+                "title" | "excerpt" | "editor" | "revisions" | "custom-fields"
+            ),
+            other => self
+                .types
+                .any_post_type(other)
+                .is_none_or(|t| t.supports(feature)),
         }
     }
 
@@ -138,21 +207,45 @@ impl Site {
     }
 
     /// `get_comments_number( $post )`: the cached `comment_count` after the `get_comments_number` filters.
-    pub fn comments_number(&self, post: &rustpress_db::Post, viewer: Option<&crate::Viewer>) -> i64 {
-        self.plugins.comments_off(post, viewer).and_then(|off| off.count).unwrap_or(post.comment_count)
+    pub fn comments_number(
+        &self,
+        post: &rustpress_db::Post,
+        viewer: Option<&crate::Viewer>,
+    ) -> i64 {
+        self.plugins
+            .comments_off(post, viewer)
+            .and_then(|off| off.count)
+            .unwrap_or(post.comment_count)
     }
 
     /// `'1' === get_comments_number( $post )`: only the cached column is a string; a plugin's number is an int.
-    pub fn comments_number_is_one(&self, post: &rustpress_db::Post, viewer: Option<&crate::Viewer>) -> bool {
-        match self.plugins.comments_off(post, viewer).and_then(|off| off.count) {
+    pub fn comments_number_is_one(
+        &self,
+        post: &rustpress_db::Post,
+        viewer: Option<&crate::Viewer>,
+    ) -> bool {
+        match self
+            .plugins
+            .comments_off(post, viewer)
+            .and_then(|off| off.count)
+        {
             Some(_) => false,
             None => post.comment_count == 1,
         }
     }
 
     /// The `comments_array` filters of the plugins on the comments `comments_template()` shows.
-    pub fn filter_comments_array(&self, post: &rustpress_db::Post, viewer: Option<&crate::Viewer>, comments: &mut Vec<rustpress_db::Comment>) {
-        if let Some(types) = self.plugins.comments_off(post, viewer).and_then(|off| off.keep_types) {
+    pub fn filter_comments_array(
+        &self,
+        post: &rustpress_db::Post,
+        viewer: Option<&crate::Viewer>,
+        comments: &mut Vec<rustpress_db::Comment>,
+    ) {
+        if let Some(types) = self
+            .plugins
+            .comments_off(post, viewer)
+            .and_then(|off| off.keep_types)
+        {
             comments.retain(|c| types.contains(&c.comment_type));
         }
     }
@@ -163,7 +256,10 @@ impl Site {
             "category" => self.trx("Category", "taxonomy singular name"),
             "post_tag" => self.trx("Tag", "taxonomy singular name"),
             "post_format" => self.trx("Format", "post format"),
-            other => self.types.taxonomy(other).map_or_else(|| other.to_owned(), |t| t.singular_label()),
+            other => self
+                .types
+                .taxonomy(other)
+                .map_or_else(|| other.to_owned(), |t| t.singular_label()),
         }
     }
 
@@ -174,13 +270,20 @@ impl Site {
             "post_tag" => self.trx("Tags", "taxonomy general name"),
             "post_format" => self.trx("Formats", "post format"),
             "wp_pattern_category" => self.trx("Pattern Categories", "taxonomy general name"),
-            other => self.types.taxonomy(other).map_or_else(|| other.to_owned(), |t| t.plural_label()),
+            other => self
+                .types
+                .taxonomy(other)
+                .map_or_else(|| other.to_owned(), |t| t.plural_label()),
         }
     }
 
     /// The locale (`WPLANG`), `en_US` if unset.
     pub fn locale(&self) -> String {
-        self.options.get("WPLANG").filter(|l| !l.is_empty()).unwrap_or("en_US").to_owned()
+        self.options
+            .get("WPLANG")
+            .filter(|l| !l.is_empty())
+            .unwrap_or("en_US")
+            .to_owned()
     }
 
     /// Loads the catalogs for the site's locale from `wp_root` (once; later calls do nothing).
@@ -239,7 +342,9 @@ impl Site {
     pub fn locale_data(&self) -> std::borrow::Cow<'_, crate::locale::LocaleData> {
         match self.i18n.get() {
             Some(i18n) => std::borrow::Cow::Borrowed(i18n.locale_data()),
-            None => std::borrow::Cow::Owned(crate::locale::LocaleData::from_i18n(&crate::i18n::I18n::default())),
+            None => std::borrow::Cow::Owned(crate::locale::LocaleData::from_i18n(
+                &crate::i18n::I18n::default(),
+            )),
         }
     }
 
@@ -275,7 +380,11 @@ impl Site {
         let tags = self.shortcode_tags();
         match self.i18n.get().filter(|i| i.is_translated()) {
             Some(i18n) => crate::formatting::wptexturize_shortcodes(text, i18n.texturize(), &tags),
-            None => crate::formatting::wptexturize_shortcodes(text, crate::formatting::texturize_rules(), &tags),
+            None => crate::formatting::wptexturize_shortcodes(
+                text,
+                crate::formatting::texturize_rules(),
+                &tags,
+            ),
         }
     }
 
@@ -298,7 +407,10 @@ impl Site {
 
     /// The default excerpt length: `_x( '55', 'excerpt_length' )`.
     pub fn excerpt_length(&self) -> usize {
-        self.trx("55", "excerpt_length").trim().parse().unwrap_or(55)
+        self.trx("55", "excerpt_length")
+            .trim()
+            .parse()
+            .unwrap_or(55)
     }
 
     /// `is_rtl()`.
@@ -342,7 +454,16 @@ impl Site {
         if let Some(loaded) = self.i18n.get() {
             let _ = i18n.set(loaded.clone());
         }
-        Self { db: self.db.clone(), options, settings, rewrite: self.rewrite.clone(), timezone: self.timezone.clone(), types: self.types.clone(), plugins: self.plugins.clone(), i18n }
+        Self {
+            db: self.db.clone(),
+            options,
+            settings,
+            rewrite: self.rewrite.clone(),
+            timezone: self.timezone.clone(),
+            types: self.types.clone(),
+            plugins: self.plugins.clone(),
+            i18n,
+        }
     }
 
     /// The site without its catalogs, which [`Site::init_i18n`] loads again (for the text domains of another theme).
@@ -353,11 +474,26 @@ impl Site {
 
     pub fn from_parts(db: Db, options: Options) -> Self {
         let settings = Settings::from_options(&options);
-        let rewrite = options.value("rewrite_rules").map(|v| RewriteRules::from_option(&v)).unwrap_or_default();
+        let rewrite = options
+            .value("rewrite_rules")
+            .map(|v| RewriteRules::from_option(&v))
+            .unwrap_or_default();
         for pattern in &rewrite.skipped {
-            tracing::warn!(pattern, "rewrite rule uses regex features that are not supported; skipped");
+            tracing::warn!(
+                pattern,
+                "rewrite rule uses regex features that are not supported; skipped"
+            );
         }
         let timezone = SiteTimezone::from_options(&options);
-        Self { db, options, settings, rewrite, timezone, types: crate::types::Types::default(), plugins: crate::native::Plugins::default(), i18n: std::sync::OnceLock::new() }
+        Self {
+            db,
+            options,
+            settings,
+            rewrite,
+            timezone,
+            types: crate::types::Types::default(),
+            plugins: crate::native::Plugins::default(),
+            i18n: std::sync::OnceLock::new(),
+        }
     }
 }

@@ -56,8 +56,13 @@ impl LoaderEnv {
             Some(context) => i18n.pgettext("default", context, text),
             None => i18n.gettext("default", text),
         });
-        let plurals: PluralFn = std::sync::Arc::new(move |single, plural, number| plural_i18n.ngettext("default", single, plural, number));
-        Self { messages: Some((locale, messages, plurals)), ..self.clone() }
+        let plurals: PluralFn = std::sync::Arc::new(move |single, plural, number| {
+            plural_i18n.ngettext("default", single, plural, number)
+        });
+        Self {
+            messages: Some((locale, messages, plurals)),
+            ..self.clone()
+        }
     }
 }
 
@@ -157,7 +162,13 @@ fn statements(body: &str) -> Vec<(usize, Statement)> {
     let mut found: Vec<(usize, Statement)> = Vec::new();
     for m in call.captures_iter(body) {
         let whole = m.get(0).expect("whole match");
-        found.push((whole.start(), Statement::Call { method: m[2].to_owned(), args_at: whole.end() }));
+        found.push((
+            whole.start(),
+            Statement::Call {
+                method: m[2].to_owned(),
+                args_at: whole.end(),
+            },
+        ));
     }
     for m in assign.captures_iter(body) {
         let whole = m.get(0).expect("whole match");
@@ -165,7 +176,10 @@ fn statements(body: &str) -> Vec<(usize, Statement)> {
         if body[whole.end()..].starts_with('=') || body[whole.start()..whole.end()].contains("=>") {
             continue;
         }
-        found.push((whole.start(), Statement::Assign(m[1].to_owned(), whole.end())));
+        found.push((
+            whole.start(),
+            Statement::Assign(m[1].to_owned(), whole.end()),
+        ));
     }
     found.sort_by_key(|(at, _)| *at);
     found
@@ -176,60 +190,153 @@ fn hooks(env: &LoaderEnv) -> Hooks {
     let site = env.site_url.clone();
     let content = env.content_url.clone();
     let version = env.version.clone();
-    h.functions.insert("site_url".into(), Box::new({
-        let site = site.clone();
-        move |args| Some(Lit::Str(format!("{site}{}", args.first().and_then(Lit::as_str).map(|p| if p.starts_with('/') { p.to_owned() } else { format!("/{p}") }).unwrap_or_default())))
-    }));
-    h.functions.insert("admin_url".into(), Box::new({
-        let site = site.clone();
-        move |args| {
-            let path = args.first().and_then(Lit::as_str).unwrap_or_default();
-            // `admin_url( $path, 'relative' )` leaves the host out.
-            let base = if args.get(1).and_then(Lit::as_str) == Some("relative") { rustpress_core::urls::strip_origin(&site) } else { site.clone() };
-            Some(Lit::Str(format!("{base}/wp-admin/{path}")))
-        }
-    }));
-    h.functions.insert("includes_url".into(), Box::new({
-        let site = site.clone();
-        move |args| {
-            let base = if args.get(1).and_then(Lit::as_str) == Some("relative") { rustpress_core::urls::strip_origin(&site) } else { site.clone() };
-            Some(Lit::Str(format!("{base}/wp-includes/{}", args.first().and_then(Lit::as_str).unwrap_or_default().trim_start_matches('/'))))
-        }
-    }));
-    h.functions.insert("get_rest_url".into(), Box::new({
-        let site = site.clone();
-        move |_| Some(Lit::Str(format!("{site}/wp-json/")))
-    }));
-    h.functions.insert("sanitize_url".into(), Box::new(|args| args.first().cloned()));
-    h.functions.insert("esc_url".into(), Box::new(|args| args.first().and_then(Lit::as_str).map(|url| Lit::Str(rustpress_core::formatting::esc_url(url)))));
-    h.functions.insert("content_url".into(), Box::new({
-        let content = content.clone();
-        move |args| Some(Lit::Str(format!("{content}/{}", args.first().and_then(Lit::as_str).unwrap_or_default().trim_start_matches('/'))))
-    }));
-    h.functions.insert("get_bloginfo".into(), Box::new(move |args| match args.first().and_then(Lit::as_str) {
-        Some("version") => Some(Lit::Str(version.clone())),
-        _ => None,
-    }));
-    h.functions.insert("wp_scripts_get_suffix".into(), Box::new(|_| Some(Lit::Str(".min".into()))));
-    h.functions.insert("is_admin".into(), Box::new(|_| Some(Lit::Bool(false))));
-    h.functions.insert("wp_installing".into(), Box::new(|_| Some(Lit::Bool(false))));
+    h.functions.insert(
+        "site_url".into(),
+        Box::new({
+            let site = site.clone();
+            move |args| {
+                Some(Lit::Str(format!(
+                    "{site}{}",
+                    args.first()
+                        .and_then(Lit::as_str)
+                        .map(|p| if p.starts_with('/') {
+                            p.to_owned()
+                        } else {
+                            format!("/{p}")
+                        })
+                        .unwrap_or_default()
+                )))
+            }
+        }),
+    );
+    h.functions.insert(
+        "admin_url".into(),
+        Box::new({
+            let site = site.clone();
+            move |args| {
+                let path = args.first().and_then(Lit::as_str).unwrap_or_default();
+                // `admin_url( $path, 'relative' )` leaves the host out.
+                let base = if args.get(1).and_then(Lit::as_str) == Some("relative") {
+                    rustpress_core::urls::strip_origin(&site)
+                } else {
+                    site.clone()
+                };
+                Some(Lit::Str(format!("{base}/wp-admin/{path}")))
+            }
+        }),
+    );
+    h.functions.insert(
+        "includes_url".into(),
+        Box::new({
+            let site = site.clone();
+            move |args| {
+                let base = if args.get(1).and_then(Lit::as_str) == Some("relative") {
+                    rustpress_core::urls::strip_origin(&site)
+                } else {
+                    site.clone()
+                };
+                Some(Lit::Str(format!(
+                    "{base}/wp-includes/{}",
+                    args.first()
+                        .and_then(Lit::as_str)
+                        .unwrap_or_default()
+                        .trim_start_matches('/')
+                )))
+            }
+        }),
+    );
+    h.functions.insert(
+        "get_rest_url".into(),
+        Box::new({
+            let site = site.clone();
+            move |_| Some(Lit::Str(format!("{site}/wp-json/")))
+        }),
+    );
+    h.functions.insert(
+        "sanitize_url".into(),
+        Box::new(|args| args.first().cloned()),
+    );
+    h.functions.insert(
+        "esc_url".into(),
+        Box::new(|args| {
+            args.first()
+                .and_then(Lit::as_str)
+                .map(|url| Lit::Str(rustpress_core::formatting::esc_url(url)))
+        }),
+    );
+    h.functions.insert(
+        "content_url".into(),
+        Box::new({
+            let content = content.clone();
+            move |args| {
+                Some(Lit::Str(format!(
+                    "{content}/{}",
+                    args.first()
+                        .and_then(Lit::as_str)
+                        .unwrap_or_default()
+                        .trim_start_matches('/')
+                )))
+            }
+        }),
+    );
+    h.functions.insert(
+        "get_bloginfo".into(),
+        Box::new(move |args| match args.first().and_then(Lit::as_str) {
+            Some("version") => Some(Lit::Str(version.clone())),
+            _ => None,
+        }),
+    );
+    h.functions.insert(
+        "wp_scripts_get_suffix".into(),
+        Box::new(|_| Some(Lit::Str(".min".into()))),
+    );
+    h.functions
+        .insert("is_admin".into(), Box::new(|_| Some(Lit::Bool(false))));
+    h.functions
+        .insert("wp_installing".into(), Box::new(|_| Some(Lit::Bool(false))));
     // `empty()` and `isset()` of values this reader cannot know: not set.
-    h.functions.insert("empty".into(), Box::new(|args| Some(Lit::Bool(args.first().is_none_or(|a| matches!(a.truthy(), Some(false) | None))))));
-    h.functions.insert("isset".into(), Box::new(|_| Some(Lit::Bool(false))));
-    h.functions.insert("wp_create_nonce".into(), Box::new({
-        let nonce = env.nonce.clone();
-        move |args| {
-            let action = args.first().and_then(Lit::as_str)?;
-            Some(Lit::Str(nonce.as_ref().map(|n| n(action)).unwrap_or_default()))
-        }
-    }));
-    h.functions.insert("urlencode".into(), Box::new(|args| args.first().and_then(Lit::as_str).map(|t| Lit::Str(rustpress_core::canonical::php_urlencode(t)))));
-    h.props.insert("const::WPINC".into(), Lit::Str("wp-includes".into()));
-    h.props.insert("const::ABSPATH".into(), Lit::Str("/var/www/html/".into()));
-    h.props.insert("scripts->base_url".into(), Lit::Str(site.clone()));
+    h.functions.insert(
+        "empty".into(),
+        Box::new(|args| {
+            Some(Lit::Bool(
+                args.first()
+                    .is_none_or(|a| matches!(a.truthy(), Some(false) | None)),
+            ))
+        }),
+    );
+    h.functions
+        .insert("isset".into(), Box::new(|_| Some(Lit::Bool(false))));
+    h.functions.insert(
+        "wp_create_nonce".into(),
+        Box::new({
+            let nonce = env.nonce.clone();
+            move |args| {
+                let action = args.first().and_then(Lit::as_str)?;
+                Some(Lit::Str(
+                    nonce.as_ref().map(|n| n(action)).unwrap_or_default(),
+                ))
+            }
+        }),
+    );
+    h.functions.insert(
+        "urlencode".into(),
+        Box::new(|args| {
+            args.first()
+                .and_then(Lit::as_str)
+                .map(|t| Lit::Str(rustpress_core::canonical::php_urlencode(t)))
+        }),
+    );
+    h.props
+        .insert("const::WPINC".into(), Lit::Str("wp-includes".into()));
+    h.props
+        .insert("const::ABSPATH".into(), Lit::Str("/var/www/html/".into()));
+    h.props
+        .insert("scripts->base_url".into(), Lit::Str(site.clone()));
     h.props.insert("styles->base_url".into(), Lit::Str(site));
-    h.props.insert("scripts->content_url".into(), Lit::Str(content.clone()));
-    h.props.insert("styles->content_url".into(), Lit::Str(content));
+    h.props
+        .insert("scripts->content_url".into(), Lit::Str(content.clone()));
+    h.props
+        .insert("styles->content_url".into(), Lit::Str(content));
     h
 }
 
@@ -265,7 +372,9 @@ fn extra_of(lit: &Lit) -> Option<Extra> {
 fn parser<'a>(body: &'a str, at: usize, vars: &'a Vars, env: &'a LoaderEnv) -> Parser<'a> {
     let reader = Parser::new(body, at, vars);
     match &env.messages {
-        Some((_, messages, plurals)) => reader.with_translator(&**messages).with_plural_translator(&**plurals),
+        Some((_, messages, plurals)) => reader
+            .with_translator(&**messages)
+            .with_plural_translator(&**plurals),
         None => reader,
     }
 }
@@ -280,9 +389,15 @@ fn run_body(body: &str, vars: &mut Vars, env: &LoaderEnv, mut target: Target<'_>
                     vars.insert(name, value);
                 }
             }
-            Statement::Call { method, args_at, .. } => {
-                let args = parser(body, args_at, vars, env).with_hooks(&hooks).call_args();
-                let Some(handle) = args.first().and_then(Lit::as_str).map(str::to_owned) else { continue };
+            Statement::Call {
+                method, args_at, ..
+            } => {
+                let args = parser(body, args_at, vars, env)
+                    .with_hooks(&hooks)
+                    .call_args();
+                let Some(handle) = args.first().and_then(Lit::as_str).map(str::to_owned) else {
+                    continue;
+                };
                 match (&mut target, method.as_str()) {
                     (Target::Scripts(s), "add") => {
                         let src = args.get(1).and_then(Lit::as_str);
@@ -303,18 +418,28 @@ fn run_body(body: &str, vars: &mut Vars, env: &LoaderEnv, mut target: Target<'_>
                         s.add(&handle, src, &deps_refs, ver_of(args.get(3)), media);
                     }
                     (Target::Scripts(s), "add_data") => {
-                        if let (Some(key), Some(value)) = (args.get(1).and_then(Lit::as_str), args.get(2).and_then(extra_of)) {
+                        if let (Some(key), Some(value)) = (
+                            args.get(1).and_then(Lit::as_str),
+                            args.get(2).and_then(extra_of),
+                        ) {
                             s.add_data(&handle, key, value);
                         }
                     }
                     (Target::Styles(s), "add_data") => {
-                        if let (Some(key), Some(value)) = (args.get(1).and_then(Lit::as_str), args.get(2).and_then(extra_of)) {
+                        if let (Some(key), Some(value)) = (
+                            args.get(1).and_then(Lit::as_str),
+                            args.get(2).and_then(extra_of),
+                        ) {
                             s.add_data(&handle, key, value);
                         }
                     }
                     (Target::Scripts(s), "add_inline_script") => {
                         if let Some(code) = args.get(1).and_then(Lit::as_str) {
-                            s.add_inline_script(&handle, code, args.get(2).and_then(Lit::as_str).unwrap_or("after"));
+                            s.add_inline_script(
+                                &handle,
+                                code,
+                                args.get(2).and_then(Lit::as_str).unwrap_or("after"),
+                            );
                         }
                     }
                     (Target::Styles(s), "add_inline_style") => {
@@ -323,7 +448,9 @@ fn run_body(body: &str, vars: &mut Vars, env: &LoaderEnv, mut target: Target<'_>
                         }
                     }
                     (Target::Scripts(s), "localize") => {
-                        if let (Some(name), Some(data)) = (args.get(1).and_then(Lit::as_str), args.get(2)) {
+                        if let (Some(name), Some(data)) =
+                            (args.get(1).and_then(Lit::as_str), args.get(2))
+                        {
                             s.localize(&handle, name, &lit_to_json(data));
                         }
                     }
@@ -357,15 +484,30 @@ fn base_vars() -> Vars {
 type RegistryKey = (PathBuf, String, String, String, bool, bool, bool, String);
 
 fn registry_key(env: &LoaderEnv) -> RegistryKey {
-    (env.includes.clone(), env.site_url.clone(), env.content_url.clone(), env.version.clone(), env.rtl, env.separate_block_assets, env.compressed_tinymce, env.messages.as_ref().map_or_else(String::new, |(locale, ..)| locale.clone()))
+    (
+        env.includes.clone(),
+        env.site_url.clone(),
+        env.content_url.clone(),
+        env.version.clone(),
+        env.rtl,
+        env.separate_block_assets,
+        env.compressed_tinymce,
+        env.messages
+            .as_ref()
+            .map_or_else(String::new, |(locale, ..)| locale.clone()),
+    )
 }
 
 const NONCE_MARK: char = '\u{1}';
 
 /// The environment with a nonce function that leaves a mark (`\u{1}nonce:<action>\u{1}`) instead of a nonce.
 fn marking(env: &LoaderEnv) -> LoaderEnv {
-    let mark: NonceFn = std::sync::Arc::new(|action: &str| format!("{NONCE_MARK}nonce:{action}{NONCE_MARK}"));
-    LoaderEnv { nonce: Some(mark), ..env.clone() }
+    let mark: NonceFn =
+        std::sync::Arc::new(|action: &str| format!("{NONCE_MARK}nonce:{action}{NONCE_MARK}"));
+    LoaderEnv {
+        nonce: Some(mark),
+        ..env.clone()
+    }
 }
 
 /// Replaces the marks of [`marking`] with the user's nonces (or nothing, without a user).
@@ -403,7 +545,9 @@ fn with_nonces(deps: &mut super::deps::Dependencies, env: &LoaderEnv) {
 /// Every script WordPress registers on its own: `wp_default_scripts()`, the vendor scripts and the
 /// packages of `script-loader-packages.php`. Built once per configuration and copied.
 pub fn default_scripts(env: &LoaderEnv) -> Scripts {
-    static CACHE: std::sync::OnceLock<std::sync::Mutex<HashMap<RegistryKey, super::deps::Dependencies>>> = std::sync::OnceLock::new();
+    static CACHE: std::sync::OnceLock<
+        std::sync::Mutex<HashMap<RegistryKey, super::deps::Dependencies>>,
+    > = std::sync::OnceLock::new();
     let cache = CACHE.get_or_init(Default::default);
     let key = registry_key(env);
     let cached = cache.lock().expect("registry cache").get(&key).cloned();
@@ -411,7 +555,10 @@ pub fn default_scripts(env: &LoaderEnv) -> Scripts {
         Some(deps) => deps,
         None => {
             let built = build_default_scripts(&marking(env)).deps;
-            cache.lock().expect("registry cache").insert(key, built.clone());
+            cache
+                .lock()
+                .expect("registry cache")
+                .insert(key, built.clone());
             built
         }
     };
@@ -444,40 +591,103 @@ fn build_default_scripts(env: &LoaderEnv) -> Scripts {
 /// What `wp_default_scripts()` and `wp_register_tinymce_scripts()` register in loops or by condition.
 fn register_loops(scripts: &mut Scripts, php: &str, env: &LoaderEnv) {
     for handle in ["all", "html5", "flash", "silverlight", "html4"] {
-        scripts.add(&format!("plupload-{handle}"), None, &["plupload"], Ver::Value("2.1.1".into()), None);
+        scripts.add(
+            &format!("plupload-{handle}"),
+            None,
+            &["plupload"],
+            Ver::Value("2.1.1".into()),
+            None,
+        );
     }
     let version = read(&env.includes.join("version.php"));
-    let tinymce = version.split("$tinymce_version = '").nth(1).and_then(|r| r.split('\'').next()).unwrap_or_default().to_owned();
+    let tinymce = version
+        .split("$tinymce_version = '")
+        .nth(1)
+        .and_then(|r| r.split('\'').next())
+        .unwrap_or_default()
+        .to_owned();
     let _ = php;
     let dir = format!("{}/wp-includes/js/tinymce/", env.site_url);
     if env.compressed_tinymce {
-        scripts.add("wp-tinymce", Some(&format!("{dir}wp-tinymce.js")), &[], Ver::Value(tinymce.clone()), None);
+        scripts.add(
+            "wp-tinymce",
+            Some(&format!("{dir}wp-tinymce.js")),
+            &[],
+            Ver::Value(tinymce.clone()),
+            None,
+        );
     } else {
-        scripts.add("wp-tinymce-root", Some(&format!("{dir}tinymce.min.js")), &[], Ver::Value(tinymce.clone()), None);
-        scripts.add("wp-tinymce", Some(&format!("{dir}plugins/compat3x/plugin.min.js")), &["wp-tinymce-root"], Ver::Value(tinymce.clone()), None);
+        scripts.add(
+            "wp-tinymce-root",
+            Some(&format!("{dir}tinymce.min.js")),
+            &[],
+            Ver::Value(tinymce.clone()),
+            None,
+        );
+        scripts.add(
+            "wp-tinymce",
+            Some(&format!("{dir}plugins/compat3x/plugin.min.js")),
+            &["wp-tinymce-root"],
+            Ver::Value(tinymce.clone()),
+            None,
+        );
     }
-    scripts.add("wp-tinymce-lists", Some(&format!("{dir}plugins/lists/plugin.min.js")), &["wp-tinymce"], Ver::Value(tinymce), None);
+    scripts.add(
+        "wp-tinymce-lists",
+        Some(&format!("{dir}plugins/lists/plugin.min.js")),
+        &["wp-tinymce"],
+        Ver::Value(tinymce),
+        None,
+    );
 }
 
 /// `wp_default_packages_vendor()`: the table of vendor scripts and the two inline scripts.
 fn register_vendor(scripts: &mut Scripts, php: &str, env: &LoaderEnv) {
-    let Some(body) = function_body(php, "wp_default_packages_vendor") else { return };
+    let Some(body) = function_body(php, "wp_default_packages_vendor") else {
+        return;
+    };
     let mut vars = base_vars();
     let hooks = hooks(env);
     let mut tables: HashMap<String, Lit> = HashMap::new();
-    for (name, at) in [("vendor_scripts", body.find("$vendor_scripts = ")), ("vendor_scripts_versions", body.find("$vendor_scripts_versions = "))] {
+    for (name, at) in [
+        ("vendor_scripts", body.find("$vendor_scripts = ")),
+        (
+            "vendor_scripts_versions",
+            body.find("$vendor_scripts_versions = "),
+        ),
+    ] {
         if let Some(at) = at {
             let start = at + body[at..].find('=').map_or(0, |e| e + 1);
-            tables.insert(name.to_owned(), parser(body, start, &vars, env).with_hooks(&hooks).expr());
+            tables.insert(
+                name.to_owned(),
+                parser(body, start, &vars, env).with_hooks(&hooks).expr(),
+            );
         }
     }
-    let (Some(Lit::Array(deps)), Some(versions)) = (tables.get("vendor_scripts"), tables.get("vendor_scripts_versions")) else { return };
+    let (Some(Lit::Array(deps)), Some(versions)) = (
+        tables.get("vendor_scripts"),
+        tables.get("vendor_scripts_versions"),
+    ) else {
+        return;
+    };
     for (handle, dependencies) in deps {
-        let Some(handle) = handle.as_ref().and_then(Lit::as_str) else { continue };
-        let ver = versions.get(handle).and_then(Lit::as_str).map(|v| Ver::Value(v.to_owned())).unwrap_or(Ver::Default);
+        let Some(handle) = handle.as_ref().and_then(Lit::as_str) else {
+            continue;
+        };
+        let ver = versions
+            .get(handle)
+            .and_then(Lit::as_str)
+            .map(|v| Ver::Value(v.to_owned()))
+            .unwrap_or(Ver::Default);
         let dependencies = dependencies.strings();
         let refs: Vec<&str> = dependencies.iter().map(String::as_str).collect();
-        scripts.add(handle, Some(&format!("/wp-includes/js/dist/vendor/{handle}.min.js")), &refs, ver, Some(Arg::Int(1)));
+        scripts.add(
+            handle,
+            Some(&format!("/wp-includes/js/dist/vendor/{handle}.min.js")),
+            &refs,
+            ver,
+            Some(Arg::Int(1)),
+        );
     }
     vars.insert("scripts".into(), Lit::Unknown);
     scripts.add_inline_script("lodash", "window.lodash = _.noConflict();", "after");
@@ -485,40 +695,79 @@ fn register_vendor(scripts: &mut Scripts, php: &str, env: &LoaderEnv) {
 
 /// `wp_default_packages_scripts()`.
 fn register_packages(scripts: &mut Scripts, env: &LoaderEnv) {
-    let text = read(&env.includes.join("assets").join("script-loader-packages.php"));
-    let Some(start) = text.find("return") else { return };
+    let text = read(
+        &env.includes
+            .join("assets")
+            .join("script-loader-packages.php"),
+    );
+    let Some(start) = text.find("return") else {
+        return;
+    };
     let vars = Vars::new();
-    let Lit::Array(packages) = Parser::new(&text, start + "return".len(), &vars).expr() else { return };
+    let Lit::Array(packages) = Parser::new(&text, start + "return".len(), &vars).expr() else {
+        return;
+    };
     for (file, data) in &packages {
-        let Some(file) = file.as_ref().and_then(Lit::as_str) else { continue };
-        let basename = file.trim_end_matches(".js").rsplit('/').next().unwrap_or(file);
+        let Some(file) = file.as_ref().and_then(Lit::as_str) else {
+            continue;
+        };
+        let basename = file
+            .trim_end_matches(".js")
+            .rsplit('/')
+            .next()
+            .unwrap_or(file);
         let handle = format!("wp-{basename}");
         let path = format!("/wp-includes/js/dist/{basename}.min.js");
-        let mut dependencies: Vec<String> = data.get("dependencies").map(strings).unwrap_or_default();
+        let mut dependencies: Vec<String> =
+            data.get("dependencies").map(strings).unwrap_or_default();
         match handle.as_str() {
             "wp-block-library" => dependencies.push("editor".into()),
-            "wp-edit-post" => dependencies.extend(["media-models", "media-views", "postbox", "wp-dom-ready"].map(String::from)),
+            "wp-edit-post" => dependencies.extend(
+                ["media-models", "media-views", "postbox", "wp-dom-ready"].map(String::from),
+            ),
             "wp-preferences" => dependencies.push("wp-preferences-persistence".into()),
             _ => {}
         }
         let refs: Vec<&str> = dependencies.iter().map(String::as_str).collect();
-        let version = data.get("version").and_then(Lit::as_str).unwrap_or_default();
-        scripts.add(&handle, Some(&path), &refs, Ver::Value(version.to_owned()), Some(Arg::Int(1)));
-        if let Some(modules) = data.get("module_dependencies").filter(|m| matches!(m, Lit::Array(items) if !items.is_empty())) {
-            scripts.add_data(&handle, "module_dependencies", Extra::List(strings(modules)));
+        let version = data
+            .get("version")
+            .and_then(Lit::as_str)
+            .unwrap_or_default();
+        scripts.add(
+            &handle,
+            Some(&path),
+            &refs,
+            Ver::Value(version.to_owned()),
+            Some(Arg::Int(1)),
+        );
+        if let Some(modules) = data
+            .get("module_dependencies")
+            .filter(|m| matches!(m, Lit::Array(items) if !items.is_empty()))
+        {
+            scripts.add_data(
+                &handle,
+                "module_dependencies",
+                Extra::List(strings(modules)),
+            );
         }
         if dependencies.iter().any(|d| d == "wp-i18n") {
             scripts.set_translations(&handle, "default", "");
         }
         if handle == "wp-i18n" {
-            scripts.add_inline_script(&handle, r"wp.i18n.setLocaleData( { 'text direction\u0004ltr': [ 'ltr' ] } );", "after");
+            scripts.add_inline_script(
+                &handle,
+                r"wp.i18n.setLocaleData( { 'text direction\u0004ltr': [ 'ltr' ] } );",
+                "after",
+            );
         }
     }
 }
 
 /// Every stylesheet WordPress registers on its own (`wp_default_styles()`), built once per configuration.
 pub fn default_styles(env: &LoaderEnv) -> Styles {
-    static CACHE: std::sync::OnceLock<std::sync::Mutex<HashMap<RegistryKey, super::deps::Dependencies>>> = std::sync::OnceLock::new();
+    static CACHE: std::sync::OnceLock<
+        std::sync::Mutex<HashMap<RegistryKey, super::deps::Dependencies>>,
+    > = std::sync::OnceLock::new();
     let cache = CACHE.get_or_init(Default::default);
     let key = registry_key(env);
     let cached = cache.lock().expect("registry cache").get(&key).cloned();
@@ -526,7 +775,10 @@ pub fn default_styles(env: &LoaderEnv) -> Styles {
         Some(deps) => deps,
         None => {
             let built = build_default_styles(&marking(env)).deps;
-            cache.lock().expect("registry cache").insert(key, built.clone());
+            cache
+                .lock()
+                .expect("registry cache")
+                .insert(key, built.clone());
             built
         }
     };
@@ -559,23 +811,35 @@ fn register_package_styles(styles: &mut Styles, body: &str, env: &LoaderEnv) {
     };
     if let Some(Lit::Array(packages)) = table("package_styles") {
         for (package, dependencies) in &packages {
-            let Some(package) = package.as_ref().and_then(Lit::as_str) else { continue };
+            let Some(package) = package.as_ref().and_then(Lit::as_str) else {
+                continue;
+            };
             let handle = format!("wp-{package}");
             let path = match package {
-                "block-library" if env.separate_block_assets => format!("/wp-includes/css/dist/{package}/common.min.css"),
-                "base-styles" => "/wp-includes/css/dist/base-styles/admin-schemes.min.css".to_owned(),
+                "block-library" if env.separate_block_assets => {
+                    format!("/wp-includes/css/dist/{package}/common.min.css")
+                }
+                "base-styles" => {
+                    "/wp-includes/css/dist/base-styles/admin-schemes.min.css".to_owned()
+                }
                 "theme" => "/wp-includes/css/dist/theme/design-tokens.min.css".to_owned(),
                 _ => format!("/wp-includes/css/dist/{package}/style.min.css"),
             };
             let deps = dependencies.strings();
             let refs: Vec<&str> = deps.iter().map(String::as_str).collect();
             styles.add(&handle, Some(&path), &refs, Ver::Default, None);
-            styles.add_data(&handle, "path", Extra::Text(format!("/var/www/html/{path}")));
+            styles.add_data(
+                &handle,
+                "path",
+                Extra::Text(format!("/var/www/html/{path}")),
+            );
         }
     }
     if let Some(Lit::Array(rtl)) = table("rtl_styles") {
         for (_, handle) in &rtl {
-            let Some(handle) = handle.as_str() else { continue };
+            let Some(handle) = handle.as_str() else {
+                continue;
+            };
             styles.add_data(handle, "rtl", Extra::Text("replace".into()));
             styles.add_data(handle, "suffix", Extra::Text(".min".into()));
         }

@@ -23,21 +23,38 @@ fn field<'a>(value: &'a Value, name: &str) -> Option<&'a Value> {
 }
 
 fn text(value: &Value, name: &str) -> String {
-    field(value, name).and_then(Value::as_str).unwrap_or_default().to_owned()
+    field(value, name)
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_owned()
 }
 
 async fn transient(ctx: &Ctx<'_>, name: &str) -> Option<Value> {
     let site = ctx.site();
-    let raw = site.options.fetch(&site.db, &format!("_site_transient_{name}")).await.ok().flatten()?;
+    let raw = site
+        .options
+        .fetch(&site.db, &format!("_site_transient_{name}"))
+        .await
+        .ok()
+        .flatten()?;
     rustpress_phpser::unserialize(raw.as_bytes()).ok()
 }
 
 pub(super) fn wp_root(ctx: &Ctx<'_>) -> std::path::PathBuf {
-    ctx.env.loader.includes.parent().map(std::path::Path::to_path_buf).unwrap_or_default()
+    ctx.env
+        .loader
+        .includes
+        .parent()
+        .map(std::path::Path::to_path_buf)
+        .unwrap_or_default()
 }
 
 fn nonce_fields(ctx: &Ctx<'_>) -> String {
-    format!("<input type=\"hidden\" id=\"_wpnonce\" name=\"_wpnonce\" value=\"{}\" /><input type=\"hidden\" name=\"_wp_http_referer\" value=\"{}\" />", ctx.create_nonce("upgrade-core"), super::referer_field_value(&ctx.request.request_uri))
+    format!(
+        "<input type=\"hidden\" id=\"_wpnonce\" name=\"_wpnonce\" value=\"{}\" /><input type=\"hidden\" name=\"_wp_http_referer\" value=\"{}\" />",
+        ctx.create_nonce("upgrade-core"),
+        super::referer_field_value(&ctx.request.request_uri)
+    )
 }
 
 /// `list_core_update()` for one offer.
@@ -47,30 +64,60 @@ fn list_core_update(ctx: &Ctx<'_>, update: &Value, version: &str) -> String {
     let current = text(update, "current");
     let locale = text(update, "locale");
     let site_locale = ctx.site().locale();
-    let version_string = if locale == "en_US" && site_locale == "en_US" { current.clone() } else { format!("{current}&ndash;{site_locale}") };
+    let version_string = if locale == "en_US" && site_locale == "en_US" {
+        current.clone()
+    } else {
+        format!("{current}&ndash;{site_locale}")
+    };
     let is_current = response.is_empty() || response == "latest";
-    let (mut message, mut action, mut submit) = (String::new(), "update-core.php?action=do-core-upgrade", sprintf(&tr("Update to version %s"), &[&version_string]));
+    let (mut message, mut action, mut submit) = (
+        String::new(),
+        "update-core.php?action=do-core-upgrade",
+        sprintf(&tr("Update to version %s"), &[&version_string]),
+    );
     if response == "development" {
         message = tr("You can update to the latest nightly build manually:");
     } else if is_current {
         submit = sprintf(&tr("Re-install version %s"), &[&version_string]);
         action = "update-core.php?action=do-core-reinstall";
     } else {
-        let version_url = format!("https://wordpress.org/documentation/wordpress-version/version-{}/", rustpress_core::slug::sanitize_title(&current));
-        message = sprintf(&tr("You can update from WordPress %1$s to <a href=\"%2$s\">WordPress %3$s</a> manually:"), &[version, &esc_url(&version_url), &version_string]);
+        let version_url = format!(
+            "https://wordpress.org/documentation/wordpress-version/version-{}/",
+            rustpress_core::slug::sanitize_title(&current)
+        );
+        message = sprintf(
+            &tr(
+                "You can update from WordPress %1$s to <a href=\"%2$s\">WordPress %3$s</a> manually:",
+            ),
+            &[version, &esc_url(&version_url), &version_string],
+        );
     }
-    let mut out = format!("<p>{message}</p><form method=\"post\" action=\"{}\" name=\"upgrade\" class=\"upgrade\">{}", esc_url(action), nonce_fields(ctx));
+    let mut out = format!(
+        "<p>{message}</p><form method=\"post\" action=\"{}\" name=\"upgrade\" class=\"upgrade\">{}",
+        esc_url(action),
+        nonce_fields(ctx)
+    );
     out.push_str(&format!("<p><input name=\"version\" value=\"{}\" type=\"hidden\" /><input name=\"locale\" value=\"{}\" type=\"hidden\" />", esc_attr(&current), esc_attr(&locale)));
-    out.push_str(&format!("<input type=\"submit\" name=\"upgrade\" id=\"upgrade\" class=\"button\" value=\"{}\"  />", esc_attr(&submit)));
+    out.push_str(&format!(
+        "<input type=\"submit\" name=\"upgrade\" id=\"upgrade\" class=\"button\" value=\"{}\"  />",
+        esc_attr(&submit)
+    ));
     if locale != "en_US" {
         let dismissed = matches!(field(update, "dismissed"), Some(Value::Bool(true)));
-        let (name, label) = if dismissed { ("undismiss", tr("Bring back this update")) } else { ("dismiss", tr("Hide this update")) };
+        let (name, label) = if dismissed {
+            ("undismiss", tr("Bring back this update"))
+        } else {
+            ("dismiss", tr("Hide this update"))
+        };
         out.push_str(&format!("<input type=\"submit\" name=\"{name}\" id=\"{name}\" class=\"button\" value=\"{}\"  />", esc_attr(&label)));
     }
     out.push_str("</p>");
     if locale != "en_US" {
         out.push_str(&format!("<p class=\"hint\">{}</p>", tr("This localized version contains both the translation and various other localization fixes.")));
-    } else if site_locale != "en_US" && text(field(update, "packages").unwrap_or(update), "partial").is_empty() && text(update, "partial_version") == version {
+    } else if site_locale != "en_US"
+        && text(field(update, "packages").unwrap_or(update), "partial").is_empty()
+        && text(update, "partial_version") == version
+    {
         // Partial builds don't need language-specific warnings.
         out.push_str(&format!("<p class=\"hint\">{}</p>", sprintf(&tr("You are about to install WordPress %s <strong>in English (US)</strong>. There is a chance this update will break your translation. You may prefer to wait for the localized version to be released."), &[if response == "development" { "" } else { &current }])));
     }
@@ -81,29 +128,74 @@ fn list_core_update(ctx: &Ctx<'_>, update: &Value, version: &str) -> String {
 /// The version the first core offer upgrades to, when there is one.
 pub(super) async fn core_upgrade_version(ctx: &Ctx<'_>) -> Option<String> {
     let core = transient(ctx, "update_core").await?;
-    let Some(Value::Array(updates)) = field(&core, "updates") else { return None };
-    updates.iter().map(|(_, u)| u).find(|u| text(u, "response") == "upgrade").map(|u| text(u, "current"))
+    let Some(Value::Array(updates)) = field(&core, "updates") else {
+        return None;
+    };
+    updates
+        .iter()
+        .map(|(_, u)| u)
+        .find(|u| text(u, "response") == "upgrade")
+        .map(|u| text(u, "current"))
 }
 
 /// The offer of [crate::install::fetch::VERSION] in the shape of the `update_core` transient.
 fn own_offer(ctx: &Ctx<'_>, version: &str) -> Value {
-    let field = |name: &str, value: &str| (Key::Str(name.as_bytes().to_vec()), Value::Str(value.as_bytes().to_vec()));
+    let field = |name: &str, value: &str| {
+        (
+            Key::Str(name.as_bytes().to_vec()),
+            Value::Str(value.as_bytes().to_vec()),
+        )
+    };
     let target = crate::install::fetch::VERSION;
-    let response = if version == target { "latest" } else { "upgrade" };
-    Value::Object { class: b"stdClass".to_vec(), props: vec![field("response", response), field("current", target), field("locale", &ctx.site().locale())] }
+    let response = if version == target {
+        "latest"
+    } else {
+        "upgrade"
+    };
+    Value::Object {
+        class: b"stdClass".to_vec(),
+        props: vec![
+            field("response", response),
+            field("current", target),
+            field("locale", &ctx.site().locale()),
+        ],
+    }
 }
 
 /// `do_core_upgrade()`: downloads the release, checks it and copies the core files over the site's.
 async fn do_core_upgrade(ctx: &Ctx<'_>) -> AdminResponse {
     let tr = |s: &str| ctx.tr(s);
-    let locale = ctx.request.post_field("locale").filter(|l| !l.is_empty()).map(str::to_owned).unwrap_or_else(|| ctx.site().locale());
-    let mut lines = vec![format!("<p>{}</p>", sprintf(&tr("Downloading update from %s&#8230;"), &[&format!("<span class=\"code pre\">{}</span>", esc_html(&crate::install::fetch::package_url(&locale)))]))];
+    let locale = ctx
+        .request
+        .post_field("locale")
+        .filter(|l| !l.is_empty())
+        .map(str::to_owned)
+        .unwrap_or_else(|| ctx.site().locale());
+    let mut lines = vec![format!(
+        "<p>{}</p>",
+        sprintf(
+            &tr("Downloading update from %s&#8230;"),
+            &[&format!(
+                "<span class=\"code pre\">{}</span>",
+                esc_html(&crate::install::fetch::package_url(&locale))
+            )]
+        )
+    )];
     let root = wp_root(ctx);
     let fetch_locale = locale.clone();
-    let result = tokio::task::spawn_blocking(move || crate::install::fetch::install(&root, &fetch_locale, crate::install::fetch::Mode::Replace)).await.unwrap_or_else(|e| Err(e.to_string()));
+    let result = tokio::task::spawn_blocking(move || {
+        crate::install::fetch::install(&root, &fetch_locale, crate::install::fetch::Mode::Replace)
+    })
+    .await
+    .unwrap_or_else(|e| Err(e.to_string()));
     match result {
         Ok(_) => {
-            for step in ["Unpacking the update&#8230;", "Verifying the unpacked files&#8230;", "Preparing to install the latest version&#8230;", "Copying the required files&#8230;"] {
+            for step in [
+                "Unpacking the update&#8230;",
+                "Verifying the unpacked files&#8230;",
+                "Preparing to install the latest version&#8230;",
+                "Copying the required files&#8230;",
+            ] {
                 lines.push(format!("<p>{}</p>", tr(step)));
             }
             let about = esc_url(&ctx.admin_url("about.php?updated"));
@@ -115,11 +207,24 @@ async fn do_core_upgrade(ctx: &Ctx<'_>) -> AdminResponse {
         }
         Err(e) => {
             lines.push(format!("<p>{}</p>", esc_html(&e)));
-            lines.push(format!("<p><strong>{}</strong></p>", tr("Installation failed.")));
+            lines.push(format!(
+                "<p><strong>{}</strong></p>",
+                tr("Installation failed.")
+            ));
         }
     }
-    let content = format!("\t<div class=\"wrap\">\n\t<h1>{}</h1>\n{}\n\t</div>\n", tr("Update WordPress"), lines.join("\n"));
-    let screen = Screen { file: "update-core.php".into(), parent_file: "index.php".into(), submenu_file: Some("update-core.php".into()), title: tr("WordPress Updates"), ..Default::default() };
+    let content = format!(
+        "\t<div class=\"wrap\">\n\t<h1>{}</h1>\n{}\n\t</div>\n",
+        tr("Update WordPress"),
+        lines.join("\n")
+    );
+    let screen = Screen {
+        file: "update-core.php".into(),
+        parent_file: "index.php".into(),
+        submenu_file: Some("update-core.php".into()),
+        title: tr("WordPress Updates"),
+        ..Default::default()
+    };
     render(ctx, &screen, &content, &Assets::default()).await
 }
 
@@ -127,29 +232,52 @@ async fn do_core_upgrade(ctx: &Ctx<'_>) -> AdminResponse {
 async fn core_section(ctx: &Ctx<'_>, version: &str) -> String {
     let tr = |s: &str| ctx.tr(s);
     let core = transient(ctx, "update_core").await;
-    let updates: Vec<&Value> = core.as_ref().and_then(|c| field(c, "updates")).map(|u| match u {
-        Value::Array(items) => items.iter().map(|(_, v)| v).collect(),
-        _ => Vec::new(),
-    }).unwrap_or_default();
+    let updates: Vec<&Value> = core
+        .as_ref()
+        .and_then(|c| field(c, "updates"))
+        .map(|u| match u {
+            Value::Array(items) => items.iter().map(|(_, v)| v).collect(),
+            _ => Vec::new(),
+        })
+        .unwrap_or_default();
     let mut updates = updates;
     // The release RustPress follows is always on offer: as an update when the files are of another version.
     let own = own_offer(ctx, version);
-    if !updates.iter().any(|u| text(u, "current") == crate::install::fetch::VERSION) {
+    if !updates
+        .iter()
+        .any(|u| text(u, "current") == crate::install::fetch::VERSION)
+    {
         updates.insert(0, &own);
     }
     let newer = updates.first().filter(|u| text(u, "response") == "upgrade");
     let mut out = String::new();
     if newer.is_some() {
-        out.push_str(&format!("<h2 class=\"response\">{}</h2>", tr("An updated version of WordPress is available.")));
+        out.push_str(&format!(
+            "<h2 class=\"response\">{}</h2>",
+            tr("An updated version of WordPress is available.")
+        ));
         let message = sprintf(
-            &tr("<strong>Important:</strong> Before updating, please <a href=\"%1$s\">back up your database and files</a>. For help with updates, visit the <a href=\"%2$s\">Updating WordPress</a> documentation page."),
-            &[&tr("https://developer.wordpress.org/advanced-administration/security/backup/"), &tr("https://wordpress.org/documentation/article/updating-wordpress/")],
+            &tr(
+                "<strong>Important:</strong> Before updating, please <a href=\"%1$s\">back up your database and files</a>. For help with updates, visit the <a href=\"%2$s\">Updating WordPress</a> documentation page.",
+            ),
+            &[
+                &tr("https://developer.wordpress.org/advanced-administration/security/backup/"),
+                &tr("https://wordpress.org/documentation/article/updating-wordpress/"),
+            ],
         );
-        out.push_str(&format!("<div class=\"notice notice-warning inline\"><p>{message}</p></div>\n"));
+        out.push_str(&format!(
+            "<div class=\"notice notice-warning inline\"><p>{message}</p></div>\n"
+        ));
     } else if version.contains("alpha") || version.contains("beta") || version.contains("RC") {
-        out.push_str(&format!("<h2 class=\"response\">{}</h2>", tr("You are using a development version of WordPress.")));
+        out.push_str(&format!(
+            "<h2 class=\"response\">{}</h2>",
+            tr("You are using a development version of WordPress.")
+        ));
     } else {
-        out.push_str(&format!("<h2 class=\"response\">{}</h2>", tr("You have the latest version of WordPress.")));
+        out.push_str(&format!(
+            "<h2 class=\"response\">{}</h2>",
+            tr("You have the latest version of WordPress.")
+        ));
     }
     out.push_str("<ul class=\"core-updates\">");
     for update in &updates {
@@ -162,7 +290,13 @@ async fn core_section(ctx: &Ctx<'_>, version: &str) -> String {
         out.push_str(&format!("<p>{}</p>", tr("While your site is being updated, it will be in maintenance mode. As soon as your updates are complete, this mode will be deactivated.")));
     } else if updates.is_empty() {
         let normalized = version.split('-').next().unwrap_or(version);
-        out.push_str(&format!("<p>{}</p>", sprintf(&tr("<a href=\"%1$s\">Learn more about WordPress %2$s</a>."), &[&esc_url(&ctx.admin_url("about.php")), normalized])));
+        out.push_str(&format!(
+            "<p>{}</p>",
+            sprintf(
+                &tr("<a href=\"%1$s\">Learn more about WordPress %2$s</a>."),
+                &[&esc_url(&ctx.admin_url("about.php")), normalized]
+            )
+        ));
     }
     out
 }
@@ -175,12 +309,37 @@ fn auto_update_status(ctx: &Ctx<'_>) -> String {
     let major = site.options.string("auto_update_core_major", "unset") == "enabled";
     let action_url = ctx.admin_url("update-core.php?action=core-major-auto-updates-settings");
     let link = |value: &str, class: &str, label: String| {
-        format!("<br /><a href=\"{}\" class=\"core-auto-update-settings-link {class}\">{label}</a>", esc_url(&format!("{action_url}&value={value}&_wpnonce={}", ctx.create_nonce("core-major-auto-updates-nonce"))).replace("&#038;", "&amp;"))
+        format!(
+            "<br /><a href=\"{}\" class=\"core-auto-update-settings-link {class}\">{label}</a>",
+            esc_url(&format!(
+                "{action_url}&value={value}&_wpnonce={}",
+                ctx.create_nonce("core-major-auto-updates-nonce")
+            ))
+            .replace("&#038;", "&amp;")
+        )
     };
     let body = if major {
-        format!("{}{}", tr("This site is automatically kept up to date with each new version of WordPress."), link("disable", "core-auto-update-settings-link-disable", tr("Switch to automatic updates for maintenance and security releases only.")))
+        format!(
+            "{}{}",
+            tr("This site is automatically kept up to date with each new version of WordPress."),
+            link(
+                "disable",
+                "core-auto-update-settings-link-disable",
+                tr("Switch to automatic updates for maintenance and security releases only.")
+            )
+        )
     } else if minor {
-        format!("{}{}", tr("This site is automatically kept up to date with maintenance and security releases of WordPress only."), link("enable", "core-auto-update-settings-link-enable", tr("Enable automatic updates for all new versions of WordPress.")))
+        format!(
+            "{}{}",
+            tr(
+                "This site is automatically kept up to date with maintenance and security releases of WordPress only."
+            ),
+            link(
+                "enable",
+                "core-auto-update-settings-link-enable",
+                tr("Enable automatic updates for all new versions of WordPress.")
+            )
+        )
     } else {
         tr("This site will not receive automatic updates for new versions of WordPress.")
     };
@@ -190,16 +349,38 @@ fn auto_update_status(ctx: &Ctx<'_>) -> String {
 /// `list_plugin_updates()`.
 async fn plugin_section(ctx: &Ctx<'_>, version: &str) -> String {
     let tr = |s: &str| ctx.tr(s);
-    let Some(transient) = transient(ctx, "update_plugins").await else { return format!("<h2>{}</h2><p>{}</p>", tr("Plugins"), tr("Your plugins are all up to date.")) };
+    let Some(transient) = transient(ctx, "update_plugins").await else {
+        return format!(
+            "<h2>{}</h2><p>{}</p>",
+            tr("Plugins"),
+            tr("Your plugins are all up to date.")
+        );
+    };
     let entries: Vec<(String, &Value)> = match field(&transient, "response") {
-        Some(Value::Array(items)) => items.iter().filter_map(|(k, v)| if let Key::Str(name) = k { Some((String::from_utf8_lossy(name).into_owned(), v)) } else { None }).collect(),
+        Some(Value::Array(items)) => items
+            .iter()
+            .filter_map(|(k, v)| {
+                if let Key::Str(name) = k {
+                    Some((String::from_utf8_lossy(name).into_owned(), v))
+                } else {
+                    None
+                }
+            })
+            .collect(),
         _ => Vec::new(),
     };
     if entries.is_empty() {
-        return format!("<h2>{}</h2><p>{}</p>", tr("Plugins"), tr("Your plugins are all up to date."));
+        return format!(
+            "<h2>{}</h2><p>{}</p>",
+            tr("Plugins"),
+            tr("Your plugins are all up to date.")
+        );
     }
     let root = wp_root(ctx);
-    let installed: Vec<_> = crate::plugins::installed(&root).iter().map(|p| super::plugins::translated(ctx, &root, p)).collect();
+    let installed: Vec<_> = crate::plugins::installed(&root)
+        .iter()
+        .map(|p| super::plugins::translated(ctx, &root, p))
+        .collect();
     let current_version = version.split('-').next().unwrap_or(version).to_owned();
     let mut rows = String::new();
     for (file, update) in &entries {
@@ -208,17 +389,49 @@ async fn plugin_section(ctx: &Ctx<'_>, version: &str) -> String {
         let installed_version = info.map(|p| p.version.clone()).unwrap_or_default();
         let new_version = text(update, "new_version");
         let slug = text(update, "slug");
-        let icon = ["svg", "2x", "1x", "default"].iter().find_map(|k| field(update, "icons").and_then(|i| field(i, k)).and_then(Value::as_str).filter(|s| !s.is_empty()).map(|s| format!("<img src=\"{}\" alt=\"\" class=\"plugin-icon\" />", esc_url(s)))).unwrap_or_else(|| "<span class=\"dashicons dashicons-admin-plugins\"></span>".to_owned());
+        let icon = ["svg", "2x", "1x", "default"]
+            .iter()
+            .find_map(|k| {
+                field(update, "icons")
+                    .and_then(|i| field(i, k))
+                    .and_then(Value::as_str)
+                    .filter(|s| !s.is_empty())
+                    .map(|s| {
+                        format!(
+                            "<img src=\"{}\" alt=\"\" class=\"plugin-icon\" />",
+                            esc_url(s)
+                        )
+                    })
+            })
+            .unwrap_or_else(|| {
+                "<span class=\"dashicons dashicons-admin-plugins\"></span>".to_owned()
+            });
         let tested = text(update, "tested");
-        let compat = if !tested.is_empty() && tested >= current_version { sprintf(&tr("Compatibility with WordPress %s: Yes (according to its author)"), &[&current_version]) } else { sprintf(&tr("Compatibility with WordPress %s: Not tested"), &[&current_version]) };
+        let compat = if !tested.is_empty() && tested >= current_version {
+            sprintf(
+                &tr("Compatibility with WordPress %s: Yes (according to its author)"),
+                &[&current_version],
+            )
+        } else {
+            sprintf(
+                &tr("Compatibility with WordPress %s: Not tested"),
+                &[&current_version],
+            )
+        };
         let details_url = ctx.admin_url(&format!("plugin-install.php?tab=plugin-information&plugin={slug}&section=changelog&TB_iframe=true&width=640&height=662"));
         let details = format!(
             "<a href=\"{}\" class=\"thickbox open-plugin-details-modal\" aria-label=\"{}\">{}</a>",
             esc_url(&details_url),
-            esc_attr(&sprintf(&tr("View %1$s version %2$s details"), &[&name, &new_version])),
+            esc_attr(&sprintf(
+                &tr("View %1$s version %2$s details"),
+                &[&name, &new_version]
+            )),
             sprintf(&tr("View version %s details."), &[&new_version])
         );
-        let notice = field(update, "upgrade_notice").and_then(Value::as_str).map(|n| format!("<br />{}", rustpress_core::formatting::strip_tags(n))).unwrap_or_default();
+        let notice = field(update, "upgrade_notice")
+            .and_then(Value::as_str)
+            .map(|n| format!("<br />{}", rustpress_core::formatting::strip_tags(n)))
+            .unwrap_or_default();
         let checkbox_id = format!("checkbox_{}", crate::deps::md5_hex(file));
         rows.push_str(&format!(
             "\t<tr>\n\t\t<td class=\"check-column\">\n\t\t\t\t\t\t\t<input type=\"checkbox\" name=\"checked[]\" id=\"{checkbox_id}\" value=\"{}\" />\n\t\t\t\t<label for=\"{checkbox_id}\">\n\t\t\t\t\t<span class=\"screen-reader-text\">\n\t\t\t\t\t{}\t\t\t\t\t</span>\n\t\t\t\t</label>\n\t\t\t\t\t</td>\n\t\t<td class=\"plugin-title\"><p>\n\t\t\t{icon}\t\t\t<strong>{name}</strong>\n\t\t\t{} {details}<br />{compat}{notice}\t\t</p></td>\n\t</tr>\n\t\t\t",
@@ -231,7 +444,9 @@ async fn plugin_section(ctx: &Ctx<'_>, version: &str) -> String {
         "<h2>\n\t{} <span class=\"count\">({})</span></h2>\n<p>{}</p>\n<form method=\"post\" action=\"update-core.php?action=do-plugin-upgrade\" name=\"upgrade-plugins\" class=\"upgrade\">\n\t{}<p><input id=\"upgrade-plugins\" class=\"button\" type=\"submit\" value=\"{}\" name=\"upgrade\" /></p>\n<table class=\"widefat updates-table\" id=\"update-plugins-table\">\n\t<thead>\n\t<tr>\n\t\t<td class=\"manage-column check-column\"><input type=\"checkbox\" id=\"plugins-select-all\" /></td>\n\t\t<td class=\"manage-column\"><label for=\"plugins-select-all\">{}</label></td>\n\t</tr>\n\t</thead>\n\n\t<tbody class=\"plugins\">\n\t{rows}\t</tbody>\n\n\t<tfoot>\n\t<tr>\n\t\t<td class=\"manage-column check-column\"><input type=\"checkbox\" id=\"plugins-select-all-2\" /></td>\n\t\t<td class=\"manage-column\"><label for=\"plugins-select-all-2\">{}</label></td>\n\t</tr>\n\t</tfoot>\n</table>\n<p><input id=\"upgrade-plugins-2\" class=\"button\" type=\"submit\" value=\"{}\" name=\"upgrade\" /></p>\n</form>\n\t",
         tr("Plugins"),
         entries.len(),
-        tr("The following plugins have new versions available. Check the ones you want to update and then click &#8220;Update Plugins&#8221;."),
+        tr(
+            "The following plugins have new versions available. Check the ones you want to update and then click &#8220;Update Plugins&#8221;."
+        ),
         nonce_fields(ctx),
         esc_attr(&tr("Update Plugins")),
         tr("Select All"),
@@ -245,17 +460,30 @@ async fn theme_section(ctx: &Ctx<'_>) -> String {
     let tr = |s: &str| ctx.tr(s);
     let updates = crate::updates::theme_updates(ctx.site()).await;
     let raw = crate::themes::installed(&wp_root(ctx));
-    let installed: Vec<_> = raw.iter().map(|t| super::themes::translated(ctx, t)).collect();
-    let mut entries: Vec<(&crate::themes::ThemeInfo, &crate::updates::ThemeUpdate)> = installed.iter().filter_map(|t| updates.get(&t.stylesheet).map(|u| (t, u))).collect();
+    let installed: Vec<_> = raw
+        .iter()
+        .map(|t| super::themes::translated(ctx, t))
+        .collect();
+    let mut entries: Vec<(&crate::themes::ThemeInfo, &crate::updates::ThemeUpdate)> = installed
+        .iter()
+        .filter_map(|t| updates.get(&t.stylesheet).map(|u| (t, u)))
+        .collect();
     entries.sort_by_key(|(t, _)| t.name.to_lowercase());
     if entries.is_empty() {
-        return format!("<h2>{}</h2><p>{}</p>", tr("Themes"), tr("Your themes are all up to date."));
+        return format!(
+            "<h2>{}</h2><p>{}</p>",
+            tr("Themes"),
+            tr("Your themes are all up to date.")
+        );
     }
     let siteurl = ctx.site().settings.siteurl.trim_end_matches('/').to_owned();
     let mut rows = String::new();
     for (theme, update) in &entries {
         // `$theme->get( 'Name' )`: the name as the theme has it.
-        let raw_name = raw.iter().find(|t| t.stylesheet == theme.stylesheet).map_or(theme.name.as_str(), |t| t.name.as_str());
+        let raw_name = raw
+            .iter()
+            .find(|t| t.stylesheet == theme.stylesheet)
+            .map_or(theme.name.as_str(), |t| t.name.as_str());
         let checkbox_id = format!("checkbox_{}", crate::deps::md5_hex(raw_name));
         let screenshot = theme.screenshot.as_ref().map(|file| format!("\t\t\t<img src=\"{siteurl}/wp-content/themes/{}/{file}?ver={}\" width=\"85\" height=\"64\" class=\"updates-table-screenshot\" alt=\"\" />\n", theme.stylesheet, theme.version)).unwrap_or_default();
         rows.push_str(&format!(
@@ -270,8 +498,17 @@ async fn theme_section(ctx: &Ctx<'_>) -> String {
         "<h2>\n\t{} <span class=\"count\">({})</span></h2>\n<p>{}</p>\n<p>\n\t{}</p>\n<form method=\"post\" action=\"update-core.php?action=do-theme-upgrade\" name=\"upgrade-themes\" class=\"upgrade\">\n\t{}<p><input id=\"upgrade-themes\" class=\"button\" type=\"submit\" value=\"{}\" name=\"upgrade\" /></p>\n<table class=\"widefat updates-table\" id=\"update-themes-table\">\n\t<thead>\n\t<tr>\n\t\t<td class=\"manage-column check-column\"><input type=\"checkbox\" id=\"themes-select-all\" /></td>\n\t\t<td class=\"manage-column\"><label for=\"themes-select-all\">{}</label></td>\n\t</tr>\n\t</thead>\n\n\t<tbody class=\"plugins\">\n\t{rows}\t</tbody>\n\n\t<tfoot>\n\t<tr>\n\t\t<td class=\"manage-column check-column\"><input type=\"checkbox\" id=\"themes-select-all-2\" /></td>\n\t\t<td class=\"manage-column\"><label for=\"themes-select-all-2\">{}</label></td>\n\t</tr>\n\t</tfoot>\n</table>\n<p><input id=\"upgrade-themes-2\" class=\"button\" type=\"submit\" value=\"{}\" name=\"upgrade\" /></p>\n</form>\n\t",
         tr("Themes"),
         entries.len(),
-        tr("The following themes have new versions available. Check the ones you want to update and then click &#8220;Update Themes&#8221;."),
-        sprintf(&tr("<strong>Please Note:</strong> Any customizations you have made to theme files will be lost. Please consider using <a href=\"%s\">child themes</a> for modifications."), &[&tr("https://developer.wordpress.org/themes/advanced-topics/child-themes/")]),
+        tr(
+            "The following themes have new versions available. Check the ones you want to update and then click &#8220;Update Themes&#8221;."
+        ),
+        sprintf(
+            &tr(
+                "<strong>Please Note:</strong> Any customizations you have made to theme files will be lost. Please consider using <a href=\"%s\">child themes</a> for modifications."
+            ),
+            &[&tr(
+                "https://developer.wordpress.org/themes/advanced-topics/child-themes/"
+            )]
+        ),
         nonce_fields(ctx),
         esc_attr(&tr("Update Themes")),
         tr("Select All"),
@@ -287,7 +524,11 @@ fn translation_section(ctx: &Ctx<'_>, any: bool) -> String {
         if ctx.site().locale() == "en_US" {
             return String::new();
         }
-        return format!("<h2>{}</h2><p>{}</p>", tr("Translations"), tr("Your translations are all up to date."));
+        return format!(
+            "<h2>{}</h2><p>{}</p>",
+            tr("Translations"),
+            tr("Your translations are all up to date.")
+        );
     }
     format!(
         "\t<h2>{}</h2>\n\t<form method=\"post\" action=\"update-core.php?action=do-translation-upgrade\" name=\"upgrade-translations\" class=\"upgrade\">\n\t\t<p>{}</p>\n\t\t{}\t\t<p><input class=\"button\" type=\"submit\" value=\"{}\" name=\"upgrade\" /></p>\n\t</form>\n\t",
@@ -305,8 +546,15 @@ fn time_with_zone(ctx: &Ctx<'_>, timestamp: i64) -> String {
     if site.options.string("timezone_string", "").is_empty()
         && let Some(format) = format.strip_suffix('T')
     {
-        let offset = site.options.string("gmt_offset", "0").parse::<f64>().unwrap_or(0.0);
-        let zone = format!("GMT{}", rustpress_core::datetime::offset_string((offset * 3600.0) as i32, false));
+        let offset = site
+            .options
+            .string("gmt_offset", "0")
+            .parse::<f64>()
+            .unwrap_or(0.0);
+        let zone = format!(
+            "GMT{}",
+            rustpress_core::datetime::offset_string((offset * 3600.0) as i32, false)
+        );
         return format!("{}{zone}", site.date(format, timestamp));
     }
     site.date(&format, timestamp)
@@ -317,7 +565,9 @@ fn tr_format(ctx: &Ctx<'_>) -> String {
 }
 
 async fn has_translations(ctx: &Ctx<'_>, name: &str) -> bool {
-    transient(ctx, name).await.is_some_and(|t| matches!(field(&t, "translations"), Some(Value::Array(items)) if !items.is_empty()))
+    transient(ctx, name).await.is_some_and(
+        |t| matches!(field(&t, "translations"), Some(Value::Array(items)) if !items.is_empty()),
+    )
 }
 
 /// The notice when no plugin or theme was chosen to update, if there are updates to choose from.
@@ -325,38 +575,79 @@ async fn upgrade_error_notice(ctx: &Ctx<'_>, upgrade_error: Option<&str>) -> Str
     let available = match upgrade_error {
         Some("themes") => {
             let updates = crate::updates::theme_updates(ctx.site()).await;
-            crate::themes::installed(&wp_root(ctx)).iter().any(|t| updates.contains_key(&t.stylesheet))
+            crate::themes::installed(&wp_root(ctx))
+                .iter()
+                .any(|t| updates.contains_key(&t.stylesheet))
         }
         Some(_) => {
             let response = transient(ctx, "update_plugins").await;
             let files: Vec<String> = match response.as_ref().and_then(|t| field(t, "response")) {
-                Some(Value::Array(items)) => items.iter().filter_map(|(k, _)| if let Key::Str(name) = k { Some(String::from_utf8_lossy(name).into_owned()) } else { None }).collect(),
+                Some(Value::Array(items)) => items
+                    .iter()
+                    .filter_map(|(k, _)| {
+                        if let Key::Str(name) = k {
+                            Some(String::from_utf8_lossy(name).into_owned())
+                        } else {
+                            None
+                        }
+                    })
+                    .collect(),
                 _ => Vec::new(),
             };
-            crate::plugins::installed(&wp_root(ctx)).iter().any(|p| files.contains(&p.file))
+            crate::plugins::installed(&wp_root(ctx))
+                .iter()
+                .any(|p| files.contains(&p.file))
         }
         None => false,
     };
     if !available {
         return String::new();
     }
-    let message = if upgrade_error == Some("themes") { ctx.tr("Please select one or more themes to update.") } else { ctx.tr("Please select one or more plugins to update.") };
+    let message = if upgrade_error == Some("themes") {
+        ctx.tr("Please select one or more themes to update.")
+    } else {
+        ctx.tr("Please select one or more plugins to update.")
+    };
     super::notices::notice(&message, "", false, "", &["error"], true)
 }
 
 pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     let tr = |s: &str| ctx.tr(s);
-    if !(ctx.can("update_core") || ctx.can("update_themes") || ctx.can("update_plugins") || ctx.can("update_languages")) {
-        return die(ctx.env, 403, "WordPress &rsaquo; Error", &format!("<h1>{}</h1><p>{}</p>", tr("You need a higher level of permission."), tr("Sorry, you are not allowed to update this site.")));
+    if !(ctx.can("update_core")
+        || ctx.can("update_themes")
+        || ctx.can("update_plugins")
+        || ctx.can("update_languages"))
+    {
+        return die(
+            ctx.env,
+            403,
+            "WordPress &rsaquo; Error",
+            &format!(
+                "<h1>{}</h1><p>{}</p>",
+                tr("You need a higher level of permission."),
+                tr("Sorry, you are not allowed to update this site.")
+            ),
+        );
     }
     // The update actions check the capability and the nonce first; only the core update is carried out, a valid
     // request for the others shows the overview.
     // Updating plugins or themes without choosing any goes back to the overview with a notice.
     let mut action = ctx.request.get("action").unwrap_or("upgrade-core");
-    let chosen = ctx.request.form.iter().any(|(k, _)| k == "checked" || k.starts_with("checked["));
+    let chosen = ctx
+        .request
+        .form
+        .iter()
+        .any(|(k, _)| k == "checked" || k.starts_with("checked["));
     let mut upgrade_error = None;
-    if (action == "do-theme-upgrade" || (action == "do-plugin-upgrade" && ctx.request.get("plugins").is_none())) && !chosen {
-        upgrade_error = Some(if action == "do-theme-upgrade" { "themes" } else { "plugins" });
+    if (action == "do-theme-upgrade"
+        || (action == "do-plugin-upgrade" && ctx.request.get("plugins").is_none()))
+        && !chosen
+    {
+        upgrade_error = Some(if action == "do-theme-upgrade" {
+            "themes"
+        } else {
+            "plugins"
+        });
         action = "upgrade-core";
     }
     let gate = match action {
@@ -368,10 +659,20 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     };
     if let Some((capability, nonce_action)) = gate {
         if !ctx.can(capability) {
-            return die(ctx.env, 500, "WordPress &rsaquo; Error", &tr("Sorry, you are not allowed to update this site."));
+            return die(
+                ctx.env,
+                500,
+                "WordPress &rsaquo; Error",
+                &tr("Sorry, you are not allowed to update this site."),
+            );
         }
         if !ctx.verify_nonce(nonce_action) {
-            return die(ctx.env, 403, &tr("An error occurred."), &tr("The link you followed has expired."));
+            return die(
+                ctx.env,
+                403,
+                &tr("An error occurred."),
+                &tr("The link you followed has expired."),
+            );
         }
         if capability == "update_core" {
             return do_core_upgrade(ctx).await;
@@ -380,18 +681,39 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     let site = ctx.site();
     let version = ctx.env.loader.version.clone();
     let core = transient(ctx, "update_core").await;
-    let last_checked = core.as_ref().and_then(|c| field(c, "last_checked")).and_then(Value::as_i64).unwrap_or(0);
+    let last_checked = core
+        .as_ref()
+        .and_then(|c| field(c, "last_checked"))
+        .and_then(Value::as_i64)
+        .unwrap_or(0);
     let last = if last_checked > 0 {
-        let link = format!("<a href=\"{}\">{}</a>", esc_url(&ctx.admin_url("update-core.php?force-check=1")), tr("Check again."));
-        format!("<p class=\"update-last-checked\">{} {link}</p>", sprintf(&tr("Last checked on %1$s at %2$s."), &[&site.date(&tr("F j, Y"), last_checked), &time_with_zone(ctx, last_checked)]))
+        let link = format!(
+            "<a href=\"{}\">{}</a>",
+            esc_url(&ctx.admin_url("update-core.php?force-check=1")),
+            tr("Check again.")
+        );
+        format!(
+            "<p class=\"update-last-checked\">{} {link}</p>",
+            sprintf(
+                &tr("Last checked on %1$s at %2$s."),
+                &[
+                    &site.date(&tr("F j, Y"), last_checked),
+                    &time_with_zone(ctx, last_checked)
+                ]
+            )
+        )
     } else {
         String::new()
     };
-    let translations = has_translations(ctx, "update_core").await || has_translations(ctx, "update_plugins").await || has_translations(ctx, "update_themes").await;
+    let translations = has_translations(ctx, "update_core").await
+        || has_translations(ctx, "update_plugins").await
+        || has_translations(ctx, "update_themes").await;
     let content = format!(
         "\t<div class=\"wrap\">\n\t<h1>{}</h1>\n\t<p>{}</p>\n\n\t{}<h2 class=\"wp-current-version\">{}</h2>{last}\n{}\n\t{}{}{}{}</div>",
         tr("WordPress Updates"),
-        tr("Updates may take several minutes to complete. If there is no feedback after 5 minutes, or if there are errors please refer to the Help section above."),
+        tr(
+            "Updates may take several minutes to complete. If there is no feedback after 5 minutes, or if there are errors please refer to the Help section above."
+        ),
         upgrade_error_notice(ctx, upgrade_error).await,
         sprintf(&tr("Current version: %s"), &[&version]),
         auto_update_status(ctx),
@@ -407,13 +729,25 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     {
         tab.content.push_str(&format!("<p>{}</p>", tr("<strong>Translations</strong> &mdash; The files translating WordPress into your language are updated for you whenever any other updates occur. But if these files are out of date, you can <strong>click the &#8220;Update Translations&#8221;</strong> button.")));
     }
-    let screen = Screen { file: "update-core.php".into(), content_inline: true, parent_file: "index.php".into(), submenu_file: Some("update-core.php".into()), title: tr("WordPress Updates"), help: Some(help), ..Default::default() };
+    let screen = Screen {
+        file: "update-core.php".into(),
+        content_inline: true,
+        parent_file: "index.php".into(),
+        submenu_file: Some("update-core.php".into()),
+        title: tr("WordPress Updates"),
+        help: Some(help),
+        ..Default::default()
+    };
     let counts = crate::updates::counts(site).await;
     let totals = crate::updates::update_data(ctx.site(), counts);
     let assets = Assets {
         scripts: vec!["plugin-install".into(), "updates".into(), "thickbox".into()],
         styles: vec!["plugin-install".into(), "thickbox".into()],
-        localize: vec![("updates".into(), "_wpUpdatesItemCounts".into(), serde_json::json!({"totals": totals}))],
+        localize: vec![(
+            "updates".into(),
+            "_wpUpdatesItemCounts".into(),
+            serde_json::json!({"totals": totals}),
+        )],
         no_auth_check: true,
         ..Default::default()
     };

@@ -46,7 +46,19 @@ impl Tag {
 pub fn is_void(name: &str) -> bool {
     matches!(
         name,
-        "area" | "base" | "br" | "col" | "embed" | "hr" | "img" | "input" | "link" | "meta" | "source" | "track" | "wbr"
+        "area"
+            | "base"
+            | "br"
+            | "col"
+            | "embed"
+            | "hr"
+            | "img"
+            | "input"
+            | "link"
+            | "meta"
+            | "source"
+            | "track"
+            | "wbr"
     )
 }
 
@@ -61,7 +73,9 @@ fn find_ascii_ci(haystack: &[u8], needle: &[u8]) -> Option<usize> {
     if needle.is_empty() || haystack.len() < needle.len() {
         return None;
     }
-    haystack.windows(needle.len()).position(|window| window.eq_ignore_ascii_case(needle))
+    haystack
+        .windows(needle.len())
+        .position(|window| window.eq_ignore_ascii_case(needle))
 }
 
 /// [`tags`], or only up to the first start tag.
@@ -70,7 +84,9 @@ fn scan(html: &str, from: usize, first_start_only: bool) -> Vec<Tag> {
     let mut out = Vec::new();
     let mut i = from;
     while i < bytes.len() {
-        let Some(rel) = html[i..].find('<') else { break };
+        let Some(rel) = html[i..].find('<') else {
+            break;
+        };
         let start = i + rel;
         let rest = &html[start..];
         if rest.starts_with("<!--") {
@@ -88,7 +104,9 @@ fn scan(html: &str, from: usize, first_start_only: bool) -> Vec<Tag> {
             continue;
         }
         let mut j = name_start;
-        while j < bytes.len() && !matches!(bytes[j], b' ' | b'\t' | b'\n' | b'\r' | 0x0c | b'/' | b'>') {
+        while j < bytes.len()
+            && !matches!(bytes[j], b' ' | b'\t' | b'\n' | b'\r' | 0x0c | b'/' | b'>')
+        {
             j += 1;
         }
         let name = html[name_start..j].to_ascii_lowercase();
@@ -96,7 +114,8 @@ fn scan(html: &str, from: usize, first_start_only: bool) -> Vec<Tag> {
         let mut attrs = Vec::new();
         // Attributes.
         loop {
-            while j < bytes.len() && matches!(bytes[j], b' ' | b'\t' | b'\n' | b'\r' | 0x0c | b'/') {
+            while j < bytes.len() && matches!(bytes[j], b' ' | b'\t' | b'\n' | b'\r' | 0x0c | b'/')
+            {
                 j += 1;
             }
             if j >= bytes.len() {
@@ -107,7 +126,12 @@ fn scan(html: &str, from: usize, first_start_only: bool) -> Vec<Tag> {
                 break;
             }
             let attr_start = j;
-            while j < bytes.len() && !matches!(bytes[j], b' ' | b'\t' | b'\n' | b'\r' | 0x0c | b'=' | b'>' | b'/') {
+            while j < bytes.len()
+                && !matches!(
+                    bytes[j],
+                    b' ' | b'\t' | b'\n' | b'\r' | 0x0c | b'=' | b'>' | b'/'
+                )
+            {
                 j += 1;
             }
             if j == attr_start {
@@ -128,22 +152,38 @@ fn scan(html: &str, from: usize, first_start_only: bool) -> Vec<Tag> {
                 if k < bytes.len() && (bytes[k] == b'"' || bytes[k] == b'\'') {
                     let quote = bytes[k];
                     let vstart = k + 1;
-                    let vend = bytes[vstart..].iter().position(|&b| b == quote).map_or(bytes.len(), |p| vstart + p);
+                    let vend = bytes[vstart..]
+                        .iter()
+                        .position(|&b| b == quote)
+                        .map_or(bytes.len(), |p| vstart + p);
                     value = Some(decode_entities(&html[vstart..vend]));
                     j = (vend + 1).min(bytes.len());
                 } else {
                     let vstart = k;
                     let mut vend = vstart;
-                    while vend < bytes.len() && !matches!(bytes[vend], b' ' | b'\t' | b'\n' | b'\r' | 0x0c | b'>') {
+                    while vend < bytes.len()
+                        && !matches!(bytes[vend], b' ' | b'\t' | b'\n' | b'\r' | 0x0c | b'>')
+                    {
                         vend += 1;
                     }
                     value = Some(decode_entities(&html[vstart..vend]));
                     j = vend;
                 }
             }
-            attrs.push(Attr { name: attr_name, value, range: attr_start..j });
+            attrs.push(Attr {
+                name: attr_name,
+                value,
+                range: attr_start..j,
+            });
         }
-        out.push(Tag { name: name.clone(), is_closer, attrs, start, end: j, name_end });
+        out.push(Tag {
+            name: name.clone(),
+            is_closer,
+            attrs,
+            start,
+            end: j,
+            name_end,
+        });
         if first_start_only && !is_closer {
             break;
         }
@@ -203,7 +243,12 @@ impl TagEditor {
     }
 
     pub fn from_tag(html: &str, tag: Tag) -> Self {
-        Self { html: html.to_owned(), tag, set: Vec::new(), removed: Vec::new() }
+        Self {
+            html: html.to_owned(),
+            tag,
+            set: Vec::new(),
+            removed: Vec::new(),
+        }
     }
 
     pub fn tag(&self) -> &Tag {
@@ -248,7 +293,11 @@ impl TagEditor {
                 if existing.split_ascii_whitespace().any(|c| c == class) {
                     return;
                 }
-                let updated = if existing.is_empty() { class.to_owned() } else { format!("{existing} {class}") };
+                let updated = if existing.is_empty() {
+                    class.to_owned()
+                } else {
+                    format!("{existing} {class}")
+                };
                 self.set_attribute("class", &updated);
             }
             None => self.set_attribute("class", class),
@@ -257,11 +306,16 @@ impl TagEditor {
 
     /// `remove_class`: drops the class token; the attribute goes when no class is left.
     pub fn remove_class(&mut self, class: &str) {
-        let Some(existing) = self.get_attribute("class").map(str::to_owned) else { return };
+        let Some(existing) = self.get_attribute("class").map(str::to_owned) else {
+            return;
+        };
         if !existing.split_ascii_whitespace().any(|c| c == class) {
             return;
         }
-        let rest: Vec<&str> = existing.split_ascii_whitespace().filter(|c| *c != class).collect();
+        let rest: Vec<&str> = existing
+            .split_ascii_whitespace()
+            .filter(|c| *c != class)
+            .collect();
         if rest.is_empty() {
             self.remove_attribute("class");
             // A pending value for an attribute that is not in the source goes away with it.
@@ -281,11 +335,16 @@ impl TagEditor {
         let rendered = self.render();
         let grown = rendered.len() as isize - self.html.len() as isize;
         let end = (self.tag.end as isize + grown) as usize;
-        (self.tag.start, self.tag.end, rendered[self.tag.start..end].to_owned())
+        (
+            self.tag.start,
+            self.tag.end,
+            rendered[self.tag.start..end].to_owned(),
+        )
     }
 
     pub fn has_class(&self, class: &str) -> bool {
-        self.get_attribute("class").is_some_and(|c| c.split_ascii_whitespace().any(|x| x == class))
+        self.get_attribute("class")
+            .is_some_and(|c| c.split_ascii_whitespace().any(|x| x == class))
     }
 
     pub fn remove_attribute(&mut self, name: &str) {
@@ -366,7 +425,11 @@ pub fn append_style(editor: &mut TagEditor, css: &str) {
     }
     let updated = match editor.get_attribute("style") {
         Some(existing) if !existing.is_empty() => {
-            if existing.ends_with(';') { format!("{existing}{css}") } else { format!("{existing};{css}") }
+            if existing.ends_with(';') {
+                format!("{existing}{css}")
+            } else {
+                format!("{existing};{css}")
+            }
         }
         _ => css.to_owned(),
     };
@@ -379,7 +442,8 @@ mod tests {
 
     #[test]
     fn finds_tags_and_attributes() {
-        let t = first_start_tag("  <div class=\"a b\" id='x' hidden data-n=5>text</div>", 0).unwrap();
+        let t =
+            first_start_tag("  <div class=\"a b\" id='x' hidden data-n=5>text</div>", 0).unwrap();
         assert_eq!(t.name, "div");
         assert_eq!(t.attr("class"), Some("a b"));
         assert_eq!(t.attr("id"), Some("x"));
@@ -393,7 +457,12 @@ mod tests {
         let html = "<!-- <b> --></p><span>x</span>";
         assert_eq!(first_start_tag(html, 0).unwrap().name, "span");
         let all = tags(html, 0);
-        assert_eq!(all.iter().map(|t| (t.name.as_str(), t.is_closer)).collect::<Vec<_>>(), [("p", true), ("span", false), ("span", true)]);
+        assert_eq!(
+            all.iter()
+                .map(|t| (t.name.as_str(), t.is_closer))
+                .collect::<Vec<_>>(),
+            [("p", true), ("span", false), ("span", true)]
+        );
     }
 
     #[test]
@@ -444,7 +513,13 @@ mod tests {
     #[test]
     fn script_and_style_bodies_are_opaque() {
         let all = tags("<script>if (a<b) {}</script><i>", 0);
-        assert_eq!(all.iter().filter(|t| !t.is_closer).map(|t| t.name.as_str()).collect::<Vec<_>>(), ["script", "i"]);
+        assert_eq!(
+            all.iter()
+                .filter(|t| !t.is_closer)
+                .map(|t| t.name.as_str())
+                .collect::<Vec<_>>(),
+            ["script", "i"]
+        );
     }
 
     #[test]
@@ -460,7 +535,10 @@ mod tests {
         e.set_attribute("data-wp-watch", "w");
         e.set_attribute("data-wp-context", "c");
         e.add_class("y");
-        assert_eq!(e.finish(), "<li data-wp-context=\"c\" data-wp-watch=\"w\" tabindex=\"-1\" class=\"x y\">");
+        assert_eq!(
+            e.finish(),
+            "<li data-wp-context=\"c\" data-wp-watch=\"w\" tabindex=\"-1\" class=\"x y\">"
+        );
         let mut e = TagEditor::first("<div>").unwrap();
         e.set_attribute("style", "a:b");
         e.add_class("k");

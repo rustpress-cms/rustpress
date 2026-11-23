@@ -58,12 +58,37 @@ pub struct MenuContext {
     pub request_uri: String,
 }
 
-fn item(position: u32, title: &str, capability: &str, slug: &str, classes: &str, id: &str, icon: &str) -> MenuItem {
-    MenuItem { position, title: title.to_owned(), capability: capability.to_owned(), slug: slug.to_owned(), classes: classes.to_owned(), id: id.to_owned(), icon: icon.to_owned(), href: None }
+fn item(
+    position: u32,
+    title: &str,
+    capability: &str,
+    slug: &str,
+    classes: &str,
+    id: &str,
+    icon: &str,
+) -> MenuItem {
+    MenuItem {
+        position,
+        title: title.to_owned(),
+        capability: capability.to_owned(),
+        slug: slug.to_owned(),
+        classes: classes.to_owned(),
+        id: id.to_owned(),
+        icon: icon.to_owned(),
+        href: None,
+    }
 }
 
 fn sub(position: u32, title: &str, capability: &str, slug: &str) -> SubItem {
-    SubItem { position, title: title.to_owned(), capability: capability.to_owned(), slug: slug.to_owned(), classes: String::new(), href: None, page_url: None }
+    SubItem {
+        position,
+        title: title.to_owned(),
+        capability: capability.to_owned(),
+        slug: slug.to_owned(),
+        classes: String::new(),
+        href: None,
+        page_url: None,
+    }
 }
 
 impl AdminMenu {
@@ -79,9 +104,21 @@ impl AdminMenu {
         let tr = |s: &str| site.tr(s);
         let number = |n: u64| site.number_i18n(n);
         let mut menu = AdminMenu::default();
-        menu.items.push(item(2, &tr("Dashboard"), "read", "index.php", "menu-top menu-top-first menu-icon-dashboard", "menu-dashboard", "dashicons-dashboard"));
+        menu.items.push(item(
+            2,
+            &tr("Dashboard"),
+            "read",
+            "index.php",
+            "menu-top menu-top-first menu-icon-dashboard",
+            "menu-dashboard",
+            "dashicons-dashboard",
+        ));
         menu.add_sub("index.php", sub(0, &tr("Home"), "read", "index.php"));
-        let update_capability = ["update_core", "update_plugins", "update_themes"].iter().find(|c| user.can(c)).copied().unwrap_or("update_languages");
+        let update_capability = ["update_core", "update_plugins", "update_themes"]
+            .iter()
+            .find(|c| user.can(c))
+            .copied()
+            .unwrap_or("update_languages");
         menu.add_sub(
             "index.php",
             sub(
@@ -91,22 +128,79 @@ impl AdminMenu {
                 "update-core.php",
             ),
         );
-        menu.items.push(item(4, "", "read", "separator1", "wp-menu-separator", "", ""));
-        menu.items.push(item(10, &tr("Media"), "upload_files", "upload.php", "menu-top menu-icon-media", "menu-media", "dashicons-admin-media"));
-        menu.add_sub("upload.php", sub(5, &site.trx("Library", "media library menu item"), "upload_files", "upload.php"));
-        menu.add_sub("upload.php", sub(10, &tr("Add Media File"), "upload_files", "media-new.php"));
+        menu.items.push(item(
+            4,
+            "",
+            "read",
+            "separator1",
+            "wp-menu-separator",
+            "",
+            "",
+        ));
+        menu.items.push(item(
+            10,
+            &tr("Media"),
+            "upload_files",
+            "upload.php",
+            "menu-top menu-icon-media",
+            "menu-media",
+            "dashicons-admin-media",
+        ));
+        menu.add_sub(
+            "upload.php",
+            sub(
+                5,
+                &site.trx("Library", "media library menu item"),
+                "upload_files",
+                "upload.php",
+            ),
+        );
+        menu.add_sub(
+            "upload.php",
+            sub(10, &tr("Add Media File"), "upload_files", "media-new.php"),
+        );
         if user.can("edit_posts") {
             let count = ctx.pending_comments;
-            let text = rustpress_core::i18n::sprintf(&site.trn("%s Comment in moderation", "%s Comments in moderation", count as i64), &[&number(count)]);
-            let badge = format!("<span class=\"awaiting-mod count-{count}\"><span class=\"pending-count\" aria-hidden=\"true\">{}</span><span class=\"comments-in-moderation-text screen-reader-text\">{text}</span></span>", number(count));
-            menu.items.push(item(25, &rustpress_core::i18n::sprintf(&tr("Comments %s"), &[&badge]), "edit_posts", "edit-comments.php", "menu-top menu-icon-comments", "menu-comments", "dashicons-admin-comments"));
+            let text = rustpress_core::i18n::sprintf(
+                &site.trn(
+                    "%s Comment in moderation",
+                    "%s Comments in moderation",
+                    count as i64,
+                ),
+                &[&number(count)],
+            );
+            let badge = format!(
+                "<span class=\"awaiting-mod count-{count}\"><span class=\"pending-count\" aria-hidden=\"true\">{}</span><span class=\"comments-in-moderation-text screen-reader-text\">{text}</span></span>",
+                number(count)
+            );
+            menu.items.push(item(
+                25,
+                &rustpress_core::i18n::sprintf(&tr("Comments %s"), &[&badge]),
+                "edit_posts",
+                "edit-comments.php",
+                "menu-top menu-icon-comments",
+                "menu-comments",
+                "dashicons-admin-comments",
+            ));
         }
-        menu.add_sub("edit-comments.php", sub(0, &tr("All Comments"), "edit_posts", "edit-comments.php"));
+        menu.add_sub(
+            "edit-comments.php",
+            sub(0, &tr("All Comments"), "edit_posts", "edit-comments.php"),
+        );
 
         // Posts, pages and the custom post types, in that order.
         let mut last_object_menu = 25u32;
         // (name, menu name, all items, add new, icon, taxonomies, hierarchical, menu position)
-        type TypeEntry = (String, String, String, String, String, Vec<(String, String)>, bool, Option<i64>);
+        type TypeEntry = (
+            String,
+            String,
+            String,
+            String,
+            String,
+            Vec<(String, String)>,
+            bool,
+            Option<i64>,
+        );
         let registered = site.types.admin_post_types();
         let registered_taxonomies = site.types.admin_taxonomies();
         // `get_taxonomies()`: the taxonomies of a type that have a screen and a menu entry.
@@ -117,45 +211,113 @@ impl AdminMenu {
                 out.push(("post_tag".into(), site.taxonomy_label("post_tag")));
             }
             for t in &registered_taxonomies {
-                if t.show_ui && t.show_in_menu && t.object_types.iter().any(|o| o == post_type) && !out.iter().any(|(n, _)| *n == t.name) {
-                    out.push((t.name.clone(), t.menu_name().unwrap_or_else(|| site.taxonomy_label(&t.name))));
+                if t.show_ui
+                    && t.show_in_menu
+                    && t.object_types.iter().any(|o| o == post_type)
+                    && !out.iter().any(|(n, _)| *n == t.name)
+                {
+                    out.push((
+                        t.name.clone(),
+                        t.menu_name()
+                            .unwrap_or_else(|| site.taxonomy_label(&t.name)),
+                    ));
                 }
             }
             // Taxonomies only the rewrite rules know.
             for t in &site.types.taxonomies {
-                if !registered_taxonomies.iter().any(|r| r.name == t.name) && t.object_types.iter().any(|o| o == post_type) && !out.iter().any(|(n, _)| *n == t.name) {
+                if !registered_taxonomies.iter().any(|r| r.name == t.name)
+                    && t.object_types.iter().any(|o| o == post_type)
+                    && !out.iter().any(|(n, _)| *n == t.name)
+                {
                     out.push((t.name.clone(), site.taxonomy_label(&t.name)));
                 }
             }
             out
         };
-        let pick = |hierarchical: bool, post: &str, page: &str| tr(if hierarchical { page } else { post });
+        let pick =
+            |hierarchical: bool, post: &str, page: &str| tr(if hierarchical { page } else { post });
         let mut types: Vec<TypeEntry> = Vec::new();
-        types.push(("post".into(), site.post_type_label("post"), tr("All Posts"), tr("Add Post"), "dashicons-admin-post".into(), taxonomies_of("post"), false, Some(5)));
-        types.push(("page".into(), site.post_type_label("page"), tr("All Pages"), tr("Add Page"), "dashicons-admin-page".into(), taxonomies_of("page"), true, Some(20)));
+        types.push((
+            "post".into(),
+            site.post_type_label("post"),
+            tr("All Posts"),
+            tr("Add Post"),
+            "dashicons-admin-post".into(),
+            taxonomies_of("post"),
+            false,
+            Some(5),
+        ));
+        types.push((
+            "page".into(),
+            site.post_type_label("page"),
+            tr("All Pages"),
+            tr("Add Page"),
+            "dashicons-admin-page".into(),
+            taxonomies_of("page"),
+            true,
+            Some(20),
+        ));
         for custom in registered.iter().filter(|t| t.own_menu) {
             // `menu_icon`: an empty or Dashicons icon or an SVG as it is, a URL escaped.
             let icon = match custom.menu_icon.as_deref() {
-                Some(icon) if icon == "none" || icon == "div" || icon.starts_with("data:image/svg+xml;base64,") || icon.starts_with("dashicons-") => icon.to_owned(),
+                Some(icon)
+                    if icon == "none"
+                        || icon == "div"
+                        || icon.starts_with("data:image/svg+xml;base64,")
+                        || icon.starts_with("dashicons-") =>
+                {
+                    icon.to_owned()
+                }
                 Some(icon) => rustpress_core::formatting::esc_url(icon),
                 None => "dashicons-admin-post".to_owned(),
             };
-            let menu_name = custom.label("menu_name").unwrap_or_else(|| site.post_type_label(&custom.name));
-            let all_items = custom.label("all_items").unwrap_or_else(|| pick(custom.hierarchical, "All Posts", "All Pages"));
-            let add_new = custom.label("add_new_item").unwrap_or_else(|| pick(custom.hierarchical, "Add Post", "Add Page"));
-            types.push((custom.name.clone(), menu_name, all_items, add_new, icon, taxonomies_of(&custom.name), custom.hierarchical, custom.menu_position));
+            let menu_name = custom
+                .label("menu_name")
+                .unwrap_or_else(|| site.post_type_label(&custom.name));
+            let all_items = custom
+                .label("all_items")
+                .unwrap_or_else(|| pick(custom.hierarchical, "All Posts", "All Pages"));
+            let add_new = custom
+                .label("add_new_item")
+                .unwrap_or_else(|| pick(custom.hierarchical, "Add Post", "Add Page"));
+            types.push((
+                custom.name.clone(),
+                menu_name,
+                all_items,
+                add_new,
+                icon,
+                taxonomies_of(&custom.name),
+                custom.hierarchical,
+                custom.menu_position,
+            ));
         }
         // Types only the rewrite rules know of.
         for custom in &site.types.post_types {
-            if registered.iter().any(|r| r.name == custom.name) || (!custom.public && !custom.queryable) {
+            if registered.iter().any(|r| r.name == custom.name)
+                || (!custom.public && !custom.queryable)
+            {
                 continue;
             }
-            let icon = custom.menu_icon.clone().unwrap_or_else(|| "dashicons-admin-post".to_owned());
+            let icon = custom
+                .menu_icon
+                .clone()
+                .unwrap_or_else(|| "dashicons-admin-post".to_owned());
             let label = site.post_type_label(&custom.name);
             let add_new = pick(custom.hierarchical, "Add Post", "Add Page");
-            types.push((custom.name.clone(), label.clone(), label, add_new, icon, taxonomies_of(&custom.name), custom.hierarchical, None));
+            types.push((
+                custom.name.clone(),
+                label.clone(),
+                label,
+                add_new,
+                icon,
+                taxonomies_of(&custom.name),
+                custom.hierarchical,
+                None,
+            ));
         }
-        for (name, label, all_items, add_new, icon, taxonomies, _hierarchical, menu_position) in types {
+        for (name, label, all_items, add_new, icon, taxonomies, _hierarchical, menu_position) in
+            types
+        {
             let mut position = match menu_position {
                 Some(p) if p >= 0 => p as u32,
                 _ => {
@@ -163,37 +325,119 @@ impl AdminMenu {
                     last_object_menu
                 }
             };
-            while menu.items.iter().any(|m| m.position == position) || [59, 60, 65, 70, 75, 80, 85, 99].contains(&position) {
+            while menu.items.iter().any(|m| m.position == position)
+                || [59, 60, 65, 70, 75, 80, 85, 99].contains(&position)
+            {
                 position += 1;
             }
             let for_id = rustpress_core::formatting::sanitize_html_class(&name);
             let (file, new_file, tags_file) = if name == "post" {
-                ("edit.php".to_owned(), "post-new.php".to_owned(), "edit-tags.php?taxonomy=%s".to_owned())
+                (
+                    "edit.php".to_owned(),
+                    "post-new.php".to_owned(),
+                    "edit-tags.php?taxonomy=%s".to_owned(),
+                )
             } else {
-                (format!("edit.php?post_type={name}"), format!("post-new.php?post_type={name}"), format!("edit-tags.php?taxonomy=%s&amp;post_type={name}"))
+                (
+                    format!("edit.php?post_type={name}"),
+                    format!("post-new.php?post_type={name}"),
+                    format!("edit-tags.php?taxonomy=%s&amp;post_type={name}"),
+                )
             };
             let mut classes = format!("menu-top menu-icon-{for_id}");
             if name == "post" {
                 classes.push_str(" open-if-no-js");
             }
-            let id = if name == "post" || name == "page" { format!("menu-{for_id}s") } else { format!("menu-posts-{for_id}") };
-            menu.items.push(item(position, &esc_attr(&label), "edit_posts", &file, &classes, &id, &icon));
+            let id = if name == "post" || name == "page" {
+                format!("menu-{for_id}s")
+            } else {
+                format!("menu-posts-{for_id}")
+            };
+            menu.items.push(item(
+                position,
+                &esc_attr(&label),
+                "edit_posts",
+                &file,
+                &classes,
+                &id,
+                &icon,
+            ));
             menu.add_sub(&file, sub(5, &all_items, "edit_posts", &file));
             menu.add_sub(&file, sub(10, &add_new, "edit_posts", &new_file));
             for (index, (taxonomy, label)) in taxonomies.iter().enumerate() {
                 let capability = "manage_categories";
-                menu.add_sub(&file, sub(15 + index as u32, &esc_attr(label), capability, &tags_file.replace("%s", taxonomy)));
+                menu.add_sub(
+                    &file,
+                    sub(
+                        15 + index as u32,
+                        &esc_attr(label),
+                        capability,
+                        &tags_file.replace("%s", taxonomy),
+                    ),
+                );
             }
         }
-        menu.items.push(item(59, "", "read", "separator2", "wp-menu-separator", "", ""));
-        let appearance = if user.can("switch_themes") { "switch_themes" } else { "edit_theme_options" };
-        menu.items.push(item(60, &tr("Appearance"), appearance, "themes.php", "menu-top menu-icon-appearance", "menu-appearance", "dashicons-admin-appearance"));
-        let theme_count = if user.can("update_themes") { format!("<span class=\"update-plugins count-{}\"><span class=\"theme-count\">{}</span></span>", ctx.updates.2, number(ctx.updates.2)) } else { String::new() };
-        menu.add_sub("themes.php", sub(5, &rustpress_core::i18n::sprintf(&tr("Themes %s"), &[&theme_count]), appearance, "themes.php"));
-        if ctx.block_theme {
-            menu.add_sub("themes.php", sub(6, &site.trx("Editor", "site editor menu item"), "edit_theme_options", "site-editor.php"));
+        menu.items.push(item(
+            59,
+            "",
+            "read",
+            "separator2",
+            "wp-menu-separator",
+            "",
+            "",
+        ));
+        let appearance = if user.can("switch_themes") {
+            "switch_themes"
         } else {
-            menu.add_sub("themes.php", sub(6, &site.trx("Design", "design menu item"), "edit_theme_options", "site-editor.php"));
+            "edit_theme_options"
+        };
+        menu.items.push(item(
+            60,
+            &tr("Appearance"),
+            appearance,
+            "themes.php",
+            "menu-top menu-icon-appearance",
+            "menu-appearance",
+            "dashicons-admin-appearance",
+        ));
+        let theme_count = if user.can("update_themes") {
+            format!(
+                "<span class=\"update-plugins count-{}\"><span class=\"theme-count\">{}</span></span>",
+                ctx.updates.2,
+                number(ctx.updates.2)
+            )
+        } else {
+            String::new()
+        };
+        menu.add_sub(
+            "themes.php",
+            sub(
+                5,
+                &rustpress_core::i18n::sprintf(&tr("Themes %s"), &[&theme_count]),
+                appearance,
+                "themes.php",
+            ),
+        );
+        if ctx.block_theme {
+            menu.add_sub(
+                "themes.php",
+                sub(
+                    6,
+                    &site.trx("Editor", "site editor menu item"),
+                    "edit_theme_options",
+                    "site-editor.php",
+                ),
+            );
+        } else {
+            menu.add_sub(
+                "themes.php",
+                sub(
+                    6,
+                    &site.trx("Design", "design menu item"),
+                    "edit_theme_options",
+                    "site-editor.php",
+                ),
+            );
         }
         if !ctx.block_theme {
             // `$customize_url`, with `wp_removable_query_args()` taken out of the way back.
@@ -201,69 +445,272 @@ impl AdminMenu {
             for arg in crate::chrome::REMOVABLE_QUERY_ARGS {
                 back = rustpress_core::urls::remove_query_arg(&back, arg);
             }
-            let customize = format!("customize.php?return={}", rustpress_core::canonical::php_urlencode(&back));
+            let customize = format!(
+                "customize.php?return={}",
+                rustpress_core::canonical::php_urlencode(&back)
+            );
             let hidden = |mut entry: SubItem| {
                 entry.classes = "hide-if-no-customize".to_owned();
                 entry
             };
-            menu.add_sub("themes.php", hidden(sub(7, &tr("Customize"), "edit_theme_options", &rustpress_core::formatting::esc_url(&customize))));
-            menu.add_sub("themes.php", sub(8, &tr("Widgets"), "edit_theme_options", "widgets.php"));
-            menu.add_sub("themes.php", sub(9, &tr("Fonts"), "edit_theme_options", "font-library.php"));
-            menu.add_sub("themes.php", sub(10, &tr("Menus"), "edit_theme_options", "nav-menus.php"));
+            menu.add_sub(
+                "themes.php",
+                hidden(sub(
+                    7,
+                    &tr("Customize"),
+                    "edit_theme_options",
+                    &rustpress_core::formatting::esc_url(&customize),
+                )),
+            );
+            menu.add_sub(
+                "themes.php",
+                sub(8, &tr("Widgets"), "edit_theme_options", "widgets.php"),
+            );
+            menu.add_sub(
+                "themes.php",
+                sub(9, &tr("Fonts"), "edit_theme_options", "font-library.php"),
+            );
+            menu.add_sub(
+                "themes.php",
+                sub(10, &tr("Menus"), "edit_theme_options", "nav-menus.php"),
+            );
             let header = format!("{customize}&autofocus%5Bcontrol%5D=header_image");
-            menu.add_sub("themes.php", hidden(sub(15, &site.trx("Header", "custom image header"), appearance, &rustpress_core::formatting::esc_url(&header))));
+            menu.add_sub(
+                "themes.php",
+                hidden(sub(
+                    15,
+                    &site.trx("Header", "custom image header"),
+                    appearance,
+                    &rustpress_core::formatting::esc_url(&header),
+                )),
+            );
             // `Custom_Image_Header::init()` adds it with `add_theme_page()`.
-            menu.add_sub("themes.php", SubItem { href: Some("themes.php?page=custom-header".to_owned()), page_url: Some("themes.php?page=custom-header".to_owned()), ..sub(16, &site.trx("Header", "custom image header"), "edit_theme_options", "custom-header") });
-            menu.add_sub("themes.php", sub(17, &tr("Theme File Editor"), "edit_themes", "theme-editor.php"));
+            menu.add_sub(
+                "themes.php",
+                SubItem {
+                    href: Some("themes.php?page=custom-header".to_owned()),
+                    page_url: Some("themes.php?page=custom-header".to_owned()),
+                    ..sub(
+                        16,
+                        &site.trx("Header", "custom image header"),
+                        "edit_theme_options",
+                        "custom-header",
+                    )
+                },
+            );
+            menu.add_sub(
+                "themes.php",
+                sub(
+                    17,
+                    &tr("Theme File Editor"),
+                    "edit_themes",
+                    "theme-editor.php",
+                ),
+            );
         } else {
-            menu.add_sub("themes.php", sub(9, &tr("Fonts"), "edit_theme_options", "font-library.php"));
+            menu.add_sub(
+                "themes.php",
+                sub(9, &tr("Fonts"), "edit_theme_options", "font-library.php"),
+            );
         }
-        let plugin_count = if user.can("update_plugins") { format!("<span class=\"update-plugins count-{}\"><span class=\"plugin-count\">{}</span></span>", ctx.updates.1, number(ctx.updates.1)) } else { String::new() };
-        menu.items.push(item(65, &rustpress_core::i18n::sprintf(&tr("Plugins %s"), &[&plugin_count]), "activate_plugins", "plugins.php", "menu-top menu-icon-plugins", "menu-plugins", "dashicons-admin-plugins"));
-        menu.add_sub("plugins.php", sub(5, &tr("Installed Plugins"), "activate_plugins", "plugins.php"));
-        menu.add_sub("plugins.php", sub(10, &tr("Add Plugin"), "install_plugins", "plugin-install.php"));
+        let plugin_count = if user.can("update_plugins") {
+            format!(
+                "<span class=\"update-plugins count-{}\"><span class=\"plugin-count\">{}</span></span>",
+                ctx.updates.1,
+                number(ctx.updates.1)
+            )
+        } else {
+            String::new()
+        };
+        menu.items.push(item(
+            65,
+            &rustpress_core::i18n::sprintf(&tr("Plugins %s"), &[&plugin_count]),
+            "activate_plugins",
+            "plugins.php",
+            "menu-top menu-icon-plugins",
+            "menu-plugins",
+            "dashicons-admin-plugins",
+        ));
+        menu.add_sub(
+            "plugins.php",
+            sub(
+                5,
+                &tr("Installed Plugins"),
+                "activate_plugins",
+                "plugins.php",
+            ),
+        );
+        menu.add_sub(
+            "plugins.php",
+            sub(
+                10,
+                &tr("Add Plugin"),
+                "install_plugins",
+                "plugin-install.php",
+            ),
+        );
         if !ctx.block_theme {
-            menu.add_sub("plugins.php", sub(15, &tr("Plugin File Editor"), "edit_plugins", "plugin-editor.php"));
+            menu.add_sub(
+                "plugins.php",
+                sub(
+                    15,
+                    &tr("Plugin File Editor"),
+                    "edit_plugins",
+                    "plugin-editor.php",
+                ),
+            );
         }
         if user.can("list_users") {
-            menu.items.push(item(70, &tr("Users"), "list_users", "users.php", "menu-top menu-icon-users", "menu-users", "dashicons-admin-users"));
-            menu.add_sub("users.php", sub(5, &tr("All Users"), "list_users", "users.php"));
+            menu.items.push(item(
+                70,
+                &tr("Users"),
+                "list_users",
+                "users.php",
+                "menu-top menu-icon-users",
+                "menu-users",
+                "dashicons-admin-users",
+            ));
+            menu.add_sub(
+                "users.php",
+                sub(5, &tr("All Users"), "list_users", "users.php"),
+            );
             if user.can("create_users") {
-                menu.add_sub("users.php", sub(10, &tr("Add User"), "create_users", "user-new.php"));
+                menu.add_sub(
+                    "users.php",
+                    sub(10, &tr("Add User"), "create_users", "user-new.php"),
+                );
             }
             menu.add_sub("users.php", sub(15, &tr("Profile"), "read", "profile.php"));
         } else {
-            menu.items.push(item(70, &tr("Profile"), "read", "profile.php", "menu-top menu-icon-users", "menu-users", "dashicons-admin-users"));
+            menu.items.push(item(
+                70,
+                &tr("Profile"),
+                "read",
+                "profile.php",
+                "menu-top menu-icon-users",
+                "menu-users",
+                "dashicons-admin-users",
+            ));
             menu.add_sub("profile.php", sub(5, &tr("Profile"), "read", "profile.php"));
             if user.can("create_users") {
-                menu.add_sub("profile.php", sub(10, &tr("Add User"), "create_users", "user-new.php"));
+                menu.add_sub(
+                    "profile.php",
+                    sub(10, &tr("Add User"), "create_users", "user-new.php"),
+                );
             }
         }
-        menu.items.push(item(75, &tr("Tools"), "edit_posts", "tools.php", "menu-top menu-icon-tools", "menu-tools", "dashicons-admin-tools"));
-        menu.add_sub("tools.php", sub(5, &tr("Available Tools"), "edit_posts", "tools.php"));
+        menu.items.push(item(
+            75,
+            &tr("Tools"),
+            "edit_posts",
+            "tools.php",
+            "menu-top menu-icon-tools",
+            "menu-tools",
+            "dashicons-admin-tools",
+        ));
+        menu.add_sub(
+            "tools.php",
+            sub(5, &tr("Available Tools"), "edit_posts", "tools.php"),
+        );
         menu.add_sub("tools.php", sub(10, &tr("Import"), "import", "import.php"));
         menu.add_sub("tools.php", sub(15, &tr("Export"), "export", "export.php"));
         menu.add_sub("tools.php", sub(20, &rustpress_core::i18n::sprintf(&tr("Site Health %s"), &["<span class=\"menu-counter site-health-counter count-0\"><span class=\"count\">0</span></span>"]), "view_site_health_checks", "site-health.php"));
-        menu.add_sub("tools.php", sub(25, &tr("Export Personal Data"), "export_others_personal_data", "export-personal-data.php"));
-        menu.add_sub("tools.php", sub(30, &tr("Erase Personal Data"), "erase_others_personal_data", "erase-personal-data.php"));
+        menu.add_sub(
+            "tools.php",
+            sub(
+                25,
+                &tr("Export Personal Data"),
+                "export_others_personal_data",
+                "export-personal-data.php",
+            ),
+        );
+        menu.add_sub(
+            "tools.php",
+            sub(
+                30,
+                &tr("Erase Personal Data"),
+                "erase_others_personal_data",
+                "erase-personal-data.php",
+            ),
+        );
         if ctx.block_theme {
-            menu.add_sub("tools.php", sub(35, &tr("Theme File Editor"), "edit_themes", "theme-editor.php"));
-            menu.add_sub("tools.php", sub(36, &tr("Plugin File Editor"), "edit_plugins", "plugin-editor.php"));
+            menu.add_sub(
+                "tools.php",
+                sub(
+                    35,
+                    &tr("Theme File Editor"),
+                    "edit_themes",
+                    "theme-editor.php",
+                ),
+            );
+            menu.add_sub(
+                "tools.php",
+                sub(
+                    36,
+                    &tr("Plugin File Editor"),
+                    "edit_plugins",
+                    "plugin-editor.php",
+                ),
+            );
         }
-        menu.items.push(item(80, &tr("Settings"), "manage_options", "options-general.php", "menu-top menu-icon-settings", "menu-settings", "dashicons-admin-settings"));
+        menu.items.push(item(
+            80,
+            &tr("Settings"),
+            "manage_options",
+            "options-general.php",
+            "menu-top menu-icon-settings",
+            "menu-settings",
+            "dashicons-admin-settings",
+        ));
         for (position, title, capability, slug) in [
-            (10, site.trx("General", "settings screen"), "manage_options", "options-general.php"),
-            (12, tr("Connectors"), "manage_options", "options-connectors.php"),
+            (
+                10,
+                site.trx("General", "settings screen"),
+                "manage_options",
+                "options-general.php",
+            ),
+            (
+                12,
+                tr("Connectors"),
+                "manage_options",
+                "options-connectors.php",
+            ),
             (15, tr("Writing"), "manage_options", "options-writing.php"),
             (20, tr("Reading"), "manage_options", "options-reading.php"),
-            (25, tr("Discussion"), "manage_options", "options-discussion.php"),
+            (
+                25,
+                tr("Discussion"),
+                "manage_options",
+                "options-discussion.php",
+            ),
             (30, tr("Media"), "manage_options", "options-media.php"),
-            (40, tr("Permalinks"), "manage_options", "options-permalink.php"),
-            (45, tr("Privacy"), "manage_privacy_options", "options-privacy.php"),
+            (
+                40,
+                tr("Permalinks"),
+                "manage_options",
+                "options-permalink.php",
+            ),
+            (
+                45,
+                tr("Privacy"),
+                "manage_privacy_options",
+                "options-privacy.php",
+            ),
         ] {
-            menu.add_sub("options-general.php", sub(position, &title, capability, slug));
+            menu.add_sub(
+                "options-general.php",
+                sub(position, &title, capability, slug),
+            );
         }
-        menu.items.push(item(99, "", "read", "separator-last", "wp-menu-separator", "", ""));
+        menu.items.push(item(
+            99,
+            "",
+            "read",
+            "separator-last",
+            "wp-menu-separator",
+            "",
+            "",
+        ));
         menu
     }
 
@@ -271,11 +718,17 @@ impl AdminMenu {
     pub fn with_plugin_pages(mut self, pages: &[rustpress_core::native::AdminPage]) -> Self {
         // `add_menu_page()`: the entries of the main menu come first, at their position or last.
         for page in pages.iter().filter(|p| p.is_top_level()) {
-            let position = page.position.unwrap_or_else(|| self.items.iter().map(|m| m.position + 1).max().unwrap_or(0));
+            let position = page
+                .position
+                .unwrap_or_else(|| self.items.iter().map(|m| m.position + 1).max().unwrap_or(0));
             // A menu without a callback whose slug is a screen (`edit.php?post_type=...`) links to that screen.
             let file = page.slug.contains(".php");
             let hook = format!("toplevel_page_{}", page.slug.replace(".php", ""));
-            let (icon, icon_class) = if page.icon.is_empty() { ("dashicons-admin-generic", "menu-icon-generic ") } else { (page.icon, "") };
+            let (icon, icon_class) = if page.icon.is_empty() {
+                ("dashicons-admin-generic", "menu-icon-generic ")
+            } else {
+                (page.icon, "")
+            };
             self.items.push(MenuItem {
                 position,
                 title: page.menu_title.clone(),
@@ -287,11 +740,24 @@ impl AdminMenu {
                 href: (!file).then(|| format!("admin.php?page={}", page.slug)),
             });
         }
-        let plugin_menus: Vec<&str> = pages.iter().filter(|p| p.is_top_level() && !p.slug.contains(".php")).map(|p| p.slug).collect();
+        let plugin_menus: Vec<&str> = pages
+            .iter()
+            .filter(|p| p.is_top_level() && !p.slug.contains(".php"))
+            .map(|p| p.slug)
+            .collect();
         // `$_parent_pages`: every menu of `add_menu_page()`.
-        let parent_pages: Vec<&str> = pages.iter().filter(|p| p.is_top_level()).map(|p| p.slug).collect();
+        let parent_pages: Vec<&str> = pages
+            .iter()
+            .filter(|p| p.is_top_level())
+            .map(|p| p.slug)
+            .collect();
         for page in pages.iter().filter(|p| !p.is_top_level()) {
-            let position = self.submenu.iter().find(|(p, _)| p == page.parent).and_then(|(_, list)| list.iter().map(|s| s.position + 1).max()).unwrap_or(0);
+            let position = self
+                .submenu
+                .iter()
+                .find(|(p, _)| p == page.parent)
+                .and_then(|(_, list)| list.iter().map(|s| s.position + 1).max())
+                .unwrap_or(0);
             let href = if page.slug.contains(".php") {
                 // A submenu entry that is a screen of its own.
                 None
@@ -307,7 +773,18 @@ impl AdminMenu {
             } else {
                 rustpress_core::urls::add_query_arg(page.parent, "page", page.slug)
             };
-            self.add_sub(page.parent, SubItem { position, title: page.menu_title.clone(), capability: page.capability.to_owned(), slug: page.slug.to_owned(), classes: String::new(), href, page_url: Some(page_url) });
+            self.add_sub(
+                page.parent,
+                SubItem {
+                    position,
+                    title: page.menu_title.clone(),
+                    capability: page.capability.to_owned(),
+                    slug: page.slug.to_owned(),
+                    classes: String::new(),
+                    href,
+                    page_url: Some(page_url),
+                },
+            );
         }
         self
     }
@@ -372,7 +849,10 @@ impl AdminMenu {
             previous_separator = separator;
             cleaned.push(m);
         }
-        if cleaned.last().is_some_and(|m| m.classes == "wp-menu-separator") {
+        if cleaned
+            .last()
+            .is_some_and(|m| m.classes == "wp-menu-separator")
+        {
             cleaned.pop();
         }
         self.items = cleaned;
@@ -407,7 +887,14 @@ impl AdminMenu {
 
     /// `_wp_menu_output()` for the page `self_file` (`options-general.php`), whose parent is `parent_file`
     /// and whose submenu entry is `submenu_file`.
-    pub fn render(&self, site: &Site, self_file: &str, parent_file: &str, submenu_file: Option<&str>, post_type: &str) -> String {
+    pub fn render(
+        &self,
+        site: &Site,
+        self_file: &str,
+        parent_file: &str,
+        submenu_file: Option<&str>,
+        post_type: &str,
+    ) -> String {
         let mut out = String::new();
         let mut first = true;
         for item in &self.items {
@@ -417,11 +904,17 @@ impl AdminMenu {
                 classes.push("wp-first-item".to_owned());
                 first = false;
             }
-            let subs: &[SubItem] = self.submenu.iter().find(|(p, _)| *p == item.slug).map_or(&[], |(_, l)| l.as_slice());
+            let subs: &[SubItem] = self
+                .submenu
+                .iter()
+                .find(|(p, _)| *p == item.slug)
+                .map_or(&[], |(_, l)| l.as_slice());
             if !subs.is_empty() {
                 classes.push("wp-has-submenu".to_owned());
             }
-            if (!parent_file.is_empty() && item.slug == parent_file) || (post_type.is_empty() && self_file == item.slug) {
+            if (!parent_file.is_empty() && item.slug == parent_file)
+                || (post_type.is_empty() && self_file == item.slug)
+            {
                 if subs.is_empty() {
                     classes.push("current".to_owned());
                     aria.push_str("aria-current=\"page\"");
@@ -437,27 +930,60 @@ impl AdminMenu {
             if !item.classes.is_empty() {
                 classes.push(esc_attr(&item.classes));
             }
-            let class = if classes.is_empty() { String::new() } else { format!(" class=\"{}\"", classes.join(" ")) };
-            let id = if item.id.is_empty() { String::new() } else { format!(" id=\"{}\"", item.id.chars().map(|c| if c.is_ascii_alphanumeric() || matches!(c, '_' | ':' | '.') { c } else { '-' }).collect::<String>()) };
+            let class = if classes.is_empty() {
+                String::new()
+            } else {
+                format!(" class=\"{}\"", classes.join(" "))
+            };
+            let id = if item.id.is_empty() {
+                String::new()
+            } else {
+                format!(
+                    " id=\"{}\"",
+                    item.id
+                        .chars()
+                        .map(
+                            |c| if c.is_ascii_alphanumeric() || matches!(c, '_' | ':' | '.') {
+                                c
+                            } else {
+                                '-'
+                            }
+                        )
+                        .collect::<String>()
+                )
+            };
             let mut img = String::new();
             let mut img_class = " dashicons-before".to_owned();
             let mut img_style = String::new();
             if !item.icon.is_empty() {
-                img = format!("<img src=\"{}\" alt=\"\" />", rustpress_core::formatting::esc_url(&item.icon));
+                img = format!(
+                    "<img src=\"{}\" alt=\"\" />",
+                    rustpress_core::formatting::esc_url(&item.icon)
+                );
                 if item.icon == "none" || item.icon == "div" {
                     img = "<br />".to_owned();
                 } else if item.icon.starts_with("data:image/svg+xml;base64,") {
                     img = "<br />".to_owned();
-                    img_style = format!(" style=\"background-image:url('{}')\"", esc_attr(&item.icon));
+                    img_style = format!(
+                        " style=\"background-image:url('{}')\"",
+                        esc_attr(&item.icon)
+                    );
                     img_class = " svg".to_owned();
                 } else if item.icon.starts_with("dashicons-") {
                     img = "<br />".to_owned();
-                    img_class = format!(" dashicons-before {}", rustpress_core::formatting::sanitize_html_class(&item.icon));
+                    img_class = format!(
+                        " dashicons-before {}",
+                        rustpress_core::formatting::sanitize_html_class(&item.icon)
+                    );
                 }
             }
             let separator = class.contains("wp-menu-separator");
             let title = wptexturize(&item.title);
-            let hidden = if separator { " aria-hidden=\"true\"" } else { "" };
+            let hidden = if separator {
+                " aria-hidden=\"true\""
+            } else {
+                ""
+            };
             out.push_str(&format!("\n\t<li{class}{id}{hidden}>"));
             if separator {
                 out.push_str("<div class=\"separator\"></div>");
@@ -470,7 +996,10 @@ impl AdminMenu {
             }
             if !subs.is_empty() {
                 out.push_str("\n\t<ul class='wp-submenu wp-submenu-wrap'>");
-                out.push_str(&format!("<li class='wp-submenu-head' aria-hidden='true'>{}</li>", item.title));
+                out.push_str(&format!(
+                    "<li class='wp-submenu-head' aria-hidden='true'>{}</li>",
+                    item.title
+                ));
                 let mut first_sub = true;
                 for entry in subs {
                     let mut class: Vec<String> = Vec::new();
@@ -486,9 +1015,19 @@ impl AdminMenu {
                     if !entry.classes.is_empty() {
                         class.push(esc_attr(&entry.classes));
                     }
-                    let class = if class.is_empty() { String::new() } else { format!(" class=\"{}\"", class.join(" ")) };
-                    let href = entry.href.as_deref().map_or_else(|| entry.slug.clone(), rustpress_core::formatting::esc_url);
-                    out.push_str(&format!("<li{class}><a href='{href}'{class}{aria}>{}</a></li>", wptexturize(&entry.title)));
+                    let class = if class.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" class=\"{}\"", class.join(" "))
+                    };
+                    let href = entry
+                        .href
+                        .as_deref()
+                        .map_or_else(|| entry.slug.clone(), rustpress_core::formatting::esc_url);
+                    out.push_str(&format!(
+                        "<li{class}><a href='{href}'{class}{aria}>{}</a></li>",
+                        wptexturize(&entry.title)
+                    ));
                 }
                 out.push_str("</ul>");
             }
@@ -504,5 +1043,9 @@ impl AdminMenu {
 }
 
 fn add_class(class: &str, classes: &str) -> String {
-    if classes.is_empty() { class.to_owned() } else { format!("{classes} {class}") }
+    if classes.is_empty() {
+        class.to_owned()
+    } else {
+        format!("{classes} {class}")
+    }
 }

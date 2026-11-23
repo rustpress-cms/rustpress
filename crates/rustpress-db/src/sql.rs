@@ -94,7 +94,11 @@ pub(crate) struct Sql {
 
 impl Sql {
     pub(crate) fn new(init: impl std::fmt::Display) -> Self {
-        Self { text: init.to_string(), args: Vec::new(), inline: crate::one_request() }
+        Self {
+            text: init.to_string(),
+            args: Vec::new(),
+            inline: crate::one_request(),
+        }
     }
 
     pub(crate) fn push(&mut self, sql: impl std::fmt::Display) -> &mut Self {
@@ -114,7 +118,10 @@ impl Sql {
     }
 
     /// `push_bind` for each value, separated by `", "`.
-    pub(crate) fn push_list<V: Into<Arg>>(&mut self, values: impl IntoIterator<Item = V>) -> &mut Self {
+    pub(crate) fn push_list<V: Into<Arg>>(
+        &mut self,
+        values: impl IntoIterator<Item = V>,
+    ) -> &mut Self {
         for (i, value) in values.into_iter().enumerate() {
             if i > 0 {
                 self.text.push_str(", ");
@@ -126,7 +133,11 @@ impl Sql {
 
     /// Values or SQL with `separator` between them (`QueryBuilder::separated`).
     pub(crate) fn separated(&mut self, separator: &'static str) -> Separated<'_> {
-        Separated { sql: self, separator, first: true }
+        Separated {
+            sql: self,
+            separator,
+            first: true,
+        }
     }
 
     fn arguments(&self) -> MySqlArguments {
@@ -144,18 +155,31 @@ impl Sql {
 
     async fn rows(self, pool: &MySqlPool) -> Result<Vec<MySqlRow>> {
         if self.args.is_empty() && self.inline {
-            return Ok(sqlx::raw_sql(AssertSqlSafe(self.text)).fetch_all(pool).await?);
+            return Ok(sqlx::raw_sql(AssertSqlSafe(self.text))
+                .fetch_all(pool)
+                .await?);
         }
         let arguments = self.arguments();
-        Ok(sqlx::query_with(AssertSqlSafe(self.text), arguments).fetch_all(pool).await?)
+        Ok(sqlx::query_with(AssertSqlSafe(self.text), arguments)
+            .fetch_all(pool)
+            .await?)
     }
 
-    pub(crate) async fn fetch_all<T: for<'r> FromRow<'r, MySqlRow>>(self, pool: &MySqlPool) -> Result<Vec<T>> {
+    pub(crate) async fn fetch_all<T: for<'r> FromRow<'r, MySqlRow>>(
+        self,
+        pool: &MySqlPool,
+    ) -> Result<Vec<T>> {
         let rows = self.rows(pool).await?;
-        Ok(rows.iter().map(T::from_row).collect::<std::result::Result<_, _>>()?)
+        Ok(rows
+            .iter()
+            .map(T::from_row)
+            .collect::<std::result::Result<_, _>>()?)
     }
 
-    pub(crate) async fn fetch_optional<T: for<'r> FromRow<'r, MySqlRow>>(self, pool: &MySqlPool) -> Result<Option<T>> {
+    pub(crate) async fn fetch_optional<T: for<'r> FromRow<'r, MySqlRow>>(
+        self,
+        pool: &MySqlPool,
+    ) -> Result<Option<T>> {
         let rows = self.rows(pool).await?;
         Ok(rows.first().map(T::from_row).transpose()?)
     }
@@ -166,7 +190,10 @@ impl Sql {
         T: for<'r> sqlx::Decode<'r, sqlx::MySql> + sqlx::Type<sqlx::MySql>,
     {
         let rows = self.rows(pool).await?;
-        Ok(rows.iter().map(|row| row.try_get::<T, _>(0)).collect::<std::result::Result<_, _>>()?)
+        Ok(rows
+            .iter()
+            .map(|row| row.try_get::<T, _>(0))
+            .collect::<std::result::Result<_, _>>()?)
     }
 
     /// The first column of the first row.

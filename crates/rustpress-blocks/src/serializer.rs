@@ -12,15 +12,32 @@ fn strip_core_namespace(name: &str) -> &str {
 
 /// `serialize_block_attributes()`.
 pub fn serialize_block_attributes(attrs: &Map<String, Value>) -> String {
-    let encoded = encode_with(&Value::Object(attrs.clone()), Flags { unescaped_slashes: true, unescaped_unicode: true });
-    encoded.replace("--", "\\u002d\\u002d").replace('<', "\\u003c").replace('>', "\\u003e").replace('&', "\\u0026").replace("\\\"", "\\u0022")
+    let encoded = encode_with(
+        &Value::Object(attrs.clone()),
+        Flags {
+            unescaped_slashes: true,
+            unescaped_unicode: true,
+        },
+    );
+    encoded
+        .replace("--", "\\u002d\\u002d")
+        .replace('<', "\\u003c")
+        .replace('>', "\\u003e")
+        .replace('&', "\\u0026")
+        .replace("\\\"", "\\u0022")
 }
 
 /// `get_comment_delimited_block_content()`.
 pub fn comment_delimited(name: Option<&str>, attrs: &Map<String, Value>, content: &str) -> String {
-    let Some(name) = name else { return content.to_owned() };
+    let Some(name) = name else {
+        return content.to_owned();
+    };
     let name = strip_core_namespace(name);
-    let attributes = if attrs.is_empty() { String::new() } else { format!("{} ", serialize_block_attributes(attrs)) };
+    let attributes = if attrs.is_empty() {
+        String::new()
+    } else {
+        format!("{} ", serialize_block_attributes(attrs))
+    };
     if content.is_empty() {
         return format!("<!-- wp:{name} {attributes}/-->");
     }
@@ -69,7 +86,11 @@ pub fn serialize_with(blocks: &mut [Block], before: &dyn Fn(&mut Block)) -> Stri
                 }
             }
         }
-        out.push_str(&comment_delimited(block.name.as_deref(), &block.attrs, &content));
+        out.push_str(&comment_delimited(
+            block.name.as_deref(),
+            &block.attrs,
+            &content,
+        ));
     }
     out
 }
@@ -78,17 +99,25 @@ pub fn serialize_with(blocks: &mut [Block], before: &dyn Fn(&mut Block)) -> Stri
 /// written again inside a temporary wrapper, so it comes back normalized. `stylesheet` goes on the template parts
 /// (`_inject_theme_attribute_in_template_part_block()`).
 pub fn apply_block_hooks_to_content(content: &str, post_type: &str, stylesheet: &str) -> String {
-    let classic = (!crate::content::has_blocks(content)).then(|| comment_delimited(Some("core/freeform"), &Map::new(), content));
+    let classic = (!crate::content::has_blocks(content))
+        .then(|| comment_delimited(Some("core/freeform"), &Map::new(), content));
     let wrapper = match post_type {
         "wp_navigation" => "core/navigation",
         "wp_block" => "core/block",
         _ => "core/post-content",
     };
-    let markup = comment_delimited(Some(wrapper), &Map::new(), classic.as_deref().unwrap_or(content));
+    let markup = comment_delimited(
+        Some(wrapper),
+        &Map::new(),
+        classic.as_deref().unwrap_or(content),
+    );
     let mut blocks = crate::parser::parse_blocks(&markup);
     let serialized = serialize_with(&mut blocks, &|block: &mut Block| {
-        if block.name.as_deref() == Some("core/template-part") && !block.attrs.contains_key("theme") {
-            block.attrs.insert("theme".to_owned(), Value::String(stylesheet.to_owned()));
+        if block.name.as_deref() == Some("core/template-part") && !block.attrs.contains_key("theme")
+        {
+            block
+                .attrs
+                .insert("theme".to_owned(), Value::String(stylesheet.to_owned()));
         }
     });
     // `remove_serialized_parent_block()`.
@@ -117,12 +146,24 @@ fn sanitize_text(text: &str) -> String {
 }
 
 /// `resolve_pattern_blocks()`: `core/pattern` blocks are replaced with the blocks of the pattern.
-pub fn resolve_pattern_blocks(blocks: Vec<Block>, lookup: &dyn Fn(&str) -> Option<PatternRef>) -> Vec<Block> {
-    fn resolve(mut blocks: Vec<Block>, lookup: &dyn Fn(&str) -> Option<PatternRef>, seen: &mut Vec<String>) -> Vec<Block> {
+pub fn resolve_pattern_blocks(
+    blocks: Vec<Block>,
+    lookup: &dyn Fn(&str) -> Option<PatternRef>,
+) -> Vec<Block> {
+    fn resolve(
+        mut blocks: Vec<Block>,
+        lookup: &dyn Fn(&str) -> Option<PatternRef>,
+        seen: &mut Vec<String>,
+    ) -> Vec<Block> {
         let mut i = 0;
         while i < blocks.len() {
             if blocks[i].name.as_deref() == Some("core/pattern") {
-                let slug = blocks[i].attrs.get("slug").and_then(Value::as_str).unwrap_or_default().to_owned();
+                let slug = blocks[i]
+                    .attrs
+                    .get("slug")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_owned();
                 if slug.is_empty() {
                     i += 1;
                     continue;
@@ -137,24 +178,65 @@ pub fn resolve_pattern_blocks(blocks: Vec<Block>, lookup: &dyn Fn(&str) -> Optio
                 };
                 let mut insert = parse_blocks(pattern.content.trim());
                 if insert.len() == 1 {
-                    let mut metadata = insert[0].attrs.get("metadata").and_then(Value::as_object).cloned().unwrap_or_default();
+                    let mut metadata = insert[0]
+                        .attrs
+                        .get("metadata")
+                        .and_then(Value::as_object)
+                        .cloned()
+                        .unwrap_or_default();
                     metadata.insert("patternName".into(), Value::String(slug.clone()));
                     let existing = |key: &str| metadata.get(key).cloned();
-                    let name = if pattern.title.is_empty() { existing("name") } else { Some(Value::String(pattern.title.clone())) };
-                    let description = if pattern.description.is_empty() { existing("description") } else { Some(Value::String(pattern.description.clone())) };
-                    let categories = if pattern.categories.is_empty() { existing("categories") } else { Some(Value::Array(pattern.categories.iter().map(|c| Value::String(c.clone())).collect())) };
-                    for (key, value) in [("name", name), ("description", description), ("categories", categories)] {
+                    let name = if pattern.title.is_empty() {
+                        existing("name")
+                    } else {
+                        Some(Value::String(pattern.title.clone()))
+                    };
+                    let description = if pattern.description.is_empty() {
+                        existing("description")
+                    } else {
+                        Some(Value::String(pattern.description.clone()))
+                    };
+                    let categories = if pattern.categories.is_empty() {
+                        existing("categories")
+                    } else {
+                        Some(Value::Array(
+                            pattern
+                                .categories
+                                .iter()
+                                .map(|c| Value::String(c.clone()))
+                                .collect(),
+                        ))
+                    };
+                    for (key, value) in [
+                        ("name", name),
+                        ("description", description),
+                        ("categories", categories),
+                    ] {
                         match value {
                             Some(Value::String(s)) if !s.is_empty() => {
                                 metadata.insert(key.into(), Value::String(sanitize_text(&s)));
                             }
                             Some(Value::Array(items)) if !items.is_empty() => {
-                                metadata.insert(key.into(), Value::Array(items.iter().map(|v| Value::String(sanitize_text(v.as_str().unwrap_or_default()))).collect()));
+                                metadata.insert(
+                                    key.into(),
+                                    Value::Array(
+                                        items
+                                            .iter()
+                                            .map(|v| {
+                                                Value::String(sanitize_text(
+                                                    v.as_str().unwrap_or_default(),
+                                                ))
+                                            })
+                                            .collect(),
+                                    ),
+                                );
                             }
                             _ => {}
                         }
                     }
-                    insert[0].attrs.insert("metadata".into(), Value::Object(metadata));
+                    insert[0]
+                        .attrs
+                        .insert("metadata".into(), Value::Object(metadata));
                 }
                 seen.push(slug.clone());
                 let insert = resolve(insert, lookup, seen);
@@ -177,7 +259,10 @@ pub fn resolve_pattern_blocks(blocks: Vec<Block>, lookup: &dyn Fn(&str) -> Optio
                                 Content::InnerBlock => {
                                     placed += 1;
                                     if placed == 1 {
-                                        content.extend(std::iter::repeat_n(Content::InnerBlock, resolved.len()));
+                                        content.extend(std::iter::repeat_n(
+                                            Content::InnerBlock,
+                                            resolved.len(),
+                                        ));
                                     }
                                 }
                             }
@@ -200,10 +285,27 @@ mod tests {
 
     #[test]
     fn block_hooks_write_the_content_again() {
-        let reserialized = apply_block_hooks_to_content("<!-- wp:paragraph {} --><p>a</p><!-- /wp:paragraph -->", "post", "t");
-        assert_eq!(reserialized, "<!-- wp:paragraph --><p>a</p><!-- /wp:paragraph -->");
-        assert_eq!(apply_block_hooks_to_content("<p>classic</p>", "post", "t"), "<p>classic</p>");
-        assert_eq!(apply_block_hooks_to_content("<!-- wp:template-part {\"slug\":\"x\"} /-->", "page", "t"), "<!-- wp:template-part {\"slug\":\"x\",\"theme\":\"t\"} /-->");
+        let reserialized = apply_block_hooks_to_content(
+            "<!-- wp:paragraph {} --><p>a</p><!-- /wp:paragraph -->",
+            "post",
+            "t",
+        );
+        assert_eq!(
+            reserialized,
+            "<!-- wp:paragraph --><p>a</p><!-- /wp:paragraph -->"
+        );
+        assert_eq!(
+            apply_block_hooks_to_content("<p>classic</p>", "post", "t"),
+            "<p>classic</p>"
+        );
+        assert_eq!(
+            apply_block_hooks_to_content(
+                "<!-- wp:template-part {\"slug\":\"x\"} /-->",
+                "page",
+                "t"
+            ),
+            "<!-- wp:template-part {\"slug\":\"x\",\"theme\":\"t\"} /-->"
+        );
     }
 
     #[test]
@@ -217,14 +319,27 @@ mod tests {
     fn attributes_are_escaped_like_wordpress() {
         let mut attrs = Map::new();
         attrs.insert("a".into(), Value::String("x--<y>&\"z".into()));
-        assert_eq!(serialize_block_attributes(&attrs), "{\"a\":\"x\\u002d\\u002d\\u003cy\\u003e\\u0026\\u0022z\"}");
+        assert_eq!(
+            serialize_block_attributes(&attrs),
+            "{\"a\":\"x\\u002d\\u002d\\u003cy\\u003e\\u0026\\u0022z\"}"
+        );
     }
 
     #[test]
     fn patterns_are_inserted_with_their_name() {
         let blocks = parse_blocks("<!-- wp:pattern {\"slug\":\"t/p\"} /-->");
-        let lookup = |slug: &str| (slug == "t/p").then(|| PatternRef { title: "Hero".into(), description: String::new(), categories: vec!["text".into()], content: "<!-- wp:paragraph -->\n<p>Hi</p>\n<!-- /wp:paragraph -->".into() });
+        let lookup = |slug: &str| {
+            (slug == "t/p").then(|| PatternRef {
+                title: "Hero".into(),
+                description: String::new(),
+                categories: vec!["text".into()],
+                content: "<!-- wp:paragraph -->\n<p>Hi</p>\n<!-- /wp:paragraph -->".into(),
+            })
+        };
         let resolved = resolve_pattern_blocks(blocks, &lookup);
-        assert_eq!(serialize_blocks(&resolved), "<!-- wp:paragraph {\"metadata\":{\"patternName\":\"t/p\",\"name\":\"Hero\",\"categories\":[\"text\"]}} -->\n<p>Hi</p>\n<!-- /wp:paragraph -->");
+        assert_eq!(
+            serialize_blocks(&resolved),
+            "<!-- wp:paragraph {\"metadata\":{\"patternName\":\"t/p\",\"name\":\"Hero\",\"categories\":[\"text\"]}} -->\n<p>Hi</p>\n<!-- /wp:paragraph -->"
+        );
     }
 }

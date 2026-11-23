@@ -5,8 +5,8 @@ use std::sync::Arc;
 use rustpress_auth::setcookie::{CookiePaths, SetCookie};
 use rustpress_auth::{Auth, CurrentUser, Roles, Scheme};
 use rustpress_core::Site;
-use rustpress_core::native::{ActivePlugin, AdminContext, AdminPage};
 use rustpress_core::formatting::{esc_attr, esc_html};
+use rustpress_core::native::{ActivePlugin, AdminContext, AdminPage};
 use rustpress_db::{Db, Writer};
 
 use crate::adminbar::BarContext;
@@ -22,51 +22,51 @@ pub mod ajax_media;
 mod ajax_misc;
 mod ajax_privacy;
 pub mod ajax_terms;
-mod bare_pages;
-mod custom_header;
-mod customize;
-mod file_editor;
-mod privacy_requests;
-mod site_health_info;
 mod attachment_edit;
 mod authorize_app;
+mod bare_pages;
 pub mod block_editor;
+pub mod boot_page;
 pub mod comments;
-pub mod media_lib;
-mod media_upload;
-mod nav_menus;
-pub mod media_ui;
 pub mod common;
+mod custom_header;
+mod customize;
 pub mod dashboard;
 pub mod editor;
 pub mod export;
+mod file_editor;
 pub mod general;
 mod image_edit;
+mod inline_edit;
 mod install;
+pub mod media_lib;
+pub mod media_ui;
+mod media_upload;
+pub mod meta_boxes;
+mod nav_menus;
 pub mod notices;
 pub mod options;
 pub mod pages;
 mod permalink;
-pub mod post_edit;
 pub mod plugins;
-mod inline_edit;
-mod quick_edit;
+pub mod post_edit;
 pub mod posts;
 pub mod privacy;
-pub mod settings;
-pub mod boot_page;
+mod privacy_requests;
+mod quick_edit;
 pub mod revision;
+pub mod settings;
 pub mod site_editor;
 mod site_health;
+mod site_health_info;
+mod template_text;
 pub mod terms;
-mod update_core;
 pub mod themes;
+pub mod timezones;
+mod update_core;
 pub mod user_edit;
 pub mod users;
-mod template_text;
 mod widgets;
-pub mod meta_boxes;
-pub mod timezones;
 
 /// The answer of a screen is the one of the sign-in page: status, headers, cookies, body.
 pub type AdminResponse = LoginResponse;
@@ -100,7 +100,13 @@ pub struct AdminEnv<'a> {
 impl AdminEnv<'_> {
     /// What the messages WordPress sends on its own need.
     pub fn mail_ctx(&self) -> crate::mail::MailCtx<'_> {
-        crate::mail::MailCtx { site: self.site, db: self.db, writer: self.writer, now: self.now, mailer: self.mailer.as_ref() }
+        crate::mail::MailCtx {
+            site: self.site,
+            db: self.db,
+            writer: self.writer,
+            now: self.now,
+            mailer: self.mailer.as_ref(),
+        }
     }
 
     /// `wp_mail()`: a plain text message; `false` when it could not be sent.
@@ -135,11 +141,19 @@ pub struct AdminRequest {
 
 impl AdminRequest {
     pub fn get(&self, name: &str) -> Option<&str> {
-        self.query.iter().rev().find(|(k, _)| k == name).map(|(_, v)| v.as_str())
+        self.query
+            .iter()
+            .rev()
+            .find(|(k, _)| k == name)
+            .map(|(_, v)| v.as_str())
     }
 
     pub fn post_field(&self, name: &str) -> Option<&str> {
-        self.form.iter().rev().find(|(k, _)| k == name).map(|(_, v)| v.as_str())
+        self.form
+            .iter()
+            .rev()
+            .find(|(k, _)| k == name)
+            .map(|(_, v)| v.as_str())
     }
 
     /// `$_REQUEST`: the form wins over the query string.
@@ -148,7 +162,10 @@ impl AdminRequest {
     }
 
     pub fn cookie(&self, name: &str) -> Option<&str> {
-        self.cookies.iter().find(|(k, _)| k == name).map(|(_, v)| v.as_str())
+        self.cookies
+            .iter()
+            .find(|(k, _)| k == name)
+            .map(|(_, v)| v.as_str())
     }
 }
 
@@ -163,13 +180,24 @@ pub struct Ctx<'a> {
 /// The value of `wp_referer_field()`: `esc_url( remove_query_arg( '_wp_http_referer' ) )` of the request, whose query
 /// PHP builds anew (values are encoded again, `5,6` becomes `5%2C6`).
 pub fn referer_field_value(request_uri: &str) -> String {
-    rustpress_core::formatting::esc_url(&rustpress_core::urls::remove_query_arg(request_uri, "_wp_http_referer"))
+    rustpress_core::formatting::esc_url(&rustpress_core::urls::remove_query_arg(
+        request_uri,
+        "_wp_http_referer",
+    ))
 }
 
 /// `wp_is_client_side_media_processing_enabled()`: the browser may process media in a secure context (TLS, or a host
 /// named `localhost`).
 pub fn client_side_media_processing(ctx: &Ctx<'_>) -> bool {
-    let host = ctx.request.host.as_deref().unwrap_or("").split(':').next().unwrap_or("").to_lowercase();
+    let host = ctx
+        .request
+        .host
+        .as_deref()
+        .unwrap_or("")
+        .split(':')
+        .next()
+        .unwrap_or("")
+        .to_lowercase();
     ctx.env.https || host == "localhost" || host.ends_with(".localhost")
 }
 
@@ -191,39 +219,78 @@ impl Ctx<'_> {
     }
 
     pub fn create_nonce(&self, action: &str) -> String {
-        self.env.auth.create_nonce(action, self.user.id, &self.token, self.env.now).unwrap_or_default()
+        self.env
+            .auth
+            .create_nonce(action, self.user.id, &self.token, self.env.now)
+            .unwrap_or_default()
     }
 
     /// `check_admin_referer()` / `wp_verify_nonce()` on `_wpnonce`.
     pub fn verify_nonce(&self, action: &str) -> bool {
         let nonce = self.request.request("_wpnonce").unwrap_or_default();
-        self.env.auth.verify_nonce(nonce, action, self.user.id, &self.token, self.env.now).is_some()
+        self.env
+            .auth
+            .verify_nonce(nonce, action, self.user.id, &self.token, self.env.now)
+            .is_some()
     }
 
     /// `check_admin_referer( $action, $query_arg )`.
     pub fn verify_nonce_field(&self, action: &str, field: &str) -> bool {
         let nonce = self.request.request(field).unwrap_or_default();
-        self.env.auth.verify_nonce(nonce, action, self.user.id, &self.token, self.env.now).is_some()
+        self.env
+            .auth
+            .verify_nonce(nonce, action, self.user.id, &self.token, self.env.now)
+            .is_some()
     }
 
     /// What the administration hooks of plugins need of the signed-in user.
     pub fn plugin_parts(&self) -> PluginParts {
         let user = self.user.clone();
-        let (auth, id, token, now) = (self.env.auth.clone(), self.user.id, self.token.clone(), self.env.now);
+        let (auth, id, token, now) = (
+            self.env.auth.clone(),
+            self.user.id,
+            self.token.clone(),
+            self.env.now,
+        );
         let (verify_auth, verify_token) = (auth.clone(), token.clone());
         let origin = request_origin(self.env, self.request);
-        let same_origin = self.request.referer.as_deref().is_some_and(|r| r == origin || r.starts_with(&format!("{origin}/")));
+        let same_origin = self
+            .request
+            .referer
+            .as_deref()
+            .is_some_and(|r| r == origin || r.starts_with(&format!("{origin}/")));
         PluginParts {
             can: Box::new(move |capability| user.can(capability)),
-            nonce: Box::new(move |action| auth.create_nonce(action, id, &token, now).unwrap_or_default()),
-            verify: Box::new(move |nonce, action| verify_auth.verify_nonce(nonce, action, id, &verify_token, now).is_some()),
+            nonce: Box::new(move |action| {
+                auth.create_nonce(action, id, &token, now)
+                    .unwrap_or_default()
+            }),
+            verify: Box::new(move |nonce, action| {
+                verify_auth
+                    .verify_nonce(nonce, action, id, &verify_token, now)
+                    .is_some()
+            }),
             same_origin,
-            files: self.request.files.iter().map(|f| rustpress_core::native::RestFile { field: f.field.clone(), filename: f.filename.clone(), content_type: f.content_type.clone(), bytes: f.bytes.clone() }).collect(),
+            files: self
+                .request
+                .files
+                .iter()
+                .map(|f| rustpress_core::native::RestFile {
+                    field: f.field.clone(),
+                    filename: f.filename.clone(),
+                    content_type: f.content_type.clone(),
+                    bytes: f.bytes.clone(),
+                })
+                .collect(),
         }
     }
 
     /// The [`AdminContext`] of the screen `hook_suffix`.
-    pub fn plugin_context<'a>(&'a self, parts: &'a PluginParts, hook_suffix: &'a str) -> AdminContext<'a> {
+    pub fn plugin_context<'a>(
+        &'a self,
+        parts: &'a PluginParts,
+        hook_suffix: &'a str,
+    ) -> AdminContext<'a> {
         AdminContext {
             site: self.env.site,
             writer: self.env.writer,
@@ -240,7 +307,12 @@ impl Ctx<'_> {
             verify_nonce: parts.verify.as_ref(),
             user_agent: self.request.user_agent.as_deref(),
             wp_version: &self.env.loader.version,
-            wp_root: self.env.loader.includes.parent().unwrap_or(&self.env.loader.includes),
+            wp_root: self
+                .env
+                .loader
+                .includes
+                .parent()
+                .unwrap_or(&self.env.loader.includes),
             edited_post: None,
             block_editor: false,
             taxonomy: None,
@@ -274,7 +346,11 @@ impl Ctx<'_> {
 
     /// `settings_fields( $group )`.
     pub fn settings_fields(&self, group: &str) -> String {
-        format!("<input type='hidden' name='option_page' value='{}' /><input type=\"hidden\" name=\"action\" value=\"update\" />{}", esc_attr(group), self.nonce_field(&format!("{group}-options")))
+        format!(
+            "<input type='hidden' name='option_page' value='{}' /><input type=\"hidden\" name=\"action\" value=\"update\" />{}",
+            esc_attr(group),
+            self.nonce_field(&format!("{group}-options"))
+        )
     }
 }
 
@@ -286,17 +362,32 @@ pub(crate) fn plugin_output(own: Vec<(String, String)>, body: String) -> AdminRe
         headers.retain(|(n, _)| !n.eq_ignore_ascii_case(&name));
         headers.push((name, value));
     }
-    AdminResponse { status: 200, headers, cookies: Vec::new(), body, bytes: Vec::new() }
+    AdminResponse {
+        status: 200,
+        headers,
+        cookies: Vec::new(),
+        body,
+        bytes: Vec::new(),
+    }
 }
 
 /// `nocache_headers()` and the frame headers of the administration area.
 pub fn page_headers() -> Vec<(String, String)> {
     vec![
         ("Expires".into(), "Wed, 11 Jan 1984 05:00:00 GMT".into()),
-        ("Cache-Control".into(), "no-cache, must-revalidate, max-age=0, no-store, private".into()),
-        ("Referrer-Policy".into(), "strict-origin-when-cross-origin".into()),
+        (
+            "Cache-Control".into(),
+            "no-cache, must-revalidate, max-age=0, no-store, private".into(),
+        ),
+        (
+            "Referrer-Policy".into(),
+            "strict-origin-when-cross-origin".into(),
+        ),
         ("X-Frame-Options".into(), "SAMEORIGIN".into()),
-        ("Content-Security-Policy".into(), "frame-ancestors 'self';".into()),
+        (
+            "Content-Security-Policy".into(),
+            "frame-ancestors 'self';".into(),
+        ),
         ("Content-Type".into(), "text/html; charset=UTF-8".into()),
     ]
 }
@@ -306,16 +397,43 @@ fn paths(site: &Site) -> CookiePaths {
 }
 
 /// `wp_user_settings()`: the cookies that carry the user's interface settings.
-async fn user_settings_cookies(env: &AdminEnv<'_>, request: &AdminRequest, user_id: u64) -> Vec<SetCookie> {
+async fn user_settings_cookies(
+    env: &AdminEnv<'_>,
+    request: &AdminRequest,
+    user_id: u64,
+) -> Vec<SetCookie> {
     let key = format!("{}user-settings", env.db.table_prefix());
-    let stored = env.db.user_meta(user_id, &key).await.ok().flatten().unwrap_or_default();
-    let stored_time: i64 = env.db.user_meta(user_id, &format!("{}user-settings-time", env.db.table_prefix())).await.ok().flatten().and_then(|t| t.parse().ok()).unwrap_or(0);
+    let stored = env
+        .db
+        .user_meta(user_id, &key)
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or_default();
+    let stored_time: i64 = env
+        .db
+        .user_meta(
+            user_id,
+            &format!("{}user-settings-time", env.db.table_prefix()),
+        )
+        .await
+        .ok()
+        .flatten()
+        .and_then(|t| t.parse().ok())
+        .unwrap_or(0);
     if let Some(cookie) = request.cookie(&format!("wp-settings-{user_id}")) {
-        let cleaned: String = cookie.chars().filter(|c| c.is_ascii_alphanumeric() || matches!(c, '=' | '&' | '-' | '_')).collect();
+        let cleaned: String = cookie
+            .chars()
+            .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '=' | '&' | '-' | '_'))
+            .collect();
         if cleaned == stored {
             return Vec::new();
         }
-        let current: i64 = request.cookie(&format!("wp-settings-time-{user_id}")).map(|t| t.chars().filter(char::is_ascii_digit).collect::<String>()).and_then(|t| t.parse().ok()).unwrap_or(0);
+        let current: i64 = request
+            .cookie(&format!("wp-settings-time-{user_id}"))
+            .map(|t| t.chars().filter(char::is_ascii_digit).collect::<String>())
+            .and_then(|t| t.parse().ok())
+            .unwrap_or(0);
         if current > stored_time {
             return Vec::new();
         }
@@ -323,11 +441,31 @@ async fn user_settings_cookies(env: &AdminEnv<'_>, request: &AdminRequest, user_
     let site_path = paths(env.site).site;
     let secure = env.site.settings.siteurl.starts_with("https");
     let year = 31_536_000;
-    let value = if stored.is_empty() { "deleted".to_owned() } else { stored.clone() };
+    let value = if stored.is_empty() {
+        "deleted".to_owned()
+    } else {
+        stored.clone()
+    };
     let first_expires = if stored.is_empty() { 1 } else { env.now + year };
     vec![
-        SetCookie { name: format!("wp-settings-{user_id}"), value, expires: Some(first_expires), path: site_path.clone(), domain: None, secure, http_only: false },
-        SetCookie { name: format!("wp-settings-time-{user_id}"), value: env.now.to_string(), expires: Some(env.now + year), path: site_path, domain: None, secure, http_only: false },
+        SetCookie {
+            name: format!("wp-settings-{user_id}"),
+            value,
+            expires: Some(first_expires),
+            path: site_path.clone(),
+            domain: None,
+            secure,
+            http_only: false,
+        },
+        SetCookie {
+            name: format!("wp-settings-time-{user_id}"),
+            value: env.now.to_string(),
+            expires: Some(env.now + year),
+            path: site_path,
+            domain: None,
+            secure,
+            http_only: false,
+        },
     ]
 }
 
@@ -339,7 +477,9 @@ pub fn request_origin(env: &AdminEnv<'_>, request: &AdminRequest) -> String {
         None => {
             let siteurl = &env.site.settings.siteurl;
             match siteurl.split_once("://") {
-                Some((scheme, rest)) => format!("{scheme}://{}", rest.split('/').next().unwrap_or_default()),
+                Some((scheme, rest)) => {
+                    format!("{scheme}://{}", rest.split('/').next().unwrap_or_default())
+                }
                 None => siteurl.clone(),
             }
         }
@@ -349,22 +489,43 @@ pub fn request_origin(env: &AdminEnv<'_>, request: &AdminRequest) -> String {
 /// `auth_redirect()` for somebody who is not signed in.
 pub(crate) fn auth_redirect(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse {
     let current = format!("{}{}", request_origin(env, request), request.request_uri);
-    let login = format!("{}?redirect_to={}&reauth=1", env.site.site_url("wp-login.php"), rustpress_core::canonical::php_urlencode(&current));
+    let login = format!(
+        "{}?redirect_to={}&reauth=1",
+        env.site.site_url("wp-login.php"),
+        rustpress_core::canonical::php_urlencode(&current)
+    );
     redirect(&login)
 }
 
 /// `wp_die()` for the administration area.
 pub fn die(env: &AdminEnv<'_>, status: u16, title: &str, message: &str) -> AdminResponse {
-    AdminResponse { status, headers: page_headers(), cookies: Vec::new(), body: crate::die::page(env.site, &env.site.tr(title), message), bytes: Vec::new() }
+    AdminResponse {
+        status,
+        headers: page_headers(),
+        cookies: Vec::new(),
+        body: crate::die::page(env.site, &env.site.tr(title), message),
+        bytes: Vec::new(),
+    }
 }
 
 /// What the preview of the Customizer prints at the end of a page of the website for the signed-in user of the
 /// request (`customize_preview_settings()` and the exports of the widgets and of selective refresh).
-pub async fn customize_preview_exports(env: &AdminEnv<'_>, original: &rustpress_core::Site, request: &AdminRequest, q: &rustpress_core::QueryResult, preview: &rustpress_core::customize::Preview) -> String {
+pub async fn customize_preview_exports(
+    env: &AdminEnv<'_>,
+    original: &rustpress_core::Site,
+    request: &AdminRequest,
+    q: &rustpress_core::QueryResult,
+    preview: &rustpress_core::customize::Preview,
+) -> String {
     // The website knows the user from the cookie of `logged_in`.
     let name = env.auth.cookie_name(Scheme::LoggedIn);
     let session = match request.cookie(&name) {
-        Some(cookie) => env.auth.validate_cookie(env.db, cookie, Scheme::LoggedIn, env.now, false).await.ok().flatten(),
+        Some(cookie) => env
+            .auth
+            .validate_cookie(env.db, cookie, Scheme::LoggedIn, env.now, false)
+            .await
+            .ok()
+            .flatten(),
         None => None,
     };
     // A visitor may look at a changeset that exists; the exports then have no settings.
@@ -392,8 +553,18 @@ pub async fn customize_preview_exports(env: &AdminEnv<'_>, original: &rustpress_
         mailer: env.mailer.clone(),
         plugin_mailer: env.plugin_mailer.clone(),
     };
-    let stored_ctx = Ctx { env: &stored, request, user: user.clone(), token: token.clone() };
-    let ctx = Ctx { env, request, user, token };
+    let stored_ctx = Ctx {
+        env: &stored,
+        request,
+        user: user.clone(),
+        token: token.clone(),
+    };
+    let ctx = Ctx {
+        env,
+        request,
+        user,
+        token,
+    };
     customize::preview_exports(&ctx, &stored_ctx, q, preview).await
 }
 
@@ -410,43 +581,88 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse
         _ => {}
     }
     // The signed-in user: the `auth` cookie of this connection's scheme.
-    let (scheme, name) = if env.https { (Scheme::SecureAuth, env.auth.cookie_name(Scheme::SecureAuth)) } else { (Scheme::Auth, env.auth.cookie_name(Scheme::Auth)) };
+    let (scheme, name) = if env.https {
+        (Scheme::SecureAuth, env.auth.cookie_name(Scheme::SecureAuth))
+    } else {
+        (Scheme::Auth, env.auth.cookie_name(Scheme::Auth))
+    };
     let session = match request.cookie(&name) {
-        Some(cookie) => env.auth.validate_cookie(env.db, cookie, scheme, env.now, false).await.ok().flatten(),
+        Some(cookie) => env
+            .auth
+            .validate_cookie(env.db, cookie, scheme, env.now, false)
+            .await
+            .ok()
+            .flatten(),
         None => None,
     };
-    let Some(session) = session else { return auth_redirect(env, request) };
-    let Ok(user) = CurrentUser::load(env.db, env.roles, &session.user).await else {
-        return die(env, 500, "WordPress &rsaquo; Error", "<p>The user could not be loaded.</p>");
+    let Some(session) = session else {
+        return auth_redirect(env, request);
     };
-    let ctx = Ctx { env, request, user, token: session.token.clone() };
+    let Ok(user) = CurrentUser::load(env.db, env.roles, &session.user).await else {
+        return die(
+            env,
+            500,
+            "WordPress &rsaquo; Error",
+            "<p>The user could not be loaded.</p>",
+        );
+    };
+    let ctx = Ctx {
+        env,
+        request,
+        user,
+        token: session.token.clone(),
+    };
     // `admin.php` saves the Screen Options before any page runs.
     if let Some(response) = common::set_screen_options(&ctx).await {
         return response;
     }
     // `user_can_access_admin_page()`: the pages of the menu are only for those the menu is for.
     if let Some(capabilities) = menu_capabilities(&request.file)
-        && !capabilities.iter().any(|capability| ctx.can(capability)) {
-            return access_denied(&ctx);
-        }
+        && !capabilities.iter().any(|capability| ctx.can(capability))
+    {
+        return access_denied(&ctx);
+    }
     // The menu of a classic theme has this page.
     if request.file == "nav-menus.php" && !env.block_theme && !ctx.can("edit_theme_options") {
         return access_denied(&ctx);
     }
     // `admin.php`: the parent of a plugin page is `{$pagenow}?post_type={$typenow}` when the request names a post type.
-    let typed_parent = request.request("post_type").filter(|t| env.site.types.post_type_exists(t)).map(|t| format!("{}?post_type={t}", request.file));
+    let typed_parent = request
+        .request("post_type")
+        .filter(|t| env.site.types.post_type_exists(t))
+        .map(|t| format!("{}?post_type={t}", request.file));
     if let Some(slug) = request.get("page").filter(|p| !p.is_empty())
-        && let Some((plugin, page)) = typed_parent.as_deref().and_then(|parent| env.site.plugins.admin_page_of(env.site, parent, slug)).or_else(|| env.site.plugins.admin_page_of(env.site, &request.file, slug))
+        && let Some((plugin, page)) = typed_parent
+            .as_deref()
+            .and_then(|parent| env.site.plugins.admin_page_of(env.site, parent, slug))
+            .or_else(|| {
+                env.site
+                    .plugins
+                    .admin_page_of(env.site, &request.file, slug)
+            })
     {
         if !ctx.can(page.capability) {
-            return die(env, 403, "WordPress &rsaquo; Error", &ctx.tr("Sorry, you are not allowed to access this page."));
+            return die(
+                env,
+                403,
+                "WordPress &rsaquo; Error",
+                &ctx.tr("Sorry, you are not allowed to access this page."),
+            );
         }
         return plugin_page(&ctx, plugin, &page).await;
     }
     // `Custom_Image_Header::init()` adds the page with `add_theme_page()`.
-    if request.file == "themes.php" && request.get("page") == Some("custom-header") && custom_header::available(&ctx) {
+    if request.file == "themes.php"
+        && request.get("page") == Some("custom-header")
+        && custom_header::available(&ctx)
+    {
         if !ctx.can("edit_theme_options") {
-            return die(env, 403, "WordPress &rsaquo; Error", &ctx.tr("Sorry, you are not allowed to access this page."));
+            return die(
+                env,
+                403,
+                "WordPress &rsaquo; Error",
+                &ctx.tr("Sorry, you are not allowed to access this page."),
+            );
         }
         return custom_header::page(&ctx).await;
     }
@@ -570,13 +786,32 @@ fn die_message(env: &AdminEnv<'_>, status: u16, message: &str) -> AdminResponse 
 
 /// `wp_die( '<h1>…permission</h1><p>message</p>', 403 )`.
 fn higher_permission(ctx: &Ctx<'_>, message: &str, status: u16) -> AdminResponse {
-    die(ctx.env, status, "WordPress &rsaquo; Error", &format!("<h1>{}</h1><p>{}</p>", ctx.tr("You need a higher level of permission."), ctx.tr(message)))
+    die(
+        ctx.env,
+        status,
+        "WordPress &rsaquo; Error",
+        &format!(
+            "<h1>{}</h1><p>{}</p>",
+            ctx.tr("You need a higher level of permission."),
+            ctx.tr(message)
+        ),
+    )
 }
 
 /// The `wp_die()` of `wp-admin/includes/menu.php`, which comes before `admin_init` sends the frame headers.
 fn access_denied(ctx: &Ctx<'_>) -> AdminResponse {
-    let mut response = die(ctx.env, 403, "WordPress &rsaquo; Error", &ctx.tr("Sorry, you are not allowed to access this page."));
-    response.headers.retain(|(name, _)| !matches!(name.as_str(), "Referrer-Policy" | "X-Frame-Options" | "Content-Security-Policy"));
+    let mut response = die(
+        ctx.env,
+        403,
+        "WordPress &rsaquo; Error",
+        &ctx.tr("Sorry, you are not allowed to access this page."),
+    );
+    response.headers.retain(|(name, _)| {
+        !matches!(
+            name.as_str(),
+            "Referrer-Policy" | "X-Frame-Options" | "Content-Security-Policy"
+        )
+    });
     response
 }
 
@@ -587,10 +822,18 @@ async fn site_icon(site: &rustpress_core::Site) -> Option<(String, String)> {
         return None;
     }
     let rows = site.db.post_meta(id).await.ok()?;
-    let value = |key: &str| rows.iter().find(|m| m.meta_key.as_deref() == Some(key)).and_then(|m| m.meta_value.clone());
+    let value = |key: &str| {
+        rows.iter()
+            .find(|m| m.meta_key.as_deref() == Some(key))
+            .and_then(|m| m.meta_value.clone())
+    };
     let full = rustpress_blocks::images::attachment_url(site, &value("_wp_attached_file")?);
-    let meta = value("_wp_attachment_metadata").and_then(|raw| rustpress_blocks::images::Metadata::parse(&raw))?;
-    let url = |size: u64| rustpress_blocks::images::intermediate_url(&full, &meta, size, size).unwrap_or_else(|| full.clone());
+    let meta = value("_wp_attachment_metadata")
+        .and_then(|raw| rustpress_blocks::images::Metadata::parse(&raw))?;
+    let url = |size: u64| {
+        rustpress_blocks::images::intermediate_url(&full, &meta, size, size)
+            .unwrap_or_else(|| full.clone())
+    };
     Some((url(32), url(64)))
 }
 
@@ -602,7 +845,13 @@ fn sprintf_html(format: &str, value: &str) -> String {
 /// The capabilities (any of them) the menu of WordPress asks for a page.
 fn menu_capabilities(file: &str) -> Option<&'static [&'static str]> {
     Some(match file {
-        "options-general.php" | "options-writing.php" | "options-reading.php" | "options-discussion.php" | "options-media.php" | "options-permalink.php" | "options-connectors.php" => &["manage_options"],
+        "options-general.php"
+        | "options-writing.php"
+        | "options-reading.php"
+        | "options-discussion.php"
+        | "options-media.php"
+        | "options-permalink.php"
+        | "options-connectors.php" => &["manage_options"],
         "options-privacy.php" => &["manage_privacy_options"],
         "plugins.php" => &["activate_plugins"],
         "plugin-install.php" => &["install_plugins"],
@@ -624,16 +873,39 @@ fn menu_capabilities(file: &str) -> Option<&'static [&'static str]> {
 
 /// A screen of WordPress that RustPress does not have yet.
 async fn unavailable(ctx: &Ctx<'_>, file: &str) -> AdminResponse {
-    let exists = ctx.env.loader.includes.parent().is_some_and(|root| rustpress_core::files::is_file(&root.join("wp-admin").join(file)));
+    let exists = ctx
+        .env
+        .loader
+        .includes
+        .parent()
+        .is_some_and(|root| rustpress_core::files::is_file(&root.join("wp-admin").join(file)));
     if !exists {
-        return die(ctx.env, 404, "WordPress &rsaquo; Error", &format!("<p>{}</p>", ctx.tr("The requested page does not exist.")));
+        return die(
+            ctx.env,
+            404,
+            "WordPress &rsaquo; Error",
+            &format!("<p>{}</p>", ctx.tr("The requested page does not exist.")),
+        );
     }
     let content = format!(
         "<div class=\"wrap\">\n<h1>{}</h1>\n{}\n</div>\n\n",
         esc_html(file),
-        notices::admin_notice("This screen is not available in RustPress yet.", &["notice-warning"])
+        notices::admin_notice(
+            "This screen is not available in RustPress yet.",
+            &["notice-warning"]
+        )
     );
-    let mut response = render(ctx, &Screen { file: file.to_owned(), title: file.to_owned(), ..Default::default() }, &content, &Assets::default()).await;
+    let mut response = render(
+        ctx,
+        &Screen {
+            file: file.to_owned(),
+            title: file.to_owned(),
+            ..Default::default()
+        },
+        &content,
+        &Assets::default(),
+    )
+    .await;
     response.status = 501;
     response
 }
@@ -651,7 +923,13 @@ pub struct PluginParts {
 async fn plugin_page(ctx: &Ctx<'_>, plugin: &dyn ActivePlugin, page: &AdminPage) -> AdminResponse {
     let hook = ctx.site().plugins.page_hook(ctx.site(), page);
     // A page of a plugin's own menu is `admin.php`, its parent the slug of that menu.
-    let own_menu = page.is_top_level() || ctx.site().plugins.admin_pages(ctx.site()).iter().any(|p| p.is_top_level() && p.slug == page.parent);
+    let own_menu = page.is_top_level()
+        || ctx
+            .site()
+            .plugins
+            .admin_pages(ctx.site())
+            .iter()
+            .any(|p| p.is_top_level() && p.slug == page.parent);
     let (file, parent_file) = match (page.is_top_level(), own_menu) {
         (true, _) => ("admin.php", page.slug),
         (false, true) => ("admin.php", page.parent),
@@ -661,9 +939,17 @@ async fn plugin_page(ctx: &Ctx<'_>, plugin: &dyn ActivePlugin, page: &AdminPage)
     let plugin_ctx = ctx.plugin_context(&parts, &hook);
     let mut load_notices = String::new();
     match plugin.admin_page_load(page.slug, &plugin_ctx).await {
-        Ok(Some(rustpress_core::native::PageLoad::Redirect(location))) => return redirect(&location),
-        Ok(Some(rustpress_core::native::PageLoad::Die { status, title, message })) => return die(ctx.env, status, &title, &message),
-        Ok(Some(rustpress_core::native::PageLoad::Output { headers, body })) => return plugin_output(headers, body),
+        Ok(Some(rustpress_core::native::PageLoad::Redirect(location))) => {
+            return redirect(&location);
+        }
+        Ok(Some(rustpress_core::native::PageLoad::Die {
+            status,
+            title,
+            message,
+        })) => return die(ctx.env, status, &title, &message),
+        Ok(Some(rustpress_core::native::PageLoad::Output { headers, body })) => {
+            return plugin_output(headers, body);
+        }
         Ok(Some(rustpress_core::native::PageLoad::Notices(html))) => load_notices = html,
         Ok(None) => {}
         Err(e) => tracing::error!(page = page.slug, error = %e, "loading the plugin page failed"),
@@ -672,57 +958,111 @@ async fn plugin_page(ctx: &Ctx<'_>, plugin: &dyn ActivePlugin, page: &AdminPage)
         // A page with meta boxes: `do_meta_boxes()` where the callback calls it, with what the user changed.
         Ok(Some((parts, boxes))) => {
             let state = meta_boxes::BoxState::load(ctx, &hook, "").await;
-            let boxes: Vec<meta_boxes::MetaBox> = boxes.into_iter().map(meta_boxes::MetaBox::from_plugin).collect();
+            let boxes: Vec<meta_boxes::MetaBox> = boxes
+                .into_iter()
+                .map(meta_boxes::MetaBox::from_plugin)
+                .collect();
             parts
                 .into_iter()
                 .map(|part| match part {
                     rustpress_core::native::FormPart::Html(html) => html,
-                    rustpress_core::native::FormPart::MetaBoxes(context) => meta_boxes::do_meta_boxes(ctx, &boxes, &context, &state),
+                    rustpress_core::native::FormPart::MetaBoxes(context) => {
+                        meta_boxes::do_meta_boxes(ctx, &boxes, &context, &state)
+                    }
                 })
                 .collect()
         }
-        Ok(None) => plugin.admin_page(page.slug, &plugin_ctx).await.unwrap_or_else(|e| {
-            tracing::error!(page = page.slug, error = %e, "plugin page failed");
-            String::new()
-        }),
+        Ok(None) => plugin
+            .admin_page(page.slug, &plugin_ctx)
+            .await
+            .unwrap_or_else(|e| {
+                tracing::error!(page = page.slug, error = %e, "plugin page failed");
+                String::new()
+            }),
         Err(e) => {
             tracing::error!(page = page.slug, error = %e, "plugin page failed");
             String::new()
         }
     };
-    let plugin_help = ctx.site().plugins.admin_page_help(ctx.site(), page.slug, &ctx.request.query);
+    let plugin_help = ctx
+        .site()
+        .plugins
+        .admin_page_help(ctx.site(), page.slug, &ctx.request.query);
     // The screen options of a plugin's list: its columns as `render_list_table_columns_preferences()` lists them.
     let options = match plugin.admin_screen_options(page.slug, ctx.site(), &ctx.request.query) {
         Some(options) => {
             let hidden = common::hidden_columns(ctx, &hook).await;
-            let columns = options.columns.into_iter().filter(|(key, label)| !["_title", "cb", "comment", "media", "name", "title", "username", "blogname"].contains(&key.as_str()) && !label.is_empty()).map(|(key, label)| {
-                let is_hidden = hidden.contains(&key);
-                (key, label, is_hidden)
-            });
+            let columns = options
+                .columns
+                .into_iter()
+                .filter(|(key, label)| {
+                    ![
+                        "_title", "cb", "comment", "media", "name", "title", "username", "blogname",
+                    ]
+                    .contains(&key.as_str())
+                        && !label.is_empty()
+                })
+                .map(|(key, label)| {
+                    let is_hidden = hidden.contains(&key);
+                    (key, label, is_hidden)
+                });
             let columns: Vec<(String, String, bool)> = columns.collect();
             let per_page = match options.per_page {
-                Some((option, default)) => Some((option.to_owned(), common::items_per_page(ctx, option, default).await)),
+                Some((option, default)) => Some((
+                    option.to_owned(),
+                    common::items_per_page(ctx, option, default).await,
+                )),
                 None => None,
             };
             // `meta_box_prefs()` of a plugin's dashboard: the boxes the user hid.
             let meta_boxes = if options.meta_boxes.is_empty() {
                 None
             } else {
-                let hidden: Vec<String> = common::user_option(ctx, &format!("metaboxhidden_{hook}"))
-                    .await
-                    .and_then(|raw| rustpress_phpser::unserialize(raw.as_bytes()).ok())
-                    .and_then(|v| v.as_array().map(|items| items.iter().filter_map(|(_, v)| v.as_str().map(str::to_owned)).collect()))
-                    .unwrap_or_default();
-                Some(options.meta_boxes.into_iter().map(|(id, title)| {
-                    let is_hidden = hidden.contains(&id);
-                    (id, title, is_hidden)
-                }).collect())
+                let hidden: Vec<String> =
+                    common::user_option(ctx, &format!("metaboxhidden_{hook}"))
+                        .await
+                        .and_then(|raw| rustpress_phpser::unserialize(raw.as_bytes()).ok())
+                        .and_then(|v| {
+                            v.as_array().map(|items| {
+                                items
+                                    .iter()
+                                    .filter_map(|(_, v)| v.as_str().map(str::to_owned))
+                                    .collect()
+                            })
+                        })
+                        .unwrap_or_default();
+                Some(
+                    options
+                        .meta_boxes
+                        .into_iter()
+                        .map(|(id, title)| {
+                            let is_hidden = hidden.contains(&id);
+                            (id, title, is_hidden)
+                        })
+                        .collect(),
+                )
             };
-            Some(chrome::ScreenOptions { columns, per_page, meta_boxes, ..Default::default() })
+            Some(chrome::ScreenOptions {
+                columns,
+                per_page,
+                meta_boxes,
+                ..Default::default()
+            })
         }
         None => None,
     };
-    let help = chrome::Help { tabs: plugin_help.tabs.into_iter().map(|t| chrome::HelpTab { id: t.id, title: t.title, content: t.content }).collect(), sidebar: plugin_help.sidebar };
+    let help = chrome::Help {
+        tabs: plugin_help
+            .tabs
+            .into_iter()
+            .map(|t| chrome::HelpTab {
+                id: t.id,
+                title: t.title,
+                content: t.content,
+            })
+            .collect(),
+        sidebar: plugin_help.sidebar,
+    };
     let screen = Screen {
         file: file.to_owned(),
         parent_file: parent_file.to_owned(),
@@ -734,14 +1074,27 @@ async fn plugin_page(ctx: &Ctx<'_>, plugin: &dyn ActivePlugin, page: &AdminPage)
         // The callback prints its markup right after the header.
         content_inline: true,
         // `$typenow` of `admin.php`: the post type of the request, if it exists.
-        post_type: ctx.request.request("post_type").filter(|t| ctx.site().types.post_type_exists(t)).unwrap_or_default().to_owned(),
+        post_type: ctx
+            .request
+            .request("post_type")
+            .filter(|t| ctx.site().types.post_type_exists(t))
+            .unwrap_or_default()
+            .to_owned(),
         ..Default::default()
     };
     // `options-head.php` below Settings: the messages of `options.php`, and "Settings saved." for `updated`.
-    let mut assets = Assets { notices: load_notices, ..Default::default() };
+    let mut assets = Assets {
+        notices: load_notices,
+        ..Default::default()
+    };
     if page.parent == "options-general.php" {
         if ctx.request.get("updated").is_some() {
-            let saved = notices::SettingsError { setting: "general".into(), code: "settings_updated".into(), message: ctx.tr("Settings saved."), kind: "success".into() };
+            let saved = notices::SettingsError {
+                setting: "general".into(),
+                code: "settings_updated".into(),
+                message: ctx.tr("Settings saved."),
+                kind: "success".into(),
+            };
             assets.notices = notices::render_settings_errors(&[saved], false);
         } else {
             assets.notices = common::settings_errors(ctx).await;
@@ -754,36 +1107,62 @@ async fn plugin_page(ctx: &Ctx<'_>, plugin: &dyn ActivePlugin, page: &AdminPage)
 /// the editors and fields that print one sit.
 fn first_media_button_id(body: String) -> String {
     const ID: &str = " id=\"insert-media-button\" class=\"button insert-media add_media\"";
-    let Some(first) = body.find(ID) else { return body };
+    let Some(first) = body.find(ID) else {
+        return body;
+    };
     let split = first + ID.len();
     let (head, tail) = body.split_at(split);
     if !tail.contains(ID) {
         return body;
     }
-    format!("{head}{}", tail.replace(ID, " class=\"button insert-media add_media\""))
+    format!(
+        "{head}{}",
+        tail.replace(ID, " class=\"button insert-media add_media\"")
+    )
 }
 
 /// The menu of the signed-in user.
 async fn admin_menu(ctx: &Ctx<'_>) -> AdminMenu {
     let updates = crate::updates::counts(ctx.env.site).await;
-    let pending = ctx.env.db.count_comments_with_status("0").await.unwrap_or(0);
+    let pending = ctx
+        .env
+        .db
+        .count_comments_with_status("0")
+        .await
+        .unwrap_or(0);
     menu_with(ctx, &updates, pending)
 }
 
 fn menu_with(ctx: &Ctx<'_>, updates: &crate::updates::UpdateCounts, pending: u64) -> AdminMenu {
     let env = ctx.env;
-    let menu_context = MenuContext { request_uri: ctx.request.request_uri.clone(), block_theme: env.block_theme, pending_comments: pending, updates: (updates.total(), updates.plugins, updates.themes), site_title: env.site.settings.blogname.clone() };
-    AdminMenu::core(env.site, &ctx.user, &menu_context).with_plugin_pages(&env.site.plugins.admin_pages(env.site)).prepare(&ctx.user)
+    let menu_context = MenuContext {
+        request_uri: ctx.request.request_uri.clone(),
+        block_theme: env.block_theme,
+        pending_comments: pending,
+        updates: (updates.total(), updates.plugins, updates.themes),
+        site_title: env.site.settings.blogname.clone(),
+    };
+    AdminMenu::core(env.site, &ctx.user, &menu_context)
+        .with_plugin_pages(&env.site.plugins.admin_pages(env.site))
+        .prepare(&ctx.user)
 }
 
 /// The frame around `content` for the signed-in user.
-pub async fn render(ctx: &Ctx<'_>, screen: &Screen, content: &str, assets: &Assets) -> AdminResponse {
+pub async fn render(
+    ctx: &Ctx<'_>,
+    screen: &Screen,
+    content: &str,
+    assets: &Assets,
+) -> AdminResponse {
     let env = ctx.env;
     let updates = crate::updates::counts(env.site).await;
     let pending = env.db.count_comments_with_status("0").await.unwrap_or(0);
     let menu = menu_with(ctx, &updates, pending);
     // `admin_enqueue_scripts` and `admin_notices` of the plugins.
-    let hook_suffix = screen.hook_suffix.clone().unwrap_or_else(|| screen.file.clone());
+    let hook_suffix = screen
+        .hook_suffix
+        .clone()
+        .unwrap_or_else(|| screen.file.clone());
     let parts = ctx.plugin_parts();
     let mut plugin_ctx = ctx.plugin_context(&parts, &hook_suffix);
     plugin_ctx.edited_post = screen.edited_post.as_ref();
@@ -797,54 +1176,113 @@ pub async fn render(ctx: &Ctx<'_>, screen: &Screen, content: &str, assets: &Asse
     // The help plugins add on `current_screen` comes before the screen's own tabs.
     let mut screen = screen.clone();
     if !env.site.plugins.is_empty() {
-        let parent_file = if screen.parent_file.is_empty() { screen.file.clone() } else { screen.parent_file.clone() };
+        let parent_file = if screen.parent_file.is_empty() {
+            screen.file.clone()
+        } else {
+            screen.parent_file.clone()
+        };
         screen.parent_file = env.site.plugins.parent_file(&plugin_ctx, parent_file);
-        let submenu_file = screen.submenu_file.clone().unwrap_or_else(|| screen.file.clone());
+        let submenu_file = screen
+            .submenu_file
+            .clone()
+            .unwrap_or_else(|| screen.file.clone());
         screen.submenu_file = Some(env.site.plugins.submenu_file(&plugin_ctx, submenu_file));
     }
     if let Some(help) = env.site.plugins.screen_help(&plugin_ctx) {
         let own = screen.help.take().unwrap_or_default();
-        let mut tabs: Vec<crate::chrome::HelpTab> = help.tabs.into_iter().map(|tab| crate::chrome::HelpTab { id: tab.id, title: tab.title, content: tab.content }).collect();
+        let mut tabs: Vec<crate::chrome::HelpTab> = help
+            .tabs
+            .into_iter()
+            .map(|tab| crate::chrome::HelpTab {
+                id: tab.id,
+                title: tab.title,
+                content: tab.content,
+            })
+            .collect();
         tabs.extend(own.tabs);
-        screen.help = Some(crate::chrome::Help { tabs, sidebar: if own.sidebar.is_empty() { help.sidebar } else { own.sidebar } });
+        screen.help = Some(crate::chrome::Help {
+            tabs,
+            sidebar: if own.sidebar.is_empty() {
+                help.sidebar
+            } else {
+                own.sidebar
+            },
+        });
     }
     let screen = &screen;
     let plugin_assets = env.site.plugins.admin_assets(&plugin_ctx);
-    let notices = env.site.plugins.admin_notices(&plugin_ctx).await.unwrap_or_else(|e| {
-        tracing::error!(error = %e, "plugin notices failed");
-        String::new()
-    });
+    let notices = env
+        .site
+        .plugins
+        .admin_notices(&plugin_ctx)
+        .await
+        .unwrap_or_else(|e| {
+            tracing::error!(error = %e, "plugin notices failed");
+            String::new()
+        });
 
     let mut loader = env.loader.clone();
     {
         let auth: Arc<Auth> = Arc::new(env.auth.clone());
         let (id, token, now) = (ctx.user.id, ctx.token.clone(), env.now);
-        loader.nonce = Some(Arc::new(move |action: &str| auth.create_nonce(action, id, &token, now).unwrap_or_default()));
+        loader.nonce = Some(Arc::new(move |action: &str| {
+            auth.create_nonce(action, id, &token, now)
+                .unwrap_or_default()
+        }));
     }
     let chrome_env = ChromeEnv {
         site: env.site,
         loader,
         user: &ctx.user,
         menu: &menu,
-        bar: BarContext { updates: updates.total(), pending_comments: pending, logout_nonce: ctx.create_nonce("log-out"), view_item: None, view_archive: false, view_preview: None, command_palette: true, site_icon: site_icon(env.site).await },
+        bar: BarContext {
+            updates: updates.total(),
+            pending_comments: pending,
+            logout_nonce: ctx.create_nonce("log-out"),
+            view_item: None,
+            view_archive: false,
+            view_preview: None,
+            command_palette: true,
+            site_icon: site_icon(env.site).await,
+        },
         stylesheet: env.site.settings.stylesheet.clone(),
         cookie_path: paths(env.site).cookie,
         now: env.now,
         secure: env.https,
         request_uri: ctx.request.request_uri.clone(),
         host: ctx.request.host.clone(),
-        head_styles: format!("{}{}{}", include_str!("../data/head_styles.html"), rustpress_theme::document::font_faces(env.theme), rustpress_theme::document::font_faces_from_style_variations(env.theme)),
+        head_styles: format!(
+            "{}{}{}",
+            include_str!("../data/head_styles.html"),
+            rustpress_theme::document::font_faces(env.theme),
+            rustpress_theme::document::font_faces_from_style_variations(env.theme)
+        ),
     };
     // What the command palette's scripts need on every screen: the fetch layer, the data and preferences persistence.
     let mut assets = assets.clone();
-    assets.site_icon = rustpress_theme::classic::wp_site_icon(env.site).await.unwrap_or_default();
+    assets.site_icon = rustpress_theme::classic::wp_site_icon(env.site)
+        .await
+        .unwrap_or_default();
     assets.rest_root = env.site.rest_url("/");
-    if env.db.option("can_compress_scripts").await.ok().flatten().is_none() {
-        assets.compression_test = include_str!("../data/compression_test.html").replace("@NONCE@", &ctx.create_nonce("update_can_compress_scripts"));
+    if env
+        .db
+        .option("can_compress_scripts")
+        .await
+        .ok()
+        .flatten()
+        .is_none()
+    {
+        assets.compression_test = include_str!("../data/compression_test.html")
+            .replace("@NONCE@", &ctx.create_nonce("update_can_compress_scripts"));
     }
     // `wp_dequeue_script()` of the plugins.
     for handle in &plugin_assets.dequeue {
-        for list in [&mut assets.scripts, &mut assets.early_scripts, &mut assets.late_scripts, &mut assets.post_header_scripts] {
+        for list in [
+            &mut assets.scripts,
+            &mut assets.early_scripts,
+            &mut assets.late_scripts,
+            &mut assets.post_header_scripts,
+        ] {
             list.retain(|h| h != handle);
         }
         assets.localize.retain(|(h, _, _)| h != handle);
@@ -854,22 +1292,37 @@ pub async fn render(ctx: &Ctx<'_>, screen: &Screen, content: &str, assets: &Asse
     assets.notices = format!("{notices}{}", assets.notices);
     assets.footer_text = env.site.plugins.admin_footer_text(&plugin_ctx);
     assets.update_footer = env.site.plugins.update_footer(&plugin_ctx);
-    assets.admin_header = env.site.plugins.in_admin_header(&plugin_ctx).await.unwrap_or_else(|e| {
-        tracing::error!(error = %e, "plugin in_admin_header failed");
-        String::new()
-    });
+    assets.admin_header = env
+        .site
+        .plugins
+        .in_admin_header(&plugin_ctx)
+        .await
+        .unwrap_or_else(|e| {
+            tracing::error!(error = %e, "plugin in_admin_header failed");
+            String::new()
+        });
     assets.plugin_body_classes = env.site.plugins.admin_body_class(&plugin_ctx);
     assets.plugin_print_styles = env.site.plugins.admin_print_styles(&plugin_ctx);
     // What the screen printed on `admin_head-{$hook_suffix}` comes first.
-    let plugin_head = env.site.plugins.admin_head(&plugin_ctx).await.unwrap_or_else(|e| {
-        tracing::error!(error = %e, "plugin admin_head failed");
-        String::new()
-    });
+    let plugin_head = env
+        .site
+        .plugins
+        .admin_head(&plugin_ctx)
+        .await
+        .unwrap_or_else(|e| {
+            tracing::error!(error = %e, "plugin admin_head failed");
+            String::new()
+        });
     assets.plugin_admin_head.push_str(&plugin_head);
     // The stylesheets of the plugins: one WordPress registers joins the styles of the screen; a plugin's own comes after
     // its dependencies among the plugins' stylesheets, those of priority 10 before the emoji styles, later ones after.
     let mut printed: Vec<String> = Vec::new();
-    fn plugin_style(style: &rustpress_core::native::Asset, all: &[rustpress_core::native::Asset], printed: &mut Vec<String>, out: &mut String) {
+    fn plugin_style(
+        style: &rustpress_core::native::Asset,
+        all: &[rustpress_core::native::Asset],
+        printed: &mut Vec<String>,
+        out: &mut String,
+    ) {
         if printed.contains(&style.handle) {
             return;
         }
@@ -879,27 +1332,50 @@ pub async fn render(ctx: &Ctx<'_>, screen: &Screen, content: &str, assets: &Asse
                 plugin_style(found, all, printed, out);
             }
         }
-        let href = style.ver.as_ref().map_or_else(|| style.src.clone(), |ver| rustpress_core::urls::add_query_arg(&style.src, "ver", ver));
-        out.push_str(&format!("<link rel='stylesheet' id='{}-css' href='{}' media='{}' />\n", esc_attr(&style.handle), rustpress_core::formatting::esc_url(&href), esc_attr(&style.media)));
+        let href = style.ver.as_ref().map_or_else(
+            || style.src.clone(),
+            |ver| rustpress_core::urls::add_query_arg(&style.src, "ver", ver),
+        );
+        out.push_str(&format!(
+            "<link rel='stylesheet' id='{}-css' href='{}' media='{}' />\n",
+            esc_attr(&style.handle),
+            rustpress_core::formatting::esc_url(&href),
+            esc_attr(&style.media)
+        ));
     }
     // A stylesheet of WordPress a plugin enqueues late (`wp_enqueue_media()` of ACF's uploader) joins the concatenated
     // ones; its dependencies outside `load-styles.php` print in the order of the queue, after the plugin's styles before
     // it.
     let mut core_registry: Option<crate::styles::Styles> = None;
-    fn late_core_style(registry: &mut crate::styles::Styles, handle: &str, screen_styles: &[String], printed: &mut Vec<String>, assets: &mut Assets) {
+    fn late_core_style(
+        registry: &mut crate::styles::Styles,
+        handle: &str,
+        screen_styles: &[String],
+        printed: &mut Vec<String>,
+        assets: &mut Assets,
+    ) {
         if printed.iter().any(|h| h == handle) || screen_styles.iter().any(|h| h == handle) {
             return;
         }
         printed.push(handle.to_owned());
-        let Some(dependency) = registry.deps.get(handle).cloned() else { return };
+        let Some(dependency) = registry.deps.get(handle).cloned() else {
+            return;
+        };
         for dep in &dependency.deps {
             late_core_style(registry, dep, screen_styles, printed, assets);
         }
         let src = dependency.src.unwrap_or_default();
-        if src.is_empty() || registry.default_dirs.iter().any(|d| src.starts_with(d.as_str())) {
+        if src.is_empty()
+            || registry
+                .default_dirs
+                .iter()
+                .any(|d| src.starts_with(d.as_str()))
+        {
             assets.plugin_core_styles.push(handle.to_owned());
         } else {
-            assets.plugin_late_styles.push_str(&registry.print_one(handle));
+            assets
+                .plugin_late_styles
+                .push_str(&registry.print_one(handle));
             assets.plugin_done_styles.push(handle.to_owned());
         }
     }
@@ -909,7 +1385,12 @@ pub async fn render(ctx: &Ctx<'_>, screen: &Screen, content: &str, assets: &Asse
             return;
         }
         out.push(handle.to_owned());
-        for dep in registry.deps.get(handle).map(|d| d.deps.clone()).unwrap_or_default() {
+        for dep in registry
+            .deps
+            .get(handle)
+            .map(|d| d.deps.clone())
+            .unwrap_or_default()
+        {
             closure(registry, &dep, out);
         }
     }
@@ -925,24 +1406,48 @@ pub async fn render(ctx: &Ctx<'_>, screen: &Screen, content: &str, assets: &Asse
                     core_registry = Some(registry);
                 }
                 let registry = core_registry.as_mut().expect("just set");
-                late_core_style(registry, &style.handle, &screen_styles, &mut printed, &mut assets);
+                late_core_style(
+                    registry,
+                    &style.handle,
+                    &screen_styles,
+                    &mut printed,
+                    &mut assets,
+                );
             } else {
                 assets.plugin_core_styles.push(style.handle.clone());
             }
             continue;
         }
-        let target = if style.priority > 10 { &mut assets.plugin_late_styles } else { &mut assets.plugin_styles };
+        let target = if style.priority > 10 {
+            &mut assets.plugin_late_styles
+        } else {
+            &mut assets.plugin_styles
+        };
         plugin_style(style, &plugin_assets.styles, &mut printed, target);
     }
-    assets.plugin_footer = env.site.plugins.admin_footer(&plugin_ctx).await.unwrap_or_else(|e| {
-        tracing::error!(error = %e, "plugin admin_footer failed");
-        String::new()
-    });
-    assets.plugin_footer_scripts = env.site.plugins.admin_print_footer_scripts(&plugin_ctx).await.unwrap_or_else(|e| {
-        tracing::error!(error = %e, "plugin admin_print_footer_scripts failed");
-        String::new()
-    });
-    if !assets.inline.iter().any(|(handle, _, _)| handle == "wp-api-fetch") {
+    assets.plugin_footer = env
+        .site
+        .plugins
+        .admin_footer(&plugin_ctx)
+        .await
+        .unwrap_or_else(|e| {
+            tracing::error!(error = %e, "plugin admin_footer failed");
+            String::new()
+        });
+    assets.plugin_footer_scripts = env
+        .site
+        .plugins
+        .admin_print_footer_scripts(&plugin_ctx)
+        .await
+        .unwrap_or_else(|e| {
+            tracing::error!(error = %e, "plugin admin_print_footer_scripts failed");
+            String::new()
+        });
+    if !assets
+        .inline
+        .iter()
+        .any(|(handle, _, _)| handle == "wp-api-fetch")
+    {
         let nonce = ctx.create_nonce("wp_rest");
         assets.inline.push((
             "wp-api-fetch".into(),
@@ -958,47 +1463,124 @@ pub async fn render(ctx: &Ctx<'_>, screen: &Screen, content: &str, assets: &Asse
     // `wp_set_client_side_media_processing_flag()` on `admin_init`: the browser resizes images when the page is a
     // secure context (SharedArrayBuffer).
     if client_side_media_processing(ctx) {
-        assets.inline.push(("wp-block-editor".into(), "window.__clientSideMediaProcessing = true;".into(), "before".into()));
-        let chromium = ctx.request.user_agent.as_deref().and_then(|ua| ua.split_once("Chrome/")).map(|(_, rest)| rest.bytes().take_while(u8::is_ascii_digit).fold(0u64, |n, d| n.saturating_mul(10).saturating_add(u64::from(d - b'0'))));
+        assets.inline.push((
+            "wp-block-editor".into(),
+            "window.__clientSideMediaProcessing = true;".into(),
+            "before".into(),
+        ));
+        let chromium = ctx
+            .request
+            .user_agent
+            .as_deref()
+            .and_then(|ua| ua.split_once("Chrome/"))
+            .map(|(_, rest)| {
+                rest.bytes()
+                    .take_while(u8::is_ascii_digit)
+                    .fold(0u64, |n, d| {
+                        n.saturating_mul(10).saturating_add(u64::from(d - b'0'))
+                    })
+            });
         if chromium.is_some_and(|version| version >= 137) {
-            assets.inline.push(("wp-block-editor".into(), "window.__documentIsolationPolicy = true;".into(), "before".into()));
+            assets.inline.push((
+                "wp-block-editor".into(),
+                "window.__documentIsolationPolicy = true;".into(),
+                "before".into(),
+            ));
         }
     }
-    if !assets.inline.iter().any(|(handle, _, _)| handle == "mediaelement-core") {
+    if !assets
+        .inline
+        .iter()
+        .any(|(handle, _, _)| handle == "mediaelement-core")
+    {
         // `var mejsL10n`: the strings of MediaElement.js, read from the script loader of WordPress and translated.
         let mut strings = serde_json::Map::new();
-        if let Some(php) = rustpress_core::files::read(&env.loader.includes.join("script-loader.php")) {
-            let re = rustpress_core::formatting::cached_plain_regex(r"'(mejs\.[a-z-]+)'\s*=>\s*__\(\s*'((?:[^'\\]|\\.)*)'\s*\)");
+        if let Some(php) =
+            rustpress_core::files::read(&env.loader.includes.join("script-loader.php"))
+        {
+            let re = rustpress_core::formatting::cached_plain_regex(
+                r"'(mejs\.[a-z-]+)'\s*=>\s*__\(\s*'((?:[^'\\]|\\.)*)'\s*\)",
+            );
             for found in re.captures_iter(&php) {
-                strings.insert(found[1].to_owned(), serde_json::Value::from(ctx.tr(&found[2].replace("\\'", "'"))));
+                strings.insert(
+                    found[1].to_owned(),
+                    serde_json::Value::from(ctx.tr(&found[2].replace("\\'", "'"))),
+                );
             }
         }
-        let language = env.site.locale().split(['_', '-']).next().unwrap_or("en").to_lowercase();
-        let json = rustpress_blocks::php_json::encode_with(&serde_json::json!({"language": language, "strings": strings}), rustpress_blocks::php_json::Flags { unescaped_slashes: true, unescaped_unicode: false });
-        let json = json.replace('<', &format!("{}u003C", char::from(92u8))).replace('>', &format!("{}u003E", char::from(92u8)));
-        assets.inline.push(("mediaelement-core".into(), format!("var mejsL10n = {json};"), "before".into()));
+        let language = env
+            .site
+            .locale()
+            .split(['_', '-'])
+            .next()
+            .unwrap_or("en")
+            .to_lowercase();
+        let json = rustpress_blocks::php_json::encode_with(
+            &serde_json::json!({"language": language, "strings": strings}),
+            rustpress_blocks::php_json::Flags {
+                unescaped_slashes: true,
+                unescaped_unicode: false,
+            },
+        );
+        let json = json
+            .replace('<', &format!("{}u003C", char::from(92u8)))
+            .replace('>', &format!("{}u003E", char::from(92u8)));
+        assets.inline.push((
+            "mediaelement-core".into(),
+            format!("var mejsL10n = {json};"),
+            "before".into(),
+        ));
     }
-    if !assets.inline.iter().any(|(handle, _, _)| handle == "moment") {
+    if !assets
+        .inline
+        .iter()
+        .any(|(handle, _, _)| handle == "moment")
+    {
         // `moment.updateLocale()` and `wp.date.setSettings()` (`wp_default_packages_inline_scripts()`).
         let site = env.site;
         let locale = site.locale_data();
-        let flags = rustpress_blocks::php_json::Flags { unescaped_slashes: true, unescaped_unicode: false };
-        let hex_tags = |json: String| json.replace('<', &format!("{}u003C", char::from(92u8))).replace('>', &format!("{}u003E", char::from(92u8)));
+        let flags = rustpress_blocks::php_json::Flags {
+            unescaped_slashes: true,
+            unescaped_unicode: false,
+        };
+        let hex_tags = |json: String| {
+            json.replace('<', &format!("{}u003C", char::from(92u8)))
+                .replace('>', &format!("{}u003E", char::from(92u8)))
+        };
         let time_format = site.options.string("time_format", &ctx.tr("g:i a"));
         let date_format = site.options.string("date_format", &ctx.tr("F j, Y"));
-        let start_of_week = site.options.string("start_of_week", "0").parse::<i64>().unwrap_or(0);
+        let start_of_week = site
+            .options
+            .string("start_of_week", "0")
+            .parse::<i64>()
+            .unwrap_or(0);
         let user_locale = site.locale();
         let moment = serde_json::json!({
             "months": locale.month, "monthsShort": locale.month_abbrev, "weekdays": locale.weekday, "weekdaysShort": locale.weekday_abbrev,
             "week": {"dow": start_of_week},
             "longDateFormat": {"LT": time_format, "LTS": null, "L": null, "LL": date_format, "LLL": ctx.tr("F j, Y g:i a"), "LLLL": null}
         });
-        assets.inline.push(("moment".into(), format!("moment.updateLocale( '{user_locale}', {} );", rustpress_blocks::php_json::encode_with(&moment, flags)), "after".into()));
+        assets.inline.push((
+            "moment".into(),
+            format!(
+                "moment.updateLocale( '{user_locale}', {} );",
+                rustpress_blocks::php_json::encode_with(&moment, flags)
+            ),
+            "after".into(),
+        ));
         let gmt_offset = site.options.string("gmt_offset", "0");
         let offset: f64 = gmt_offset.parse().unwrap_or(0.0);
         let timezone_string = site.options.string("timezone_string", "UTC");
-        let abbr = if timezone_string.is_empty() { String::new() } else { site.date("T", env.now) };
-        let offset_value = if offset.fract() == 0.0 { serde_json::json!(offset as i64) } else { serde_json::json!(offset) };
+        let abbr = if timezone_string.is_empty() {
+            String::new()
+        } else {
+            site.date("T", env.now)
+        };
+        let offset_value = if offset.fract() == 0.0 {
+            serde_json::json!(offset as i64)
+        } else {
+            serde_json::json!(offset)
+        };
         let relative = serde_json::json!({
             "future": ctx.tr("%s from now"), "past": ctx.tr("%s ago"), "s": ctx.tr("a second"), "ss": ctx.tr("%d seconds"), "m": ctx.tr("a minute"), "mm": ctx.tr("%d minutes"),
             "h": ctx.tr("an hour"), "hh": ctx.tr("%d hours"), "d": ctx.tr("a day"), "dd": ctx.tr("%d days"), "M": ctx.tr("a month"), "MM": ctx.tr("%d months"), "y": ctx.tr("a year"), "yy": ctx.tr("%d years")
@@ -1012,25 +1594,52 @@ pub async fn render(ctx: &Ctx<'_>, screen: &Screen, content: &str, assets: &Asse
             "formats": {"time": time_format, "date": date_format, "datetime": ctx.tr("F j, Y g:i a"), "datetimeAbbreviated": ctx.tr("M j, Y g:i a")},
             "timezone": {"offset": offset_value, "offsetFormatted": gmt_offset.replace(".25", ":15").replace(".5", ":30").replace(".75", ":45"), "string": timezone_string, "abbr": abbr}
         });
-        assets.inline.push(("wp-date".into(), hex_tags(format!("wp.date.setSettings( {} );", rustpress_blocks::php_json::encode_with(&date, flags))), "after".into()));
+        assets.inline.push((
+            "wp-date".into(),
+            hex_tags(format!(
+                "wp.date.setSettings( {} );",
+                rustpress_blocks::php_json::encode_with(&date, flags)
+            )),
+            "after".into(),
+        ));
     }
-    if !assets.inline.iter().any(|(handle, _, _)| handle == "wp-data") {
+    if !assets
+        .inline
+        .iter()
+        .any(|(handle, _, _)| handle == "wp-data")
+    {
         assets.inline.push((
             "wp-data".into(),
             format!("( function() {{\n\tvar userId = {};\n\tvar storageKey = \"WP_DATA_USER_\" + userId;\n\twp.data\n\t\t.use( wp.data.plugins.persistence, {{ storageKey: storageKey }} );\n}} )();", ctx.user.id),
             "after".into(),
         ));
     }
-    if !assets.inline.iter().any(|(handle, _, _)| handle == "wp-preferences") {
+    if !assets
+        .inline
+        .iter()
+        .any(|(handle, _, _)| handle == "wp-preferences")
+    {
         let preferences = env
             .db
-            .user_meta(ctx.user.id, &format!("{}persisted_preferences", env.db.table_prefix()))
+            .user_meta(
+                ctx.user.id,
+                &format!("{}persisted_preferences", env.db.table_prefix()),
+            )
             .await
             .ok()
             .flatten()
             .and_then(|raw| rustpress_phpser::unserialize(raw.as_bytes()).ok())
-            .map_or_else(|| serde_json::json!(""), |value| rustpress_core::options::php_to_json(&value));
-        let preferences = rustpress_blocks::php_json::encode_with(&preferences, rustpress_blocks::php_json::Flags { unescaped_slashes: true, unescaped_unicode: true });
+            .map_or_else(
+                || serde_json::json!(""),
+                |value| rustpress_core::options::php_to_json(&value),
+            );
+        let preferences = rustpress_blocks::php_json::encode_with(
+            &preferences,
+            rustpress_blocks::php_json::Flags {
+                unescaped_slashes: true,
+                unescaped_unicode: true,
+            },
+        );
         assets.inline.push((
             "wp-preferences".into(),
             format!("( function() {{\n\t\t\t\tvar serverData = {};\n\t\t\t\tvar userId = \"{}\";\n\t\t\t\tvar persistenceLayer = wp.preferencesPersistence.__unstableCreatePersistenceLayer( serverData, userId );\n\t\t\t\tvar preferencesStore = wp.preferences.store;\n\t\t\t\twp.data.dispatch( preferencesStore ).setPersistenceLayer( persistenceLayer );\n\t\t\t}} ) ();", preferences, ctx.user.id),
@@ -1040,7 +1649,13 @@ pub async fn render(ctx: &Ctx<'_>, screen: &Screen, content: &str, assets: &Asse
     let body = first_media_button_id(chrome::render(&chrome_env, screen, content, &assets));
     // Output buffers plugins start on `admin_init`.
     let body = env.site.plugins.admin_page_output(&plugin_ctx, body);
-    AdminResponse { status: 200, headers: page_headers(), cookies: Vec::new(), body, bytes: Vec::new() }
+    AdminResponse {
+        status: 200,
+        headers: page_headers(),
+        cookies: Vec::new(),
+        body,
+        bytes: Vec::new(),
+    }
 }
 
 /// A redirect (`wp_redirect()` and `exit`).
@@ -1049,10 +1664,19 @@ pub fn redirect(location: &str) -> AdminResponse {
         status: 302,
         headers: vec![
             ("Expires".into(), "Wed, 11 Jan 1984 05:00:00 GMT".into()),
-            ("Cache-Control".into(), "no-cache, must-revalidate, max-age=0, no-store, private".into()),
-            ("Referrer-Policy".into(), "strict-origin-when-cross-origin".into()),
+            (
+                "Cache-Control".into(),
+                "no-cache, must-revalidate, max-age=0, no-store, private".into(),
+            ),
+            (
+                "Referrer-Policy".into(),
+                "strict-origin-when-cross-origin".into(),
+            ),
             ("X-Frame-Options".into(), "SAMEORIGIN".into()),
-            ("Content-Security-Policy".into(), "frame-ancestors 'self';".into()),
+            (
+                "Content-Security-Policy".into(),
+                "frame-ancestors 'self';".into(),
+            ),
             ("X-Redirect-By".into(), "WordPress".into()),
             ("Location".into(), location.to_owned()),
             ("Content-Type".into(), "text/html; charset=UTF-8".into()),

@@ -6,14 +6,28 @@ use rustpress_admin::registry::{LoaderEnv, default_scripts, default_styles};
 use serde_json::Value;
 
 fn env() -> Option<LoaderEnv> {
-    let root = std::env::var("RUSTPRESS_TEST_WP_ROOT").unwrap_or_else(|_| concat!(env!("CARGO_MANIFEST_DIR"), "/../../wordpress").into());
+    let root = std::env::var("RUSTPRESS_TEST_WP_ROOT")
+        .unwrap_or_else(|_| concat!(env!("CARGO_MANIFEST_DIR"), "/../../wordpress").into());
     let includes = std::path::Path::new(&root).join("wp-includes");
     if !includes.join("script-loader.php").is_file() {
         eprintln!("no WordPress files at {root}, skipping");
-        assert!(std::env::var_os("RUSTPRESS_REQUIRE_REFERENCE").is_none(), "RUSTPRESS_REQUIRE_REFERENCE is set, so this test must not skip itself");
+        assert!(
+            std::env::var_os("RUSTPRESS_REQUIRE_REFERENCE").is_none(),
+            "RUSTPRESS_REQUIRE_REFERENCE is set, so this test must not skip itself"
+        );
         return None;
     }
-    Some(LoaderEnv { includes, site_url: "http://localhost:8080".into(), content_url: "http://localhost:8080/wp-content".into(), version: rustpress_core::WP_VERSION.into(), rtl: false, separate_block_assets: true, compressed_tinymce: false, nonce: None, messages: None })
+    Some(LoaderEnv {
+        includes,
+        site_url: "http://localhost:8080".into(),
+        content_url: "http://localhost:8080/wp-content".into(),
+        version: rustpress_core::WP_VERSION.into(),
+        rtl: false,
+        separate_block_assets: true,
+        compressed_tinymce: false,
+        nonce: None,
+        messages: None,
+    })
 }
 
 fn fixture() -> Value {
@@ -50,14 +64,35 @@ fn args_matches(actual: &Option<Arg>, expected: &Value) -> bool {
 /// the default registry yet (`wp_default_packages_inline_scripts()` and the localizations that read
 /// settings): the admin screens that need them add them when they are built.
 const INLINE_GAPS: &[&str] = &[
-    "utils", "common", "editor", "heartbeat", "plupload-handlers", "wp-plupload", "mediaelement", "mediaelement-core", "wplink", "customize-controls", "moment", "wp-data",
-    "wp-date", "wp-editor", "wp-preferences", "wp-view-transitions-admin",
+    "utils",
+    "common",
+    "editor",
+    "heartbeat",
+    "plupload-handlers",
+    "wp-plupload",
+    "mediaelement",
+    "mediaelement-core",
+    "wplink",
+    "customize-controls",
+    "moment",
+    "wp-data",
+    "wp-date",
+    "wp-editor",
+    "wp-preferences",
+    "wp-view-transitions-admin",
 ];
 
 /// The extra data that does not depend on the site: when and how to load.
 fn extra_differences(actual: &Dependency, expected: &Value) -> Vec<String> {
     let mut out = Vec::new();
-    for key in ["strategy", "fetchpriority", "group", "rtl", "suffix", "conditional"] {
+    for key in [
+        "strategy",
+        "fetchpriority",
+        "group",
+        "rtl",
+        "suffix",
+        "conditional",
+    ] {
         let want = expected["extra"].get(key);
         let have = actual.extra.get(key);
         let same = match (have, want) {
@@ -84,12 +119,18 @@ fn extra_differences(actual: &Dependency, expected: &Value) -> Vec<String> {
         };
         let want_text = want.to_string();
         // The command line prints the AJAX address with its host, the browser gets it without.
-        if want_text.contains("nonce") || want_text.contains("localhost:8080/?") || want_text.contains("localhost:8080/wp-admin/admin-ajax.php") {
+        if want_text.contains("nonce")
+            || want_text.contains("localhost:8080/?")
+            || want_text.contains("localhost:8080/wp-admin/admin-ajax.php")
+        {
             continue;
         }
         let want_items: Vec<String> = match want {
             Value::String(text) => vec![text.clone()],
-            Value::Array(items) => items.iter().filter_map(|i| i.as_str().map(str::to_owned)).collect(),
+            Value::Array(items) => items
+                .iter()
+                .filter_map(|i| i.as_str().map(str::to_owned))
+                .collect(),
             _ => Vec::new(),
         };
         let have_items: Vec<String> = match actual.extra.get(key) {
@@ -98,7 +139,11 @@ fn extra_differences(actual: &Dependency, expected: &Value) -> Vec<String> {
             _ => Vec::new(),
         };
         if want_items != have_items {
-            out.push(format!("extra.{key} {} / {}", have_items.join(" | ").chars().take(160).collect::<String>(), want_items.join(" | ").chars().take(160).collect::<String>()));
+            out.push(format!(
+                "extra.{key} {} / {}",
+                have_items.join(" | ").chars().take(160).collect::<String>(),
+                want_items.join(" | ").chars().take(160).collect::<String>()
+            ));
         }
     }
     out
@@ -116,19 +161,42 @@ fn scripts_match_the_reference() {
             missing.push(handle.to_owned());
             continue;
         };
-        let deps: Vec<String> = expected["deps"].as_array().unwrap().iter().filter_map(|d| d.as_str().map(str::to_owned)).collect();
+        let deps: Vec<String> = expected["deps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|d| d.as_str().map(str::to_owned))
+            .collect();
         if actual.src != src_text(&expected["src"]) || actual.deps != deps {
-            different.push(format!("{handle}: src {:?} / {:?}, deps {:?} / {:?}", actual.src, expected["src"], actual.deps, deps));
+            different.push(format!(
+                "{handle}: src {:?} / {:?}, deps {:?} / {:?}",
+                actual.src, expected["src"], actual.deps, deps
+            ));
         }
-        if !ver_matches(&actual.ver, &expected["ver"]) || !args_matches(&actual.args, &expected["args"]) {
-            different.push(format!("{handle}: ver {:?} / {:?}, args {:?} / {:?}", actual.ver, expected["ver"], actual.args, expected["args"]));
+        if !ver_matches(&actual.ver, &expected["ver"])
+            || !args_matches(&actual.args, &expected["args"])
+        {
+            different.push(format!(
+                "{handle}: ver {:?} / {:?}, args {:?} / {:?}",
+                actual.ver, expected["ver"], actual.args, expected["args"]
+            ));
         }
         for difference in extra_differences(actual, expected) {
             different.push(format!("{handle}: {difference}"));
         }
     }
-    assert!(missing.is_empty(), "scripts the reference registers and we do not ({}): {:?}", missing.len(), missing);
-    assert!(different.is_empty(), "scripts that differ ({}):\n{}", different.len(), different.join("\n"));
+    assert!(
+        missing.is_empty(),
+        "scripts the reference registers and we do not ({}): {:?}",
+        missing.len(),
+        missing
+    );
+    assert!(
+        different.is_empty(),
+        "scripts that differ ({}):\n{}",
+        different.len(),
+        different.join("\n")
+    );
 }
 
 #[test]
@@ -140,24 +208,54 @@ fn styles_match_the_reference() {
     for expected in fixture()["styles"].as_array().unwrap() {
         let handle = expected["handle"].as_str().unwrap();
         // Block styles are registered with the blocks, not by `wp_default_styles()`.
-        if handle.starts_with("wp-block-") && !matches!(handle, "wp-block-library-theme" | "wp-block-editor-content" | "wp-block-template-skip-link") {
+        if handle.starts_with("wp-block-")
+            && !matches!(
+                handle,
+                "wp-block-library-theme"
+                    | "wp-block-editor-content"
+                    | "wp-block-template-skip-link"
+            )
+        {
             continue;
         }
         let Some(actual) = styles.deps.get(handle) else {
             missing.push(handle.to_owned());
             continue;
         };
-        let deps: Vec<String> = expected["deps"].as_array().unwrap().iter().filter_map(|d| d.as_str().map(str::to_owned)).collect();
+        let deps: Vec<String> = expected["deps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|d| d.as_str().map(str::to_owned))
+            .collect();
         if actual.src != src_text(&expected["src"]) || actual.deps != deps {
-            different.push(format!("{handle}: src {:?} / {:?}, deps {:?} / {:?}", actual.src, expected["src"], actual.deps, deps));
+            different.push(format!(
+                "{handle}: src {:?} / {:?}, deps {:?} / {:?}",
+                actual.src, expected["src"], actual.deps, deps
+            ));
         }
-        if !ver_matches(&actual.ver, &expected["ver"]) || !args_matches(&actual.args, &expected["args"]) {
-            different.push(format!("{handle}: ver {:?} / {:?}, args {:?} / {:?}", actual.ver, expected["ver"], actual.args, expected["args"]));
+        if !ver_matches(&actual.ver, &expected["ver"])
+            || !args_matches(&actual.args, &expected["args"])
+        {
+            different.push(format!(
+                "{handle}: ver {:?} / {:?}, args {:?} / {:?}",
+                actual.ver, expected["ver"], actual.args, expected["args"]
+            ));
         }
         for difference in extra_differences(actual, expected) {
             different.push(format!("{handle}: {difference}"));
         }
     }
-    assert!(missing.is_empty(), "styles the reference registers and we do not ({}): {:?}", missing.len(), missing);
-    assert!(different.is_empty(), "styles that differ ({}):\n{}", different.len(), different.join("\n"));
+    assert!(
+        missing.is_empty(),
+        "styles the reference registers and we do not ({}): {:?}",
+        missing.len(),
+        missing
+    );
+    assert!(
+        different.is_empty(),
+        "styles that differ ({}):\n{}",
+        different.len(),
+        different.join("\n")
+    );
 }

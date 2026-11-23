@@ -21,11 +21,18 @@ static STAT_NANOS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::
 static READS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 static READ_NANOS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
-fn count<T>(calls: &std::sync::atomic::AtomicU64, nanos: &std::sync::atomic::AtomicU64, f: impl FnOnce() -> T) -> T {
+fn count<T>(
+    calls: &std::sync::atomic::AtomicU64,
+    nanos: &std::sync::atomic::AtomicU64,
+    f: impl FnOnce() -> T,
+) -> T {
     let start = Instant::now();
     let out = f();
     calls.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    nanos.fetch_add(start.elapsed().as_nanos() as u64, std::sync::atomic::Ordering::Relaxed);
+    nanos.fetch_add(
+        start.elapsed().as_nanos() as u64,
+        std::sync::atomic::Ordering::Relaxed,
+    );
     out
 }
 
@@ -33,7 +40,12 @@ fn count<T>(calls: &std::sync::atomic::AtomicU64, nanos: &std::sync::atomic::Ato
 /// seconds). For `Server-Timing` in CGI mode, where a network file system answers every call.
 pub fn io_totals() -> (u64, f64, u64, f64) {
     use std::sync::atomic::Ordering::Relaxed;
-    (STATS.load(Relaxed), STAT_NANOS.load(Relaxed) as f64 / 1e9, READS.load(Relaxed), READ_NANOS.load(Relaxed) as f64 / 1e9)
+    (
+        STATS.load(Relaxed),
+        STAT_NANOS.load(Relaxed) as f64 / 1e9,
+        READS.load(Relaxed),
+        READ_NANOS.load(Relaxed) as f64 / 1e9,
+    )
 }
 
 /// What a file holds: UTF-8 text, other bytes, or nothing readable.
@@ -71,13 +83,28 @@ fn cache() -> &'static Mutex<HashMap<PathBuf, Entry>> {
 fn entry<R>(path: &Path, content: bool, f: impl FnOnce(&Entry) -> R) -> R {
     let now = Instant::now();
     let mut map = cache().lock().expect("file cache");
-    let fresh = map.get(path).is_some_and(|e| now.duration_since(e.checked) < RECHECK);
+    let fresh = map
+        .get(path)
+        .is_some_and(|e| now.duration_since(e.checked) < RECHECK);
     if !fresh {
-        let meta = count(&STATS, &STAT_NANOS, || std::fs::metadata(path)).ok().filter(std::fs::Metadata::is_file);
+        let meta = count(&STATS, &STAT_NANOS, || std::fs::metadata(path))
+            .ok()
+            .filter(std::fs::Metadata::is_file);
         let modified = meta.as_ref().and_then(|m| m.modified().ok());
         let size = meta.as_ref().map(std::fs::Metadata::len);
-        let kept = map.get_mut(path).filter(|old| old.modified == modified && modified.is_some() && old.size == size).and_then(|old| old.content.take());
-        map.insert(path.to_path_buf(), Entry { checked: now, modified, size, content: kept });
+        let kept = map
+            .get_mut(path)
+            .filter(|old| old.modified == modified && modified.is_some() && old.size == size)
+            .and_then(|old| old.content.take());
+        map.insert(
+            path.to_path_buf(),
+            Entry {
+                checked: now,
+                modified,
+                size,
+                content: kept,
+            },
+        );
     }
     let entry = map.get_mut(path).expect("entry just inserted");
     if content && entry.content.is_none() {
@@ -150,18 +177,29 @@ fn load(path: &Path, modified: Option<SystemTime>, size: u64) -> Content {
     let mut snapshot = snapshot().lock().expect("file snapshot");
     let stamp = stamp(modified);
     if let (Some(snapshot), Some(stamp)) = (snapshot.as_ref(), stamp)
-        && let Some(kept) = snapshot.entries.get(path).filter(|k| k.modified == stamp && k.size == size)
+        && let Some(kept) = snapshot
+            .entries
+            .get(path)
+            .filter(|k| k.modified == stamp && k.size == size)
     {
         return kept.content.clone();
     }
-    let content = count(&READS, &READ_NANOS, || std::fs::read(path)).map_or(Content::Unreadable, Content::from_bytes);
+    let content = count(&READS, &READ_NANOS, || std::fs::read(path))
+        .map_or(Content::Unreadable, Content::from_bytes);
     // The configuration with the database password never goes into the snapshot.
     let secret = path.file_name().is_some_and(|name| name == "wp-config.php");
     if let (Some(snapshot), Some(stamp)) = (snapshot.as_mut(), stamp)
         && !secret
         && !matches!(content, Content::Unreadable)
     {
-        snapshot.entries.insert(path.to_path_buf(), Kept { modified: stamp, size, content: content.clone() });
+        snapshot.entries.insert(
+            path.to_path_buf(),
+            Kept {
+                modified: stamp,
+                size,
+                content: content.clone(),
+            },
+        );
         snapshot.changed = true;
     }
     content
@@ -172,8 +210,15 @@ const MAGIC: &[u8] = b"rustpress-files 1\n";
 /// Keeps the contents of the files read in `file` for the next process (CGI). Reads what an earlier process kept; a
 /// missing or damaged file just starts empty.
 pub fn use_snapshot(file: PathBuf) {
-    let entries = count(&READS, &READ_NANOS, || std::fs::read(&file)).ok().and_then(|data| decode(&data)).unwrap_or_default();
-    *snapshot().lock().expect("file snapshot") = Some(Snapshot { file, entries, changed: false });
+    let entries = count(&READS, &READ_NANOS, || std::fs::read(&file))
+        .ok()
+        .and_then(|data| decode(&data))
+        .unwrap_or_default();
+    *snapshot().lock().expect("file snapshot") = Some(Snapshot {
+        file,
+        entries,
+        changed: false,
+    });
 }
 
 /// Writes the snapshot back if this process read files it did not have. The file is replaced atomically (written
@@ -181,10 +226,16 @@ pub fn use_snapshot(file: PathBuf) {
 /// that is not writable) only cost the next process the reads.
 pub fn save_snapshot() {
     let mut guard = snapshot().lock().expect("file snapshot");
-    let Some(snapshot) = guard.as_mut().filter(|s| s.changed) else { return };
+    let Some(snapshot) = guard.as_mut().filter(|s| s.changed) else {
+        return;
+    };
     let data = encode(&snapshot.entries);
-    let temp = snapshot.file.with_extension(format!("tmp{}", std::process::id()));
-    let written = std::fs::File::create(&temp).and_then(|mut f| f.write_all(&data)).and_then(|()| std::fs::rename(&temp, &snapshot.file));
+    let temp = snapshot
+        .file
+        .with_extension(format!("tmp{}", std::process::id()));
+    let written = std::fs::File::create(&temp)
+        .and_then(|mut f| f.write_all(&data))
+        .and_then(|()| std::fs::rename(&temp, &snapshot.file));
     if let Err(error) = written {
         let _ = std::fs::remove_file(&temp);
         tracing::debug!(%error, file = %snapshot.file.display(), "file snapshot not written");
@@ -194,7 +245,10 @@ pub fn save_snapshot() {
 
 fn encode(entries: &HashMap<PathBuf, Kept>) -> Vec<u8> {
     let mut out = MAGIC.to_vec();
-    let kept: Vec<(&str, &Kept)> = entries.iter().filter_map(|(path, kept)| Some((path.to_str()?, kept))).collect();
+    let kept: Vec<(&str, &Kept)> = entries
+        .iter()
+        .filter_map(|(path, kept)| Some((path.to_str()?, kept)))
+        .collect();
     out.extend((kept.len() as u64).to_le_bytes());
     for (path, kept) in kept {
         let (kind, bytes): (u8, &[u8]) = match &kept.content {
@@ -241,7 +295,14 @@ fn decode(data: &[u8]) -> Option<HashMap<PathBuf, Kept>> {
             2 => Content::Bytes(Arc::from(bytes)),
             _ => return None,
         };
-        entries.insert(PathBuf::from(String::from_utf8(path).ok()?), Kept { modified: (secs, u32::from_le_bytes(nanos)), size, content });
+        entries.insert(
+            PathBuf::from(String::from_utf8(path).ok()?),
+            Kept {
+                modified: (secs, u32::from_le_bytes(nanos)),
+                size,
+                content,
+            },
+        );
     }
     Some(entries)
 }
@@ -253,14 +314,30 @@ mod tests {
     #[test]
     fn snapshot_round_trip() {
         let mut entries = HashMap::new();
-        entries.insert(PathBuf::from("/a/theme.json"), Kept { modified: (1_700_000_000, 5), size: 2, content: Content::Text(Arc::from("{}")) });
-        entries.insert(PathBuf::from("/a/de_DE.mo"), Kept { modified: (1, 0), size: 3, content: Content::Bytes(Arc::from(vec![0xde, 0x12, 0xff])) });
+        entries.insert(
+            PathBuf::from("/a/theme.json"),
+            Kept {
+                modified: (1_700_000_000, 5),
+                size: 2,
+                content: Content::Text(Arc::from("{}")),
+            },
+        );
+        entries.insert(
+            PathBuf::from("/a/de_DE.mo"),
+            Kept {
+                modified: (1, 0),
+                size: 3,
+                content: Content::Bytes(Arc::from(vec![0xde, 0x12, 0xff])),
+            },
+        );
         let decoded = decode(&encode(&entries)).expect("decodes");
         assert_eq!(decoded.len(), 2);
         let theme = &decoded[Path::new("/a/theme.json")];
         assert_eq!((theme.modified, theme.size), ((1_700_000_000, 5), 2));
         assert!(matches!(&theme.content, Content::Text(t) if &**t == "{}"));
-        assert!(matches!(&decoded[Path::new("/a/de_DE.mo")].content, Content::Bytes(b) if **b == [0xde, 0x12, 0xff]));
+        assert!(
+            matches!(&decoded[Path::new("/a/de_DE.mo")].content, Content::Bytes(b) if **b == [0xde, 0x12, 0xff])
+        );
         assert!(decode(b"something else").is_none());
         let mut cut = encode(&entries);
         cut.truncate(cut.len() - 1);

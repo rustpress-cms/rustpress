@@ -3,11 +3,11 @@
 
 pub mod adminbar;
 pub mod chrome;
+pub mod comments_post;
 pub mod cron;
 pub mod die;
 pub mod install;
 pub mod list_table;
-pub mod comments_post;
 pub mod login;
 pub mod mail;
 mod mail_comments;

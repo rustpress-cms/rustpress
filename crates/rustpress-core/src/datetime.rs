@@ -1,7 +1,9 @@
 //! Dates: the site's timezone and PHP's `date()` format characters
 //! (`wp_date()`, `get_post_time()`).
 
-use chrono::{DateTime, Datelike, FixedOffset, NaiveDateTime, Offset, TimeZone, Timelike, Utc, Weekday};
+use chrono::{
+    DateTime, Datelike, FixedOffset, NaiveDateTime, Offset, TimeZone, Timelike, Utc, Weekday,
+};
 use chrono_tz::Tz;
 
 use crate::options::Options;
@@ -16,12 +18,19 @@ pub enum SiteTimezone {
 impl SiteTimezone {
     pub fn from_options(options: &Options) -> Self {
         if let Some(name) = options.get("timezone_string").filter(|s| !s.is_empty())
-            && let Ok(tz) = name.parse::<Tz>() {
-                return SiteTimezone::Named(tz);
-            }
-        let hours: f64 = options.get("gmt_offset").and_then(|s| s.trim().parse().ok()).unwrap_or(0.0);
+            && let Ok(tz) = name.parse::<Tz>()
+        {
+            return SiteTimezone::Named(tz);
+        }
+        let hours: f64 = options
+            .get("gmt_offset")
+            .and_then(|s| s.trim().parse().ok())
+            .unwrap_or(0.0);
         let seconds = (hours * 3600.0).round() as i32;
-        SiteTimezone::Offset(FixedOffset::east_opt(seconds).unwrap_or_else(|| FixedOffset::east_opt(0).expect("utc")))
+        SiteTimezone::Offset(
+            FixedOffset::east_opt(seconds)
+                .unwrap_or_else(|| FixedOffset::east_opt(0).expect("utc")),
+        )
     }
 
     pub fn utc() -> Self {
@@ -38,27 +47,45 @@ impl SiteTimezone {
                 chrono::LocalResult::Single(d) => Some(d.timestamp()),
                 chrono::LocalResult::Ambiguous(_, later) => Some(later.timestamp()),
                 chrono::LocalResult::None => {
-                    let before = tz.from_local_datetime(&(naive - chrono::Duration::hours(3))).earliest()?;
-                    Some(naive.and_utc().timestamp() - i64::from(before.offset().fix().local_minus_utc()))
+                    let before = tz
+                        .from_local_datetime(&(naive - chrono::Duration::hours(3)))
+                        .earliest()?;
+                    Some(
+                        naive.and_utc().timestamp()
+                            - i64::from(before.offset().fix().local_minus_utc()),
+                    )
                 }
             },
-            SiteTimezone::Offset(offset) => offset.from_local_datetime(&naive).single().map(|d| d.timestamp()),
+            SiteTimezone::Offset(offset) => offset
+                .from_local_datetime(&naive)
+                .single()
+                .map(|d| d.timestamp()),
         }
     }
 
     /// Interprets a MySQL datetime as UTC (`post_date_gmt`).
     pub fn gmt_timestamp(mysql_datetime: &str) -> Option<i64> {
-        NaiveDateTime::parse_from_str(mysql_datetime, "%Y-%m-%d %H:%M:%S").ok().map(|n| Utc.from_utc_datetime(&n).timestamp())
+        NaiveDateTime::parse_from_str(mysql_datetime, "%Y-%m-%d %H:%M:%S")
+            .ok()
+            .map(|n| Utc.from_utc_datetime(&n).timestamp())
     }
 
     /// `wp_date( $format, $timestamp )`.
     pub fn format(&self, format: &str, timestamp: i64) -> String {
-        let Some(utc) = DateTime::<Utc>::from_timestamp(timestamp, 0) else { return String::new() };
+        let Some(utc) = DateTime::<Utc>::from_timestamp(timestamp, 0) else {
+            return String::new();
+        };
         match self {
             SiteTimezone::Named(tz) => {
                 let local = utc.with_timezone(tz);
                 let abbreviation = tz_abbreviation(tz, &local);
-                php_date(format, &local.fixed_offset(), tz.name(), &abbreviation, matches!(local.offset().fix().local_minus_utc(), o if is_dst(tz, &local, o)))
+                php_date(
+                    format,
+                    &local.fixed_offset(),
+                    tz.name(),
+                    &abbreviation,
+                    matches!(local.offset().fix().local_minus_utc(), o if is_dst(tz, &local, o)),
+                )
             }
             SiteTimezone::Offset(offset) => {
                 let local = utc.with_timezone(offset);
@@ -76,8 +103,14 @@ fn tz_abbreviation(_tz: &Tz, local: &DateTime<Tz>) -> String {
 /// Whether the offset differs from the zone's standard offset in January.
 fn is_dst(tz: &Tz, local: &DateTime<Tz>, offset: i32) -> bool {
     let year = local.year();
-    let jan = tz.with_ymd_and_hms(year, 1, 1, 12, 0, 0).earliest().map(|d| d.offset().fix().local_minus_utc());
-    let jul = tz.with_ymd_and_hms(year, 7, 1, 12, 0, 0).earliest().map(|d| d.offset().fix().local_minus_utc());
+    let jan = tz
+        .with_ymd_and_hms(year, 1, 1, 12, 0, 0)
+        .earliest()
+        .map(|d| d.offset().fix().local_minus_utc());
+    let jul = tz
+        .with_ymd_and_hms(year, 7, 1, 12, 0, 0)
+        .earliest()
+        .map(|d| d.offset().fix().local_minus_utc());
     match (jan, jul) {
         (Some(j), Some(u)) => offset == j.max(u) && j != u,
         _ => false,
@@ -89,7 +122,11 @@ pub fn offset_string(seconds: i32, with_colon: bool) -> String {
     let sign = if seconds < 0 { '-' } else { '+' };
     let abs = seconds.abs();
     let (h, m) = (abs / 3600, (abs % 3600) / 60);
-    if with_colon { format!("{sign}{h:02}:{m:02}") } else { format!("{sign}{h:02}{m:02}") }
+    if with_colon {
+        format!("{sign}{h:02}:{m:02}")
+    } else {
+        format!("{sign}{h:02}{m:02}")
+    }
 }
 
 fn ordinal_suffix(day: u32) -> &'static str {
@@ -102,11 +139,38 @@ fn ordinal_suffix(day: u32) -> &'static str {
     }
 }
 
-const MONTHS: [&str; 12] = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-const DAYS: [&str; 7] = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+const MONTHS: [&str; 12] = [
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+];
+const DAYS: [&str; 7] = [
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+    "Sunday",
+];
 
 /// PHP's `date()` format characters for a moment in a fixed-offset zone.
-pub fn php_date(format: &str, dt: &DateTime<FixedOffset>, tz_name: &str, tz_abbr: &str, is_dst: bool) -> String {
+pub fn php_date(
+    format: &str,
+    dt: &DateTime<FixedOffset>,
+    tz_name: &str,
+    tz_abbr: &str,
+    is_dst: bool,
+) -> String {
     let mut out = String::new();
     let mut chars = format.chars();
     while let Some(c) = chars.next() {
@@ -153,7 +217,11 @@ pub fn php_date(format: &str, dt: &DateTime<FixedOffset>, tz_name: &str, tz_abbr
             'P' => out.push_str(&offset_string(dt.offset().local_minus_utc(), true)),
             'p' => {
                 let secs = dt.offset().local_minus_utc();
-                out.push_str(&if secs == 0 { "Z".to_owned() } else { offset_string(secs, true) });
+                out.push_str(&if secs == 0 {
+                    "Z".to_owned()
+                } else {
+                    offset_string(secs, true)
+                });
             }
             'T' => out.push_str(tz_abbr),
             'Z' => out.push_str(&dt.offset().local_minus_utc().to_string()),
@@ -198,8 +266,14 @@ mod tests {
         let ts = tz.local_timestamp("2026-10-24 14:10:42").unwrap();
         assert_eq!(tz.format("F j, Y", ts), "October 24, 2026");
         assert_eq!(tz.format("c", ts), "2026-10-24T14:10:42+00:00");
-        assert_eq!(tz.format("D, d M Y H:i:s O", ts), "Sat, 24 Oct 2026 14:10:42 +0000");
-        assert_eq!(tz.format("l jS \\o\\f F Y h:i:s A", ts), "Saturday 24th of October 2026 02:10:42 PM");
+        assert_eq!(
+            tz.format("D, d M Y H:i:s O", ts),
+            "Sat, 24 Oct 2026 14:10:42 +0000"
+        );
+        assert_eq!(
+            tz.format("l jS \\o\\f F Y h:i:s A", ts),
+            "Saturday 24th of October 2026 02:10:42 PM"
+        );
         assert_eq!(tz.format("g:i a", ts), "2:10 pm");
         assert_eq!(tz.format("N w z t L W", ts), "6 6 296 31 0 43");
     }
@@ -225,13 +299,23 @@ mod tests {
 
     #[test]
     fn invalid_dates_yield_none() {
-        assert!(SiteTimezone::utc().local_timestamp("0000-00-00 00:00:00").is_none());
+        assert!(
+            SiteTimezone::utc()
+                .local_timestamp("0000-00-00 00:00:00")
+                .is_none()
+        );
         assert!(SiteTimezone::utc().local_timestamp("junk").is_none());
     }
 
     #[test]
     fn ordinal_suffixes() {
-        assert_eq!((1..=4).map(ordinal_suffix).collect::<Vec<_>>(), ["st", "nd", "rd", "th"]);
-        assert_eq!([11, 12, 13, 21, 22, 23].map(ordinal_suffix), ["th", "th", "th", "st", "nd", "rd"]);
+        assert_eq!(
+            (1..=4).map(ordinal_suffix).collect::<Vec<_>>(),
+            ["st", "nd", "rd", "th"]
+        );
+        assert_eq!(
+            [11, 12, 13, 21, 22, 23].map(ordinal_suffix),
+            ["th", "th", "th", "st", "nd", "rd"]
+        );
     }
 }

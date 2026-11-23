@@ -12,7 +12,12 @@ fn s(text: &str) -> Value {
 }
 
 fn array(items: Vec<(&str, Value)>) -> Value {
-    Value::Array(items.into_iter().map(|(k, v)| (Key::Str(k.as_bytes().to_vec()), v)).collect())
+    Value::Array(
+        items
+            .into_iter()
+            .map(|(k, v)| (Key::Str(k.as_bytes().to_vec()), v))
+            .collect(),
+    )
 }
 
 /// The translations of the template, in the language of the site.
@@ -30,14 +35,25 @@ impl Tr<'_> {
 
 /// `WPCF7_ContactFormTemplate::from_email()`.
 fn from_email(site: &Site) -> String {
-    let admin_email = site.options.get("admin_email").unwrap_or_default().to_owned();
+    let admin_email = site
+        .options
+        .get("admin_email")
+        .unwrap_or_default()
+        .to_owned();
     let home = site.home_url("");
-    let host = home.split_once("://").map(|(_, rest)| rest.split(['/', ':', '?', '#']).next().unwrap_or_default()).unwrap_or_default().to_lowercase();
+    let host = home
+        .split_once("://")
+        .map(|(_, rest)| rest.split(['/', ':', '?', '#']).next().unwrap_or_default())
+        .unwrap_or_default()
+        .to_lowercase();
     if host == "localhost" || host == "127.0.0.1" {
         return admin_email;
     }
     let sitename = host.strip_prefix("www.").unwrap_or(&host).to_owned();
-    if admin_email.find('@').is_some_and(|at| admin_email[at..] == format!("@{sitename}")) {
+    if admin_email
+        .find('@')
+        .is_some_and(|at| admin_email[at..] == format!("@{sitename}"))
+    {
         return admin_email;
     }
     format!("wordpress@{sitename}")
@@ -57,17 +73,24 @@ fn form(tr: &Tr<'_>) -> String {
 }
 
 fn subject(tr: &Tr<'_>) -> String {
-    tr.x("%1$s \"%2$s\"", "mail subject").replacen("%1$s", "[_site_title]", 1).replacen("%2$s", "[your-subject]", 1)
+    tr.x("%1$s \"%2$s\"", "mail subject")
+        .replacen("%1$s", "[_site_title]", 1)
+        .replacen("%2$s", "[your-subject]", 1)
 }
 
 /// `WPCF7_ContactFormTemplate::mail()`.
 fn mail(tr: &Tr<'_>, sender: &str) -> Value {
     let body = format!(
         "{}\n{}\n\n{}\n[your-message]\n\n-- \n{}",
-        tr.t("From: %s").replacen("%s", "[your-name] [your-email]", 1),
+        tr.t("From: %s")
+            .replacen("%s", "[your-name] [your-email]", 1),
         tr.t("Subject: %s").replacen("%s", "[your-subject]", 1),
         tr.t("Message Body:"),
-        tr.t("This is a notification that a contact form was submitted on your website (%1$s %2$s).").replacen("%1$s", "[_site_title]", 1).replacen("%2$s", "[_site_url]", 1)
+        tr.t(
+            "This is a notification that a contact form was submitted on your website (%1$s %2$s)."
+        )
+        .replacen("%1$s", "[_site_title]", 1)
+        .replacen("%2$s", "[_site_url]", 1)
     );
     array(vec![
         ("subject", s(&subject(tr))),
@@ -107,18 +130,42 @@ fn mail_2(tr: &Tr<'_>, sender: &str) -> Value {
 /// messages of the plugin and of `includes/file.php` are there.
 fn messages(tr: &Tr<'_>) -> Value {
     let keys = [
-        ("mail_sent_ok", "Thank you for your message. It has been sent."),
-        ("mail_sent_ng", "There was an error trying to send your message. Please try again later."),
-        ("validation_error", "One or more fields have an error. Please check and try again."),
-        ("spam", "There was an error trying to send your message. Please try again later."),
-        ("accept_terms", "You must accept the terms and conditions before sending your message."),
+        (
+            "mail_sent_ok",
+            "Thank you for your message. It has been sent.",
+        ),
+        (
+            "mail_sent_ng",
+            "There was an error trying to send your message. Please try again later.",
+        ),
+        (
+            "validation_error",
+            "One or more fields have an error. Please check and try again.",
+        ),
+        (
+            "spam",
+            "There was an error trying to send your message. Please try again later.",
+        ),
+        (
+            "accept_terms",
+            "You must accept the terms and conditions before sending your message.",
+        ),
         ("invalid_required", "Please fill out this field."),
         ("invalid_too_long", "This field has a too long input."),
         ("invalid_too_short", "This field has a too short input."),
-        ("upload_failed", "There was an unknown error uploading the file."),
-        ("upload_file_type_invalid", "You are not allowed to upload files of this type."),
+        (
+            "upload_failed",
+            "There was an unknown error uploading the file.",
+        ),
+        (
+            "upload_file_type_invalid",
+            "You are not allowed to upload files of this type.",
+        ),
         ("upload_file_too_large", "The uploaded file is too large."),
-        ("upload_failed_php_error", "There was an error uploading the file."),
+        (
+            "upload_failed_php_error",
+            "There was an error uploading the file.",
+        ),
     ];
     array(keys.iter().map(|(k, text)| (*k, s(&tr.t(text)))).collect())
 }
@@ -128,7 +175,12 @@ fn messages(tr: &Tr<'_>) -> Value {
 pub fn template(site: &Site) -> super::form::ContactForm {
     let tr = Tr(site);
     let sender = format!("[_site_title] <{}>", from_email(site));
-    let messages = array(super::submission::DEFAULT_MESSAGES.iter().map(|(k, text)| (*k, s(&tr.t(text)))).collect());
+    let messages = array(
+        super::submission::DEFAULT_MESSAGES
+            .iter()
+            .map(|(k, text)| (*k, s(&tr.t(text))))
+            .collect(),
+    );
     super::form::ContactForm {
         title: tr.t("Untitled"),
         locale: site.locale(),
@@ -168,13 +220,26 @@ async fn unique_slug(site: &Site, writer: &Writer, slug: &str) -> Result<String>
 
 /// `WPCF7_ContactForm::save()` of a new form: the post, a meta row for each property, the locale and the hash.
 /// Returns the ID of the post.
-pub async fn store_new(site: &Site, writer: &Writer, user: u64, now: i64, title: &str, locale: &str, properties: &[(&str, Value)]) -> Result<u64> {
+pub async fn store_new(
+    site: &Site,
+    writer: &Writer,
+    user: u64,
+    now: i64,
+    title: &str,
+    locale: &str,
+    properties: &[(&str, Value)],
+) -> Result<u64> {
     let mut flat = Vec::new();
     for (_, value) in properties {
         flatten(value, &mut flat);
     }
     let content = flat.join("\n").trim().to_owned();
-    let slug = unique_slug(site, writer, &rustpress_core::slug::sanitize_title_save(title, &site.locale())).await?;
+    let slug = unique_slug(
+        site,
+        writer,
+        &rustpress_core::slug::sanitize_title_save(title, &site.locale()),
+    )
+    .await?;
     let local = site.timezone.format("Y-m-d H:i:s", now);
     let gmt = rustpress_core::datetime::SiteTimezone::utc().format("Y-m-d H:i:s", now);
     let str_ = |v: &str| Val::Str(v.to_owned());
@@ -209,18 +274,28 @@ pub async fn store_new(site: &Site, writer: &Writer, user: u64, now: i64, title:
         .await?;
     // `wp_insert_post()` names a post without a guid by its (unpretty) address.
     let guid = site.home_url(&format!("?post_type={}&p={id}", super::form::POST_TYPE));
-    writer.update_rows("posts", "ID", id, &[("guid", Val::Str(guid))]).await?;
+    writer
+        .update_rows("posts", "ID", id, &[("guid", Val::Str(guid))])
+        .await?;
     for (name, value) in properties {
         let stored = match value {
             Value::Str(bytes) => normalize_newline(&String::from_utf8_lossy(bytes)),
-            other => String::from_utf8_lossy(&rustpress_phpser::serialize(&normalize_newlines(other))).into_owned(),
+            other => {
+                String::from_utf8_lossy(&rustpress_phpser::serialize(&normalize_newlines(other)))
+                    .into_owned()
+            }
         };
-        writer.add_post_meta(id, &format!("_{name}"), &stored).await?;
+        writer
+            .add_post_meta(id, &format!("_{name}"), &stored)
+            .await?;
     }
     if !locale.is_empty() {
         writer.add_post_meta(id, "_locale", locale).await?;
     }
-    let hash = super::formatter::sha256_hex(&format!("{user}|{id}|{now}|{}", site.home_url("").trim_end_matches('/')));
+    let hash = super::formatter::sha256_hex(&format!(
+        "{user}|{id}|{now}|{}",
+        site.home_url("").trim_end_matches('/')
+    ));
     writer.add_post_meta(id, "_hash", &hash).await?;
     Ok(id)
 }
@@ -228,7 +303,16 @@ pub async fn store_new(site: &Site, writer: &Writer, user: u64, now: i64, title:
 /// `WPCF7_ContactForm::save()` of a stored form: `wp_update_post()` of the title and the content, the meta rows of the
 /// properties and the locale; a hash only when the form has none yet.
 #[allow(clippy::too_many_arguments)]
-pub async fn update(site: &Site, writer: &Writer, user: u64, now: i64, id: u64, title: &str, locale: &str, properties: &[(&str, Value)]) -> Result<()> {
+pub async fn update(
+    site: &Site,
+    writer: &Writer,
+    user: u64,
+    now: i64,
+    id: u64,
+    title: &str,
+    locale: &str,
+    properties: &[(&str, Value)],
+) -> Result<()> {
     let mut flat = Vec::new();
     for (_, value) in properties {
         flatten(value, &mut flat);
@@ -253,15 +337,29 @@ pub async fn update(site: &Site, writer: &Writer, user: u64, now: i64, id: u64, 
     for (name, value) in properties {
         let stored = match value {
             Value::Str(bytes) => normalize_newline(&String::from_utf8_lossy(bytes)),
-            other => String::from_utf8_lossy(&rustpress_phpser::serialize(&normalize_newlines(other))).into_owned(),
+            other => {
+                String::from_utf8_lossy(&rustpress_phpser::serialize(&normalize_newlines(other)))
+                    .into_owned()
+            }
         };
-        writer.update_post_meta(id, &format!("_{name}"), &stored).await?;
+        writer
+            .update_post_meta(id, &format!("_{name}"), &stored)
+            .await?;
     }
     if !locale.is_empty() {
         writer.update_post_meta(id, "_locale", locale).await?;
     }
-    if site.db.post_meta(id).await?.iter().all(|m| m.meta_key.as_deref() != Some("_hash")) {
-        let hash = super::formatter::sha256_hex(&format!("{user}|{id}|{now}|{}", site.home_url("").trim_end_matches('/')));
+    if site
+        .db
+        .post_meta(id)
+        .await?
+        .iter()
+        .all(|m| m.meta_key.as_deref() != Some("_hash"))
+    {
+        let hash = super::formatter::sha256_hex(&format!(
+            "{user}|{id}|{now}|{}",
+            site.home_url("").trim_end_matches('/')
+        ));
         writer.add_post_meta(id, "_hash", &hash).await?;
     }
     Ok(())
@@ -275,20 +373,37 @@ fn normalize_newline(text: &str) -> String {
 /// `wpcf7_normalize_newline_deep()`.
 fn normalize_newlines(value: &Value) -> Value {
     match value {
-        Value::Str(bytes) => Value::Str(normalize_newline(&String::from_utf8_lossy(bytes)).into_bytes()),
-        Value::Array(items) => Value::Array(items.iter().map(|(k, v)| (k.clone(), normalize_newlines(v))).collect()),
+        Value::Str(bytes) => {
+            Value::Str(normalize_newline(&String::from_utf8_lossy(bytes)).into_bytes())
+        }
+        Value::Array(items) => Value::Array(
+            items
+                .iter()
+                .map(|(k, v)| (k.clone(), normalize_newlines(v)))
+                .collect(),
+        ),
         other => other.clone(),
     }
 }
 
 /// `wpcf7_install()`.
 pub async fn install(site: &Site, writer: &Writer, user: u64, now: i64) -> Result<()> {
-    if site.options.fetch(&site.db, "wpcf7").await?.is_some_and(|v| !v.is_empty() && v != "0") {
+    if site
+        .options
+        .fetch(&site.db, "wpcf7")
+        .await?
+        .is_some_and(|v| !v.is_empty() && v != "0")
+    {
         return Ok(());
     }
     // `wpcf7_upgrade()`: there is nothing to upgrade from, the version is stored.
     let mut option = vec![("version", s(VERSION))];
-    writer.update_option("wpcf7", &String::from_utf8_lossy(&rustpress_phpser::serialize(&array(option.clone())))).await?;
+    writer
+        .update_option(
+            "wpcf7",
+            &String::from_utf8_lossy(&rustpress_phpser::serialize(&array(option.clone()))),
+        )
+        .await?;
     let table = format!("{}posts", site.db.table_prefix());
     if !writer.column_u64(&format!("SELECT ID FROM {table} WHERE post_type = 'wpcf7_contact_form' AND post_status = 'publish' LIMIT 1")).await?.is_empty() {
         return Ok(());
@@ -304,7 +419,20 @@ pub async fn install(site: &Site, writer: &Writer, user: u64, now: i64) -> Resul
         ("additional_settings", s("")),
     ];
     store_new(site, writer, user, now, &title, &site.locale(), &properties).await?;
-    option.push(("bulk_validate", array(vec![("timestamp", Value::Int(now)), ("version", s(VERSION)), ("count_valid", Value::Int(1)), ("count_invalid", Value::Int(0))])));
-    writer.update_option("wpcf7", &String::from_utf8_lossy(&rustpress_phpser::serialize(&array(option)))).await?;
+    option.push((
+        "bulk_validate",
+        array(vec![
+            ("timestamp", Value::Int(now)),
+            ("version", s(VERSION)),
+            ("count_valid", Value::Int(1)),
+            ("count_invalid", Value::Int(0)),
+        ]),
+    ));
+    writer
+        .update_option(
+            "wpcf7",
+            &String::from_utf8_lossy(&rustpress_phpser::serialize(&array(option))),
+        )
+        .await?;
     Ok(())
 }

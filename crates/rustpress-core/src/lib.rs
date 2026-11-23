@@ -4,6 +4,7 @@
 //! WordPress' conditional flags and the posts of the main query, which
 //! [`hierarchy::template_candidates`] turns into a list of template names.
 
+mod accents_table;
 pub mod canonical;
 pub mod customize;
 pub mod datetime;
@@ -13,11 +14,10 @@ pub mod formatting;
 pub mod health;
 pub mod hierarchy;
 pub mod html_entities;
-pub mod kses;
-mod kses_post_table;
-pub mod safe_css;
 pub mod i18n;
 pub mod image_sizes;
+pub mod kses;
+mod kses_post_table;
 pub mod locale;
 pub mod native;
 pub mod options;
@@ -26,15 +26,15 @@ pub mod plugins;
 pub mod query;
 pub mod rewrite;
 pub mod rewrite_gen;
-pub mod shortcodes;
+pub mod safe_css;
 pub mod settings;
+pub mod shortcodes;
 pub mod site;
 pub mod sitemap;
+pub mod slug;
 pub mod text;
 pub mod text_diff;
 pub mod types;
-pub mod slug;
-mod accents_table;
 pub mod urls;
 pub mod viewer;
 
@@ -42,8 +42,8 @@ pub use query::{Flags, Queried, QueryResult};
 pub use rewrite::QueryVars;
 pub use settings::{Settings, ShowOnFront};
 pub use site::Site;
-pub use viewer::Viewer;
 pub use sitemap::SitemapOutput;
+pub use viewer::Viewer;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -83,6 +83,13 @@ mod tests {
     #[test]
     fn wp_version_is_a_release_number() {
         let parts: Vec<&str> = super::WP_VERSION.split('.').collect();
-        assert!((2..=3).contains(&parts.len()) && parts.iter().all(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit())), "{}", super::WP_VERSION);
+        assert!(
+            (2..=3).contains(&parts.len())
+                && parts
+                    .iter()
+                    .all(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit())),
+            "{}",
+            super::WP_VERSION
+        );
     }
 }

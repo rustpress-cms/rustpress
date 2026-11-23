@@ -63,7 +63,10 @@ impl Links {
 
     pub fn finish(mut self) -> Value {
         if self.map.keys().any(|k| k.starts_with("wp:")) {
-            self.map.insert("curies".into(), json!([{"name": "wp", "href": "https://api.w.org/{rel}", "templated": true}]));
+            self.map.insert(
+                "curies".into(),
+                json!([{"name": "wp", "href": "https://api.w.org/{rel}", "templated": true}]),
+            );
         }
         Value::Object(self.map)
     }
@@ -77,13 +80,28 @@ pub struct LinkParams<'a> {
 }
 
 /// `Link: <...>; rel="prev", <...>; rel="next"` for a paged collection.
-pub fn link_header(rest: &Rest<'_>, route: &str, params: &Params, shape: &LinkParams<'_>, page: u64, max_pages: u64) -> Option<String> {
+pub fn link_header(
+    rest: &Rest<'_>,
+    route: &str,
+    params: &Params,
+    shape: &LinkParams<'_>,
+    page: u64,
+    max_pages: u64,
+) -> Option<String> {
     link_header_with(rest, route, params, shape, page, max_pages, true)
 }
 
 /// [link_header], where `clamp_prev` keeps the previous page within the last page (the search
 /// controller does not).
-pub fn link_header_with(rest: &Rest<'_>, route: &str, params: &Params, shape: &LinkParams<'_>, page: u64, max_pages: u64, clamp_prev: bool) -> Option<String> {
+pub fn link_header_with(
+    rest: &Rest<'_>,
+    route: &str,
+    params: &Params,
+    shape: &LinkParams<'_>,
+    page: u64,
+    max_pages: u64,
+    clamp_prev: bool,
+) -> Option<String> {
     let mut pairs: Vec<(String, String)> = Vec::new();
     for (key, value) in parse_qs(params.raw()) {
         let name = key.trim_end_matches("[]").to_owned();
@@ -105,7 +123,12 @@ pub fn link_header_with(rest: &Rest<'_>, route: &str, params: &Params, shape: &L
         if shape.arrays.contains(&name.as_str()) {
             if !done.contains(&name) {
                 done.push(name.clone());
-                for (i, item) in params.list(&name).unwrap_or_default().into_iter().enumerate() {
+                for (i, item) in params
+                    .list(&name)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .enumerate()
+                {
                     ordered.push((format!("{name}[{i}]"), item));
                 }
             }
@@ -123,14 +146,28 @@ pub fn link_header_with(rest: &Rest<'_>, route: &str, params: &Params, shape: &L
         let collection = rest.rest_url(route);
         // `add_query_arg()` re-encodes the route of a plain-permalink URL.
         let collection = match collection.split_once("?rest_route=") {
-            Some((base, route)) => format!("{base}?rest_route={}", rustpress_core::canonical::php_urlencode(route)),
+            Some((base, route)) => format!(
+                "{base}?rest_route={}",
+                rustpress_core::canonical::php_urlencode(route)
+            ),
             None => collection,
         };
-        if collection.contains('?') { format!("{collection}&{query}") } else { format!("{collection}?{query}") }
+        if collection.contains('?') {
+            format!("{collection}&{query}")
+        } else {
+            format!("{collection}?{query}")
+        }
     };
     let mut parts = Vec::new();
     if page > 1 {
-        parts.push(format!("<{}>; rel=\"prev\"", url_for(if clamp_prev { (page - 1).min(max_pages) } else { page - 1 })));
+        parts.push(format!(
+            "<{}>; rel=\"prev\"",
+            url_for(if clamp_prev {
+                (page - 1).min(max_pages)
+            } else {
+                page - 1
+            })
+        ));
     }
     if max_pages > page {
         parts.push(format!("<{}>; rel=\"next\"", url_for(page + 1)));
@@ -150,14 +187,25 @@ impl Rest<'_> {
 
     /// `prepare_date_response( $gmt )` for the `*_gmt` fields.
     pub fn date_gmt(&self, gmt: &str, local: &str) -> Value {
-        if gmt == ZERO_DATE { Value::from(rfc3339(&self.gmt_from_local(local))) } else { Value::from(rfc3339(gmt)) }
+        if gmt == ZERO_DATE {
+            Value::from(rfc3339(&self.gmt_from_local(local)))
+        } else {
+            Value::from(rfc3339(gmt))
+        }
     }
 
     /// The Gravatar URLs of `avatar_urls` / `author_avatar_urls`.
     pub fn avatar_urls(&self, email: &str) -> Value {
         let mut map = Map::new();
         for size in [24, 48, 96] {
-            map.insert(size.to_string(), Value::from(rustpress_blocks::content::avatar_url(&self.site.options, email, size)));
+            map.insert(
+                size.to_string(),
+                Value::from(rustpress_blocks::content::avatar_url(
+                    &self.site.options,
+                    email,
+                    size,
+                )),
+            );
         }
         Value::Object(map)
     }
@@ -200,7 +248,14 @@ mod tests {
     #[test]
     fn links_put_attributes_before_href_and_add_curies() {
         let mut links = Links::new();
-        links.self_link("http://x/a".into()).embeddable("author", "http://x/u".into()).add("wp:term", vec![("taxonomy", json!("category"))], "http://x/t".into());
+        links
+            .self_link("http://x/a".into())
+            .embeddable("author", "http://x/u".into())
+            .add(
+                "wp:term",
+                vec![("taxonomy", json!("category"))],
+                "http://x/t".into(),
+            );
         let value = links.finish();
         assert_eq!(
             serde_json::to_string(&value).unwrap(),

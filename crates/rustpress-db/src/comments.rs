@@ -1,6 +1,6 @@
-use sqlx::AssertSqlSafe;
 use crate::models::{COMMENT_COLUMNS, Comment};
 use crate::{Db, Result};
+use sqlx::AssertSqlSafe;
 
 impl Db {
     /// Approved comments of a post in chronological order.
@@ -8,13 +8,22 @@ impl Db {
         if let Some(primed) = crate::primed::primed_approved(post_id) {
             return Ok(primed);
         }
-        let mut sql = crate::sql::Sql::new(format!("SELECT {COMMENT_COLUMNS} FROM {} WHERE comment_post_ID = ", self.prefix.table("comments")));
-        sql.push_bind(post_id).push(" AND comment_approved = '1' ORDER BY comment_date_gmt, comment_ID");
+        let mut sql = crate::sql::Sql::new(format!(
+            "SELECT {COMMENT_COLUMNS} FROM {} WHERE comment_post_ID = ",
+            self.prefix.table("comments")
+        ));
+        sql.push_bind(post_id)
+            .push(" AND comment_approved = '1' ORDER BY comment_date_gmt, comment_ID");
         sql.fetch_all(&self.pool).await
     }
 
     /// The approved comments of a post and the pending ones of a user or of an address (`include_unapproved`).
-    pub async fn comments_with_pending(&self, post_id: u64, user: Option<u64>, email: Option<&str>) -> Result<Vec<Comment>> {
+    pub async fn comments_with_pending(
+        &self,
+        post_id: u64,
+        user: Option<u64>,
+        email: Option<&str>,
+    ) -> Result<Vec<Comment>> {
         let mut conditions = vec!["comment_approved = '1'".to_owned()];
         if user.is_some() {
             conditions.push("( user_id = ? AND comment_approved = '0' )".to_owned());
@@ -41,53 +50,102 @@ impl Db {
     /// A comment in any status.
     /// The approved comments of the types `types` per post (`get_comments( [ 'type__in' => $types, 'status' =>
     /// 'approve', 'count' => true ] )` for every post at once).
-    pub async fn approved_comment_counts_of_types(&self, types: &[String]) -> Result<Vec<(u64, u64)>> {
+    pub async fn approved_comment_counts_of_types(
+        &self,
+        types: &[String],
+    ) -> Result<Vec<(u64, u64)>> {
         if types.is_empty() {
             return Ok(Vec::new());
         }
         let marks = vec!["?"; types.len()].join(",");
-        let sql = format!("SELECT comment_post_ID, COUNT(*) FROM {} WHERE comment_approved = '1' AND comment_type IN ({marks}) GROUP BY comment_post_ID", self.prefix.table("comments"));
+        let sql = format!(
+            "SELECT comment_post_ID, COUNT(*) FROM {} WHERE comment_approved = '1' AND comment_type IN ({marks}) GROUP BY comment_post_ID",
+            self.prefix.table("comments")
+        );
         let mut query = sqlx::query_as::<_, (u64, i64)>(AssertSqlSafe(sql));
         for kind in types {
             query = query.bind(kind);
         }
-        Ok(query.fetch_all(&self.pool).await?.into_iter().map(|(id, n)| (id, n.max(0) as u64)).collect())
+        Ok(query
+            .fetch_all(&self.pool)
+            .await?
+            .into_iter()
+            .map(|(id, n)| (id, n.max(0) as u64))
+            .collect())
     }
 
     pub async fn comment_any(&self, id: u64) -> Result<Option<Comment>> {
         if let Some(primed) = crate::primed::primed_comment(id) {
             return Ok(primed);
         }
-        let sql = format!("SELECT {COMMENT_COLUMNS} FROM {} WHERE comment_ID = ?", self.prefix.table("comments"));
-        Ok(sqlx::query_as(AssertSqlSafe(sql)).bind(id).fetch_optional(&self.pool).await?)
+        let sql = format!(
+            "SELECT {COMMENT_COLUMNS} FROM {} WHERE comment_ID = ?",
+            self.prefix.table("comments")
+        );
+        Ok(sqlx::query_as(AssertSqlSafe(sql))
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await?)
     }
 
     pub async fn comment(&self, id: u64) -> Result<Option<Comment>> {
         if let Some(primed) = crate::primed::primed_comment(id) {
             return Ok(primed);
         }
-        let sql = format!("SELECT {COMMENT_COLUMNS} FROM {} WHERE comment_ID = ?", self.prefix.table("comments"));
-        Ok(sqlx::query_as(AssertSqlSafe(sql)).bind(id).fetch_optional(&self.pool).await?)
+        let sql = format!(
+            "SELECT {COMMENT_COLUMNS} FROM {} WHERE comment_ID = ?",
+            self.prefix.table("comments")
+        );
+        Ok(sqlx::query_as(AssertSqlSafe(sql))
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await?)
     }
 
     /// The comment `wp_allow_comment()` calls a duplicate: the same author, address and text on the same post under
     /// the same parent, not in the trash.
-    pub async fn duplicate_comment(&self, post_id: u64, parent: u64, author: &str, email: &str, content: &str) -> Result<Option<u64>> {
-        let mut sql = format!("SELECT comment_ID FROM {} WHERE comment_post_ID = ? AND comment_parent = ? AND comment_approved != 'trash' AND ( comment_author = ? ", self.prefix.table("comments"));
+    pub async fn duplicate_comment(
+        &self,
+        post_id: u64,
+        parent: u64,
+        author: &str,
+        email: &str,
+        content: &str,
+    ) -> Result<Option<u64>> {
+        let mut sql = format!(
+            "SELECT comment_ID FROM {} WHERE comment_post_ID = ? AND comment_parent = ? AND comment_approved != 'trash' AND ( comment_author = ? ",
+            self.prefix.table("comments")
+        );
         if !email.is_empty() {
             sql.push_str("AND comment_author_email = ? ");
         }
         sql.push_str(") AND comment_content = ? LIMIT 1");
-        let mut query = sqlx::query_scalar::<_, u64>(AssertSqlSafe(sql)).bind(post_id).bind(parent.to_string()).bind(author.to_owned());
+        let mut query = sqlx::query_scalar::<_, u64>(AssertSqlSafe(sql))
+            .bind(post_id)
+            .bind(parent.to_string())
+            .bind(author.to_owned());
         if !email.is_empty() {
             query = query.bind(email.to_owned());
         }
-        Ok(query.bind(content.to_owned()).fetch_optional(&self.pool).await?)
+        Ok(query
+            .bind(content.to_owned())
+            .fetch_optional(&self.pool)
+            .await?)
     }
 
     /// The date (GMT) of the last comment of a user or an address since `since`: `wp_check_comment_flood()`.
-    pub async fn last_comment_since(&self, by_user: Option<u64>, ip: &str, email: &str, since: &str) -> Result<Option<String>> {
-        let column = if by_user.is_some() { "`user_id`" } else { "`comment_author_IP`" };
+    pub async fn last_comment_since(
+        &self,
+        by_user: Option<u64>,
+        ip: &str,
+        email: &str,
+        since: &str,
+    ) -> Result<Option<String>> {
+        let column = if by_user.is_some() {
+            "`user_id`"
+        } else {
+            "`comment_author_IP`"
+        };
         let sql = format!(
             "SELECT CAST(`comment_date_gmt` AS CHAR) FROM {} WHERE `comment_date_gmt` >= ? AND ( {column} = ? OR `comment_author_email` = ? ) ORDER BY `comment_date_gmt` DESC LIMIT 1",
             self.prefix.table("comments")
@@ -97,12 +155,20 @@ impl Db {
             Some(user) => query.bind(user.to_string()),
             None => query.bind(ip.to_owned()),
         };
-        Ok(query.bind(email.to_owned()).fetch_optional(&self.pool).await?)
+        Ok(query
+            .bind(email.to_owned())
+            .fetch_optional(&self.pool)
+            .await?)
     }
 
     /// Whether an earlier comment of this person was approved (`check_comment()`, "comment author must have a
     /// previously approved comment"): by the user, or by name and address.
-    pub async fn has_approved_comment(&self, user_id: Option<u64>, author: &str, email: &str) -> Result<bool> {
+    pub async fn has_approved_comment(
+        &self,
+        user_id: Option<u64>,
+        author: &str,
+        email: &str,
+    ) -> Result<bool> {
         let table = self.prefix.table("comments");
         let found: Option<String> = match user_id {
             Some(user) => sqlx::query_scalar(AssertSqlSafe(format!("SELECT comment_approved FROM {table} WHERE user_id = ? AND comment_approved = '1' LIMIT 1"))).bind(user).fetch_optional(&self.pool).await?,
@@ -113,8 +179,13 @@ impl Db {
 
     /// `get_lastcommentmodified( 'GMT' )`.
     pub async fn last_comment_modified_gmt(&self) -> Result<Option<String>> {
-        let sql = format!("SELECT CAST(comment_date_gmt AS CHAR) FROM {} WHERE comment_approved = '1' ORDER BY comment_date_gmt DESC LIMIT 1", self.prefix.table("comments"));
-        Ok(sqlx::query_scalar(AssertSqlSafe(sql)).fetch_optional(&self.pool).await?)
+        let sql = format!(
+            "SELECT CAST(comment_date_gmt AS CHAR) FROM {} WHERE comment_approved = '1' ORDER BY comment_date_gmt DESC LIMIT 1",
+            self.prefix.table("comments")
+        );
+        Ok(sqlx::query_scalar(AssertSqlSafe(sql))
+            .fetch_optional(&self.pool)
+            .await?)
     }
 
     /// The comments of a feed, newest first: those of one post, or of all
@@ -124,7 +195,9 @@ impl Db {
         let posts = self.prefix.table("posts");
         let select = format!("SELECT {COMMENT_COLUMNS} FROM {comments}");
         let sql = match post_id {
-            Some(_) => format!("{select} WHERE comment_post_ID = ? AND comment_approved = '1' AND {comments}.comment_type != 'note' ORDER BY comment_date_gmt DESC LIMIT {limit}"),
+            Some(_) => format!(
+                "{select} WHERE comment_post_ID = ? AND comment_approved = '1' AND {comments}.comment_type != 'note' ORDER BY comment_date_gmt DESC LIMIT {limit}"
+            ),
             None => format!(
                 "{select} JOIN {posts} ON ( {comments}.comment_post_ID = {posts}.ID ) WHERE ( post_status = 'publish' OR ( post_status = 'inherit' AND post_type = 'attachment' ) ) AND comment_approved = '1' AND {comments}.comment_type != 'note' ORDER BY comment_date_gmt DESC LIMIT {limit}"
             ),
@@ -138,9 +211,15 @@ impl Db {
 
     /// The comments of the comment feed of an archive or a search, newest first: `WP_Query::get_posts()` keeps the
     /// `$join` and `$where` of the posts of the request for `$comments_request`.
-    pub async fn feed_comments_of_posts(&self, posts: &crate::PostQuery, limit: u64) -> Result<Vec<Comment>> {
+    pub async fn feed_comments_of_posts(
+        &self,
+        posts: &crate::PostQuery,
+        limit: u64,
+    ) -> Result<Vec<Comment>> {
         let table = self.prefix.table("comments");
-        let mut qb = crate::sql::Sql::new(format!("SELECT {COMMENT_COLUMNS} FROM {table} WHERE comment_approved = '1' AND comment_type != 'note' AND comment_post_ID IN (SELECT p.ID"));
+        let mut qb = crate::sql::Sql::new(format!(
+            "SELECT {COMMENT_COLUMNS} FROM {table} WHERE comment_approved = '1' AND comment_type != 'note' AND comment_post_ID IN (SELECT p.ID"
+        ));
         posts.push_filters(&mut qb, self);
         qb.push(format!(") ORDER BY comment_date_gmt DESC LIMIT {limit}"));
         qb.fetch_all(&self.pool).await
@@ -158,9 +237,14 @@ impl Db {
             CommentOrder::Parent => "c.comment_parent",
         };
         let direction = if query.descending { "DESC" } else { "ASC" };
-        qb.push(format!(" ORDER BY {column} {direction}, c.comment_ID {direction}"));
+        qb.push(format!(
+            " ORDER BY {column} {direction}, c.comment_ID {direction}"
+        ));
         if let Some(limit) = query.limit {
-            qb.push(" LIMIT ").push_bind(limit).push(" OFFSET ").push_bind(query.offset);
+            qb.push(" LIMIT ")
+                .push_bind(limit)
+                .push(" OFFSET ")
+                .push_bind(query.offset);
         }
         qb.fetch_all(&self.pool).await
     }
@@ -239,13 +323,21 @@ impl Default for CommentQuery {
 
 impl CommentQuery {
     fn push_filters(&self, qb: &mut crate::sql::Sql, db: &Db) {
-        qb.push(" FROM ").push(db.prefix.table("comments")).push(" c");
+        qb.push(" FROM ")
+            .push(db.prefix.table("comments"))
+            .push(" c");
         if self.public_posts {
-            qb.push(" JOIN ").push(db.prefix.table("posts")).push(" p ON p.ID = c.comment_post_ID");
+            qb.push(" JOIN ")
+                .push(db.prefix.table("posts"))
+                .push(" p ON p.ID = c.comment_post_ID");
         }
         qb.push(" WHERE 1=1");
         // `status`: the clauses are joined with OR; `any` leaves the status open.
-        let statuses: Vec<&str> = if self.statuses.is_empty() { vec!["all"] } else { self.statuses.iter().map(String::as_str).collect() };
+        let statuses: Vec<&str> = if self.statuses.is_empty() {
+            vec!["all"]
+        } else {
+            self.statuses.iter().map(String::as_str).collect()
+        };
         if !statuses.contains(&"any") {
             qb.push(" AND ( ");
             for (index, status) in statuses.iter().enumerate() {
@@ -255,7 +347,9 @@ impl CommentQuery {
                 match *status {
                     "hold" => qb.push("c.comment_approved = '0'"),
                     "approve" => qb.push("c.comment_approved = '1'"),
-                    "all" | "" => qb.push("( c.comment_approved = '0' OR c.comment_approved = '1' )"),
+                    "all" | "" => {
+                        qb.push("( c.comment_approved = '0' OR c.comment_approved = '1' )")
+                    }
                     other => qb.push("c.comment_approved = ").push_bind(other.to_owned()),
                 };
             }
@@ -269,7 +363,8 @@ impl CommentQuery {
         push_numbers(qb, "c.user_id", &self.author_in, false);
         push_numbers(qb, "c.user_id", &self.author_not_in, true);
         if let Some(email) = &self.author_email {
-            qb.push(" AND c.comment_author_email = ").push_bind(email.clone());
+            qb.push(" AND c.comment_author_email = ")
+                .push_bind(email.clone());
         }
         push_numbers(qb, "c.comment_ID", &self.ids, false);
         push_numbers(qb, "c.comment_ID", &self.exclude_ids, true);
@@ -277,12 +372,24 @@ impl CommentQuery {
         push_numbers(qb, "c.comment_parent", &self.parent_in, false);
         push_numbers(qb, "c.comment_parent", &self.parent_not_in, true);
         if let Some(search) = &self.search {
-            let pattern = format!("%{}%", search.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_"));
-            qb.push(" AND (c.comment_author LIKE ").push_bind(pattern.clone());
-            qb.push(" OR c.comment_author_email LIKE ").push_bind(pattern.clone());
-            qb.push(" OR c.comment_author_url LIKE ").push_bind(pattern.clone());
-            qb.push(" OR c.comment_author_IP LIKE ").push_bind(pattern.clone());
-            qb.push(" OR c.comment_content LIKE ").push_bind(pattern).push(")");
+            let pattern = format!(
+                "%{}%",
+                search
+                    .replace('\\', "\\\\")
+                    .replace('%', "\\%")
+                    .replace('_', "\\_")
+            );
+            qb.push(" AND (c.comment_author LIKE ")
+                .push_bind(pattern.clone());
+            qb.push(" OR c.comment_author_email LIKE ")
+                .push_bind(pattern.clone());
+            qb.push(" OR c.comment_author_url LIKE ")
+                .push_bind(pattern.clone());
+            qb.push(" OR c.comment_author_IP LIKE ")
+                .push_bind(pattern.clone());
+            qb.push(" OR c.comment_content LIKE ")
+                .push_bind(pattern)
+                .push(")");
         }
         if let Some(after) = &self.after {
             qb.push(" AND c.comment_date > ").push_bind(after.clone());
@@ -297,7 +404,10 @@ fn push_numbers(qb: &mut crate::sql::Sql, column: &str, values: &[u64], negate: 
     if values.is_empty() {
         return;
     }
-    qb.push(format!(" AND {column} {}IN (", if negate { "NOT " } else { "" }));
+    qb.push(format!(
+        " AND {column} {}IN (",
+        if negate { "NOT " } else { "" }
+    ));
     let mut list = qb.separated(", ");
     for v in values {
         list.push_bind(*v);
@@ -309,7 +419,10 @@ fn push_ids(qb: &mut crate::sql::Sql, column: &str, values: &[String], negate: b
     if values.is_empty() {
         return;
     }
-    qb.push(format!(" AND {column} {}IN (", if negate { "NOT " } else { "" }));
+    qb.push(format!(
+        " AND {column} {}IN (",
+        if negate { "NOT " } else { "" }
+    ));
     let mut list = qb.separated(", ");
     for v in values {
         list.push_bind(v.clone());

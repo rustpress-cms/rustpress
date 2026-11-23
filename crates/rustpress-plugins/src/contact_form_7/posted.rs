@@ -40,7 +40,9 @@ impl Posted {
     pub fn map(&self, f: &dyn Fn(&str) -> String) -> Posted {
         match self {
             Posted::Str(s) => Posted::Str(f(s)),
-            Posted::Map(items) => Posted::Map(items.iter().map(|(k, v)| (k.clone(), v.map(f))).collect()),
+            Posted::Map(items) => {
+                Posted::Map(items.iter().map(|(k, v)| (k.clone(), v.map(f))).collect())
+            }
         }
     }
 
@@ -63,8 +65,13 @@ impl PostData {
         let renamed: Vec<(String, String)> = fields
             .iter()
             .map(|(name, value)| {
-                let (base, rest) = name.find('[').map_or((name.as_str(), ""), |at| (&name[..at], &name[at..]));
-                (format!("{}{rest}", base.replace(['.', ' '], "_")), value.clone())
+                let (base, rest) = name
+                    .find('[')
+                    .map_or((name.as_str(), ""), |at| (&name[..at], &name[at..]));
+                (
+                    format!("{}{rest}", base.replace(['.', ' '], "_")),
+                    value.clone(),
+                )
             })
             .collect();
         let mut names: Vec<String> = Vec::new();
@@ -99,18 +106,28 @@ impl PostData {
 
 /// `wpcf7_strip_whitespaces( wp_kses_no_null( wp_scrub_utf8( $value ) ) )` on every string of the value.
 pub fn clean(value: &Posted) -> Posted {
-    value.map(&|s| super::formatter::strip_whitespaces(&kses_no_null(s), super::formatter::Side::Both).to_owned())
+    value.map(&|s| {
+        super::formatter::strip_whitespaces(&kses_no_null(s), super::formatter::Side::Both)
+            .to_owned()
+    })
 }
 
 /// `wp_kses_no_null()`: no NUL bytes and no escaped zeros (`\0`).
 pub fn kses_no_null(text: &str) -> String {
-    static ESCAPED_ZERO: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| regex::Regex::new(r"\\+0+").unwrap());
-    ESCAPED_ZERO.replace_all(&text.replace('\0', ""), "").into_owned()
+    static ESCAPED_ZERO: std::sync::LazyLock<regex::Regex> =
+        std::sync::LazyLock::new(|| regex::Regex::new(r"\\+0+").unwrap());
+    ESCAPED_ZERO
+        .replace_all(&text.replace('\0', ""), "")
+        .into_owned()
 }
 
 /// `wpcf7_flat_join( $input, array( 'separator' => $separator ) )`.
 pub fn flat_join(values: &[String], separator: &str) -> String {
-    values.iter().map(|v| super::formatter::php_trim(v)).collect::<Vec<_>>().join(separator)
+    values
+        .iter()
+        .map(|v| super::formatter::php_trim(v))
+        .collect::<Vec<_>>()
+        .join(separator)
 }
 
 #[cfg(test)]
@@ -119,7 +136,16 @@ mod tests {
 
     #[test]
     fn post_is_built_like_php() {
-        let fields: Vec<(String, String)> = [("a", "1"), ("boxes[]", "x"), ("b.c", "2"), ("boxes[]", "y"), ("_wpcf7", "5")].iter().map(|(k, v)| ((*k).to_owned(), (*v).to_owned())).collect();
+        let fields: Vec<(String, String)> = [
+            ("a", "1"),
+            ("boxes[]", "x"),
+            ("b.c", "2"),
+            ("boxes[]", "y"),
+            ("_wpcf7", "5"),
+        ]
+        .iter()
+        .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
+        .collect();
         let post = PostData::from_fields(&fields);
         let names: Vec<&str> = post.0.iter().map(|(k, _)| k.as_str()).collect();
         assert_eq!(names, ["a", "boxes", "b_c", "_wpcf7"]);

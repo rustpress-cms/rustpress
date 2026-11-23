@@ -9,7 +9,9 @@ use rustpress_core::formatting::{cached_plain_regex, esc_attr, esc_url};
 use rustpress_core::shortcodes::Atts;
 use rustpress_phpser::{Key, Value};
 
-use super::widgets::{Services, Sidebar, heading, setting_flag, setting_int, setting_str, widget_title};
+use super::widgets::{
+    Services, Sidebar, heading, setting_flag, setting_int, setting_str, widget_title,
+};
 use crate::Result;
 
 /// `wp_get_audio_extensions()` and `wp_get_video_extensions()`.
@@ -17,7 +19,14 @@ const AUDIO_EXTENSIONS: [&str; 5] = ["mp3", "ogg", "flac", "m4a", "wav"];
 const VIDEO_EXTENSIONS: [&str; 5] = ["mp4", "m4v", "webm", "ogv", "flv"];
 
 /// The sizes before those of the theme, `get_intermediate_image_sizes()`.
-const SITE_SIZES: [&str; 6] = ["thumbnail", "medium", "medium_large", "large", "1536x1536", "2048x2048"];
+const SITE_SIZES: [&str; 6] = [
+    "thumbnail",
+    "medium",
+    "medium_large",
+    "large",
+    "1536x1536",
+    "2048x2048",
+];
 
 /// PHP's truth of a string.
 fn truthy(text: &str) -> bool {
@@ -61,7 +70,12 @@ fn id_list(value: Option<&Value>) -> Vec<u64> {
             Value::Str(text) => absint(&String::from_utf8_lossy(text)),
             _ => 0,
         })),
-        Some(Value::Str(text)) => ids.extend(String::from_utf8_lossy(text).split([' ', '\t', '\n', '\r', '\x0B', '\x0C', ',']).filter(|id| !id.is_empty()).map(absint)),
+        Some(Value::Str(text)) => ids.extend(
+            String::from_utf8_lossy(text)
+                .split([' ', '\t', '\n', '\r', '\x0B', '\x0C', ','])
+                .filter(|id| !id.is_empty())
+                .map(absint),
+        ),
         Some(Value::Int(n)) => ids.push(n.unsigned_abs()),
         _ => {}
     }
@@ -90,10 +104,20 @@ fn shortcode_atts(settings: &Value, defaults: &[(&str, &str)]) -> Atts {
 }
 
 /// `WP_Widget_Media::widget()`.
-pub(super) async fn display(s: &Services<'_>, sidebar: &Sidebar<'_>, before: &str, base: &str, settings: &Value) -> Result<Option<String>> {
+pub(super) async fn display(
+    s: &Services<'_>,
+    sidebar: &Sidebar<'_>,
+    before: &str,
+    base: &str,
+    settings: &Value,
+) -> Result<Option<String>> {
     let site = s.site;
     let post = match u64::try_from(setting_int(settings, "attachment_id")) {
-        Ok(id) if id != 0 => site.db.post(id).await?.filter(|post| post.post_type == "attachment"),
+        Ok(id) if id != 0 => site
+            .db
+            .post(id)
+            .await?
+            .filter(|post| post.post_type == "attachment"),
         _ => None,
     };
     let has_content = if base == "media_gallery" {
@@ -101,7 +125,12 @@ pub(super) async fn display(s: &Services<'_>, sidebar: &Sidebar<'_>, before: &st
         let ids = id_list(settings.get("ids"));
         let mut all = !ids.is_empty();
         for id in ids {
-            all = all && site.db.post(id).await?.is_some_and(|post| post.post_type == "attachment");
+            all = all
+                && site
+                    .db
+                    .post(id)
+                    .await?
+                    .is_some_and(|post| post.post_type == "attachment");
         }
         all
     } else {
@@ -111,13 +140,30 @@ pub(super) async fn display(s: &Services<'_>, sidebar: &Sidebar<'_>, before: &st
         return Ok(None);
     }
     let (title, _) = widget_title(site, settings, None);
-    let heading = if truthy(&title) { heading(sidebar, &title) } else { String::new() };
+    let heading = if truthy(&title) {
+        heading(sidebar, &title)
+    } else {
+        String::new()
+    };
     let mut attachment = None;
     if let Some(post) = post {
         let (meta, file) = images::load_metadata(site, &post).await?;
-        if let Some(file) = file.filter(|file| !file.is_empty() && attachment_is(base.trim_start_matches("media_"), &post.post_mime_type, file)) {
+        if let Some(file) = file.filter(|file| {
+            !file.is_empty()
+                && attachment_is(
+                    base.trim_start_matches("media_"),
+                    &post.post_mime_type,
+                    file,
+                )
+        }) {
             let link = site.permalink(&post).await?;
-            attachment = Some(Attachment { id: post.id, excerpt: post.post_excerpt.clone(), meta, file, link });
+            attachment = Some(Attachment {
+                id: post.id,
+                excerpt: post.post_excerpt.clone(),
+                meta,
+                file,
+                link,
+            });
         }
     }
     let body = match base {
@@ -126,7 +172,10 @@ pub(super) async fn display(s: &Services<'_>, sidebar: &Sidebar<'_>, before: &st
         "media_video" => video(s, settings, attachment.as_ref()),
         _ => gallery(s, settings).await?,
     };
-    Ok(Some(format!("{before}{heading}{body}{}", sidebar.after_widget)))
+    Ok(Some(format!(
+        "{before}{heading}{body}{}",
+        sidebar.after_widget
+    )))
 }
 
 /// `_wp_get_image_size_from_meta()`: the width.
@@ -135,7 +184,11 @@ fn width_from_meta(size: &str, meta: Option<&Metadata>) -> u64 {
     if size == "full" {
         return meta.width();
     }
-    meta.sizes().and_then(|sizes| sizes.get(size)).and_then(|entry| entry.get("width")).and_then(serde_json::Value::as_u64).unwrap_or(0)
+    meta.sizes()
+        .and_then(|sizes| sizes.get(size))
+        .and_then(|entry| entry.get("width"))
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(0)
 }
 
 /// The tag of an image that is no attachment.
@@ -146,20 +199,39 @@ fn plain_image(s: &Services<'_>, settings: &Value) -> String {
     };
     let pixels = |name: &str| u64::try_from(setting_int(settings, name)).unwrap_or(0);
     let mut attr: Vec<(String, String)> = vec![
-        ("class".into(), format!("image {}", setting_str(settings, "image_classes"))),
+        (
+            "class".into(),
+            format!("image {}", setting_str(settings, "image_classes")),
+        ),
         ("src".into(), setting_str(settings, "url")),
         ("alt".into(), setting_str(settings, "alt")),
         ("width".into(), dimension("width")),
         ("height".into(), dimension("height")),
     ];
-    let input = LoadingInput { width: Some(pixels("width")), height: Some(pixels("height")), ..LoadingInput::default() };
-    attr.extend(images::loading_attributes(s.env, "img", &input, "widget_media_image"));
-    let attributes: String = attr.iter().map(|(name, value)| format!(" {name}=\"{}\"", esc_attr(value))).collect();
+    let input = LoadingInput {
+        width: Some(pixels("width")),
+        height: Some(pixels("height")),
+        ..LoadingInput::default()
+    };
+    attr.extend(images::loading_attributes(
+        s.env,
+        "img",
+        &input,
+        "widget_media_image",
+    ));
+    let attributes: String = attr
+        .iter()
+        .map(|(name, value)| format!(" {name}=\"{}\"", esc_attr(value)))
+        .collect();
     format!("<img{attributes} />")
 }
 
 /// `WP_Widget_Media_Image::render_media()`.
-async fn image(s: &Services<'_>, settings: &Value, attachment: Option<&Attachment>) -> Result<String> {
+async fn image(
+    s: &Services<'_>,
+    settings: &Value,
+    attachment: Option<&Attachment>,
+) -> Result<String> {
     let site = s.site;
     let text = |name: &str| setting_str(settings, name);
     let (mut html, caption, width) = if let Some(attachment) = attachment {
@@ -171,7 +243,10 @@ async fn image(s: &Services<'_>, settings: &Value, attachment: Option<&Attachmen
             String::new()
         };
         let mut class = format!("image wp-image-{} {}", attachment.id, text("image_classes"));
-        let mut attrs = vec![("style".to_owned(), AttrValue::Text("max-width: 100%; height: auto;".into()))];
+        let mut attrs = vec![(
+            "style".to_owned(),
+            AttrValue::Text("max-width: 100%; height: auto;".into()),
+        )];
         if truthy(&text("image_title")) {
             attrs.push(("title".into(), AttrValue::Text(text("image_title"))));
         }
@@ -179,24 +254,63 @@ async fn image(s: &Services<'_>, settings: &Value, attachment: Option<&Attachmen
             attrs.push(("alt".into(), AttrValue::Text(text("alt"))));
         }
         let stored = text("size");
-        let size = if settings.get("size").is_none() { "medium".to_owned() } else { stored };
+        let size = if settings.get("size").is_none() {
+            "medium".to_owned()
+        } else {
+            stored
+        };
         let theme = rustpress_core::image_sizes::of_theme(s.stylesheet);
-        let named = size == "full" || SITE_SIZES.contains(&size.as_str()) || theme.iter().any(|(name, ..)| *name == size);
-        let (pixels_w, pixels_h) = (u64::try_from(setting_int(settings, "width")).unwrap_or(0), u64::try_from(setting_int(settings, "height")).unwrap_or(0));
-        let (size_class, requested, width) = if named { (size.clone(), None, width_from_meta(&size, attachment.meta.as_ref())) } else { (format!("{pixels_w}x{pixels_h}"), Some((pixels_w, pixels_h)), pixels_w) };
+        let named = size == "full"
+            || SITE_SIZES.contains(&size.as_str())
+            || theme.iter().any(|(name, ..)| *name == size);
+        let (pixels_w, pixels_h) = (
+            u64::try_from(setting_int(settings, "width")).unwrap_or(0),
+            u64::try_from(setting_int(settings, "height")).unwrap_or(0),
+        );
+        let (size_class, requested, width) = if named {
+            (
+                size.clone(),
+                None,
+                width_from_meta(&size, attachment.meta.as_ref()),
+            )
+        } else {
+            (
+                format!("{pixels_w}x{pixels_h}"),
+                Some((pixels_w, pixels_h)),
+                pixels_w,
+            )
+        };
         class.push_str(&format!(" attachment-{size_class} size-{size_class}"));
         attrs.insert(0, ("class".into(), AttrValue::Text(class)));
-        let html = images::get_attachment_image(s.env, attachment.id, &size_class, &ImageArgs { attrs, requested, ..ImageArgs::default() }).await?;
+        let html = images::get_attachment_image(
+            s.env,
+            attachment.id,
+            &size_class,
+            &ImageArgs {
+                attrs,
+                requested,
+                ..ImageArgs::default()
+            },
+        )
+        .await?;
         (html, caption, width)
     } else {
         if !truthy(&text("url")) {
             return Ok(String::new());
         }
-        (plain_image(s, settings), text("caption"), u64::try_from(setting_int(settings, "width")).unwrap_or(0))
+        (
+            plain_image(s, settings),
+            text("caption"),
+            u64::try_from(setting_int(settings, "width")).unwrap_or(0),
+        )
     };
 
     let link_type = text("link_type");
-    let link_type = if settings.get("link_type").is_none() { "custom".to_owned() } else { link_type };
+    let link_type = if settings.get("link_type").is_none() {
+        "custom".to_owned()
+    } else {
+        link_type
+    };
     let url = match (link_type.as_str(), attachment) {
         ("file", Some(attachment)) => images::attachment_url(site, &attachment.file),
         ("file", None) => text("url"),
@@ -234,7 +348,10 @@ fn current_post(s: &Services<'_>) -> u64 {
 /// `WP_Widget_Media_Audio::render_media()`.
 fn audio(s: &Services<'_>, settings: &Value, attachment: Option<&Attachment>) -> String {
     let mut atts = shortcode_atts(settings, &[("preload", "none")]);
-    let src = attachment.map_or_else(|| setting_str(settings, "url"), |attachment| images::attachment_url(s.site, &attachment.file));
+    let src = attachment.map_or_else(
+        || setting_str(settings, "url"),
+        |attachment| images::attachment_url(s.site, &attachment.file),
+    );
     atts.set("src", &src);
     media_shortcodes::audio(s.env, current_post(s), &atts).unwrap_or_default()
 }
@@ -243,31 +360,53 @@ fn audio(s: &Services<'_>, settings: &Value, attachment: Option<&Attachment>) ->
 fn inject_video_max_width_style(html: &str) -> String {
     let html = cached_plain_regex(r#"[ \t\n\r\x0B\x0C]height="[0-9]+""#).replace_all(html, "");
     let html = cached_plain_regex(r#"[ \t\n\r\x0B\x0C]width="[0-9]+""#).replace_all(&html, "");
-    cached_plain_regex(r"width:[ \t\n\r\x0B\x0C]*[0-9]+px").replace_all(&html, "width:100%").into_owned()
+    cached_plain_regex(r"width:[ \t\n\r\x0B\x0C]*[0-9]+px")
+        .replace_all(&html, "width:100%")
+        .into_owned()
 }
 
 /// `WP_Widget_Media_Video::render_media()`. Any other address goes to `wp_oembed_get()`, which prints nothing for an
 /// address without a provider. Asking a provider or one of the site's own posts is not ported.
 fn video(s: &Services<'_>, settings: &Value, attachment: Option<&Attachment>) -> String {
-    let src = attachment.map_or_else(|| setting_str(settings, "url"), |attachment| images::attachment_url(s.site, &attachment.file));
+    let src = attachment.map_or_else(
+        || setting_str(settings, "url"),
+        |attachment| images::attachment_url(s.site, &attachment.file),
+    );
     if !truthy(&src) {
         return String::new();
     }
-    let youtube = cached_plain_regex(r"^https?://(?:www\.)?(?:youtube\.com/watch|youtu\.be/)").is_match(&src);
+    let youtube =
+        cached_plain_regex(r"^https?://(?:www\.)?(?:youtube\.com/watch|youtu\.be/)").is_match(&src);
     let vimeo = cached_plain_regex(r"^https?://(.+\.)?vimeo\.com/.*").is_match(&src);
     if attachment.is_none() && !youtube && !vimeo {
         return String::new();
     }
     let mut atts = shortcode_atts(settings, &[("preload", "metadata")]);
     atts.set("src", &src);
-    let html = media_shortcodes::video(s.env, current_post(s), &atts, &setting_str(settings, "content")).unwrap_or_default();
+    let html = media_shortcodes::video(
+        s.env,
+        current_post(s),
+        &atts,
+        &setting_str(settings, "content"),
+    )
+    .unwrap_or_default();
     inject_video_max_width_style(&html)
 }
 
 /// `WP_Widget_Media_Gallery::render_media()`.
 async fn gallery(s: &Services<'_>, settings: &Value) -> Result<String> {
-    let mut atts = shortcode_atts(settings, &[("columns", "3"), ("size", "thumbnail"), ("link_type", "post")]);
-    let ids: Vec<String> = id_list(settings.get("ids")).iter().map(u64::to_string).collect();
+    let mut atts = shortcode_atts(
+        settings,
+        &[
+            ("columns", "3"),
+            ("size", "thumbnail"),
+            ("link_type", "post"),
+        ],
+    );
+    let ids: Vec<String> = id_list(settings.get("ids"))
+        .iter()
+        .map(u64::to_string)
+        .collect();
     atts.set("ids", &ids.join(","));
     let link = atts.get("link_type").unwrap_or_default().to_owned();
     atts.set("link", &link);

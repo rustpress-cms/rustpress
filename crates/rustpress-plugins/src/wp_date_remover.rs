@@ -12,7 +12,9 @@
 
 use futures::future::BoxFuture;
 use rustpress_core::formatting::{esc_attr, esc_html};
-use rustpress_core::native::{ActivePlugin, AdminContext, AdminPage, AjaxAnswer, Assets, NativePlugin};
+use rustpress_core::native::{
+    ActivePlugin, AdminContext, AdminPage, AjaxAnswer, Assets, NativePlugin,
+};
 use rustpress_core::{Result, Site};
 use rustpress_db::{Post, Term};
 
@@ -33,8 +35,18 @@ impl NativePlugin for WpDateRemover {
     fn load<'a>(&'a self, site: &'a Site) -> BoxFuture<'a, Result<Box<dyn ActivePlugin>>> {
         Box::pin(async move {
             let categories = site.db.terms("category").await?;
-            let flagged: Vec<u64> = site.db.term_meta_by_key("wp-date-remover").await?.into_iter().filter(|(_, value)| loosely_one(value)).map(|(id, _)| id).collect();
-            let categories = shown_categories(&categories).into_iter().filter(|id| flagged.contains(id)).collect();
+            let flagged: Vec<u64> = site
+                .db
+                .term_meta_by_key("wp-date-remover")
+                .await?
+                .into_iter()
+                .filter(|(_, value)| loosely_one(value))
+                .map(|(id, _)| id)
+                .collect();
+            let categories = shown_categories(&categories)
+                .into_iter()
+                .filter(|id| flagged.contains(id))
+                .collect();
             Ok(Box::new(Active { categories }) as Box<dyn ActivePlugin>)
         })
     }
@@ -42,7 +54,11 @@ impl NativePlugin for WpDateRemover {
 
 /// `$value == 1` for the string `get_term_meta()` returns.
 fn loosely_one(value: &str) -> bool {
-    value.trim_start().trim_end_matches([' ', '\t', '\n', '\r', '\x0b', '\x0c']).parse::<f64>().is_ok_and(|n| n == 1.0)
+    value
+        .trim_start()
+        .trim_end_matches([' ', '\t', '\n', '\r', '\x0b', '\x0c'])
+        .parse::<f64>()
+        .is_ok_and(|n| n == 1.0)
 }
 
 /// The IDs `get_categories()` returns: `hide_empty` keeps a category with posts or with a descendant that has some.
@@ -58,11 +74,20 @@ fn shown_categories(categories: &[Term]) -> Vec<u64> {
             if categories.iter().any(|t| t.term_id == id && t.count > 0) {
                 return true;
             }
-            stack.extend(categories.iter().filter(|t| t.parent == id).map(|t| t.term_id));
+            stack.extend(
+                categories
+                    .iter()
+                    .filter(|t| t.parent == id)
+                    .map(|t| t.term_id),
+            );
         }
         false
     };
-    categories.iter().filter(|t| has_posts(t)).map(|t| t.term_id).collect()
+    categories
+        .iter()
+        .filter(|t| has_posts(t))
+        .map(|t| t.term_id)
+        .collect()
 }
 
 struct Active {
@@ -76,15 +101,32 @@ impl Active {
         if self.categories.is_empty() {
             return Ok(false);
         }
-        Ok(site.db.terms_for_post(post_id, Some("category")).await?.iter().any(|t| self.categories.contains(&t.term_id)))
+        Ok(site
+            .db
+            .terms_for_post(post_id, Some("category"))
+            .await?
+            .iter()
+            .any(|t| self.categories.contains(&t.term_id)))
     }
 }
 
 impl ActivePlugin for Active {
     fn enqueue(&self, site: &Site, assets: &mut Assets) {
         let base = site.site_url("wp-content/plugins/wp-date-remover/public");
-        assets.style("wp-date-remover", format!("{base}/css/wp-date-remover-public.css"), &[], ASSET_VERSION, "all");
-        assets.script("wp-date-remover", format!("{base}/js/wp-date-remover-public.js"), &["jquery"], ASSET_VERSION, false);
+        assets.style(
+            "wp-date-remover",
+            format!("{base}/css/wp-date-remover-public.css"),
+            &[],
+            ASSET_VERSION,
+            "all",
+        );
+        assets.script(
+            "wp-date-remover",
+            format!("{base}/js/wp-date-remover-public.js"),
+            &["jquery"],
+            ASSET_VERSION,
+            false,
+        );
     }
 
     fn hides_date<'a>(&'a self, site: &'a Site, post: &'a Post) -> BoxFuture<'a, Result<bool>> {
@@ -105,20 +147,47 @@ impl ActivePlugin for Active {
     }
 
     fn admin_pages(&self, _site: &Site) -> Vec<AdminPage> {
-        vec![AdminPage { parent: "options-general.php", slug: "wp-date-remover", page_title: TITLE.into(), menu_title: TITLE.into(), capability: "manage_options", ..AdminPage::default() }]
+        vec![AdminPage {
+            parent: "options-general.php",
+            slug: "wp-date-remover",
+            page_title: TITLE.into(),
+            menu_title: TITLE.into(),
+            capability: "manage_options",
+            ..AdminPage::default()
+        }]
     }
 
     fn admin_enqueue(&self, ctx: &AdminContext<'_>, assets: &mut Assets) {
-        let base = ctx.site.site_url("wp-content/plugins/wp-date-remover/admin");
-        assets.style("wp-date-remover", format!("{base}/css/wp-date-remover-admin.css"), &[], ASSET_VERSION, "all");
-        assets.script("wp-date-remover", format!("{base}/js/wp-date-remover-admin.js"), &["jquery"], ASSET_VERSION, false);
+        let base = ctx
+            .site
+            .site_url("wp-content/plugins/wp-date-remover/admin");
+        assets.style(
+            "wp-date-remover",
+            format!("{base}/css/wp-date-remover-admin.css"),
+            &[],
+            ASSET_VERSION,
+            "all",
+        );
+        assets.script(
+            "wp-date-remover",
+            format!("{base}/js/wp-date-remover-admin.js"),
+            &["jquery"],
+            ASSET_VERSION,
+            false,
+        );
     }
 
     /// `wp-date-remover-admin-display-notice.php`: its comment always, the notice until it was closed.
     fn admin_notices<'a>(&'a self, ctx: &'a AdminContext<'a>) -> BoxFuture<'a, Result<String>> {
         Box::pin(async move {
-            let show = ctx.site.options.get("wdr_admin_notices_show").is_none_or(|v| !v.is_empty() && v != "0");
-            let mut out = String::from("\r\n<!-- This file should primarily consist of HTML with a little bit of PHP. -->\r\n");
+            let show = ctx
+                .site
+                .options
+                .get("wdr_admin_notices_show")
+                .is_none_or(|v| !v.is_empty() && v != "0");
+            let mut out = String::from(
+                "\r\n<!-- This file should primarily consist of HTML with a little bit of PHP. -->\r\n",
+            );
             if show {
                 out.push_str(NOTICE);
             }
@@ -126,18 +195,29 @@ impl ActivePlugin for Active {
         })
     }
 
-    fn admin_page<'a>(&'a self, _slug: &'a str, ctx: &'a AdminContext<'a>) -> BoxFuture<'a, Result<String>> {
+    fn admin_page<'a>(
+        &'a self,
+        _slug: &'a str,
+        ctx: &'a AdminContext<'a>,
+    ) -> BoxFuture<'a, Result<String>> {
         Box::pin(settings_page(ctx))
     }
 
     fn plugin_action_links(&self, site: &Site, links: Vec<String>) -> Vec<String> {
-        let mut all = vec![format!("<a href=\"{}\">Settings</a>", site.site_url("wp-admin/options-general.php?page=wp-date-remover"))];
+        let mut all = vec![format!(
+            "<a href=\"{}\">Settings</a>",
+            site.site_url("wp-admin/options-general.php?page=wp-date-remover")
+        )];
         all.extend(links);
         all
     }
 
     /// `wp_date_remover_hide_notice()` for any signed-in user; the answer is `admin-ajax.php`'s `0`.
-    fn admin_ajax<'a>(&'a self, action: &'a str, ctx: &'a AdminContext<'a>) -> BoxFuture<'a, Result<Option<AjaxAnswer>>> {
+    fn admin_ajax<'a>(
+        &'a self,
+        action: &'a str,
+        ctx: &'a AdminContext<'a>,
+    ) -> BoxFuture<'a, Result<Option<AjaxAnswer>>> {
         Box::pin(async move {
             if action != "wp_date_remover_hide_notice" {
                 return Ok(None);
@@ -172,14 +252,19 @@ async fn settings_page(ctx: &AdminContext<'_>) -> Result<String> {
             if value.as_i64() == Some(1)
                 && let Some(term_id) = key.split('_').nth(1).and_then(|id| id.parse::<u64>().ok())
             {
-                writer.update_term_meta(term_id, "wp-date-remover", "1").await?;
+                writer
+                    .update_term_meta(term_id, "wp-date-remover", "1")
+                    .await?;
                 writer.delete_option("wp-date-remover").await?;
             }
         }
     }
     let categories = site.db.terms("category").await?;
     let shown = shown_categories(&categories);
-    let categories: Vec<&Term> = categories.iter().filter(|t| shown.contains(&t.term_id)).collect();
+    let categories: Vec<&Term> = categories
+        .iter()
+        .filter(|t| shown.contains(&t.term_id))
+        .collect();
     let mut saved = false;
     if ctx.post
         && ctx.post_field("wp_date_btn_submit").is_some()
@@ -187,19 +272,39 @@ async fn settings_page(ctx: &AdminContext<'_>) -> Result<String> {
         && let Some(writer) = ctx.writer
     {
         for term in &categories {
-            let value = ctx.post_field(&format!("wp-date-remover-removedt[{}]", term.term_id)).is_some_and(loosely_one);
-            writer.update_term_meta(term.term_id, "wp-date-remover", if value { "1" } else { "0" }).await?;
+            let value = ctx
+                .post_field(&format!("wp-date-remover-removedt[{}]", term.term_id))
+                .is_some_and(loosely_one);
+            writer
+                .update_term_meta(
+                    term.term_id,
+                    "wp-date-remover",
+                    if value { "1" } else { "0" },
+                )
+                .await?;
         }
         saved = true;
     }
     let meta = site.db.term_meta_by_key("wp-date-remover").await?;
-    let rows: Vec<(u64, String, bool)> = categories.iter().map(|t| (t.term_id, t.name.clone(), meta.iter().any(|(id, value)| *id == t.term_id && loosely_one(value)))).collect();
+    let rows: Vec<(u64, String, bool)> = categories
+        .iter()
+        .map(|t| {
+            (
+                t.term_id,
+                t.name.clone(),
+                meta.iter()
+                    .any(|(id, value)| *id == t.term_id && loosely_one(value)),
+            )
+        })
+        .collect();
     Ok(settings_html(TITLE, saved, &rows))
 }
 
 /// The markup of the settings page for `(term_id, name, checked)` of each category.
 fn settings_html(title: &str, saved: bool, categories: &[(u64, String, bool)]) -> String {
-    let mut out = String::from("\r\n<!-- This file should primarily consist of HTML with a little bit of PHP. -->\r\n<div class=\"wrap\">\r\n\r\n\t");
+    let mut out = String::from(
+        "\r\n<!-- This file should primarily consist of HTML with a little bit of PHP. -->\r\n<div class=\"wrap\">\r\n\r\n\t",
+    );
     if saved {
         out.push_str("<div class=\"updated\"><p>Settings saved.</p></div>");
     }
@@ -243,12 +348,26 @@ mod tests {
     use super::*;
 
     fn category(term_id: u64, parent: u64, count: i64) -> Term {
-        Term { term_id, term_taxonomy_id: term_id, name: format!("c{term_id}"), slug: format!("c{term_id}"), taxonomy: "category".into(), description: String::new(), parent, count }
+        Term {
+            term_id,
+            term_taxonomy_id: term_id,
+            name: format!("c{term_id}"),
+            slug: format!("c{term_id}"),
+            taxonomy: "category".into(),
+            description: String::new(),
+            parent,
+            count,
+        }
     }
 
     #[test]
     fn empty_categories_count_through_their_children() {
-        let terms = [category(1, 0, 0), category(2, 1, 3), category(3, 0, 0), category(4, 3, 0)];
+        let terms = [
+            category(1, 0, 0),
+            category(2, 1, 3),
+            category(3, 0, 0),
+            category(4, 3, 0),
+        ];
         assert_eq!(shown_categories(&terms), vec![1, 2]);
     }
 
@@ -263,7 +382,10 @@ mod tests {
 
     #[test]
     fn footer_keeps_the_template_whitespace() {
-        assert_eq!(footer_script(&[]), "\t\t<script type=\"text/javascript\">\n\t\t\t\t</script>\n\t");
+        assert_eq!(
+            footer_script(&[]),
+            "\t\t<script type=\"text/javascript\">\n\t\t\t\t</script>\n\t"
+        );
         assert_eq!(
             footer_script(&[7]),
             "\t\t<script type=\"text/javascript\">\n\t\t\t\t\t\t\tjQuery(\"#post-7 .entry-meta .date\").css(\"display\",\"none\");\n\t\t\t\t\tjQuery(\"#post-7 .entry-date\").css(\"display\",\"none\");\n\t\t\t\t\tjQuery(\"#post-7 .posted-on\").css(\"display\",\"none\");\n\t\t\t\t</script>\n\t"

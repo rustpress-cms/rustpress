@@ -24,7 +24,11 @@ fn add_args(url: &str, pairs: &[(&str, &str)]) -> String {
 /// `wp_is_uuid()`.
 fn is_uuid(value: &str) -> bool {
     let parts: Vec<&str> = value.split('-').collect();
-    parts.len() == 5 && [8, 4, 4, 4, 12].iter().zip(&parts).all(|(n, p)| p.len() == *n && p.chars().all(|c| c.is_ascii_hexdigit()))
+    parts.len() == 5
+        && [8, 4, 4, 4, 12]
+            .iter()
+            .zip(&parts)
+            .all(|(n, p)| p.len() == *n && p.chars().all(|c| c.is_ascii_hexdigit()))
 }
 
 /// `wp_is_authorize_application_redirect_url_valid()`: a scheme and a host, not `javascript:` or `data:`; plain
@@ -35,16 +39,24 @@ fn redirect_valid(ctx: &Ctx<'_>, url: &str) -> Result<(), String> {
     }
     let invalid = || Err(ctx.tr("Invalid URL format."));
     // `/^[a-zA-Z][a-zA-Z0-9+.-]*:/` (RFC 2396, 3.1).
-    let Some((scheme, rest)) = url.split_once(':') else { return invalid() };
+    let Some((scheme, rest)) = url.split_once(':') else {
+        return invalid();
+    };
     let mut chars = scheme.chars();
-    if !chars.next().is_some_and(|c| c.is_ascii_alphabetic()) || !chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '.' | '-')) {
+    if !chars.next().is_some_and(|c| c.is_ascii_alphabetic())
+        || !chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '.' | '-'))
+    {
         return invalid();
     }
     // `wp_parse_url( $url, PHP_URL_HOST )`: the authority after `//`, without user and port.
     let host = rest.strip_prefix("//").map_or("", |authority| {
         let authority = authority.split(['/', '?', '#']).next().unwrap_or_default();
         let authority = authority.rsplit_once('@').map_or(authority, |(_, h)| h);
-        if authority.starts_with('[') { authority.split_inclusive(']').next().unwrap_or_default() } else { authority.split(':').next().unwrap_or_default() }
+        if authority.starts_with('[') {
+            authority.split_inclusive(']').next().unwrap_or_default()
+        } else {
+            authority.split(':').next().unwrap_or_default()
+        }
     });
     if host.is_empty() || matches!(scheme.to_lowercase().as_str(), "javascript" | "data") {
         return invalid();
@@ -66,29 +78,66 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
 
     if request.post && request.post_field("action") == Some("authorize_application_password") {
         if !ctx.verify_nonce("authorize_application_password") {
-            return die(ctx.env, 403, &tr("An error occurred."), &tr("The link you followed has expired."));
+            return die(
+                ctx.env,
+                403,
+                &tr("An error occurred."),
+                &tr("The link you followed has expired."),
+            );
         }
         let field = |name: &str| request.post_field(name).unwrap_or_default().to_owned();
-        let (success_url, reject_url, app_name, app_id) = (field("success_url"), field("reject_url"), field("app_name"), field("app_id"));
+        let (success_url, reject_url, app_name, app_id) = (
+            field("success_url"),
+            field("reject_url"),
+            field("app_name"),
+            field("app_id"),
+        );
         let mut target = String::new();
         if request.post_field("reject").is_some() {
-            target = if reject_url.is_empty() { ctx.admin_url("") } else { reject_url };
+            target = if reject_url.is_empty() {
+                ctx.admin_url("")
+            } else {
+                reject_url
+            };
         } else if request.post_field("approve").is_some() {
             match ctx.env.writer {
                 None => error = Some(tr("Application passwords could not be saved.")),
                 Some(writer) => {
                     if app_name.trim().is_empty() {
-                        error = Some(tr("An application name is required to create an application password."));
+                        error = Some(tr(
+                            "An application name is required to create an application password.",
+                        ));
                     } else {
                         let plain = app_passwords::new_password();
                         let mut list = app_passwords::list(ctx.env.db, ctx.user.id).await;
-                        list.push(AppPassword { uuid: app_passwords::new_uuid(), app_id, name: rustpress_core::formatting::strip_tags(&app_name).split_whitespace().collect::<Vec<_>>().join(" "), password: app_passwords::hash(&plain), created: ctx.env.now, last_used: None, last_ip: None });
+                        list.push(AppPassword {
+                            uuid: app_passwords::new_uuid(),
+                            app_id,
+                            name: rustpress_core::formatting::strip_tags(&app_name)
+                                .split_whitespace()
+                                .collect::<Vec<_>>()
+                                .join(" "),
+                            password: app_passwords::hash(&plain),
+                            created: ctx.env.now,
+                            last_used: None,
+                            last_ip: None,
+                        });
                         match app_passwords::save(writer, ctx.user.id, &list).await {
                             Ok(()) => {
                                 new_password = plain;
                                 if !success_url.is_empty() {
                                     use rustpress_core::canonical::php_urlencode as enc;
-                                    target = add_args(&success_url, &[("site_url", &enc(site.settings.siteurl.trim_end_matches('/'))), ("user_login", &enc(&ctx.user.login)), ("password", &enc(&new_password))]);
+                                    target = add_args(
+                                        &success_url,
+                                        &[
+                                            (
+                                                "site_url",
+                                                &enc(site.settings.siteurl.trim_end_matches('/')),
+                                            ),
+                                            ("user_login", &enc(&ctx.user.login)),
+                                            ("password", &enc(&new_password)),
+                                        ],
+                                    );
                                 }
                             }
                             Err(e) => error = Some(e.to_string()),
@@ -102,7 +151,12 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         }
     }
 
-    let param = |name: &str| request.request(name).filter(|v| !v.is_empty()).map(str::to_owned);
+    let param = |name: &str| {
+        request
+            .request(name)
+            .filter(|v| !v.is_empty())
+            .map(str::to_owned)
+    };
     let app_name = param("app_name").unwrap_or_default();
     let app_id = param("app_id").unwrap_or_default();
     let success_url = param("success_url");
@@ -123,14 +177,40 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         problems.push(tr("The application ID must be a UUID."));
     }
     if !problems.is_empty() {
-        return die(ctx.env, 500, &tr("Cannot Authorize Application"), &format!("{} {}", tr("The Authorize Application request is not allowed."), problems.join(" ")));
+        return die(
+            ctx.env,
+            500,
+            &tr("Cannot Authorize Application"),
+            &format!(
+                "{} {}",
+                tr("The Authorize Application request is not allowed."),
+                problems.join(" ")
+            ),
+        );
     }
     if !site.app_passwords_available() {
         // `wp_die()` with `link_url` and `link_text`.
-        let back = reject_url.as_ref().map_or_else(|| ctx.admin_url(""), |url| add_query_arg(url, "error", "disabled"));
-        let back_link = format!("\n<p><a href='{}'>{}</a></p>", esc_url(&back), tr("Go Back"));
-        let mut response = die(ctx.env, 501, &tr("Cannot Authorize Application"), &tr("Application passwords are not available."));
-        response.body = crate::die::page_with_back_link(ctx.site(), &ctx.site().tr("Cannot Authorize Application"), &tr("Application passwords are not available."), &back_link);
+        let back = reject_url.as_ref().map_or_else(
+            || ctx.admin_url(""),
+            |url| add_query_arg(url, "error", "disabled"),
+        );
+        let back_link = format!(
+            "\n<p><a href='{}'>{}</a></p>",
+            esc_url(&back),
+            tr("Go Back")
+        );
+        let mut response = die(
+            ctx.env,
+            501,
+            &tr("Cannot Authorize Application"),
+            &tr("Application passwords are not available."),
+        );
+        response.body = crate::die::page_with_back_link(
+            ctx.site(),
+            &ctx.site().tr("Cannot Authorize Application"),
+            &tr("Application passwords are not available."),
+            &back_link,
+        );
         return response;
     }
 
@@ -153,22 +233,52 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     if !new_password.is_empty() {
         let message = format!(
             "<p class=\"application-password-display\">\n\t\t\t\t<label for=\"new-application-password-value\">{}\n\t\t\t\t</label>\n\t\t\t\t<input id=\"new-application-password-value\" type=\"text\" class=\"code\" readonly=\"readonly\" value=\"{}\" />\n\t\t\t</p>\n\t\t\t<p>{}</p>",
-            sprintf(&esc_html(&tr("Your new password for %s is:")), &[&format!("<strong>{}</strong>", esc_html(&app_name))]),
+            sprintf(
+                &esc_html(&tr("Your new password for %s is:")),
+                &[&format!("<strong>{}</strong>", esc_html(&app_name))]
+            ),
             esc_attr(&app_passwords::display(&new_password)),
             tr("Be sure to save this in a safe location. You will not be able to retrieve it.")
         );
-        h.push_str(&notice(&message, "success", false, "", &["notice-alt", "below-h2"], false));
+        h.push_str(&notice(
+            &message,
+            "success",
+            false,
+            "",
+            &["notice-alt", "below-h2"],
+            false,
+        ));
     } else {
         let success_text = match &success_url {
             Some(url) => {
-                let shown = add_args(url, &[("site_url", site.settings.siteurl.trim_end_matches('/')), ("user_login", &ctx.user.login), ("password", "[------]")]);
-                sprintf(&tr("You will be sent to %s"), &[&format!("<strong><code>{}</code></strong>", esc_html(&shown))])
+                let shown = add_args(
+                    url,
+                    &[
+                        ("site_url", site.settings.siteurl.trim_end_matches('/')),
+                        ("user_login", &ctx.user.login),
+                        ("password", "[------]"),
+                    ],
+                );
+                sprintf(
+                    &tr("You will be sent to %s"),
+                    &[&format!(
+                        "<strong><code>{}</code></strong>",
+                        esc_html(&shown)
+                    )],
+                )
             }
-            None => tr("You will be given a password to manually enter into the application in question."),
+            None => tr(
+                "You will be given a password to manually enter into the application in question.",
+            ),
         };
         let reject_text = match &reject_url {
-            Some(url) => sprintf(&tr("You will be sent to %s"), &[&format!("<strong><code>{}</code></strong>", esc_html(url))]),
-            None => tr("You will be returned to the WordPress Dashboard, and no changes will be made."),
+            Some(url) => sprintf(
+                &tr("You will be sent to %s"),
+                &[&format!("<strong><code>{}</code></strong>", esc_html(url))],
+            ),
+            None => {
+                tr("You will be returned to the WordPress Dashboard, and no changes will be made.")
+            }
         };
         h.push_str(&format!(
             "\t\t\t<form action=\"{}\" method=\"post\" class=\"form-wrap\">\n\t\t\t\t{}\t\t\t\t<input type=\"hidden\" name=\"action\" value=\"authorize_application_password\" />\n\t\t\t\t<input type=\"hidden\" name=\"app_id\" value=\"{}\" />\n\t\t\t\t<input type=\"hidden\" name=\"success_url\" value=\"{}\" />\n\t\t\t\t<input type=\"hidden\" name=\"reject_url\" value=\"{}\" />\n\n\t\t\t\t<div class=\"form-field\">\n\t\t\t\t\t<label for=\"app_name\">{}</label>\n\t\t\t\t\t<input type=\"text\" id=\"app_name\" name=\"app_name\" value=\"{}\" required />\n\t\t\t\t</div>\n\n\t\t\t\t\n\t\t\t\t<input type=\"submit\" name=\"approve\" id=\"approve\" class=\"button button-primary\" value=\"{}\" aria-describedby=\"description-approve\"  />\t\t\t\t<p class=\"description\" id=\"description-approve\">\n\t\t\t\t\t{success_text}\t\t\t\t</p>\n\n\t\t\t\t<input type=\"submit\" name=\"reject\" id=\"reject\" class=\"button\" value=\"{}\" aria-describedby=\"description-reject\"  />\t\t\t\t<p class=\"description\" id=\"description-reject\">\n\t\t\t\t\t{reject_text}\t\t\t\t</p>\n\t\t\t</form>\n\t\t",
@@ -190,6 +300,23 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         "success": success_url,
         "reject": reject_url.clone().unwrap_or_else(|| ctx.admin_url("")),
     });
-    let screen = Screen { file: "authorize-application.php".into(), parent_file: "authorize-application.php".into(), submenu_file: Some("authorize-application.php".into()), title: tr("Authorize Application"), help: Some(crate::chrome::Help::default()), ..Default::default() };
-    render(ctx, &screen, &h, &Assets { scripts: vec!["auth-app".into()], localize: vec![("auth-app".into(), "authApp".into(), settings)], ..Default::default() }).await
+    let screen = Screen {
+        file: "authorize-application.php".into(),
+        parent_file: "authorize-application.php".into(),
+        submenu_file: Some("authorize-application.php".into()),
+        title: tr("Authorize Application"),
+        help: Some(crate::chrome::Help::default()),
+        ..Default::default()
+    };
+    render(
+        ctx,
+        &screen,
+        &h,
+        &Assets {
+            scripts: vec!["auth-app".into()],
+            localize: vec![("auth-app".into(), "authApp".into(), settings)],
+            ..Default::default()
+        },
+    )
+    .await
 }

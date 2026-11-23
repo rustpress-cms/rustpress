@@ -5,7 +5,7 @@
 
 use std::path::Path;
 
-use super::options::{item, php_string, truthy, Options};
+use super::options::{Options, item, php_string, truthy};
 
 /// What the scripts need besides the options.
 pub struct Context<'a> {
@@ -26,14 +26,24 @@ fn esc_attr(text: &str) -> String {
 
 /// `esc_js()` for the short texts it gets here (a country code).
 fn esc_js(text: &str) -> String {
-    let text = text.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;").replace('\r', "");
-    text.replace('\\', "\\\\").replace('\'', "\\'").replace('\n', "\\n")
+    let text = text
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\r', "");
+    text.replace('\\', "\\\\")
+        .replace('\'', "\\'")
+        .replace('\n', "\\n")
 }
 
 impl Context<'_> {
     /// `cmplz_get_template( "statistics/$name" )`.
     fn template(&self, name: &str) -> String {
-        let theme = self.theme_dir.join("complianz-gdpr/templates/statistics").join(name);
+        let theme = self
+            .theme_dir
+            .join("complianz-gdpr/templates/statistics")
+            .join(name);
         let file = self.plugin_dir.join("templates/statistics").join(name);
         if !file.exists() {
             return String::new();
@@ -55,11 +65,18 @@ impl Context<'_> {
         let mut out = String::new();
         let statistics = self.option("compile_statistics");
         let code = self.option("ua_code");
-        if !self.is("configuration_by_complianz", "no") && statistics == "google-analytics" && truthy(&self.options.get("ua_code")) {
+        if !self.is("configuration_by_complianz", "no")
+            && statistics == "google-analytics"
+            && truthy(&self.options.get("ua_code"))
+        {
             out.push_str(&format!("\t\t\t\t<script async data-category=\"{}\"\n\t\t\t\t\t\tsrc=\"https://www.googletagmanager.com/gtag/js?id={}\"></script>\n\t\t\t\t\t\t", esc_attr(self.category), esc_attr(&code)));
         }
         if statistics == "clicky" {
-            let plain = if self.category == "functional" { "" } else { "type=\"text/plain\"" };
+            let plain = if self.category == "functional" {
+                ""
+            } else {
+                "type=\"text/plain\""
+            };
             out.push_str(&format!("\t\t\t\t<script async {plain}\t\t\t\t\t\tdata-category=\"{}\" src=\"//static.getclicky.com/js\"></script>\n\t\t\t\t", esc_attr(self.category)));
         }
         out
@@ -72,43 +89,82 @@ impl Context<'_> {
         }
         match self.option("compile_statistics").as_str() {
             "google-analytics" => {
-                let mut consent_mode = if self.options.consent_mode() { "-consent-mode".to_owned() } else { String::new() };
+                let mut consent_mode = if self.options.consent_mode() {
+                    "-consent-mode".to_owned()
+                } else {
+                    String::new()
+                };
                 if !consent_mode.is_empty() && self.is("gtag-basic-consent-mode", "yes") {
                     consent_mode.push_str("-basic");
                 }
                 let code = esc_attr(&self.option("ua_code"));
                 let mut additional = String::new();
-                for tag in self.option("additional_gtags_stats").split(',').map(str::trim) {
+                for tag in self
+                    .option("additional_gtags_stats")
+                    .split(',')
+                    .map(str::trim)
+                {
                     if !tag.is_empty() && tag != "0" {
                         additional.push_str(&format!("gtag('config', '{}' );", esc_attr(tag)));
                     }
                 }
                 let more_info = self.options.get("compile_statistics_more_info");
                 let ip_blocked = matches!(&more_info, rustpress_phpser::Value::Array(items) if items.iter().any(|(_, v)| php_string(v) == "ip-addresses-blocked" && matches!(v, rustpress_phpser::Value::Str(_))));
-                let anonymize = if ip_blocked && !code.to_uppercase().starts_with("G-") { "'anonymize_ip': true" } else { "" };
+                let anonymize = if ip_blocked && !code.to_uppercase().starts_with("G-") {
+                    "'anonymize_ip': true"
+                } else {
+                    ""
+                };
                 let flag = |id: &str| if self.is(id, "yes") { "true" } else { "false" };
                 self.template(&format!("gtag{consent_mode}.js"))
                     .replace("{G_code}", &code)
                     .replace("{additional_tags}", &additional)
                     .replace("{anonymize_ip}", anonymize)
                     .replace("{enable_tcf_support}", "false")
-                    .replace("{ads_data_redaction}", flag("cmplz-gtag-ads_data_redaction"))
+                    .replace(
+                        "{ads_data_redaction}",
+                        flag("cmplz-gtag-ads_data_redaction"),
+                    )
                     .replace("{url_passthrough}", flag("cmplz-gtag-urlpassthrough"))
             }
             "matomo" => {
-                let cookieless = if self.is("matomo_anonymized", "yes") { "-cookieless" } else { "" };
+                let cookieless = if self.is("matomo_anonymized", "yes") {
+                    "-cookieless"
+                } else {
+                    ""
+                };
                 self.template(&format!("matomo{cookieless}.js"))
                     .replace("{site_id}", &esc_attr(&self.option("matomo_site_id")))
-                    .replace("{matomo_url}", &rustpress_core::formatting::esc_url_raw(&rustpress_core::urls::trailingslashit(&self.option("matomo_url"))))
+                    .replace(
+                        "{matomo_url}",
+                        &rustpress_core::formatting::esc_url_raw(
+                            &rustpress_core::urls::trailingslashit(&self.option("matomo_url")),
+                        ),
+                    )
             }
-            "clicky" => self.template("clicky.js").replace("{site_ID}", &esc_attr(&self.option("clicky_site_id"))),
+            "clicky" => self
+                .template("clicky.js")
+                .replace("{site_ID}", &esc_attr(&self.option("clicky_site_id"))),
             "clarity" => {
-                let variant = if self.is("clarity_consent_mode", "yes") && self.is("consent_for_anonymous_stats", "yes") { "-consent-mode" } else { "" };
-                self.template(&format!("clarity{variant}.js")).replace("{site_ID}", &esc_attr(&self.option("clarity_id")))
+                let variant = if self.is("clarity_consent_mode", "yes")
+                    && self.is("consent_for_anonymous_stats", "yes")
+                {
+                    "-consent-mode"
+                } else {
+                    ""
+                };
+                self.template(&format!("clarity{variant}.js"))
+                    .replace("{site_ID}", &esc_attr(&self.option("clarity_id")))
             }
             "yandex" => {
-                let ecommerce = if self.is("yandex_ecommerce", "yes") { "ecommerce:\"dataLayer\"" } else { "" };
-                self.template("yandex.js").replace("{yandex_id}", &self.option("yandex_id")).replace("{ecommerce}", ecommerce)
+                let ecommerce = if self.is("yandex_ecommerce", "yes") {
+                    "ecommerce:\"dataLayer\""
+                } else {
+                    ""
+                };
+                self.template("yandex.js")
+                    .replace("{yandex_id}", &self.option("yandex_id"))
+                    .replace("{ecommerce}", ecommerce)
             }
             _ => String::new(),
         }
@@ -121,14 +177,31 @@ impl Context<'_> {
         }
         match self.option("compile_statistics").as_str() {
             "google-tag-manager" => {
-                let template = if self.is("cmplz-tm-template", "yes") { "-template" } else { "" };
-                let consent_mode = if self.options.consent_mode() { format!("-consent-mode{template}") } else { String::new() };
-                self.template(&format!("google-tag-manager{consent_mode}.js")).replace("{gtm_code}", &esc_attr(&self.option("gtm_code")))
+                let template = if self.is("cmplz-tm-template", "yes") {
+                    "-template"
+                } else {
+                    ""
+                };
+                let consent_mode = if self.options.consent_mode() {
+                    format!("-consent-mode{template}")
+                } else {
+                    String::new()
+                };
+                self.template(&format!("google-tag-manager{consent_mode}.js"))
+                    .replace("{gtm_code}", &esc_attr(&self.option("gtm_code")))
             }
             "matomo-tag-manager" => self
                 .template("matomo-tag-manager.js")
-                .replace("{container_id}", &esc_attr(&self.option("matomo_container_id")))
-                .replace("{matomo_url}", &rustpress_core::formatting::esc_url_raw(&rustpress_core::urls::trailingslashit(&self.option("matomo_tag_url")))),
+                .replace(
+                    "{container_id}",
+                    &esc_attr(&self.option("matomo_container_id")),
+                )
+                .replace(
+                    "{matomo_url}",
+                    &rustpress_core::formatting::esc_url_raw(
+                        &rustpress_core::urls::trailingslashit(&self.option("matomo_tag_url")),
+                    ),
+                ),
             _ => String::new(),
         }
     }
@@ -139,9 +212,17 @@ impl Context<'_> {
             return String::new();
         }
         let country = self.option("country_company");
-        let country = if truthy(&self.options.get("country_company")) { country } else { "US".into() };
-        let script = self.template("amazon-consent-signal.js").replace("{country_code}", &esc_js(&country));
-        format!("<!-- Amazon Consent Signal Complianz GDPR/CCPA -->\n\t\t\t<script data-category=\"functional\">{script}</script>\n\t\t\t")
+        let country = if truthy(&self.options.get("country_company")) {
+            country
+        } else {
+            "US".into()
+        };
+        let script = self
+            .template("amazon-consent-signal.js")
+            .replace("{country_code}", &esc_js(&country));
+        format!(
+            "<!-- Amazon Consent Signal Complianz GDPR/CCPA -->\n\t\t\t<script data-category=\"functional\">{script}</script>\n\t\t\t"
+        )
     }
 
     /// `inline_cookie_script()`.
@@ -150,7 +231,11 @@ impl Context<'_> {
         let statistics = self.option("compile_statistics");
         let aw_code = self.option("aw_code");
         let mut additional = String::new();
-        for tag in self.option("additional_gtags_marketing").split(',').map(str::trim) {
+        for tag in self
+            .option("additional_gtags_marketing")
+            .split(',')
+            .map(str::trim)
+        {
             additional.push_str(&format!("gtag('config', '{}' );", esc_attr(tag)));
         }
         out.push_str(&self.before_statistics_script());
@@ -165,13 +250,20 @@ impl Context<'_> {
             } else {
                 let script = self.statistics_script();
                 if !script.is_empty() && script != "0" {
-                    let plain = if self.category == "functional" { "" } else { "type=\"text/plain\"" };
+                    let plain = if self.category == "functional" {
+                        ""
+                    } else {
+                        "type=\"text/plain\""
+                    };
                     out.push_str(comment);
                     out.push_str(&format!("\t\t\t\t\t\t<script {plain}\t\t\t\t\t\t\tdata-category=\"{}\">{script}</script>\n\t\t\t\t\t\t\t", esc_attr(self.category)));
                 }
             }
             if truthy(&self.options.get("aw_code")) && statistics == "google-analytics" {
-                let script = self.template("gtag-remarketing.js").replace("{aw_code}", &aw_code).replace("{additional_tags}", &additional);
+                let script = self
+                    .template("gtag-remarketing.js")
+                    .replace("{aw_code}", &aw_code)
+                    .replace("{additional_tags}", &additional);
                 if self.options.consent_mode() && !self.is("gtag-basic-consent-mode", "yes") {
                     out.push_str(&format!("\t\t\t\t\t\t<script data-category=\"functional\">{script}</script>\n\t\t\t\t\t\t"));
                 } else {
@@ -179,10 +271,16 @@ impl Context<'_> {
                 }
             }
         }
-        if matches!(self.options.get("disable_cookie_block"), rustpress_phpser::Value::Int(1)) {
+        if matches!(
+            self.options.get("disable_cookie_block"),
+            rustpress_phpser::Value::Int(1)
+        ) {
             return out;
         }
-        let Some(rustpress_phpser::Value::Array(scripts)) = item(self.custom_scripts, "add_script") else { return out };
+        let Some(rustpress_phpser::Value::Array(scripts)) = item(self.custom_scripts, "add_script")
+        else {
+            return out;
+        };
         for (_, script) in scripts {
             if !item(script, "enable").is_some_and(truthy) {
                 continue;
@@ -192,8 +290,14 @@ impl Context<'_> {
                 continue;
             }
             let category = item(script, "category").map(php_string).unwrap_or_default();
-            let asynchronous = if item(script, "async").is_some_and(truthy) { "async" } else { "" };
-            out.push_str(&format!("<!-- Script Center {category} script Complianz GDPR/CCPA -->\n"));
+            let asynchronous = if item(script, "async").is_some_and(truthy) {
+                "async"
+            } else {
+                ""
+            };
+            out.push_str(&format!(
+                "<!-- Script Center {category} script Complianz GDPR/CCPA -->\n"
+            ));
             out.push_str(&format!("\t\t\t\t<script {asynchronous} type=\"text/plain\"\n\t\t\t\t\t\t\t\t\t\t\tdata-category=\"{}\">\n\t\t\t\t\t{editor}\n\t\t\t\t</script>\n\t\t\t\t", esc_attr(&category)));
         }
         out
@@ -201,7 +305,12 @@ impl Context<'_> {
 
     /// `inline_cookie_script_no_warning()`.
     pub fn inline_cookie_script_no_warning(&self) -> String {
-        format!("{}\t\t\t<script data-category=\"functional\">\n\t\t\t\t{}\t\t\t\t{}\t\t\t</script>\n\t\t\t", self.before_statistics_script(), self.statistics_script(), self.tagmanager_script())
+        format!(
+            "{}\t\t\t<script data-category=\"functional\">\n\t\t\t\t{}\t\t\t\t{}\t\t\t</script>\n\t\t\t",
+            self.before_statistics_script(),
+            self.statistics_script(),
+            self.tagmanager_script()
+        )
     }
 
     /// `inject_gtg_gtm_consent_script()` / `inject_gtg_ga_consent_script()` on `wp_head` at priority 0.
@@ -213,13 +322,21 @@ impl Context<'_> {
         let (comment, script) = match self.option("compile_statistics_more_info_gtg").as_str() {
             "google-tag-manager" => (
                 "<!-- GTG GTM script Complianz GDPR/CCPA -->",
-                self.template("gtg-tag-manager-consent-mode.js").replace("{ads_data_redaction}", flag("cmplz-gtag-ads_data_redaction")).replace("{url_passthrough}", flag("cmplz-gtag-urlpassthrough")),
+                self.template("gtg-tag-manager-consent-mode.js")
+                    .replace(
+                        "{ads_data_redaction}",
+                        flag("cmplz-gtag-ads_data_redaction"),
+                    )
+                    .replace("{url_passthrough}", flag("cmplz-gtag-urlpassthrough")),
             ),
             "google-analytics" => (
                 "<!-- GTG GA4 Consent Mode script Complianz GDPR/CCPA -->",
                 self.template("gtg-consent-mode.js")
                     .replace("{enable_tcf_support}", "false")
-                    .replace("{ads_data_redaction}", flag("cmplz-gtag-ads_data_redaction"))
+                    .replace(
+                        "{ads_data_redaction}",
+                        flag("cmplz-gtag-ads_data_redaction"),
+                    )
                     .replace("{url_passthrough}", flag("cmplz-gtag-urlpassthrough"))
                     .replace("{G_code}", &esc_attr(&self.option("ua_code")))
                     .replace("{cookie_prefix}", self.cookie_prefix),

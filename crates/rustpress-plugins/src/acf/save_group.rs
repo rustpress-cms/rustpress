@@ -17,12 +17,16 @@ struct Writer<'a> {
 }
 
 /// A failed `wp_insert_post()`: a database error stops the save, a `WP_Error` (which ACF ignores) is logged.
-fn content_result<T: Default>(result: std::result::Result<T, rustpress_content::content::ContentError>) -> Result<T> {
+fn content_result<T: Default>(
+    result: std::result::Result<T, rustpress_content::content::ContentError>,
+) -> Result<T> {
     match result {
         Ok(value) => Ok(value),
         Err(rustpress_content::content::ContentError::Db(e)) => Err(e.into()),
         Err(rustpress_content::content::ContentError::Message(message)) => {
-            rustpress_core::OrLog::or_log(Err::<(), _>(format!("ACF could not write a post: {message}")));
+            rustpress_core::OrLog::or_log(Err::<(), _>(format!(
+                "ACF could not write a post: {message}"
+            )));
             Ok(T::default())
         }
     }
@@ -51,14 +55,30 @@ fn parse_types(items: Vec<(Key, Value)>) -> Vec<(Key, Value)> {
 
 /// `array_filter()` then `array_values()` of a list of lists, the inner lists the same (empty values go).
 fn clean_groups(value: &Value) -> Value {
-    let Value::Array(groups) = value else { return value.clone() };
-    let list = |items: Vec<Value>| Value::Array(items.into_iter().enumerate().map(|(i, v)| (Key::Int(i as i64), v)).collect());
+    let Value::Array(groups) = value else {
+        return value.clone();
+    };
+    let list = |items: Vec<Value>| {
+        Value::Array(
+            items
+                .into_iter()
+                .enumerate()
+                .map(|(i, v)| (Key::Int(i as i64), v))
+                .collect(),
+        )
+    };
     list(
         groups
             .iter()
             .filter(|(_, g)| truthy(Some(g)))
             .map(|(_, g)| match g {
-                Value::Array(rules) => list(rules.iter().filter(|(_, r)| truthy(Some(r))).map(|(_, r)| r.clone()).collect()),
+                Value::Array(rules) => list(
+                    rules
+                        .iter()
+                        .filter(|(_, r)| truthy(Some(r)))
+                        .map(|(_, r)| r.clone())
+                        .collect(),
+                ),
                 other => other.clone(),
             })
             .collect(),
@@ -67,12 +87,17 @@ fn clean_groups(value: &Value) -> Value {
 
 fn get<'v>(items: &'v [(Key, Value)], name: &str) -> Option<&'v Value> {
     let k = key(name);
-    items.iter().find(|(existing, _)| super::php::key_eq(existing, &k)).map(|(_, v)| v)
+    items
+        .iter()
+        .find(|(existing, _)| super::php::key_eq(existing, &k))
+        .map(|(_, v)| v)
 }
 
 fn remove(items: &mut Vec<(Key, Value)>, name: &str) -> Option<Value> {
     let k = key(name);
-    let at = items.iter().position(|(existing, _)| super::php::key_eq(existing, &k))?;
+    let at = items
+        .iter()
+        .position(|(existing, _)| super::php::key_eq(existing, &k))?;
     Some(items.remove(at).1)
 }
 
@@ -84,7 +109,10 @@ fn decode_choices(value: Option<&Value>, array_keys: bool) -> Value {
         Some(Value::Str(bytes)) if !bytes.is_empty() => String::from_utf8_lossy(bytes).into_owned(),
         _ => return Value::Array(Vec::new()),
     };
-    let trim = |s: &str| s.trim_matches([' ', '\t', '\n', '\r', '\0', '\x0b']).to_owned();
+    let trim = |s: &str| {
+        s.trim_matches([' ', '\t', '\n', '\r', '\0', '\x0b'])
+            .to_owned()
+    };
     let mut items: Vec<(Key, Value)> = Vec::new();
     for line in text.split('\n') {
         let (k, v) = match line.split_once(" : ") {
@@ -99,7 +127,21 @@ fn decode_choices(value: Option<&Value>, array_keys: bool) -> Value {
         super::php::set_key(&mut items, k, string(&v));
     }
     if array_keys {
-        return Value::Array(items.into_iter().enumerate().map(|(i, (k, _))| (Key::Int(i as i64), match k { Key::Int(n) => Value::Int(n), Key::Str(s) => Value::Str(s) })).collect());
+        return Value::Array(
+            items
+                .into_iter()
+                .enumerate()
+                .map(|(i, (k, _))| {
+                    (
+                        Key::Int(i as i64),
+                        match k {
+                            Key::Int(n) => Value::Int(n),
+                            Key::Str(s) => Value::Str(s),
+                        },
+                    )
+                })
+                .collect(),
+        );
     }
     Value::Array(items)
 }
@@ -115,7 +157,11 @@ fn type_update_field(items: &mut Vec<(Key, Value)>) {
             if !truthy(get(items, "multiple")) {
                 // `acf_unarray()`.
                 defaults = match defaults {
-                    Value::Array(list) => list.into_iter().next().map(|(_, v)| v).unwrap_or(Value::Bool(false)),
+                    Value::Array(list) => list
+                        .into_iter()
+                        .next()
+                        .map(|(_, v)| v)
+                        .unwrap_or(Value::Bool(false)),
                     other => other,
                 };
             }
@@ -138,10 +184,24 @@ fn type_update_field(items: &mut Vec<(Key, Value)>) {
 /// `acf_update_field( $field, $specific )`.
 async fn update_field(w: &Writer<'_>, posted: Vec<(Key, Value)>, specific: bool) -> Result<u64> {
     // `acf_validate_field()` leaves a field that is already valid alone.
-    let mut field = if truthy(get(&posted, "_valid")) { RenderField { items: posted, sub_fields: Vec::new() } } else { RenderField::raw(posted, Vec::new()) };
+    let mut field = if truthy(get(&posted, "_valid")) {
+        RenderField {
+            items: posted,
+            sub_fields: Vec::new(),
+        }
+    } else {
+        RenderField::raw(posted, Vec::new())
+    };
     // The translated default of checkboxes (`acf_field_checkbox::initialize()`).
-    if strval(field.get("type")) == "checkbox" && field.get("custom_choice_button_text").is_none_or(|v| matches!(v, Value::Null)) {
-        field.set("custom_choice_button_text", string(&w.content.site.trd("acf", "Add new choice")));
+    if strval(field.get("type")) == "checkbox"
+        && field
+            .get("custom_choice_button_text")
+            .is_none_or(|v| matches!(v, Value::Null))
+    {
+        field.set(
+            "custom_choice_button_text",
+            string(&w.content.site.trd("acf", "Add new choice")),
+        );
     }
     let mut items = parse_types(field.items);
     if truthy(get(&items, "conditional_logic")) {
@@ -151,19 +211,45 @@ async fn update_field(w: &Writer<'_>, posted: Vec<(Key, Value)>, specific: bool)
     // A parent given as a field key.
     let parent = get(&items, "parent").cloned().unwrap_or(Value::Null);
     if truthy(Some(&parent)) && !super::php::is_numeric(&parent) {
-        let id = w.content.db.acf_fields().await?.into_iter().find(|f| f.name == strval(Some(&parent))).map_or(0, |f| f.id);
+        let id = w
+            .content
+            .db
+            .acf_fields()
+            .await?
+            .into_iter()
+            .find(|f| f.name == strval(Some(&parent)))
+            .map_or(0, |f| f.id);
         super::php::set(&mut items, "parent", Value::Int(id as i64));
     }
     type_update_field(&mut items);
     let mut stored = items.clone();
-    for name in ["ID", "key", "label", "name", "prefix", "value", "menu_order", "id", "class", "parent", "_name", "_prepare", "_valid"] {
+    for name in [
+        "ID",
+        "key",
+        "label",
+        "name",
+        "prefix",
+        "value",
+        "menu_order",
+        "id",
+        "class",
+        "parent",
+        "_name",
+        "_prepare",
+        "_valid",
+    ] {
         remove(&mut stored, name);
     }
     let id = super::php::intval(get(&items, "ID")).max(0) as u64;
     let parent = super::php::intval(get(&items, "parent")).max(0) as u64;
     let menu_order = super::php::intval(get(&items, "menu_order")) as i32;
     let data = if specific {
-        rustpress_content::content::PostData { id: Some(id), post_parent: Some(parent), menu_order: Some(menu_order), ..Default::default() }
+        rustpress_content::content::PostData {
+            id: Some(id),
+            post_parent: Some(parent),
+            menu_order: Some(menu_order),
+            ..Default::default()
+        }
     } else {
         rustpress_content::content::PostData {
             id: (id != 0).then_some(id),
@@ -173,7 +259,10 @@ async fn update_field(w: &Writer<'_>, posted: Vec<(Key, Value)>, specific: bool)
             post_title: Some(strval(get(&items, "label"))),
             post_name: Some(strval(get(&items, "key"))),
             post_excerpt: Some(strval(get(&items, "name"))),
-            post_content: Some(String::from_utf8_lossy(&rustpress_phpser::serialize(&Value::Array(stored))).into_owned()),
+            post_content: Some(
+                String::from_utf8_lossy(&rustpress_phpser::serialize(&Value::Array(stored)))
+                    .into_owned(),
+            ),
             post_parent: Some(parent),
             menu_order: Some(menu_order),
             ..Default::default()
@@ -186,9 +275,13 @@ async fn update_field(w: &Writer<'_>, posted: Vec<(Key, Value)>, specific: bool)
 fn delete_field<'a>(w: &'a Writer<'a>, id: u64) -> futures::future::BoxFuture<'a, Result<()>> {
     Box::pin(async move {
         let fields = w.content.db.acf_fields().await?;
-        let Some(field) = fields.iter().find(|f| f.id == id) else { return Ok(()) };
+        let Some(field) = fields.iter().find(|f| f.id == id) else {
+            return Ok(());
+        };
         content_result(w.content.delete_post(field.id, true).await)?;
-        let kind = super::php::strval(rustpress_core::options::maybe_unserialize(&field.content).get("type"));
+        let kind = super::php::strval(
+            rustpress_core::options::maybe_unserialize(&field.content).get("type"),
+        );
         if kind == "group" {
             for sub in fields.iter().filter(|f| f.parent == id) {
                 delete_field(w, sub.id).await?;
@@ -249,7 +342,10 @@ fn validate_internal(post_type: &str, posted: Vec<(Key, Value)>) -> Vec<(Key, Va
     super::php::set(&mut items, "menu_order", Value::Int(menu_order));
     if post_type == "acf-post-type" {
         for (k, v) in items.iter_mut() {
-            if !matches!(defaults.iter().find(|(d, _)| super::php::key_eq(d, k)), Some((_, Value::Bool(_)))) {
+            if !matches!(
+                defaults.iter().find(|(d, _)| super::php::key_eq(d, k)),
+                Some((_, Value::Bool(_)))
+            ) {
                 continue;
             }
             if let Value::Str(s) = v {
@@ -271,21 +367,47 @@ fn validate_internal(post_type: &str, posted: Vec<(Key, Value)>) -> Vec<(Key, Va
 /// `ACF_Internal_Post_Type::update_post( $post )` of a field group, post type or taxonomy: `validate_post()`,
 /// `acf_parse_types()`, `pre_update_field_group()`, the post and `flush_post_cache()` – a post type with a key or a
 /// taxonomy registers again, so the rewrite rules of the site under `wp_root` are flushed.
-pub(super) async fn update_internal_post(content: &rustpress_content::content::Content<'_>, wp_root: Option<&std::path::Path>, post_type: &str, posted: Vec<(Key, Value)>) -> Result<()> {
-    update_internal_post_as(content, wp_root, post_type, posted, 0).await.map(|_| ())
+pub(super) async fn update_internal_post(
+    content: &rustpress_content::content::Content<'_>,
+    wp_root: Option<&std::path::Path>,
+    post_type: &str,
+    posted: Vec<(Key, Value)>,
+) -> Result<()> {
+    update_internal_post_as(content, wp_root, post_type, posted, 0)
+        .await
+        .map(|_| ())
 }
 
 /// [`update_internal_post`] that inserts an item without `ID` as the post of `user` (`wp_insert_post()`); the ID of
 /// the post.
-pub(super) async fn update_internal_post_as(content: &rustpress_content::content::Content<'_>, wp_root: Option<&std::path::Path>, post_type: &str, posted: Vec<(Key, Value)>, user: u64) -> Result<u64> {
-    let items = if truthy(get(&posted, "_valid")) { posted } else { validate_internal(post_type, posted) };
+pub(super) async fn update_internal_post_as(
+    content: &rustpress_content::content::Content<'_>,
+    wp_root: Option<&std::path::Path>,
+    post_type: &str,
+    posted: Vec<(Key, Value)>,
+    user: u64,
+) -> Result<u64> {
+    let items = if truthy(get(&posted, "_valid")) {
+        posted
+    } else {
+        validate_internal(post_type, posted)
+    };
     let mut items = parse_types(items);
     if post_type == "acf-field-group" && truthy(get(&items, "location")) {
         let cleaned = clean_groups(get(&items, "location").unwrap_or(&Value::Null));
         super::php::set(&mut items, "location", cleaned);
     }
     let mut stored = items.clone();
-    for name in ["ID", "key", "title", "menu_order", "fields", "active", "_valid", "_parent"] {
+    for name in [
+        "ID",
+        "key",
+        "title",
+        "menu_order",
+        "fields",
+        "active",
+        "_valid",
+        "_parent",
+    ] {
         remove(&mut stored, name);
     }
     let title = strval(get(&items, "title"));
@@ -293,12 +415,22 @@ pub(super) async fn update_internal_post_as(content: &rustpress_content::content
     let data = rustpress_content::content::PostData {
         id: (id > 0).then_some(id as u64),
         post_author: (id <= 0).then_some(user),
-        post_status: Some(if truthy(get(&items, "active")) { "publish" } else { "acf-disabled" }.into()),
+        post_status: Some(
+            if truthy(get(&items, "active")) {
+                "publish"
+            } else {
+                "acf-disabled"
+            }
+            .into(),
+        ),
         post_type: Some(post_type.to_owned()),
         post_title: Some(title.clone()),
         post_name: Some(strval(get(&items, "key"))),
         post_excerpt: Some(rustpress_core::slug::sanitize_title(&title)),
-        post_content: Some(String::from_utf8_lossy(&rustpress_phpser::serialize(&Value::Array(stored))).into_owned()),
+        post_content: Some(
+            String::from_utf8_lossy(&rustpress_phpser::serialize(&Value::Array(stored)))
+                .into_owned(),
+        ),
         menu_order: Some(super::php::intval(get(&items, "menu_order")) as i32),
         comment_status: Some("closed".into()),
         ping_status: Some("closed".into()),
@@ -315,8 +447,18 @@ pub(super) async fn update_internal_post_as(content: &rustpress_content::content
         // The type is unregistered and, when active, registered again.
         let taxonomy = post_type == "acf-taxonomy";
         let name = strval(get(&items, if taxonomy { "taxonomy" } else { "post_type" }));
-        let change = rustpress_core::rewrite_gen::Reregistered { taxonomy, name: &name, active: truthy(get(&items, "active")) };
-        rustpress_core::rewrite_gen::flush_rewrite_rules(content.site, content.writer, wp_root, change).await?;
+        let change = rustpress_core::rewrite_gen::Reregistered {
+            taxonomy,
+            name: &name,
+            active: truthy(get(&items, "active")),
+        };
+        rustpress_core::rewrite_gen::flush_rewrite_rules(
+            content.site,
+            content.writer,
+            wp_root,
+            change,
+        )
+        .await?;
     }
     Ok(if id > 0 { id as u64 } else { saved })
 }
@@ -329,17 +471,32 @@ pub async fn save_post(ctx: &PostSaved<'_>) -> Result<()> {
         return Ok(());
     }
     // `acf_verify_nonce( 'field_group' )`.
-    if !actx.post_field("_acf_nonce").is_some_and(|nonce| !nonce.is_empty() && (actx.verify_nonce)(nonce, "field_group")) {
+    if !actx
+        .post_field("_acf_nonce")
+        .is_some_and(|nonce| !nonce.is_empty() && (actx.verify_nonce)(nonce, "field_group"))
+    {
         return Ok(());
     }
     if !(actx.can)("manage_options") {
         return Ok(());
     }
     let system = rustpress_auth::CurrentUser::system();
-    let w = Writer { content: rustpress_content::content::Content { site: actx.site, db: &actx.site.db, writer: ctx.writer, user: &system, now: actx.now }, user: actx.user };
-    if let Some(Value::Array(fields)) = rustpress_core::native::form_value(actx.form, "acf_fields") {
+    let w = Writer {
+        content: rustpress_content::content::Content {
+            site: actx.site,
+            db: &actx.site.db,
+            writer: ctx.writer,
+            user: &system,
+            now: actx.now,
+        },
+        user: actx.user,
+    };
+    if let Some(Value::Array(fields)) = rustpress_core::native::form_value(actx.form, "acf_fields")
+    {
         for (_, field) in fields {
-            let Value::Array(mut items) = field else { continue };
+            let Value::Array(mut items) = field else {
+                continue;
+            };
             if get(&items, "key").is_none() {
                 continue;
             }
@@ -351,7 +508,10 @@ pub async fn save_post(ctx: &PostSaved<'_>) -> Result<()> {
             update_field(&w, items, specific).await?;
         }
     }
-    if let Some(ids) = actx.post_field("_acf_delete_fields").filter(|v| truthy(Some(&string(v)))) {
+    if let Some(ids) = actx
+        .post_field("_acf_delete_fields")
+        .filter(|v| truthy(Some(&string(v))))
+    {
         for id in ids.split('|').map(|s| super::php::intval(Some(&string(s)))) {
             if id > 0 {
                 delete_field(&w, id as u64).await?;
@@ -363,7 +523,11 @@ pub async fn save_post(ctx: &PostSaved<'_>) -> Result<()> {
         _ => Vec::new(),
     };
     super::php::set(&mut group, "ID", Value::Int(post.id as i64));
-    super::php::set(&mut group, "title", string(actx.post_field("post_title").unwrap_or_default()));
+    super::php::set(
+        &mut group,
+        "title",
+        string(actx.post_field("post_title").unwrap_or_default()),
+    );
     update_internal_post(&w.content, None, "acf-field-group", group).await
 }
 
@@ -374,9 +538,16 @@ fn unique_key(prefix: &str) -> String {
 }
 
 /// `acf_duplicate_fields( $fields, $parent_id )`: new keys first (conditional logic refers to them), then each field.
-fn duplicate_fields<'a>(w: &'a Writer<'a>, fields: Vec<RenderField>, parent: u64) -> futures::future::BoxFuture<'a, Result<()>> {
+fn duplicate_fields<'a>(
+    w: &'a Writer<'a>,
+    fields: Vec<RenderField>,
+    parent: u64,
+) -> futures::future::BoxFuture<'a, Result<()>> {
     Box::pin(async move {
-        let keys: Vec<(String, String)> = fields.iter().map(|f| (strval(f.get("key")), unique_key("field_"))).collect();
+        let keys: Vec<(String, String)> = fields
+            .iter()
+            .map(|f| (strval(f.get("key")), unique_key("field_")))
+            .collect();
         for field in fields {
             duplicate_field(w, field, parent, &keys).await?;
         }
@@ -386,10 +557,18 @@ fn duplicate_fields<'a>(w: &'a Writer<'a>, fields: Vec<RenderField>, parent: u64
 
 /// `acf_duplicate_field( $id, $parent_id )`; a group saves itself first and duplicates its sub fields below it
 /// (`acf_field_group::duplicate_field()`).
-async fn duplicate_field(w: &Writer<'_>, mut field: RenderField, parent: u64, keys: &[(String, String)]) -> Result<u64> {
+async fn duplicate_field(
+    w: &Writer<'_>,
+    mut field: RenderField,
+    parent: u64,
+    keys: &[(String, String)],
+) -> Result<u64> {
     field.set("ID", Value::Int(0));
     let old_key = strval(field.get("key"));
-    let new_key = keys.iter().find(|(k, _)| *k == old_key).map_or_else(|| unique_key("field_"), |(_, v)| v.clone());
+    let new_key = keys
+        .iter()
+        .find(|(k, _)| *k == old_key)
+        .map_or_else(|| unique_key("field_"), |(_, v)| v.clone());
     field.set("key", string(&new_key));
     if parent != 0 {
         field.set("parent", Value::Int(parent as i64));
@@ -406,7 +585,8 @@ async fn duplicate_field(w: &Writer<'_>, mut field: RenderField, parent: u64, ke
                             .map(|(rk, rule)| match rule {
                                 Value::Array(mut items) => {
                                     let target = strval(get(&items, "field"));
-                                    if let Some((_, new)) = keys.iter().find(|(k, _)| *k == target) {
+                                    if let Some((_, new)) = keys.iter().find(|(k, _)| *k == target)
+                                    {
                                         super::php::set(&mut items, "field", string(new));
                                     }
                                     (rk, Value::Array(items))
@@ -451,7 +631,11 @@ fn sub_fields_render(w: &Writer<'_>, fields: &[super::fields::Field]) -> Vec<Ren
 /// `acf_prepare_fields_for_import()`: each field, a group followed by its sub fields with the group's key as their
 /// parent and their place as their order (`acf_field_group::prepare_field_for_import()`).
 fn flatten_for_import(mut field: Vec<(Key, Value)>, out: &mut Vec<Vec<(Key, Value)>>) {
-    let subs = if strval(get(&field, "type")) == "group" && truthy(get(&field, "sub_fields")) { remove(&mut field, "sub_fields") } else { None };
+    let subs = if strval(get(&field, "type")) == "group" && truthy(get(&field, "sub_fields")) {
+        remove(&mut field, "sub_fields")
+    } else {
+        None
+    };
     let field_key = get(&field, "key").cloned().unwrap_or(Value::Null);
     out.push(field);
     if let Some(Value::Array(subs)) = subs {
@@ -478,22 +662,52 @@ fn stored_fields_below(parent: u64, all: &[rustpress_db::AcfPost], out: &mut Vec
 /// import no longer has are deleted, a new group gets its post before –, then the item. The ID of its post.
 /// A post type or taxonomy it registers again is added to `reregistered` (`(taxonomy, key, active)`) for the flush
 /// of the rewrite rules after the import.
-pub(super) async fn import_item(ctx: &rustpress_core::native::AdminContext<'_>, post_type: &str, item: Vec<(Key, Value)>, existing: Option<u64>, reregistered: &mut Vec<(bool, String, bool)>) -> Result<u64> {
-    let Some(writer) = ctx.writer else { return Ok(0) };
+pub(super) async fn import_item(
+    ctx: &rustpress_core::native::AdminContext<'_>,
+    post_type: &str,
+    item: Vec<(Key, Value)>,
+    existing: Option<u64>,
+    reregistered: &mut Vec<(bool, String, bool)>,
+) -> Result<u64> {
+    let Some(writer) = ctx.writer else {
+        return Ok(0);
+    };
     let site = ctx.site;
     let system = rustpress_auth::CurrentUser::system();
-    let w = Writer { content: rustpress_content::content::Content { site, db: &site.db, writer, user: &system, now: ctx.now }, user: ctx.user };
+    let w = Writer {
+        content: rustpress_content::content::Content {
+            site,
+            db: &site.db,
+            writer,
+            user: &system,
+            now: ctx.now,
+        },
+        user: ctx.user,
+    };
     let mut item = item;
     if let Some(id) = existing {
         super::php::set(&mut item, "ID", Value::Int(id as i64));
     }
     // `get_valid_post()`.
-    let mut items = if truthy(get(&item, "_valid")) { item } else { validate_internal(post_type, item) };
+    let mut items = if truthy(get(&item, "_valid")) {
+        item
+    } else {
+        validate_internal(post_type, item)
+    };
     if post_type == "acf-field-group" {
         let group_key = strval(get(&items, "key"));
         // `prepare_post_for_import()`.
         let listed: Vec<Vec<(Key, Value)>> = match get(&items, "fields") {
-            Some(Value::Array(list)) => list.iter().filter_map(|(_, v)| if let Value::Array(f) = v { Some(f.clone()) } else { None }).collect(),
+            Some(Value::Array(list)) => list
+                .iter()
+                .filter_map(|(_, v)| {
+                    if let Value::Array(f) = v {
+                        Some(f.clone())
+                    } else {
+                        None
+                    }
+                })
+                .collect(),
             _ => Vec::new(),
         };
         let mut flat = Vec::new();
@@ -504,7 +718,10 @@ pub(super) async fn import_item(ctx: &rustpress_core::native::AdminContext<'_>, 
         }
         // `$ids`: key => ID.
         let mut ids: Vec<(String, u64)> = Vec::new();
-        let remember = |ids: &mut Vec<(String, u64)>, key: String, id: u64| match ids.iter_mut().find(|(k, _)| *k == key) {
+        let remember = |ids: &mut Vec<(String, u64)>, key: String, id: u64| match ids
+            .iter_mut()
+            .find(|(k, _)| *k == key)
+        {
             Some(slot) => slot.1 = id,
             None => ids.push((key, id)),
         };
@@ -521,7 +738,16 @@ pub(super) async fn import_item(ctx: &rustpress_core::native::AdminContext<'_>, 
                 }
             }
         } else {
-            group_id = content_result(w.content.insert_post(&rustpress_content::content::PostData { post_title: Some(group_key.clone()), post_type: Some("acf-field-group".into()), post_author: Some(ctx.user), ..Default::default() }).await)?;
+            group_id = content_result(
+                w.content
+                    .insert_post(&rustpress_content::content::PostData {
+                        post_title: Some(group_key.clone()),
+                        post_type: Some("acf-field-group".into()),
+                        post_author: Some(ctx.user),
+                        ..Default::default()
+                    })
+                    .await,
+            )?;
             super::php::set(&mut items, "ID", Value::Int(group_id as i64));
         }
         remember(&mut ids, group_key, group_id);
@@ -546,26 +772,59 @@ pub(super) async fn import_item(ctx: &rustpress_core::native::AdminContext<'_>, 
         _ => false,
     };
     if registers {
-        reregistered.push((taxonomy, strval(get(&items, if taxonomy { "taxonomy" } else { "post_type" })), truthy(get(&items, "active"))));
+        reregistered.push((
+            taxonomy,
+            strval(get(&items, if taxonomy { "taxonomy" } else { "post_type" })),
+            truthy(get(&items, "active")),
+        ));
     }
     update_internal_post_as(&w.content, None, post_type, unslash_items(items), ctx.user).await
 }
 
 /// The move of `ACF_Admin_Field_Group::ajax_move_field()`: the field (as `acf_get_field()` loads it) gets the new
 /// group as its parent and loses its conditional logic. The field's label, or `None` without the field.
-pub(super) async fn move_field(ctx: &rustpress_core::native::AdminContext<'_>, field_id: u64, group_id: Option<u64>) -> Result<Option<String>> {
-    let Some(writer) = ctx.writer else { return Ok(None) };
+pub(super) async fn move_field(
+    ctx: &rustpress_core::native::AdminContext<'_>,
+    field_id: u64,
+    group_id: Option<u64>,
+) -> Result<Option<String>> {
+    let Some(writer) = ctx.writer else {
+        return Ok(None);
+    };
     let site = ctx.site;
     let all = site.db.acf_fields().await?;
-    let Some((parent, field_key)) = all.iter().find(|f| f.id == field_id).map(|f| (f.parent, f.name.clone())) else { return Ok(None) };
-    let Some(field) = super::fields::children_of(parent, &all).into_iter().find(|f| f.key == field_key) else { return Ok(None) };
+    let Some((parent, field_key)) = all
+        .iter()
+        .find(|f| f.id == field_id)
+        .map(|f| (f.parent, f.name.clone()))
+    else {
+        return Ok(None);
+    };
+    let Some(field) = super::fields::children_of(parent, &all)
+        .into_iter()
+        .find(|f| f.key == field_key)
+    else {
+        return Ok(None);
+    };
     let mut field = loaded(site, &field);
     // `$new_field_group['ID']` of a group that does not exist is `null`.
-    field.set("parent", group_id.map_or(Value::Null, |id| Value::Int(id as i64)));
+    field.set(
+        "parent",
+        group_id.map_or(Value::Null, |id| Value::Int(id as i64)),
+    );
     field.set("conditional_logic", Value::Int(0));
     let label = strval(field.get("label"));
     let system = rustpress_auth::CurrentUser::system();
-    let w = Writer { content: rustpress_content::content::Content { site, db: &site.db, writer, user: &system, now: ctx.now }, user: ctx.user };
+    let w = Writer {
+        content: rustpress_content::content::Content {
+            site,
+            db: &site.db,
+            writer,
+            user: &system,
+            now: ctx.now,
+        },
+        user: ctx.user,
+    };
     update_field(&w, unslash_items(field.items), false).await?;
     Ok(Some(label))
 }
@@ -575,26 +834,80 @@ pub(super) fn loaded(site: &Site, field: &super::fields::Field) -> RenderField {
     let services = super::edit_comment::AdminServices(std::path::PathBuf::new());
     let can = |_: &str| true;
     let nonce = |_: &str| String::new();
-    let render = super::render::Ctx { site, nonce: &nonce, services: &services, admin: true, uploader: "wp", wants_uploader: Default::default(), can: &can, rich_edit: true, default_editor: "tinymce", wysiwyg_height: 300 };
+    let render = super::render::Ctx {
+        site,
+        nonce: &nonce,
+        services: &services,
+        admin: true,
+        uploader: "wp",
+        wants_uploader: Default::default(),
+        can: &can,
+        rich_edit: true,
+        default_editor: "tinymce",
+        wysiwyg_height: 300,
+    };
     RenderField::load(field, &render)
 }
 
 /// `acf_duplicate_field_group( $id )` (`ACF_Field_Group::duplicate_post()`): a temporary post for the new ID, the
 /// fields below it with new keys, then the group with a new key and " (copy)" in its title.
-pub(super) async fn duplicate_field_group(ctx: &rustpress_core::native::AdminContext<'_>, post: &Post) -> Result<Option<u64>> {
-    let Some(writer) = ctx.writer else { return Ok(None) };
+pub(super) async fn duplicate_field_group(
+    ctx: &rustpress_core::native::AdminContext<'_>,
+    post: &Post,
+) -> Result<Option<u64>> {
+    let Some(writer) = ctx.writer else {
+        return Ok(None);
+    };
     let site = ctx.site;
     let system = rustpress_auth::CurrentUser::system();
-    let w = Writer { content: rustpress_content::content::Content { site, db: &site.db, writer, user: &system, now: ctx.now }, user: ctx.user };
-    let acf_post = rustpress_db::AcfPost { id: post.id, parent: post.post_parent, title: post.post_title.clone(), name: post.post_name.clone(), excerpt: post.post_excerpt.clone(), menu_order: i64::from(post.menu_order), status: post.post_status.clone(), content: post.post_content.clone() };
-    let Value::Array(mut items) = super::internal::validated(&acf_post, Value::Array(group_defaults())) else { return Ok(None) };
+    let w = Writer {
+        content: rustpress_content::content::Content {
+            site,
+            db: &site.db,
+            writer,
+            user: &system,
+            now: ctx.now,
+        },
+        user: ctx.user,
+    };
+    let acf_post = rustpress_db::AcfPost {
+        id: post.id,
+        parent: post.post_parent,
+        title: post.post_title.clone(),
+        name: post.post_name.clone(),
+        excerpt: post.post_excerpt.clone(),
+        menu_order: i64::from(post.menu_order),
+        status: post.post_status.clone(),
+        content: post.post_content.clone(),
+    };
+    let Value::Array(mut items) =
+        super::internal::validated(&acf_post, Value::Array(group_defaults()))
+    else {
+        return Ok(None);
+    };
     let all = site.db.acf_fields().await?;
-    let fields: Vec<RenderField> = super::fields::children_of(post.id, &all).iter().map(|f| loaded(site, f)).collect();
+    let fields: Vec<RenderField> = super::fields::children_of(post.id, &all)
+        .iter()
+        .map(|f| loaded(site, f))
+        .collect();
     let key_value = unique_key("group_");
     super::php::set(&mut items, "key", string(&key_value));
-    let title = format!("{} ({})", strval(get(&items, "title")), site.trd("acf", "copy"));
+    let title = format!(
+        "{} ({})",
+        strval(get(&items, "title")),
+        site.trd("acf", "copy")
+    );
     super::php::set(&mut items, "title", string(&title));
-    let id = content_result(w.content.insert_post(&rustpress_content::content::PostData { post_title: Some(key_value), post_type: Some("acf-field-group".into()), post_author: Some(ctx.user), ..Default::default() }).await)?;
+    let id = content_result(
+        w.content
+            .insert_post(&rustpress_content::content::PostData {
+                post_title: Some(key_value),
+                post_type: Some("acf-field-group".into()),
+                post_author: Some(ctx.user),
+                ..Default::default()
+            })
+            .await,
+    )?;
     if id == 0 {
         return Ok(None);
     }
@@ -607,7 +920,11 @@ pub(super) async fn duplicate_field_group(ctx: &rustpress_core::native::AdminCon
 /// `ACF_Internal_Post_Type::untrash_post_status()` and `_acf_untrash_field_post_status()`: ACF's posts and fields
 /// come back with their status.
 pub fn untrash_post_status(post: &Post, previous: &str) -> Option<String> {
-    matches!(post.post_type.as_str(), "acf-field-group" | "acf-post-type" | "acf-taxonomy" | "acf-ui-options-page" | "acf-field").then(|| previous.to_owned())
+    matches!(
+        post.post_type.as_str(),
+        "acf-field-group" | "acf-post-type" | "acf-taxonomy" | "acf-ui-options-page" | "acf-field"
+    )
+    .then(|| previous.to_owned())
 }
 
 /// `trashed_post`, `untrashed_post` and `deleted_post` of the field group list: the group's fields go to the trash,
@@ -617,8 +934,25 @@ pub async fn post_trash_change(change: &rustpress_core::native::PostChange<'_>) 
         return Ok(());
     }
     let system = rustpress_auth::CurrentUser::system();
-    let w = Writer { content: rustpress_content::content::Content { site: change.site, db: &change.site.db, writer: change.writer, user: &system, now: change.now }, user: change.user };
-    let fields: Vec<u64> = change.site.db.acf_fields().await?.into_iter().filter(|f| f.parent == change.post.id).map(|f| f.id).collect();
+    let w = Writer {
+        content: rustpress_content::content::Content {
+            site: change.site,
+            db: &change.site.db,
+            writer: change.writer,
+            user: &system,
+            now: change.now,
+        },
+        user: change.user,
+    };
+    let fields: Vec<u64> = change
+        .site
+        .db
+        .acf_fields()
+        .await?
+        .into_iter()
+        .filter(|f| f.parent == change.post.id)
+        .map(|f| f.id)
+        .collect();
     for id in fields {
         match change.kind {
             rustpress_core::native::PostChangeKind::Trashed => {

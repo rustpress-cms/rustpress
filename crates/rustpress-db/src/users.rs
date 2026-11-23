@@ -1,13 +1,16 @@
-use sqlx::AssertSqlSafe;
 use crate::models::{AUTH_USER_COLUMNS, AuthUser, USER_COLUMNS, User};
 use crate::{Db, Result};
+use sqlx::AssertSqlSafe;
 
 impl Db {
     pub async fn user(&self, id: u64) -> Result<Option<User>> {
         if let Some(primed) = crate::primed::primed_user(id) {
             return Ok(primed);
         }
-        let mut sql = crate::sql::Sql::new(format!("SELECT {USER_COLUMNS} FROM {} WHERE ID = ", self.prefix.table("users")));
+        let mut sql = crate::sql::Sql::new(format!(
+            "SELECT {USER_COLUMNS} FROM {} WHERE ID = ",
+            self.prefix.table("users")
+        ));
         sql.push_bind(id);
         let user: Option<User> = sql.fetch_optional(&self.pool).await?;
         crate::primed::remember_user(id, user.clone());
@@ -15,24 +18,46 @@ impl Db {
     }
 
     pub async fn user_by_nicename(&self, nicename: &str) -> Result<Option<User>> {
-        let sql = format!("SELECT {USER_COLUMNS} FROM {} WHERE user_nicename = ?", self.prefix.table("users"));
-        Ok(sqlx::query_as(AssertSqlSafe(sql)).bind(nicename).fetch_optional(&self.pool).await?)
+        let sql = format!(
+            "SELECT {USER_COLUMNS} FROM {} WHERE user_nicename = ?",
+            self.prefix.table("users")
+        );
+        Ok(sqlx::query_as(AssertSqlSafe(sql))
+            .bind(nicename)
+            .fetch_optional(&self.pool)
+            .await?)
     }
 
     /// Users that have published posts of the given types, ordered by login
     /// (`WP_User_Query` with `has_published_posts`).
-    pub async fn users_with_published_posts(&self, post_types: &[&str], limit: u64, offset: u64) -> Result<Vec<User>> {
-        let mut qb = sqlx::QueryBuilder::<sqlx::MySql>::new(format!("SELECT {USER_COLUMNS} FROM {} WHERE ID IN (SELECT post_author FROM {} WHERE post_status = 'publish' AND post_type IN (", self.prefix.table("users"), self.prefix.table("posts")));
+    pub async fn users_with_published_posts(
+        &self,
+        post_types: &[&str],
+        limit: u64,
+        offset: u64,
+    ) -> Result<Vec<User>> {
+        let mut qb = sqlx::QueryBuilder::<sqlx::MySql>::new(format!(
+            "SELECT {USER_COLUMNS} FROM {} WHERE ID IN (SELECT post_author FROM {} WHERE post_status = 'publish' AND post_type IN (",
+            self.prefix.table("users"),
+            self.prefix.table("posts")
+        ));
         let mut separated = qb.separated(", ");
         for t in post_types {
             separated.push_bind((*t).to_owned());
         }
-        qb.push(")) ORDER BY user_login ASC LIMIT ").push_bind(limit).push(" OFFSET ").push_bind(offset);
+        qb.push(")) ORDER BY user_login ASC LIMIT ")
+            .push_bind(limit)
+            .push(" OFFSET ")
+            .push_bind(offset);
         Ok(qb.build_query_as().fetch_all(&self.pool).await?)
     }
 
     pub async fn count_users_with_published_posts(&self, post_types: &[&str]) -> Result<u64> {
-        let mut qb = sqlx::QueryBuilder::<sqlx::MySql>::new(format!("SELECT COUNT(*) FROM {} WHERE ID IN (SELECT post_author FROM {} WHERE post_status = 'publish' AND post_type IN (", self.prefix.table("users"), self.prefix.table("posts")));
+        let mut qb = sqlx::QueryBuilder::<sqlx::MySql>::new(format!(
+            "SELECT COUNT(*) FROM {} WHERE ID IN (SELECT post_author FROM {} WHERE post_status = 'publish' AND post_type IN (",
+            self.prefix.table("users"),
+            self.prefix.table("posts")
+        ));
         let mut separated = qb.separated(", ");
         for t in post_types {
             separated.push_bind((*t).to_owned());
@@ -45,27 +70,58 @@ impl Db {
     /// `SELECT user_id, meta_value FROM wp_usermeta WHERE meta_key = %s`: every row of one key, in the order of the
     /// rows.
     pub async fn user_meta_by_key(&self, key: &str) -> Result<Vec<(u64, String)>> {
-        let sql = format!("SELECT user_id, meta_value FROM {} WHERE meta_key = ? ORDER BY umeta_id", self.prefix.table("usermeta"));
-        let rows: Vec<(u64, Option<String>)> = sqlx::query_as(AssertSqlSafe(sql)).bind(key).fetch_all(&self.pool).await?;
-        Ok(rows.into_iter().map(|(id, value)| (id, value.unwrap_or_default())).collect())
+        let sql = format!(
+            "SELECT user_id, meta_value FROM {} WHERE meta_key = ? ORDER BY umeta_id",
+            self.prefix.table("usermeta")
+        );
+        let rows: Vec<(u64, Option<String>)> = sqlx::query_as(AssertSqlSafe(sql))
+            .bind(key)
+            .fetch_all(&self.pool)
+            .await?;
+        Ok(rows
+            .into_iter()
+            .map(|(id, value)| (id, value.unwrap_or_default()))
+            .collect())
     }
 
     /// One `wp_usermeta` value (`get_user_meta( $id, $key, true )`).
     pub async fn user_meta(&self, user_id: u64, key: &str) -> Result<Option<String>> {
         match crate::primed::primed_user_meta(user_id) {
-            Ok(Some(rows)) => return Ok(rows.into_iter().find(|(k, _)| k == key).and_then(|(_, v)| v)),
+            Ok(Some(rows)) => {
+                return Ok(rows
+                    .into_iter()
+                    .find(|(k, _)| k == key)
+                    .and_then(|(_, v)| v));
+            }
             // Inside a request: all rows of the user in one query, the next keys come from the cache.
             Ok(None) => {
-                let sql = format!("SELECT meta_key, meta_value FROM {} WHERE user_id = ? ORDER BY umeta_id", self.prefix.table("usermeta"));
-                let rows: Vec<(String, Option<String>)> = sqlx::query_as(AssertSqlSafe(sql)).bind(user_id).fetch_all(&self.pool).await?;
-                let value = rows.iter().find(|(k, _)| k == key).and_then(|(_, v)| v.clone());
+                let sql = format!(
+                    "SELECT meta_key, meta_value FROM {} WHERE user_id = ? ORDER BY umeta_id",
+                    self.prefix.table("usermeta")
+                );
+                let rows: Vec<(String, Option<String>)> = sqlx::query_as(AssertSqlSafe(sql))
+                    .bind(user_id)
+                    .fetch_all(&self.pool)
+                    .await?;
+                let value = rows
+                    .iter()
+                    .find(|(k, _)| k == key)
+                    .and_then(|(_, v)| v.clone());
                 crate::primed::remember_user_meta(user_id, rows);
                 return Ok(value);
             }
             Err(()) => {}
         }
-        let sql = format!("SELECT meta_value FROM {} WHERE user_id = ? AND meta_key = ? ORDER BY umeta_id LIMIT 1", self.prefix.table("usermeta"));
-        Ok(sqlx::query_scalar::<_, Option<String>>(AssertSqlSafe(sql)).bind(user_id).bind(key).fetch_optional(&self.pool).await?.flatten())
+        let sql = format!(
+            "SELECT meta_value FROM {} WHERE user_id = ? AND meta_key = ? ORDER BY umeta_id LIMIT 1",
+            self.prefix.table("usermeta")
+        );
+        Ok(sqlx::query_scalar::<_, Option<String>>(AssertSqlSafe(sql))
+            .bind(user_id)
+            .bind(key)
+            .fetch_optional(&self.pool)
+            .await?
+            .flatten())
     }
 }
 impl Db {
@@ -76,23 +132,48 @@ impl Db {
 
     /// A user with the password hash, for signing in. Only the authentication code asks for this.
     pub async fn auth_user_by_login(&self, login: &str) -> Result<Option<AuthUser>> {
-        let sql = format!("SELECT {AUTH_USER_COLUMNS} FROM {} WHERE user_login = ?", self.prefix.table("users"));
-        Ok(sqlx::query_as(AssertSqlSafe(sql)).bind(login).fetch_optional(&self.pool).await?)
+        let sql = format!(
+            "SELECT {AUTH_USER_COLUMNS} FROM {} WHERE user_login = ?",
+            self.prefix.table("users")
+        );
+        Ok(sqlx::query_as(AssertSqlSafe(sql))
+            .bind(login)
+            .fetch_optional(&self.pool)
+            .await?)
     }
 
     /// `user_activation_key` of a user: the password reset key (`time:hash`) or the activation key.
     pub async fn user_activation_key(&self, id: u64) -> Result<String> {
-        let sql = format!("SELECT user_activation_key FROM {} WHERE ID = ?", self.prefix.table("users"));
-        Ok(sqlx::query_scalar::<_, String>(AssertSqlSafe(sql)).bind(id).fetch_optional(&self.pool).await?.unwrap_or_default())
+        let sql = format!(
+            "SELECT user_activation_key FROM {} WHERE ID = ?",
+            self.prefix.table("users")
+        );
+        Ok(sqlx::query_scalar::<_, String>(AssertSqlSafe(sql))
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await?
+            .unwrap_or_default())
     }
 
     pub async fn auth_user_by_id(&self, id: u64) -> Result<Option<AuthUser>> {
-        let sql = format!("SELECT {AUTH_USER_COLUMNS} FROM {} WHERE ID = ?", self.prefix.table("users"));
-        Ok(sqlx::query_as(AssertSqlSafe(sql)).bind(id).fetch_optional(&self.pool).await?)
+        let sql = format!(
+            "SELECT {AUTH_USER_COLUMNS} FROM {} WHERE ID = ?",
+            self.prefix.table("users")
+        );
+        Ok(sqlx::query_as(AssertSqlSafe(sql))
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await?)
     }
 
     pub async fn auth_user_by_email(&self, email: &str) -> Result<Option<AuthUser>> {
-        let sql = format!("SELECT {AUTH_USER_COLUMNS} FROM {} WHERE user_email = ?", self.prefix.table("users"));
-        Ok(sqlx::query_as(AssertSqlSafe(sql)).bind(email).fetch_optional(&self.pool).await?)
+        let sql = format!(
+            "SELECT {AUTH_USER_COLUMNS} FROM {} WHERE user_email = ?",
+            self.prefix.table("users")
+        );
+        Ok(sqlx::query_as(AssertSqlSafe(sql))
+            .bind(email)
+            .fetch_optional(&self.pool)
+            .await?)
     }
 }

@@ -81,16 +81,34 @@ impl Mailer {
 
     /// With a plugin's settings: its route (else the environment's), its filters of the sender, and whether it
     /// blocks every message.
-    pub fn configured(default_host: &str, route: Option<Route>, sender: Option<SenderFilter>, blocked: bool) -> Option<Self> {
+    pub fn configured(
+        default_host: &str,
+        route: Option<Route>,
+        sender: Option<SenderFilter>,
+        blocked: bool,
+    ) -> Option<Self> {
         let transport = match route {
             Some(Route::Smtp(smtp)) => Transport::Smtp(smtp_transport(&smtp)?),
-            Some(Route::Sendmail) => Transport::Sendmail(AsyncSendmailTransport::new_with_command(sendmail_command(std::env::var("RUSTPRESS_SENDMAIL").ok().as_deref(), |p| std::path::Path::new(p).is_file())?)),
+            Some(Route::Sendmail) => Transport::Sendmail(AsyncSendmailTransport::new_with_command(
+                sendmail_command(std::env::var("RUSTPRESS_SENDMAIL").ok().as_deref(), |p| {
+                    std::path::Path::new(p).is_file()
+                })?,
+            )),
             None => Self::env_transport()?,
         };
         let host = default_host.trim_start_matches("www.");
-        let from = std::env::var("RUSTPRESS_MAIL_FROM").ok().filter(|f| !f.is_empty()).unwrap_or_else(|| format!("WordPress <wordpress@{host}>"));
+        let from = std::env::var("RUSTPRESS_MAIL_FROM")
+            .ok()
+            .filter(|f| !f.is_empty())
+            .unwrap_or_else(|| format!("WordPress <wordpress@{host}>"));
         match from.parse::<Mailbox>() {
-            Ok(from) => Some(Self { transport, from, sender, default_email: format!("wordpress@{host}"), blocked }),
+            Ok(from) => Some(Self {
+                transport,
+                from,
+                sender,
+                default_email: format!("wordpress@{host}"),
+                blocked,
+            }),
             Err(e) => {
                 tracing::error!(error = %e, "RUSTPRESS_MAIL_FROM is not a valid sender");
                 None
@@ -99,16 +117,25 @@ impl Mailer {
     }
 
     fn env_transport() -> Option<Transport> {
-        Some(match std::env::var("RUSTPRESS_SMTP_URL").ok().filter(|u| !u.is_empty()) {
-            Some(url) => match AsyncSmtpTransport::<Tokio1Executor>::from_url(&url) {
-                Ok(builder) => Transport::Smtp(builder.build()),
-                Err(e) => {
-                    tracing::error!(error = %e, "RUSTPRESS_SMTP_URL is not a valid address");
-                    return None;
-                }
+        Some(
+            match std::env::var("RUSTPRESS_SMTP_URL")
+                .ok()
+                .filter(|u| !u.is_empty())
+            {
+                Some(url) => match AsyncSmtpTransport::<Tokio1Executor>::from_url(&url) {
+                    Ok(builder) => Transport::Smtp(builder.build()),
+                    Err(e) => {
+                        tracing::error!(error = %e, "RUSTPRESS_SMTP_URL is not a valid address");
+                        return None;
+                    }
+                },
+                None => Transport::Sendmail(AsyncSendmailTransport::new_with_command(
+                    sendmail_command(std::env::var("RUSTPRESS_SENDMAIL").ok().as_deref(), |p| {
+                        std::path::Path::new(p).is_file()
+                    })?,
+                )),
             },
-            None => Transport::Sendmail(AsyncSendmailTransport::new_with_command(sendmail_command(std::env::var("RUSTPRESS_SENDMAIL").ok().as_deref(), |p| std::path::Path::new(p).is_file())?)),
-        })
+        )
     }
 
     /// Sends `message` (plain text, UTF-8) to `to`; `false` when it could not be sent.
@@ -117,7 +144,13 @@ impl Mailer {
     }
 
     /// The same with the header lines of `headers` (`"From: ...\nReply-To: ..."`).
-    pub async fn send_with_headers(&self, to: &str, subject: &str, message: &str, headers: &str) -> bool {
+    pub async fn send_with_headers(
+        &self,
+        to: &str,
+        subject: &str,
+        message: &str,
+        headers: &str,
+    ) -> bool {
         let headers: Vec<&str> = headers.lines().collect();
         self.send_mail(to, subject, message, &headers, &[]).await
     }
@@ -125,13 +158,26 @@ impl Mailer {
     /// `wp_mail( $to, $subject, $message, $headers, $attachments )`: `to` may name several addresses separated by
     /// commas; of the headers `From` gives the name (the address of the site stays), `Content-Type: text/html` makes an
     /// HTML message, `Cc`, `Bcc` and `Reply-To` add addresses, and any other header is passed on.
-    pub async fn send_mail(&self, to: &str, subject: &str, message: &str, headers: &[&str], attachments: &[Attached<'_>]) -> bool {
+    pub async fn send_mail(
+        &self,
+        to: &str,
+        subject: &str,
+        message: &str,
+        headers: &[&str],
+        attachments: &[Attached<'_>],
+    ) -> bool {
         if self.blocked {
             return false;
         }
-        let Some(email) = self.build(to, subject, message, headers, attachments) else { return false };
+        let Some(email) = self.build(to, subject, message, headers, attachments) else {
+            return false;
+        };
         let sent = match &self.transport {
-            Transport::Smtp(smtp) => smtp.send(email).await.map(|_| ()).map_err(|e| e.to_string()),
+            Transport::Smtp(smtp) => smtp
+                .send(email)
+                .await
+                .map(|_| ())
+                .map_err(|e| e.to_string()),
             Transport::Sendmail(sendmail) => sendmail.send(email).await.map_err(|e| e.to_string()),
         };
         match sent {
@@ -143,9 +189,24 @@ impl Mailer {
         }
     }
 
-    fn build(&self, to: &str, subject: &str, message: &str, headers: &[&str], attachments: &[Attached<'_>]) -> Option<Message> {
+    fn build(
+        &self,
+        to: &str,
+        subject: &str,
+        message: &str,
+        headers: &[&str],
+        attachments: &[Attached<'_>],
+    ) -> Option<Message> {
         match &self.sender {
-            Some(filter) => build_filtered(filter, &self.default_email, to, subject, message, headers, attachments),
+            Some(filter) => build_filtered(
+                filter,
+                &self.default_email,
+                to,
+                subject,
+                message,
+                headers,
+                attachments,
+            ),
             None => build_message(&self.from, to, subject, message, headers, attachments),
         }
     }
@@ -169,7 +230,10 @@ fn smtp_transport(smtp: &Smtp) -> Option<AsyncSmtpTransport<Tokio1Executor>> {
         Security::Opportunistic => Tls::Opportunistic(tls()?),
         Security::Plain => Tls::None,
     };
-    let mut builder = AsyncSmtpTransport::<Tokio1Executor>::builder_dangerous(smtp.host.as_str()).port(smtp.port).tls(tls).timeout(Some(std::time::Duration::from_secs(30)));
+    let mut builder = AsyncSmtpTransport::<Tokio1Executor>::builder_dangerous(smtp.host.as_str())
+        .port(smtp.port)
+        .tls(tls)
+        .timeout(Some(std::time::Duration::from_secs(30)));
     if let Some((user, password)) = &smtp.credentials {
         builder = builder.credentials(Credentials::new(user.clone(), password.clone()));
     }
@@ -181,7 +245,10 @@ fn header_from(value: &str) -> (Option<String>, Option<String>) {
     match value.find('<') {
         Some(at) => {
             let name = (at > 0).then(|| value[..at].replace('"', "").trim().to_owned());
-            (name, Some(value[at + 1..].replace('>', "").trim().to_owned()))
+            (
+                name,
+                Some(value[at + 1..].replace('>', "").trim().to_owned()),
+            )
         }
         None if !value.trim().is_empty() => (None, Some(value.trim().to_owned())),
         None => (None, None),
@@ -189,24 +256,55 @@ fn header_from(value: &str) -> (Option<String>, Option<String>) {
 }
 
 /// A message whose sender a plugin's filters decide (`wp_mail_from`, `wp_mail_from_name`, `phpmailer_init`).
-fn build_filtered(filter: &SenderFilter, default_email: &str, to: &str, subject: &str, message: &str, headers: &[&str], attachments: &[Attached<'_>]) -> Option<Message> {
+fn build_filtered(
+    filter: &SenderFilter,
+    default_email: &str,
+    to: &str,
+    subject: &str,
+    message: &str,
+    headers: &[&str],
+    attachments: &[Attached<'_>],
+) -> Option<Message> {
     let (mut name, mut email) = (None, None);
     let mut reply_to = Vec::new();
     let mut rest: Vec<&str> = Vec::new();
     for line in headers {
-        let Some((key, value)) = line.split_once(':') else { continue };
+        let Some((key, value)) = line.split_once(':') else {
+            continue;
+        };
         match key.trim().to_lowercase().as_str() {
             "from" => (name, email) = header_from(value.trim()),
             "reply-to" => {
-                reply_to.extend(value.split(',').map(str::trim).filter(|a| !a.is_empty()).map(str::to_owned));
+                reply_to.extend(
+                    value
+                        .split(',')
+                        .map(str::trim)
+                        .filter(|a| !a.is_empty())
+                        .map(str::to_owned),
+                );
                 rest.push(line);
             }
             _ => rest.push(line),
         }
     }
-    let sender = filter(Sender { email: email.unwrap_or_else(|| default_email.to_owned()), name: name.unwrap_or_else(|| "WordPress".to_owned()), default_email: default_email.to_owned(), reply_to: reply_to.clone(), headers: Vec::new() });
-    let from = Mailbox::new(Some(sender.name.clone()).filter(|n| !n.is_empty()), sender.email.parse().ok()?);
-    let added: Vec<String> = sender.reply_to.iter().filter(|a| !reply_to.contains(a)).map(|a| format!("Reply-To: {a}")).chain(sender.headers.iter().map(|(k, v)| format!("{k}: {v}"))).collect();
+    let sender = filter(Sender {
+        email: email.unwrap_or_else(|| default_email.to_owned()),
+        name: name.unwrap_or_else(|| "WordPress".to_owned()),
+        default_email: default_email.to_owned(),
+        reply_to: reply_to.clone(),
+        headers: Vec::new(),
+    });
+    let from = Mailbox::new(
+        Some(sender.name.clone()).filter(|n| !n.is_empty()),
+        sender.email.parse().ok()?,
+    );
+    let added: Vec<String> = sender
+        .reply_to
+        .iter()
+        .filter(|a| !reply_to.contains(a))
+        .map(|a| format!("Reply-To: {a}"))
+        .chain(sender.headers.iter().map(|(k, v)| format!("{k}: {v}")))
+        .collect();
     rest.extend(added.iter().map(String::as_str));
     build_message_from(from, to, subject, message, &rest, attachments)
 }
@@ -217,7 +315,10 @@ fn sendmail_command(configured: Option<&str>, exists: impl Fn(&str) -> bool) -> 
     match configured.map(str::trim).filter(|c| !c.is_empty()) {
         Some(off) if off.eq_ignore_ascii_case("off") => None,
         Some(path) => Some(path.to_owned()),
-        None => SENDMAIL_PATHS.iter().find(|p| exists(p)).map(|p| (*p).to_owned()),
+        None => SENDMAIL_PATHS
+            .iter()
+            .find(|p| exists(p))
+            .map(|p| (*p).to_owned()),
     }
 }
 
@@ -230,10 +331,21 @@ pub struct Attached<'a> {
 
 /// The addresses of a comma-separated list that parse.
 fn mailboxes(list: &str) -> Vec<Mailbox> {
-    list.split(',').map(str::trim).filter(|a| !a.is_empty()).filter_map(|a| a.parse::<Mailbox>().ok()).collect()
+    list.split(',')
+        .map(str::trim)
+        .filter(|a| !a.is_empty())
+        .filter_map(|a| a.parse::<Mailbox>().ok())
+        .collect()
 }
 
-fn build_message(site_from: &Mailbox, to: &str, subject: &str, message: &str, headers: &[&str], attachments: &[Attached<'_>]) -> Option<Message> {
+fn build_message(
+    site_from: &Mailbox,
+    to: &str,
+    subject: &str,
+    message: &str,
+    headers: &[&str],
+    attachments: &[Attached<'_>],
+) -> Option<Message> {
     // The address of the site stays; the name is the one a `From` header gives.
     let mut from = site_from.clone();
     for line in headers {
@@ -248,7 +360,14 @@ fn build_message(site_from: &Mailbox, to: &str, subject: &str, message: &str, he
 }
 
 /// The message with its sender decided; a `From` header in `headers` is left out.
-fn build_message_from(from: Mailbox, to: &str, subject: &str, message: &str, headers: &[&str], attachments: &[Attached<'_>]) -> Option<Message> {
+fn build_message_from(
+    from: Mailbox,
+    to: &str,
+    subject: &str,
+    message: &str,
+    headers: &[&str],
+    attachments: &[Attached<'_>],
+) -> Option<Message> {
     let recipients = mailboxes(to);
     if recipients.is_empty() {
         return None;
@@ -259,7 +378,9 @@ fn build_message_from(from: Mailbox, to: &str, subject: &str, message: &str, hea
     }
     let mut html = false;
     for line in headers {
-        let Some((name, value)) = line.split_once(':') else { continue };
+        let Some((name, value)) = line.split_once(':') else {
+            continue;
+        };
         let value = value.trim();
         match name.trim().to_lowercase().as_str() {
             "from" => {}
@@ -278,26 +399,53 @@ fn build_message_from(from: Mailbox, to: &str, subject: &str, message: &str, hea
                     builder = builder.bcc(bcc);
                 }
             }
-            "content-type" => html = value.split(';').next().is_some_and(|t| t.trim().eq_ignore_ascii_case("text/html")),
+            "content-type" => {
+                html = value
+                    .split(';')
+                    .next()
+                    .is_some_and(|t| t.trim().eq_ignore_ascii_case("text/html"))
+            }
             // Set by the builder.
-            "to" | "subject" | "mime-version" | "content-transfer-encoding" | "date" | "message-id" => {}
+            "to"
+            | "subject"
+            | "mime-version"
+            | "content-transfer-encoding"
+            | "date"
+            | "message-id" => {}
             _ => {
-                if let Ok(header) = lettre::message::header::HeaderName::new_from_ascii(name.trim().to_owned()) {
-                    builder = builder.raw_header(lettre::message::header::HeaderValue::new(header, value.to_owned()));
+                if let Ok(header) =
+                    lettre::message::header::HeaderName::new_from_ascii(name.trim().to_owned())
+                {
+                    builder = builder.raw_header(lettre::message::header::HeaderValue::new(
+                        header,
+                        value.to_owned(),
+                    ));
                 }
             }
         }
     }
     let body = message.replace("\r\n", "\n").replace('\n', "\r\n");
-    let text = if html { SinglePart::builder().header(ContentType::TEXT_HTML).body(body) } else { SinglePart::builder().header(ContentType::TEXT_PLAIN).body(body) };
+    let text = if html {
+        SinglePart::builder()
+            .header(ContentType::TEXT_HTML)
+            .body(body)
+    } else {
+        SinglePart::builder()
+            .header(ContentType::TEXT_PLAIN)
+            .body(body)
+    };
     let builder = builder.from(from);
     if attachments.is_empty() {
         return builder.singlepart(text).ok();
     }
     let mut parts = MultiPart::mixed().singlepart(text);
     for file in attachments {
-        let content_type = ContentType::parse(file.content_type).unwrap_or_else(|_| ContentType::parse("application/octet-stream").expect("a valid type"));
-        parts = parts.singlepart(Attachment::new(file.filename.to_owned()).body(file.bytes.to_vec(), content_type));
+        let content_type = ContentType::parse(file.content_type).unwrap_or_else(|_| {
+            ContentType::parse("application/octet-stream").expect("a valid type")
+        });
+        parts = parts.singlepart(
+            Attachment::new(file.filename.to_owned()).body(file.bytes.to_vec(), content_type),
+        );
     }
     builder.multipart(parts).ok()
 }
@@ -313,36 +461,79 @@ mod tests {
     #[test]
     fn headers_of_wp_mail() {
         let site: Mailbox = "WordPress <wordpress@example.org>".parse().unwrap();
-        let headers = ["From: Site <other@example.net>", "Reply-To: Jane <jane@example.com>", "Cc: a@example.com, b@example.com", "X-Extra: yes"];
-        let message = build_message(&site, "x@example.com, y@example.com", "Hi", "line\nline", &headers, &[]).unwrap();
+        let headers = [
+            "From: Site <other@example.net>",
+            "Reply-To: Jane <jane@example.com>",
+            "Cc: a@example.com, b@example.com",
+            "X-Extra: yes",
+        ];
+        let message = build_message(
+            &site,
+            "x@example.com, y@example.com",
+            "Hi",
+            "line\nline",
+            &headers,
+            &[],
+        )
+        .unwrap();
         let text = formatted(&message);
-        assert!(text.contains("From: Site <wordpress@example.org>"), "{text}");
+        assert!(
+            text.contains("From: Site <wordpress@example.org>"),
+            "{text}"
+        );
         assert!(text.contains("Reply-To: Jane <jane@example.com>"), "{text}");
         assert!(text.contains("To: x@example.com, y@example.com"), "{text}");
         assert!(text.contains("Cc: a@example.com, b@example.com"), "{text}");
         assert!(text.contains("X-Extra: yes"), "{text}");
-        assert!(text.contains("Content-Type: text/plain; charset=utf-8"), "{text}");
+        assert!(
+            text.contains("Content-Type: text/plain; charset=utf-8"),
+            "{text}"
+        );
         assert!(text.contains("line\r\nline"), "{text}");
     }
 
     #[test]
     fn html_and_attachments() {
         let site: Mailbox = "wordpress@example.org".parse().unwrap();
-        let file = Attached { filename: "a.txt", content_type: "text/plain", bytes: b"hello" };
-        let message = build_message(&site, "x@example.com", "Hi", "<p>Hi</p>", &["Content-Type: text/html"], &[file]).unwrap();
+        let file = Attached {
+            filename: "a.txt",
+            content_type: "text/plain",
+            bytes: b"hello",
+        };
+        let message = build_message(
+            &site,
+            "x@example.com",
+            "Hi",
+            "<p>Hi</p>",
+            &["Content-Type: text/html"],
+            &[file],
+        )
+        .unwrap();
         let text = formatted(&message);
         assert!(text.contains("multipart/mixed"), "{text}");
-        assert!(text.contains("Content-Type: text/html; charset=utf-8"), "{text}");
+        assert!(
+            text.contains("Content-Type: text/html; charset=utf-8"),
+            "{text}"
+        );
         assert!(text.contains("filename=\"a.txt\""), "{text}");
     }
 
     #[test]
     fn sendmail_like_php() {
-        assert_eq!(sendmail_command(None, |p| p == "/usr/lib/sendmail").as_deref(), Some("/usr/lib/sendmail"));
-        assert_eq!(sendmail_command(None, |_| true).as_deref(), Some("/usr/sbin/sendmail"));
+        assert_eq!(
+            sendmail_command(None, |p| p == "/usr/lib/sendmail").as_deref(),
+            Some("/usr/lib/sendmail")
+        );
+        assert_eq!(
+            sendmail_command(None, |_| true).as_deref(),
+            Some("/usr/sbin/sendmail")
+        );
         assert_eq!(sendmail_command(None, |_| false), None);
         assert_eq!(sendmail_command(Some("off"), |_| true), None);
-        assert_eq!(sendmail_command(Some("/opt/bin/msmtp"), |_| false).as_deref(), Some("/opt/bin/msmtp"));
+        assert_eq!(
+            sendmail_command(Some("/opt/bin/msmtp"), |_| false).as_deref(),
+            Some("/opt/bin/msmtp")
+        );
     }
 
     #[test]
@@ -353,14 +544,45 @@ mod tests {
                 sender.name = "Die Seite".into();
             }
             sender.reply_to.push("jemand@example.net".into());
-            sender.headers.push(("X-Mailer".into(), "WPMailSMTP/Mailer/smtp 4.10.4".into()));
+            sender
+                .headers
+                .push(("X-Mailer".into(), "WPMailSMTP/Mailer/smtp 4.10.4".into()));
             sender
         });
-        let text = formatted(&build_filtered(&filter, "wordpress@example.org", "x@example.com", "Hi", "x", &[], &[]).unwrap());
-        assert!(text.contains("From: \"Die Seite\" <site@example.org>") || text.contains("From: Die Seite <site@example.org>"), "{text}");
+        let text = formatted(
+            &build_filtered(
+                &filter,
+                "wordpress@example.org",
+                "x@example.com",
+                "Hi",
+                "x",
+                &[],
+                &[],
+            )
+            .unwrap(),
+        );
+        assert!(
+            text.contains("From: \"Die Seite\" <site@example.org>")
+                || text.contains("From: Die Seite <site@example.org>"),
+            "{text}"
+        );
         assert!(text.contains("Reply-To: jemand@example.net"), "{text}");
-        assert!(text.contains("X-Mailer: WPMailSMTP/Mailer/smtp 4.10.4"), "{text}");
-        let text = formatted(&build_filtered(&filter, "wordpress@example.org", "x@example.com", "Hi", "x", &["From: \"Jemand\" <jemand@example.net>"], &[]).unwrap());
+        assert!(
+            text.contains("X-Mailer: WPMailSMTP/Mailer/smtp 4.10.4"),
+            "{text}"
+        );
+        let text = formatted(
+            &build_filtered(
+                &filter,
+                "wordpress@example.org",
+                "x@example.com",
+                "Hi",
+                "x",
+                &["From: \"Jemand\" <jemand@example.net>"],
+                &[],
+            )
+            .unwrap(),
+        );
         assert!(text.contains("From: Jemand <jemand@example.net>"), "{text}");
     }
 

@@ -7,7 +7,15 @@ use regex::Regex;
 
 /// The shortcodes WordPress registers itself, in registration order. Others come from plugins,
 /// which do not run here; their tags stay in the text.
-pub const CORE_TAGS: &[&str] = &["playlist", "audio", "video", "embed", "caption", "wp_caption", "gallery"];
+pub const CORE_TAGS: &[&str] = &[
+    "playlist",
+    "audio",
+    "video",
+    "embed",
+    "caption",
+    "wp_caption",
+    "gallery",
+];
 
 /// One match of `get_shortcode_regex()`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -43,7 +51,10 @@ fn match_at(text: &str, at: usize, tags: &[&str]) -> Option<Found> {
     }
     let rest = &text[j..];
     let name = tags.iter().find(|tag| {
-        rest.starts_with(**tag) && !bytes.get(j + tag.len()).is_some_and(|b| word_byte(*b) || *b == b'-')
+        rest.starts_with(**tag)
+            && !bytes
+                .get(j + tag.len())
+                .is_some_and(|b| word_byte(*b) || *b == b'-')
     })?;
     let name_end = j + name.len();
     let mut k = name_end;
@@ -96,9 +107,18 @@ pub fn tags_in<'a>(content: &str, registered: &[&'a str]) -> Vec<&'a str> {
     if !content.contains('[') {
         return Vec::new();
     }
-    static NAME: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\[([^<>&/\[\]\x00-\x20=]+)").unwrap());
-    let seen: Vec<&str> = NAME.captures_iter(content).filter_map(|c| c.get(1)).map(|m| m.as_str()).collect();
-    registered.iter().copied().filter(|tag| seen.contains(tag)).collect()
+    static NAME: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"\[([^<>&/\[\]\x00-\x20=]+)").unwrap());
+    let seen: Vec<&str> = NAME
+        .captures_iter(content)
+        .filter_map(|c| c.get(1))
+        .map(|m| m.as_str())
+        .collect();
+    registered
+        .iter()
+        .copied()
+        .filter(|tag| seen.contains(tag))
+        .collect()
 }
 
 /// Like [`tags_in`], but also finds closing tags (`[/tag`), as `wptexturize()` does.
@@ -106,9 +126,18 @@ pub fn tags_in_closing<'a>(content: &str, registered: &[&'a str]) -> Vec<&'a str
     if !content.contains('[') {
         return Vec::new();
     }
-    static NAME: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\[/?([^<>&/\[\]\x00-\x20=]+)").unwrap());
-    let seen: Vec<&str> = NAME.captures_iter(content).filter_map(|c| c.get(1)).map(|m| m.as_str()).collect();
-    registered.iter().copied().filter(|tag| seen.contains(tag)).collect()
+    static NAME: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"\[/?([^<>&/\[\]\x00-\x20=]+)").unwrap());
+    let seen: Vec<&str> = NAME
+        .captures_iter(content)
+        .filter_map(|c| c.get(1))
+        .map(|m| m.as_str())
+        .collect();
+    registered
+        .iter()
+        .copied()
+        .filter(|tag| seen.contains(tag))
+        .collect()
 }
 
 /// The length of a shortcode delimiter at the start of `s`, as `_get_wptexturize_shortcode_regex()`
@@ -119,7 +148,12 @@ pub fn texturize_delimiter_len(s: &str, tags: &[&str]) -> Option<usize> {
     if matches!(bytes.get(i), Some(b'/' | b'[')) {
         i += 1;
     }
-    let tag = tags.iter().find(|tag| s[i..].starts_with(**tag) && bytes.get(i + tag.len()).is_some_and(|b| matches!(b, b' ' | b'\t' | b'\n' | 0x0B | 0x0C | b'\r' | b']' | b'/')))?;
+    let tag = tags.iter().find(|tag| {
+        s[i..].starts_with(**tag)
+            && bytes.get(i + tag.len()).is_some_and(|b| {
+                matches!(b, b' ' | b'\t' | b'\n' | 0x0B | 0x0C | b'\r' | b']' | b'/')
+            })
+    })?;
     i += tag.len();
     loop {
         match bytes.get(i)? {
@@ -147,7 +181,9 @@ pub fn texturize_delimiter_len(s: &str, tags: &[&str]) -> Option<usize> {
 /// tags and comments are written as entities so that they cannot form a shortcode.
 /// [`unescape_invalid`] undoes it.
 pub fn protect_html(content: &str, ignore_html: bool) -> String {
-    let content = content.replace("&#91;", "&#091;").replace("&#93;", "&#093;");
+    let content = content
+        .replace("&#91;", "&#091;")
+        .replace("&#93;", "&#093;");
     let mut out = String::with_capacity(content.len());
     for (i, element) in crate::formatting::html_split(&content).iter().enumerate() {
         if i % 2 == 0 || element.is_empty() {
@@ -211,7 +247,11 @@ pub struct Atts {
 impl Atts {
     /// The value of a named attribute (the last one wins, as in a PHP array).
     pub fn get(&self, name: &str) -> Option<&str> {
-        self.named.iter().rev().find(|(k, _)| k == name).map(|(_, v)| v.as_str())
+        self.named
+            .iter()
+            .rev()
+            .find(|(k, _)| k == name)
+            .map(|(_, v)| v.as_str())
     }
 
     /// `! empty( $atts[ name ] )`: set and not `""`/`"0"`.
@@ -297,8 +337,16 @@ fn decode_att(s: &str) -> String {
             continue;
         }
         let len = match bytes[i + 1] {
-            b'x' if bytes.get(i + 2).is_some_and(u8::is_ascii_hexdigit) => 3 + usize::from(bytes.get(i + 3).is_some_and(u8::is_ascii_hexdigit)),
-            b'0'..=b'7' => 2 + bytes[i + 2..].iter().take(2).take_while(|b| (b'0'..=b'7').contains(*b)).count(),
+            b'x' if bytes.get(i + 2).is_some_and(u8::is_ascii_hexdigit) => {
+                3 + usize::from(bytes.get(i + 3).is_some_and(u8::is_ascii_hexdigit))
+            }
+            b'0'..=b'7' => {
+                2 + bytes[i + 2..]
+                    .iter()
+                    .take(2)
+                    .take_while(|b| (b'0'..=b'7').contains(*b))
+                    .count()
+            }
             _ => 2,
         };
         let token = &bytes[i..i + len];
@@ -359,8 +407,14 @@ pub fn parse_atts(text: &str) -> Atts {
         }
     }
     // Reject any unclosed HTML elements.
-    static BALANCED: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[^<]*(?:<[^>]*>[^<]*)*$").unwrap());
-    for value in atts.named.iter_mut().map(|(_, v)| v).chain(atts.positional.iter_mut()) {
+    static BALANCED: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"^[^<]*(?:<[^>]*>[^<]*)*$").unwrap());
+    for value in atts
+        .named
+        .iter_mut()
+        .map(|(_, v)| v)
+        .chain(atts.positional.iter_mut())
+    {
         if value.contains('<') && !BALANCED.is_match(value) {
             value.clear();
         }
@@ -379,7 +433,11 @@ pub fn shortcode_unautop_with(text: &str, tags: &[&str]) -> String {
         let mut n = 0;
         loop {
             let rest = &s[n..];
-            if let Some(c) = rest.chars().next().filter(|c| matches!(c, '\r' | '\n' | '\t' | ' ')) {
+            if let Some(c) = rest
+                .chars()
+                .next()
+                .filter(|c| matches!(c, '\r' | '\n' | '\t' | ' '))
+            {
                 n += c.len_utf8();
             } else if rest.starts_with('\u{a0}') {
                 n += '\u{a0}'.len_utf8();
@@ -397,15 +455,26 @@ pub fn shortcode_unautop_with(text: &str, tags: &[&str]) -> String {
         let after = open + 3;
         let lead = spaces_len(&text[after..]);
         let begin = after + lead;
-        let matched = text[begin..].starts_with('[').then(|| match_at(text, begin, tags)).flatten();
+        let matched = text[begin..]
+            .starts_with('[')
+            .then(|| match_at(text, begin, tags))
+            .flatten();
         if let Some(m) = matched {
             // With a closing tag the pattern first takes the whole enclosing shortcode; when no `</p>` follows, the
             // optional content group gives way and the opening tag alone may stand in the paragraph.
-            let open_tag_end = m.content.as_ref().map(|content| m.core_end - content.len() - m.name.len() - 3);
-            let found = [Some(m.core_end), open_tag_end].into_iter().flatten().find_map(|end| {
-                let trail = spaces_len(&text[end..]);
-                text[end + trail..].starts_with("</p>").then_some((end, trail))
-            });
+            let open_tag_end = m
+                .content
+                .as_ref()
+                .map(|content| m.core_end - content.len() - m.name.len() - 3);
+            let found = [Some(m.core_end), open_tag_end]
+                .into_iter()
+                .flatten()
+                .find_map(|end| {
+                    let trail = spaces_len(&text[end..]);
+                    text[end + trail..]
+                        .starts_with("</p>")
+                        .then_some((end, trail))
+                });
             if let Some((end, trail)) = found {
                 out.push_str(&text[at..open]);
                 out.push_str(&text[begin..end]);
@@ -426,15 +495,27 @@ mod tests {
 
     #[test]
     fn unautop_takes_an_opening_tag_alone_when_its_paragraph_ends() {
-        let text = "<p>[area service=\"x\"]</p>\n<p>Inner</p>\n<p>[/area]<br />\n[area]Two[/area]</p>\n";
-        assert_eq!(shortcode_unautop_with(text, &["area"]), "[area service=\"x\"]\n<p>Inner</p>\n<p>[/area]<br />\n[area]Two[/area]</p>\n");
+        let text =
+            "<p>[area service=\"x\"]</p>\n<p>Inner</p>\n<p>[/area]<br />\n[area]Two[/area]</p>\n";
+        assert_eq!(
+            shortcode_unautop_with(text, &["area"]),
+            "[area service=\"x\"]\n<p>Inner</p>\n<p>[/area]<br />\n[area]Two[/area]</p>\n"
+        );
     }
 
     #[test]
     fn finds_enclosing_self_closing_and_escaped_shortcodes() {
         let tags = ["caption", "gallery"];
-        let m = find("a [caption id=\"x\" width=3]<img>Text[/caption] b", 0, &tags).unwrap();
-        assert_eq!((m.name.as_str(), m.atts.as_str(), m.content.as_deref()), ("caption", " id=\"x\" width=3", Some("<img>Text")));
+        let m = find(
+            "a [caption id=\"x\" width=3]<img>Text[/caption] b",
+            0,
+            &tags,
+        )
+        .unwrap();
+        assert_eq!(
+            (m.name.as_str(), m.atts.as_str(), m.content.as_deref()),
+            ("caption", " id=\"x\" width=3", Some("<img>Text"))
+        );
         let m = find("[gallery ids=\"1,2\" /]", 0, &tags).unwrap();
         assert_eq!((m.content, m.atts.as_str()), (None, " ids=\"1,2\" "));
         let m = find("[[gallery]]", 0, &tags).unwrap();
@@ -478,12 +559,21 @@ mod tests {
             assert_eq!(decode_att(input), want, "{input:?}");
         }
         assert_eq!(stripcslashes("a\\"), "a\\");
-        assert_eq!(parse_atts(r#"title="\x3cb\x3e""#).get("title"), Some("&lt;b&gt;"));
+        assert_eq!(
+            parse_atts(r#"title="\x3cb\x3e""#).get("title"),
+            Some("&lt;b&gt;")
+        );
     }
 
     #[test]
     fn strips_and_unautops() {
-        assert_eq!(strip_shortcodes("a [gallery ids=\"1\"] b [[gallery]] c [x]"), "a  b [gallery] c [x]");
-        assert_eq!(shortcode_unautop("<p>[gallery ids=\"1\"]</p>\n<p>text [gallery]</p>"), "[gallery ids=\"1\"]\n<p>text [gallery]</p>");
+        assert_eq!(
+            strip_shortcodes("a [gallery ids=\"1\"] b [[gallery]] c [x]"),
+            "a  b [gallery] c [x]"
+        );
+        assert_eq!(
+            shortcode_unautop("<p>[gallery ids=\"1\"]</p>\n<p>text [gallery]</p>"),
+            "[gallery ids=\"1\"]\n<p>text [gallery]</p>"
+        );
     }
 }

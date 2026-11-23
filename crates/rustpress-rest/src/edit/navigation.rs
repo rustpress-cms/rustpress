@@ -12,14 +12,28 @@ use crate::{Outcome, Resp, Rest, Result};
 impl Rest<'_> {
     /// `WP_Navigation_Fallback::get_fallback()`: the newest published menu, else a new one with the page list.
     pub(super) async fn navigation_fallback(&self, args: &Args) -> Result<Outcome> {
-        let message = self.site.tr("Sorry, you are not allowed to create Navigation Menus as this user.");
-        if !(self.can("edit_theme_options") && self.can("edit_posts") && self.can("publish_posts")) {
+        let message = self
+            .site
+            .tr("Sorry, you are not allowed to create Navigation Menus as this user.");
+        if !(self.can("edit_theme_options") && self.can("edit_posts") && self.can("publish_posts"))
+        {
             return Ok(Err(self.forbidden("rest_cannot_create", &message)));
         }
         if args.str("context").as_deref() == Some("edit") && !self.can("edit_posts") {
-            return Ok(Err(self.forbidden("rest_forbidden_context", &self.site.tr("Sorry, you are not allowed to edit Navigation Menus as this user."))));
+            return Ok(Err(self.forbidden(
+                "rest_forbidden_context",
+                &self
+                    .site
+                    .tr("Sorry, you are not allowed to edit Navigation Menus as this user."),
+            )));
         }
-        let query = PostQuery { post_types: vec!["wp_navigation".into()], statuses: vec!["publish".into()], order_by: OrderBy::Date, order: Order::Desc, ..Default::default() };
+        let query = PostQuery {
+            post_types: vec!["wp_navigation".into()],
+            statuses: vec!["publish".into()],
+            order_by: OrderBy::Date,
+            order: Order::Desc,
+            ..Default::default()
+        };
         let id = match self.site.db.posts(&query).await?.first() {
             Some(post) => post.id,
             None => {
@@ -37,7 +51,13 @@ impl Rest<'_> {
                 };
                 match content.insert_post(&data).await {
                     Ok(id) => id,
-                    Err(_) => return Ok(Err(RestError::new("no_fallback_menu", &self.site.tr("No fallback menu found."), 404))),
+                    Err(_) => {
+                        return Ok(Err(RestError::new(
+                            "no_fallback_menu",
+                            &self.site.tr("No fallback menu found."),
+                            404,
+                        )));
+                    }
                 }
             }
         };

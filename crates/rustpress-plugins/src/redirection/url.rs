@@ -66,7 +66,12 @@ pub struct Flags {
 
 impl Default for Flags {
     fn default() -> Self {
-        Self { case: false, trailing: false, regex: false, query: QueryMode::Exact }
+        Self {
+            case: false,
+            trailing: false,
+            regex: false,
+            query: QueryMode::Exact,
+        }
     }
 }
 
@@ -99,7 +104,10 @@ impl Flags {
 
     /// `new Red_Source_Flags( [ FLAG_CASE => true ] )`.
     pub fn ignoring_case() -> Self {
-        Self { case: true, ..Self::default() }
+        Self {
+            case: true,
+            ..Self::default()
+        }
     }
 
     pub fn is_query_ignore(&self) -> bool {
@@ -152,7 +160,9 @@ impl UrlPath {
             let parts: Vec<&str> = rest.split('/').collect();
             path = format!("/{}", parts[1..].join("/"));
         }
-        Self { path: php::urldecode(query_before(&path)) }
+        Self {
+            path: php::urldecode(query_before(&path)),
+        }
     }
 
     pub fn get(&self) -> &str {
@@ -206,8 +216,13 @@ fn raw_params(query: &str) -> Vec<RawParam> {
         .split('&')
         .map(|part| {
             let name = part.split('=').next().unwrap_or_default().replace('+', " ");
-            let name = ["[", "]", "%5B", "%5D"].iter().fold(name, |n, s| n.replace(s, ""));
-            let parse_str = php::parse_str(part).into_iter().map(|(k, _)| k).collect::<String>();
+            let name = ["[", "]", "%5B", "%5D"]
+                .iter()
+                .fold(name, |n, s| n.replace(s, ""));
+            let parse_str = php::parse_str(part)
+                .into_iter()
+                .map(|(k, _)| k)
+                .collect::<String>();
             RawParam { name, parse_str }
         })
         .collect()
@@ -241,7 +256,11 @@ fn url_query(url: &str) -> (Params, Option<String>) {
 }
 
 fn is_string_match(first: &str, second: &str, case: bool) -> bool {
-    if case { php::to_lower(first) == php::to_lower(second) } else { first == second }
+    if case {
+        php::to_lower(first) == php::to_lower(second)
+    } else {
+        first == second
+    }
 }
 
 /// What `get_query_same()` keeps of a parameter (`false` drops it).
@@ -268,14 +287,22 @@ fn query_same(source: &Params, target: &Params, case: bool, depth: usize) -> Par
     let (source_keys, target_keys) = (keys(source), keys(target));
     let mut same = Params::new();
     for (lower, original) in &source_keys {
-        let Some((_, target_key)) = target_keys.iter().find(|(l, _)| l == lower) else { continue };
-        let (Some(source_value), Some(target_value)) = (php::get(source, original), php::get(target, target_key)) else { continue };
+        let Some((_, target_key)) = target_keys.iter().find(|(l, _)| l == lower) else {
+            continue;
+        };
+        let (Some(source_value), Some(target_value)) =
+            (php::get(source, original), php::get(target, target_key))
+        else {
+            continue;
+        };
         let add = match (source_value, target_value) {
             (Param::Arr(s), Param::Arr(t)) => {
                 let child = query_same(s, t, case, depth + 1);
                 (child.len() == s.len()).then_some(Param::Arr(child))
             }
-            (Param::Str(s), Param::Str(t)) => is_string_match(s, t, case).then(|| Param::Str(s.clone())),
+            (Param::Str(s), Param::Str(t)) => {
+                is_string_match(s, t, case).then(|| Param::Str(s.clone()))
+            }
             (Param::Null, Param::Null) => Some(Param::Null),
             _ => None,
         };
@@ -301,7 +328,9 @@ fn query_diff(source: &Params, target: &Params, depth: usize) -> Params {
             }
         } else if match other {
             None => true,
-            Some(other) => matches!(value, Param::Arr(_)) || matches!(other, Param::Arr(_)) || other != value,
+            Some(other) => {
+                matches!(value, Param::Arr(_)) || matches!(other, Param::Arr(_)) || other != value
+            }
         } {
             php::set(&mut diff, key, value.clone());
         }
@@ -325,12 +354,20 @@ impl UrlQuery {
             matching = lower;
             exact = lower_exact.or(exact);
         }
-        Self { original, matching, exact }
+        Self {
+            original,
+            matching,
+            exact,
+        }
     }
 
     /// `is_match()`.
     pub fn is_match(&self, url: &str, flags: &Flags) -> bool {
-        let url = if flags.case { php::to_lower(url) } else { url.to_owned() };
+        let url = if flags.case {
+            php::to_lower(url)
+        } else {
+            url.to_owned()
+        };
         if let Some(exact) = &self.exact {
             return is_string_match(query_after(&url), exact, flags.case);
         }
@@ -342,7 +379,8 @@ impl UrlQuery {
         if flags.is_query_ignore() || flags.is_query_pass() {
             return true;
         }
-        query_diff(&self.matching, &target, 0).is_empty() && query_diff(&target, &self.matching, 0).is_empty()
+        query_diff(&self.matching, &target, 0).is_empty()
+            && query_diff(&target, &self.matching, 0).is_empty()
     }
 
     /// `add_to_target()`: with the query passed on, the request's other parameters follow the target.
@@ -369,8 +407,22 @@ impl UrlQuery {
 /// `Red_Url_Query::build_url()`.
 pub fn build_url(url: &str, params: &Params) -> String {
     static INDEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"%5B\d*%5D").unwrap());
-    let mapped: Params = params.iter().map(|(k, v)| (k.clone(), if matches!(v, Param::Null) { Param::Str(String::new()) } else { v.clone() })).collect();
-    let mut query = INDEX.replace_all(&php::http_build_query(&mapped), "[]").into_owned();
+    let mapped: Params = params
+        .iter()
+        .map(|(k, v)| {
+            (
+                k.clone(),
+                if matches!(v, Param::Null) {
+                    Param::Str(String::new())
+                } else {
+                    v.clone()
+                },
+            )
+        })
+        .collect();
+    let mut query = INDEX
+        .replace_all(&php::http_build_query(&mapped), "[]")
+        .into_owned();
     for (key, value) in params {
         if matches!(value, Param::Null) {
             let search = format!("{}=", php::rawurlencode(key)).replace("%20", "+");
@@ -401,7 +453,8 @@ pub fn is_match(source: &str, requested: &str, flags: &Flags) -> bool {
     if flags.regex {
         return PcreRegex::new(&source, flags.case).is_match(requested);
     }
-    UrlPath::new(&source).is_match(requested, flags) && UrlQuery::new(&source, flags).is_match(requested, flags)
+    UrlPath::new(&source).is_match(requested, flags)
+        && UrlQuery::new(&source, flags).is_match(requested, flags)
 }
 
 /// `Red_Url_Match::get_url()`: the path the table is searched by.
@@ -412,7 +465,11 @@ pub fn match_url(url: &str) -> String {
         path = path.replace(&php::rawurlencode(c), c);
     }
     let path = php::to_lower(&path);
-    if path.is_empty() { "/".to_owned() } else { path }
+    if path.is_empty() {
+        "/".to_owned()
+    } else {
+        path
+    }
 }
 
 /// `Red_Url_Match::get_url_with_params()`.
@@ -451,7 +508,12 @@ mod tests {
     use super::*;
 
     fn flags(case: bool, trailing: bool, query: QueryMode) -> Flags {
-        Flags { case, trailing, regex: false, query }
+        Flags {
+            case,
+            trailing,
+            regex: false,
+            query,
+        }
     }
 
     #[test]
@@ -461,21 +523,42 @@ mod tests {
         assert_eq!(match_url("/a b/"), "/a%20b");
         assert_eq!(match_url("/CaseTest/"), "/casetest");
         assert_eq!(match_url("/q-exact/?x=1&y[]=2"), "/q-exact");
-        assert_eq!(match_url_with_params("/q-order/?b=2&a=1"), "/q-order?b=2&a=1");
+        assert_eq!(
+            match_url_with_params("/q-order/?b=2&a=1"),
+            "/q-order?b=2&a=1"
+        );
         assert_eq!(match_url("/"), "/");
     }
 
     #[test]
     fn queries() {
         let exact = flags(true, true, QueryMode::Exact);
-        assert!(is_match("/q-exact/?x=1&y[]=2", "/q-exact/?y[]=2&x=1", &exact));
+        assert!(is_match(
+            "/q-exact/?x=1&y[]=2",
+            "/q-exact/?y[]=2&x=1",
+            &exact
+        ));
         assert!(!is_match("/q-exact/?x=1&y[]=2", "/q-exact/?x=1", &exact));
-        assert!(is_match("/q-ignore/?k=v", "/q-ignore/?k=v&z=1", &flags(false, false, QueryMode::Ignore)));
+        assert!(is_match(
+            "/q-ignore/?k=v",
+            "/q-ignore/?k=v&z=1",
+            &flags(false, false, QueryMode::Ignore)
+        ));
         assert!(is_match("/old-page/", "/OLD-PAGE", &exact));
-        assert!(!is_match("/CaseTest/", "/casetest/", &flags(false, false, QueryMode::Exact)));
+        assert!(!is_match(
+            "/CaseTest/",
+            "/casetest/",
+            &flags(false, false, QueryMode::Exact)
+        ));
         let pass = flags(false, false, QueryMode::Pass);
-        assert_eq!(UrlQuery::add_to_target("/hello-world/?a=1", "/q-pass/?b=2&a=9", &pass), "/hello-world/?a=1&b=2");
-        assert_eq!(UrlQuery::add_to_target("/t/#f", "/s/?flag&b=c d", &pass), "/t/?flag&b=c+d#f");
+        assert_eq!(
+            UrlQuery::add_to_target("/hello-world/?a=1", "/q-pass/?b=2&a=9", &pass),
+            "/hello-world/?a=1&b=2"
+        );
+        assert_eq!(
+            UrlQuery::add_to_target("/t/#f", "/s/?flag&b=c d", &pass),
+            "/t/?flag&b=c+d#f"
+        );
     }
 
     #[test]

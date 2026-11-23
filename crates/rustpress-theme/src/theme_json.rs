@@ -29,10 +29,14 @@ fn opt_in_path(context: &mut Map<String, Value>, path: &[&str]) {
     let mut current = context;
     for (i, key) in path.iter().enumerate() {
         if i == path.len() - 1 {
-            current.entry((*key).to_owned()).or_insert(Value::Bool(true));
+            current
+                .entry((*key).to_owned())
+                .or_insert(Value::Bool(true));
             return;
         }
-        let entry = current.entry((*key).to_owned()).or_insert_with(|| Value::Object(Map::new()));
+        let entry = current
+            .entry((*key).to_owned())
+            .or_insert_with(|| Value::Object(Map::new()));
         if !entry.is_object() {
             return;
         }
@@ -98,7 +102,12 @@ fn remove(map: &mut Map<String, Value>, path: &[&str]) {
 
 /// `maybe_opt_in_into_settings` for the top-level settings and each block's settings.
 pub fn opt_in_settings(theme_json: &mut Value) {
-    let Some(settings) = theme_json.get_mut("settings").and_then(Value::as_object_mut) else { return };
+    let Some(settings) = theme_json
+        .get_mut("settings")
+        .and_then(Value::as_object_mut)
+    else {
+        return;
+    };
     do_opt_in(settings);
     if let Some(blocks) = settings.get_mut("blocks").and_then(Value::as_object_mut) {
         for block in blocks.values_mut() {
@@ -167,17 +176,31 @@ pub fn resolve_refs(styles: &mut Value) {
 fn replace_refs(value: &mut Value, root: &Value) {
     match value {
         Value::Object(map) => {
-            if let Some(path) = map.get("ref").and_then(Value::as_str).filter(|_| map.len() == 1) {
+            if let Some(path) = map
+                .get("ref")
+                .and_then(Value::as_str)
+                .filter(|_| map.len() == 1)
+            {
                 let mut found = Some(root);
                 for key in path.strip_prefix("styles.").unwrap_or(path).split('.') {
                     found = found.and_then(|v| v.get(key));
                 }
-                *value = found.filter(|v| !v.is_object() || v.get("ref").is_none()).cloned().unwrap_or(Value::Null);
+                *value = found
+                    .filter(|v| !v.is_object() || v.get("ref").is_none())
+                    .cloned()
+                    .unwrap_or(Value::Null);
                 return;
             }
             // An unresolvable reference removes its key; nulls the theme wrote itself stay.
-            let was_ref = |v: &Value| v.as_object().is_some_and(|m| m.len() == 1 && m.get("ref").is_some_and(Value::is_string));
-            let refs: Vec<String> = map.iter().filter(|(_, v)| was_ref(v)).map(|(k, _)| k.clone()).collect();
+            let was_ref = |v: &Value| {
+                v.as_object()
+                    .is_some_and(|m| m.len() == 1 && m.get("ref").is_some_and(Value::is_string))
+            };
+            let refs: Vec<String> = map
+                .iter()
+                .filter(|(_, v)| was_ref(v))
+                .map(|(k, _)| k.clone())
+                .collect();
             for child in map.values_mut() {
                 replace_refs(child, root);
             }
@@ -204,13 +227,23 @@ pub fn resolve_custom_vars(value: &mut Value) {
 
 /// Registers a partial under `styles.blocks.<type>.variations.<slug>`.
 fn add_variation_partial(theme: &mut Value, partial: &Value) {
-    let Some(styles) = partial.get("styles").filter(|s| s.is_object()) else { return };
+    let Some(styles) = partial.get("styles").filter(|s| s.is_object()) else {
+        return;
+    };
     let slug = partial
         .get("slug")
         .and_then(Value::as_str)
         .map(str::to_owned)
-        .or_else(|| partial.get("title").and_then(Value::as_str).map(rustpress_blocks::style_engine::to_kebab_case));
-    let (Some(slug), Some(types)) = (slug, partial.get("blockTypes").and_then(Value::as_array)) else { return };
+        .or_else(|| {
+            partial
+                .get("title")
+                .and_then(Value::as_str)
+                .map(rustpress_blocks::style_engine::to_kebab_case)
+        });
+    let (Some(slug), Some(types)) = (slug, partial.get("blockTypes").and_then(Value::as_array))
+    else {
+        return;
+    };
     for block_type in types.iter().filter_map(Value::as_str) {
         let mut patch = Value::Object(Map::new());
         patch["styles"]["blocks"][block_type]["variations"][&slug] = styles.clone();
@@ -220,7 +253,12 @@ fn add_variation_partial(theme: &mut Value, partial: &Value) {
 
 /// The variation `slug` of `block_name` from the merged styles.
 pub fn find_variation<'a>(styles: &'a Value, block_name: &str, slug: &str) -> Option<&'a Value> {
-    styles.get("blocks")?.get(block_name)?.get("variations")?.get(slug).filter(|v| v.as_object().is_some_and(|o| !o.is_empty()))
+    styles
+        .get("blocks")?
+        .get(block_name)?
+        .get("variations")?
+        .get(slug)
+        .filter(|v| v.as_object().is_some_and(|o| !o.is_empty()))
 }
 
 /// Reads and parses a JSON file; `None` if missing or invalid.
@@ -248,18 +286,36 @@ pub struct ThemeJson {
 }
 
 impl ThemeJson {
-    pub fn new(core: Value, parent: Option<Value>, child: Option<Value>, user: Option<Value>) -> Self {
+    pub fn new(
+        core: Value,
+        parent: Option<Value>,
+        child: Option<Value>,
+        user: Option<Value>,
+    ) -> Self {
         Self::with_partials(core, parent, child, user, &[])
     }
 
     /// Like [`ThemeJson::new`], with block style variation partials
     /// (`styles/blocks/*.json`: `{"slug", "blockTypes": [...], "styles": {...}}`).
-    pub fn with_partials(core: Value, parent: Option<Value>, child: Option<Value>, user: Option<Value>, partials: &[Value]) -> Self {
+    pub fn with_partials(
+        core: Value,
+        parent: Option<Value>,
+        child: Option<Value>,
+        user: Option<Value>,
+        partials: &[Value],
+    ) -> Self {
         Self::with_layers(core, Value::Null, parent, child, user, partials)
     }
 
     /// Core defaults, then the styles blocks declare themselves (`blocks`), the theme and the user.
-    pub fn with_layers(core: Value, blocks: Value, parent: Option<Value>, child: Option<Value>, user: Option<Value>, partials: &[Value]) -> Self {
+    pub fn with_layers(
+        core: Value,
+        blocks: Value,
+        parent: Option<Value>,
+        child: Option<Value>,
+        user: Option<Value>,
+        partials: &[Value],
+    ) -> Self {
         let mut theme = Value::Object(Map::new());
         let mut raw_theme = Value::Object(Map::new());
         for layer in [parent, child].into_iter().flatten() {
@@ -286,11 +342,20 @@ impl ThemeJson {
         }
         deep_merge(&mut merged, &theme);
         deep_merge(&mut merged, &user);
-        Self { merged, core, theme, user, raw_theme }
+        Self {
+            merged,
+            core,
+            theme,
+            user,
+            raw_theme,
+        }
     }
 
     pub fn settings(&self) -> Value {
-        self.merged.get("settings").cloned().unwrap_or(Value::Object(Map::new()))
+        self.merged
+            .get("settings")
+            .cloned()
+            .unwrap_or(Value::Object(Map::new()))
     }
 
     /// `wp_get_global_settings()` as the editor gets it: the merged settings with every preset list
@@ -308,7 +373,11 @@ impl ThemeJson {
             &["dimensions", "dimensionSizes"],
         ];
         let mut settings = self.settings();
-        let layers = [("default", &self.core), ("theme", &self.theme), ("custom", &self.user)];
+        let layers = [
+            ("default", &self.core),
+            ("theme", &self.theme),
+            ("custom", &self.user),
+        ];
         let apply = |target: &mut Value, prefix: &[&str]| {
             for path in PRESET_PATHS {
                 let mut by_origin = Map::new();
@@ -323,7 +392,9 @@ impl ThemeJson {
                         }
                         Some(Value::Object(map)) => {
                             for (key, items) in map {
-                                if matches!(key.as_str(), "default" | "theme" | "custom") && key == origin {
+                                if matches!(key.as_str(), "default" | "theme" | "custom")
+                                    && key == origin
+                                {
                                     by_origin.insert(key.clone(), items.clone());
                                 }
                             }
@@ -337,7 +408,10 @@ impl ThemeJson {
                 let (last, parents) = path.split_last().expect("non-empty path");
                 let mut node = Some(&mut *target);
                 for key in parents {
-                    node = node.and_then(|n| n.as_object_mut()).map(|o| o.entry((*key).to_owned()).or_insert_with(|| Value::Object(Map::new())));
+                    node = node.and_then(|n| n.as_object_mut()).map(|o| {
+                        o.entry((*key).to_owned())
+                            .or_insert_with(|| Value::Object(Map::new()))
+                    });
                 }
                 if let Some(parent) = node.and_then(Value::as_object_mut) {
                     parent.insert((*last).to_owned(), Value::Object(by_origin));
@@ -345,7 +419,11 @@ impl ThemeJson {
             }
         };
         apply(&mut settings, &[]);
-        if let Some(blocks) = settings.get("blocks").and_then(Value::as_object).map(|b| b.keys().cloned().collect::<Vec<_>>()) {
+        if let Some(blocks) = settings
+            .get("blocks")
+            .and_then(Value::as_object)
+            .map(|b| b.keys().cloned().collect::<Vec<_>>())
+        {
             for name in blocks {
                 if let Some(node) = settings.get_mut("blocks").and_then(|b| b.get_mut(&name)) {
                     apply(node, &["blocks", &name]);
@@ -356,30 +434,55 @@ impl ThemeJson {
     }
 
     pub fn styles(&self) -> Value {
-        let mut styles = self.merged.get("styles").cloned().unwrap_or(Value::Object(Map::new()));
+        let mut styles = self
+            .merged
+            .get("styles")
+            .cloned()
+            .unwrap_or(Value::Object(Map::new()));
         resolve_refs(&mut styles);
         resolve_custom_vars(&mut styles);
         styles
     }
 
     pub fn template_parts(&self) -> Vec<Value> {
-        self.theme.get("templateParts").and_then(Value::as_array).cloned().unwrap_or_default()
+        self.theme
+            .get("templateParts")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
     }
 
     pub fn custom_templates(&self) -> Vec<Value> {
-        self.theme.get("customTemplates").and_then(Value::as_array).cloned().unwrap_or_default()
+        self.theme
+            .get("customTemplates")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
     }
 }
 
 /// `WP_Theme_JSON::compute_spacing_sizes()`: the sizes a `spacingScale` stands for.
 fn compute_spacing_sizes(scale: &Value) -> Vec<Value> {
     let number = |key: &str| scale.get(key).and_then(Value::as_f64);
-    let (Some(steps), Some(medium), Some(increment)) = (number("steps"), number("mediumStep"), number("increment")) else { return Vec::new() };
-    let (Some(unit), Some(operator)) = (scale.get("unit").and_then(Value::as_str), scale.get("operator").and_then(Value::as_str)) else { return Vec::new() };
+    let (Some(steps), Some(medium), Some(increment)) =
+        (number("steps"), number("mediumStep"), number("increment"))
+    else {
+        return Vec::new();
+    };
+    let (Some(unit), Some(operator)) = (
+        scale.get("unit").and_then(Value::as_str),
+        scale.get("operator").and_then(Value::as_str),
+    ) else {
+        return Vec::new();
+    };
     if steps == 0.0 || !matches!(operator, "+" | "*") {
         return Vec::new();
     }
-    let unit = if unit == "%" { "%".to_owned() } else { unit.to_lowercase() };
+    let unit = if unit == "%" {
+        "%".to_owned()
+    } else {
+        unit.to_lowercase()
+    };
     let round2 = |v: f64| {
         let r = (v * 100.0).round() / 100.0;
         format!("{r}")
@@ -405,7 +508,14 @@ fn compute_spacing_sizes(scale: &Value) -> Vec<Value> {
             remainder = below_count;
             break;
         }
-        let name = if below_count == mid - 1.0 { "Small".to_owned() } else { format!("{}X-Small", x_small_count.map(|n| n.to_string()).unwrap_or_default()) };
+        let name = if below_count == mid - 1.0 {
+            "Small".to_owned()
+        } else {
+            format!(
+                "{}X-Small",
+                x_small_count.map(|n| n.to_string()).unwrap_or_default()
+            )
+        };
         below.push((name, slug.to_string(), format!("{}{unit}", round2(current))));
         if below_count == mid - 2.0 {
             x_small_count = Some(2);
@@ -417,7 +527,17 @@ fn compute_spacing_sizes(scale: &Value) -> Vec<Value> {
     }
     below.reverse();
     sizes.extend(below);
-    sizes.push(("Medium".to_owned(), "50".to_owned(), format!("{}{unit}", scale.get("mediumStep").map(|v| v.to_string()).unwrap_or_default())));
+    sizes.push((
+        "Medium".to_owned(),
+        "50".to_owned(),
+        format!(
+            "{}{unit}",
+            scale
+                .get("mediumStep")
+                .map(|v| v.to_string())
+                .unwrap_or_default()
+        ),
+    ));
     let mut current = medium;
     let mut x_large_count: Option<u32> = None;
     let mut slug = 60i64;
@@ -431,7 +551,14 @@ fn compute_spacing_sizes(scale: &Value) -> Vec<Value> {
         } else {
             current / increment
         };
-        let name = if index == 0.0 { "Large".to_owned() } else { format!("{}X-Large", x_large_count.map(|n| n.to_string()).unwrap_or_default()) };
+        let name = if index == 0.0 {
+            "Large".to_owned()
+        } else {
+            format!(
+                "{}X-Large",
+                x_large_count.map(|n| n.to_string()).unwrap_or_default()
+            )
+        };
         sizes.push((name, slug.to_string(), format!("{}{unit}", round2(current))));
         if index == 1.0 {
             x_large_count = Some(2);
@@ -441,18 +568,34 @@ fn compute_spacing_sizes(scale: &Value) -> Vec<Value> {
         slug += 10;
         index += 1.0;
     }
-    sizes.into_iter().map(|(name, slug, size)| serde_json::json!({"name": name, "slug": slug, "size": size})).collect()
+    sizes
+        .into_iter()
+        .map(|(name, slug, size)| serde_json::json!({"name": name, "slug": slug, "size": size}))
+        .collect()
 }
 
 /// `WP_Theme_JSON::set_spacing_sizes()`: sizes computed from the layer's own `spacingScale` are
 /// its `default` origin; sizes it lists itself stay in `origin`.
 fn set_spacing_sizes(layer: &mut Value, origin: &str) {
-    let Some(scale) = layer.get("settings").and_then(|s| s.get("spacing")).and_then(|s| s.get("spacingScale")).cloned() else { return };
+    let Some(scale) = layer
+        .get("settings")
+        .and_then(|s| s.get("spacing"))
+        .and_then(|s| s.get("spacingScale"))
+        .cloned()
+    else {
+        return;
+    };
     let computed = compute_spacing_sizes(&scale);
     if computed.is_empty() {
         return;
     }
-    let Some(spacing) = layer.get_mut("settings").and_then(|s| s.get_mut("spacing")).and_then(Value::as_object_mut) else { return };
+    let Some(spacing) = layer
+        .get_mut("settings")
+        .and_then(|s| s.get_mut("spacing"))
+        .and_then(Value::as_object_mut)
+    else {
+        return;
+    };
     // `_wp_array_set()` replaces the sizes where they are.
     let mut by_origin = match spacing.get_mut("spacingSizes").map(Value::take) {
         Some(Value::Array(items)) => {
@@ -498,8 +641,18 @@ mod tests {
 
     #[test]
     fn preset_references_are_resolved_in_styles() {
-        let tj = ThemeJson::new(json!({}), Some(json!({"styles": {"blocks": {"core/columns": {"spacing": {"blockGap": "var:preset|spacing|50"}}}, "css": "a|b"}})), None, None);
-        assert_eq!(tj.styles()["blocks"]["core/columns"]["spacing"]["blockGap"], "var(--wp--preset--spacing--50)");
+        let tj = ThemeJson::new(
+            json!({}),
+            Some(
+                json!({"styles": {"blocks": {"core/columns": {"spacing": {"blockGap": "var:preset|spacing|50"}}}, "css": "a|b"}}),
+            ),
+            None,
+            None,
+        );
+        assert_eq!(
+            tj.styles()["blocks"]["core/columns"]["spacing"]["blockGap"],
+            "var(--wp--preset--spacing--50)"
+        );
         assert_eq!(tj.styles()["css"], "a|b");
     }
 
@@ -510,16 +663,37 @@ mod tests {
         let child = json!({"settings": {"layout": {"wideSize": "4"}}});
         let user = json!({"settings": {"useRootPaddingAwareAlignments": true}});
         let tj = ThemeJson::new(core, Some(parent), Some(child), Some(user));
-        assert_eq!(tj.settings()["layout"], json!({"contentSize": "2", "wideSize": "4"}));
+        assert_eq!(
+            tj.settings()["layout"],
+            json!({"contentSize": "2", "wideSize": "4"})
+        );
         assert_eq!(tj.settings()["useRootPaddingAwareAlignments"], true);
         assert_eq!(tj.template_parts().len(), 1);
     }
 
     #[test]
     fn the_default_spacing_scale_yields_seven_sizes() {
-        let sizes = compute_spacing_sizes(&serde_json::json!({"operator": "*", "increment": 1.5, "steps": 7, "mediumStep": 1.5, "unit": "rem"}));
-        let pairs: Vec<(String, String)> = sizes.iter().map(|s| (s["slug"].as_str().unwrap().to_owned(), s["size"].as_str().unwrap().to_owned())).collect();
-        let expected = [("20", "0.44rem"), ("30", "0.67rem"), ("40", "1rem"), ("50", "1.5rem"), ("60", "2.25rem"), ("70", "3.38rem"), ("80", "5.06rem")];
+        let sizes = compute_spacing_sizes(
+            &serde_json::json!({"operator": "*", "increment": 1.5, "steps": 7, "mediumStep": 1.5, "unit": "rem"}),
+        );
+        let pairs: Vec<(String, String)> = sizes
+            .iter()
+            .map(|s| {
+                (
+                    s["slug"].as_str().unwrap().to_owned(),
+                    s["size"].as_str().unwrap().to_owned(),
+                )
+            })
+            .collect();
+        let expected = [
+            ("20", "0.44rem"),
+            ("30", "0.67rem"),
+            ("40", "1rem"),
+            ("50", "1.5rem"),
+            ("60", "2.25rem"),
+            ("70", "3.38rem"),
+            ("80", "5.06rem"),
+        ];
         assert_eq!(pairs, expected.map(|(a, b)| (a.to_owned(), b.to_owned())));
         assert!(compute_spacing_sizes(&serde_json::json!({"steps": 0})).is_empty());
     }
@@ -528,5 +702,9 @@ mod tests {
     fn refs_point_to_other_style_values() {
         let mut styles = serde_json::json!({"elements": {"button": {"border": {"radius": "4px"}}}, "blocks": {"core/search": {"elements": {"button": {"border": {"radius": {"ref": "styles.elements.button.border.radius"}}}}}}});
         resolve_refs(&mut styles);
-        assert_eq!(styles["blocks"]["core/search"]["elements"]["button"]["border"]["radius"], "4px");
-    }}
+        assert_eq!(
+            styles["blocks"]["core/search"]["elements"]["button"]["border"]["radius"],
+            "4px"
+        );
+    }
+}

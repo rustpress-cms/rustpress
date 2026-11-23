@@ -21,14 +21,23 @@ pub struct CronArray {
 impl CronArray {
     /// Reads the option from the database (not from the snapshot, which is older than the writes of the request).
     pub async fn load(db: &Db) -> rustpress_db::Result<Self> {
-        Ok(db.option("cron").await?.map(|raw| Self::parse(&raw)).unwrap_or_default())
+        Ok(db
+            .option("cron")
+            .await?
+            .map(|raw| Self::parse(&raw))
+            .unwrap_or_default())
     }
 
     /// The option's value, without `version` (an array without it is the format of WordPress before 2.1, which
     /// `_upgrade_cron_array()` would convert; such an array is read as empty).
     pub fn parse(raw: &str) -> Self {
-        let Ok(Value::Array(items)) = rustpress_phpser::unserialize(raw.as_bytes()) else { return Self::default() };
-        if !items.iter().any(|(k, _)| matches!(k, Key::Str(s) if s == b"version")) {
+        let Ok(Value::Array(items)) = rustpress_phpser::unserialize(raw.as_bytes()) else {
+            return Self::default();
+        };
+        if !items
+            .iter()
+            .any(|(k, _)| matches!(k, Key::Str(s) if s == b"version"))
+        {
             return Self::default();
         }
         let mut entries = Vec::new();
@@ -43,7 +52,9 @@ impl CronArray {
                 .into_iter()
                 .map(|(hook, events)| {
                     let events = match events {
-                        Value::Array(events) => events.into_iter().map(|(k, v)| (key_bytes(k), v)).collect(),
+                        Value::Array(events) => {
+                            events.into_iter().map(|(k, v)| (key_bytes(k), v)).collect()
+                        }
                         _ => Vec::new(),
                     };
                     (key_bytes(hook), events)
@@ -60,7 +71,20 @@ impl CronArray {
             .entries
             .iter()
             .map(|(timestamp, hooks)| {
-                let hooks = hooks.iter().map(|(hook, events)| (Key::Str(hook.clone()), Value::Array(events.iter().map(|(k, v)| (Key::Str(k.clone()), v.clone())).collect()))).collect();
+                let hooks = hooks
+                    .iter()
+                    .map(|(hook, events)| {
+                        (
+                            Key::Str(hook.clone()),
+                            Value::Array(
+                                events
+                                    .iter()
+                                    .map(|(k, v)| (Key::Str(k.clone()), v.clone()))
+                                    .collect(),
+                            ),
+                        )
+                    })
+                    .collect();
                 (Key::Int(*timestamp), Value::Array(hooks))
             })
             .collect();
@@ -70,14 +94,20 @@ impl CronArray {
 
     /// `_set_cron_array()`.
     pub async fn save(&self, writer: &Writer) -> rustpress_db::Result<()> {
-        writer.update_option_with_autoload("cron", &self.serialize(), "on").await?;
+        writer
+            .update_option_with_autoload("cron", &self.serialize(), "on")
+            .await?;
         Ok(())
     }
 
     /// Whether an event of the hook is stored for the arguments.
     pub fn has(&self, hook: &str, args: &Value) -> bool {
         let key = args_key(args);
-        self.entries.iter().any(|(_, hooks)| hooks.iter().any(|(h, events)| h == hook.as_bytes() && events.iter().any(|(k, _)| *k == key)))
+        self.entries.iter().any(|(_, hooks)| {
+            hooks
+                .iter()
+                .any(|(h, events)| h == hook.as_bytes() && events.iter().any(|(k, _)| *k == key))
+        })
     }
 
     /// The timestamps up to `now` with the arguments of their events of the hook (`wp_get_ready_cron_jobs()`).
@@ -89,7 +119,15 @@ impl CronArray {
             }
             for (h, events) in hooks {
                 if h == hook.as_bytes() {
-                    due.extend(events.iter().map(|(_, event)| (*timestamp, event.get("args").cloned().unwrap_or(Value::Array(Vec::new())))));
+                    due.extend(events.iter().map(|(_, event)| {
+                        (
+                            *timestamp,
+                            event
+                                .get("args")
+                                .cloned()
+                                .unwrap_or(Value::Array(Vec::new())),
+                        )
+                    }));
                 }
             }
         }
@@ -98,13 +136,27 @@ impl CronArray {
 
     /// `wp_schedule_single_event()` without plugin filters. Returns whether the event was added (`false` for an
     /// identical event within ten minutes).
-    pub fn schedule_single_event(&mut self, timestamp: i64, hook: &str, args: Value, now: i64) -> bool {
+    pub fn schedule_single_event(
+        &mut self,
+        timestamp: i64,
+        hook: &str,
+        args: Value,
+        now: i64,
+    ) -> bool {
         if timestamp <= 0 {
             return false;
         }
         let key = args_key(&args);
-        let min = if timestamp < now + DUPLICATE_WINDOW { 0 } else { timestamp - DUPLICATE_WINDOW };
-        let max = if timestamp < now { now + DUPLICATE_WINDOW } else { timestamp + DUPLICATE_WINDOW };
+        let min = if timestamp < now + DUPLICATE_WINDOW {
+            0
+        } else {
+            timestamp - DUPLICATE_WINDOW
+        };
+        let max = if timestamp < now {
+            now + DUPLICATE_WINDOW
+        } else {
+            timestamp + DUPLICATE_WINDOW
+        };
         for (at, hooks) in &self.entries {
             if *at < min {
                 continue;
@@ -112,11 +164,17 @@ impl CronArray {
             if *at > max {
                 break;
             }
-            if hooks.iter().any(|(h, events)| h == hook.as_bytes() && events.iter().any(|(k, _)| *k == key)) {
+            if hooks
+                .iter()
+                .any(|(h, events)| h == hook.as_bytes() && events.iter().any(|(k, _)| *k == key))
+            {
                 return false;
             }
         }
-        let event = Value::Array(vec![(Key::Str(b"schedule".to_vec()), Value::Bool(false)), (Key::Str(b"args".to_vec()), args)]);
+        let event = Value::Array(vec![
+            (Key::Str(b"schedule".to_vec()), Value::Bool(false)),
+            (Key::Str(b"args".to_vec()), args),
+        ]);
         let index = match self.entries.iter().position(|(at, _)| *at == timestamp) {
             Some(index) => index,
             None => {
@@ -140,9 +198,13 @@ impl CronArray {
     /// `wp_unschedule_event()`: removes the event, then the hook and the timestamp when they are left empty.
     pub fn unschedule_event(&mut self, timestamp: i64, hook: &str, args: &Value) -> bool {
         let key = args_key(args);
-        let Some(index) = self.entries.iter().position(|(at, _)| *at == timestamp) else { return false };
+        let Some(index) = self.entries.iter().position(|(at, _)| *at == timestamp) else {
+            return false;
+        };
         let hooks = &mut self.entries[index].1;
-        let Some(hook_index) = hooks.iter().position(|(h, _)| h == hook.as_bytes()) else { return false };
+        let Some(hook_index) = hooks.iter().position(|(h, _)| h == hook.as_bytes()) else {
+            return false;
+        };
         let events = &mut hooks[hook_index].1;
         let before = events.len();
         events.retain(|(k, _)| *k != key);
@@ -159,7 +221,16 @@ impl CronArray {
     /// `wp_clear_scheduled_hook()`: every event of the hook with these arguments. Returns how many there were.
     pub fn clear_scheduled_hook(&mut self, hook: &str, args: &Value) -> usize {
         let key = args_key(args);
-        let timestamps: Vec<i64> = self.entries.iter().filter(|(_, hooks)| hooks.iter().any(|(h, events)| h == hook.as_bytes() && events.iter().any(|(k, _)| *k == key))).map(|(at, _)| *at).collect();
+        let timestamps: Vec<i64> = self
+            .entries
+            .iter()
+            .filter(|(_, hooks)| {
+                hooks.iter().any(|(h, events)| {
+                    h == hook.as_bytes() && events.iter().any(|(k, _)| *k == key)
+                })
+            })
+            .map(|(at, _)| *at)
+            .collect();
         for timestamp in &timestamps {
             self.unschedule_event(*timestamp, hook, args);
         }
@@ -199,7 +270,12 @@ mod tests {
     fn schedules_and_clears_like_wordpress() {
         let mut cron = CronArray::parse(INSTALLED);
         // `md5( serialize( array( 5 ) ) )` is the key WordPress stores for post 5.
-        assert!(cron.schedule_single_event(1793003000, "publish_future_post", post_args(5), 1792990000));
+        assert!(cron.schedule_single_event(
+            1793003000,
+            "publish_future_post",
+            post_args(5),
+            1792990000
+        ));
         // What PHP's `serialize()` gives for the same array after `uksort()`.
         let expected = INSTALLED.replacen("a:4:", "a:5:", 1).replacen(
             "i:1793005400;",
@@ -208,9 +284,20 @@ mod tests {
         );
         assert_eq!(cron.serialize(), expected);
         // The same event again within ten minutes is a duplicate.
-        assert!(!cron.schedule_single_event(1793003300, "publish_future_post", post_args(5), 1792990000));
-        assert_eq!(cron.due("publish_future_post", 1793003000), vec![(1793003000, post_args(5))]);
-        assert_eq!(cron.clear_scheduled_hook("publish_future_post", &post_args(5)), 1);
+        assert!(!cron.schedule_single_event(
+            1793003300,
+            "publish_future_post",
+            post_args(5),
+            1792990000
+        ));
+        assert_eq!(
+            cron.due("publish_future_post", 1793003000),
+            vec![(1793003000, post_args(5))]
+        );
+        assert_eq!(
+            cron.clear_scheduled_hook("publish_future_post", &post_args(5)),
+            1
+        );
         assert_eq!(cron.serialize(), INSTALLED);
     }
 

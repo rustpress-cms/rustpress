@@ -29,7 +29,9 @@ fn string(value: Option<&Value>) -> String {
 
 /// The list of a user from the serialized meta value; unreadable entries are skipped.
 pub fn parse(raw: &str) -> Vec<AppPassword> {
-    let Ok(Value::Array(items)) = rustpress_phpser::unserialize(raw.as_bytes()) else { return Vec::new() };
+    let Ok(Value::Array(items)) = rustpress_phpser::unserialize(raw.as_bytes()) else {
+        return Vec::new();
+    };
     items
         .iter()
         .filter_map(|(_, item)| {
@@ -44,7 +46,10 @@ pub fn parse(raw: &str) -> Vec<AppPassword> {
                 password: string(item.get("password")),
                 created: item.get("created").and_then(Value::as_i64).unwrap_or(0),
                 last_used: item.get("last_used").and_then(Value::as_i64),
-                last_ip: item.get("last_ip").and_then(Value::as_str).map(str::to_owned),
+                last_ip: item
+                    .get("last_ip")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned),
             })
         })
         .collect()
@@ -64,7 +69,12 @@ pub fn serialize(list: &[AppPassword]) -> String {
                 field("password", Value::Str(item.password.clone().into_bytes())),
                 field("created", Value::Int(item.created)),
                 field("last_used", item.last_used.map_or(Value::Null, Value::Int)),
-                field("last_ip", item.last_ip.as_ref().map_or(Value::Null, |ip| Value::Str(ip.clone().into_bytes()))),
+                field(
+                    "last_ip",
+                    item.last_ip
+                        .as_ref()
+                        .map_or(Value::Null, |ip| Value::Str(ip.clone().into_bytes())),
+                ),
             ];
             (Key::Int(index as i64), Value::Array(entry))
         })
@@ -79,38 +89,72 @@ pub fn new_uuid() -> String {
     bytes[6] = (bytes[6] & 0x0f) | 0x40;
     bytes[8] = (bytes[8] & 0x3f) | 0x80;
     let hex: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
-    format!("{}-{}-{}-{}-{}", &hex[0..8], &hex[8..12], &hex[12..16], &hex[16..20], &hex[20..32])
+    format!(
+        "{}-{}-{}-{}-{}",
+        &hex[0..8],
+        &hex[8..12],
+        &hex[12..16],
+        &hex[16..20],
+        &hex[20..32]
+    )
 }
 
 /// A fresh password: `wp_generate_password( 24, false )`.
 pub fn new_password() -> String {
     const ALPHABET: &[u8] = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
     let mut rng = rand::rng();
-    (0..24).map(|_| ALPHABET[rng.random_range(0..ALPHABET.len())] as char).collect()
+    (0..24)
+        .map(|_| ALPHABET[rng.random_range(0..ALPHABET.len())] as char)
+        .collect()
 }
 
 /// The password as the user sees it: groups of four, separated by spaces (`chunk_split()`, trimmed).
 pub fn display(password: &str) -> String {
-    password.as_bytes().chunks(4).map(|c| String::from_utf8_lossy(c).into_owned()).collect::<Vec<_>>().join(" ")
+    password
+        .as_bytes()
+        .chunks(4)
+        .map(|c| String::from_utf8_lossy(c).into_owned())
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// The list of a user.
 pub async fn list(db: &Db, user_id: u64) -> Vec<AppPassword> {
-    db.user_meta(user_id, META_KEY).await.ok().flatten().map(|raw| parse(&raw)).unwrap_or_default()
+    db.user_meta(user_id, META_KEY)
+        .await
+        .ok()
+        .flatten()
+        .map(|raw| parse(&raw))
+        .unwrap_or_default()
 }
 
 /// Writes the list back.
-pub async fn save(writer: &Writer, user_id: u64, list: &[AppPassword]) -> Result<(), rustpress_db::Error> {
-    writer.update_user_meta(user_id, META_KEY, &serialize(list)).await
+pub async fn save(
+    writer: &Writer,
+    user_id: u64,
+    list: &[AppPassword],
+) -> Result<(), rustpress_db::Error> {
+    writer
+        .update_user_meta(user_id, META_KEY, &serialize(list))
+        .await
 }
 
 /// `wp_authenticate_application_password()`: the user and the entry a login and password belong to.
 ///
 /// `Err(None)`: no application password is in use on the site, the request stays anonymous. `Err(Some((code,
 /// message)))`: the error WordPress answers with (401).
-pub async fn authenticate(db: &Db, login: &str, password: &str) -> Result<(u64, String), Option<(&'static str, &'static str)>> {
+pub async fn authenticate(
+    db: &Db,
+    login: &str,
+    password: &str,
+) -> Result<(u64, String), Option<(&'static str, &'static str)>> {
     // `WP_Application_Passwords::is_in_use()`
-    let in_use = db.option("using_application_passwords").await.ok().flatten().is_some_and(|v| !v.is_empty() && v != "0");
+    let in_use = db
+        .option("using_application_passwords")
+        .await
+        .ok()
+        .flatten()
+        .is_some_and(|v| !v.is_empty() && v != "0");
     if !in_use {
         return Err(None);
     }
@@ -121,25 +165,46 @@ pub async fn authenticate(db: &Db, login: &str, password: &str) -> Result<(u64, 
     };
     let Some(user) = user else {
         return Err(Some(if login.contains('@') {
-            ("invalid_email", "<strong>Error:</strong> Unknown email address. Check again or try your username.")
+            (
+                "invalid_email",
+                "<strong>Error:</strong> Unknown email address. Check again or try your username.",
+            )
         } else {
-            ("invalid_username", "<strong>Error:</strong> Unknown username. Check again or try your email address.")
+            (
+                "invalid_username",
+                "<strong>Error:</strong> Unknown username. Check again or try your email address.",
+            )
         }));
     };
     // Everything that is not a letter or a digit goes (spaces and dashes of the displayed form).
-    let plain: String = password.chars().filter(char::is_ascii_alphanumeric).collect();
+    let plain: String = password
+        .chars()
+        .filter(char::is_ascii_alphanumeric)
+        .collect();
     list(db, user.id)
         .await
         .into_iter()
         .find(|item| matches_hash(&plain, &item.password))
         .map(|item| (user.id, item.uuid))
-        .ok_or(Some(("incorrect_password", "The provided password is an invalid application password.")))
+        .ok_or(Some((
+            "incorrect_password",
+            "The provided password is an invalid application password.",
+        )))
 }
 
 /// `WP_Application_Passwords::record_application_password_usage()`.
-pub async fn record_usage(db: &Db, writer: &Writer, user_id: u64, uuid: &str, ip: Option<&str>, now: i64) {
+pub async fn record_usage(
+    db: &Db,
+    writer: &Writer,
+    user_id: u64,
+    uuid: &str,
+    ip: Option<&str>,
+    now: i64,
+) {
     let mut passwords = list(db, user_id).await;
-    let Some(item) = passwords.iter_mut().find(|p| p.uuid == uuid) else { return };
+    let Some(item) = passwords.iter_mut().find(|p| p.uuid == uuid) else {
+        return;
+    };
     // Only once a day (`last_used` is not updated for each request).
     if item.last_used.is_some_and(|last| last + 86_400 > now) {
         return;
@@ -157,5 +222,9 @@ pub fn hash(password: &str) -> String {
 /// `WP_Application_Passwords::check_password()`: `wp_fast_hash()`, or `wp_check_password()` for the passwords made
 /// before WordPress 6.8.
 fn matches_hash(password: &str, hash: &str) -> bool {
-    if hash.starts_with("$generic$") { crate::password::verify_fast_hash(password, hash) } else { check_password(password, hash) }
+    if hash.starts_with("$generic$") {
+        crate::password::verify_fast_hash(password, hash)
+    } else {
+        check_password(password, hash)
+    }
 }

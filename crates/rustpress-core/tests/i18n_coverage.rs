@@ -38,11 +38,16 @@ const OWN_MESSAGES: &[&str] = &[
 ];
 
 fn rust_files(dir: &Path, out: &mut Vec<PathBuf>) {
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {
-            if path.file_name().is_some_and(|n| n == "target" || n == "tests") {
+            if path
+                .file_name()
+                .is_some_and(|n| n == "target" || n == "tests")
+            {
                 continue;
             }
             rust_files(&path, out);
@@ -53,14 +58,22 @@ fn rust_files(dir: &Path, out: &mut Vec<PathBuf>) {
 }
 
 fn unescape(literal: &str) -> String {
-    let text = literal.replace("\\\"", "\"").replace("\\n", "\n").replace("\\\\", "\\");
+    let text = literal
+        .replace("\\\"", "\"")
+        .replace("\\n", "\n")
+        .replace("\\\\", "\\");
     // `\u{2318}` and the like.
     let mut out = String::new();
     let mut rest = text.as_str();
     while let Some(at) = rest.find("\\u{") {
         out.push_str(&rest[..at]);
         let after = &rest[at + 3..];
-        match after.find('}').and_then(|end| u32::from_str_radix(&after[..end], 16).ok().and_then(char::from_u32).map(|c| (c, end))) {
+        match after.find('}').and_then(|end| {
+            u32::from_str_radix(&after[..end], 16)
+                .ok()
+                .and_then(char::from_u32)
+                .map(|c| (c, end))
+        }) {
             Some((c, end)) => {
                 out.push(c);
                 rest = &after[end + 1..];
@@ -77,16 +90,22 @@ fn unescape(literal: &str) -> String {
 
 #[test]
 fn every_message_id_exists_in_wordpress() {
-    let root = PathBuf::from(std::env::var("RUSTPRESS_WP_ROOT").unwrap_or_else(|_| DEFAULT_ROOT.into()));
+    let root =
+        PathBuf::from(std::env::var("RUSTPRESS_WP_ROOT").unwrap_or_else(|_| DEFAULT_ROOT.into()));
     if !root.join("wp-content/languages/de_DE.mo").exists() {
         eprintln!("skipped: no de_DE language pack in {}", root.display());
-        assert!(std::env::var_os("RUSTPRESS_REQUIRE_REFERENCE").is_none(), "RUSTPRESS_REQUIRE_REFERENCE is set, so this test must not skip itself");
+        assert!(
+            std::env::var_os("RUSTPRESS_REQUIRE_REFERENCE").is_none(),
+            "RUSTPRESS_REQUIRE_REFERENCE is set, so this test must not skip itself"
+        );
         return;
     }
     let i18n = I18n::load(&root, "de_DE", &[]);
     assert!(i18n.is_translated());
 
-    let crates = Path::new(env!("CARGO_MANIFEST_DIR")).parent().expect("crates directory");
+    let crates = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("crates directory");
     let mut files = Vec::new();
     rust_files(crates, &mut files);
 
@@ -99,7 +118,10 @@ fn every_message_id_exists_in_wordpress() {
     // REST errors carry their message id as a literal and are translated when serialized.
     let rest_messages = [
         Regex::new(&format!(r"RestError::new\(\s*{text}\s*,\s*{text}")).unwrap(),
-        Regex::new(&format!(r"invalid_param(?:_with_data)?\(\s*[^,]+,\s*{text}")).unwrap(),
+        Regex::new(&format!(
+            r"invalid_param(?:_with_data)?\(\s*[^,]+,\s*{text}"
+        ))
+        .unwrap(),
     ];
     let msg = Regex::new(&format!(r"Msg::new\(\s*{text}\s*\)")).unwrap();
 
@@ -108,12 +130,17 @@ fn every_message_id_exists_in_wordpress() {
     for file in files {
         let source = std::fs::read_to_string(&file).unwrap();
         let source = source.split("#[cfg(test)]").next().unwrap_or_default();
-        let name = file.strip_prefix(crates).unwrap_or(&file).display().to_string();
+        let name = file
+            .strip_prefix(crates)
+            .unwrap_or(&file)
+            .display()
+            .to_string();
         let plugin_module = name.starts_with("rustpress-plugins");
         let core_domain = |c: &regex::Captures| !plugin_module || &c[1] == "site";
         let mut check = |context: Option<String>, id: String| {
             checked += 1;
-            if !OWN_MESSAGES.contains(&id.as_str()) && !i18n.has("default", context.as_deref(), &id) {
+            if !OWN_MESSAGES.contains(&id.as_str()) && !i18n.has("default", context.as_deref(), &id)
+            {
                 missing.push(format!("{name}: {:?} {id:?}", context));
             }
         };
@@ -137,6 +164,13 @@ fn every_message_id_exists_in_wordpress() {
             check(None, unescape(&c[1]));
         }
     }
-    assert!(checked > 20, "only {checked} messages found: the patterns no longer match the code");
-    assert!(missing.is_empty(), "message ids WordPress does not have (typo, or a changed English text):\n{}", missing.join("\n"));
+    assert!(
+        checked > 20,
+        "only {checked} messages found: the patterns no longer match the code"
+    );
+    assert!(
+        missing.is_empty(),
+        "message ids WordPress does not have (typo, or a changed English text):\n{}",
+        missing.join("\n")
+    );
 }

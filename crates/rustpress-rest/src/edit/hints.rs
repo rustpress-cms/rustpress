@@ -8,7 +8,10 @@ use crate::Rest;
 
 impl Rest<'_> {
     /// Replaces the `["GET"]` hints of the `self` links in `data` (an item, a list of items, their `_embedded`).
-    pub(crate) fn refine_hints<'a>(&'a self, data: &'a mut Value) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send + 'a>> {
+    pub(crate) fn refine_hints<'a>(
+        &'a self,
+        data: &'a mut Value,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send + 'a>> {
         Box::pin(async move {
             match data {
                 Value::Array(items) => {
@@ -27,7 +30,10 @@ impl Rest<'_> {
                         .map(str::to_owned);
                     if let Some(href) = href
                         && let Some(allow) = self.hint_allow(&href).await
-                        && let Some(link) = map.get_mut("_links").and_then(|l| l.pointer_mut("/self/0")).and_then(Value::as_object_mut)
+                        && let Some(link) = map
+                            .get_mut("_links")
+                            .and_then(|l| l.pointer_mut("/self/0"))
+                            .and_then(Value::as_object_mut)
                     {
                         // Nothing allowed leaves no hint at all.
                         if allow.is_empty() {
@@ -36,7 +42,8 @@ impl Rest<'_> {
                             link.insert("targetHints".into(), json!({"allow": allow}));
                         }
                     }
-                    if let Some(embedded) = map.get_mut("_embedded").and_then(Value::as_object_mut) {
+                    if let Some(embedded) = map.get_mut("_embedded").and_then(Value::as_object_mut)
+                    {
                         for (_, value) in embedded.iter_mut() {
                             self.refine_hints(value).await;
                         }
@@ -52,7 +59,14 @@ impl Rest<'_> {
         let ids: Vec<u64> = items
             .iter()
             .filter_map(|item| item.pointer("/_links/self/0/href").and_then(Value::as_str))
-            .filter_map(|href| href.split("/wp/v2/comments/").nth(1)?.split(['?', '&', '/']).next()?.parse().ok())
+            .filter_map(|href| {
+                href.split("/wp/v2/comments/")
+                    .nth(1)?
+                    .split(['?', '&', '/'])
+                    .next()?
+                    .parse()
+                    .ok()
+            })
             .collect();
         if ids.is_empty() {
             return;
@@ -86,26 +100,45 @@ impl Rest<'_> {
             let post = db.post(comment.comment_post_id).await.ok().flatten();
             let params = crate::params::Params::parse("");
             let mut allow = Vec::new();
-            let readable = self.check_read_comment(&comment, &params, true).await.unwrap_or(false);
+            let readable = self
+                .check_read_comment(&comment, &params, true)
+                .await
+                .unwrap_or(false);
             let post_readable = match &post {
-                Some(post) => self.check_read_post_permission(post, &params, false, true).await,
+                Some(post) => {
+                    self.check_read_post_permission(post, &params, false, true)
+                        .await
+                }
                 None => true,
             };
             if readable && post_readable {
                 allow.push("GET");
             }
             let moderates = !comment.comment_type.eq_ignore_ascii_case("note");
-            let editable = self.user().is_some_and(|u| u.id != 0 && ((moderates && u.can("moderate_comments")) || u.can_edit_comment(post.as_ref())));
+            let editable = self.user().is_some_and(|u| {
+                u.id != 0
+                    && ((moderates && u.can("moderate_comments"))
+                        || u.can_edit_comment(post.as_ref()))
+            });
             if editable {
                 allow.extend(["POST", "PUT", "PATCH", "DELETE"]);
             }
             return Some(allow);
         }
-        if let Some(tax) = self.site.types.taxonomies.iter().filter(|t| t.show_in_rest).find_map(|t| (t.rest_base() == base).then(|| self.tax(&t.name))).flatten().or_else(|| match base {
-            "categories" => self.tax("category"),
-            "tags" => self.tax("post_tag"),
-            _ => None,
-        }) {
+        if let Some(tax) = self
+            .site
+            .types
+            .taxonomies
+            .iter()
+            .filter(|t| t.show_in_rest)
+            .find_map(|t| (t.rest_base() == base).then(|| self.tax(&t.name)))
+            .flatten()
+            .or_else(|| match base {
+                "categories" => self.tax("category"),
+                "tags" => self.tax("post_tag"),
+                _ => None,
+            })
+        {
             // The item was just read: the ID of its link is a term of the taxonomy.
             let mut allow = vec!["GET"];
             if self.can("manage_categories") {
@@ -118,7 +151,13 @@ impl Rest<'_> {
             }
             return Some(allow);
         }
-        let known = matches!(base, "posts" | "pages" | "media") || self.site.types.post_types.iter().any(|t| t.show_in_rest && t.rest_base() == base);
+        let known = matches!(base, "posts" | "pages" | "media")
+            || self
+                .site
+                .types
+                .post_types
+                .iter()
+                .any(|t| t.show_in_rest && t.rest_base() == base);
         if known {
             let post = db.post(id).await.ok().flatten()?;
             let mut allow = vec!["GET"];

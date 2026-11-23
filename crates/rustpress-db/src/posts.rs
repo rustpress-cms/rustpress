@@ -1,5 +1,5 @@
-use sqlx::AssertSqlSafe;
 use crate::sql::Sql;
+use sqlx::AssertSqlSafe;
 
 use crate::models::{POST_COLUMNS, Post, PostMeta};
 use crate::{Db, Result};
@@ -146,9 +146,13 @@ impl Default for PostQuery {
 impl PostQuery {
     /// Appends `FROM <posts> WHERE ...` including the `WHERE` clause.
     pub(crate) fn push_filters(&self, qb: &mut Sql, db: &Db) {
-        qb.push(" FROM ").push(db.prefix.table("posts")).push(" p WHERE 1 = 1");
+        qb.push(" FROM ")
+            .push(db.prefix.table("posts"))
+            .push(" p WHERE 1 = 1");
         push_in(qb, "p.post_type", &self.post_types);
-        if self.statuses.iter().any(|s| s == "publish") && (!self.private_types.is_empty() || self.private_author.is_some()) {
+        if self.statuses.iter().any(|s| s == "publish")
+            && (!self.private_types.is_empty() || self.private_author.is_some())
+        {
             // `WP_Query::get_posts()` for a signed-in viewer: `OR post_status = 'private'` where they may read it.
             qb.push(" AND (p.post_status IN (");
             let mut list = qb.separated(", ");
@@ -196,14 +200,19 @@ impl PostQuery {
         push_in(qb, "p.post_parent", &self.parent_in);
         push_in(qb, "p.post_parent NOT", &self.parent_not_in);
         if let Some(prefix) = &self.mime_prefix {
-            qb.push(" AND p.post_mime_type LIKE ").push_bind(format!("{}/%", prefix.replace('%', "\\%").replace('_', "\\_")));
+            qb.push(" AND p.post_mime_type LIKE ").push_bind(format!(
+                "{}/%",
+                prefix.replace('%', "\\%").replace('_', "\\_")
+            ));
         }
         if let Some(mime) = &self.mime_type {
             qb.push(" AND p.post_mime_type = ").push_bind(mime.clone());
         }
         push_in(qb, "p.post_mime_type", &self.mime_types);
         if self.public_parent {
-            qb.push(" AND (p.post_parent = 0 OR p.post_parent IN (SELECT parent.ID FROM ").push(db.prefix.table("posts")).push(" parent WHERE parent.post_status = 'publish'))");
+            qb.push(" AND (p.post_parent = 0 OR p.post_parent IN (SELECT parent.ID FROM ")
+                .push(db.prefix.table("posts"))
+                .push(" parent WHERE parent.post_status = 'publish'))");
         }
         if let Some(menu_order) = self.menu_order {
             qb.push(" AND p.menu_order = ").push_bind(menu_order);
@@ -215,11 +224,14 @@ impl PostQuery {
             ("p.post_modified", "<", &self.modified_before),
         ] {
             if let Some(value) = value {
-                qb.push(format!(" AND {column} {op} ")).push_bind(value.clone());
+                qb.push(format!(" AND {column} {op} "))
+                    .push_bind(value.clone());
             }
         }
         if !self.tax_not.is_empty() {
-            qb.push(" AND p.ID NOT IN (SELECT object_id FROM ").push(db.prefix.table("term_relationships")).push(" WHERE term_taxonomy_id IN (");
+            qb.push(" AND p.ID NOT IN (SELECT object_id FROM ")
+                .push(db.prefix.table("term_relationships"))
+                .push(" WHERE term_taxonomy_id IN (");
             let mut ids = qb.separated(", ");
             for id in &self.tax_not {
                 ids.push_bind(*id);
@@ -227,7 +239,9 @@ impl PostQuery {
             qb.push("))");
         }
         for group in self.tax_groups.iter().filter(|g| !g.is_empty()) {
-            qb.push(" AND p.ID IN (SELECT object_id FROM ").push(db.prefix.table("term_relationships")).push(" WHERE term_taxonomy_id IN (");
+            qb.push(" AND p.ID IN (SELECT object_id FROM ")
+                .push(db.prefix.table("term_relationships"))
+                .push(" WHERE term_taxonomy_id IN (");
             let mut ids = qb.separated(", ");
             for id in group {
                 ids.push_bind(*id);
@@ -236,16 +250,28 @@ impl PostQuery {
         }
         for term in &self.search {
             let pattern = like_pattern(term);
-            qb.push(" AND (p.post_title LIKE ").push_bind(pattern.clone());
-            qb.push(" OR p.post_excerpt LIKE ").push_bind(pattern.clone());
-            qb.push(" OR p.post_content LIKE ").push_bind(pattern).push(")");
+            qb.push(" AND (p.post_title LIKE ")
+                .push_bind(pattern.clone());
+            qb.push(" OR p.post_excerpt LIKE ")
+                .push_bind(pattern.clone());
+            qb.push(" OR p.post_content LIKE ")
+                .push_bind(pattern)
+                .push(")");
         }
         if !self.search.is_empty() && !self.search_signed_in {
             qb.push(" AND p.post_password = ''");
         }
-        for (column, value) in [("YEAR", self.year), ("MONTH", self.month), ("DAYOFMONTH", self.day), ("HOUR", self.hour), ("MINUTE", self.minute), ("SECOND", self.second)] {
+        for (column, value) in [
+            ("YEAR", self.year),
+            ("MONTH", self.month),
+            ("DAYOFMONTH", self.day),
+            ("HOUR", self.hour),
+            ("MINUTE", self.minute),
+            ("SECOND", self.second),
+        ] {
             if let Some(value) = value {
-                qb.push(format!(" AND {column}(p.post_date) = ")).push_bind(value);
+                qb.push(format!(" AND {column}(p.post_date) = "))
+                    .push_bind(value);
             }
         }
         if let Some((week, start)) = self.week {
@@ -261,7 +287,12 @@ impl PostQuery {
 
 /// `%term%` with LIKE wildcards in `term` escaped.
 fn like_pattern(term: &str) -> String {
-    format!("%{}%", term.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_"))
+    format!(
+        "%{}%",
+        term.replace('\\', "\\\\")
+            .replace('%', "\\%")
+            .replace('_', "\\_")
+    )
 }
 
 /// `(CASE WHEN ... THEN 1 ... ELSE 6 END)`, ported from `parse_search_order`.
@@ -270,7 +301,9 @@ fn push_relevance(qb: &mut Sql, query: &PostQuery) {
     let phrase = query.search_phrase.as_deref().filter(|_| terms.len() > 1);
     qb.push("(CASE ");
     if let Some(phrase) = phrase {
-        qb.push("WHEN p.post_title LIKE ").push_bind(like_pattern(phrase)).push(" THEN 1 ");
+        qb.push("WHEN p.post_title LIKE ")
+            .push_bind(like_pattern(phrase))
+            .push(" THEN 1 ");
     }
     // Beyond six terms WordPress only ranks by the whole phrase.
     if !terms.is_empty() && terms.len() < 7 {
@@ -289,8 +322,12 @@ fn push_relevance(qb: &mut Sql, query: &PostQuery) {
         }
     }
     if let Some(phrase) = phrase {
-        qb.push("WHEN p.post_excerpt LIKE ").push_bind(like_pattern(phrase)).push(" THEN 4 ");
-        qb.push("WHEN p.post_content LIKE ").push_bind(like_pattern(phrase)).push(" THEN 5 ");
+        qb.push("WHEN p.post_excerpt LIKE ")
+            .push_bind(like_pattern(phrase))
+            .push(" THEN 4 ");
+        qb.push("WHEN p.post_content LIKE ")
+            .push_bind(like_pattern(phrase))
+            .push(" THEN 5 ");
     }
     qb.push("ELSE 6 END)");
 }
@@ -326,10 +363,16 @@ fn push_order_and_limit(qb: &mut Sql, query: &PostQuery) {
         OrderBy::Include => "",
         OrderBy::Relevance => "",
     };
-    let direction = if query.order == Order::Asc { "ASC" } else { "DESC" };
+    let direction = if query.order == Order::Asc {
+        "ASC"
+    } else {
+        "DESC"
+    };
     // `FIELD()` needs at least one ID; without any the order of the date is used.
     if query.order_by == OrderBy::Include && query.ids.is_empty() {
-        qb.push(format!(" ORDER BY p.post_date {direction}, p.ID {direction}"));
+        qb.push(format!(
+            " ORDER BY p.post_date {direction}, p.ID {direction}"
+        ));
     } else if query.order_by == OrderBy::Include {
         qb.push(" ORDER BY FIELD(p.ID");
         for id in &query.ids {
@@ -344,11 +387,18 @@ fn push_order_and_limit(qb: &mut Sql, query: &PostQuery) {
     } else {
         // `ID` as tie-breaker keeps pagination stable. WordPress shows equal dates newest
         // ID first, except for term queries: their `GROUP BY ID` feeds the sort oldest first.
-        let tie = if query.tax_groups.is_empty() && !query.ties_ascending { direction } else { "ASC" };
+        let tie = if query.tax_groups.is_empty() && !query.ties_ascending {
+            direction
+        } else {
+            "ASC"
+        };
         qb.push(format!(" ORDER BY {column} {direction}, p.ID {tie}"));
     }
     if let Some(limit) = query.limit {
-        qb.push(" LIMIT ").push_bind(limit).push(" OFFSET ").push_bind(query.offset);
+        qb.push(" LIMIT ")
+            .push_bind(limit)
+            .push(" OFFSET ")
+            .push_bind(query.offset);
     }
 }
 
@@ -383,8 +433,13 @@ impl Db {
             "SELECT YEAR(post_date) AS y, MONTH(post_date) AS m, COUNT(ID) AS n FROM {} WHERE post_type = 'post' AND post_status = 'publish' GROUP BY y, m ORDER BY MAX(post_date) DESC",
             self.prefix.table("posts")
         );
-        let rows: Vec<(i32, i32, i64)> = sqlx::query_as(AssertSqlSafe(sql)).fetch_all(&self.pool).await?;
-        Ok(rows.into_iter().map(|(y, m, n)| (y as u32, m as u32, n as u64)).collect())
+        let rows: Vec<(i32, i32, i64)> = sqlx::query_as(AssertSqlSafe(sql))
+            .fetch_all(&self.pool)
+            .await?;
+        Ok(rows
+            .into_iter()
+            .map(|(y, m, n)| (y as u32, m as u32, n as u64))
+            .collect())
     }
 
     /// Days of a month with published posts (`get_calendar()`).
@@ -393,22 +448,39 @@ impl Db {
             "SELECT DISTINCT DAYOFMONTH(post_date) FROM {} WHERE post_date >= ? AND post_type = 'post' AND post_status = 'publish' AND post_date <= ?",
             self.prefix.table("posts")
         );
-        let rows: Vec<(i32,)> = sqlx::query_as(AssertSqlSafe(sql)).bind(format!("{year:04}-{month:02}-01 00:00:00")).bind(format!("{year:04}-{month:02}-{last_day:02} 23:59:59")).fetch_all(&self.pool).await?;
+        let rows: Vec<(i32,)> = sqlx::query_as(AssertSqlSafe(sql))
+            .bind(format!("{year:04}-{month:02}-01 00:00:00"))
+            .bind(format!("{year:04}-{month:02}-{last_day:02} 23:59:59"))
+            .fetch_all(&self.pool)
+            .await?;
         Ok(rows.into_iter().map(|(d,)| d as u32).collect())
     }
 
     /// The month before or after `year`/`month` that has published posts (`get_calendar()`).
-    pub async fn calendar_neighbor(&self, year: u32, month: u32, last_day: u32, previous: bool) -> Result<Option<(u32, u32)>> {
+    pub async fn calendar_neighbor(
+        &self,
+        year: u32,
+        month: u32,
+        last_day: u32,
+        previous: bool,
+    ) -> Result<Option<(u32, u32)>> {
         let (cmp, order, bound) = if previous {
             ("<", "DESC", format!("{year:04}-{month:02}-01"))
         } else {
-            (">", "ASC", format!("{year:04}-{month:02}-{last_day:02} 23:59:59"))
+            (
+                ">",
+                "ASC",
+                format!("{year:04}-{month:02}-{last_day:02} 23:59:59"),
+            )
         };
         let sql = format!(
             "SELECT YEAR(post_date), MONTH(post_date) FROM {} WHERE post_date {cmp} ? AND post_type = 'post' AND post_status = 'publish' ORDER BY post_date {order} LIMIT 1",
             self.prefix.table("posts")
         );
-        let row: Option<(i32, i32)> = sqlx::query_as(AssertSqlSafe(sql)).bind(bound).fetch_optional(&self.pool).await?;
+        let row: Option<(i32, i32)> = sqlx::query_as(AssertSqlSafe(sql))
+            .bind(bound)
+            .fetch_optional(&self.pool)
+            .await?;
         Ok(row.map(|(y, m)| (y as u32, m as u32)))
     }
 
@@ -432,9 +504,29 @@ impl Db {
     /// `redirect_guess_404_permalink()`: the first publicly viewable post whose
     /// slug starts with `name` (`LIKE 'name%'`), optionally narrowed by type and date. Without a type, the ones in
     /// `excluded` (not public) are left out as well.
-    pub async fn guess_post_by_name(&self, name: &str, post_type: Option<&str>, excluded: &[&str], year: Option<u32>, month: Option<u32>, day: Option<u32>) -> Result<Option<u64>> {
-        let escaped: String = name.chars().flat_map(|c| if matches!(c, '\\' | '%' | '_') { vec!['\\', c] } else { vec![c] }).collect();
-        let mut qb = Sql::new(format!("SELECT ID FROM {} WHERE post_name LIKE ", self.prefix.table("posts")));
+    pub async fn guess_post_by_name(
+        &self,
+        name: &str,
+        post_type: Option<&str>,
+        excluded: &[&str],
+        year: Option<u32>,
+        month: Option<u32>,
+        day: Option<u32>,
+    ) -> Result<Option<u64>> {
+        let escaped: String = name
+            .chars()
+            .flat_map(|c| {
+                if matches!(c, '\\' | '%' | '_') {
+                    vec!['\\', c]
+                } else {
+                    vec![c]
+                }
+            })
+            .collect();
+        let mut qb = Sql::new(format!(
+            "SELECT ID FROM {} WHERE post_name LIKE ",
+            self.prefix.table("posts")
+        ));
         qb.push_bind(format!("{escaped}%"));
         match post_type {
             Some(t) => {
@@ -462,22 +554,56 @@ impl Db {
 
     /// `get_adjacent_post()` without term filters: the published post of the same type that comes
     /// directly before or after `(date, id)` in the order `post_date, ID`.
-    pub async fn adjacent_post_id(&self, post_type: &str, date: &str, id: u64, previous: bool) -> Result<Option<u64>> {
-        let (op, order) = if previous { ("<", "DESC") } else { (">", "ASC") };
-        let mut sql = Sql::new(format!("SELECT ID FROM {} WHERE (post_date {op} ", self.prefix.table("posts")));
-        sql.push_bind(date).push(" OR (post_date = ").push_bind(date).push(format!(" AND ID {op} ")).push_bind(id);
-        sql.push(")) AND post_type = ").push_bind(post_type).push(format!(" AND post_status = 'publish' ORDER BY post_date {order}, ID {order} LIMIT 1"));
-        Ok(sql.fetch_column::<u64>(&self.pool).await?.into_iter().next())
+    pub async fn adjacent_post_id(
+        &self,
+        post_type: &str,
+        date: &str,
+        id: u64,
+        previous: bool,
+    ) -> Result<Option<u64>> {
+        let (op, order) = if previous {
+            ("<", "DESC")
+        } else {
+            (">", "ASC")
+        };
+        let mut sql = Sql::new(format!(
+            "SELECT ID FROM {} WHERE (post_date {op} ",
+            self.prefix.table("posts")
+        ));
+        sql.push_bind(date)
+            .push(" OR (post_date = ")
+            .push_bind(date)
+            .push(format!(" AND ID {op} "))
+            .push_bind(id);
+        sql.push(")) AND post_type = ")
+            .push_bind(post_type)
+            .push(format!(
+                " AND post_status = 'publish' ORDER BY post_date {order}, ID {order} LIMIT 1"
+            ));
+        Ok(sql
+            .fetch_column::<u64>(&self.pool)
+            .await?
+            .into_iter()
+            .next())
     }
 
     /// `wp_old_slug_redirect()` lookup: a post that once had this slug (`_wp_old_slug`).
-    pub async fn post_by_old_slug(&self, name: &str, post_type: &str, year: Option<u32>, month: Option<u32>, day: Option<u32>) -> Result<Option<u64>> {
+    pub async fn post_by_old_slug(
+        &self,
+        name: &str,
+        post_type: &str,
+        year: Option<u32>,
+        month: Option<u32>,
+        day: Option<u32>,
+    ) -> Result<Option<u64>> {
         let mut qb = Sql::new(format!(
             "SELECT post_id FROM {} AS m INNER JOIN {} AS p ON p.ID = m.post_id WHERE m.meta_key = '_wp_old_slug' AND m.meta_value = ",
             self.prefix.table("postmeta"),
             self.prefix.table("posts")
         ));
-        qb.push_bind(name.to_owned()).push(" AND p.post_type = ").push_bind(post_type.to_owned());
+        qb.push_bind(name.to_owned())
+            .push(" AND p.post_type = ")
+            .push_bind(post_type.to_owned());
         if let Some(y) = year {
             qb.push(" AND YEAR(p.post_date) = ").push_bind(y);
         }
@@ -492,7 +618,11 @@ impl Db {
     }
     /// `get_lastpostmodified( 'GMT' )`: the newest `post_modified_gmt` of published content.
     pub async fn last_post_modified_gmt(&self, post_types: &[&str]) -> Result<Option<String>> {
-        let types = post_types.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
+        let types = post_types
+            .iter()
+            .map(|_| "?")
+            .collect::<Vec<_>>()
+            .join(", ");
         let sql = format!(
             "SELECT CAST(post_modified_gmt AS CHAR) FROM {} WHERE post_status = 'publish' AND post_type IN ({types}) ORDER BY post_modified_gmt DESC LIMIT 1",
             self.prefix.table("posts")
@@ -505,7 +635,10 @@ impl Db {
     }
     /// The first value of the meta `key` of every post that has it.
     pub async fn post_meta_by_key(&self, key: &str) -> Result<Vec<(u64, String)>> {
-        let mut sql = Sql::new(format!("SELECT meta_id, post_id, meta_key, meta_value FROM {} WHERE meta_key = ", self.prefix.table("postmeta")));
+        let mut sql = Sql::new(format!(
+            "SELECT meta_id, post_id, meta_key, meta_value FROM {} WHERE meta_key = ",
+            self.prefix.table("postmeta")
+        ));
         sql.push_bind(key.to_owned()).push(" ORDER BY meta_id");
         let rows: Vec<PostMeta> = sql.fetch_all(&self.pool).await?;
         let mut values: Vec<(u64, String)> = Vec::new();
@@ -521,7 +654,10 @@ impl Db {
         if let Some(primed) = crate::primed::primed_meta(post_id) {
             return Ok(primed);
         }
-        let mut sql = Sql::new(format!("SELECT meta_id, post_id, meta_key, meta_value FROM {} WHERE post_id = ", self.prefix.table("postmeta")));
+        let mut sql = Sql::new(format!(
+            "SELECT meta_id, post_id, meta_key, meta_value FROM {} WHERE post_id = ",
+            self.prefix.table("postmeta")
+        ));
         sql.push_bind(post_id).push(" ORDER BY meta_id");
         let rows: Vec<PostMeta> = sql.fetch_all(&self.pool).await?;
         crate::primed::remember_meta(post_id, &rows);
@@ -530,7 +666,13 @@ impl Db {
 
     /// `get_metadata_by_mid( 'post', $meta_id )`.
     pub async fn post_meta_by_id(&self, meta_id: u64) -> Result<Option<PostMeta>> {
-        let sql = format!("SELECT meta_id, post_id, meta_key, meta_value FROM {} WHERE meta_id = ?", self.prefix.table("postmeta"));
-        Ok(sqlx::query_as(AssertSqlSafe(sql)).bind(meta_id).fetch_optional(&self.pool).await?)
+        let sql = format!(
+            "SELECT meta_id, post_id, meta_key, meta_value FROM {} WHERE meta_id = ?",
+            self.prefix.table("postmeta")
+        );
+        Ok(sqlx::query_as(AssertSqlSafe(sql))
+            .bind(meta_id)
+            .fetch_optional(&self.pool)
+            .await?)
     }
 }

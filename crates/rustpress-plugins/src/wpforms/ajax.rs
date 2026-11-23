@@ -13,8 +13,15 @@ use super::submit::{self, Form, Request, User};
 use super::{DOMAIN, Loaded, php};
 
 /// The answer to one of the plugin's actions, `None` for any other action.
-pub async fn handle(loaded: &Loaded, action: &str, ctx: &AdminContext<'_>) -> Result<Option<AjaxAnswer>> {
-    if !matches!(action, "wpforms_submit" | "wpforms_get_token" | "wpforms_restricted_email") {
+pub async fn handle(
+    loaded: &Loaded,
+    action: &str,
+    ctx: &AdminContext<'_>,
+) -> Result<Option<AjaxAnswer>> {
+    if !matches!(
+        action,
+        "wpforms_submit" | "wpforms_get_token" | "wpforms_restricted_email"
+    ) {
         return Ok(None);
     }
     let site = ctx.site;
@@ -22,10 +29,18 @@ pub async fn handle(loaded: &Loaded, action: &str, ctx: &AdminContext<'_>) -> Re
     let get = submit::post_tree(ctx.query);
     let form_id = php::int(post.get("wpforms").and_then(|w| w.get("id"))).max(0) as u64;
     let form = loaded.form(form_id);
-    let needs_users = action == "wpforms_submit" && form.is_some_and(|f| !php::empty(f.data.get("settings").and_then(|s| s.get("notification_enable"))));
+    let needs_users = action == "wpforms_submit"
+        && form.is_some_and(|f| {
+            !php::empty(
+                f.data
+                    .get("settings")
+                    .and_then(|s| s.get("notification_enable")),
+            )
+        });
     let facts = Facts::load(site, ctx, &post, form.map(|f| &f.data), needs_users).await?;
     let tr = |text: &str| site.trd(DOMAIN, text);
-    let trn = |singular: &str, plural: &str, n: i64| site.i18n().ngettext(DOMAIN, singular, plural, n);
+    let trn =
+        |singular: &str, plural: &str, n: i64| site.i18n().ngettext(DOMAIN, singular, plural, n);
     let date = |format: &str, at: i64| site.date_utc(format, at);
     let verify = |nonce: &str, action: &str| (ctx.verify_nonce)(nonce, action);
     let shortcodes = site.shortcode_tags();
@@ -61,7 +76,13 @@ pub async fn handle(loaded: &Loaded, action: &str, ctx: &AdminContext<'_>) -> Re
         manager_emails: facts.manager_emails.clone(),
         plugin_dir: Some(super::notify::plugin_dir(&ctx.wp_root.join("wp-content"))),
     };
-    let forms = |id: u64| loaded.form(id).map(|f| Form { status: &f.status, data: &f.data, post_date: &f.date });
+    let forms = |id: u64| {
+        loaded.form(id).map(|f| Form {
+            status: &f.status,
+            data: &f.data,
+            post_date: &f.date,
+        })
+    };
     let body = match action {
         "wpforms_get_token" => submit::ajax_get_token(&request),
         "wpforms_restricted_email" => submit::ajax_restricted_email(&request, &forms),
@@ -76,7 +97,15 @@ pub async fn handle(loaded: &Loaded, action: &str, ctx: &AdminContext<'_>) -> Re
             if outcome.complete
                 && let Some(writer) = ctx.writer
             {
-                saved(site, writer, &loaded.settings, form_id, outcome.saved, ctx.now).await?;
+                saved(
+                    site,
+                    writer,
+                    &loaded.settings,
+                    form_id,
+                    outcome.saved,
+                    ctx.now,
+                )
+                .await?;
             }
             outcome.body
         }
@@ -98,19 +127,49 @@ struct Facts {
 }
 
 impl Facts {
-    async fn load(site: &Site, ctx: &AdminContext<'_>, post: &Value, form: Option<&Value>, needs_users: bool) -> Result<Self> {
+    async fn load(
+        site: &Site,
+        ctx: &AdminContext<'_>,
+        post: &Value,
+        form: Option<&Value>,
+        needs_users: bool,
+    ) -> Result<Self> {
         let mut facts = Facts::default();
         if ctx.user != 0
             && let Some(u) = site.db.user(ctx.user).await?
         {
-            let first_name = site.db.user_meta(u.id, "first_name").await?.unwrap_or_default();
-            let last_name = site.db.user_meta(u.id, "last_name").await?.unwrap_or_default();
-            facts.user = Some(User { id: u.id, display_name: u.display_name, email: u.user_email, first_name, last_name });
+            let first_name = site
+                .db
+                .user_meta(u.id, "first_name")
+                .await?
+                .unwrap_or_default();
+            let last_name = site
+                .db
+                .user_meta(u.id, "last_name")
+                .await?
+                .unwrap_or_default();
+            facts.user = Some(User {
+                id: u.id,
+                display_name: u.display_name,
+                email: u.user_email,
+                first_name,
+                last_name,
+            });
         }
         let home = site.home_url("");
-        let host = home.split_once("://").map(|(_, rest)| rest.split(['/', '?', '#']).next().unwrap_or_default()).unwrap_or_default();
-        facts.origin = home.split_once("://").map(|(scheme, _)| format!("{scheme}://{host}")).unwrap_or_default();
-        facts.home_host = host.split(':').next().unwrap_or_default().to_ascii_lowercase();
+        let host = home
+            .split_once("://")
+            .map(|(_, rest)| rest.split(['/', '?', '#']).next().unwrap_or_default())
+            .unwrap_or_default();
+        facts.origin = home
+            .split_once("://")
+            .map(|(scheme, _)| format!("{scheme}://{host}"))
+            .unwrap_or_default();
+        facts.home_host = host
+            .split(':')
+            .next()
+            .unwrap_or_default()
+            .to_ascii_lowercase();
         // `get_language_attributes()`.
         let mut attributes = Vec::new();
         if site.is_rtl() {
@@ -118,11 +177,19 @@ impl Facts {
         }
         let lang = site.language_tag();
         if !lang.is_empty() {
-            attributes.push(format!("lang=\"{}\"", rustpress_core::formatting::esc_attr(&lang)));
+            attributes.push(format!(
+                "lang=\"{}\"",
+                rustpress_core::formatting::esc_attr(&lang)
+            ));
         }
         facts.language_attributes = attributes.join(" ");
         // `get_option( 'gmt_offset' )`, which follows the time zone of the site.
-        let offset = site.timezone.format("Z", ctx.now).trim().parse::<f64>().unwrap_or(0.0);
+        let offset = site
+            .timezone
+            .format("Z", ctx.now)
+            .trim()
+            .parse::<f64>()
+            .unwrap_or(0.0);
         facts.gmt_offset = offset / 3600.0;
         // `get_permalink()` of the pages the confirmations of the form go to.
         if let Some(settings) = form.and_then(|f| f.get("settings")) {
@@ -160,7 +227,11 @@ impl Facts {
 /// The e-mail addresses of the users who can `manage_options`, lowercase.
 async fn manager_emails(site: &Site) -> Result<Vec<String>> {
     let prefix = site.db.table_prefix();
-    let roles = site.options.fetch(&site.db, &format!("{prefix}user_roles")).await?.unwrap_or_default();
+    let roles = site
+        .options
+        .fetch(&site.db, &format!("{prefix}user_roles"))
+        .await?
+        .unwrap_or_default();
     let roles = rustpress_auth::caps::Roles::from_option(&roles);
     let granted = |caps: &Php| -> Option<bool> {
         let items = caps.as_array()?;
@@ -172,7 +243,11 @@ async fn manager_emails(site: &Site) -> Result<Vec<String>> {
             if name == "manage_options" {
                 return Some(on);
             }
-            if on && roles.capabilities(&name).is_some_and(|c| c.get("manage_options").copied().unwrap_or(false)) {
+            if on
+                && roles
+                    .capabilities(&name)
+                    .is_some_and(|c| c.get("manage_options").copied().unwrap_or(false))
+            {
                 role_grants = true;
             }
         }
@@ -183,29 +258,62 @@ async fn manager_emails(site: &Site) -> Result<Vec<String>> {
         .user_capability_rows()
         .await?
         .into_iter()
-        .filter(|(_, caps)| caps.as_deref().and_then(|raw| rustpress_phpser::unserialize(raw.as_bytes()).ok()).and_then(|c| granted(&c)).unwrap_or(false))
+        .filter(|(_, caps)| {
+            caps.as_deref()
+                .and_then(|raw| rustpress_phpser::unserialize(raw.as_bytes()).ok())
+                .and_then(|c| granted(&c))
+                .unwrap_or(false)
+        })
         .map(|(id, _)| id)
         .collect();
     if ids.is_empty() {
         return Ok(Vec::new());
     }
-    Ok(site.db.users_by_ids(&ids).await?.into_iter().map(|u| u.user_email.to_lowercase()).collect())
+    Ok(site
+        .db
+        .users_by_ids(&ids)
+        .await?
+        .into_iter()
+        .map(|u| u.user_email.to_lowercase())
+        .collect())
 }
 
 /// What `wpforms_process_entry_saved` and `wpforms_process_complete` change for a saved entry.
-async fn saved(site: &Site, writer: &rustpress_db::Writer, settings: &super::settings::Settings, form_id: u64, counted: bool, now: i64) -> Result<()> {
+async fn saved(
+    site: &Site,
+    writer: &rustpress_db::Writer,
+    settings: &super::settings::Settings,
+    form_id: u64,
+    counted: bool,
+    now: i64,
+) -> Result<()> {
     let options = writer.table("options");
-    let option = |name: &str| format!("SELECT option_value FROM {options} WHERE option_name = '{name}' LIMIT 1");
+    let option = |name: &str| {
+        format!("SELECT option_value FROM {options} WHERE option_name = '{name}' LIMIT 1")
+    };
     // `WPForms_Lite::update_entry_count()`.
     if counted && form_id != 0 {
         let postmeta = writer.table("postmeta");
         // `EntriesWindow::record()` (before the count changes).
-        let stored = writer.column_string(&option("wpforms_entries_count_daily")).await?.into_iter().next();
+        let stored = writer
+            .column_string(&option("wpforms_entries_count_daily"))
+            .await?
+            .into_iter()
+            .next();
         let stored = stored.and_then(|raw| rustpress_phpser::unserialize(raw.as_bytes()).ok());
-        let since = stored.as_ref().and_then(|v| v.get("since")).filter(|s| !matches!(s, Php::Null | Php::Bool(false)) && s.as_str() != Some("") && s.as_str() != Some("0") && s.as_i64() != Some(0));
+        let since = stored.as_ref().and_then(|v| v.get("since")).filter(|s| {
+            !matches!(s, Php::Null | Php::Bool(false))
+                && s.as_str() != Some("")
+                && s.as_str() != Some("0")
+                && s.as_i64() != Some(0)
+        });
         let (since, mut days): (i64, Vec<(String, i64)>) = match since {
             Some(since) => {
-                let days = stored.as_ref().and_then(|v| v.get("days")).and_then(Php::as_array).unwrap_or_default();
+                let days = stored
+                    .as_ref()
+                    .and_then(|v| v.get("days"))
+                    .and_then(Php::as_array)
+                    .unwrap_or_default();
                 let days = days
                     .iter()
                     .filter_map(|(k, v)| {
@@ -213,24 +321,48 @@ async fn saved(site: &Site, writer: &rustpress_db::Writer, settings: &super::set
                             Key::Str(s) => String::from_utf8_lossy(s).into_owned(),
                             Key::Int(i) => i.to_string(),
                         };
-                        let count = v.as_i64().or_else(|| v.as_str().and_then(|s| s.trim().parse::<f64>().ok()).map(|f| f as i64))?;
+                        let count = v.as_i64().or_else(|| {
+                            v.as_str()
+                                .and_then(|s| s.trim().parse::<f64>().ok())
+                                .map(|f| f as i64)
+                        })?;
                         Some((key, count))
                     })
                     .collect();
-                (since.as_i64().or_else(|| since.as_str().map(php::leading_int)).unwrap_or(0), days)
+                (
+                    since
+                        .as_i64()
+                        .or_else(|| since.as_str().map(php::leading_int))
+                        .unwrap_or(0),
+                    days,
+                )
             }
             None => {
                 // `EntriesWindow::create()`, stored at once.
                 let total = writer.column_u64(&format!("SELECT CAST(COALESCE(SUM(meta_value), 0) AS UNSIGNED) FROM {postmeta} WHERE meta_key = 'wpforms_entries_count'")).await?.into_iter().next().unwrap_or(0);
                 let mut since = now;
                 if total == 0 {
-                    let activated = site.options.fetch(&site.db, "wpforms_activated").await?.and_then(|raw| rustpress_phpser::unserialize(raw.as_bytes()).ok());
-                    let lite = activated.as_ref().and_then(|a| a.get("lite")).and_then(|l| l.as_i64().or_else(|| l.as_str().map(php::leading_int))).unwrap_or(0);
+                    let activated = site
+                        .options
+                        .fetch(&site.db, "wpforms_activated")
+                        .await?
+                        .and_then(|raw| rustpress_phpser::unserialize(raw.as_bytes()).ok());
+                    let lite = activated
+                        .as_ref()
+                        .and_then(|a| a.get("lite"))
+                        .and_then(|l| l.as_i64().or_else(|| l.as_str().map(php::leading_int)))
+                        .unwrap_or(0);
                     if lite > 0 {
                         since = lite;
                     }
                 }
-                writer.update_option_with_autoload("wpforms_entries_count_daily", &window(since, &[]), "off").await?;
+                writer
+                    .update_option_with_autoload(
+                        "wpforms_entries_count_daily",
+                        &window(since, &[]),
+                        "off",
+                    )
+                    .await?;
                 (since, Vec::new())
             }
         };
@@ -241,27 +373,67 @@ async fn saved(site: &Site, writer: &rustpress_db::Writer, settings: &super::set
         }
         let oldest = gmdate(now - 30 * 86_400);
         days.retain(|(d, _)| d.as_str() >= oldest.as_str());
-        writer.update_option_with_autoload("wpforms_entries_count_daily", &window(since, &days), "off").await?;
+        writer
+            .update_option_with_autoload(
+                "wpforms_entries_count_daily",
+                &window(since, &days),
+                "off",
+            )
+            .await?;
         let existing = writer.column_u64(&format!("SELECT meta_id FROM {postmeta} WHERE post_id = {form_id} AND meta_key = 'wpforms_entries_count' LIMIT 1")).await?;
         if existing.is_empty() {
-            writer.add_post_meta(form_id, "wpforms_entries_count", "1").await?;
+            writer
+                .add_post_meta(form_id, "wpforms_entries_count", "1")
+                .await?;
         } else {
             writer.execute(format!("UPDATE {postmeta} SET meta_value = meta_value + 1 WHERE post_id = {form_id} AND meta_key = 'wpforms_entries_count'")).await?;
         }
     }
     // `Cache::invalidate()`.
-    let generation = writer.column_string(&option("wpforms_dashboard_cache_generation")).await?.into_iter().next().map_or(0, |g| php::leading_int(&rustpress_phpser::unserialize(g.as_bytes()).ok().and_then(|v| v.as_i64().map(|n| n.to_string()).or_else(|| v.as_str().map(str::to_owned))).unwrap_or(g)));
-    writer.update_option_with_autoload("wpforms_dashboard_cache_generation", &(generation + 1).to_string(), "off").await?;
+    let generation = writer
+        .column_string(&option("wpforms_dashboard_cache_generation"))
+        .await?
+        .into_iter()
+        .next()
+        .map_or(0, |g| {
+            php::leading_int(
+                &rustpress_phpser::unserialize(g.as_bytes())
+                    .ok()
+                    .and_then(|v| {
+                        v.as_i64()
+                            .map(|n| n.to_string())
+                            .or_else(|| v.as_str().map(str::to_owned))
+                    })
+                    .unwrap_or(g),
+            )
+        });
+    writer
+        .update_option_with_autoload(
+            "wpforms_dashboard_cache_generation",
+            &(generation + 1).to_string(),
+            "off",
+        )
+        .await?;
     let currency = settings.string("currency", "USD").to_lowercase();
     for preset in ["0", "1", "7", "30", "90", "365"] {
         let key = format!("dashboard_cache_{preset}_{currency}_lite");
-        if writer.delete_option(&format!("_wpforms_transient_{key}")).await? {
-            writer.delete_option(&format!("_wpforms_transient_timeout_{key}")).await?;
+        if writer
+            .delete_option(&format!("_wpforms_transient_{key}"))
+            .await?
+        {
+            writer
+                .delete_option(&format!("_wpforms_transient_timeout_{key}"))
+                .await?;
         }
     }
     // `DashboardWidget::clear_widget_cache()`: `delete_transient()`.
-    if writer.delete_option("_transient_wpforms_dash_widget_lite_entries_by_form").await? {
-        writer.delete_option("_transient_timeout_wpforms_dash_widget_lite_entries_by_form").await?;
+    if writer
+        .delete_option("_transient_wpforms_dash_widget_lite_entries_by_form")
+        .await?
+    {
+        writer
+            .delete_option("_transient_timeout_wpforms_dash_widget_lite_entries_by_form")
+            .await?;
     }
     Ok(())
 }
@@ -273,7 +445,13 @@ fn gmdate(at: i64) -> String {
 
 /// The option `wpforms_entries_count_daily` as `serialize()` writes it.
 fn window(since: i64, days: &[(String, i64)]) -> String {
-    let days: Vec<(Key, Php)> = days.iter().map(|(d, n)| (Key::Str(d.as_bytes().to_vec()), Php::Int(*n))).collect();
-    let value = Php::Array(vec![(Key::Str(b"since".to_vec()), Php::Int(since)), (Key::Str(b"days".to_vec()), Php::Array(days))]);
+    let days: Vec<(Key, Php)> = days
+        .iter()
+        .map(|(d, n)| (Key::Str(d.as_bytes().to_vec()), Php::Int(*n)))
+        .collect();
+    let value = Php::Array(vec![
+        (Key::Str(b"since".to_vec()), Php::Int(since)),
+        (Key::Str(b"days".to_vec()), Php::Array(days)),
+    ]);
     String::from_utf8_lossy(&rustpress_phpser::serialize(&value)).into_owned()
 }

@@ -15,21 +15,21 @@ mod breadcrumbs;
 mod button;
 mod comments;
 mod extra;
-mod icon;
 mod featured;
 mod gallery;
+mod icon;
+mod latest_posts;
 pub mod lightbox;
 mod media;
-mod playlist;
 mod navigation;
+mod playlist;
 mod post_content;
 mod post_meta;
 pub(crate) mod query;
-mod latest_posts;
 mod search;
 mod simple;
-mod template;
 pub(crate) mod tabs;
+mod template;
 
 /// Blocks with a server-side render callback.
 pub fn is_dynamic(name: &str) -> bool {
@@ -142,15 +142,33 @@ pub fn render<'a>(bc: &'a BlockCtx<'a>) -> BoxFuture<'a, Result<String>> {
             "core/playlist" => playlist::playlist(bc),
             "core/playlist-track" => playlist::playlist_track(bc),
             "core/post-featured-image" => media::post_featured_image(bc).await,
-            "core/heading" => Ok(simple::add_class_to_first(&bc.content, &["h1", "h2", "h3", "h4", "h5", "h6"], "wp-block-heading")),
-            "core/list" => Ok(simple::add_class_to_first(&bc.content, &["ol", "ul"], "wp-block-list")),
+            "core/heading" => Ok(simple::add_class_to_first(
+                &bc.content,
+                &["h1", "h2", "h3", "h4", "h5", "h6"],
+                "wp-block-heading",
+            )),
+            "core/list" => Ok(simple::add_class_to_first(
+                &bc.content,
+                &["ol", "ul"],
+                "wp-block-list",
+            )),
             "core/navigation" => navigation::navigation(bc).await,
             "core/page-list" => navigation::page_list(bc).await,
             "core/navigation-link" => navigation::navigation_link(bc).await,
             "core/navigation-submenu" => navigation::navigation_submenu(bc).await,
             "core/query" => {
                 // Yoast SEO's `query_loop_next_prev()` (on `render_block`) notes a query that does not inherit the main one.
-                if bc.attrs.get("query").and_then(|q| q.get("inherit")).is_some_and(|i| !i.as_bool().unwrap_or_else(|| i.as_u64().is_some_and(|n| n != 0) || i.as_str().is_some_and(|s| !s.is_empty() && s != "0"))) {
+                if bc
+                    .attrs
+                    .get("query")
+                    .and_then(|q| q.get("inherit"))
+                    .is_some_and(|i| {
+                        !i.as_bool().unwrap_or_else(|| {
+                            i.as_u64().is_some_and(|n| n != 0)
+                                || i.as_str().is_some_and(|s| !s.is_empty() && s != "0")
+                        })
+                    })
+                {
                     bc.env.with_state(|s| s.custom_query_loop = true);
                 }
                 query::query(bc)
@@ -162,7 +180,13 @@ pub fn render<'a>(bc: &'a BlockCtx<'a>) -> BoxFuture<'a, Result<String>> {
             "core/query-pagination-next" | "core/query-pagination-previous" => {
                 let next = bc.block.name.as_deref() == Some("core/query-pagination-next");
                 let html = query::pagination_link(bc, next).await?;
-                bc.env.with_state(|s| if next { s.pagination_next = Some(html.clone()) } else { s.pagination_previous = Some(html.clone()) });
+                bc.env.with_state(|s| {
+                    if next {
+                        s.pagination_next = Some(html.clone())
+                    } else {
+                        s.pagination_previous = Some(html.clone())
+                    }
+                });
                 Ok(html)
             }
             "core/query-pagination-numbers" => query::pagination_numbers(bc).await,
@@ -216,11 +240,26 @@ pub fn render<'a>(bc: &'a BlockCtx<'a>) -> BoxFuture<'a, Result<String>> {
             "core/tab-list" => tabs::tab_list(bc),
             "core/tab-panel" => tabs::tab_panel(bc),
             name if bc.env.site.plugins.renders_block(name) => {
-                let (plugins, rest) = bc.env.with_state(|s| (std::mem::take(&mut s.plugins), s.outside_loop));
+                let (plugins, rest) = bc
+                    .env
+                    .with_state(|s| (std::mem::take(&mut s.plugins), s.outside_loop));
                 let state = std::sync::Mutex::new(plugins);
-                let ctx = rustpress_core::native::BlockContext { site: bc.env.site, query: bc.env.query, services: bc.env, post: bc.available.post.as_deref(), rest, state: &state };
-                let output = bc.env.site.plugins.render_block(name, &bc.raw_attrs, &ctx).await;
-                bc.env.with_state(|s| s.plugins = state.into_inner().unwrap_or_default());
+                let ctx = rustpress_core::native::BlockContext {
+                    site: bc.env.site,
+                    query: bc.env.query,
+                    services: bc.env,
+                    post: bc.available.post.as_deref(),
+                    rest,
+                    state: &state,
+                };
+                let output = bc
+                    .env
+                    .site
+                    .plugins
+                    .render_block(name, &bc.raw_attrs, &ctx)
+                    .await;
+                bc.env
+                    .with_state(|s| s.plugins = state.into_inner().unwrap_or_default());
                 Ok(output?)
             }
             _ => Ok(bc.content.clone()),
@@ -229,10 +268,16 @@ pub fn render<'a>(bc: &'a BlockCtx<'a>) -> BoxFuture<'a, Result<String>> {
 }
 
 /// `render_block_{name}` filters: run on the output of the generic pipeline.
-pub fn name_filter(name: &str, raw_attrs: &serde_json::Map<String, serde_json::Value>, content: String) -> String {
+pub fn name_filter(
+    name: &str,
+    raw_attrs: &serde_json::Map<String, serde_json::Value>,
+    content: String,
+) -> String {
     match name {
         "core/details" => featured::details_images_low_priority(raw_attrs, content),
-        "core/paragraph" if !content.is_empty() => simple::add_class_to_first(&content, &["p"], "wp-block-paragraph"),
+        "core/paragraph" if !content.is_empty() => {
+            simple::add_class_to_first(&content, &["p"], "wp-block-paragraph")
+        }
         _ => content,
     }
 }

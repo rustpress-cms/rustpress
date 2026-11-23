@@ -31,11 +31,29 @@ impl std::fmt::Debug for Viewer {
 
 impl Viewer {
     pub fn new(id: u64, can: impl Fn(&str) -> bool + Send + Sync + 'static) -> Self {
-        Self { id, login: String::new(), display_name: String::new(), email: String::new(), show_admin_bar: false, privacy_page: 0, roles: Vec::new(), can: Arc::new(can), nonce: Arc::new(|_| String::new()), verify: Arc::new(|_, _| false) }
+        Self {
+            id,
+            login: String::new(),
+            display_name: String::new(),
+            email: String::new(),
+            show_admin_bar: false,
+            privacy_page: 0,
+            roles: Vec::new(),
+            can: Arc::new(can),
+            nonce: Arc::new(|_| String::new()),
+            verify: Arc::new(|_, _| false),
+        }
     }
 
     /// Who the viewer is, and how a nonce of their session is made.
-    pub fn with_identity(mut self, login: &str, display_name: &str, email: &str, show_admin_bar: bool, nonce: impl Fn(&str) -> String + Send + Sync + 'static) -> Self {
+    pub fn with_identity(
+        mut self,
+        login: &str,
+        display_name: &str,
+        email: &str,
+        show_admin_bar: bool,
+        nonce: impl Fn(&str) -> String + Send + Sync + 'static,
+    ) -> Self {
         self.login = login.to_owned();
         self.display_name = display_name.to_owned();
         self.email = email.to_owned();
@@ -51,7 +69,11 @@ impl Viewer {
     }
 
     /// How a nonce of the viewer's session is checked (`wp_verify_nonce()`).
-    pub fn with_verifier(mut self, privacy_page: u64, verify: impl Fn(&str, &str) -> bool + Send + Sync + 'static) -> Self {
+    pub fn with_verifier(
+        mut self,
+        privacy_page: u64,
+        verify: impl Fn(&str, &str) -> bool + Send + Sync + 'static,
+    ) -> Self {
         self.privacy_page = privacy_page;
         self.verify = Arc::new(verify);
         self
@@ -74,7 +96,11 @@ impl Viewer {
 
     /// The suffix of the capabilities of a post type: `posts`, or `pages` for pages.
     fn suffix(post_type: &str) -> &'static str {
-        if post_type == "page" { "pages" } else { "posts" }
+        if post_type == "page" {
+            "pages"
+        } else {
+            "posts"
+        }
     }
 
     /// Whether the viewer may read the private posts of the type (`read_private_posts`).
@@ -90,7 +116,11 @@ impl Viewer {
         let s = Self::suffix(&post.post_type);
         let published = matches!(post.post_status.as_str(), "publish" | "future");
         if post.post_author == self.id {
-            if published { self.can(&format!("edit_published_{s}")) } else { self.can(&format!("edit_{s}")) }
+            if published {
+                self.can(&format!("edit_published_{s}"))
+            } else {
+                self.can(&format!("edit_{s}"))
+            }
         } else {
             let mut ok = self.can(&format!("edit_others_{s}"));
             if published {

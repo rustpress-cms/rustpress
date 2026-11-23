@@ -11,7 +11,9 @@ use std::process::ExitCode;
 use rustpress_compat::{Known, Options, run};
 
 fn usage() -> ExitCode {
-    eprintln!("usage: rustpress-compat [--reference HOST:PORT] [--host HOST:PORT] [--db URL] [--wp-root DIR] [--report FILE] [--known FILE] [--limit N] [--concurrency N] [--only REGEX] [--dump PATH]");
+    eprintln!(
+        "usage: rustpress-compat [--reference HOST:PORT] [--host HOST:PORT] [--db URL] [--wp-root DIR] [--report FILE] [--known FILE] [--limit N] [--concurrency N] [--only REGEX] [--dump PATH]"
+    );
     ExitCode::from(2)
 }
 
@@ -20,7 +22,11 @@ fn main() -> ExitCode {
     std::thread::Builder::new()
         .stack_size(256 * 1024 * 1024)
         .spawn(|| {
-            let runtime = tokio::runtime::Builder::new_multi_thread().enable_all().thread_stack_size(64 * 1024 * 1024).build().expect("tokio runtime");
+            let runtime = tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .thread_stack_size(64 * 1024 * 1024)
+                .build()
+                .expect("tokio runtime");
             runtime.block_on(main_async())
         })
         .expect("main thread")
@@ -34,7 +40,9 @@ async fn main_async() -> ExitCode {
     let mut dump: Option<String> = None;
     let mut args = std::env::args().skip(1);
     while let Some(flag) = args.next() {
-        let Some(value) = args.next() else { return usage() };
+        let Some(value) = args.next() else {
+            return usage();
+        };
         match flag.as_str() {
             "--reference" => options.reference = value,
             "--host" => options.host = value,
@@ -63,7 +71,14 @@ async fn main_async() -> ExitCode {
                 let _ = std::fs::create_dir_all(&dir);
                 let _ = std::fs::write(dir.join("ours.txt"), &ours.body);
                 let _ = std::fs::write(dir.join("theirs.txt"), &theirs.body);
-                eprintln!("{path}: RustPress {} ({} bytes), WordPress {} ({} bytes) -> {}", ours.status, ours.body.len(), theirs.status, theirs.body.len(), dir.display());
+                eprintln!(
+                    "{path}: RustPress {} ({} bytes), WordPress {} ({} bytes) -> {}",
+                    ours.status,
+                    ours.body.len(),
+                    theirs.status,
+                    theirs.body.len(),
+                    dir.display()
+                );
                 ExitCode::SUCCESS
             }
             Err(e) => {
@@ -104,6 +119,13 @@ async fn main_async() -> ExitCode {
     }
     let unexpected = report.unexpected_count();
     let identical = report.outcomes.iter().filter(|o| o.is_identical()).count();
-    eprintln!("{} URLs, {identical} identical, {unexpected} with unexpected differences", report.outcomes.len());
-    if unexpected == 0 { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+    eprintln!(
+        "{} URLs, {identical} identical, {unexpected} with unexpected differences",
+        report.outcomes.len()
+    );
+    if unexpected == 0 {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
 }

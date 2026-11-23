@@ -257,4 +257,3 @@ pub(crate) const ENTITIES: &[(&str, u32)] = &[
     ("hearts", 9829),
     ("diams", 9830),
 ];
-

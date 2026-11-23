@@ -23,7 +23,15 @@ pub(super) struct Setting {
 
 impl Setting {
     pub fn new(id: &str, kind: &str, transport: &'static str, value: Value) -> Self {
-        Self { id: id.to_owned(), kind: kind.to_owned(), transport, allowed: true, raw: value.clone(), value, dirty: false }
+        Self {
+            id: id.to_owned(),
+            kind: kind.to_owned(),
+            transport,
+            allowed: true,
+            raw: value.clone(),
+            value,
+            dirty: false,
+        }
     }
 
     fn json(&self) -> Value {
@@ -105,10 +113,20 @@ impl Control {
 
     /// `render()`: the item around `render_content()`.
     pub fn wrapped_content(&self) -> String {
-        let id = format!("customize-control-{}", self.id.replace('[', "-").replace(']', ""));
+        let id = format!(
+            "customize-control-{}",
+            self.id.replace('[', "-").replace(']', "")
+        );
         let class = format!("customize-control customize-control-{}", self.kind);
         // `get_content()` trims what was printed.
-        format!("<li id=\"{}\" class=\"{}\">{}</li>", rustpress_core::formatting::esc_attr(&id), rustpress_core::formatting::esc_attr(&class), self.content).trim().to_owned()
+        format!(
+            "<li id=\"{}\" class=\"{}\">{}</li>",
+            rustpress_core::formatting::esc_attr(&id),
+            rustpress_core::formatting::esc_attr(&class),
+            self.content
+        )
+        .trim()
+        .to_owned()
     }
 
     fn json(&self) -> Value {
@@ -209,7 +227,11 @@ impl Manager {
         if control.capability.is_some_and(|cap| !can(cap)) {
             return false;
         }
-        if !control.settings.iter().all(|(_, id)| self.settings.iter().any(|s| s.id == *id && s.allowed)) {
+        if !control
+            .settings
+            .iter()
+            .all(|(_, id)| self.settings.iter().any(|s| s.id == *id && s.allowed))
+        {
             return false;
         }
         self.section_allowed(&control.section) != Some(false)
@@ -220,7 +242,9 @@ impl Manager {
     pub fn prepare(&mut self, can: &dyn Fn(&str) -> bool) {
         let mut controls = std::mem::take(&mut self.controls);
         controls.sort_by_key(|c| (c.priority, c.instance));
-        controls.retain(|c| self.sections.iter().any(|s| s.id == c.section) && self.control_allowed(c, can));
+        controls.retain(|c| {
+            self.sections.iter().any(|s| s.id == c.section) && self.control_allowed(c, can)
+        });
         self.controls = controls;
         self.sections.sort_by_key(|s| (s.priority, s.instance));
         self.sections.retain(|s| s.allowed);
@@ -236,13 +260,27 @@ impl Manager {
         out.insert("priority".into(), json!(section.priority));
         out.insert("panel".into(), json!(section.panel));
         out.insert("type".into(), json!(section.kind));
-        out.insert("description_hidden".into(), json!(section.description_hidden));
-        out.insert("title".into(), json!(rustpress_core::formatting::html_entity_decode(&section.title)));
+        out.insert(
+            "description_hidden".into(),
+            json!(section.description_hidden),
+        );
+        out.insert(
+            "title".into(),
+            json!(rustpress_core::formatting::html_entity_decode(
+                &section.title
+            )),
+        );
         out.insert("content".into(), json!(""));
         out.insert("active".into(), json!(section.active));
         out.insert("instanceNumber".into(), json!(section.instance));
-        let action = match self.panel(&section.panel).filter(|_| !section.panel.is_empty()) {
-            Some(panel) => rustpress_core::i18n::sprintf(&tr("Customizing &#9656; %s"), &[&rustpress_core::formatting::esc_html(&panel.title)]),
+        let action = match self
+            .panel(&section.panel)
+            .filter(|_| !section.panel.is_empty())
+        {
+            Some(panel) => rustpress_core::i18n::sprintf(
+                &tr("Customizing &#9656; %s"),
+                &[&rustpress_core::formatting::esc_html(&panel.title)],
+            ),
             None => tr("Customizing"),
         };
         out.insert("customizeAction".into(), json!(action));
@@ -287,12 +325,20 @@ impl Manager {
     pub fn statements(&self) -> String {
         let mut out = String::from("(function ( s ){\n");
         for setting in self.settings.iter().filter(|s| s.allowed) {
-            out.push_str(&format!("s[{}] = {};\n", inline_json(&json!(setting.id)), inline_json(&setting.json())));
+            out.push_str(&format!(
+                "s[{}] = {};\n",
+                inline_json(&json!(setting.id)),
+                inline_json(&setting.json())
+            ));
         }
         out.push_str("})( _wpCustomizeSettings.settings );\n");
         out.push_str("(function ( c ){\n");
         for control in &self.controls {
-            out.push_str(&format!("c[{}] = {};\n", inline_json(&json!(control.id)), inline_json(&control.json())));
+            out.push_str(&format!(
+                "c[{}] = {};\n",
+                inline_json(&json!(control.id)),
+                inline_json(&control.json())
+            ));
         }
         out.push_str("})( _wpCustomizeSettings.controls );\n");
         out

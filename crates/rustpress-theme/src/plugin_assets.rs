@@ -44,7 +44,11 @@ pub struct StylePrinter<'s> {
 
 impl<'s> StylePrinter<'s> {
     pub fn new(wp_root: &Path, site: &'s Site) -> Self {
-        Self { site: Some((site, wp_root.to_owned())), registry: None, printed: Vec::new() }
+        Self {
+            site: Some((site, wp_root.to_owned())),
+            registry: None,
+            printed: Vec::new(),
+        }
     }
 
     /// Handles the page printed already (the toolbar's `dashicons` and `admin-bar`).
@@ -77,7 +81,12 @@ impl<'s> StylePrinter<'s> {
             return out;
         }
         self.printed.push(style.handle.clone());
-        out.push_str(&format!("<link rel='stylesheet' id='{}-css' href='{}' media='{}' />\n", esc_attr(&style.handle), esc_url(&src(style)), esc_attr(&style.media)));
+        out.push_str(&format!(
+            "<link rel='stylesheet' id='{}-css' href='{}' media='{}' />\n",
+            esc_attr(&style.handle),
+            esc_url(&src(style)),
+            esc_attr(&style.media)
+        ));
         // `wp_add_inline_style()`.
         if !style.after.is_empty() {
             let handle = esc_attr(&style.handle);
@@ -93,10 +102,19 @@ impl<'s> StylePrinter<'s> {
         }
         self.printed.push(handle.to_owned());
         if self.registry.is_none() {
-            let Some((site, root)) = &self.site else { return String::new() };
+            let Some((site, root)) = &self.site else {
+                return String::new();
+            };
             self.registry = Some(default_styles(&loader_env(site, root)));
         }
-        let Some(deps) = self.registry.as_ref().and_then(|r| r.deps.get(handle)).map(|d| d.deps.clone()) else { return String::new() };
+        let Some(deps) = self
+            .registry
+            .as_ref()
+            .and_then(|r| r.deps.get(handle))
+            .map(|d| d.deps.clone())
+        else {
+            return String::new();
+        };
         let mut out: String = deps.iter().map(|d| self.core(d)).collect();
         if let Some(registry) = self.registry.as_mut() {
             out.push_str(&registry.print_one(handle));
@@ -107,7 +125,12 @@ impl<'s> StylePrinter<'s> {
 
 /// The `version` of a package in `wp-includes/assets/script-loader-packages.php` (`hooks`, `i18n`).
 pub fn package_version(wp_root: &std::path::Path, package: &str) -> Option<String> {
-    let text = rustpress_core::files::read(&wp_root.join("wp-includes").join("assets").join("script-loader-packages.php"))?;
+    let text = rustpress_core::files::read(
+        &wp_root
+            .join("wp-includes")
+            .join("assets")
+            .join("script-loader-packages.php"),
+    )?;
     let at = text.find(&format!("'{package}.js' => array("))?;
     let rest = &text[at..];
     let version = &rest[rest.find("'version' => '")? + "'version' => '".len()..];
@@ -135,7 +158,18 @@ pub struct ScriptPrinter<'s> {
 impl<'s> ScriptPrinter<'s> {
     /// `jquery`/`migrate`: the versions of `jquery-core` and `jquery-migrate`.
     pub fn new(includes_url: &str, jquery: &str, migrate: &str) -> Self {
-        Self { includes_url: includes_url.to_owned(), jquery: jquery.to_owned(), migrate: migrate.to_owned(), hooks: String::new(), i18n: String::new(), text_direction: "ltr".to_owned(), languages: None, printed: Vec::new(), site: None, registry: None }
+        Self {
+            includes_url: includes_url.to_owned(),
+            jquery: jquery.to_owned(),
+            migrate: migrate.to_owned(),
+            hooks: String::new(),
+            i18n: String::new(),
+            text_direction: "ltr".to_owned(),
+            languages: None,
+            printed: Vec::new(),
+            site: None,
+            registry: None,
+        }
     }
 
     /// Knows the packages `wp-hooks` and `wp-i18n` of the WordPress files in `wp_root`, and the translations of
@@ -147,7 +181,11 @@ impl<'s> ScriptPrinter<'s> {
         self.text_direction = if site.is_rtl() { "rtl" } else { "ltr" }.to_owned();
         let locale = site.locale();
         if locale != "en_US" {
-            self.languages = Some((wp_root.join("wp-content").join("languages"), site.site_url("wp-content/plugins"), locale));
+            self.languages = Some((
+                wp_root.join("wp-content").join("languages"),
+                site.site_url("wp-content/plugins"),
+                locale,
+            ));
         }
         self
     }
@@ -155,12 +193,21 @@ impl<'s> ScriptPrinter<'s> {
     /// `load_script_textdomain()` for a plugin script: the JSON of `<domain>-<locale>-<md5>.json`.
     fn script_translations(&self, script: &Asset, domain: &str) -> Option<String> {
         let (dir, plugins_url, locale) = self.languages.as_ref()?;
-        let relative = script.src.strip_prefix(plugins_url.as_str())?.trim_matches('/');
+        let relative = script
+            .src
+            .strip_prefix(plugins_url.as_str())?
+            .trim_matches('/');
         // The plugin's own directory is not part of the path.
         let relative = relative.split_once('/')?.1;
-        let relative = relative.strip_suffix(".min.js").map_or_else(|| relative.to_owned(), |base| format!("{base}.js"));
+        let relative = relative
+            .strip_suffix(".min.js")
+            .map_or_else(|| relative.to_owned(), |base| format!("{base}.js"));
         let md5 = format!("{:x}", md5::compute(relative.as_bytes()));
-        rustpress_core::files::read(&dir.join("plugins").join(format!("{domain}-{locale}-{md5}.json"))).map(|text| text.to_string())
+        rustpress_core::files::read(
+            &dir.join("plugins")
+                .join(format!("{domain}-{locale}-{md5}.json")),
+        )
+        .map(|text| text.to_string())
     }
 
     /// The tags of a core script (with its dependencies), unless they were printed already.
@@ -180,13 +227,15 @@ impl<'s> ScriptPrinter<'s> {
                 "<script id=\"jquery-core-js\" src=\"{includes}/js/jquery/jquery.min.js?ver={}\"></script>\n<script id=\"jquery-migrate-js\" src=\"{includes}/js/jquery/jquery-migrate.min.js?ver={}\"></script>\n",
                 self.jquery, self.migrate
             ),
-            "wp-hooks" => format!("<script id=\"wp-hooks-js\" src=\"{includes}/js/dist/hooks.min.js?ver={}\"></script>\n", self.hooks),
+            "wp-hooks" => format!(
+                "<script id=\"wp-hooks-js\" src=\"{includes}/js/dist/hooks.min.js?ver={}\"></script>\n",
+                self.hooks
+            ),
             "wp-i18n" => {
                 let hooks = self.core("wp-hooks");
                 format!(
                     "{hooks}<script id=\"wp-i18n-js\" src=\"{includes}/js/dist/i18n.min.js?ver={}\"></script>\n<script id=\"wp-i18n-js-after\">\nwp.i18n.setLocaleData( {{ 'text direction\\u0004ltr': [ '{}' ] }} );\n//# sourceURL=wp-i18n-js-after\n</script>\n",
-                    self.i18n,
-                    self.text_direction
+                    self.i18n, self.text_direction
                 )
             }
             _ => self.registered(handle),
@@ -196,13 +245,26 @@ impl<'s> ScriptPrinter<'s> {
     /// A script of the registry (`jquery-ui-core`, `wp-a11y`), after its dependencies.
     fn registered(&mut self, handle: &str) -> String {
         if self.registry.is_none() {
-            let Some((site, root)) = &self.site else { return String::new() };
+            let Some((site, root)) = &self.site else {
+                return String::new();
+            };
             let mut registry = default_scripts(&loader_env(site, root));
             // `wp_localize_jquery_ui_datepicker()` on `wp_enqueue_scripts`, once the date picker is enqueued.
-            registry.add_inline_script("jquery-ui-datepicker", &crate::script_loader::localize::jquery_ui_datepicker(site), "after");
+            registry.add_inline_script(
+                "jquery-ui-datepicker",
+                &crate::script_loader::localize::jquery_ui_datepicker(site),
+                "after",
+            );
             self.registry = Some(registry);
         }
-        let Some(deps) = self.registry.as_ref().and_then(|r| r.deps.get(handle)).map(|d| d.deps.clone()) else { return String::new() };
+        let Some(deps) = self
+            .registry
+            .as_ref()
+            .and_then(|r| r.deps.get(handle))
+            .map(|d| d.deps.clone())
+        else {
+            return String::new();
+        };
         let mut out: String = deps.iter().map(|d| self.core(d)).collect();
         if let Some(registry) = self.registry.as_mut() {
             out.push_str(&registry.print_one(handle));
@@ -213,7 +275,10 @@ impl<'s> ScriptPrinter<'s> {
     /// The plugin scripts of one place (head or footer) in queue order, each after its dependencies.
     pub fn scripts(&mut self, scripts: &[Asset], in_footer: bool) -> String {
         let mut out = String::new();
-        for script in scripts.iter().filter(|s| s.in_footer == in_footer && !s.registered_only) {
+        for script in scripts
+            .iter()
+            .filter(|s| s.in_footer == in_footer && !s.registered_only)
+        {
             out.push_str(&self.script(scripts, script));
         }
         out
@@ -242,7 +307,10 @@ impl<'s> ScriptPrinter<'s> {
         // `script_loader_tag` gets the translations, the inline scripts and the element together.
         out.push_str(&script.tag_prefix);
         let tag_start = out.len();
-        if let Some(json) = script.translations.as_deref().and_then(|domain| self.script_translations(script, domain).map(|json| (domain, json))) {
+        if let Some(json) = script.translations.as_deref().and_then(|domain| {
+            self.script_translations(script, domain)
+                .map(|json| (domain, json))
+        }) {
             let (domain, json) = json;
             out.push_str(&format!(
                 "<script id=\"{handle}-js-translations\">\n( function( domain, translations ) {{\n\tvar localeData = translations.locale_data[ domain ] || translations.locale_data.messages;\n\tlocaleData[\"\"].domain = domain;\n\twp.i18n.setLocaleData( localeData, domain );\n}} )( \"{domain}\", {json} );\n//# sourceURL={handle}-js-translations\n</script>\n"
@@ -251,7 +319,11 @@ impl<'s> ScriptPrinter<'s> {
         if !script.before.is_empty() {
             out.push_str(&format!("<script id=\"{handle}-js-before\">\n{}\n//# sourceURL={handle}-js-before\n</script>\n", script.before.join("\n").trim_start_matches('\n')));
         }
-        out.push_str(&format!("<script id=\"{handle}-js\" src=\"{}\"{}></script>\n", esc_url(&src(script)), script.tag_attributes));
+        out.push_str(&format!(
+            "<script id=\"{handle}-js\" src=\"{}\"{}></script>\n",
+            esc_url(&src(script)),
+            script.tag_attributes
+        ));
         if !script.after.is_empty() {
             out.push_str(&format!("<script id=\"{handle}-js-after\">\n{}\n//# sourceURL={handle}-js-after\n</script>\n", script.after.join("\n").trim_start_matches('\n')));
         }

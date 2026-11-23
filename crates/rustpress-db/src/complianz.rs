@@ -31,13 +31,28 @@ impl Db {
         if columns.is_empty() {
             return Ok(Vec::new());
         }
-        let select = columns.iter().map(|c| format!("CAST(`{}` AS CHAR)", c.replace('`', ""))).collect::<Vec<_>>().join(", ");
-        let rows = sqlx::query(AssertSqlSafe(format!("SELECT {select} FROM {table}"))).fetch_all(&self.pool).await?;
+        let select = columns
+            .iter()
+            .map(|c| format!("CAST(`{}` AS CHAR)", c.replace('`', "")))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let rows = sqlx::query(AssertSqlSafe(format!("SELECT {select} FROM {table}")))
+            .fetch_all(&self.pool)
+            .await?;
         Ok(rows
             .iter()
             .map(|row| {
                 use sqlx::Row;
-                columns.iter().enumerate().map(|(i, name)| (name.clone(), row.try_get::<Option<String>, _>(i).ok().flatten())).collect()
+                columns
+                    .iter()
+                    .enumerate()
+                    .map(|(i, name)| {
+                        (
+                            name.clone(),
+                            row.try_get::<Option<String>, _>(i).ok().flatten(),
+                        )
+                    })
+                    .collect()
             })
             .collect())
     }

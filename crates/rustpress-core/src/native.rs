@@ -23,7 +23,11 @@ pub trait NativePlugin: Send + Sync {
     fn load<'a>(&'a self, site: &'a Site) -> BoxFuture<'a, Result<Box<dyn ActivePlugin>>>;
 
     /// [NativePlugin::load] for a module that also reads files of the installation under `wp_root` (`ABSPATH`).
-    fn load_at<'a>(&'a self, site: &'a Site, _wp_root: &'a std::path::Path) -> BoxFuture<'a, Result<Box<dyn ActivePlugin>>> {
+    fn load_at<'a>(
+        &'a self,
+        site: &'a Site,
+        _wp_root: &'a std::path::Path,
+    ) -> BoxFuture<'a, Result<Box<dyn ActivePlugin>>> {
         self.load(site)
     }
     /// The text domain WordPress loads just in time from `wp-content/languages/plugins/<domain>-<locale>.mo`.
@@ -32,20 +36,36 @@ pub trait NativePlugin: Send + Sync {
     }
 
     /// `activate_{$plugin}`: what the plugin sets up when `user` activates it (its options, first content).
-    fn activate<'a>(&'a self, _site: &'a Site, _writer: &'a rustpress_db::Writer, _user: u64, _now: i64) -> BoxFuture<'a, Result<()>> {
+    fn activate<'a>(
+        &'a self,
+        _site: &'a Site,
+        _writer: &'a rustpress_db::Writer,
+        _user: u64,
+        _now: i64,
+    ) -> BoxFuture<'a, Result<()>> {
         Box::pin(async { Ok(()) })
     }
 
     /// The `register_post_type()` and `register_taxonomy()` calls the plugin makes on `init` from data it keeps
     /// itself (types defined in the database), in their order. Read once per snapshot, before the module loads;
     /// they are applied before the ones found in PHP sources.
-    fn registrations<'a>(&'a self, _site: &'a Site, _wp_root: &'a std::path::Path) -> BoxFuture<'a, Result<Vec<crate::types::Registration>>> {
+    fn registrations<'a>(
+        &'a self,
+        _site: &'a Site,
+        _wp_root: &'a std::path::Path,
+    ) -> BoxFuture<'a, Result<Vec<crate::types::Registration>>> {
         Box::pin(async { Ok(Vec::new()) })
     }
 }
 
 /// Runs the activation of the native module of `file`, if there is one.
-pub async fn activate(file: &str, site: &Site, writer: &rustpress_db::Writer, user: u64, now: i64) -> Result<()> {
+pub async fn activate(
+    file: &str,
+    site: &Site,
+    writer: &rustpress_db::Writer,
+    user: u64,
+    now: i64,
+) -> Result<()> {
     match registered().iter().find(|p| p.file() == file) {
         Some(plugin) => plugin.activate(site, writer, user, now).await,
         None => Ok(()),
@@ -70,19 +90,32 @@ pub trait ActivePlugin: Send + Sync {
 
     /// `wp_footer` at the default priority (after the speculation rules, before the script modules). `looped`: the
     /// posts `the_post` ran for, in order.
-    fn wp_footer<'a>(&'a self, _site: &'a Site, _looped: &'a [u64]) -> BoxFuture<'a, Result<String>> {
+    fn wp_footer<'a>(
+        &'a self,
+        _site: &'a Site,
+        _looped: &'a [u64],
+    ) -> BoxFuture<'a, Result<String>> {
         Box::pin(async { Ok(String::new()) })
     }
 
     /// `wp_footer` at the default priority, for plugins that look at the main query (`global $post`), after
     /// [ActivePlugin::wp_footer].
-    fn wp_footer_query<'a>(&'a self, _site: &'a Site, _query: &'a crate::QueryResult) -> BoxFuture<'a, Result<String>> {
+    fn wp_footer_query<'a>(
+        &'a self,
+        _site: &'a Site,
+        _query: &'a crate::QueryResult,
+    ) -> BoxFuture<'a, Result<String>> {
         Box::pin(async { Ok(String::new()) })
     }
 
     /// `wp_enqueue_scripts` for plugins that look at the main query (`is_singular()`, `is_preview()`), after
     /// [ActivePlugin::enqueue].
-    fn enqueue_query<'a>(&'a self, _site: &'a Site, _query: &'a crate::QueryResult, _assets: &'a mut Assets) -> BoxFuture<'a, Result<()>> {
+    fn enqueue_query<'a>(
+        &'a self,
+        _site: &'a Site,
+        _query: &'a crate::QueryResult,
+        _assets: &'a mut Assets,
+    ) -> BoxFuture<'a, Result<()>> {
         Box::pin(async { Ok(()) })
     }
 
@@ -100,7 +133,11 @@ pub trait ActivePlugin: Send + Sync {
     }
 
     /// The `body_class` filter of the website: classes the plugin appends (before the theme's own filter).
-    fn body_class<'a>(&'a self, _site: &'a Site, _query: &'a crate::QueryResult) -> BoxFuture<'a, Result<Vec<String>>> {
+    fn body_class<'a>(
+        &'a self,
+        _site: &'a Site,
+        _query: &'a crate::QueryResult,
+    ) -> BoxFuture<'a, Result<Vec<String>>> {
         Box::pin(async { Ok(Vec::new()) })
     }
 
@@ -123,18 +160,30 @@ pub trait ActivePlugin: Send + Sync {
 
     /// `wp_head` at priority 1, after `wp_robots()`, with what the plugin changes around it: the `wp_robots` filter
     /// (gets the directives of the core filters), `pre_get_document_title` and core actions it removes from `wp_head`.
-    fn wp_head<'a>(&'a self, _ctx: &'a HeadContext<'a>, _robots: &'a [(String, Robot)]) -> BoxFuture<'a, Result<Option<Head>>> {
+    fn wp_head<'a>(
+        &'a self,
+        _ctx: &'a HeadContext<'a>,
+        _robots: &'a [(String, Robot)],
+    ) -> BoxFuture<'a, Result<Option<Head>>> {
         Box::pin(async { Ok(None) })
     }
 
     /// A request the plugin answers itself before the main query (its own rewrite rules at the top, handled on
     /// `pre_get_posts` or `parse_request`): a sitemap, a stylesheet, a redirect, or a 404 page.
-    fn serve<'a>(&'a self, _site: &'a Site, _request: &'a ServeRequest<'a>) -> BoxFuture<'a, Result<Option<Serve>>> {
+    fn serve<'a>(
+        &'a self,
+        _site: &'a Site,
+        _request: &'a ServeRequest<'a>,
+    ) -> BoxFuture<'a, Result<Option<Serve>>> {
         Box::pin(async { Ok(None) })
     }
 
     /// `register_rest_field()`: fields the plugin adds to an object of the REST API, in order.
-    fn rest_fields<'a>(&'a self, _object: RestObject<'a>, _ctx: &'a RestFieldContext<'a>) -> BoxFuture<'a, Result<Vec<(String, serde_json::Value)>>> {
+    fn rest_fields<'a>(
+        &'a self,
+        _object: RestObject<'a>,
+        _ctx: &'a RestFieldContext<'a>,
+    ) -> BoxFuture<'a, Result<Vec<(String, serde_json::Value)>>> {
         Box::pin(async { Ok(Vec::new()) })
     }
 
@@ -151,7 +200,11 @@ pub trait ActivePlugin: Send + Sync {
 
     /// Links a plugin adds to an object of the REST API on `rest_prepare_{$type}` (`WP_REST_Response::add_link()`),
     /// after the core's.
-    fn rest_links<'a>(&'a self, _object: RestObject<'a>, _ctx: &'a RestFieldContext<'a>) -> BoxFuture<'a, Result<Vec<RestLink>>> {
+    fn rest_links<'a>(
+        &'a self,
+        _object: RestObject<'a>,
+        _ctx: &'a RestFieldContext<'a>,
+    ) -> BoxFuture<'a, Result<Vec<RestLink>>> {
         Box::pin(async { Ok(Vec::new()) })
     }
 
@@ -162,7 +215,13 @@ pub trait ActivePlugin: Send + Sync {
     }
 
     /// The `the_content_feed` (`excerpt` false) and `the_excerpt_rss` filters of an item of a feed.
-    fn feed_item<'a>(&'a self, _site: &'a Site, _post: &'a Post, _excerpt: bool, text: String) -> BoxFuture<'a, Result<String>> {
+    fn feed_item<'a>(
+        &'a self,
+        _site: &'a Site,
+        _post: &'a Post,
+        _excerpt: bool,
+        text: String,
+    ) -> BoxFuture<'a, Result<String>> {
         Box::pin(async move { Ok(text) })
     }
 
@@ -177,7 +236,12 @@ pub trait ActivePlugin: Send + Sync {
     }
 
     /// The `render_callback` of one of [ActivePlugin::block_names].
-    fn render_block<'a>(&'a self, _name: &'a str, _attrs: &'a serde_json::Map<String, serde_json::Value>, _ctx: &'a BlockContext<'a>) -> BoxFuture<'a, Result<String>> {
+    fn render_block<'a>(
+        &'a self,
+        _name: &'a str,
+        _attrs: &'a serde_json::Map<String, serde_json::Value>,
+        _ctx: &'a BlockContext<'a>,
+    ) -> BoxFuture<'a, Result<String>> {
         Box::pin(async { Ok(String::new()) })
     }
 
@@ -202,13 +266,21 @@ pub trait ActivePlugin: Send + Sync {
     }
 
     /// `template_redirect`: a redirect instead of the page (before `redirect_canonical()`).
-    fn template_redirect<'a>(&'a self, _site: &'a Site, _query: &'a crate::QueryResult) -> BoxFuture<'a, Result<Option<Redirect>>> {
+    fn template_redirect<'a>(
+        &'a self,
+        _site: &'a Site,
+        _query: &'a crate::QueryResult,
+    ) -> BoxFuture<'a, Result<Option<Redirect>>> {
         Box::pin(async { Ok(None) })
     }
 
     /// `init` on the website, before WordPress parses the request: the plugin may answer it, change it, or keep
     /// `redirect_canonical()` from redirecting it.
-    fn init<'a>(&'a self, _site: &'a Site, _request: &'a PluginRequest<'a>) -> BoxFuture<'a, Result<Option<Init>>> {
+    fn init<'a>(
+        &'a self,
+        _site: &'a Site,
+        _request: &'a PluginRequest<'a>,
+    ) -> BoxFuture<'a, Result<Option<Init>>> {
         Box::pin(async { Ok(None) })
     }
 
@@ -219,12 +291,22 @@ pub trait ActivePlugin: Send + Sync {
 
     /// The `wp_redirect` and `x_redirect_by` filters: headers a redirect sends before `X-Redirect-By` and
     /// `Location` (`header()` replaces one of the same name).
-    fn wp_redirect<'a>(&'a self, _site: &'a Site, _request: &'a PluginRequest<'a>, _redirect: &'a Redirected<'a>) -> BoxFuture<'a, Result<Vec<(String, String)>>> {
+    fn wp_redirect<'a>(
+        &'a self,
+        _site: &'a Site,
+        _request: &'a PluginRequest<'a>,
+        _redirect: &'a Redirected<'a>,
+    ) -> BoxFuture<'a, Result<Vec<(String, String)>>> {
         Box::pin(async { Ok(Vec::new()) })
     }
 
     /// `template_redirect` after `redirect_canonical()` on a 404 page.
-    fn not_found<'a>(&'a self, _site: &'a Site, _query: &'a crate::QueryResult, _request: &'a PluginRequest<'a>) -> BoxFuture<'a, Result<Option<Redirect>>> {
+    fn not_found<'a>(
+        &'a self,
+        _site: &'a Site,
+        _query: &'a crate::QueryResult,
+        _request: &'a PluginRequest<'a>,
+    ) -> BoxFuture<'a, Result<Option<Redirect>>> {
         Box::pin(async { Ok(None) })
     }
 
@@ -271,55 +353,88 @@ pub trait ActivePlugin: Send + Sync {
 
     /// The `rest_comment_query` filter of `GET /wp/v2/comments`: whether the plugin empties the result
     /// (`comment__in` of `[0]`). The parameters have the defaults of the route.
-    fn rest_comment_query_empty<'a>(&'a self, _request: &'a RestPreDispatch<'a>) -> BoxFuture<'a, Result<bool>> {
+    fn rest_comment_query_empty<'a>(
+        &'a self,
+        _request: &'a RestPreDispatch<'a>,
+    ) -> BoxFuture<'a, Result<bool>> {
         Box::pin(async { Ok(false) })
     }
 
     /// The `rest_pre_dispatch` filter: an error that answers the REST request before its route runs.
-    fn rest_pre_dispatch<'a>(&'a self, _request: &'a RestPreDispatch<'a>) -> BoxFuture<'a, Result<Option<RestAnswer>>> {
+    fn rest_pre_dispatch<'a>(
+        &'a self,
+        _request: &'a RestPreDispatch<'a>,
+    ) -> BoxFuture<'a, Result<Option<RestAnswer>>> {
         Box::pin(async { Ok(None) })
     }
 
     /// `comment_post` (a visitor's comment was saved) and `edit_comment` (the administration saved one): the plugin
     /// saves what the form sent along. A `wp_die()` stops the request.
-    fn comment_post<'a>(&'a self, _ctx: &'a CommentSaved<'a>) -> BoxFuture<'a, Result<Option<Die>>> {
+    fn comment_post<'a>(
+        &'a self,
+        _ctx: &'a CommentSaved<'a>,
+    ) -> BoxFuture<'a, Result<Option<Die>>> {
         Box::pin(async { Ok(None) })
     }
 
     /// The `comment_form_field_comment` filter of `comment_form()`: the HTML of the comment field, after which a
     /// plugin may add its own fields.
-    fn comment_form_field_comment<'a>(&'a self, _ctx: &'a CommentFormContext<'a>, html: String) -> BoxFuture<'a, Result<String>> {
+    fn comment_form_field_comment<'a>(
+        &'a self,
+        _ctx: &'a CommentFormContext<'a>,
+        html: String,
+    ) -> BoxFuture<'a, Result<String>> {
         Box::pin(async move { Ok(html) })
     }
 
     /// `add_meta_boxes_comment`: what the plugin prints in the second column of `comment.php?action=editcomment`,
     /// before the meta boxes.
-    fn comment_meta_boxes<'a>(&'a self, _ctx: &'a AdminContext<'a>, _comment: &'a rustpress_db::Comment) -> BoxFuture<'a, Result<MetaBoxes>> {
+    fn comment_meta_boxes<'a>(
+        &'a self,
+        _ctx: &'a AdminContext<'a>,
+        _comment: &'a rustpress_db::Comment,
+    ) -> BoxFuture<'a, Result<MetaBoxes>> {
         Box::pin(async { Ok(MetaBoxes::default()) })
     }
 
     /// `{$taxonomy}_add_form_fields` of `edit-tags.php` (`term` is `None`) and `{$taxonomy}_edit_form` of `term.php`:
     /// what the plugin prints into the form of a term, and what it asks of the screen for it.
-    fn term_form<'a>(&'a self, _ctx: &'a AdminContext<'a>, _taxonomy: &'a str, _term: Option<&'a rustpress_db::Term>) -> BoxFuture<'a, Result<MetaBoxes>> {
+    fn term_form<'a>(
+        &'a self,
+        _ctx: &'a AdminContext<'a>,
+        _taxonomy: &'a str,
+        _term: Option<&'a rustpress_db::Term>,
+    ) -> BoxFuture<'a, Result<MetaBoxes>> {
         Box::pin(async { Ok(MetaBoxes::default()) })
     }
 
     /// The `attachment_fields_to_edit` filter of `get_compat_media_markup()`: the fields the plugin adds to the edit form of
     /// an attachment (`in_modal` in the media modal, else on `post.php`).
-    fn attachment_fields_to_edit<'a>(&'a self, _ctx: &'a AdminContext<'a>, _attachment: &'a Post, _in_modal: bool) -> BoxFuture<'a, Result<Vec<AttachmentField>>> {
+    fn attachment_fields_to_edit<'a>(
+        &'a self,
+        _ctx: &'a AdminContext<'a>,
+        _attachment: &'a Post,
+        _in_modal: bool,
+    ) -> BoxFuture<'a, Result<Vec<AttachmentField>>> {
         Box::pin(async { Ok(Vec::new()) })
     }
 
     /// The `attachment_fields_to_save` filter of `edit_post()` and `wp_ajax_save_attachment_compat()`; a `wp_die()` of
     /// the plugin ends the request.
-    fn attachment_fields_to_save<'a>(&'a self, _ctx: &'a AttachmentSaved<'a>) -> BoxFuture<'a, Result<Option<Die>>> {
+    fn attachment_fields_to_save<'a>(
+        &'a self,
+        _ctx: &'a AttachmentSaved<'a>,
+    ) -> BoxFuture<'a, Result<Option<Die>>> {
         Box::pin(async { Ok(None) })
     }
 
     /// What a plugin's `acf_enqueue_uploader()`-like call asks of a screen without boxes (`upload.php`, the attachment's
     /// `post.php`): the media library and an editor on `admin_footer`, whose `before` holds what the plugin prints there
     /// first.
-    fn screen_uploader<'a>(&'a self, _ctx: &'a AdminContext<'a>) -> BoxFuture<'a, Result<MetaBoxes>> {
+    fn screen_uploader<'a>(
+        &'a self,
+        _ctx: &'a AdminContext<'a>,
+    ) -> BoxFuture<'a, Result<MetaBoxes>> {
         Box::pin(async { Ok(MetaBoxes::default()) })
     }
 
@@ -329,11 +444,19 @@ pub trait ActivePlugin: Send + Sync {
     }
 
     /// The `wp_prepare_attachment_for_js` filter the plugin adds on `wp_ajax_query-attachments`, after the others.
-    fn query_attachment_js(&self, _ctx: &AdminContext<'_>, _response: &mut serde_json::Map<String, serde_json::Value>) {}
+    fn query_attachment_js(
+        &self,
+        _ctx: &AdminContext<'_>,
+        _response: &mut serde_json::Map<String, serde_json::Value>,
+    ) {
+    }
 
     /// The `schema` of the fields the plugin registers with `register_rest_field()` for the route of `ctx` (its
     /// `OPTIONS`): `(field, schema)` for `schema.properties` and the arguments of the writing endpoints.
-    fn rest_schema_fields<'a>(&'a self, _ctx: &'a RestFieldContext<'a>) -> BoxFuture<'a, Result<Vec<(String, serde_json::Value)>>> {
+    fn rest_schema_fields<'a>(
+        &'a self,
+        _ctx: &'a RestFieldContext<'a>,
+    ) -> BoxFuture<'a, Result<Vec<(String, serde_json::Value)>>> {
         Box::pin(async { Ok(Vec::new()) })
     }
 
@@ -359,19 +482,33 @@ pub trait ActivePlugin: Send + Sync {
     }
 
     /// `wp_untrash_post_status`: the status a post restored from the trash gets (`draft` by default).
-    fn untrash_post_status(&self, _post: &Post, _new_status: &str, _previous: &str) -> Option<String> {
+    fn untrash_post_status(
+        &self,
+        _post: &Post,
+        _new_status: &str,
+        _previous: &str,
+    ) -> Option<String> {
         None
     }
 
     /// `current_screen` of a posts list (`edit.php`, before WordPress handles its bulk actions): an action of the plugin
     /// that redirects, or stops with an error.
-    fn list_load<'a>(&'a self, _ctx: &'a AdminContext<'a>) -> BoxFuture<'a, Result<Option<PageLoad>>> {
+    fn list_load<'a>(
+        &'a self,
+        _ctx: &'a AdminContext<'a>,
+    ) -> BoxFuture<'a, Result<Option<PageLoad>>> {
         Box::pin(async { Ok(None) })
     }
 
     /// `post_updated_messages`: the message `$number` of the edit screen of `post` after a save (`Some(None)` for
     /// `false`, which prints nothing); `nonce` is `wp_create_nonce()` of the signed-in user.
-    fn post_updated_message(&self, _site: &Site, _post: &Post, _number: u32, _nonce: &dyn Fn(&str) -> String) -> Option<Option<String>> {
+    fn post_updated_message(
+        &self,
+        _site: &Site,
+        _post: &Post,
+        _number: u32,
+        _nonce: &dyn Fn(&str) -> String,
+    ) -> Option<Option<String>> {
         None
     }
 
@@ -381,7 +518,11 @@ pub trait ActivePlugin: Send + Sync {
     }
 
     /// The `screen_settings` filter: what the plugin appends to the settings of "Screen Options".
-    fn screen_settings<'a>(&'a self, _ctx: &'a AdminContext<'a>, html: String) -> BoxFuture<'a, Result<String>> {
+    fn screen_settings<'a>(
+        &'a self,
+        _ctx: &'a AdminContext<'a>,
+        html: String,
+    ) -> BoxFuture<'a, Result<String>> {
         Box::pin(async { Ok(html) })
     }
 
@@ -408,38 +549,74 @@ pub trait ActivePlugin: Send + Sync {
 
     /// `$wp_post_statuses[ $status ]->label_count` on the list of `ctx`, translated for `n` (with `%s` for the
     /// number): the plugin's own statuses, or a core status it relabels; `None` keeps the core label.
-    fn status_label_count(&self, _ctx: &AdminContext<'_>, _status: &str, _n: u64) -> Option<String> {
+    fn status_label_count(
+        &self,
+        _ctx: &AdminContext<'_>,
+        _status: &str,
+        _n: u64,
+    ) -> Option<String> {
         None
     }
 
     /// `manage_{$post_type}_posts_columns` of `edit.php`: the columns as `(key, title)`.
-    fn posts_columns(&self, _ctx: &AdminContext<'_>, _post_type: &str, columns: Vec<(String, String)>) -> Vec<(String, String)> {
+    fn posts_columns(
+        &self,
+        _ctx: &AdminContext<'_>,
+        _post_type: &str,
+        columns: Vec<(String, String)>,
+    ) -> Vec<(String, String)> {
         columns
     }
 
     /// `manage_{$post_type}_posts_custom_column` (and `manage_pages_custom_column`/`manage_posts_custom_column`):
     /// what the plugin prints in a column of a row that is not one of WordPress.
-    fn posts_custom_column<'a>(&'a self, _ctx: &'a AdminContext<'a>, _column: &'a str, _post: &'a Post) -> BoxFuture<'a, Result<String>> {
+    fn posts_custom_column<'a>(
+        &'a self,
+        _ctx: &'a AdminContext<'a>,
+        _column: &'a str,
+        _post: &'a Post,
+    ) -> BoxFuture<'a, Result<String>> {
         Box::pin(async { Ok(String::new()) })
     }
 
     /// `post_row_actions` (`page_row_actions` for hierarchical types): the actions of a row as `(class, link)`.
-    fn post_row_actions<'a>(&'a self, _ctx: &'a AdminContext<'a>, _post: &'a Post, _hierarchical: bool, actions: Vec<(String, String)>) -> BoxFuture<'a, Result<Vec<(String, String)>>> {
+    fn post_row_actions<'a>(
+        &'a self,
+        _ctx: &'a AdminContext<'a>,
+        _post: &'a Post,
+        _hierarchical: bool,
+        actions: Vec<(String, String)>,
+    ) -> BoxFuture<'a, Result<Vec<(String, String)>>> {
         Box::pin(async move { Ok(actions) })
     }
 
     /// `bulk_actions-{$screen_id}`: `(value, label)`.
-    fn bulk_actions(&self, _ctx: &AdminContext<'_>, _screen_id: &str, actions: Vec<(String, String)>) -> Vec<(String, String)> {
+    fn bulk_actions(
+        &self,
+        _ctx: &AdminContext<'_>,
+        _screen_id: &str,
+        actions: Vec<(String, String)>,
+    ) -> Vec<(String, String)> {
         actions
     }
 
     /// `views_{$screen_id}`: the links above a list as `(class, link)`.
-    fn list_views(&self, _ctx: &AdminContext<'_>, _screen_id: &str, views: Vec<(String, String)>) -> Vec<(String, String)> {
+    fn list_views(
+        &self,
+        _ctx: &AdminContext<'_>,
+        _screen_id: &str,
+        views: Vec<(String, String)>,
+    ) -> Vec<(String, String)> {
         views
     }
 
     /// `display_post_states`: the states after a row's title as `(key, HTML)`.
-    fn display_post_states<'a>(&'a self, _ctx: &'a AdminContext<'a>, _post: &'a Post, states: Vec<(String, String)>) -> BoxFuture<'a, Result<Vec<(String, String)>>> {
+    fn display_post_states<'a>(
+        &'a self,
+        _ctx: &'a AdminContext<'a>,
+        _post: &'a Post,
+        states: Vec<(String, String)>,
+    ) -> BoxFuture<'a, Result<Vec<(String, String)>>> {
         Box::pin(async move { Ok(states) })
     }
 
@@ -456,7 +633,11 @@ pub trait ActivePlugin: Send + Sync {
 
     /// `show_user_profile`/`edit_user_profile` of `profile.php`/`user-edit.php` (the user's ID) and `user_new_form` of
     /// `user-new.php` (`None`): what the plugin prints at the end of the form, and what it asks of the screen for it.
-    fn user_form<'a>(&'a self, _ctx: &'a AdminContext<'a>, _user_id: Option<u64>) -> BoxFuture<'a, Result<MetaBoxes>> {
+    fn user_form<'a>(
+        &'a self,
+        _ctx: &'a AdminContext<'a>,
+        _user_id: Option<u64>,
+    ) -> BoxFuture<'a, Result<MetaBoxes>> {
         Box::pin(async { Ok(MetaBoxes::default()) })
     }
 
@@ -474,7 +655,11 @@ pub trait ActivePlugin: Send + Sync {
 
     /// `add_meta_boxes` of `post.php`/`post-new.php` ([`AdminContext::edited_post`] is the post): the plugin's boxes,
     /// the boxes of WordPress it removes, and what it prints on the actions of the form.
-    fn post_meta_boxes<'a>(&'a self, _ctx: &'a AdminContext<'a>, _post: &'a rustpress_db::Post) -> BoxFuture<'a, Result<PostMetaBoxes>> {
+    fn post_meta_boxes<'a>(
+        &'a self,
+        _ctx: &'a AdminContext<'a>,
+        _post: &'a rustpress_db::Post,
+    ) -> BoxFuture<'a, Result<PostMetaBoxes>> {
         Box::pin(async { Ok(PostMetaBoxes::default()) })
     }
 
@@ -485,12 +670,21 @@ pub trait ActivePlugin: Send + Sync {
 
     /// The `wp_save_post_revision_post_has_changed` filter while `edit_post()` saves: whether the post differs from
     /// its latest revision.
-    fn revision_post_has_changed<'a>(&'a self, _ctx: &'a PostSaved<'a>, _latest_revision: u64, changed: bool) -> BoxFuture<'a, Result<bool>> {
+    fn revision_post_has_changed<'a>(
+        &'a self,
+        _ctx: &'a PostSaved<'a>,
+        _latest_revision: u64,
+        changed: bool,
+    ) -> BoxFuture<'a, Result<bool>> {
         Box::pin(async move { Ok(changed) })
     }
 
     /// `_wp_put_post_revision` while `edit_post()` saves: a revision of the post was made.
-    fn put_post_revision<'a>(&'a self, _ctx: &'a PostSaved<'a>, _revision_id: u64) -> BoxFuture<'a, Result<()>> {
+    fn put_post_revision<'a>(
+        &'a self,
+        _ctx: &'a PostSaved<'a>,
+        _revision_id: u64,
+    ) -> BoxFuture<'a, Result<()>> {
         Box::pin(async { Ok(()) })
     }
 
@@ -512,7 +706,10 @@ pub trait ActivePlugin: Send + Sync {
     }
 
     /// `admin_print_footer_scripts` after the scripts of the footer and the emoji script (priority 20).
-    fn admin_print_footer_scripts<'a>(&'a self, _ctx: &'a AdminContext<'a>) -> BoxFuture<'a, Result<String>> {
+    fn admin_print_footer_scripts<'a>(
+        &'a self,
+        _ctx: &'a AdminContext<'a>,
+    ) -> BoxFuture<'a, Result<String>> {
         Box::pin(async { Ok(String::new()) })
     }
 
@@ -528,7 +725,12 @@ pub trait ActivePlugin: Send + Sync {
     }
 
     /// The screen options of a page the plugin added (`add_screen_option()` and the columns of its list table).
-    fn admin_screen_options(&self, _slug: &str, _site: &Site, _query: &[(String, String)]) -> Option<PageScreenOptions> {
+    fn admin_screen_options(
+        &self,
+        _slug: &str,
+        _site: &Site,
+        _query: &[(String, String)],
+    ) -> Option<PageScreenOptions> {
         None
     }
 
@@ -540,7 +742,11 @@ pub trait ActivePlugin: Send + Sync {
 
     /// `load-{$page_hook}` of a page the plugin added: what happens before the page is printed (an action that
     /// redirects, or stops with an error). `None` prints the page.
-    fn admin_page_load<'a>(&'a self, _slug: &'a str, _ctx: &'a AdminContext<'a>) -> BoxFuture<'a, Result<Option<PageLoad>>> {
+    fn admin_page_load<'a>(
+        &'a self,
+        _slug: &'a str,
+        _ctx: &'a AdminContext<'a>,
+    ) -> BoxFuture<'a, Result<Option<PageLoad>>> {
         Box::pin(async { Ok(None) })
     }
 
@@ -554,40 +760,71 @@ pub trait ActivePlugin: Send + Sync {
 
     /// `use_block_editor_for_post_type`: whether the block editor edits posts of `post_type` (`true` when WordPress
     /// would use it).
-    fn use_block_editor_for_post_type(&self, _site: &Site, _post_type: &str, use_block_editor: bool) -> bool {
+    fn use_block_editor_for_post_type(
+        &self,
+        _site: &Site,
+        _post_type: &str,
+        use_block_editor: bool,
+    ) -> bool {
         use_block_editor
     }
 
     /// `use_block_editor_for_post`: whether the block editor edits `post`.
-    fn use_block_editor_for_post<'a>(&'a self, _ctx: &'a AdminContext<'a>, _post: &'a Post, use_block_editor: bool) -> BoxFuture<'a, Result<bool>> {
+    fn use_block_editor_for_post<'a>(
+        &'a self,
+        _ctx: &'a AdminContext<'a>,
+        _post: &'a Post,
+        use_block_editor: bool,
+    ) -> BoxFuture<'a, Result<bool>> {
         Box::pin(async move { Ok(use_block_editor) })
     }
 
     /// `add_settings_field()` for the default section of a settings screen of WordPress (`writing`): the rows
     /// `do_settings_fields( $page, 'default' )` prints, as `(title, HTML of the field)`.
-    fn settings_fields<'a>(&'a self, _ctx: &'a AdminContext<'a>, _page: &'a str) -> BoxFuture<'a, Result<Vec<(String, String)>>> {
+    fn settings_fields<'a>(
+        &'a self,
+        _ctx: &'a AdminContext<'a>,
+        _page: &'a str,
+    ) -> BoxFuture<'a, Result<Vec<(String, String)>>> {
         Box::pin(async { Ok(Vec::new()) })
     }
 
     /// `get_edit_post_link`: the address of a post's edit screen as WordPress builds it (`&amp;` in the `display`
     /// context).
-    fn get_edit_post_link<'a>(&'a self, _ctx: &'a AdminContext<'a>, _post_id: u64, link: String) -> BoxFuture<'a, Result<String>> {
+    fn get_edit_post_link<'a>(
+        &'a self,
+        _ctx: &'a AdminContext<'a>,
+        _post_id: u64,
+        link: String,
+    ) -> BoxFuture<'a, Result<String>> {
         Box::pin(async move { Ok(link) })
     }
 
     /// `redirect_post_location`: where `post.php` sends the browser after saving a post.
-    fn redirect_post_location<'a>(&'a self, _ctx: &'a AdminContext<'a>, location: String) -> BoxFuture<'a, Result<String>> {
+    fn redirect_post_location<'a>(
+        &'a self,
+        _ctx: &'a AdminContext<'a>,
+        location: String,
+    ) -> BoxFuture<'a, Result<String>> {
         Box::pin(async move { Ok(location) })
     }
 
     /// `edit_form_top`: printed at the top of the classic edit form, after its hidden fields.
-    fn edit_form_top<'a>(&'a self, _ctx: &'a AdminContext<'a>, _post: &'a Post) -> BoxFuture<'a, Result<String>> {
+    fn edit_form_top<'a>(
+        &'a self,
+        _ctx: &'a AdminContext<'a>,
+        _post: &'a Post,
+    ) -> BoxFuture<'a, Result<String>> {
         Box::pin(async { Ok(String::new()) })
     }
 
     /// `block_editor_settings_all` with the edited post as the context, for what a plugin does there besides
     /// changing the settings (which no module does yet).
-    fn block_editor_settings<'a>(&'a self, _ctx: &'a AdminContext<'a>, _post: &'a Post) -> BoxFuture<'a, Result<()>> {
+    fn block_editor_settings<'a>(
+        &'a self,
+        _ctx: &'a AdminContext<'a>,
+        _post: &'a Post,
+    ) -> BoxFuture<'a, Result<()>> {
         Box::pin(async { Ok(()) })
     }
 
@@ -597,7 +834,11 @@ pub trait ActivePlugin: Send + Sync {
     }
 
     /// `profile_personal_options`: printed after the personal options of the own profile.
-    fn profile_personal_options<'a>(&'a self, _ctx: &'a AdminContext<'a>, _user_id: u64) -> BoxFuture<'a, Result<String>> {
+    fn profile_personal_options<'a>(
+        &'a self,
+        _ctx: &'a AdminContext<'a>,
+        _user_id: u64,
+    ) -> BoxFuture<'a, Result<String>> {
         Box::pin(async { Ok(String::new()) })
     }
 
@@ -607,14 +848,22 @@ pub trait ActivePlugin: Send + Sync {
     }
 
     /// The callback of one of the plugin's [`AdminPage`]s: what it prints (and does) inside the frame.
-    fn admin_page<'a>(&'a self, _slug: &'a str, _ctx: &'a AdminContext<'a>) -> BoxFuture<'a, Result<String>> {
+    fn admin_page<'a>(
+        &'a self,
+        _slug: &'a str,
+        _ctx: &'a AdminContext<'a>,
+    ) -> BoxFuture<'a, Result<String>> {
         Box::pin(async { Ok(String::new()) })
     }
 
     /// The callback of a page that prints meta boxes: its output in parts, [`FormPart::MetaBoxes`] where it calls
     /// `do_meta_boxes( $screen, $context, … )`, and the boxes it added (`add_meta_box()`); `None` for
     /// [`Self::admin_page`].
-    fn admin_page_parts<'a>(&'a self, _slug: &'a str, _ctx: &'a AdminContext<'a>) -> BoxFuture<'a, Result<Option<(Vec<FormPart>, Vec<PluginMetaBox>)>>> {
+    fn admin_page_parts<'a>(
+        &'a self,
+        _slug: &'a str,
+        _ctx: &'a AdminContext<'a>,
+    ) -> BoxFuture<'a, Result<Option<(Vec<FormPart>, Vec<PluginMetaBox>)>>> {
         Box::pin(async { Ok(None) })
     }
 
@@ -646,7 +895,11 @@ pub trait ActivePlugin: Send + Sync {
     }
 
     /// The `sanitize_callback` of a registered setting (`sanitize_option_{$option}`).
-    fn sanitize_setting(&self, _option: &str, value: Option<rustpress_phpser::Value>) -> Option<rustpress_phpser::Value> {
+    fn sanitize_setting(
+        &self,
+        _option: &str,
+        value: Option<rustpress_phpser::Value>,
+    ) -> Option<rustpress_phpser::Value> {
         value
     }
 
@@ -657,23 +910,45 @@ pub trait ActivePlugin: Send + Sync {
     fn upload_mimes(&self, _uploader: &Uploader<'_>, _mimes: &mut Vec<(String, String)>) {}
 
     /// `wp_handle_upload_prefilter`: may change the file before it is checked and stored, or refuse it with a message.
-    fn upload_prefilter(&self, _uploader: &Uploader<'_>, _name: &mut String, _bytes: &mut Vec<u8>) -> std::result::Result<(), String> {
+    fn upload_prefilter(
+        &self,
+        _uploader: &Uploader<'_>,
+        _name: &mut String,
+        _bytes: &mut Vec<u8>,
+    ) -> std::result::Result<(), String> {
         Ok(())
     }
 
     /// `wp_check_filetype_and_ext` after the core refused the file: `(name, MIME type)` to accept it with.
-    fn accept_filetype(&self, _name: &str, _mimes: &[(String, String)]) -> Option<(String, String)> {
+    fn accept_filetype(
+        &self,
+        _name: &str,
+        _mimes: &[(String, String)],
+    ) -> Option<(String, String)> {
         None
     }
 
     /// `wp_generate_attachment_metadata` of a new upload (`path` is the stored file, `relative` its path below the
     /// uploads directory).
-    fn attachment_metadata(&self, _site: &Site, _mime: &str, _path: &std::path::Path, _relative: &str, metadata: rustpress_phpser::Value) -> rustpress_phpser::Value {
+    fn attachment_metadata(
+        &self,
+        _site: &Site,
+        _mime: &str,
+        _path: &std::path::Path,
+        _relative: &str,
+        metadata: rustpress_phpser::Value,
+    ) -> rustpress_phpser::Value {
         metadata
     }
 
     /// `wp_prepare_attachment_for_js` of an attachment (`path` its file, when it exists).
-    fn prepare_attachment_for_js(&self, _mime: &str, _path: Option<&std::path::Path>, _response: &mut serde_json::Map<String, serde_json::Value>) {}
+    fn prepare_attachment_for_js(
+        &self,
+        _mime: &str,
+        _path: Option<&std::path::Path>,
+        _response: &mut serde_json::Map<String, serde_json::Value>,
+    ) {
+    }
 
     /// The whole page of an administration screen, for plugins that buffer and rewrite it (`ob_start()` on
     /// `admin_init`).
@@ -682,17 +957,31 @@ pub trait ActivePlugin: Send + Sync {
     }
 
     /// `post_thumbnail_html`: the featured image of `post_id` (the post of the loop); `singular` is `is_singular()`.
-    fn post_thumbnail_html<'a>(&'a self, _site: &'a Site, _post_id: u64, _singular: bool, html: String) -> BoxFuture<'a, Result<String>> {
+    fn post_thumbnail_html<'a>(
+        &'a self,
+        _site: &'a Site,
+        _post_id: u64,
+        _singular: bool,
+        html: String,
+    ) -> BoxFuture<'a, Result<String>> {
         Box::pin(async move { Ok(html) })
     }
 
     /// `wp_ajax_{$action}`: the answer to `admin-ajax.php`, or `None` when the plugin has no such action.
-    fn admin_ajax<'a>(&'a self, _action: &'a str, _ctx: &'a AdminContext<'a>) -> BoxFuture<'a, Result<Option<AjaxAnswer>>> {
+    fn admin_ajax<'a>(
+        &'a self,
+        _action: &'a str,
+        _ctx: &'a AdminContext<'a>,
+    ) -> BoxFuture<'a, Result<Option<AjaxAnswer>>> {
         Box::pin(async { Ok(None) })
     }
 
     /// `wp_ajax_nopriv_{$action}`: an Ajax request of a visitor who is not signed in (`user` is 0).
-    fn admin_ajax_nopriv<'a>(&'a self, _action: &'a str, _ctx: &'a AdminContext<'a>) -> BoxFuture<'a, Result<Option<AjaxAnswer>>> {
+    fn admin_ajax_nopriv<'a>(
+        &'a self,
+        _action: &'a str,
+        _ctx: &'a AdminContext<'a>,
+    ) -> BoxFuture<'a, Result<Option<AjaxAnswer>>> {
         Box::pin(async { Ok(None) })
     }
 
@@ -702,7 +991,13 @@ pub trait ActivePlugin: Send + Sync {
     }
 
     /// The callback of one of [`shortcode_tags`](Self::shortcode_tags): what `[tag atts]content[/tag]` turns into.
-    fn shortcode<'a>(&'a self, _tag: &'a str, _atts: &'a crate::shortcodes::Atts, _content: Option<&'a str>, _ctx: &'a ShortcodeContext<'a>) -> BoxFuture<'a, Result<String>> {
+    fn shortcode<'a>(
+        &'a self,
+        _tag: &'a str,
+        _atts: &'a crate::shortcodes::Atts,
+        _content: Option<&'a str>,
+        _ctx: &'a ShortcodeContext<'a>,
+    ) -> BoxFuture<'a, Result<String>> {
         Box::pin(async { Ok(String::new()) })
     }
 
@@ -714,7 +1009,10 @@ pub trait ActivePlugin: Send + Sync {
     }
 
     /// A request to the plugin's REST API: the answer, or `None` when no endpoint of the plugin takes it.
-    fn rest<'a>(&'a self, _request: &'a RestRequest<'a>) -> BoxFuture<'a, Result<Option<RestAnswer>>> {
+    fn rest<'a>(
+        &'a self,
+        _request: &'a RestRequest<'a>,
+    ) -> BoxFuture<'a, Result<Option<RestAnswer>>> {
         Box::pin(async { Ok(None) })
     }
 }
@@ -768,17 +1066,28 @@ pub struct RestAnswer {
 
 impl RestAnswer {
     pub fn ok(data: serde_json::Value) -> Self {
-        Self { status: 200, data, permitted: true }
+        Self {
+            status: 200,
+            data,
+            permitted: true,
+        }
     }
 
     /// `new WP_Error( $code, $message, array( 'status' => $status ) )` of the callback.
     pub fn error(code: &str, message: &str, status: u16) -> Self {
-        Self { status, data: serde_json::json!({"code": code, "message": message, "data": {"status": status}}), permitted: true }
+        Self {
+            status,
+            data: serde_json::json!({"code": code, "message": message, "data": {"status": status}}),
+            permitted: true,
+        }
     }
 
     /// The error of a `permission_callback`.
     pub fn forbidden(code: &str, message: &str, status: u16) -> Self {
-        Self { permitted: false, ..Self::error(code, message, status) }
+        Self {
+            permitted: false,
+            ..Self::error(code, message, status)
+        }
     }
 }
 
@@ -808,7 +1117,12 @@ pub enum MailTransport {
     /// PHPMailer's `mail()`: PHP's `mail()`, the host's `sendmail`.
     Sendmail,
     /// PHPMailer's `smtp`.
-    Smtp { host: String, port: u16, security: SmtpSecurity, credentials: Option<(String, String)> },
+    Smtp {
+        host: String,
+        port: u16,
+        security: SmtpSecurity,
+        credentials: Option<(String, String)>,
+    },
 }
 
 /// PHPMailer's `SMTPSecure` and `SMTPAutoTLS`.
@@ -853,7 +1167,10 @@ pub struct MailSettings {
 
 impl std::fmt::Debug for MailSettings {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("MailSettings").field("transport", &self.transport).field("blocked", &self.blocked).finish_non_exhaustive()
+        f.debug_struct("MailSettings")
+            .field("transport", &self.transport)
+            .field("blocked", &self.blocked)
+            .finish_non_exhaustive()
     }
 }
 
@@ -990,7 +1307,10 @@ pub struct PluginRequest<'a> {
 impl PluginRequest<'_> {
     /// The first header of the name (lower case).
     pub fn header(&self, name: &str) -> Option<&str> {
-        self.headers.iter().find(|(n, _)| n == name).map(|(_, v)| v.as_str())
+        self.headers
+            .iter()
+            .find(|(n, _)| n == name)
+            .map(|(_, v)| v.as_str())
     }
 
     /// `$_SERVER['HTTP_HOST']`.
@@ -1041,7 +1361,10 @@ pub fn robots_tag(robots: &[(String, Robot)]) -> String {
     if strings.is_empty() {
         return String::new();
     }
-    format!("<meta name='robots' content='{}' />\n", crate::formatting::esc_attr(&strings.join(", ")))
+    format!(
+        "<meta name='robots' content='{}' />\n",
+        crate::formatting::esc_attr(&strings.join(", "))
+    )
 }
 
 /// What the theme offers a plugin that prints into the head (functions that need the rendering environment).
@@ -1056,12 +1379,21 @@ pub trait PageServices: Send + Sync {
     /// `acf_the_content`): `[embed]`, `wptexturize`, `wpautop`, `shortcode_unautop`, `wp_filter_content_tags` (with
     /// the filter's name as context), then `capital_P_dangit`, `do_shortcode` and `convert_smilies`. `post` is
     /// `global $post`.
-    fn content_filters<'a>(&'a self, _post: Option<&'a Post>, text: &'a str, _context: &'a str) -> BoxFuture<'a, Result<String>> {
+    fn content_filters<'a>(
+        &'a self,
+        _post: Option<&'a Post>,
+        text: &'a str,
+        _context: &'a str,
+    ) -> BoxFuture<'a, Result<String>> {
         Box::pin(async move { Ok(text.to_owned()) })
     }
 
     /// `do_shortcode( $text )`, `post` being `global $post`.
-    fn do_shortcode<'a>(&'a self, _post: Option<&'a Post>, text: &'a str) -> BoxFuture<'a, Result<String>> {
+    fn do_shortcode<'a>(
+        &'a self,
+        _post: Option<&'a Post>,
+        text: &'a str,
+    ) -> BoxFuture<'a, Result<String>> {
         Box::pin(async move { Ok(text.to_owned()) })
     }
 
@@ -1371,9 +1703,16 @@ pub enum PageLoad {
     /// `wp_safe_redirect( $location ); exit();`
     Redirect(String),
     /// `wp_die( $message, $title, $status )`; the message is HTML.
-    Die { status: u16, title: String, message: String },
+    Die {
+        status: u16,
+        title: String,
+        message: String,
+    },
     /// The plugin sends its own answer and exits (a download): the headers it sets and what it prints.
-    Output { headers: Vec<(String, String)>, body: String },
+    Output {
+        headers: Vec<(String, String)>,
+        body: String,
+    },
     /// The page goes on; the plugin prints these notices on `admin_notices` (what it did while loading).
     Notices(String),
 }
@@ -1390,12 +1729,20 @@ pub struct AjaxAnswer {
 impl AjaxAnswer {
     /// `wp_die( $text )` of `admin-ajax.php` (`0` when the action printed nothing).
     pub fn text(status: u16, body: &str) -> Self {
-        Self { status, body: body.to_owned(), json: false }
+        Self {
+            status,
+            body: body.to_owned(),
+            json: false,
+        }
     }
 
     /// `wp_send_json( $data, $status )` with the encoded data.
     pub fn json(status: u16, body: String) -> Self {
-        Self { status, body, json: true }
+        Self {
+            status,
+            body,
+            json: true,
+        }
     }
 }
 
@@ -1422,10 +1769,28 @@ pub fn form_value(form: &[(String, String)], name: &str) -> Option<rustpress_php
     use rustpress_phpser::{Key, Value};
     fn insert(target: &mut Value, keys: &[String], value: &str) {
         let Value::Array(items) = target else { return };
-        let Some((first, rest)) = keys.split_first() else { return };
+        let Some((first, rest)) = keys.split_first() else {
+            return;
+        };
         let key = if first.is_empty() {
-            Key::Int(items.iter().filter_map(|(k, _)| if let Key::Int(n) = k { Some(*n + 1) } else { None }).max().unwrap_or(0))
-        } else if let Some(n) = first.parse::<i64>().ok().filter(|n| n.to_string() == *first) {
+            Key::Int(
+                items
+                    .iter()
+                    .filter_map(|(k, _)| {
+                        if let Key::Int(n) = k {
+                            Some(*n + 1)
+                        } else {
+                            None
+                        }
+                    })
+                    .max()
+                    .unwrap_or(0),
+            )
+        } else if let Some(n) = first
+            .parse::<i64>()
+            .ok()
+            .filter(|n| n.to_string() == *first)
+        {
             // PHP keys an array with an integer when the string is one.
             Key::Int(n)
         } else {
@@ -1438,7 +1803,10 @@ pub fn form_value(form: &[(String, String)], name: &str) -> Option<rustpress_php
             }
             return;
         }
-        let index = match items.iter().position(|(k, v)| *k == key && matches!(v, Value::Array(_))) {
+        let index = match items
+            .iter()
+            .position(|(k, v)| *k == key && matches!(v, Value::Array(_)))
+        {
             Some(index) => index,
             None => {
                 items.retain(|(k, _)| *k != key);
@@ -1450,7 +1818,9 @@ pub fn form_value(form: &[(String, String)], name: &str) -> Option<rustpress_php
     }
     let mut result: Option<Value> = None;
     for (field, value) in form {
-        let Some(rest) = field.strip_prefix(name) else { continue };
+        let Some(rest) = field.strip_prefix(name) else {
+            continue;
+        };
         if rest.is_empty() {
             result = Some(Value::Str(value.as_bytes().to_vec()));
             continue;
@@ -1458,7 +1828,11 @@ pub fn form_value(form: &[(String, String)], name: &str) -> Option<rustpress_php
         if !rest.starts_with('[') {
             continue;
         }
-        let keys: Vec<String> = rest.split('[').skip(1).map_while(|part| part.strip_suffix(']').map(str::to_owned)).collect();
+        let keys: Vec<String> = rest
+            .split('[')
+            .skip(1)
+            .map_while(|part| part.strip_suffix(']').map(str::to_owned))
+            .collect();
         if keys.is_empty() {
             continue;
         }
@@ -1580,17 +1954,28 @@ pub struct ListStatus {
 impl AdminContext<'_> {
     /// `$_GET[ $name ]`.
     pub fn get(&self, name: &str) -> Option<&str> {
-        self.query.iter().rev().find(|(k, _)| k == name).map(|(_, v)| v.as_str())
+        self.query
+            .iter()
+            .rev()
+            .find(|(k, _)| k == name)
+            .map(|(_, v)| v.as_str())
     }
 
     /// `$_POST[ $name ]`.
     pub fn post_field(&self, name: &str) -> Option<&str> {
-        self.form.iter().rev().find(|(k, _)| k == name).map(|(_, v)| v.as_str())
+        self.form
+            .iter()
+            .rev()
+            .find(|(k, _)| k == name)
+            .map(|(_, v)| v.as_str())
     }
 
     /// `settings_fields( $group )`: the hidden fields of a form that `options.php` saves.
     pub fn settings_fields(&self, group: &str) -> String {
-        let referer = crate::formatting::esc_url(&crate::urls::remove_query_arg(self.request_uri, "_wp_http_referer"));
+        let referer = crate::formatting::esc_url(&crate::urls::remove_query_arg(
+            self.request_uri,
+            "_wp_http_referer",
+        ));
         format!(
             "<input type='hidden' name='option_page' value='{}' /><input type=\"hidden\" name=\"action\" value=\"update\" /><input type=\"hidden\" id=\"_wpnonce\" name=\"_wpnonce\" value=\"{}\" /><input type=\"hidden\" name=\"_wp_http_referer\" value=\"{referer}\" />",
             crate::formatting::esc_attr(group),
@@ -1620,7 +2005,10 @@ impl RegisteredMeta {
     pub fn rest_value(&self, stored: Option<&str>) -> serde_json::Value {
         match self.kind {
             // `rest_sanitize_boolean()` of the stored string; without a row the default `false`.
-            MetaType::Boolean => serde_json::Value::Bool(stored.is_some_and(|v| !v.is_empty() && v != "0" && !v.eq_ignore_ascii_case("false"))),
+            MetaType::Boolean => serde_json::Value::Bool(
+                stored
+                    .is_some_and(|v| !v.is_empty() && v != "0" && !v.eq_ignore_ascii_case("false")),
+            ),
             MetaType::String => serde_json::Value::String(stored.unwrap_or_default().to_owned()),
         }
     }
@@ -1671,32 +2059,73 @@ pub struct Assets {
 
 impl Assets {
     /// `wp_enqueue_style( $handle, $src, $deps, $ver, $media )`.
-    pub fn style(&mut self, handle: &str, src: String, deps: &[&str], ver: &str, media: &str) -> &mut Asset {
-        self.styles.push(Asset { handle: handle.to_owned(), src, deps: deps.iter().map(|d| (*d).to_owned()).collect(), ver: Some(ver.to_owned()), media: media.to_owned(), priority: 10, ..Asset::default() });
+    pub fn style(
+        &mut self,
+        handle: &str,
+        src: String,
+        deps: &[&str],
+        ver: &str,
+        media: &str,
+    ) -> &mut Asset {
+        self.styles.push(Asset {
+            handle: handle.to_owned(),
+            src,
+            deps: deps.iter().map(|d| (*d).to_owned()).collect(),
+            ver: Some(ver.to_owned()),
+            media: media.to_owned(),
+            priority: 10,
+            ..Asset::default()
+        });
         self.styles.last_mut().expect("just pushed")
     }
 
     /// `wp_enqueue_style( $handle )` of a stylesheet WordPress registers (`wp-color-picker`).
     pub fn core_style(&mut self, handle: &str) {
-        self.styles.push(Asset { handle: handle.to_owned(), priority: 10, ..Asset::default() });
+        self.styles.push(Asset {
+            handle: handle.to_owned(),
+            priority: 10,
+            ..Asset::default()
+        });
     }
 
     /// `wp_enqueue_script( $handle )` of a script WordPress registers. `in_footer` is where it ends up: its own
     /// group, or the head when a script of the head depends on it.
     pub fn core_script(&mut self, handle: &str, in_footer: bool) {
-        self.scripts.push(Asset { handle: handle.to_owned(), in_footer, priority: 10, ..Asset::default() });
+        self.scripts.push(Asset {
+            handle: handle.to_owned(),
+            in_footer,
+            priority: 10,
+            ..Asset::default()
+        });
     }
 
     /// `wp_enqueue_script( $handle, $src, $deps, $ver, $in_footer )`.
-    pub fn script(&mut self, handle: &str, src: String, deps: &[&str], ver: &str, in_footer: bool) -> &mut Asset {
-        self.scripts.push(Asset { handle: handle.to_owned(), src, deps: deps.iter().map(|d| (*d).to_owned()).collect(), ver: Some(ver.to_owned()), in_footer, priority: 10, ..Asset::default() });
+    pub fn script(
+        &mut self,
+        handle: &str,
+        src: String,
+        deps: &[&str],
+        ver: &str,
+        in_footer: bool,
+    ) -> &mut Asset {
+        self.scripts.push(Asset {
+            handle: handle.to_owned(),
+            src,
+            deps: deps.iter().map(|d| (*d).to_owned()).collect(),
+            ver: Some(ver.to_owned()),
+            in_footer,
+            priority: 10,
+            ..Asset::default()
+        });
         self.scripts.last_mut().expect("just pushed")
     }
 }
 
 /// `PHP_URL_HOST` of an address (`wp_parse_url( $url, PHP_URL_HOST )`), if it has one.
 fn url_host(url: &str) -> Option<&str> {
-    let rest = url.strip_prefix("//").or_else(|| url.split_once("://").map(|(_, r)| r))?;
+    let rest = url
+        .strip_prefix("//")
+        .or_else(|| url.split_once("://").map(|(_, r)| r))?;
     let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
     let host = authority.rsplit_once('@').map_or(authority, |(_, h)| h);
     let host = host.split(':').next().unwrap_or_default();
@@ -1708,7 +2137,12 @@ fn url_host(url: &str) -> Option<&str> {
 pub fn resource_hints(site: &Site, assets: &Assets) -> String {
     let server = url_host(&site.settings.home).unwrap_or_default().to_owned();
     let mut hosts: Vec<String> = Vec::new();
-    for asset in assets.scripts.iter().chain(&assets.styles).filter(|a| !a.registered_only) {
+    for asset in assets
+        .scripts
+        .iter()
+        .chain(&assets.styles)
+        .filter(|a| !a.registered_only)
+    {
         if let Some(host) = url_host(&asset.src)
             && !hosts.iter().any(|h| h == host)
             && host != server
@@ -1718,13 +2152,23 @@ pub fn resource_hints(site: &Site, assets: &Assets) -> String {
     }
     let mut out = String::new();
     for relation in ["dns-prefetch", "preconnect", "prefetch", "prerender"] {
-        let urls = site.plugins.resource_hints(relation, if relation == "dns-prefetch" { hosts.clone() } else { Vec::new() });
+        let urls = site.plugins.resource_hints(
+            relation,
+            if relation == "dns-prefetch" {
+                hosts.clone()
+            } else {
+                Vec::new()
+            },
+        );
         let mut seen: Vec<String> = Vec::new();
         let mut unique: Vec<String> = Vec::new();
         for url in urls {
             // `esc_url( $url, array( 'http', 'https' ) )`.
             let url = crate::formatting::esc_url(&url);
-            let scheme_ok = url.split_once(':').is_none_or(|(scheme, _)| scheme.contains(['/', '?', '#']) || matches!(scheme.to_ascii_lowercase().as_str(), "http" | "https"));
+            let scheme_ok = url.split_once(':').is_none_or(|(scheme, _)| {
+                scheme.contains(['/', '?', '#'])
+                    || matches!(scheme.to_ascii_lowercase().as_str(), "http" | "https")
+            });
             if url.is_empty() || !scheme_ok || seen.contains(&url) {
                 continue;
             }
@@ -1743,7 +2187,11 @@ pub fn resource_hints(site: &Site, assets: &Assets) -> String {
             }
         }
         for href in unique {
-            out.push_str(&format!("<link rel='{}' href='{}' />\n", crate::formatting::esc_attr(relation), crate::formatting::esc_url(&href)));
+            out.push_str(&format!(
+                "<link rel='{}' href='{}' />\n",
+                crate::formatting::esc_attr(relation),
+                crate::formatting::esc_url(&href)
+            ));
         }
     }
     out
@@ -1772,13 +2220,19 @@ impl Plugins {
     pub async fn load(site: &Site, active: &[String], wp_root: &std::path::Path) -> Self {
         let mut loaded = Vec::new();
         for file in active {
-            let Some(plugin) = registered().iter().find(|p| p.file() == file) else { continue };
+            let Some(plugin) = registered().iter().find(|p| p.file() == file) else {
+                continue;
+            };
             match plugin.load_at(site, wp_root).await {
                 Ok(instance) => loaded.push((*plugin, instance)),
-                Err(e) => tracing::error!(plugin = file.as_str(), error = %e, "native plugin failed to load"),
+                Err(e) => {
+                    tracing::error!(plugin = file.as_str(), error = %e, "native plugin failed to load")
+                }
             }
         }
-        Self { active: std::sync::Arc::new(loaded) }
+        Self {
+            active: std::sync::Arc::new(loaded),
+        }
     }
 
     pub fn is_empty(&self) -> bool {
@@ -1809,14 +2263,20 @@ impl Plugins {
     }
 
     /// What the plugins enqueue on a page of the website with its main query.
-    pub async fn assets_for(&self, site: &Site, query: Option<&crate::QueryResult>, state: Option<&PluginState>) -> Assets {
+    pub async fn assets_for(
+        &self,
+        site: &Site,
+        query: Option<&crate::QueryResult>,
+        state: Option<&PluginState>,
+    ) -> Assets {
         let mut assets = Assets::default();
         for plugin in self.hooks() {
             plugin.enqueue(site, &mut assets);
             if let Some(query) = query
-                && let Err(e) = plugin.enqueue_query(site, query, &mut assets).await {
-                    tracing::error!(error = %e, "native plugin enqueue failed");
-                }
+                && let Err(e) = plugin.enqueue_query(site, query, &mut assets).await
+            {
+                tracing::error!(error = %e, "native plugin enqueue failed");
+            }
         }
         Self::finish_assets(assets, state)
     }
@@ -1844,12 +2304,17 @@ impl Plugins {
 
     /// The post meta the plugins register for the REST API for posts of `post_type`, in the order of registration.
     pub fn registered_post_meta(&self, post_type: &str) -> Vec<RegisteredMeta> {
-        self.hooks().flat_map(|plugin| plugin.registered_post_meta()).filter(|m| m.post_type.is_none_or(|t| t == post_type)).collect()
+        self.hooks()
+            .flat_map(|plugin| plugin.registered_post_meta())
+            .filter(|m| m.post_type.is_none_or(|t| t == post_type))
+            .collect()
     }
 
     /// The pages the plugins add to the menu of the administration, in the order they add them.
     pub fn admin_pages(&self, site: &Site) -> Vec<AdminPage> {
-        self.hooks().flat_map(|plugin| plugin.admin_pages(site)).collect()
+        self.hooks()
+            .flat_map(|plugin| plugin.admin_pages(site))
+            .collect()
     }
 
     /// `get_plugin_page_hookname()`: `toplevel_page_<slug>` for an entry of the main menu, `<menu title>_page_<slug>`
@@ -1858,20 +2323,40 @@ impl Plugins {
         if page.is_top_level() {
             return format!("toplevel_page_{}", page.slug);
         }
-        match self.admin_pages(site).into_iter().find(|p| p.is_top_level() && p.slug == page.parent) {
-            Some(top) => format!("{}_page_{}", crate::slug::sanitize_title(&top.menu_title), page.slug),
+        match self
+            .admin_pages(site)
+            .into_iter()
+            .find(|p| p.is_top_level() && p.slug == page.parent)
+        {
+            Some(top) => format!(
+                "{}_page_{}",
+                crate::slug::sanitize_title(&top.menu_title),
+                page.slug
+            ),
             None => page.hook_suffix(),
         }
     }
 
     /// Whether a plugin lets `set_screen_options()` store `option`.
     pub fn stores_screen_option(&self, option: &str) -> bool {
-        self.hooks().any(|plugin| plugin.screen_option_names().contains(&option))
+        self.hooks()
+            .any(|plugin| plugin.screen_option_names().contains(&option))
     }
 
     /// The plugin that added the page `slug` below `parent`, with the page.
-    pub fn admin_page_of(&self, site: &Site, parent: &str, slug: &str) -> Option<(&dyn ActivePlugin, AdminPage)> {
-        self.hooks().find_map(|plugin| plugin.admin_pages(site).into_iter().find(|p| p.slug == slug && (p.parent == parent || parent == "admin.php")).map(|page| (plugin, page)))
+    pub fn admin_page_of(
+        &self,
+        site: &Site,
+        parent: &str,
+        slug: &str,
+    ) -> Option<(&dyn ActivePlugin, AdminPage)> {
+        self.hooks().find_map(|plugin| {
+            plugin
+                .admin_pages(site)
+                .into_iter()
+                .find(|p| p.slug == slug && (p.parent == parent || parent == "admin.php"))
+                .map(|page| (plugin, page))
+        })
     }
 
     /// The assets of `admin_enqueue_scripts`, by priority, then by plugin.
@@ -1887,22 +2372,42 @@ impl Plugins {
 
     /// The text domains of the active plugins.
     pub fn text_domains(&self) -> Vec<&'static str> {
-        self.active.iter().filter_map(|(p, _)| p.text_domain()).collect()
+        self.active
+            .iter()
+            .filter_map(|(p, _)| p.text_domain())
+            .collect()
     }
 
     /// The help tabs of the plugin page `slug`.
-    pub fn admin_page_help(&self, site: &Site, slug: &str, query: &[(String, String)]) -> AdminHelp {
-        self.hooks().find(|plugin| plugin.admin_pages(site).iter().any(|p| p.slug == slug)).map(|plugin| plugin.admin_page_help(slug, site, query)).unwrap_or_default()
+    pub fn admin_page_help(
+        &self,
+        site: &Site,
+        slug: &str,
+        query: &[(String, String)],
+    ) -> AdminHelp {
+        self.hooks()
+            .find(|plugin| plugin.admin_pages(site).iter().any(|p| p.slug == slug))
+            .map(|plugin| plugin.admin_page_help(slug, site, query))
+            .unwrap_or_default()
     }
 
     /// `admin_footer_text` of the plugins.
     pub fn admin_footer_text(&self, ctx: &AdminContext<'_>) -> Option<String> {
-        self.hooks().find_map(|plugin| plugin.admin_footer_text(ctx))
+        self.hooks()
+            .find_map(|plugin| plugin.admin_footer_text(ctx))
     }
 
     /// The options the plugins registered for the settings group `group`, with the plugin that registered each.
     pub fn registered_settings(&self, group: &str) -> Vec<(&'static str, &dyn ActivePlugin)> {
-        self.hooks().flat_map(|plugin| plugin.registered_settings().into_iter().filter(|(g, _)| *g == group).map(move |(_, option)| (option, plugin))).collect()
+        self.hooks()
+            .flat_map(|plugin| {
+                plugin
+                    .registered_settings()
+                    .into_iter()
+                    .filter(|(g, _)| *g == group)
+                    .map(move |(_, option)| (option, plugin))
+            })
+            .collect()
     }
 
     /// The assets of `enqueue_block_editor_assets`.
@@ -1915,7 +2420,11 @@ impl Plugins {
     }
 
     /// `upload_mimes` of the plugins on top of the core's types.
-    pub fn upload_mimes(&self, uploader: &Uploader<'_>, mut mimes: Vec<(String, String)>) -> Vec<(String, String)> {
+    pub fn upload_mimes(
+        &self,
+        uploader: &Uploader<'_>,
+        mut mimes: Vec<(String, String)>,
+    ) -> Vec<(String, String)> {
         for plugin in self.hooks() {
             plugin.upload_mimes(uploader, &mut mimes);
         }
@@ -1923,7 +2432,12 @@ impl Plugins {
     }
 
     /// `wp_handle_upload_prefilter` of the plugins; the first refusal ends it.
-    pub fn upload_prefilter(&self, uploader: &Uploader<'_>, name: &mut String, bytes: &mut Vec<u8>) -> std::result::Result<(), String> {
+    pub fn upload_prefilter(
+        &self,
+        uploader: &Uploader<'_>,
+        name: &mut String,
+        bytes: &mut Vec<u8>,
+    ) -> std::result::Result<(), String> {
         for plugin in self.hooks() {
             plugin.upload_prefilter(uploader, name, bytes)?;
         }
@@ -1931,34 +2445,62 @@ impl Plugins {
     }
 
     /// A plugin's `wp_check_filetype_and_ext` for a file the core refused.
-    pub fn accept_filetype(&self, name: &str, mimes: &[(String, String)]) -> Option<(String, String)> {
-        self.hooks().find_map(|plugin| plugin.accept_filetype(name, mimes))
+    pub fn accept_filetype(
+        &self,
+        name: &str,
+        mimes: &[(String, String)],
+    ) -> Option<(String, String)> {
+        self.hooks()
+            .find_map(|plugin| plugin.accept_filetype(name, mimes))
     }
 
     /// `wp_generate_attachment_metadata` of the plugins.
-    pub fn attachment_metadata(&self, site: &Site, mime: &str, path: &std::path::Path, relative: &str, metadata: rustpress_phpser::Value) -> rustpress_phpser::Value {
-        self.hooks().fold(metadata, |metadata, plugin| plugin.attachment_metadata(site, mime, path, relative, metadata))
+    pub fn attachment_metadata(
+        &self,
+        site: &Site,
+        mime: &str,
+        path: &std::path::Path,
+        relative: &str,
+        metadata: rustpress_phpser::Value,
+    ) -> rustpress_phpser::Value {
+        self.hooks().fold(metadata, |metadata, plugin| {
+            plugin.attachment_metadata(site, mime, path, relative, metadata)
+        })
     }
 
     /// `wp_prepare_attachment_for_js` of the plugins.
-    pub fn prepare_attachment_for_js(&self, mime: &str, path: Option<&std::path::Path>, response: &mut serde_json::Map<String, serde_json::Value>) {
+    pub fn prepare_attachment_for_js(
+        &self,
+        mime: &str,
+        path: Option<&std::path::Path>,
+        response: &mut serde_json::Map<String, serde_json::Value>,
+    ) {
         for plugin in self.hooks() {
             plugin.prepare_attachment_for_js(mime, path, response);
         }
     }
 
     /// `post_thumbnail_html` of the plugins.
-    pub async fn post_thumbnail_html(&self, site: &Site, post_id: u64, singular: bool, html: String) -> Result<String> {
+    pub async fn post_thumbnail_html(
+        &self,
+        site: &Site,
+        post_id: u64,
+        singular: bool,
+        html: String,
+    ) -> Result<String> {
         let mut html = html;
         for plugin in self.hooks() {
-            html = plugin.post_thumbnail_html(site, post_id, singular, html).await?;
+            html = plugin
+                .post_thumbnail_html(site, post_id, singular, html)
+                .await?;
         }
         Ok(html)
     }
 
     /// The page after the plugins' output buffers.
     pub fn admin_page_output(&self, ctx: &AdminContext<'_>, html: String) -> String {
-        self.hooks().fold(html, |html, plugin| plugin.admin_page_output(ctx, html))
+        self.hooks()
+            .fold(html, |html, plugin| plugin.admin_page_output(ctx, html))
     }
 
     /// What the plugins print on `admin_notices`.
@@ -1972,24 +2514,44 @@ impl Plugins {
 
     /// What the plugins print on `admin_print_styles`.
     pub fn admin_print_styles(&self, ctx: &AdminContext<'_>) -> String {
-        self.hooks().map(|plugin| plugin.admin_print_styles(ctx)).collect()
+        self.hooks()
+            .map(|plugin| plugin.admin_print_styles(ctx))
+            .collect()
     }
 
     /// `use_block_editor_for_post_type` of the plugins.
-    pub fn use_block_editor_for_post_type(&self, site: &Site, post_type: &str, use_block_editor: bool) -> bool {
-        self.hooks().fold(use_block_editor, |value, plugin| plugin.use_block_editor_for_post_type(site, post_type, value))
+    pub fn use_block_editor_for_post_type(
+        &self,
+        site: &Site,
+        post_type: &str,
+        use_block_editor: bool,
+    ) -> bool {
+        self.hooks().fold(use_block_editor, |value, plugin| {
+            plugin.use_block_editor_for_post_type(site, post_type, value)
+        })
     }
 
     /// `use_block_editor_for_post` of the plugins.
-    pub async fn use_block_editor_for_post(&self, ctx: &AdminContext<'_>, post: &Post, mut use_block_editor: bool) -> Result<bool> {
+    pub async fn use_block_editor_for_post(
+        &self,
+        ctx: &AdminContext<'_>,
+        post: &Post,
+        mut use_block_editor: bool,
+    ) -> Result<bool> {
         for plugin in self.hooks() {
-            use_block_editor = plugin.use_block_editor_for_post(ctx, post, use_block_editor).await?;
+            use_block_editor = plugin
+                .use_block_editor_for_post(ctx, post, use_block_editor)
+                .await?;
         }
         Ok(use_block_editor)
     }
 
     /// The fields the plugins add to the default section of the settings screen `page`.
-    pub async fn settings_fields(&self, ctx: &AdminContext<'_>, page: &str) -> Result<Vec<(String, String)>> {
+    pub async fn settings_fields(
+        &self,
+        ctx: &AdminContext<'_>,
+        page: &str,
+    ) -> Result<Vec<(String, String)>> {
         let mut fields = Vec::new();
         for plugin in self.hooks() {
             fields.extend(plugin.settings_fields(ctx, page).await?);
@@ -1998,7 +2560,12 @@ impl Plugins {
     }
 
     /// `get_edit_post_link` of the plugins.
-    pub async fn get_edit_post_link(&self, ctx: &AdminContext<'_>, post_id: u64, mut link: String) -> Result<String> {
+    pub async fn get_edit_post_link(
+        &self,
+        ctx: &AdminContext<'_>,
+        post_id: u64,
+        mut link: String,
+    ) -> Result<String> {
         for plugin in self.hooks() {
             link = plugin.get_edit_post_link(ctx, post_id, link).await?;
         }
@@ -2006,7 +2573,11 @@ impl Plugins {
     }
 
     /// `redirect_post_location` of the plugins.
-    pub async fn redirect_post_location(&self, ctx: &AdminContext<'_>, mut location: String) -> Result<String> {
+    pub async fn redirect_post_location(
+        &self,
+        ctx: &AdminContext<'_>,
+        mut location: String,
+    ) -> Result<String> {
         for plugin in self.hooks() {
             location = plugin.redirect_post_location(ctx, location).await?;
         }
@@ -2040,7 +2611,11 @@ impl Plugins {
     }
 
     /// What the plugins print on `profile_personal_options`.
-    pub async fn profile_personal_options(&self, ctx: &AdminContext<'_>, user_id: u64) -> Result<String> {
+    pub async fn profile_personal_options(
+        &self,
+        ctx: &AdminContext<'_>,
+        user_id: u64,
+    ) -> Result<String> {
         let mut out = String::new();
         for plugin in self.hooks() {
             out.push_str(&plugin.profile_personal_options(ctx, user_id).await?);
@@ -2058,11 +2633,17 @@ impl Plugins {
 
     /// `plugin_row_meta` of every plugin for the row of `file`.
     pub fn plugin_row_meta(&self, site: &Site, file: &str, links: Vec<String>) -> Vec<String> {
-        self.hooks().fold(links, |links, plugin| plugin.plugin_row_meta(site, file, links))
+        self.hooks().fold(links, |links, plugin| {
+            plugin.plugin_row_meta(site, file, links)
+        })
     }
 
     /// `wp_ajax_{$action}` of the plugins.
-    pub async fn admin_ajax(&self, action: &str, ctx: &AdminContext<'_>) -> Result<Option<AjaxAnswer>> {
+    pub async fn admin_ajax(
+        &self,
+        action: &str,
+        ctx: &AdminContext<'_>,
+    ) -> Result<Option<AjaxAnswer>> {
         for plugin in self.hooks() {
             if let Some(answer) = plugin.admin_ajax(action, ctx).await? {
                 return Ok(Some(answer));
@@ -2072,7 +2653,11 @@ impl Plugins {
     }
 
     /// The first plugin that answers `wp_ajax_nopriv_{$action}`.
-    pub async fn admin_ajax_nopriv(&self, action: &str, ctx: &AdminContext<'_>) -> Result<Option<AjaxAnswer>> {
+    pub async fn admin_ajax_nopriv(
+        &self,
+        action: &str,
+        ctx: &AdminContext<'_>,
+    ) -> Result<Option<AjaxAnswer>> {
         for plugin in self.hooks() {
             if let Some(answer) = plugin.admin_ajax_nopriv(action, ctx).await? {
                 return Ok(Some(answer));
@@ -2083,11 +2668,19 @@ impl Plugins {
 
     /// The shortcodes of the plugins, in the order they register them.
     pub fn shortcode_tags(&self) -> Vec<&'static str> {
-        self.hooks().flat_map(|plugin| plugin.shortcode_tags().iter().copied()).collect()
+        self.hooks()
+            .flat_map(|plugin| plugin.shortcode_tags().iter().copied())
+            .collect()
     }
 
     /// The output of the plugin shortcode `tag`, `None` when no plugin registers it.
-    pub async fn shortcode(&self, tag: &str, atts: &crate::shortcodes::Atts, content: Option<&str>, ctx: &ShortcodeContext<'_>) -> Result<Option<String>> {
+    pub async fn shortcode(
+        &self,
+        tag: &str,
+        atts: &crate::shortcodes::Atts,
+        content: Option<&str>,
+        ctx: &ShortcodeContext<'_>,
+    ) -> Result<Option<String>> {
         for plugin in self.hooks() {
             if plugin.shortcode_tags().contains(&tag) {
                 return plugin.shortcode(tag, atts, content, ctx).await.map(Some);
@@ -2098,7 +2691,10 @@ impl Plugins {
 
     /// The routes of the plugins' REST APIs (see [`ActivePlugin::rest_index`]), in the order they register them.
     pub fn rest_index(&self) -> Vec<&'static str> {
-        self.hooks().map(|plugin| plugin.rest_index()).filter(|index| !index.is_empty()).collect()
+        self.hooks()
+            .map(|plugin| plugin.rest_index())
+            .filter(|index| !index.is_empty())
+            .collect()
     }
 
     /// The answer of the plugin whose endpoint takes `request`.
@@ -2113,11 +2709,16 @@ impl Plugins {
 
     /// The first `wp_die()` of a plugin early on `template_redirect` ([ActivePlugin::template_redirect_die]).
     pub fn template_redirect_die(&self, site: &Site, query: &crate::QueryResult) -> Option<Die> {
-        self.hooks().find_map(|plugin| plugin.template_redirect_die(site, query))
+        self.hooks()
+            .find_map(|plugin| plugin.template_redirect_die(site, query))
     }
 
     /// The first redirect a plugin asks for on `template_redirect`.
-    pub async fn template_redirect(&self, site: &Site, query: &crate::QueryResult) -> Result<Option<Redirect>> {
+    pub async fn template_redirect(
+        &self,
+        site: &Site,
+        query: &crate::QueryResult,
+    ) -> Result<Option<Redirect>> {
         for plugin in self.hooks() {
             if let Some(redirect) = plugin.template_redirect(site, query).await? {
                 return Ok(Some(redirect));
@@ -2138,11 +2739,18 @@ impl Plugins {
 
     /// The headers the plugins send on `send_headers`.
     pub fn send_headers(&self, site: &Site, request: &PluginRequest<'_>) -> Vec<(String, String)> {
-        self.hooks().flat_map(|plugin| plugin.send_headers(site, request)).collect()
+        self.hooks()
+            .flat_map(|plugin| plugin.send_headers(site, request))
+            .collect()
     }
 
     /// The headers the plugins add to a redirect.
-    pub async fn wp_redirect(&self, site: &Site, request: &PluginRequest<'_>, redirect: &Redirected<'_>) -> Result<Vec<(String, String)>> {
+    pub async fn wp_redirect(
+        &self,
+        site: &Site,
+        request: &PluginRequest<'_>,
+        redirect: &Redirected<'_>,
+    ) -> Result<Vec<(String, String)>> {
         let mut headers = Vec::new();
         for plugin in self.hooks() {
             headers.extend(plugin.wp_redirect(site, request, redirect).await?);
@@ -2151,7 +2759,12 @@ impl Plugins {
     }
 
     /// The first redirect a plugin asks for on a 404 page after `redirect_canonical()`.
-    pub async fn not_found(&self, site: &Site, query: &crate::QueryResult, request: &PluginRequest<'_>) -> Result<Option<Redirect>> {
+    pub async fn not_found(
+        &self,
+        site: &Site,
+        query: &crate::QueryResult,
+        request: &PluginRequest<'_>,
+    ) -> Result<Option<Redirect>> {
         for plugin in self.hooks() {
             if let Some(redirect) = plugin.not_found(site, query, request).await? {
                 return Ok(Some(redirect));
@@ -2171,7 +2784,11 @@ impl Plugins {
     }
 
     /// The fields the plugins add to an object of the REST API.
-    pub async fn rest_fields(&self, object: RestObject<'_>, ctx: &RestFieldContext<'_>) -> Result<Vec<(String, serde_json::Value)>> {
+    pub async fn rest_fields(
+        &self,
+        object: RestObject<'_>,
+        ctx: &RestFieldContext<'_>,
+    ) -> Result<Vec<(String, serde_json::Value)>> {
         let mut fields = Vec::new();
         for plugin in self.hooks() {
             fields.extend(plugin.rest_fields(object, ctx).await?);
@@ -2181,14 +2798,22 @@ impl Plugins {
 
     /// The public post statuses of the plugins, in the order they register them.
     pub fn internal_post_statuses(&self) -> Vec<&'static str> {
-        self.hooks().flat_map(|plugin| plugin.internal_post_statuses().iter().copied()).collect()
+        self.hooks()
+            .flat_map(|plugin| plugin.internal_post_statuses().iter().copied())
+            .collect()
     }
 
     pub fn post_statuses(&self, site: &Site) -> Vec<(&'static str, String)> {
-        self.hooks().flat_map(|plugin| plugin.post_statuses(site)).collect()
+        self.hooks()
+            .flat_map(|plugin| plugin.post_statuses(site))
+            .collect()
     }
 
-    pub async fn rest_links(&self, object: RestObject<'_>, ctx: &RestFieldContext<'_>) -> Result<Vec<RestLink>> {
+    pub async fn rest_links(
+        &self,
+        object: RestObject<'_>,
+        ctx: &RestFieldContext<'_>,
+    ) -> Result<Vec<RestLink>> {
         let mut links = Vec::new();
         for plugin in self.hooks() {
             links.extend(plugin.rest_links(object, ctx).await?);
@@ -2199,7 +2824,9 @@ impl Plugins {
     /// Whether a plugin renders the block.
     /// The names of the blocks the active plugins register.
     pub fn block_names(&self) -> Vec<String> {
-        self.hooks().flat_map(|p| p.block_names().iter().map(|n| (*n).to_owned())).collect()
+        self.hooks()
+            .flat_map(|p| p.block_names().iter().map(|n| (*n).to_owned()))
+            .collect()
     }
 
     pub fn renders_block(&self, name: &str) -> bool {
@@ -2207,7 +2834,12 @@ impl Plugins {
     }
 
     /// The output of a plugin's block.
-    pub async fn render_block(&self, name: &str, attrs: &serde_json::Map<String, serde_json::Value>, ctx: &BlockContext<'_>) -> Result<String> {
+    pub async fn render_block(
+        &self,
+        name: &str,
+        attrs: &serde_json::Map<String, serde_json::Value>,
+        ctx: &BlockContext<'_>,
+    ) -> Result<String> {
         match self.hooks().find(|p| p.block_names().contains(&name)) {
             Some(plugin) => plugin.render_block(name, attrs, ctx).await,
             None => Ok(String::new()),
@@ -2227,7 +2859,13 @@ impl Plugins {
     }
 
     /// An item of a feed after the plugins' filters.
-    pub async fn feed_item(&self, site: &Site, post: &Post, excerpt: bool, mut text: String) -> Result<String> {
+    pub async fn feed_item(
+        &self,
+        site: &Site,
+        post: &Post,
+        excerpt: bool,
+        mut text: String,
+    ) -> Result<String> {
         for plugin in self.hooks() {
             text = plugin.feed_item(site, post, excerpt, text).await?;
         }
@@ -2241,12 +2879,15 @@ impl Plugins {
 
     /// `robots.txt` after the plugins' `robots_txt` filters.
     pub fn robots_txt(&self, site: &Site, text: String) -> String {
-        self.hooks().fold(text, |text, plugin| plugin.robots_txt(site, text))
+        self.hooks()
+            .fold(text, |text, plugin| plugin.robots_txt(site, text))
     }
 
     /// The headers the plugins add to `robots.txt`.
     pub fn robots_txt_headers(&self) -> Vec<(&'static str, &'static str)> {
-        self.hooks().flat_map(|p| p.robots_txt_headers().iter().copied()).collect()
+        self.hooks()
+            .flat_map(|p| p.robots_txt_headers().iter().copied())
+            .collect()
     }
 
     /// Whether a plugin turns the sitemaps of WordPress off.
@@ -2261,33 +2902,39 @@ impl Plugins {
 
     /// The link of `wp_loginout()` after the plugins' `loginout` filters.
     pub fn loginout(&self, link: String) -> String {
-        self.hooks().fold(link, |link, plugin| plugin.loginout(link))
+        self.hooks()
+            .fold(link, |link, plugin| plugin.loginout(link))
     }
 
     /// The link of `get_comment_reply_link()` after the plugins' `comment_reply_link` filters.
     pub fn comment_reply_link(&self, link: String) -> String {
-        self.hooks().fold(link, |link, plugin| plugin.comment_reply_link(link))
+        self.hooks()
+            .fold(link, |link, plugin| plugin.comment_reply_link(link))
     }
 
     /// How the plugins close the comments of `post` for the viewer ([ActivePlugin::comments_off]).
     pub fn comments_off(&self, post: &Post, viewer: Option<&crate::Viewer>) -> Option<CommentsOff> {
-        self.hooks().find_map(|plugin| plugin.comments_off(post, viewer))
+        self.hooks()
+            .find_map(|plugin| plugin.comments_off(post, viewer))
     }
 
     /// Whether a plugin turns comments off everywhere ([ActivePlugin::comments_off_everywhere]).
     pub fn comments_off_everywhere(&self, viewer: Option<&crate::Viewer>) -> bool {
-        self.hooks().any(|plugin| plugin.comments_off_everywhere(viewer))
+        self.hooks()
+            .any(|plugin| plugin.comments_off_everywhere(viewer))
     }
 
     /// Whether a plugin removed `feature` from `post_type` ([ActivePlugin::removes_post_type_support]).
     pub fn removes_post_type_support(&self, post_type: &str, feature: &str) -> bool {
-        self.hooks().any(|plugin| plugin.removes_post_type_support(post_type, feature))
+        self.hooks()
+            .any(|plugin| plugin.removes_post_type_support(post_type, feature))
     }
 
     /// Whether a plugin drops the extra feed links and `comment-reply` of a singular page
     /// ([ActivePlugin::closes_singular_comments]).
     pub fn closes_singular_comments(&self, post: &Post, viewer: Option<&crate::Viewer>) -> bool {
-        self.hooks().any(|plugin| plugin.closes_singular_comments(post, viewer))
+        self.hooks()
+            .any(|plugin| plugin.closes_singular_comments(post, viewer))
     }
 
     /// Whether a plugin empties the comments of `GET /wp/v2/comments` ([ActivePlugin::rest_comment_query_empty]).
@@ -2301,7 +2948,10 @@ impl Plugins {
     }
 
     /// `rest_pre_dispatch` of the plugins: the first answer wins.
-    pub async fn rest_pre_dispatch(&self, request: &RestPreDispatch<'_>) -> Result<Option<RestAnswer>> {
+    pub async fn rest_pre_dispatch(
+        &self,
+        request: &RestPreDispatch<'_>,
+    ) -> Result<Option<RestAnswer>> {
         for plugin in self.hooks() {
             if let Some(answer) = plugin.rest_pre_dispatch(request).await? {
                 return Ok(Some(answer));
@@ -2321,7 +2971,11 @@ impl Plugins {
     }
 
     /// `add_meta_boxes_comment` of the plugins.
-    pub async fn comment_meta_boxes(&self, ctx: &AdminContext<'_>, comment: &rustpress_db::Comment) -> Result<MetaBoxes> {
+    pub async fn comment_meta_boxes(
+        &self,
+        ctx: &AdminContext<'_>,
+        comment: &rustpress_db::Comment,
+    ) -> Result<MetaBoxes> {
         let mut out = MetaBoxes::default();
         for plugin in self.hooks() {
             let boxes = plugin.comment_meta_boxes(ctx, comment).await?;
@@ -2333,7 +2987,12 @@ impl Plugins {
     }
 
     /// `{$taxonomy}_add_form_fields`/`{$taxonomy}_edit_form` of the plugins.
-    pub async fn term_form(&self, ctx: &AdminContext<'_>, taxonomy: &str, term: Option<&rustpress_db::Term>) -> Result<MetaBoxes> {
+    pub async fn term_form(
+        &self,
+        ctx: &AdminContext<'_>,
+        taxonomy: &str,
+        term: Option<&rustpress_db::Term>,
+    ) -> Result<MetaBoxes> {
         let mut out = MetaBoxes::default();
         for plugin in self.hooks() {
             let boxes = plugin.term_form(ctx, taxonomy, term).await?;
@@ -2345,7 +3004,10 @@ impl Plugins {
     }
 
     /// The schemas of the plugins' REST fields for a route.
-    pub async fn rest_schema_fields(&self, ctx: &RestFieldContext<'_>) -> Result<Vec<(String, serde_json::Value)>> {
+    pub async fn rest_schema_fields(
+        &self,
+        ctx: &RestFieldContext<'_>,
+    ) -> Result<Vec<(String, serde_json::Value)>> {
         let mut out = Vec::new();
         for plugin in self.hooks() {
             out.extend(plugin.rest_schema_fields(ctx).await?);
@@ -2355,11 +3017,17 @@ impl Plugins {
 
     /// The sizes of `image_size_names_choose` the plugins add to `query-attachments`.
     pub fn query_attachments_sizes(&self, ctx: &AdminContext<'_>) -> Vec<String> {
-        self.hooks().flat_map(|plugin| plugin.query_attachments_sizes(ctx)).collect()
+        self.hooks()
+            .flat_map(|plugin| plugin.query_attachments_sizes(ctx))
+            .collect()
     }
 
     /// The filters the plugins add to the attachments of `query-attachments`.
-    pub fn query_attachment_js(&self, ctx: &AdminContext<'_>, response: &mut serde_json::Map<String, serde_json::Value>) {
+    pub fn query_attachment_js(
+        &self,
+        ctx: &AdminContext<'_>,
+        response: &mut serde_json::Map<String, serde_json::Value>,
+    ) {
         for plugin in self.hooks() {
             plugin.query_attachment_js(ctx, response);
         }
@@ -2367,12 +3035,14 @@ impl Plugins {
 
     /// `parent_file` after the plugins.
     pub fn parent_file(&self, ctx: &AdminContext<'_>, parent_file: String) -> String {
-        self.hooks().fold(parent_file, |file, plugin| plugin.parent_file(ctx, file))
+        self.hooks()
+            .fold(parent_file, |file, plugin| plugin.parent_file(ctx, file))
     }
 
     /// `submenu_file` after the plugins.
     pub fn submenu_file(&self, ctx: &AdminContext<'_>, submenu_file: String) -> String {
-        self.hooks().fold(submenu_file, |file, plugin| plugin.submenu_file(ctx, file))
+        self.hooks()
+            .fold(submenu_file, |file, plugin| plugin.submenu_file(ctx, file))
     }
 
     /// `trashed_post`, `untrashed_post` or `deleted_post` of the plugins.
@@ -2390,7 +3060,11 @@ impl Plugins {
 
     /// The status of a post restored from the trash after the plugins.
     pub fn untrash_post_status(&self, post: &Post, new_status: &str, previous: &str) -> String {
-        self.hooks().fold(new_status.to_owned(), |status, plugin| plugin.untrash_post_status(post, &status, previous).unwrap_or(status))
+        self.hooks().fold(new_status.to_owned(), |status, plugin| {
+            plugin
+                .untrash_post_status(post, &status, previous)
+                .unwrap_or(status)
+        })
     }
 
     /// The first action of a plugin on a posts list.
@@ -2404,13 +3078,21 @@ impl Plugins {
     }
 
     /// The message after a save of the first plugin that gives one.
-    pub fn post_updated_message(&self, site: &Site, post: &Post, number: u32, nonce: &dyn Fn(&str) -> String) -> Option<Option<String>> {
-        self.hooks().find_map(|plugin| plugin.post_updated_message(site, post, number, nonce))
+    pub fn post_updated_message(
+        &self,
+        site: &Site,
+        post: &Post,
+        number: u32,
+        nonce: &dyn Fn(&str) -> String,
+    ) -> Option<Option<String>> {
+        self.hooks()
+            .find_map(|plugin| plugin.post_updated_message(site, post, number, nonce))
     }
 
     /// The layout of the first plugin that sets one.
     pub fn screen_layout(&self, ctx: &AdminContext<'_>, screen_id: &str) -> Option<u32> {
-        self.hooks().find_map(|plugin| plugin.screen_layout(ctx, screen_id))
+        self.hooks()
+            .find_map(|plugin| plugin.screen_layout(ctx, screen_id))
     }
 
     /// `screen_settings` after the plugins.
@@ -2451,21 +3133,41 @@ impl Plugins {
 
     /// The post statuses the plugins register, in their order.
     pub fn list_statuses(&self, site: &Site) -> Vec<ListStatus> {
-        self.hooks().flat_map(|plugin| plugin.list_statuses(site)).collect()
+        self.hooks()
+            .flat_map(|plugin| plugin.list_statuses(site))
+            .collect()
     }
 
     /// The label of a status with its count on a list, from the first plugin that gives one.
-    pub fn status_label_count(&self, ctx: &AdminContext<'_>, status: &str, n: u64) -> Option<String> {
-        self.hooks().find_map(|plugin| plugin.status_label_count(ctx, status, n))
+    pub fn status_label_count(
+        &self,
+        ctx: &AdminContext<'_>,
+        status: &str,
+        n: u64,
+    ) -> Option<String> {
+        self.hooks()
+            .find_map(|plugin| plugin.status_label_count(ctx, status, n))
     }
 
     /// The columns of a posts list after the plugins.
-    pub fn posts_columns(&self, ctx: &AdminContext<'_>, post_type: &str, columns: Vec<(String, String)>) -> Vec<(String, String)> {
-        self.hooks().fold(columns, |columns, plugin| plugin.posts_columns(ctx, post_type, columns))
+    pub fn posts_columns(
+        &self,
+        ctx: &AdminContext<'_>,
+        post_type: &str,
+        columns: Vec<(String, String)>,
+    ) -> Vec<(String, String)> {
+        self.hooks().fold(columns, |columns, plugin| {
+            plugin.posts_columns(ctx, post_type, columns)
+        })
     }
 
     /// What the plugins print in a column of theirs.
-    pub async fn posts_custom_column(&self, ctx: &AdminContext<'_>, column: &str, post: &Post) -> Result<String> {
+    pub async fn posts_custom_column(
+        &self,
+        ctx: &AdminContext<'_>,
+        column: &str,
+        post: &Post,
+    ) -> Result<String> {
         let mut out = String::new();
         for plugin in self.hooks() {
             out.push_str(&plugin.posts_custom_column(ctx, column, post).await?);
@@ -2474,25 +3176,52 @@ impl Plugins {
     }
 
     /// The row actions after the plugins.
-    pub async fn post_row_actions(&self, ctx: &AdminContext<'_>, post: &Post, hierarchical: bool, mut actions: Vec<(String, String)>) -> Result<Vec<(String, String)>> {
+    pub async fn post_row_actions(
+        &self,
+        ctx: &AdminContext<'_>,
+        post: &Post,
+        hierarchical: bool,
+        mut actions: Vec<(String, String)>,
+    ) -> Result<Vec<(String, String)>> {
         for plugin in self.hooks() {
-            actions = plugin.post_row_actions(ctx, post, hierarchical, actions).await?;
+            actions = plugin
+                .post_row_actions(ctx, post, hierarchical, actions)
+                .await?;
         }
         Ok(actions)
     }
 
     /// The bulk actions after the plugins.
-    pub fn bulk_actions(&self, ctx: &AdminContext<'_>, screen_id: &str, actions: Vec<(String, String)>) -> Vec<(String, String)> {
-        self.hooks().fold(actions, |actions, plugin| plugin.bulk_actions(ctx, screen_id, actions))
+    pub fn bulk_actions(
+        &self,
+        ctx: &AdminContext<'_>,
+        screen_id: &str,
+        actions: Vec<(String, String)>,
+    ) -> Vec<(String, String)> {
+        self.hooks().fold(actions, |actions, plugin| {
+            plugin.bulk_actions(ctx, screen_id, actions)
+        })
     }
 
     /// The views of a list after the plugins.
-    pub fn list_views(&self, ctx: &AdminContext<'_>, screen_id: &str, views: Vec<(String, String)>) -> Vec<(String, String)> {
-        self.hooks().fold(views, |views, plugin| plugin.list_views(ctx, screen_id, views))
+    pub fn list_views(
+        &self,
+        ctx: &AdminContext<'_>,
+        screen_id: &str,
+        views: Vec<(String, String)>,
+    ) -> Vec<(String, String)> {
+        self.hooks().fold(views, |views, plugin| {
+            plugin.list_views(ctx, screen_id, views)
+        })
     }
 
     /// The post states after the plugins.
-    pub async fn display_post_states(&self, ctx: &AdminContext<'_>, post: &Post, mut states: Vec<(String, String)>) -> Result<Vec<(String, String)>> {
+    pub async fn display_post_states(
+        &self,
+        ctx: &AdminContext<'_>,
+        post: &Post,
+        mut states: Vec<(String, String)>,
+    ) -> Result<Vec<(String, String)>> {
         for plugin in self.hooks() {
             states = plugin.display_post_states(ctx, post, states).await?;
         }
@@ -2501,25 +3230,40 @@ impl Plugins {
 
     /// The `not_found` label of the first plugin that changes it.
     pub fn list_not_found(&self, ctx: &AdminContext<'_>, post_type: &str) -> Option<String> {
-        self.hooks().find_map(|plugin| plugin.list_not_found(ctx, post_type))
+        self.hooks()
+            .find_map(|plugin| plugin.list_not_found(ctx, post_type))
     }
 
     /// The extension of the icons of the request: that of the first plugin that asks for icons early, else `svg`.
     pub fn admin_mime_icon_ext(&self, ctx: &AdminContext<'_>) -> &'static str {
-        self.hooks().find_map(|plugin| plugin.admin_mime_icon_ext(ctx)).unwrap_or("svg")
+        self.hooks()
+            .find_map(|plugin| plugin.admin_mime_icon_ext(ctx))
+            .unwrap_or("svg")
     }
 
     /// `attachment_fields_to_edit` of the plugins, in their order.
-    pub async fn attachment_fields_to_edit(&self, ctx: &AdminContext<'_>, attachment: &Post, in_modal: bool) -> Result<Vec<AttachmentField>> {
+    pub async fn attachment_fields_to_edit(
+        &self,
+        ctx: &AdminContext<'_>,
+        attachment: &Post,
+        in_modal: bool,
+    ) -> Result<Vec<AttachmentField>> {
         let mut out = Vec::new();
         for plugin in self.hooks() {
-            out.extend(plugin.attachment_fields_to_edit(ctx, attachment, in_modal).await?);
+            out.extend(
+                plugin
+                    .attachment_fields_to_edit(ctx, attachment, in_modal)
+                    .await?,
+            );
         }
         Ok(out)
     }
 
     /// `attachment_fields_to_save` of the plugins; the first `wp_die()` ends the request.
-    pub async fn attachment_fields_to_save(&self, ctx: &AttachmentSaved<'_>) -> Result<Option<Die>> {
+    pub async fn attachment_fields_to_save(
+        &self,
+        ctx: &AttachmentSaved<'_>,
+    ) -> Result<Option<Die>> {
         for plugin in self.hooks() {
             if let Some(die) = plugin.attachment_fields_to_save(ctx).await? {
                 return Ok(Some(die));
@@ -2541,7 +3285,11 @@ impl Plugins {
     }
 
     /// `show_user_profile`/`edit_user_profile`/`user_new_form` of the plugins.
-    pub async fn user_form(&self, ctx: &AdminContext<'_>, user_id: Option<u64>) -> Result<MetaBoxes> {
+    pub async fn user_form(
+        &self,
+        ctx: &AdminContext<'_>,
+        user_id: Option<u64>,
+    ) -> Result<MetaBoxes> {
         let mut out = MetaBoxes::default();
         for plugin in self.hooks() {
             let boxes = plugin.user_form(ctx, user_id).await?;
@@ -2573,7 +3321,11 @@ impl Plugins {
     }
 
     /// `add_meta_boxes` of the plugins on the edit screen of `post`.
-    pub async fn post_meta_boxes(&self, ctx: &AdminContext<'_>, post: &rustpress_db::Post) -> Result<PostMetaBoxes> {
+    pub async fn post_meta_boxes(
+        &self,
+        ctx: &AdminContext<'_>,
+        post: &rustpress_db::Post,
+    ) -> Result<PostMetaBoxes> {
         let mut out = PostMetaBoxes::default();
         for plugin in self.hooks() {
             let boxes = plugin.post_meta_boxes(ctx, post).await?;
@@ -2597,9 +3349,16 @@ impl Plugins {
     }
 
     /// `wp_save_post_revision_post_has_changed` of the plugins.
-    pub async fn revision_post_has_changed(&self, ctx: &PostSaved<'_>, latest_revision: u64, mut changed: bool) -> Result<bool> {
+    pub async fn revision_post_has_changed(
+        &self,
+        ctx: &PostSaved<'_>,
+        latest_revision: u64,
+        mut changed: bool,
+    ) -> Result<bool> {
         for plugin in self.hooks() {
-            changed = plugin.revision_post_has_changed(ctx, latest_revision, changed).await?;
+            changed = plugin
+                .revision_post_has_changed(ctx, latest_revision, changed)
+                .await?;
         }
         Ok(changed)
     }
@@ -2618,8 +3377,13 @@ impl Plugins {
     }
 
     /// The block bindings sources of the plugins.
-    pub fn block_bindings_sources(&self, site: &Site) -> Vec<(String, String, Option<Vec<String>>)> {
-        self.hooks().flat_map(|p| p.block_bindings_sources(site)).collect()
+    pub fn block_bindings_sources(
+        &self,
+        site: &Site,
+    ) -> Vec<(String, String, Option<Vec<String>>)> {
+        self.hooks()
+            .flat_map(|p| p.block_bindings_sources(site))
+            .collect()
     }
 
     /// `admin_footer` of the plugins.
@@ -2642,11 +3406,17 @@ impl Plugins {
 
     /// `apply_filters( 'admin_body_class', '' )` of the plugins.
     pub fn admin_body_class(&self, ctx: &AdminContext<'_>) -> String {
-        self.hooks().fold(String::new(), |classes, plugin| plugin.admin_body_class(ctx, classes))
+        self.hooks().fold(String::new(), |classes, plugin| {
+            plugin.admin_body_class(ctx, classes)
+        })
     }
 
     /// The comment field of `comment_form()` after the plugins' `comment_form_field_comment` filters.
-    pub async fn comment_form_field_comment(&self, ctx: &CommentFormContext<'_>, mut html: String) -> Result<String> {
+    pub async fn comment_form_field_comment(
+        &self,
+        ctx: &CommentFormContext<'_>,
+        mut html: String,
+    ) -> Result<String> {
         for plugin in self.hooks() {
             html = plugin.comment_form_field_comment(ctx, html).await?;
         }
@@ -2654,7 +3424,12 @@ impl Plugins {
     }
 
     /// What the plugins print in `wp_footer`.
-    pub async fn wp_footer(&self, site: &Site, query: &crate::QueryResult, looped: &[u64]) -> Result<String> {
+    pub async fn wp_footer(
+        &self,
+        site: &Site,
+        query: &crate::QueryResult,
+        looped: &[u64],
+    ) -> Result<String> {
         let mut out = String::new();
         for plugin in self.hooks() {
             out.push_str(&plugin.wp_footer(site, looped).await?);
@@ -2665,12 +3440,16 @@ impl Plugins {
 
     /// What the plugins print on `wp_print_footer_scripts` before the emoji detection script.
     pub fn print_footer_scripts_early(&self, site: &Site, query: &crate::QueryResult) -> String {
-        self.hooks().map(|plugin| plugin.print_footer_scripts_early(site, query)).collect()
+        self.hooks()
+            .map(|plugin| plugin.print_footer_scripts_early(site, query))
+            .collect()
     }
 
     /// What the plugins print on `wp_print_footer_scripts` after the scripts of the footer.
     pub fn print_footer_scripts(&self, site: &Site, query: &crate::QueryResult) -> String {
-        self.hooks().map(|plugin| plugin.print_footer_scripts(site, query)).collect()
+        self.hooks()
+            .map(|plugin| plugin.print_footer_scripts(site, query))
+            .collect()
     }
 
     /// The classes the plugins add on `body_class`.
@@ -2683,7 +3462,12 @@ impl Plugins {
     }
 
     /// The page after the plugins' output buffers of the website.
-    pub fn template_output(&self, site: &Site, query: &crate::QueryResult, mut html: String) -> String {
+    pub fn template_output(
+        &self,
+        site: &Site,
+        query: &crate::QueryResult,
+        mut html: String,
+    ) -> String {
         for plugin in self.hooks() {
             html = plugin.template_output(site, query, html);
         }
@@ -2705,8 +3489,15 @@ impl Plugins {
     }
 
     /// What the plugins change in the head; `robots` are the directives of core's `wp_robots` filters.
-    pub async fn wp_head(&self, ctx: &HeadContext<'_>, robots: Vec<(String, Robot)>) -> Result<Head> {
-        let mut head = Head { robots: Some(robots), ..Head::default() };
+    pub async fn wp_head(
+        &self,
+        ctx: &HeadContext<'_>,
+        robots: Vec<(String, Robot)>,
+    ) -> Result<Head> {
+        let mut head = Head {
+            robots: Some(robots),
+            ..Head::default()
+        };
         for plugin in self.hooks() {
             let current = head.robots.take().unwrap_or_default();
             let Some(changed) = plugin.wp_head(ctx, &current).await? else {

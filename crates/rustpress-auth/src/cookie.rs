@@ -55,21 +55,36 @@ impl ParsedCookie {
     /// `wp_parse_auth_cookie()` for the cookie value.
     pub fn parse(cookie: &str) -> Option<Self> {
         let parts: Vec<&str> = cookie.split('|').collect();
-        let [username, expiration, token, hmac] = parts.as_slice() else { return None };
+        let [username, expiration, token, hmac] = parts.as_slice() else {
+            return None;
+        };
         // PHP compares the expiration as an integer; text that is not a number counts as 0.
         let expiration = expiration.trim().parse::<i64>().unwrap_or(0);
-        Some(Self { username: (*username).to_owned(), expiration, token: (*token).to_owned(), hmac: (*hmac).to_owned() })
+        Some(Self {
+            username: (*username).to_owned(),
+            expiration,
+            token: (*token).to_owned(),
+            hmac: (*hmac).to_owned(),
+        })
     }
 }
 
 fn hmac_sha256_hex(key: &str, data: &str) -> String {
-    let mut mac = Hmac::<Sha256>::new_from_slice(key.as_bytes()).expect("hmac accepts any key length");
+    let mut mac =
+        Hmac::<Sha256>::new_from_slice(key.as_bytes()).expect("hmac accepts any key length");
     mac.update(data.as_bytes());
-    mac.finalize().into_bytes().iter().map(|b| format!("{b:02x}")).collect()
+    mac.finalize()
+        .into_bytes()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
 }
 
 pub(crate) fn sha256_hex(data: &str) -> String {
-    sha2::Sha256::digest(data.as_bytes()).iter().map(|b| format!("{b:02x}")).collect()
+    sha2::Sha256::digest(data.as_bytes())
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
 }
 
 /// The part of the stored password hash that goes into the cookie key.
@@ -85,7 +100,10 @@ fn pass_fragment(user_pass: &str) -> String {
 impl Auth {
     /// `siteurl` is the option as stored (it names the cookies: `COOKIEHASH` is its md5).
     pub fn new(salts: Salts, siteurl: &str) -> Self {
-        let cookie_hash = Md5::digest(siteurl.as_bytes()).iter().map(|b| format!("{b:02x}")).collect();
+        let cookie_hash = Md5::digest(siteurl.as_bytes())
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
         Self { salts, cookie_hash }
     }
 
@@ -107,40 +125,89 @@ impl Auth {
     }
 
     /// The hash that comes last in an authentication cookie.
-    fn cookie_hmac(&self, user: &AuthUser, expiration: i64, token: &str, scheme: Scheme) -> Option<String> {
-        let key = self.salts.hash(&format!("{}|{}|{expiration}|{token}", user.user_login, pass_fragment(&user.user_pass)), scheme.as_str())?;
-        Some(hmac_sha256_hex(&key, &format!("{}|{expiration}|{token}", user.user_login)))
+    fn cookie_hmac(
+        &self,
+        user: &AuthUser,
+        expiration: i64,
+        token: &str,
+        scheme: Scheme,
+    ) -> Option<String> {
+        let key = self.salts.hash(
+            &format!(
+                "{}|{}|{expiration}|{token}",
+                user.user_login,
+                pass_fragment(&user.user_pass)
+            ),
+            scheme.as_str(),
+        )?;
+        Some(hmac_sha256_hex(
+            &key,
+            &format!("{}|{expiration}|{token}", user.user_login),
+        ))
     }
 
     /// `wp_generate_auth_cookie()` for an existing session token.
-    pub fn generate_cookie(&self, user: &AuthUser, expiration: i64, scheme: Scheme, token: &str) -> Option<String> {
+    pub fn generate_cookie(
+        &self,
+        user: &AuthUser,
+        expiration: i64,
+        scheme: Scheme,
+        token: &str,
+    ) -> Option<String> {
         let hash = self.cookie_hmac(user, expiration, token, scheme)?;
         Some(format!("{}|{expiration}|{token}|{hash}", user.user_login))
     }
 
     /// `wp_validate_auth_cookie()`: the user and the session token, if the cookie is genuine, unexpired
     /// and its session still exists. A cookie sent with a POST or AJAX request gets an hour of grace.
-    pub async fn validate_cookie(&self, db: &Db, cookie: &str, scheme: Scheme, now: i64, grace: bool) -> Result<Option<Session>, rustpress_db::Error> {
-        let Some(parsed) = ParsedCookie::parse(cookie) else { return Ok(None) };
+    pub async fn validate_cookie(
+        &self,
+        db: &Db,
+        cookie: &str,
+        scheme: Scheme,
+        now: i64,
+        grace: bool,
+    ) -> Result<Option<Session>, rustpress_db::Error> {
+        let Some(parsed) = ParsedCookie::parse(cookie) else {
+            return Ok(None);
+        };
         let expired = parsed.expiration + if grace { 3600 } else { 0 };
         if expired < now {
             return Ok(None);
         }
-        let Some(user) = db.auth_user_by_login(&parsed.username).await? else { return Ok(None) };
-        let Some(expected) = self.cookie_hmac(&user, parsed.expiration, &parsed.token, scheme) else { return Ok(None) };
+        let Some(user) = db.auth_user_by_login(&parsed.username).await? else {
+            return Ok(None);
+        };
+        let Some(expected) = self.cookie_hmac(&user, parsed.expiration, &parsed.token, scheme)
+        else {
+            return Ok(None);
+        };
         if !bool::from(expected.as_bytes().ct_eq(parsed.hmac.as_bytes())) {
             return Ok(None);
         }
         if !self.session_exists(db, user.id, &parsed.token, now).await? {
             return Ok(None);
         }
-        Ok(Some(Session { user, token: parsed.token }))
+        Ok(Some(Session {
+            user,
+            token: parsed.token,
+        }))
     }
 
     /// `WP_Session_Tokens::verify()`: the user's `session_tokens` meta holds the sha256 of every live token.
-    async fn session_exists(&self, db: &Db, user_id: u64, token: &str, now: i64) -> Result<bool, rustpress_db::Error> {
-        let Some(raw) = db.user_meta(user_id, "session_tokens").await? else { return Ok(false) };
-        let Ok(sessions) = rustpress_phpser::unserialize(raw.as_bytes()) else { return Ok(false) };
+    async fn session_exists(
+        &self,
+        db: &Db,
+        user_id: u64,
+        token: &str,
+        now: i64,
+    ) -> Result<bool, rustpress_db::Error> {
+        let Some(raw) = db.user_meta(user_id, "session_tokens").await? else {
+            return Ok(false);
+        };
+        let Ok(sessions) = rustpress_phpser::unserialize(raw.as_bytes()) else {
+            return Ok(false);
+        };
         let verifier = sha256_hex(token);
         Ok(sessions
             .get(&verifier)
@@ -156,23 +223,41 @@ impl Auth {
     }
 
     /// `wp_create_nonce()` for a user and the token of their session.
-    pub fn create_nonce(&self, action: &str, user_id: u64, token: &str, now: i64) -> Option<String> {
+    pub fn create_nonce(
+        &self,
+        action: &str,
+        user_id: u64,
+        token: &str,
+        now: i64,
+    ) -> Option<String> {
         self.nonce(action, user_id, token, Self::nonce_tick(now))
     }
 
     fn nonce(&self, action: &str, user_id: u64, token: &str, tick: i64) -> Option<String> {
-        let hash = self.salts.hash(&format!("{tick}|{action}|{user_id}|{token}"), "nonce")?;
+        let hash = self
+            .salts
+            .hash(&format!("{tick}|{action}|{user_id}|{token}"), "nonce")?;
         Some(hash[hash.len() - 12..hash.len() - 2].to_owned())
     }
 
     /// `wp_verify_nonce()`: 1 for a nonce from the first half of its life, 2 for the second, `None` if invalid.
-    pub fn verify_nonce(&self, nonce: &str, action: &str, user_id: u64, token: &str, now: i64) -> Option<u8> {
+    pub fn verify_nonce(
+        &self,
+        nonce: &str,
+        action: &str,
+        user_id: u64,
+        token: &str,
+        now: i64,
+    ) -> Option<u8> {
         if nonce.is_empty() {
             return None;
         }
         let tick = Self::nonce_tick(now);
         for (age, tick) in [(1, tick), (2, tick - 1)] {
-            if self.nonce(action, user_id, token, tick).is_some_and(|expected| bool::from(expected.as_bytes().ct_eq(nonce.as_bytes()))) {
+            if self
+                .nonce(action, user_id, token, tick)
+                .is_some_and(|expected| bool::from(expected.as_bytes().ct_eq(nonce.as_bytes())))
+            {
                 return Some(age);
             }
         }
@@ -200,26 +285,59 @@ mod tests {
         .iter()
         .map(|(a, b)| ((*a).to_owned(), (*b).to_owned()))
         .collect();
-        Auth::new(Salts::new(constants, HashMap::new()), "http://localhost:8080")
+        Auth::new(
+            Salts::new(constants, HashMap::new()),
+            "http://localhost:8080",
+        )
     }
 
     fn user(pass: &str) -> AuthUser {
-        AuthUser { id: 7, user_login: "anna".into(), user_pass: pass.into(), user_nicename: "anna".into(), user_email: "a@example.org".into(), display_name: "Anna".into() }
+        AuthUser {
+            id: 7,
+            user_login: "anna".into(),
+            user_pass: pass.into(),
+            user_nicename: "anna".into(),
+            user_email: "a@example.org".into(),
+            display_name: "Anna".into(),
+        }
     }
 
     #[test]
     fn cookie_names_carry_the_md5_of_the_site_url() {
         let a = auth();
-        assert_eq!(a.cookie_name(Scheme::LoggedIn), format!("wordpress_logged_in_{:x}", Md5::digest(b"http://localhost:8080")));
-        assert!(a.cookie_name(Scheme::SecureAuth).starts_with("wordpress_sec_"));
+        assert_eq!(
+            a.cookie_name(Scheme::LoggedIn),
+            format!(
+                "wordpress_logged_in_{:x}",
+                Md5::digest(b"http://localhost:8080")
+            )
+        );
+        assert!(
+            a.cookie_name(Scheme::SecureAuth)
+                .starts_with("wordpress_sec_")
+        );
     }
 
     #[test]
     fn generated_cookies_parse_back() {
         let a = auth();
-        let cookie = a.generate_cookie(&user("$P$B1234567890abcdefghijklmnopqrs"), 1_900_000_000, Scheme::LoggedIn, "tok").unwrap();
+        let cookie = a
+            .generate_cookie(
+                &user("$P$B1234567890abcdefghijklmnopqrs"),
+                1_900_000_000,
+                Scheme::LoggedIn,
+                "tok",
+            )
+            .unwrap();
         let parsed = ParsedCookie::parse(&cookie).unwrap();
-        assert_eq!((parsed.username.as_str(), parsed.expiration, parsed.token.as_str()), ("anna", 1_900_000_000, "tok"));
+        assert_eq!(
+            (
+                parsed.username.as_str(),
+                parsed.expiration,
+                parsed.token.as_str()
+            ),
+            ("anna", 1_900_000_000, "tok")
+        );
         assert_eq!(parsed.hmac.len(), 64);
         assert_eq!(ParsedCookie::parse("a|b|c"), None);
     }
@@ -238,8 +356,14 @@ mod tests {
         let nonce = a.create_nonce("wp_rest", 7, "tok", now).unwrap();
         assert_eq!(nonce.len(), 10);
         assert_eq!(a.verify_nonce(&nonce, "wp_rest", 7, "tok", now), Some(1));
-        assert_eq!(a.verify_nonce(&nonce, "wp_rest", 7, "tok", now + 43_200), Some(2));
-        assert_eq!(a.verify_nonce(&nonce, "wp_rest", 7, "tok", now + 86_400 + 43_200), None);
+        assert_eq!(
+            a.verify_nonce(&nonce, "wp_rest", 7, "tok", now + 43_200),
+            Some(2)
+        );
+        assert_eq!(
+            a.verify_nonce(&nonce, "wp_rest", 7, "tok", now + 86_400 + 43_200),
+            None
+        );
         assert_eq!(a.verify_nonce(&nonce, "other", 7, "tok", now), None);
         assert_eq!(a.verify_nonce(&nonce, "wp_rest", 8, "tok", now), None);
     }

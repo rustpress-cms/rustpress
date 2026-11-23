@@ -6,7 +6,9 @@ use rustpress_core::i18n::sprintf;
 use std::path::{Path, PathBuf};
 
 use rustpress_blocks::parser::{Block, parse_blocks};
-use rustpress_blocks::serializer::{PatternRef, resolve_pattern_blocks, serialize_blocks, serialize_with};
+use rustpress_blocks::serializer::{
+    PatternRef, resolve_pattern_blocks, serialize_blocks, serialize_with,
+};
 use rustpress_content::content::{PostData, TermRef};
 use rustpress_db::{Order, OrderBy, PostQuery};
 use serde_json::{Value, json};
@@ -82,39 +84,157 @@ struct FileTpl {
 
 /// The titles and descriptions of the default template types (`get_default_block_template_types()`).
 const DEFAULT_TYPES: &[(&str, &str, &str, &str, &str)] = &[
-    ("index", "Index", "Template name", "Used as a fallback template for all pages when a more specific template is not defined.", ""),
-    ("home", "Blog Home", "Template name", "Displays the latest posts as either the site homepage or as the \"Posts page\" as defined under reading settings. If it exists, the Front Page template overrides this template when posts are shown on the homepage.", ""),
-    ("front-page", "Front Page", "Template name", "Displays your site's homepage, whether it is set to display latest posts or a static page. The Front Page template takes precedence over all templates.", ""),
-    ("singular", "Single Entries", "Template name", "Displays any single entry, such as a post or a page. This template will serve as a fallback when a more specific template (e.g. Single Post, Page, or Attachment) cannot be found.", ""),
-    ("single", "Single Posts", "Template name", "Displays a single post on your website unless a custom template has been applied to that post or a dedicated template exists.", ""),
-    ("page", "Pages", "Template name", "Displays a static page unless a custom template has been applied to that page or a dedicated template exists.", ""),
-    ("archive", "All Archives", "Template name", "Displays any archive, including posts by a single author, category, tag, taxonomy, custom post type, and date. This template will serve as a fallback when more specific templates (e.g. Category or Tag) cannot be found.", ""),
-    ("author", "Author Archives", "Template name", "Displays a single author's post archive. This template will serve as a fallback when a more specific template (e.g. Author: Admin) cannot be found.", ""),
-    ("category", "Category Archives", "Template name", "Displays a post category archive. This template will serve as a fallback when a more specific template (e.g. Category: Recipes) cannot be found.", ""),
-    ("taxonomy", "Taxonomy", "Template name", "Displays a custom taxonomy archive. Like categories and tags, taxonomies have terms which you use to classify things. For example: a taxonomy named \"Art\" can have multiple terms, such as \"Modern\" and \"18th Century.\" This template will serve as a fallback when a more specific template (e.g. Taxonomy: Art) cannot be found.", ""),
-    ("date", "Date Archives", "Template name", "Displays a post archive when a specific date is visited (e.g., example.com/2023/).", ""),
-    ("tag", "Tag Archives", "Template name", "Displays a post tag archive. This template will serve as a fallback when a more specific template (e.g. Tag: Pizza) cannot be found.", ""),
-    ("attachment", "Attachment Pages", "", "Displays when a visitor views the dedicated page that exists for any media attachment.", ""),
-    ("search", "Search Results", "Template name", "Displays when a visitor performs a search on your website.", ""),
-    ("privacy-policy", "Privacy Policy", "", "Displays your site's Privacy Policy page.", ""),
-    ("404", "Page: 404", "Template name", "Displays when a visitor views a non-existent page, such as a dead link or a mistyped URL.", ""),
+    (
+        "index",
+        "Index",
+        "Template name",
+        "Used as a fallback template for all pages when a more specific template is not defined.",
+        "",
+    ),
+    (
+        "home",
+        "Blog Home",
+        "Template name",
+        "Displays the latest posts as either the site homepage or as the \"Posts page\" as defined under reading settings. If it exists, the Front Page template overrides this template when posts are shown on the homepage.",
+        "",
+    ),
+    (
+        "front-page",
+        "Front Page",
+        "Template name",
+        "Displays your site's homepage, whether it is set to display latest posts or a static page. The Front Page template takes precedence over all templates.",
+        "",
+    ),
+    (
+        "singular",
+        "Single Entries",
+        "Template name",
+        "Displays any single entry, such as a post or a page. This template will serve as a fallback when a more specific template (e.g. Single Post, Page, or Attachment) cannot be found.",
+        "",
+    ),
+    (
+        "single",
+        "Single Posts",
+        "Template name",
+        "Displays a single post on your website unless a custom template has been applied to that post or a dedicated template exists.",
+        "",
+    ),
+    (
+        "page",
+        "Pages",
+        "Template name",
+        "Displays a static page unless a custom template has been applied to that page or a dedicated template exists.",
+        "",
+    ),
+    (
+        "archive",
+        "All Archives",
+        "Template name",
+        "Displays any archive, including posts by a single author, category, tag, taxonomy, custom post type, and date. This template will serve as a fallback when more specific templates (e.g. Category or Tag) cannot be found.",
+        "",
+    ),
+    (
+        "author",
+        "Author Archives",
+        "Template name",
+        "Displays a single author's post archive. This template will serve as a fallback when a more specific template (e.g. Author: Admin) cannot be found.",
+        "",
+    ),
+    (
+        "category",
+        "Category Archives",
+        "Template name",
+        "Displays a post category archive. This template will serve as a fallback when a more specific template (e.g. Category: Recipes) cannot be found.",
+        "",
+    ),
+    (
+        "taxonomy",
+        "Taxonomy",
+        "Template name",
+        "Displays a custom taxonomy archive. Like categories and tags, taxonomies have terms which you use to classify things. For example: a taxonomy named \"Art\" can have multiple terms, such as \"Modern\" and \"18th Century.\" This template will serve as a fallback when a more specific template (e.g. Taxonomy: Art) cannot be found.",
+        "",
+    ),
+    (
+        "date",
+        "Date Archives",
+        "Template name",
+        "Displays a post archive when a specific date is visited (e.g., example.com/2023/).",
+        "",
+    ),
+    (
+        "tag",
+        "Tag Archives",
+        "Template name",
+        "Displays a post tag archive. This template will serve as a fallback when a more specific template (e.g. Tag: Pizza) cannot be found.",
+        "",
+    ),
+    (
+        "attachment",
+        "Attachment Pages",
+        "",
+        "Displays when a visitor views the dedicated page that exists for any media attachment.",
+        "",
+    ),
+    (
+        "search",
+        "Search Results",
+        "Template name",
+        "Displays when a visitor performs a search on your website.",
+        "",
+    ),
+    (
+        "privacy-policy",
+        "Privacy Policy",
+        "",
+        "Displays your site's Privacy Policy page.",
+        "",
+    ),
+    (
+        "404",
+        "Page: 404",
+        "Template name",
+        "Displays when a visitor views a non-existent page, such as a dead link or a mistyped URL.",
+        "",
+    ),
 ];
 
 /// Post formats: `(slug, name)`.
-const POST_FORMATS: &[(&str, &str)] = &[("standard", "Standard"), ("aside", "Aside"), ("chat", "Chat"), ("gallery", "Gallery"), ("link", "Link"), ("image", "Image"), ("quote", "Quote"), ("status", "Status"), ("video", "Video"), ("audio", "Audio")];
+const POST_FORMATS: &[(&str, &str)] = &[
+    ("standard", "Standard"),
+    ("aside", "Aside"),
+    ("chat", "Chat"),
+    ("gallery", "Gallery"),
+    ("link", "Link"),
+    ("image", "Image"),
+    ("quote", "Quote"),
+    ("status", "Status"),
+    ("video", "Video"),
+    ("audio", "Audio"),
+];
 
 /// `get_default_block_template_types()`: `(slug, title, description)`.
 pub fn default_template_types(site: &rustpress_core::Site) -> Vec<(String, String, String)> {
     let mut out: Vec<(String, String, String)> = DEFAULT_TYPES
         .iter()
         .map(|(slug, title, context, description, _)| {
-            let title = if context.is_empty() { site.tr(title) } else { site.trx(title, context) };
+            let title = if context.is_empty() {
+                site.tr(title)
+            } else {
+                site.trx(title, context)
+            };
             ((*slug).to_owned(), title, site.tr(description))
         })
         .collect();
     for (slug, name) in POST_FORMATS {
         let name = site.trx(name, "Post format");
-        out.push((format!("taxonomy-post_format-post-format-{slug}"), rustpress_core::i18n::sprintf(&site.trx("Post Format: %s", "Template name"), &[&name]), rustpress_core::i18n::sprintf(&site.tr("Displays the %s post format archive."), &[&name])));
+        out.push((
+            format!("taxonomy-post_format-post-format-{slug}"),
+            rustpress_core::i18n::sprintf(&site.trx("Post Format: %s", "Template name"), &[&name]),
+            rustpress_core::i18n::sprintf(
+                &site.tr("Displays the %s post format archive."),
+                &[&name],
+            ),
+        ));
     }
     out
 }
@@ -127,19 +247,33 @@ fn block_version(content: &str) -> u8 {
 fn style_name(dir: &Path) -> String {
     let css = std::fs::read_to_string(dir.join("style.css")).unwrap_or_default();
     let head: String = css.chars().take(8192).collect();
-    head.lines().find_map(|l| l.trim().trim_start_matches('*').trim().strip_prefix("Theme Name:").map(|v| v.trim().to_owned())).unwrap_or_default()
+    head.lines()
+        .find_map(|l| {
+            l.trim()
+                .trim_start_matches('*')
+                .trim()
+                .strip_prefix("Theme Name:")
+                .map(|v| v.trim().to_owned())
+        })
+        .unwrap_or_default()
 }
 
 /// All `.html` files below `dir`, with the path relative to it and without the extension.
 fn html_files(dir: &Path, base: &Path, out: &mut Vec<(String, PathBuf)>) {
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     let mut entries: Vec<_> = entries.flatten().collect();
     entries.sort_by_key(|e| e.file_name());
     for entry in entries {
         let path = entry.path();
         if path.is_dir() {
             html_files(&path, base, out);
-        } else if path.extension().and_then(|e| e.to_str()).is_some_and(|e| e.eq_ignore_ascii_case("html")) {
+        } else if path
+            .extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(|e| e.eq_ignore_ascii_case("html"))
+        {
             let relative = path.strip_prefix(base).unwrap_or(&path).with_extension("");
             out.push((relative.to_string_lossy().replace('\\', "/"), path));
         }
@@ -153,9 +287,15 @@ impl Rest<'_> {
     }
 
     fn template_roots(&self) -> Vec<(String, PathBuf)> {
-        let mut roots = vec![(self.theme.stylesheet.clone(), self.theme.stylesheet_dir().to_path_buf())];
+        let mut roots = vec![(
+            self.theme.stylesheet.clone(),
+            self.theme.stylesheet_dir().to_path_buf(),
+        )];
         if self.theme.stylesheet != self.theme.template {
-            roots.push((self.theme.template.clone(), self.theme.template_dir().to_path_buf()));
+            roots.push((
+                self.theme.template.clone(),
+                self.theme.template_dir().to_path_buf(),
+            ));
         }
         roots
     }
@@ -166,7 +306,11 @@ impl Rest<'_> {
         let parts = self.theme.json.template_parts();
         let mut out: Vec<FileTpl> = Vec::new();
         for (_, dir) in self.template_roots() {
-            let folder = kind.folders().iter().map(|f| dir.join(f)).find(|p| p.is_dir());
+            let folder = kind
+                .folders()
+                .iter()
+                .map(|f| dir.join(f))
+                .find(|p| p.is_dir());
             let Some(folder) = folder else { continue };
             let mut files = Vec::new();
             html_files(&folder, &folder, &mut files);
@@ -174,20 +318,49 @@ impl Rest<'_> {
                 if out.iter().any(|f| f.slug == slug) {
                     continue;
                 }
-                let mut item = FileTpl { slug: slug.clone(), path, title: None, post_types: None, area: None };
+                let mut item = FileTpl {
+                    slug: slug.clone(),
+                    path,
+                    title: None,
+                    post_types: None,
+                    area: None,
+                };
                 match kind {
                     TKind::Template => {
-                        if let Some(info) = custom.iter().find(|c| c.get("name").and_then(Value::as_str) == Some(slug.as_str())) {
-                            item.title = info.get("title").and_then(Value::as_str).map(str::to_owned);
-                            item.post_types = Some(info.get("postTypes").and_then(Value::as_array).map(|a| a.iter().filter_map(Value::as_str).map(str::to_owned).collect()).unwrap_or_else(|| vec!["page".to_owned()]));
+                        if let Some(info) = custom
+                            .iter()
+                            .find(|c| c.get("name").and_then(Value::as_str) == Some(slug.as_str()))
+                        {
+                            item.title =
+                                info.get("title").and_then(Value::as_str).map(str::to_owned);
+                            item.post_types = Some(
+                                info.get("postTypes")
+                                    .and_then(Value::as_array)
+                                    .map(|a| {
+                                        a.iter()
+                                            .filter_map(Value::as_str)
+                                            .map(str::to_owned)
+                                            .collect()
+                                    })
+                                    .unwrap_or_else(|| vec!["page".to_owned()]),
+                            );
                         }
                     }
                     TKind::Part => {
-                        let info = parts.iter().find(|p| p.get("name").and_then(Value::as_str) == Some(slug.as_str()) && p.get("area").is_some());
+                        let info = parts.iter().find(|p| {
+                            p.get("name").and_then(Value::as_str) == Some(slug.as_str())
+                                && p.get("area").is_some()
+                        });
                         match info {
                             Some(info) => {
-                                item.title = info.get("title").and_then(Value::as_str).map(str::to_owned);
-                                item.area = Some(info.get("area").and_then(Value::as_str).unwrap_or("uncategorized").to_owned());
+                                item.title =
+                                    info.get("title").and_then(Value::as_str).map(str::to_owned);
+                                item.area = Some(
+                                    info.get("area")
+                                        .and_then(Value::as_str)
+                                        .unwrap_or("uncategorized")
+                                        .to_owned(),
+                                );
                             }
                             None => item.area = Some("uncategorized".to_owned()),
                         }
@@ -200,7 +373,9 @@ impl Rest<'_> {
     }
 
     fn file_template(&self, kind: TKind, slug: &str) -> Option<FileTpl> {
-        self.file_templates(kind).into_iter().find(|f| f.slug == slug)
+        self.file_templates(kind)
+            .into_iter()
+            .find(|f| f.slug == slug)
     }
 
     /// `_inject_theme_attribute_in_template_part_block()` on every block of the markup.
@@ -208,8 +383,12 @@ impl Rest<'_> {
         let mut blocks = parse_blocks(markup);
         let theme = self.theme.stylesheet.clone();
         serialize_with(&mut blocks, &|block: &mut Block| {
-            if block.name.as_deref() == Some("core/template-part") && !block.attrs.contains_key("theme") {
-                block.attrs.insert("theme".into(), Value::String(theme.clone()));
+            if block.name.as_deref() == Some("core/template-part")
+                && !block.attrs.contains_key("theme")
+            {
+                block
+                    .attrs
+                    .insert("theme".into(), Value::String(theme.clone()));
             }
         })
     }
@@ -223,8 +402,12 @@ impl Rest<'_> {
         let mut blocks = parse_blocks(&raw);
         let theme = stylesheet.clone();
         let content = serialize_with(&mut blocks, &|block: &mut Block| {
-            if block.name.as_deref() == Some("core/template-part") && !block.attrs.contains_key("theme") {
-                block.attrs.insert("theme".into(), Value::String(theme.clone()));
+            if block.name.as_deref() == Some("core/template-part")
+                && !block.attrs.contains_key("theme")
+            {
+                block
+                    .attrs
+                    .insert("theme".into(), Value::String(theme.clone()));
             }
         });
         let mut tpl = Tpl {
@@ -244,7 +427,8 @@ impl Rest<'_> {
             tpl.title = file.slug.clone();
         }
         if kind == TKind::Template {
-            if let Some((_, title, description)) = defaults.iter().find(|(s, _, _)| *s == file.slug) {
+            if let Some((_, title, description)) = defaults.iter().find(|(s, _, _)| *s == file.slug)
+            {
                 tpl.description = description.clone();
                 tpl.title = title.clone();
                 tpl.is_custom = false;
@@ -259,7 +443,13 @@ impl Rest<'_> {
     /// `_build_block_template_result_from_post()`.
     async fn tpls_from_db(&self, kind: TKind, wp_id: Option<u64>) -> Result<Vec<Tpl>> {
         let db = &self.site.db;
-        let mut query = PostQuery { post_types: vec![kind.post_type().into()], statuses: vec!["publish".into()], order_by: OrderBy::Date, order: Order::Desc, ..Default::default() };
+        let mut query = PostQuery {
+            post_types: vec![kind.post_type().into()],
+            statuses: vec!["publish".into()],
+            order_by: OrderBy::Date,
+            order: Order::Desc,
+            ..Default::default()
+        };
         if let Some(id) = wp_id {
             query.statuses = vec!["auto-draft".into(), "draft".into(), "publish".into()];
             query.ids = vec![id];
@@ -269,12 +459,19 @@ impl Rest<'_> {
         let mut out = Vec::new();
         for post in posts {
             let theme_terms = db.terms_for_post(post.id, Some("wp_theme")).await?;
-            let Some(theme) = theme_terms.first().map(|t| t.name.clone()) else { continue };
+            let Some(theme) = theme_terms.first().map(|t| t.name.clone()) else {
+                continue;
+            };
             if theme != self.theme.stylesheet {
                 continue;
             }
             let meta = db.post_meta(post.id).await?;
-            let meta_of = |key: &str| meta.iter().find(|m| m.meta_key.as_deref() == Some(key)).and_then(|m| m.meta_value.clone()).unwrap_or_default();
+            let meta_of = |key: &str| {
+                meta.iter()
+                    .find(|m| m.meta_key.as_deref() == Some(key))
+                    .and_then(|m| m.meta_value.clone())
+                    .unwrap_or_default()
+            };
             let file = self.file_template(kind, &post.post_name);
             let has_theme_file = file.is_some();
             let origin = meta_of("origin");
@@ -284,7 +481,11 @@ impl Rest<'_> {
                 content: self.with_theme_attribute(&post.post_content),
                 slug: post.post_name.clone(),
                 source: "custom".into(),
-                origin: if origin.is_empty() { None } else { Some(origin) },
+                origin: if origin.is_empty() {
+                    None
+                } else {
+                    Some(origin)
+                },
                 kind: Some(kind),
                 description: post.post_excerpt.clone(),
                 title: post.post_title.clone(),
@@ -309,7 +510,9 @@ impl Rest<'_> {
                     self.describe_custom_template(&mut tpl).await;
                 }
             } else {
-                let area = db.terms_for_post(post.id, Some("wp_template_part_area")).await?;
+                let area = db
+                    .terms_for_post(post.id, Some("wp_template_part_area"))
+                    .await?;
                 tpl.area = area.first().map(|t| t.name.clone());
             }
             out.push(tpl);
@@ -324,7 +527,11 @@ impl Rest<'_> {
         let slug = tpl.slug.clone();
         let found = ["author", "page", "single", "tag", "category", "taxonomy"]
             .iter()
-            .filter_map(|kind| slug.match_indices(&format!("{kind}-")).next().map(|(at, _)| (at, *kind)))
+            .filter_map(|kind| {
+                slug.match_indices(&format!("{kind}-"))
+                    .next()
+                    .map(|(at, _)| (at, *kind))
+            })
             .filter(|(at, kind)| slug.len() > at + kind.len() + 1)
             .min_by_key(|(at, kind)| (*at, std::cmp::Reverse(kind.len())));
         let Some((at, kind)) = found else { return };
@@ -335,7 +542,9 @@ impl Rest<'_> {
             "author" => {
                 let user = site.db.user_by_nicename(rest).await.ok().flatten();
                 let user = match user {
-                    Some(user) if self.user_can(user.id, "edit_posts").await.unwrap_or(false) => Some(user),
+                    Some(user) if self.user_can(user.id, "edit_posts").await.unwrap_or(false) => {
+                        Some(user)
+                    }
                     _ => None,
                 };
                 match user {
@@ -344,10 +553,21 @@ impl Rest<'_> {
                         tpl.title = sprintf(&tr("Author: %s"), &[&user.display_name]);
                         tpl.description = sprintf(&tr("Template for %s"), &[&user.display_name]);
                         // `get_users()` of editors with the same display name.
-                        let query = rustpress_db::UserListQuery { search: Some(user.display_name.clone()), ..Default::default() };
+                        let query = rustpress_db::UserListQuery {
+                            search: Some(user.display_name.clone()),
+                            ..Default::default()
+                        };
                         let mut same = 0;
-                        for other in site.db.list_users(&query).await.map(|(users, _)| users).unwrap_or_default() {
-                            if other.display_name == user.display_name && self.user_can(other.id, "edit_posts").await.unwrap_or(false) {
+                        for other in site
+                            .db
+                            .list_users(&query)
+                            .await
+                            .map(|(users, _)| users)
+                            .unwrap_or_default()
+                        {
+                            if other.display_name == user.display_name
+                                && self.user_can(other.id, "edit_posts").await.unwrap_or(false)
+                            {
                                 same += 1;
                             }
                         }
@@ -363,11 +583,31 @@ impl Rest<'_> {
             "single" => {
                 // `get_post_types()`: the ones of WordPress in the order it registers them, then the others.
                 const CORE: [&str; 16] = [
-                    "post", "page", "attachment", "revision", "nav_menu_item", "custom_css", "customize_changeset", "oembed_cache", "user_request", "wp_block", "wp_template",
-                    "wp_template_part", "wp_global_styles", "wp_navigation", "wp_font_family", "wp_font_face",
+                    "post",
+                    "page",
+                    "attachment",
+                    "revision",
+                    "nav_menu_item",
+                    "custom_css",
+                    "customize_changeset",
+                    "oembed_cache",
+                    "user_request",
+                    "wp_block",
+                    "wp_template",
+                    "wp_template_part",
+                    "wp_global_styles",
+                    "wp_navigation",
+                    "wp_font_family",
+                    "wp_font_face",
                 ];
                 let mut types: Vec<String> = CORE.iter().map(|t| (*t).to_owned()).collect();
-                types.extend(site.types.post_types.iter().map(|t| t.name.clone()).filter(|name| !CORE.contains(&name.as_str())));
+                types.extend(
+                    site.types
+                        .post_types
+                        .iter()
+                        .map(|t| t.name.clone())
+                        .filter(|name| !CORE.contains(&name.as_str())),
+                );
                 for post_type in types {
                     if let Some(name) = rest.strip_prefix(&format!("{post_type}-"))
                         && self.describe_single(tpl, &post_type, name).await
@@ -384,9 +624,24 @@ impl Rest<'_> {
             }
             _ => {
                 // `get_taxonomies()`, WordPress' own first.
-                const CORE: [&str; 8] = ["category", "post_tag", "nav_menu", "link_category", "post_format", "wp_theme", "wp_template_part_area", "wp_pattern_category"];
+                const CORE: [&str; 8] = [
+                    "category",
+                    "post_tag",
+                    "nav_menu",
+                    "link_category",
+                    "post_format",
+                    "wp_theme",
+                    "wp_template_part_area",
+                    "wp_pattern_category",
+                ];
                 let mut taxonomies: Vec<String> = CORE.iter().map(|t| (*t).to_owned()).collect();
-                taxonomies.extend(site.types.taxonomies.iter().map(|t| t.name.clone()).filter(|name| !CORE.contains(&name.as_str())));
+                taxonomies.extend(
+                    site.types
+                        .taxonomies
+                        .iter()
+                        .map(|t| t.name.clone())
+                        .filter(|name| !CORE.contains(&name.as_str())),
+                );
                 for taxonomy in taxonomies {
                     if let Some(name) = rest.strip_prefix(&format!("{taxonomy}-"))
                         && self.describe_term(tpl, &taxonomy, name).await
@@ -404,7 +659,11 @@ impl Rest<'_> {
             "post" => self.site.trx("Post", "post type singular name"),
             "page" => self.site.trx("Page", "post type singular name"),
             "attachment" => self.site.trx("Media", "post type general name"),
-            other => self.site.types.post_type(other).map_or_else(|| other.to_owned(), |t| t.singular_label()),
+            other => self
+                .site
+                .types
+                .post_type(other)
+                .map_or_else(|| other.to_owned(), |t| t.singular_label()),
         }
     }
 
@@ -413,8 +672,20 @@ impl Rest<'_> {
     async fn describe_single(&self, tpl: &mut Tpl, post_type: &str, slug: &str) -> bool {
         let site = self.site;
         let singular = self.type_singular(post_type);
-        let query = PostQuery { post_types: vec![post_type.to_owned()], statuses: vec!["publish".into()], name: Some(slug.to_owned()), limit: Some(1), ..Default::default() };
-        let Some(post) = site.db.posts(&query).await.ok().and_then(|posts| posts.into_iter().next()) else {
+        let query = PostQuery {
+            post_types: vec![post_type.to_owned()],
+            statuses: vec!["publish".into()],
+            name: Some(slug.to_owned()),
+            limit: Some(1),
+            ..Default::default()
+        };
+        let Some(post) = site
+            .db
+            .posts(&query)
+            .await
+            .ok()
+            .and_then(|posts| posts.into_iter().next())
+        else {
             tpl.title = sprintf(&site.tr("Not found: %1$s (%2$s)"), &[&singular, slug]);
             return false;
         };
@@ -429,7 +700,10 @@ impl Rest<'_> {
         let singular = match taxonomy {
             "category" => site.trx("Category", "taxonomy singular name"),
             "post_tag" => site.trx("Tag", "taxonomy singular name"),
-            other => site.types.taxonomy(other).map_or_else(|| other.to_owned(), |t| t.singular_label()),
+            other => site
+                .types
+                .taxonomy(other)
+                .map_or_else(|| other.to_owned(), |t| t.singular_label()),
         };
         let Some(term) = site.db.term_by_slug(taxonomy, slug).await.ok().flatten() else {
             tpl.title = sprintf(&site.tr("Not found: %1$s (%2$s)"), &[&singular, slug]);
@@ -438,7 +712,12 @@ impl Rest<'_> {
         tpl.title = sprintf(&site.tr("%1$s: %2$s"), &[&singular, &term.name]);
         tpl.description = sprintf(&site.tr("Template for %s"), &[&term.name]);
         // Two terms of the taxonomy with this name: the slug tells them apart.
-        let same = site.db.terms(taxonomy).await.map(|terms| terms.iter().filter(|t| t.name == term.name).count()).unwrap_or(0);
+        let same = site
+            .db
+            .terms(taxonomy)
+            .await
+            .map(|terms| terms.iter().filter(|t| t.name == term.name).count())
+            .unwrap_or(0);
         if same > 1 {
             tpl.title = sprintf(&site.tr("%1$s (%2$s)"), &[&tpl.title, slug]);
         }
@@ -446,7 +725,14 @@ impl Rest<'_> {
     }
 
     /// `get_block_templates()`.
-    pub(crate) async fn block_templates(&self, kind: TKind, wp_id: Option<u64>, area: Option<&str>, post_type: Option<&str>, slugs: &[String]) -> Result<Vec<Tpl>> {
+    pub(crate) async fn block_templates(
+        &self,
+        kind: TKind,
+        wp_id: Option<u64>,
+        area: Option<&str>,
+        post_type: Option<&str>,
+        slugs: &[String],
+    ) -> Result<Vec<Tpl>> {
         let mut result: Vec<Tpl> = Vec::new();
         for tpl in self.tpls_from_db(kind, wp_id).await? {
             if !slugs.is_empty() && !slugs.contains(&tpl.slug) {
@@ -476,8 +762,12 @@ impl Rest<'_> {
                     continue;
                 }
                 if let Some(pt) = post_type {
-                    let listed = file.post_types.as_ref().is_some_and(|t| t.iter().any(|x| x == pt));
-                    let unlisted_custom = file.post_types.is_none() && !defaults.iter().any(|(s, _, _)| *s == file.slug);
+                    let listed = file
+                        .post_types
+                        .as_ref()
+                        .is_some_and(|t| t.iter().any(|x| x == pt));
+                    let unlisted_custom = file.post_types.is_none()
+                        && !defaults.iter().any(|(s, _, _)| *s == file.slug);
                     if !listed && !unlisted_custom {
                         continue;
                     }
@@ -490,9 +780,13 @@ impl Rest<'_> {
 
     /// `get_block_template( $id )`.
     pub(crate) async fn block_template(&self, kind: TKind, id: &str) -> Result<Option<Tpl>> {
-        let Some((theme, slug)) = id.split_once("//") else { return Ok(None) };
+        let Some((theme, slug)) = id.split_once("//") else {
+            return Ok(None);
+        };
         if theme == self.theme.stylesheet {
-            let mut found = self.block_templates(kind, None, None, None, &[slug.to_owned()]).await?;
+            let mut found = self
+                .block_templates(kind, None, None, None, &[slug.to_owned()])
+                .await?;
             if let Some(pos) = found.iter().position(|t| t.slug == slug) {
                 return Ok(Some(found.swap_remove(pos)));
             }
@@ -500,7 +794,9 @@ impl Rest<'_> {
         Ok(None)
     }
 
-    pub(crate) fn registered_patterns(&self) -> &[rustpress_theme::registered_patterns::PatternEntry] {
+    pub(crate) fn registered_patterns(
+        &self,
+    ) -> &[rustpress_theme::registered_patterns::PatternEntry] {
         self.patterns.get_or_init(|| {
             let mut all = self.theme.registered_patterns();
             all.extend(self.remote_patterns.get().cloned().unwrap_or_default());
@@ -509,7 +805,17 @@ impl Rest<'_> {
     }
 
     fn pattern_lookup(&self) -> impl Fn(&str) -> Option<PatternRef> + '_ {
-        move |slug: &str| self.registered_patterns().iter().find(|p| p.name == slug).map(|p| PatternRef { title: p.title.clone(), description: p.description.clone(), categories: p.categories.clone(), content: p.content.clone() })
+        move |slug: &str| {
+            self.registered_patterns()
+                .iter()
+                .find(|p| p.name == slug)
+                .map(|p| PatternRef {
+                    title: p.title.clone(),
+                    description: p.description.clone(),
+                    categories: p.categories.clone(),
+                    content: p.content.clone(),
+                })
+        }
     }
 
     /// The content with its `core/pattern` blocks resolved.
@@ -519,7 +825,10 @@ impl Rest<'_> {
     }
 
     fn original_source(&self, tpl: &Tpl) -> &'static str {
-        if tpl.has_theme_file && (tpl.origin.as_deref() == Some("theme") || (tpl.origin.is_none() && matches!(tpl.source.as_str(), "theme" | "custom"))) {
+        if tpl.has_theme_file
+            && (tpl.origin.as_deref() == Some("theme")
+                || (tpl.origin.is_none() && matches!(tpl.source.as_str(), "theme" | "custom")))
+        {
             return "theme";
         }
         if tpl.origin.as_deref() == Some("plugin") {
@@ -534,8 +843,19 @@ impl Rest<'_> {
     async fn author_text(&self, tpl: &Tpl) -> String {
         match self.original_source(tpl) {
             "theme" => {
-                let name = style_name(&self.template_roots().into_iter().find(|(s, _)| *s == tpl.theme).map(|(_, d)| d).unwrap_or_default());
-                if name.is_empty() { tpl.theme.clone() } else { name }
+                let name = style_name(
+                    &self
+                        .template_roots()
+                        .into_iter()
+                        .find(|(s, _)| *s == tpl.theme)
+                        .map(|(_, d)| d)
+                        .unwrap_or_default(),
+                );
+                if name.is_empty() {
+                    tpl.theme.clone()
+                } else {
+                    name
+                }
             }
             "plugin" => tpl.theme.clone(),
             "site" => self.site.options.string("blogname", ""),
@@ -561,11 +881,21 @@ impl Rest<'_> {
         data.insert("content".into(), Value::Object(content_obj));
         data.insert("slug".into(), json!(tpl.slug));
         data.insert("source".into(), json!(tpl.source));
-        data.insert("origin".into(), tpl.origin.clone().map_or(Value::Null, Value::from));
+        data.insert(
+            "origin".into(),
+            tpl.origin.clone().map_or(Value::Null, Value::from),
+        );
         data.insert("type".into(), json!(kind.post_type()));
         data.insert("description".into(), json!(tpl.description));
-        let rendered = if tpl.wp_id != 0 { self.site.texturize(&tpl.title) } else { tpl.title.clone() };
-        data.insert("title".into(), json!({"raw": tpl.title, "rendered": rendered}));
+        let rendered = if tpl.wp_id != 0 {
+            self.site.texturize(&tpl.title)
+        } else {
+            tpl.title.clone()
+        };
+        data.insert(
+            "title".into(),
+            json!({"raw": tpl.title, "rendered": rendered}),
+        );
         data.insert("status".into(), json!(tpl.status));
         data.insert("wp_id".into(), json!(tpl.wp_id));
         data.insert("has_theme_file".into(), json!(tpl.has_theme_file));
@@ -576,12 +906,22 @@ impl Rest<'_> {
         if kind == TKind::Part {
             data.insert("area".into(), json!(tpl.area.clone().unwrap_or_default()));
         }
-        let date = |v: &Option<String>| v.as_ref().filter(|d| !d.starts_with("0000")).map_or(Value::Null, |d| Value::from(d.replace(' ', "T")));
+        let date = |v: &Option<String>| {
+            v.as_ref()
+                .filter(|d| !d.starts_with("0000"))
+                .map_or(Value::Null, |d| Value::from(d.replace(' ', "T")))
+        };
         data.insert("modified".into(), date(&tpl.modified));
         data.insert("date".into(), date(&tpl.date));
         data.insert("author_text".into(), json!(self.author_text(tpl).await));
         data.insert("original_source".into(), json!(self.original_source(tpl)));
-        data.extend(self.plugin_fields(rustpress_core::native::RestObject::Template(kind.post_type())).await.unwrap_or_default());
+        data.extend(
+            self.plugin_fields(rustpress_core::native::RestObject::Template(
+                kind.post_type(),
+            ))
+            .await
+            .unwrap_or_default(),
+        );
 
         let mut links = Links::new();
         let self_href = self.rest_url(&format!("wp/v2/{}/{}", kind.rest_base(), tpl.id));
@@ -589,31 +929,79 @@ impl Rest<'_> {
         self_link.insert("href".into(), json!(self_href));
         self_link.insert("targetHints".into(), json!({"allow": if self.can("edit_theme_options") { json!(["GET", "POST", "PUT", "PATCH", "DELETE"]) } else { json!(["GET"]) }}));
         links.push_raw("self", Value::Object(self_link));
-        links.add("collection", vec![], self.rest_url(&format!("wp/v2/{}", kind.rest_base())));
-        links.add("about", vec![], self.rest_url(&format!("wp/v2/types/{}", kind.post_type())));
+        links.add(
+            "collection",
+            vec![],
+            self.rest_url(&format!("wp/v2/{}", kind.rest_base())),
+        );
+        links.add(
+            "about",
+            vec![],
+            self.rest_url(&format!("wp/v2/types/{}", kind.post_type())),
+        );
         if tpl.wp_id != 0 {
-            let revisions = self.site.db.posts(&PostQuery { post_types: vec!["revision".into()], statuses: vec!["inherit".into()], parent: Some(tpl.wp_id), order_by: OrderBy::Id, order: Order::Desc, ..Default::default() }).await.unwrap_or_default();
-            links.add("version-history", vec![("count", json!(revisions.len()))], self.rest_url(&format!("wp/v2/{}/{}/revisions", kind.rest_base(), tpl.id)));
+            let revisions = self
+                .site
+                .db
+                .posts(&PostQuery {
+                    post_types: vec!["revision".into()],
+                    statuses: vec!["inherit".into()],
+                    parent: Some(tpl.wp_id),
+                    order_by: OrderBy::Id,
+                    order: Order::Desc,
+                    ..Default::default()
+                })
+                .await
+                .unwrap_or_default();
+            links.add(
+                "version-history",
+                vec![("count", json!(revisions.len()))],
+                self.rest_url(&format!("wp/v2/{}/{}/revisions", kind.rest_base(), tpl.id)),
+            );
             if let Some(latest) = revisions.first() {
-                links.add("predecessor-version", vec![("id", json!(latest.id))], self.rest_url(&format!("wp/v2/{}/{}/revisions/{}", kind.rest_base(), tpl.id, latest.id)));
+                links.add(
+                    "predecessor-version",
+                    vec![("id", json!(latest.id))],
+                    self.rest_url(&format!(
+                        "wp/v2/{}/{}/revisions/{}",
+                        kind.rest_base(),
+                        tpl.id,
+                        latest.id
+                    )),
+                );
             }
         }
         if self.can("publish_posts") || self.can("edit_theme_options") {
-            links.add("https://api.w.org/action-publish", vec![], self_href.clone());
+            links.add(
+                "https://api.w.org/action-publish",
+                vec![],
+                self_href.clone(),
+            );
         }
         if self.can("unfiltered_html") {
-            links.add("https://api.w.org/action-unfiltered-html", vec![], self_href.clone());
+            links.add(
+                "https://api.w.org/action-unfiltered-html",
+                vec![],
+                self_href.clone(),
+            );
         }
         let mut links_value = links.finish();
         // The action links are written as `wp:action-...` in the answer.
         if let Value::Object(map) = &mut links_value {
-            let renamed: Vec<(String, Value)> = map.iter().filter(|(k, _)| k.starts_with("https://api.w.org/")).map(|(k, v)| (k.clone(), v.clone())).collect();
+            let renamed: Vec<(String, Value)> = map
+                .iter()
+                .filter(|(k, _)| k.starts_with("https://api.w.org/"))
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect();
             for (key, value) in renamed {
                 map.shift_remove(&key);
                 map.insert(key.replace("https://api.w.org/", "wp:"), value);
             }
             if map.keys().any(|k| k.starts_with("wp:")) && !map.contains_key("curies") {
-                map.insert("curies".into(), json!([{"name": "wp", "href": "https://api.w.org/{rel}", "templated": true}]));
+                map.insert(
+                    "curies".into(),
+                    json!([{"name": "wp", "href": "https://api.w.org/{rel}", "templated": true}]),
+                );
             }
         }
         data.insert("_links".into(), links_value);
@@ -640,11 +1028,24 @@ impl Rest<'_> {
             if slug != kind {
                 hierarchy.push(kind);
             }
-        } else if let Some(head) = ["author", "category", "archive", "tag", "page"].iter().find(|h| slug.strip_prefix(&format!("{h}-")).is_some_and(|r| !r.is_empty())) {
+        } else if let Some(head) = ["author", "category", "archive", "tag", "page"]
+            .iter()
+            .find(|h| {
+                slug.strip_prefix(&format!("{h}-"))
+                    .is_some_and(|r| !r.is_empty())
+            })
+        {
             hierarchy.push((*head).to_owned());
-        } else if let Some((kind, remaining)) = slug.split_once('-').filter(|(k, r)| matches!(*k, "taxonomy" | "single") && !r.is_empty()) {
+        } else if let Some((kind, remaining)) = slug
+            .split_once('-')
+            .filter(|(k, r)| matches!(*k, "taxonomy" | "single") && !r.is_empty())
+        {
             let items: Vec<String> = if kind == "single" {
-                let mut v = vec!["post".to_owned(), "page".to_owned(), "attachment".to_owned()];
+                let mut v = vec![
+                    "post".to_owned(),
+                    "page".to_owned(),
+                    "attachment".to_owned(),
+                ];
                 v.extend(self.site.types.post_types.iter().map(|t| t.name.clone()));
                 v
             } else {
@@ -667,7 +1068,11 @@ impl Rest<'_> {
                 }
             }
         }
-        if ["author", "taxonomy", "category", "tag"].iter().any(|p| slug.starts_with(p)) || slug == "date" {
+        if ["author", "taxonomy", "category", "tag"]
+            .iter()
+            .any(|p| slug.starts_with(p))
+            || slug == "date"
+        {
             hierarchy.push("archive".into());
         }
         if slug == "attachment" {
@@ -690,8 +1095,15 @@ impl Rest<'_> {
         let mut found: Option<Tpl>;
         loop {
             let slugs: Vec<String> = hierarchy.clone();
-            let mut templates = self.block_templates(TKind::Template, None, None, None, &slugs).await?;
-            templates.sort_by_key(|t| slugs.iter().position(|s| *s == t.slug).unwrap_or(usize::MAX));
+            let mut templates = self
+                .block_templates(TKind::Template, None, None, None, &slugs)
+                .await?;
+            templates.sort_by_key(|t| {
+                slugs
+                    .iter()
+                    .position(|s| *s == t.slug)
+                    .unwrap_or(usize::MAX)
+            });
             found = templates.into_iter().next();
             hierarchy.remove(0);
             if hierarchy.is_empty() || found.as_ref().is_some_and(|t| !t.content.is_empty()) {
@@ -699,7 +1111,10 @@ impl Rest<'_> {
             }
         }
         let body = match found {
-            Some(tpl) => self.tpl_json(&tpl, args.str("context").as_deref() == Some("edit")).await,
+            Some(tpl) => {
+                self.tpl_json(&tpl, args.str("context").as_deref() == Some("edit"))
+                    .await
+            }
             None => json!({}),
         };
         Ok(Ok(Resp::item(body)))
@@ -709,7 +1124,10 @@ impl Rest<'_> {
         if self.can("edit_posts") || self.can("edit_pages") {
             Ok(())
         } else {
-            Err(self.forbidden("rest_cannot_manage_templates", "Sorry, you are not allowed to access the templates on this site."))
+            Err(self.forbidden(
+                "rest_cannot_manage_templates",
+                "Sorry, you are not allowed to access the templates on this site.",
+            ))
         }
     }
 
@@ -717,12 +1135,22 @@ impl Rest<'_> {
         if self.can("edit_theme_options") {
             Ok(())
         } else {
-            Err(self.forbidden("rest_cannot_manage_templates", "Sorry, you are not allowed to access the templates on this site."))
+            Err(self.forbidden(
+                "rest_cannot_manage_templates",
+                "Sorry, you are not allowed to access the templates on this site.",
+            ))
         }
     }
 
     /// The routes below `wp/v2/templates` and `wp/v2/template-parts`.
-    pub(crate) async fn templates_route(&self, kind: TKind, segments: &[&str], method: &str, args: &Args, params: &Params) -> Result<Outcome> {
+    pub(crate) async fn templates_route(
+        &self,
+        kind: TKind,
+        segments: &[&str],
+        method: &str,
+        args: &Args,
+        params: &Params,
+    ) -> Result<Outcome> {
         let edit = params.get("context") == Some("edit");
         let rest = &segments[3.min(segments.len())..];
         // The list.
@@ -733,7 +1161,15 @@ impl Rest<'_> {
                         return Ok(Err(e));
                     }
                     let slugs = args.list("slug").unwrap_or_default();
-                    let templates = self.block_templates(kind, args.u64("wp_id"), args.str("area").as_deref(), args.str("post_type").as_deref(), &slugs).await?;
+                    let templates = self
+                        .block_templates(
+                            kind,
+                            args.u64("wp_id"),
+                            args.str("area").as_deref(),
+                            args.str("post_type").as_deref(),
+                            &slugs,
+                        )
+                        .await?;
                     let mut items = Vec::new();
                     for tpl in &templates {
                         items.push(self.tpl_json(tpl, edit).await);
@@ -741,7 +1177,11 @@ impl Rest<'_> {
                     Ok(Ok(Resp::item(Value::Array(items))))
                 }
                 "POST" => self.templates_write(kind, None, args).await,
-                _ => Ok(Err(RestError::new("rest_no_route", "No route was found matching the URL and request method.", 404))),
+                _ => Ok(Err(RestError::new(
+                    "rest_no_route",
+                    "No route was found matching the URL and request method.",
+                    404,
+                ))),
             };
         }
         if rest == ["lookup"] && method == "GET" {
@@ -754,7 +1194,11 @@ impl Rest<'_> {
             }
             if kind == TKind::Part {
                 let slug = args.str("slug").unwrap_or_default();
-                let found = self.block_templates(TKind::Part, None, None, None, std::slice::from_ref(&slug)).await?.into_iter().next();
+                let found = self
+                    .block_templates(TKind::Part, None, None, None, std::slice::from_ref(&slug))
+                    .await?
+                    .into_iter()
+                    .next();
                 return Ok(Ok(Resp::item(match found {
                     Some(tpl) => self.tpl_json(&tpl, edit).await,
                     None => json!({}),
@@ -765,10 +1209,16 @@ impl Rest<'_> {
         // `theme//slug` (with the second slash written or not), possibly followed by `/revisions` or `/autosaves`.
         let joined = rest.join("/");
         let (id, sub) = match joined.rsplit_once('/') {
-            Some((head, tail)) if matches!(tail, "revisions" | "autosaves") => (head.to_owned(), Some(tail.to_owned())),
+            Some((head, tail)) if matches!(tail, "revisions" | "autosaves") => {
+                (head.to_owned(), Some(tail.to_owned()))
+            }
             _ => (joined.clone(), None),
         };
-        let id = if id.contains("//") { id } else { id.replacen('/', "//", 1) };
+        let id = if id.contains("//") {
+            id
+        } else {
+            id.replacen('/', "//", 1)
+        };
         if sub.is_some() {
             if let Err(e) = self.templates_permission() {
                 return Ok(Err(e));
@@ -783,20 +1233,35 @@ impl Rest<'_> {
                 if let Err(e) = self.templates_permission() {
                     return Ok(Err(e));
                 }
-                let tpl = if args.str("source").is_some_and(|s| s == "theme" || s == "plugin") {
-                    let slug = id.split_once("//").map(|(_, s)| s.to_owned()).unwrap_or_default();
-                    self.file_template(kind, &slug).map(|f| self.tpl_from_file(kind, &f))
+                let tpl = if args
+                    .str("source")
+                    .is_some_and(|s| s == "theme" || s == "plugin")
+                {
+                    let slug = id
+                        .split_once("//")
+                        .map(|(_, s)| s.to_owned())
+                        .unwrap_or_default();
+                    self.file_template(kind, &slug)
+                        .map(|f| self.tpl_from_file(kind, &f))
                 } else {
                     self.block_template(kind, &id).await?
                 };
                 match tpl {
                     Some(tpl) => Ok(Ok(Resp::item(self.tpl_json(&tpl, edit).await))),
-                    None => Ok(Err(RestError::new("rest_template_not_found", "No templates exist with that id.", 404))),
+                    None => Ok(Err(RestError::new(
+                        "rest_template_not_found",
+                        "No templates exist with that id.",
+                        404,
+                    ))),
                 }
             }
             "POST" | "PUT" | "PATCH" => self.templates_write(kind, Some(&id), args).await,
             "DELETE" => self.templates_delete(kind, &id, args).await,
-            _ => Ok(Err(RestError::new("rest_no_route", "No route was found matching the URL and request method.", 404))),
+            _ => Ok(Err(RestError::new(
+                "rest_no_route",
+                "No route was found matching the URL and request method.",
+                404,
+            ))),
         }
     }
 
@@ -812,7 +1277,13 @@ impl Rest<'_> {
         let existing = match id {
             Some(id) => match self.block_template(kind, id).await? {
                 Some(t) => Some(t),
-                None => return Ok(Err(RestError::new("rest_template_not_found", "No templates exist with that id.", 404))),
+                None => {
+                    return Ok(Err(RestError::new(
+                        "rest_template_not_found",
+                        "No templates exist with that id.",
+                        404,
+                    )));
+                }
             },
             None => None,
         };
@@ -824,7 +1295,11 @@ impl Rest<'_> {
             let id = tpl.id.clone();
             return Ok(match self.block_template(kind, &id).await? {
                 Some(fresh) => Ok(Resp::item(self.tpl_json(&fresh, true).await)),
-                None => Err(RestError::new("rest_template_not_found", "No templates exist with that id.", 404)),
+                None => Err(RestError::new(
+                    "rest_template_not_found",
+                    "No templates exist with that id.",
+                    404,
+                )),
             });
         }
         let mut data = PostData::default();
@@ -832,14 +1307,21 @@ impl Rest<'_> {
             None => {
                 data.post_type = Some(kind.post_type().to_owned());
                 data.post_status = Some("publish".into());
-                data.tax_input.push(("wp_theme".into(), vec![TermRef::Name(args.str("theme").unwrap_or_else(|| self.theme.stylesheet.clone()))]));
+                data.tax_input.push((
+                    "wp_theme".into(),
+                    vec![TermRef::Name(
+                        args.str("theme")
+                            .unwrap_or_else(|| self.theme.stylesheet.clone()),
+                    )],
+                ));
                 data.post_name = args.str("slug");
             }
             Some(tpl) if tpl.source != "custom" => {
                 data.post_name = Some(tpl.slug.clone());
                 data.post_type = Some(kind.post_type().to_owned());
                 data.post_status = Some("publish".into());
-                data.tax_input.push(("wp_theme".into(), vec![TermRef::Name(tpl.theme.clone())]));
+                data.tax_input
+                    .push(("wp_theme".into(), vec![TermRef::Name(tpl.theme.clone())]));
                 data.meta_input.push(("origin".into(), tpl.source.clone()));
             }
             Some(tpl) => {
@@ -849,38 +1331,75 @@ impl Rest<'_> {
             }
         }
         let keep = existing.as_ref().filter(|t| t.source != "custom");
-        data.post_content = args.raw_text("content").or_else(|| keep.map(|t| t.content.clone()));
-        data.post_title = args.raw_text("title").or_else(|| keep.map(|t| t.title.clone()));
-        data.post_excerpt = args.str("description").or_else(|| keep.map(|t| t.description.clone()));
-        if kind == TKind::Template && let Some(flag) = args.bool("is_wp_suggestion") {
-            data.meta_input.push(("is_wp_suggestion".into(), if flag { "1".into() } else { String::new() }));
+        data.post_content = args
+            .raw_text("content")
+            .or_else(|| keep.map(|t| t.content.clone()));
+        data.post_title = args
+            .raw_text("title")
+            .or_else(|| keep.map(|t| t.title.clone()));
+        data.post_excerpt = args
+            .str("description")
+            .or_else(|| keep.map(|t| t.description.clone()));
+        if kind == TKind::Template
+            && let Some(flag) = args.bool("is_wp_suggestion")
+        {
+            data.meta_input.push((
+                "is_wp_suggestion".into(),
+                if flag { "1".into() } else { String::new() },
+            ));
         }
         if kind == TKind::Part {
-            let area = args.str("area").or_else(|| keep.and_then(|t| t.area.clone())).unwrap_or_else(|| "uncategorized".into());
-            data.tax_input.push(("wp_template_part_area".into(), vec![TermRef::Name(area)]));
+            let area = args
+                .str("area")
+                .or_else(|| keep.and_then(|t| t.area.clone()))
+                .unwrap_or_else(|| "uncategorized".into());
+            data.tax_input
+                .push(("wp_template_part_area".into(), vec![TermRef::Name(area)]));
         }
         if let Some(author) = args.u64("author").filter(|a| *a > 0) {
             // `prepare_item_for_database()`: a user of the site, unless it is the signed-in user or the template's
             // current author (`is_user_member_of_blog()`, WordPress 7.1.5).
             let current_author = existing.as_ref().map_or(0, |t| t.author);
-            if author != self.user().map_or(0, |u| u.id) && author != current_author && self.site.db.user(author).await?.is_none() {
-                return Ok(Err(RestError::new("rest_invalid_author", "Invalid author ID.", 400)));
+            if author != self.user().map_or(0, |u| u.id)
+                && author != current_author
+                && self.site.db.user(author).await?.is_none()
+            {
+                return Ok(Err(RestError::new(
+                    "rest_invalid_author",
+                    "Invalid author ID.",
+                    400,
+                )));
             }
             data.post_author = Some(author);
         }
         let post_id = match content.insert_post(&data).await {
             Ok(id) => id,
-            Err(e) => return Ok(Err(RestError::new("rest_template_insert_error", &e.to_string(), 400))),
+            Err(e) => {
+                return Ok(Err(RestError::new(
+                    "rest_template_insert_error",
+                    &e.to_string(),
+                    400,
+                )));
+            }
         };
-        let created = self.block_templates(kind, Some(post_id), None, None, &[]).await?;
-        let Some(first) = created.first() else { return Ok(Err(RestError::new("rest_template_insert_error", "No templates exist with that id.", 400))) };
+        let created = self
+            .block_templates(kind, Some(post_id), None, None, &[])
+            .await?;
+        let Some(first) = created.first() else {
+            return Ok(Err(RestError::new(
+                "rest_template_insert_error",
+                "No templates exist with that id.",
+                400,
+            )));
+        };
         let body = self.tpl_json(first, true).await;
         let mut resp = Resp::item(body);
         if existing.is_none() || existing.as_ref().is_some_and(|t| t.source != "custom") {
             resp.status = Some(if id.is_none() { 201 } else { 200 });
         }
         if id.is_none() {
-            resp.location = Some(self.rest_url(&format!("wp/v2/{}/{}", kind.rest_base(), first.id)));
+            resp.location =
+                Some(self.rest_url(&format!("wp/v2/{}/{}", kind.rest_base(), first.id)));
         }
         Ok(Ok(resp))
     }
@@ -889,9 +1408,19 @@ impl Rest<'_> {
         if let Err(e) = self.templates_manage_permission() {
             return Ok(Err(e));
         }
-        let Some(tpl) = self.block_template(kind, id).await? else { return Ok(Err(RestError::new("rest_template_not_found", "No templates exist with that id.", 404))) };
+        let Some(tpl) = self.block_template(kind, id).await? else {
+            return Ok(Err(RestError::new(
+                "rest_template_not_found",
+                "No templates exist with that id.",
+                404,
+            )));
+        };
         if tpl.source != "custom" {
-            return Ok(Err(RestError::new("rest_invalid_template", "Templates based on theme files can't be removed.", 400)));
+            return Ok(Err(RestError::new(
+                "rest_invalid_template",
+                "Templates based on theme files can't be removed.",
+                400,
+            )));
         }
         let content = match self.content() {
             Ok(c) => c,
@@ -901,15 +1430,29 @@ impl Rest<'_> {
         if force {
             let previous = self.tpl_json(&tpl, true).await;
             if !content.delete_post(tpl.wp_id, true).await.unwrap_or(false) {
-                return Ok(Err(RestError::new("rest_cannot_delete", "The template cannot be deleted.", 500)));
+                return Ok(Err(RestError::new(
+                    "rest_cannot_delete",
+                    "The template cannot be deleted.",
+                    500,
+                )));
             }
-            return Ok(Ok(Resp::item(json!({"deleted": true, "previous": previous}))));
+            return Ok(Ok(Resp::item(
+                json!({"deleted": true, "previous": previous}),
+            )));
         }
         if tpl.status == "trash" {
-            return Ok(Err(RestError::new("rest_template_already_trashed", "The template has already been deleted.", 410)));
+            return Ok(Err(RestError::new(
+                "rest_template_already_trashed",
+                "The template has already been deleted.",
+                410,
+            )));
         }
         if !content.trash_post(tpl.wp_id).await.unwrap_or(false) {
-            return Ok(Err(RestError::new("rest_cannot_delete", "The template cannot be deleted.", 500)));
+            return Ok(Err(RestError::new(
+                "rest_cannot_delete",
+                "The template cannot be deleted.",
+                500,
+            )));
         }
         let mut trashed = tpl.clone();
         trashed.status = "trash".into();

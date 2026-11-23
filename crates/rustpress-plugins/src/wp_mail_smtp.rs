@@ -20,7 +20,9 @@ use std::sync::Arc;
 
 use base64::Engine;
 use futures::future::BoxFuture;
-use rustpress_core::native::{ActivePlugin, MailSender, MailSettings, MailTransport, NativePlugin, SmtpSecurity};
+use rustpress_core::native::{
+    ActivePlugin, MailSender, MailSettings, MailTransport, NativePlugin, SmtpSecurity,
+};
 use rustpress_core::{Result, Site};
 use rustpress_phpser::Value;
 
@@ -42,13 +44,35 @@ impl NativePlugin for WpMailSmtp {
         self.load_at(site, std::path::Path::new("."))
     }
 
-    fn load_at<'a>(&'a self, site: &'a Site, wp_root: &'a std::path::Path) -> BoxFuture<'a, Result<Box<dyn ActivePlugin>>> {
+    fn load_at<'a>(
+        &'a self,
+        site: &'a Site,
+        wp_root: &'a std::path::Path,
+    ) -> BoxFuture<'a, Result<Box<dyn ActivePlugin>>> {
         Box::pin(async move {
-            let option = site.options.fetch(&site.db, "wp_mail_smtp").await?.unwrap_or_default();
-            let key = site.options.fetch(&site.db, "wp_mail_smtp_mail_key").await?;
-            let config = [wp_root.join("wp-config.php"), wp_root.parent().map(|p| p.join("wp-config.php")).unwrap_or_default()].into_iter().find_map(|path| std::fs::read_to_string(path).ok()).unwrap_or_default();
+            let option = site
+                .options
+                .fetch(&site.db, "wp_mail_smtp")
+                .await?
+                .unwrap_or_default();
+            let key = site
+                .options
+                .fetch(&site.db, "wp_mail_smtp_mail_key")
+                .await?;
+            let config = [
+                wp_root.join("wp-config.php"),
+                wp_root
+                    .parent()
+                    .map(|p| p.join("wp-config.php"))
+                    .unwrap_or_default(),
+            ]
+            .into_iter()
+            .find_map(|path| std::fs::read_to_string(path).ok())
+            .unwrap_or_default();
             let options = Options::new(&option, key.as_deref(), config_constants(&config));
-            Ok(Box::new(Active { settings: settings(&options) }) as Box<dyn ActivePlugin>)
+            Ok(Box::new(Active {
+                settings: settings(&options),
+            }) as Box<dyn ActivePlugin>)
         })
     }
 }
@@ -124,17 +148,28 @@ pub struct Options {
 impl Options {
     /// `option` is the stored `wp_mail_smtp`, `key` the stored `wp_mail_smtp_mail_key`.
     pub fn new(option: &str, key: Option<&str>, constants: HashMap<String, Constant>) -> Self {
-        let stored = rustpress_phpser::unserialize(option.as_bytes()).unwrap_or(Value::Array(Vec::new()));
+        let stored =
+            rustpress_phpser::unserialize(option.as_bytes()).unwrap_or(Value::Array(Vec::new()));
         // `Crypto::get_secret_key()`: `WPMS_CRYPTO_KEY` as it is, else the option base64-decoded.
         let key = match constants.get("WPMS_CRYPTO_KEY") {
             Some(constant) => Some(match constant {
                 Constant::Str(s) => s.as_bytes().to_vec(),
                 Constant::Int(i) => i.to_string().into_bytes(),
-                Constant::Bool(b) => if *b { b"1".to_vec() } else { Vec::new() },
+                Constant::Bool(b) => {
+                    if *b {
+                        b"1".to_vec()
+                    } else {
+                        Vec::new()
+                    }
+                }
             }),
             None => key.map(php_base64_decode),
         };
-        Self { stored, key, constants }
+        Self {
+            stored,
+            key,
+            constants,
+        }
     }
 
     /// `is_const_enabled()`: `WPMS_ON === true`.
@@ -167,7 +202,10 @@ impl Options {
         let constant = self.constants.get(name)?;
         let defined = match name {
             // `defined( … ) && ( … === 'true' || … === true )`.
-            "WPMS_SET_RETURN_PATH" | "WPMS_MAIL_FROM_NAME_FORCE" | "WPMS_MAIL_FROM_FORCE" => matches!(constant, Constant::Bool(true)) || *constant == Constant::Str("true".into()),
+            "WPMS_SET_RETURN_PATH" | "WPMS_MAIL_FROM_NAME_FORCE" | "WPMS_MAIL_FROM_FORCE" => {
+                matches!(constant, Constant::Bool(true))
+                    || *constant == Constant::Str("true".into())
+            }
             // `defined( … )` alone.
             "WPMS_SSL" | "WPMS_SMTP_AUTH" | "WPMS_SMTP_AUTOTLS" => true,
             _ => constant.truthy(),
@@ -221,15 +259,23 @@ impl Options {
     fn decrypt(&self, encrypted: &[u8]) -> Vec<u8> {
         use crypto_secretbox::aead::{Aead, KeyInit};
         let decoded = php_base64_decode(&String::from_utf8_lossy(encrypted));
-        let Some(key) = self.key.as_ref().filter(|k| !k.is_empty()) else { return encrypted.to_vec() };
-        let Ok(key) = <[u8; 32]>::try_from(key.as_slice()) else { return encrypted.to_vec() };
+        let Some(key) = self.key.as_ref().filter(|k| !k.is_empty()) else {
+            return encrypted.to_vec();
+        };
+        let Ok(key) = <[u8; 32]>::try_from(key.as_slice()) else {
+            return encrypted.to_vec();
+        };
         if decoded.len() < 24 + 16 {
             return encrypted.to_vec();
         }
         let (nonce, ciphertext) = decoded.split_at(24);
-        let Ok(nonce) = <[u8; 24]>::try_from(nonce) else { return encrypted.to_vec() };
+        let Ok(nonce) = <[u8; 24]>::try_from(nonce) else {
+            return encrypted.to_vec();
+        };
         let cipher = crypto_secretbox::XSalsa20Poly1305::new(&crypto_secretbox::Key::from(key));
-        cipher.decrypt(&crypto_secretbox::Nonce::from(nonce), ciphertext).unwrap_or_else(|_| encrypted.to_vec())
+        cipher
+            .decrypt(&crypto_secretbox::Nonce::from(nonce), ciphertext)
+            .unwrap_or_else(|_| encrypted.to_vec())
     }
 }
 
@@ -266,8 +312,15 @@ pub fn settings(options: &Options) -> MailSettings {
                 _ => SmtpSecurity::Plain,
             };
             let port = options.text("smtp", "port").trim().parse().unwrap_or(25);
-            let credentials = options.truthy("smtp", "auth").then(|| (options.text("smtp", "user"), options.text("smtp", "pass")));
-            Some(MailTransport::Smtp { host, port, security, credentials })
+            let credentials = options
+                .truthy("smtp", "auth")
+                .then(|| (options.text("smtp", "user"), options.text("smtp", "pass")));
+            Some(MailTransport::Smtp {
+                host,
+                port,
+                security,
+                credentials,
+            })
         }
         // The mailers of web APIs.
         _ => None,
@@ -279,7 +332,9 @@ pub fn settings(options: &Options) -> MailSettings {
     let x_mailer = format!("WPMailSMTP/Mailer/{mailer} {VERSION}");
     let sender = Arc::new(move |mut sender: MailSender| {
         // `filter_mail_from_email()`: the original address, when it is not the default one, is kept for `Reply-To`.
-        let original = (sender.email != sender.default_email).then(|| sender.email.clone()).filter(|e| is_email(e));
+        let original = (sender.email != sender.default_email)
+            .then(|| sender.email.clone())
+            .filter(|e| is_email(e));
         sender.email = if email_forced && !from_email.is_empty() {
             from_email.clone()
         } else if !sender.default_email.is_empty() && sender.email != sender.default_email {
@@ -305,13 +360,22 @@ pub fn settings(options: &Options) -> MailSettings {
         sender.headers.push(("X-Mailer".into(), x_mailer.clone()));
         sender
     });
-    MailSettings { transport, blocked: options.truthy("general", "do_not_send"), sender }
+    MailSettings {
+        transport,
+        blocked: options.truthy("general", "do_not_send"),
+        sender,
+    }
 }
 
 /// `filter_var( $email, FILTER_VALIDATE_EMAIL )`, roughly: one `@` with something on both sides and a dot after it.
 fn is_email(email: &str) -> bool {
-    let Some((local, domain)) = email.split_once('@') else { return false };
-    !local.is_empty() && !domain.contains('@') && domain.contains('.') && !email.chars().any(char::is_whitespace)
+    let Some((local, domain)) = email.split_once('@') else {
+        return false;
+    };
+    !local.is_empty()
+        && !domain.contains('@')
+        && domain.contains('.')
+        && !email.chars().any(char::is_whitespace)
 }
 
 /// PHP's truthiness of a value.
@@ -347,9 +411,21 @@ fn stripslashes(bytes: &[u8]) -> Vec<u8> {
 
 /// `base64_decode()` without `$strict`: characters outside the alphabet are skipped.
 fn php_base64_decode(text: &str) -> Vec<u8> {
-    let clean: String = text.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '+' || *c == '/').collect();
-    let engine = base64::engine::GeneralPurpose::new(&base64::alphabet::STANDARD, base64::engine::GeneralPurposeConfig::new().with_decode_padding_mode(base64::engine::DecodePaddingMode::Indifferent).with_decode_allow_trailing_bits(true));
-    let usable = if clean.len() % 4 == 1 { &clean[..clean.len() - 1] } else { &clean[..] };
+    let clean: String = text
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '+' || *c == '/')
+        .collect();
+    let engine = base64::engine::GeneralPurpose::new(
+        &base64::alphabet::STANDARD,
+        base64::engine::GeneralPurposeConfig::new()
+            .with_decode_padding_mode(base64::engine::DecodePaddingMode::Indifferent)
+            .with_decode_allow_trailing_bits(true),
+    );
+    let usable = if clean.len() % 4 == 1 {
+        &clean[..clean.len() - 1]
+    } else {
+        &clean[..]
+    };
     engine.decode(usable).unwrap_or_default()
 }
 
@@ -363,7 +439,10 @@ mod tests {
         let constants = config_constants(config);
         assert_eq!(constants.get("WPMS_ON"), Some(&Constant::Bool(true)));
         assert_eq!(constants.get("WPMS_SMTP_PORT"), Some(&Constant::Int(2525)));
-        assert_eq!(constants.get("WPMS_SMTP_PASS"), Some(&Constant::Str("it's".into())));
+        assert_eq!(
+            constants.get("WPMS_SMTP_PASS"),
+            Some(&Constant::Str("it's".into()))
+        );
         assert_eq!(constants.get("WPMS_SMTP_HOST"), None);
         assert_eq!(constants.get("DB_NAME"), None);
     }
@@ -371,8 +450,10 @@ mod tests {
     /// The cases of `tests/data/wp-mail-smtp` against what the plugin set up in PHPMailer (`dev/wp-mail-smtp-golden.sh`).
     #[test]
     fn matches_the_plugin() {
-        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/wp-mail-smtp/cases.json");
-        let cases: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/data/wp-mail-smtp/cases.json");
+        let cases: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
         let mut checked = 0;
         for case in cases.as_array().unwrap() {
             let name = case["name"].as_str().unwrap();
@@ -389,7 +470,11 @@ mod tests {
                     (k.clone(), value)
                 })
                 .collect();
-            let options = Options::new(case["option"].as_str().unwrap(), case["mail_key"].as_str(), constants);
+            let options = Options::new(
+                case["option"].as_str().unwrap(),
+                case["mail_key"].as_str(),
+                constants,
+            );
             let settings = settings(&options);
             let expected = &case["expected"];
             if expected.is_null() {
@@ -414,19 +499,31 @@ mod tests {
                 "smtp" => Some(MailTransport::Smtp {
                     host: text("Host"),
                     port: text("Port").parse().unwrap(),
-                    security: match (text("SMTPSecure").as_str(), expected["SMTPAutoTLS"].as_bool().unwrap()) {
+                    security: match (
+                        text("SMTPSecure").as_str(),
+                        expected["SMTPAutoTLS"].as_bool().unwrap(),
+                    ) {
                         ("ssl", _) => SmtpSecurity::Implicit,
                         ("tls", _) => SmtpSecurity::StartTls,
                         (_, true) => SmtpSecurity::Opportunistic,
                         (_, false) => SmtpSecurity::Plain,
                     },
-                    credentials: expected["SMTPAuth"].as_bool().unwrap().then(|| (text("Username"), text("Password"))),
+                    credentials: expected["SMTPAuth"]
+                        .as_bool()
+                        .unwrap()
+                        .then(|| (text("Username"), text("Password"))),
                 }),
                 _ => None,
             };
             assert_eq!(settings.transport, want, "{name}");
             // `wp_mail()` with the case's headers.
-            let mut sender = MailSender { email: "wordpress@localhost".into(), name: "WordPress".into(), default_email: "wordpress@localhost".into(), reply_to: Vec::new(), headers: Vec::new() };
+            let mut sender = MailSender {
+                email: "wordpress@localhost".into(),
+                name: "WordPress".into(),
+                default_email: "wordpress@localhost".into(),
+                reply_to: Vec::new(),
+                headers: Vec::new(),
+            };
             for line in case["headers"].as_array().unwrap() {
                 let (key, value) = line.as_str().unwrap().split_once(':').unwrap();
                 let value = value.trim();
@@ -443,9 +540,18 @@ mod tests {
             let out = (settings.sender)(sender);
             assert_eq!(out.email, text("From"), "{name}");
             assert_eq!(out.name, text("FromName"), "{name}");
-            let reply: Vec<String> = expected["ReplyTo"].as_array().unwrap().iter().map(|r| r.as_str().unwrap().to_owned()).collect();
+            let reply: Vec<String> = expected["ReplyTo"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|r| r.as_str().unwrap().to_owned())
+                .collect();
             assert_eq!(out.reply_to, reply, "{name}");
-            assert_eq!(out.headers, vec![("X-Mailer".to_owned(), text("XMailer"))], "{name}");
+            assert_eq!(
+                out.headers,
+                vec![("X-Mailer".to_owned(), text("XMailer"))],
+                "{name}"
+            );
             checked += 1;
         }
         assert!(checked >= 35, "{checked}");

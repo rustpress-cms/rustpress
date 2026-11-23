@@ -10,9 +10,13 @@ use rustpress_core::i18n::sprintf;
 use std::sync::Arc;
 
 use chrono::NaiveDateTime;
-use rustpress_blocks::content::{comment_text, get_the_content, post_password_required, the_content, the_title_for};
 use rustpress_blocks::Env;
-use rustpress_core::formatting::{convert_chars, ent2ncr, esc_attr, esc_html, esc_url, html_entity_decode, strip_tags};
+use rustpress_blocks::content::{
+    comment_text, get_the_content, post_password_required, the_content, the_title_for,
+};
+use rustpress_core::formatting::{
+    convert_chars, ent2ncr, esc_attr, esc_html, esc_url, html_entity_decode, strip_tags,
+};
 
 use rustpress_core::{Queried, QueryResult, Site};
 use rustpress_db::{Comment, Post};
@@ -39,12 +43,22 @@ pub struct Feed {
 
 impl Feed {
     /// The conditional-GET decision of `WP::send_headers()`.
-    pub fn not_modified(&self, if_none_match: Option<&str>, if_modified_since: Option<&str>) -> bool {
-        let timestamp = |s: &str| chrono::DateTime::parse_from_rfc2822(s.trim()).map(|d| d.timestamp()).unwrap_or(0);
+    pub fn not_modified(
+        &self,
+        if_none_match: Option<&str>,
+        if_modified_since: Option<&str>,
+    ) -> bool {
+        let timestamp = |s: &str| {
+            chrono::DateTime::parse_from_rfc2822(s.trim())
+                .map(|d| d.timestamp())
+                .unwrap_or(0)
+        };
         let ours = timestamp(&self.modified_at);
         let client = if_modified_since.map_or(0, timestamp);
         let etag_matches = if_none_match.is_some_and(|e| e == self.etag);
-        if if_modified_since.is_some_and(|s| !s.trim().is_empty()) && if_none_match.is_some_and(|e| !e.is_empty()) {
+        if if_modified_since.is_some_and(|s| !s.trim().is_empty())
+            && if_none_match.is_some_and(|e| !e.is_empty())
+        {
             client >= ours && etag_matches
         } else {
             client >= ours || etag_matches
@@ -68,12 +82,16 @@ fn parse_gmt(s: &str) -> Option<NaiveDateTime> {
 
 /// `mysql2date( 'D, d M Y H:i:s +0000', $gmt, false )` (also used for `r`).
 fn rfc2822(gmt: &str) -> String {
-    parse_gmt(gmt).map(|d| d.format("%a, %d %b %Y %H:%M:%S +0000").to_string()).unwrap_or_default()
+    parse_gmt(gmt)
+        .map(|d| d.format("%a, %d %b %Y %H:%M:%S +0000").to_string())
+        .unwrap_or_default()
 }
 
 /// `Y-m-d\TH:i:s\Z`.
 fn atom_date(gmt: &str) -> String {
-    parse_gmt(gmt).map(|d| d.format("%Y-%m-%dT%H:%M:%SZ").to_string()).unwrap_or_default()
+    parse_gmt(gmt)
+        .map(|d| d.format("%Y-%m-%dT%H:%M:%SZ").to_string())
+        .unwrap_or_default()
 }
 
 /// `get_bloginfo_rss()` + `bloginfo_rss` filters.
@@ -83,21 +101,35 @@ fn bloginfo_rss(value: &str) -> String {
 
 /// `get_comments_number() || comments_open()`.
 fn has_comment_section(site: &Site, q: &QueryResult, post: &Post) -> bool {
-    site.comments_number(post, q.viewer.as_ref()) != 0 || site.comments_open(post, q.viewer.as_ref())
+    site.comments_number(post, q.viewer.as_ref()) != 0
+        || site.comments_open(post, q.viewer.as_ref())
 }
 
 /// `get_feed_link( $feed )` and `get_feed_link( 'comments_' . $feed )`.
 fn main_feed_link(site: &Site, feed: &str, comments: bool) -> String {
     if site.uses_pretty_permalinks() {
-        let suffix = if feed == "rss2" { String::new() } else { format!("/{feed}") };
-        site.user_trailingslashit(&site.home_url(&format!("{}{}feed{suffix}", site.root(), if comments { "comments/" } else { "" })))
+        let suffix = if feed == "rss2" {
+            String::new()
+        } else {
+            format!("/{feed}")
+        };
+        site.user_trailingslashit(&site.home_url(&format!(
+            "{}{}feed{suffix}",
+            site.root(),
+            if comments { "comments/" } else { "" }
+        )))
     } else {
-        site.home_url(&format!("?feed={}{feed}", if comments { "comments-" } else { "" }))
+        site.home_url(&format!(
+            "?feed={}{feed}",
+            if comments { "comments-" } else { "" }
+        ))
     }
 }
 
 async fn comment_feed_link(site: &Site, post: &Post, feed: Kind) -> Result<String> {
-    Ok(site.post_comments_feed_link(post, if feed == Kind::Atom { "atom" } else { "rss2" }).await?)
+    Ok(site
+        .post_comments_feed_link(post, if feed == Kind::Atom { "atom" } else { "rss2" })
+        .await?)
 }
 
 struct Ctx<'a> {
@@ -130,7 +162,7 @@ impl Ctx<'_> {
             let mut terms = self.site.db.terms_for_post(post.id, Some(taxonomy)).await?;
             terms.sort_by_key(|t| (t.name.to_lowercase(), t.term_id));
             for term in terms {
-let name = match self.kind {
+                let name = match self.kind {
                     Kind::Atom => term.name,
                     _ => convert_chars(&term.name),
                 };
@@ -142,9 +174,19 @@ let name = match self.kind {
         let mut list = String::new();
         for name in names {
             match self.kind {
-                Kind::Atom => list.push_str(&format!("<category scheme=\"{}\" term=\"{}\" />", esc_attr(&self.url), esc_attr(&name))),
-                Kind::Rdf => list.push_str(&format!("\t\t<dc:subject><![CDATA[{}]]></dc:subject>\n", html_entity_decode(&name))),
-                _ => list.push_str(&format!("\t\t<category><![CDATA[{}]]></category>\n", html_entity_decode(&name))),
+                Kind::Atom => list.push_str(&format!(
+                    "<category scheme=\"{}\" term=\"{}\" />",
+                    esc_attr(&self.url),
+                    esc_attr(&name)
+                )),
+                Kind::Rdf => list.push_str(&format!(
+                    "\t\t<dc:subject><![CDATA[{}]]></dc:subject>\n",
+                    html_entity_decode(&name)
+                )),
+                _ => list.push_str(&format!(
+                    "\t\t<category><![CDATA[{}]]></category>\n",
+                    html_entity_decode(&name)
+                )),
             }
         }
         Ok(list)
@@ -153,16 +195,28 @@ let name = match self.kind {
     /// `get_the_excerpt()` and the `the_excerpt_rss` filters.
     async fn excerpt(&self, post: &Arc<Post>) -> Result<String> {
         let text = rustpress_blocks::excerpt::get_the_excerpt(&self.env, post).await?;
-        Ok(self.site.plugins.feed_item(self.site, post, true, convert_chars(&ent2ncr(&text))).await?)
+        Ok(self
+            .site
+            .plugins
+            .feed_item(self.site, post, true, convert_chars(&ent2ncr(&text)))
+            .await?)
     }
     /// `get_the_content_feed()`.
     async fn content(&self, post: &Arc<Post>) -> Result<String> {
         let raw = get_the_content(&self.env, post, 1, true).await?;
-        let content = the_content(&self.env, post, &raw).await?.replace("]]>", "]]&gt;");
+        let content = the_content(&self.env, post, &raw)
+            .await?
+            .replace("]]>", "]]&gt;");
         // `the_content_feed`: `wp_staticize_emoji()`.
-        let formatting = rustpress_core::files::read(&self.wp_root.join("wp-includes").join("formatting.php")).unwrap_or_default();
+        let formatting =
+            rustpress_core::files::read(&self.wp_root.join("wp-includes").join("formatting.php"))
+                .unwrap_or_default();
         let content = rustpress_core::text::staticize_emoji(&content, &formatting);
-        Ok(self.site.plugins.feed_item(self.site, post, false, content).await?)
+        Ok(self
+            .site
+            .plugins
+            .feed_item(self.site, post, false, content)
+            .await?)
     }
 
     fn enclosures(&self, meta: &[rustpress_db::PostMeta], post: &Post) -> String {
@@ -170,7 +224,10 @@ let name = match self.kind {
         if post_password_required(post) {
             return out;
         }
-        for m in meta.iter().filter(|m| m.meta_key.as_deref() == Some("enclosure")) {
+        for m in meta
+            .iter()
+            .filter(|m| m.meta_key.as_deref() == Some("enclosure"))
+        {
             let value = m.meta_value.clone().unwrap_or_default();
             let lines: Vec<&str> = value.split('\n').collect();
             if lines.len() < 3 {
@@ -179,8 +236,16 @@ let name = match self.kind {
             let kind = lines[2].trim().split([' ', '\t']).next().unwrap_or("");
             let length: u64 = lines[1].trim().parse().unwrap_or(0);
             match self.kind {
-                Kind::Rss2 | Kind::Rss092 | Kind::Rdf => out.push_str(&format!("<enclosure url=\"{}\" length=\"{length}\" type=\"{}\" />\n", esc_url(lines[0].trim()), esc_attr(kind))),
-                Kind::Atom => out.push_str(&format!("<link href=\"{}\" rel=\"enclosure\" length=\"{length}\" type=\"{}\" />\n", esc_url(lines[0].trim()), esc_attr(kind))),
+                Kind::Rss2 | Kind::Rss092 | Kind::Rdf => out.push_str(&format!(
+                    "<enclosure url=\"{}\" length=\"{length}\" type=\"{}\" />\n",
+                    esc_url(lines[0].trim()),
+                    esc_attr(kind)
+                )),
+                Kind::Atom => out.push_str(&format!(
+                    "<link href=\"{}\" rel=\"enclosure\" length=\"{length}\" type=\"{}\" />\n",
+                    esc_url(lines[0].trim()),
+                    esc_attr(kind)
+                )),
             }
         }
         out
@@ -188,18 +253,33 @@ let name = match self.kind {
 
     fn generator(&self) -> String {
         match self.kind {
-            Kind::Rss2 | Kind::Rss092 | Kind::Rdf => format!("<generator>https://wordpress.org/?v={}</generator>", self.version),
-            Kind::Atom => format!("<generator uri=\"https://wordpress.org/\" version=\"{}\">WordPress</generator>", esc_attr(&self.version)),
+            Kind::Rss2 | Kind::Rss092 | Kind::Rdf => format!(
+                "<generator>https://wordpress.org/?v={}</generator>",
+                self.version
+            ),
+            Kind::Atom => format!(
+                "<generator uri=\"https://wordpress.org/\" version=\"{}\">WordPress</generator>",
+                esc_attr(&self.version)
+            ),
         }
     }
 }
 
 fn comment_author(site: &Site, c: &Comment) -> String {
-    if c.comment_author.is_empty() { site.tr("Anonymous") } else { c.comment_author.clone() }
+    if c.comment_author.is_empty() {
+        site.tr("Anonymous")
+    } else {
+        c.comment_author.clone()
+    }
 }
 
 /// `get_feed_build_date()`.
-async fn build_date(site: &Site, q: &QueryResult, comments: &[Comment], comment_feed: bool) -> Result<String> {
+async fn build_date(
+    site: &Site,
+    q: &QueryResult,
+    comments: &[Comment],
+    comment_feed: bool,
+) -> Result<String> {
     // A site-wide comment feed compares the posts its comments belong to.
     let mut times: Vec<String> = Vec::new();
     if comment_feed && !q.flags.is_singular() {
@@ -223,11 +303,21 @@ async fn build_date(site: &Site, q: &QueryResult, comments: &[Comment], comment_
             return Ok(max);
         }
     }
-    Ok(site.db.last_post_modified_gmt(&site.types.public_post_types()).await?.unwrap_or_default())
+    Ok(site
+        .db
+        .last_post_modified_gmt(&site.types.public_post_types())
+        .await?
+        .unwrap_or_default())
 }
 
 /// Renders the feed for a request, or `None` for feed types that are not supported.
-pub async fn render_feed(theme: &Theme, site: &Site, q: &QueryResult, registry: &rustpress_blocks::Registry, request_uri: &str) -> Result<Option<Feed>> {
+pub async fn render_feed(
+    theme: &Theme,
+    site: &Site,
+    q: &QueryResult,
+    registry: &rustpress_blocks::Registry,
+    request_uri: &str,
+) -> Result<Option<Feed>> {
     let feed_var = q.vars.get("feed").unwrap_or("feed");
     let kind = match feed_var.trim_start_matches("comments-") {
         "feed" | "rss2" => Kind::Rss2,
@@ -239,7 +329,26 @@ pub async fn render_feed(theme: &Theme, site: &Site, q: &QueryResult, registry: 
     let singular = q.flags.is_singular();
     let comment_feed = q.is_comment_feed();
 
-    let self_url = format!("{}{}", site.settings.home.trim_end_matches('/').split("://").next().map_or(String::new(), |s| format!("{s}://")) + site.settings.home.trim_end_matches('/').split("://").nth(1).unwrap_or("").split('/').next().unwrap_or(""), request_uri);
+    let self_url = format!(
+        "{}{}",
+        site.settings
+            .home
+            .trim_end_matches('/')
+            .split("://")
+            .next()
+            .map_or(String::new(), |s| format!("{s}://"))
+            + site
+                .settings
+                .home
+                .trim_end_matches('/')
+                .split("://")
+                .nth(1)
+                .unwrap_or("")
+                .split('/')
+                .next()
+                .unwrap_or(""),
+        request_uri
+    );
     let self_url = esc_url(&self_url);
     // Plugins change `get_bloginfo_rss( 'url' )` and add headers on `do_feed_*`.
     let changes = if site.plugins.is_empty() {
@@ -252,31 +361,67 @@ pub async fn render_feed(theme: &Theme, site: &Site, q: &QueryResult, registry: 
             Kind::Rdf => "rdf",
             Kind::Atom => "atom",
         };
-        site.plugins.feed(&rustpress_core::native::FeedContext { site, query: q, services: &services, kind: kind_name, comments: comment_feed }).await?
+        site.plugins
+            .feed(&rustpress_core::native::FeedContext {
+                site,
+                query: q,
+                services: &services,
+                kind: kind_name,
+                comments: comment_feed,
+            })
+            .await?
     };
-    let home = bloginfo_rss(changes.url.as_deref().unwrap_or(site.settings.home.trim_end_matches('/')));
-    let ctx = Ctx { site, env: Env::new(site, q, theme, registry), kind, version: wp_version(&theme.wp_root), wp_root: theme.wp_root.clone(), url: home.clone() };
+    let home = bloginfo_rss(
+        changes
+            .url
+            .as_deref()
+            .unwrap_or(site.settings.home.trim_end_matches('/')),
+    );
+    let ctx = Ctx {
+        site,
+        env: Env::new(site, q, theme, registry),
+        kind,
+        version: wp_version(&theme.wp_root),
+        wp_root: theme.wp_root.clone(),
+        url: home.clone(),
+    };
     // The feed templates run their `while ( have_posts() )` loop on the main query.
     ctx.env.with_state(|s| s.media.in_main_loop = true);
     let description = bloginfo_rss(&site.settings.blogdescription);
     let lang = ctx.lang();
     // `wp_title_rss()` is `wp_get_document_title()`: plugins filter it with `pre_get_document_title`.
-    let plugin_title = if site.plugins.is_empty() { None } else { crate::head::plugin_head(theme, site, q, registry, false, None).await?.head.title.filter(|t| !t.is_empty()) };
+    let plugin_title = if site.plugins.is_empty() {
+        None
+    } else {
+        crate::head::plugin_head(theme, site, q, registry, false, None)
+            .await?
+            .head
+            .title
+            .filter(|t| !t.is_empty())
+    };
     let title = match plugin_title {
         Some(title) => esc_html(&title),
         None => document_title(site, q).await?,
     };
 
     let comments: Vec<Comment> = if comment_feed {
-        let post_id = if singular { q.posts.first().map(|p| p.id) } else { None };
+        let post_id = if singular {
+            q.posts.first().map(|p| p.id)
+        } else {
+            None
+        };
         // A term that does not exist: `get_posts()` has no posts, so the comments of none.
-        let unknown_term = !singular && q.feed_comments.is_none() && (q.flags.is_category || q.flags.is_tag || q.flags.is_tax);
+        let unknown_term = !singular
+            && q.feed_comments.is_none()
+            && (q.flags.is_category || q.flags.is_tag || q.flags.is_tax);
         if (singular && post_id.is_none()) || unknown_term {
             Vec::new()
         } else if let Some(comments) = &q.feed_comments {
             comments.clone()
         } else {
-            site.db.feed_comments(post_id, site.settings.posts_per_rss).await?
+            site.db
+                .feed_comments(post_id, site.settings.posts_per_rss)
+                .await?
         }
     } else {
         Vec::new()
@@ -284,9 +429,30 @@ pub async fn render_feed(theme: &Theme, site: &Site, q: &QueryResult, registry: 
     let built = build_date(site, q, &comments, comment_feed).await?;
     // The posts of a comment feed that is not about one post are those of the latest comments.
     let posts_of_comments;
-    let q = if comment_feed && !singular && q.feed_comments.is_none() && matches!(kind, Kind::Rdf | Kind::Rss092) {
+    let q = if comment_feed
+        && !singular
+        && q.feed_comments.is_none()
+        && matches!(kind, Kind::Rdf | Kind::Rss092)
+    {
         let ids: Vec<u64> = comments.iter().map(|c| c.comment_post_id).collect();
-        let posts = if ids.is_empty() { Vec::new() } else { site.db.posts(&rustpress_db::PostQuery { ids, statuses: vec!["publish".into()], post_types: site.types.public_post_types().into_iter().map(str::to_owned).collect(), limit: Some(site.settings.posts_per_rss), ..Default::default() }).await? };
+        let posts = if ids.is_empty() {
+            Vec::new()
+        } else {
+            site.db
+                .posts(&rustpress_db::PostQuery {
+                    ids,
+                    statuses: vec!["publish".into()],
+                    post_types: site
+                        .types
+                        .public_post_types()
+                        .into_iter()
+                        .map(str::to_owned)
+                        .collect(),
+                    limit: Some(site.settings.posts_per_rss),
+                    ..Default::default()
+                })
+                .await?
+        };
         posts_of_comments = QueryResult { posts, ..q.clone() };
         &posts_of_comments
     } else {
@@ -294,40 +460,138 @@ pub async fn render_feed(theme: &Theme, site: &Site, q: &QueryResult, registry: 
     };
 
     let body = match (kind, comment_feed) {
-        (Kind::Rss092, _) => rss092_posts(&ctx, q, &home, &description, &lang, &title, &built).await?,
+        (Kind::Rss092, _) => {
+            rss092_posts(&ctx, q, &home, &description, &lang, &title, &built).await?
+        }
         (Kind::Rdf, _) => rdf_posts(&ctx, q, &home, &description, &title, &built).await?,
-        (Kind::Rss2, false) => rss2_posts(&ctx, q, &self_url, &home, &description, &lang, &title, &built).await?,
-        (Kind::Atom, false) => atom_posts(&ctx, q, &self_url, &home, &description, &lang, &title, &built).await?,
-        (Kind::Rss2, true) => rss2_comments(&ctx, q, &comments, &self_url, &home, &description, &title, &built).await?,
-        (Kind::Atom, true) => atom_comments(&ctx, q, &comments, &self_url, &home, &description, &lang, &title, &built).await?,
+        (Kind::Rss2, false) => {
+            rss2_posts(
+                &ctx,
+                q,
+                &self_url,
+                &home,
+                &description,
+                &lang,
+                &title,
+                &built,
+            )
+            .await?
+        }
+        (Kind::Atom, false) => {
+            atom_posts(
+                &ctx,
+                q,
+                &self_url,
+                &home,
+                &description,
+                &lang,
+                &title,
+                &built,
+            )
+            .await?
+        }
+        (Kind::Rss2, true) => {
+            rss2_comments(
+                &ctx,
+                q,
+                &comments,
+                &self_url,
+                &home,
+                &description,
+                &title,
+                &built,
+            )
+            .await?
+        }
+        (Kind::Atom, true) => {
+            atom_comments(
+                &ctx,
+                q,
+                &comments,
+                &self_url,
+                &home,
+                &description,
+                &lang,
+                &title,
+                &built,
+            )
+            .await?
+        }
     };
 
-    let (content_type, last_modified, etag, protected) = send_headers(site, q, kind, comment_feed).await?;
+    let (content_type, last_modified, etag, protected) =
+        send_headers(site, q, kind, comment_feed).await?;
     let not_found = q.flags.is_404;
-    Ok(Some(Feed { content_type: content_type.to_owned(), body, modified_at: last_modified.clone(), last_modified: (!protected).then_some(last_modified), etag, nocache: protected || not_found, not_found, headers: changes.headers }))
+    Ok(Some(Feed {
+        content_type: content_type.to_owned(),
+        body,
+        modified_at: last_modified.clone(),
+        last_modified: (!protected).then_some(last_modified),
+        etag,
+        nocache: protected || not_found,
+        not_found,
+        headers: changes.headers,
+    }))
 }
 
 /// The headers `WP::send_headers()` sets for a feed: content type, last modified, ETag and whether the
 /// feed must not be cached.
-async fn send_headers(site: &Site, q: &QueryResult, kind: Kind, comment_feed: bool) -> Result<(&'static str, String, String, bool)> {
+async fn send_headers(
+    site: &Site,
+    q: &QueryResult,
+    kind: Kind,
+    comment_feed: bool,
+) -> Result<(&'static str, String, String, bool)> {
     let with_comments = comment_feed
-        || (q.vars.get("withoutcomments").is_none_or(|v| v.is_empty() || v == "0")
-            && ["p", "name", "page_id", "pagename", "attachment", "attachment_id"].iter().any(|k| q.vars.get(k).is_some_and(|v| !v.is_empty() && v != "0")));
-    let post_modified = site.db.last_post_modified_gmt(&site.types.public_post_types()).await?.unwrap_or_default();
+        || (q
+            .vars
+            .get("withoutcomments")
+            .is_none_or(|v| v.is_empty() || v == "0")
+            && [
+                "p",
+                "name",
+                "page_id",
+                "pagename",
+                "attachment",
+                "attachment_id",
+            ]
+            .iter()
+            .any(|k| q.vars.get(k).is_some_and(|v| !v.is_empty() && v != "0")));
+    let post_modified = site
+        .db
+        .last_post_modified_gmt(&site.types.public_post_types())
+        .await?
+        .unwrap_or_default();
     let newest = if with_comments {
-        let comment_modified = site.db.last_comment_modified_gmt().await?.unwrap_or_default();
-        if post_modified > comment_modified { post_modified } else { comment_modified }
+        let comment_modified = site
+            .db
+            .last_comment_modified_gmt()
+            .await?
+            .unwrap_or_default();
+        if post_modified > comment_modified {
+            post_modified
+        } else {
+            comment_modified
+        }
     } else {
         post_modified
     };
-    let last_modified = format!("{} GMT", parse_gmt(&newest).map(|d| d.format("%a, %d %b %Y %H:%M:%S").to_string()).unwrap_or_else(|| chrono::Utc::now().format("%a, %d %b %Y %H:%M:%S").to_string()));
+    let last_modified = format!(
+        "{} GMT",
+        parse_gmt(&newest)
+            .map(|d| d.format("%a, %d %b %Y %H:%M:%S").to_string())
+            .unwrap_or_else(|| chrono::Utc::now()
+                .format("%a, %d %b %Y %H:%M:%S")
+                .to_string())
+    );
     let etag = format!("\"{:x}\"", md5::compute(last_modified.as_bytes()));
     let content_type = match kind {
         Kind::Rss2 | Kind::Rss092 => "application/rss+xml; charset=UTF-8",
         Kind::Atom => "application/atom+xml; charset=UTF-8",
         Kind::Rdf => "application/rdf+xml; charset=UTF-8",
     };
-    let nocache = q.flags.is_singular() && q.posts.first().is_some_and(|p| !p.post_password.is_empty());
+    let nocache =
+        q.flags.is_singular() && q.posts.first().is_some_and(|p| !p.post_password.is_empty());
     Ok((content_type, last_modified, etag, nocache))
 }
 
@@ -342,12 +606,30 @@ pub async fn redirect_headers(site: &Site, q: &QueryResult) -> Result<Option<Fee
         _ => return Ok(None),
     };
     let comment_feed = q.is_comment_feed();
-    let (content_type, last_modified, etag, nocache) = send_headers(site, q, kind, comment_feed).await?;
-    Ok(Some(Feed { content_type: content_type.to_owned(), body: String::new(), modified_at: last_modified.clone(), last_modified: (!nocache).then_some(last_modified), etag, nocache, not_found: false, headers: Vec::new() }))
+    let (content_type, last_modified, etag, nocache) =
+        send_headers(site, q, kind, comment_feed).await?;
+    Ok(Some(Feed {
+        content_type: content_type.to_owned(),
+        body: String::new(),
+        modified_at: last_modified.clone(),
+        last_modified: (!nocache).then_some(last_modified),
+        etag,
+        nocache,
+        not_found: false,
+        headers: Vec::new(),
+    }))
 }
 
 /// `feed-rss.php`.
-async fn rss092_posts(c: &Ctx<'_>, q: &QueryResult, home: &str, description: &str, lang: &str, title: &str, built: &str) -> Result<String> {
+async fn rss092_posts(
+    c: &Ctx<'_>,
+    q: &QueryResult,
+    home: &str,
+    description: &str,
+    lang: &str,
+    title: &str,
+    built: &str,
+) -> Result<String> {
     let mut out = String::new();
     out.push_str(&format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?><rss version=\"0.92\">\n<channel>\n\t<title>{title}</title>\n\t<link>{home}</link>\n\t<description>{description}</description>\n\t<lastBuildDate>{}</lastBuildDate>\n\t<docs>http://backend.userland.com/rss092</docs>\n\t<language>{lang}</language>\n\t<!-- generator=\"WordPress/{}\" -->\n\n", rfc2822(built), c.version));
     for post in &q.posts {
@@ -361,18 +643,32 @@ async fn rss092_posts(c: &Ctx<'_>, q: &QueryResult, home: &str, description: &st
 }
 
 /// `feed-rdf.php`.
-async fn rdf_posts(c: &Ctx<'_>, q: &QueryResult, home: &str, description: &str, title: &str, built: &str) -> Result<String> {
+async fn rdf_posts(
+    c: &Ctx<'_>,
+    q: &QueryResult,
+    home: &str,
+    description: &str,
+    title: &str,
+    built: &str,
+) -> Result<String> {
     let mut out = String::new();
     out.push_str("<?xml version=\"1.0\" encoding=\"UTF-8\"?><rdf:RDF\n\txmlns=\"http://purl.org/rss/1.0/\"\n\txmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\"\n\txmlns:dc=\"http://purl.org/dc/elements/1.1/\"\n\txmlns:sy=\"http://purl.org/rss/1.0/modules/syndication/\"\n\txmlns:admin=\"http://webns.net/mvcb/\"\n\txmlns:content=\"http://purl.org/rss/1.0/modules/content/\"\n\t>\n");
     out.push_str(&format!("<channel rdf:about=\"{home}\">\n\t<title>{title}</title>\n\t<link>{home}</link>\n\t<description>{description}</description>\n\t<dc:date>{}\t</dc:date>\n\t<sy:updatePeriod>\n\thourly\t</sy:updatePeriod>\n\t<sy:updateFrequency>\n\t1\t</sy:updateFrequency>\n\t<sy:updateBase>2000-01-01T12:00+00:00</sy:updateBase>\n\t<admin:generatorAgent rdf:resource=\"https://wordpress.org/?v={}\" />\n\t<items>\n\t\t<rdf:Seq>\n\t\t", atom_date(built), c.version));
     for post in &q.posts {
-        out.push_str(&format!("\t\t\t<rdf:li rdf:resource=\"{}\"/>\n\t\t", esc_url(&c.site.permalink(post).await?)));
+        out.push_str(&format!(
+            "\t\t\t<rdf:li rdf:resource=\"{}\"/>\n\t\t",
+            esc_url(&c.site.permalink(post).await?)
+        ));
     }
     out.push_str("\t\t</rdf:Seq>\n\t</items>\n</channel>\n");
     for post in &q.posts {
         let post = Arc::new(post.clone());
         let permalink = esc_url(&c.site.permalink(&post).await?);
-        let author = c.author(&post).await?.map(|u| u.display_name).unwrap_or_default();
+        let author = c
+            .author(&post)
+            .await?
+            .map(|u| u.display_name)
+            .unwrap_or_default();
         let excerpt = c.excerpt(&post).await?;
         let content = c.content(&post).await?;
         out.push_str(&format!(
@@ -387,7 +683,16 @@ async fn rdf_posts(c: &Ctx<'_>, q: &QueryResult, home: &str, description: &str, 
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn rss2_posts(c: &Ctx<'_>, q: &QueryResult, self_url: &str, home: &str, description: &str, lang: &str, title: &str, built: &str) -> Result<String> {
+async fn rss2_posts(
+    c: &Ctx<'_>,
+    q: &QueryResult,
+    self_url: &str,
+    home: &str,
+    description: &str,
+    lang: &str,
+    title: &str,
+    built: &str,
+) -> Result<String> {
     let mut out = String::new();
     out.push_str("<?xml version=\"1.0\" encoding=\"UTF-8\"?><rss version=\"2.0\"\n\txmlns:content=\"http://purl.org/rss/1.0/modules/content/\"\n\txmlns:wfw=\"http://wellformedweb.org/CommentAPI/\"\n\txmlns:dc=\"http://purl.org/dc/elements/1.1/\"\n\txmlns:atom=\"http://www.w3.org/2005/Atom\"\n\txmlns:sy=\"http://purl.org/rss/1.0/modules/syndication/\"\n\txmlns:slash=\"http://purl.org/rss/1.0/modules/slash/\"\n\t>\n\n<channel>\n");
     out.push_str(&format!("\t<title>{title}</title>\n\t<atom:link href=\"{self_url}\" rel=\"self\" type=\"application/rss+xml\" />\n\t<link>{home}</link>\n\t<description>{description}</description>\n\t<lastBuildDate>{}</lastBuildDate>\n\t<language>{lang}</language>\n\t<sy:updatePeriod>\n\thourly\t</sy:updatePeriod>\n\t<sy:updateFrequency>\n\t1\t</sy:updateFrequency>\n\t", rfc2822(built)));
@@ -404,22 +709,49 @@ async fn rss2_posts(c: &Ctx<'_>, q: &QueryResult, self_url: &str, home: &str, de
         let comments_section = has_comment_section(c.site, c.env.query, &post);
         let comments_number = c.site.comments_number(&post, c.env.query.viewer.as_ref());
         let meta = c.site.db.post_meta(post.id).await?;
-        out.push_str(&format!("\t<item>\n\t\t<title>{}</title>\n\t\t<link>{}</link>\n\t\t", c.title_rss(&post), esc_url(&permalink)));
+        out.push_str(&format!(
+            "\t<item>\n\t\t<title>{}</title>\n\t\t<link>{}</link>\n\t\t",
+            c.title_rss(&post),
+            esc_url(&permalink)
+        ));
         if comments_section {
-            let hash = if comments_number != 0 { "#comments" } else { "#respond" };
-            out.push_str(&format!("\t\t\t<comments>{}</comments>\n\t\t", esc_url(&format!("{permalink}{hash}"))));
+            let hash = if comments_number != 0 {
+                "#comments"
+            } else {
+                "#respond"
+            };
+            out.push_str(&format!(
+                "\t\t\t<comments>{}</comments>\n\t\t",
+                esc_url(&format!("{permalink}{hash}"))
+            ));
         }
-        let author = c.author(&post).await?.map(|u| u.display_name).unwrap_or_default();
-        out.push_str(&format!("\n\t\t<dc:creator><![CDATA[{author}]]></dc:creator>\n\t\t<pubDate>{}</pubDate>\n\t\t", rfc2822(&post.post_date_gmt)));
+        let author = c
+            .author(&post)
+            .await?
+            .map(|u| u.display_name)
+            .unwrap_or_default();
+        out.push_str(&format!(
+            "\n\t\t<dc:creator><![CDATA[{author}]]></dc:creator>\n\t\t<pubDate>{}</pubDate>\n\t\t",
+            rfc2822(&post.post_date_gmt)
+        ));
         out.push_str(&c.categories(&post).await?);
-        out.push_str(&format!("\t\t<guid isPermaLink=\"false\">{}</guid>\n\n\t\t", esc_url(&post.guid)));
+        out.push_str(&format!(
+            "\t\t<guid isPermaLink=\"false\">{}</guid>\n\n\t\t",
+            esc_url(&post.guid)
+        ));
         let excerpt = c.excerpt(&post).await?;
-        out.push_str(&format!("\t\t\t<description><![CDATA[{excerpt}]]></description>\n\t\t\t\t\t\t"));
+        out.push_str(&format!(
+            "\t\t\t<description><![CDATA[{excerpt}]]></description>\n\t\t\t\t\t\t"
+        ));
         let content = c.content(&post).await?;
         if content.is_empty() {
-            out.push_str(&format!("\t\t\t\t<content:encoded><![CDATA[{excerpt}]]></content:encoded>\n\t\t\t"));
+            out.push_str(&format!(
+                "\t\t\t\t<content:encoded><![CDATA[{excerpt}]]></content:encoded>\n\t\t\t"
+            ));
         } else {
-            out.push_str(&format!("\t\t\t\t<content:encoded><![CDATA[{content}]]></content:encoded>\n\t\t\t"));
+            out.push_str(&format!(
+                "\t\t\t\t<content:encoded><![CDATA[{content}]]></content:encoded>\n\t\t\t"
+            ));
         }
         out.push_str("\t\t\n\t\t");
         if comments_section {
@@ -438,7 +770,16 @@ async fn rss2_posts(c: &Ctx<'_>, q: &QueryResult, self_url: &str, home: &str, de
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn atom_posts(c: &Ctx<'_>, q: &QueryResult, self_url: &str, home: &str, description: &str, lang: &str, title: &str, built: &str) -> Result<String> {
+async fn atom_posts(
+    c: &Ctx<'_>,
+    q: &QueryResult,
+    self_url: &str,
+    home: &str,
+    description: &str,
+    lang: &str,
+    title: &str,
+    built: &str,
+) -> Result<String> {
     let atom_id = bloginfo_rss(&main_feed_link(c.site, "atom", false));
     let mut out = String::new();
     out.push_str(&format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?><feed\n\txmlns=\"http://www.w3.org/2005/Atom\"\n\txmlns:thr=\"http://purl.org/syndication/thread/1.0\"\n\txml:lang=\"{lang}\"\n\t>\n\t<title type=\"text\">{title}</title>\n\t<subtitle type=\"text\">{description}</subtitle>\n\n\t<updated>{}</updated>\n\n\t<link rel=\"alternate\" type=\"text/html\" href=\"{home}\" />\n\t<id>{atom_id}</id>\n\t<link rel=\"self\" type=\"application/atom+xml\" href=\"{self_url}\" />\n\n\t", atom_date(built)));
@@ -454,9 +795,18 @@ async fn atom_posts(c: &Ctx<'_>, q: &QueryResult, self_url: &str, home: &str, de
         let permalink = c.site.permalink(&post).await?;
         let meta = c.site.db.post_meta(post.id).await?;
         let user = c.author(&post).await?;
-        let name = user.as_ref().map(|u| u.display_name.clone()).unwrap_or_default();
-        out.push_str(&format!("\t<entry>\n\t\t<author>\n\t\t\t<name>{name}</name>\n\t\t\t"));
-        if let Some(url) = user.as_ref().map(|u| u.user_url.clone()).filter(|u| !u.is_empty()) {
+        let name = user
+            .as_ref()
+            .map(|u| u.display_name.clone())
+            .unwrap_or_default();
+        out.push_str(&format!(
+            "\t<entry>\n\t\t<author>\n\t\t\t<name>{name}</name>\n\t\t\t"
+        ));
+        if let Some(url) = user
+            .as_ref()
+            .map(|u| u.user_url.clone())
+            .filter(|u| !u.is_empty())
+        {
             out.push_str(&format!("\t\t\t\t<uri>{url}</uri>\n\t\t\t\t"));
         }
         out.push_str("\t\t</author>\n\n");
@@ -470,7 +820,9 @@ async fn atom_posts(c: &Ctx<'_>, q: &QueryResult, self_url: &str, home: &str, de
         ));
         out.push_str(&c.categories(&post).await?);
         let excerpt = c.excerpt(&post).await?;
-        out.push_str(&format!("\n\t\t<summary type=\"html\"><![CDATA[{excerpt}]]></summary>\n\n\t\t"));
+        out.push_str(&format!(
+            "\n\t\t<summary type=\"html\"><![CDATA[{excerpt}]]></summary>\n\n\t\t"
+        ));
         let content = c.content(&post).await?;
         out.push_str(&format!("\t\t\t<content type=\"html\" xml:base=\"{}\"><![CDATA[{content}]]></content>\n\t\t\n\t\t", esc_url(&permalink)));
         out.push_str(&c.enclosures(&meta, &post));
@@ -496,13 +848,29 @@ async fn protected_form(c: &Ctx<'_>, post: &Post) -> Result<String> {
 /// The title of the comment feeds of a search: the site title and `get_search_query()`.
 fn search_heading(c: &Ctx<'_>, q: &QueryResult) -> String {
     let name = bloginfo_rss(&c.site.settings.blogname);
-    sprintf(&ent2ncr(&c.site.tr("Comments for %1$s searching on %2$s")), &[&name, &esc_attr(q.vars.get("s").unwrap_or_default())])
+    sprintf(
+        &ent2ncr(&c.site.tr("Comments for %1$s searching on %2$s")),
+        &[&name, &esc_attr(q.vars.get("s").unwrap_or_default())],
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn rss2_comments(c: &Ctx<'_>, q: &QueryResult, comments: &[Comment], self_url: &str, home: &str, description: &str, title: &str, built: &str) -> Result<String> {
+async fn rss2_comments(
+    c: &Ctx<'_>,
+    q: &QueryResult,
+    comments: &[Comment],
+    self_url: &str,
+    home: &str,
+    description: &str,
+    title: &str,
+    built: &str,
+) -> Result<String> {
     let singular = q.flags.is_singular();
-    let post = if singular { q.posts.first().cloned() } else { None };
+    let post = if singular {
+        q.posts.first().cloned()
+    } else {
+        None
+    };
     // A singular feed whose post was not found has an empty title and link.
     let heading = match &post {
         Some(p) => sprintf(&ent2ncr(&c.site.tr("Comments on: %s")), &[&c.title_rss(p)]),
@@ -521,14 +889,20 @@ async fn rss2_comments(c: &Ctx<'_>, q: &QueryResult, comments: &[Comment], self_
     out.push_str(&c.generator());
     out.push('\n');
     for comment in comments {
-        let Some(comment_post) = c.site.db.post(comment.comment_post_id).await? else { continue };
+        let Some(comment_post) = c.site.db.post(comment.comment_post_id).await? else {
+            continue;
+        };
         let _permalink = ();
-        let comment_link = esc_url(&rustpress_blocks::comment_pages::comment_link(&c.env, comment, None).await?);
+        let comment_link =
+            esc_url(&rustpress_blocks::comment_pages::comment_link(&c.env, comment, None).await?);
         let author = ent2ncr(&comment_author(c.site, comment));
         let item_title = if singular {
             ent2ncr(&sprintf(&c.site.tr("By: %s"), &[&author]))
         } else {
-            ent2ncr(&sprintf(&c.site.tr("Comment on %1$s by %2$s"), &[&c.title_rss(&comment_post), &author]))
+            ent2ncr(&sprintf(
+                &c.site.tr("Comment on %1$s by %2$s"),
+                &[&c.title_rss(&comment_post), &author],
+            ))
         };
         out.push_str(&format!(
             "\t<item>\n\t\t<title>\n\t\t{item_title}\t\t</title>\n\t\t<link>{comment_link}</link>\n\n\t\t<dc:creator><![CDATA[{author}]]></dc:creator>\n\t\t<pubDate>{}</pubDate>\n\t\t<guid isPermaLink=\"false\">{}</guid>\n\n\t\t",
@@ -555,9 +929,23 @@ async fn rss2_comments(c: &Ctx<'_>, q: &QueryResult, comments: &[Comment], self_
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn atom_comments(c: &Ctx<'_>, q: &QueryResult, comments: &[Comment], _self_url: &str, home: &str, description: &str, lang: &str, title: &str, built: &str) -> Result<String> {
+async fn atom_comments(
+    c: &Ctx<'_>,
+    q: &QueryResult,
+    comments: &[Comment],
+    _self_url: &str,
+    home: &str,
+    description: &str,
+    lang: &str,
+    title: &str,
+    built: &str,
+) -> Result<String> {
     let singular = q.flags.is_singular();
-    let post = if singular { q.posts.first().cloned() } else { None };
+    let post = if singular {
+        q.posts.first().cloned()
+    } else {
+        None
+    };
     let heading = match &post {
         Some(p) => sprintf(&ent2ncr(&c.site.tr("Comments on %s")), &[&c.title_rss(p)]),
         None if singular => sprintf(&ent2ncr(&c.site.tr("Comments on %s")), &[""]),
@@ -572,7 +960,11 @@ async fn atom_comments(c: &Ctx<'_>, q: &QueryResult, comments: &[Comment], _self
     match &post {
         Some(p) => {
             let permalink = c.site.permalink(p).await?;
-            let hash = if c.site.comments_number(p, c.env.query.viewer.as_ref()) != 0 { "#comments" } else { "#respond" };
+            let hash = if c.site.comments_number(p, c.env.query.viewer.as_ref()) != 0 {
+                "#comments"
+            } else {
+                "#respond"
+            };
             let feed_link = esc_url(&comment_feed_link(c.site, p, Kind::Atom).await?);
             out.push_str(&format!(
                 "\t<link rel=\"alternate\" type=\"text/html\" href=\"{}\" />\n\t<link rel=\"self\" type=\"application/atom+xml\" href=\"{feed_link}\" />\n\t<id>{feed_link}</id>\n",
@@ -580,10 +972,12 @@ async fn atom_comments(c: &Ctx<'_>, q: &QueryResult, comments: &[Comment], _self
             ));
         }
         // No post: `get_permalink()` is empty and so is its comment feed.
-        None if singular => out.push_str("	<link rel=\"alternate\" type=\"text/html\" href=\"#respond\" />
+        None if singular => out.push_str(
+            "	<link rel=\"alternate\" type=\"text/html\" href=\"#respond\" />
 	<link rel=\"self\" type=\"application/atom+xml\" href=\"\" />
 	<id></id>
-"),
+",
+        ),
         None if q.flags.is_search => {
             let words = q.vars.get("s").unwrap_or_default();
             let feed_link = crate::head::search_comments_feed_link(c.site, words, "atom");
@@ -600,14 +994,20 @@ async fn atom_comments(c: &Ctx<'_>, q: &QueryResult, comments: &[Comment], _self
     }
     out.push_str(&format!("{}\n", c.generator()));
     for comment in comments {
-        let Some(comment_post) = c.site.db.post(comment.comment_post_id).await? else { continue };
+        let Some(comment_post) = c.site.db.post(comment.comment_post_id).await? else {
+            continue;
+        };
         let permalink = c.site.permalink(&comment_post).await?;
-        let comment_link = esc_url(&rustpress_blocks::comment_pages::comment_link(&c.env, comment, None).await?);
+        let comment_link =
+            esc_url(&rustpress_blocks::comment_pages::comment_link(&c.env, comment, None).await?);
         let author = ent2ncr(&comment_author(c.site, comment));
         let item_title = if singular {
             ent2ncr(&sprintf(&c.site.tr("By: %s"), &[&author]))
         } else {
-            ent2ncr(&sprintf(&c.site.tr("Comment on %1$s by %2$s"), &[&c.title_rss(&comment_post), &author]))
+            ent2ncr(&sprintf(
+                &c.site.tr("Comment on %1$s by %2$s"),
+                &[&c.title_rss(&comment_post), &author],
+            ))
         };
         out.push_str(&format!("\t<entry>\n\t\t<title>\n\t\t{item_title}\t\t</title>\n\t\t<link rel=\"alternate\" href=\"{comment_link}\" type=\"text/html\" />\n\n\t\t<author>\n\t\t\t<name>{author}</name>\n\t\t\t"));
         // `get_comment_author_url()`: printed as stored (it was sanitized when it was saved), `http://` alone is empty.
@@ -635,8 +1035,13 @@ async fn atom_comments(c: &Ctx<'_>, q: &QueryResult, comments: &[Comment], _self
         } else if let Some(parent) = c.site.db.comment(comment.comment_parent).await? {
             out.push_str(&format!(
                 "\t\t\t<thr:in-reply-to ref=\"{}\" href=\"{}\" type=\"text/html\" />\n\t\t\t",
-                esc_url(&format!("{}#comment-{}", comment_post.guid, parent.comment_id)),
-                esc_url(&rustpress_blocks::comment_pages::comment_link(&c.env, &parent, None).await?)
+                esc_url(&format!(
+                    "{}#comment-{}",
+                    comment_post.guid, parent.comment_id
+                )),
+                esc_url(
+                    &rustpress_blocks::comment_pages::comment_link(&c.env, &parent, None).await?
+                )
             ));
         }
         out.push_str("\t</entry>\n\t");
@@ -654,16 +1059,22 @@ fn queried_post(q: &QueryResult) -> Option<&Post> {
     }
 }
 
-
 /// `get_comment_text()` in a comment feed: a reply starts with a link to its parent.
 async fn feed_comment_text(c: &Ctx<'_>, comment: &rustpress_db::Comment) -> Result<String> {
     let mut text = comment.comment_content.clone();
     if comment.comment_parent != 0
         && let Some(parent) = c.site.db.comment(comment.comment_parent).await?
     {
-        let link = esc_url(&rustpress_blocks::comment_pages::comment_link(&c.env, &parent, None).await?);
+        let link =
+            esc_url(&rustpress_blocks::comment_pages::comment_link(&c.env, &parent, None).await?);
         let name = comment_author(c.site, &parent);
-        text = format!("{}\n\n{text}", sprintf(&ent2ncr(&c.site.tr("In reply to %s.")), &[&format!("<a href=\"{link}\">{name}</a>")]));
+        text = format!(
+            "{}\n\n{text}",
+            sprintf(
+                &ent2ncr(&c.site.tr("In reply to %s.")),
+                &[&format!("<a href=\"{link}\">{name}</a>")]
+            )
+        );
     }
     Ok(text)
 }

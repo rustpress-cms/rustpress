@@ -2,15 +2,17 @@
 //! stylesheets) and `robots.txt`, following `wp-includes/sitemaps/` and `do_robots()`.
 
 use crate::Result;
+use crate::datetime::SiteTimezone;
 use crate::formatting::esc_url;
 use crate::query::QueryResult;
 use crate::settings::ShowOnFront;
 use crate::site::Site;
-use crate::datetime::SiteTimezone;
 
 /// What SimpleXML does to text it is given: `&`, `<` and `>` are escaped.
 fn xml_text(text: &str) -> String {
-    text.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
 }
 
 /// `wp_sitemaps_get_max_urls()`.
@@ -39,7 +41,10 @@ struct Entry {
 impl Site {
     /// `WP_Sitemaps::sitemaps_enabled()`.
     fn sitemaps_enabled(&self) -> bool {
-        self.options.get("blog_public").is_some_and(|v| v != "0" && !v.is_empty()) && !self.plugins.disables_core_sitemaps()
+        self.options
+            .get("blog_public")
+            .is_some_and(|v| v != "0" && !v.is_empty())
+            && !self.plugins.disables_core_sitemaps()
     }
 
     /// `WP_Sitemaps_Provider::get_sitemap_url()`.
@@ -62,41 +67,85 @@ impl Site {
     /// `get_sitemap_url()`: the index for `index`, else the provider's sitemap page.
     pub(crate) fn sitemap_url_for(&self, name: &str, subtype: Option<&str>, page: u64) -> String {
         if name == "index" {
-            return if self.uses_pretty_permalinks() { self.home_url("/wp-sitemap.xml") } else { self.home_url("/?sitemap=index") };
+            return if self.uses_pretty_permalinks() {
+                self.home_url("/wp-sitemap.xml")
+            } else {
+                self.home_url("/?sitemap=index")
+            };
         }
         self.sitemap_url(name, subtype, page.max(1))
     }
 
     /// The post types with a sitemap: public and viewable, without attachments.
     fn sitemap_post_types(&self) -> Vec<&str> {
-        self.types.public_post_types().into_iter().filter(|t| *t != "attachment").collect()
+        self.types
+            .public_post_types()
+            .into_iter()
+            .filter(|t| *t != "attachment")
+            .collect()
     }
 
     /// The taxonomies with a sitemap.
     fn sitemap_taxonomies(&self) -> Vec<String> {
-        let mut all: Vec<String> = ["category", "post_tag", "post_format"].iter().map(|t| (*t).to_owned()).collect();
+        let mut all: Vec<String> = ["category", "post_tag", "post_format"]
+            .iter()
+            .map(|t| (*t).to_owned())
+            .collect();
         all.extend(self.types.taxonomies.iter().map(|t| t.name.clone()));
         all
     }
 
     /// Authors count with posts of every public type but pages and attachments.
     fn sitemap_author_types(&self) -> Vec<&str> {
-        self.types.public_post_types().into_iter().filter(|t| !matches!(*t, "attachment" | "page")).collect()
+        self.types
+            .public_post_types()
+            .into_iter()
+            .filter(|t| !matches!(*t, "attachment" | "page"))
+            .collect()
     }
 
     async fn sitemap_entries(&self) -> Result<Vec<Entry>> {
         let mut entries = Vec::new();
         for post_type in self.sitemap_post_types() {
-            let count = self.db.count_posts(&rustpress_db::PostQuery { post_types: vec![post_type.to_owned()], statuses: vec!["publish".into()], ..Default::default() }).await?;
-            let minimum = u64::from(post_type == "page" && self.settings.show_on_front == ShowOnFront::Posts);
-            entries.push(Entry { provider: "posts", subtype: Some(post_type.to_owned()), pages: count.div_ceil(MAX_URLS).max(minimum) });
+            let count = self
+                .db
+                .count_posts(&rustpress_db::PostQuery {
+                    post_types: vec![post_type.to_owned()],
+                    statuses: vec!["publish".into()],
+                    ..Default::default()
+                })
+                .await?;
+            let minimum =
+                u64::from(post_type == "page" && self.settings.show_on_front == ShowOnFront::Posts);
+            entries.push(Entry {
+                provider: "posts",
+                subtype: Some(post_type.to_owned()),
+                pages: count.div_ceil(MAX_URLS).max(minimum),
+            });
         }
         for taxonomy in self.sitemap_taxonomies() {
-            let count = self.db.terms(&taxonomy).await?.iter().filter(|t| t.count > 0).count() as u64;
-            entries.push(Entry { provider: "taxonomies", subtype: Some(taxonomy), pages: count.div_ceil(MAX_URLS) });
+            let count = self
+                .db
+                .terms(&taxonomy)
+                .await?
+                .iter()
+                .filter(|t| t.count > 0)
+                .count() as u64;
+            entries.push(Entry {
+                provider: "taxonomies",
+                subtype: Some(taxonomy),
+                pages: count.div_ceil(MAX_URLS),
+            });
         }
-        let users = self.db.count_users_with_published_posts(&self.sitemap_author_types()).await?;
-        entries.push(Entry { provider: "users", subtype: None, pages: users.div_ceil(MAX_URLS) });
+        let users = self
+            .db
+            .count_users_with_published_posts(&self.sitemap_author_types())
+            .await?;
+        entries.push(Entry {
+            provider: "users",
+            subtype: None,
+            pages: users.div_ceil(MAX_URLS),
+        });
         Ok(entries)
     }
 
@@ -110,10 +159,22 @@ impl Site {
         if self.is_rtl() {
             xsl = xsl.replace("text-align: left;", "text-align: right;");
         }
-        let lang = format!("{}lang=\"{}\"", if self.is_rtl() { "dir=\"rtl\" " } else { "" }, self.language_tag());
+        let lang = format!(
+            "{}lang=\"{}\"",
+            if self.is_rtl() { "dir=\"rtl\" " } else { "" },
+            self.language_tag()
+        );
         replace(&mut xsl, "<html lang=\"en-US\">", format!("<html {lang}>"));
-        replace(&mut xsl, "<title>XML Sitemap</title>", format!("<title>{}</title>", esc(&self.tr("XML Sitemap"))));
-        replace(&mut xsl, "<h1>XML Sitemap</h1>", format!("<h1>{}</h1>", esc(&self.tr("XML Sitemap"))));
+        replace(
+            &mut xsl,
+            "<title>XML Sitemap</title>",
+            format!("<title>{}</title>", esc(&self.tr("XML Sitemap"))),
+        );
+        replace(
+            &mut xsl,
+            "<h1>XML Sitemap</h1>",
+            format!("<h1>{}</h1>", esc(&self.tr("XML Sitemap"))),
+        );
         replace(
             &mut xsl,
             "<p>This XML Sitemap is generated by WordPress to make your content more visible for search engines.</p>",
@@ -122,19 +183,35 @@ impl Site {
         replace(
             &mut xsl,
             "<p><a href=\"https://www.sitemaps.org/\">Learn more about XML sitemaps.</a></p>",
-            format!("<p><a href=\"{}\">{}</a></p>", esc_url(&self.tr("https://www.sitemaps.org/")), esc(&self.tr("Learn more about XML sitemaps."))),
+            format!(
+                "<p><a href=\"{}\">{}</a></p>",
+                esc_url(&self.tr("https://www.sitemaps.org/")),
+                esc(&self.tr("Learn more about XML sitemaps."))
+            ),
         );
         // The count is an XSL expression inside the sentence.
         if let Some(start) = xsl.find("Number of URLs in this XML Sitemap: ") {
             let expression_start = start + "Number of URLs in this XML Sitemap: ".len();
             if let Some(len) = xsl[expression_start..].find(" />.") {
                 let expression = xsl[expression_start..expression_start + len + 3].to_owned();
-                let sentence = crate::i18n::sprintf(&esc(&self.tr("Number of URLs in this XML Sitemap: %s.")), &[&expression]);
+                let sentence = crate::i18n::sprintf(
+                    &esc(&self.tr("Number of URLs in this XML Sitemap: %s.")),
+                    &[&expression],
+                );
                 xsl.replace_range(start..expression_start + len + 4, &sentence);
             }
         }
-        for (english, class) in [("URL", "loc"), ("Last Modified", "lastmod"), ("Change Frequency", "changefreq"), ("Priority", "priority")] {
-            replace(&mut xsl, &format!("<th class=\"{class}\">{english}</th>"), format!("<th class=\"{class}\">{}</th>", esc(&self.tr(english))));
+        for (english, class) in [
+            ("URL", "loc"),
+            ("Last Modified", "lastmod"),
+            ("Change Frequency", "changefreq"),
+            ("Priority", "priority"),
+        ] {
+            replace(
+                &mut xsl,
+                &format!("<th class=\"{class}\">{english}</th>"),
+                format!("<th class=\"{class}\">{}</th>", esc(&self.tr(english))),
+            );
         }
         xsl
     }
@@ -154,21 +231,35 @@ impl Site {
             });
         }
         let stylesheet_url = |name: &str, plain: &str| {
-            if self.uses_pretty_permalinks() { self.home_url(&format!("/{name}")) } else { self.home_url(&format!("/?sitemap-stylesheet={plain}")) }
+            if self.uses_pretty_permalinks() {
+                self.home_url(&format!("/{name}"))
+            } else {
+                self.home_url(&format!("/?sitemap-stylesheet={plain}"))
+            }
         };
 
         if sitemap == "index" {
             let mut body = String::new();
             for entry in self.sitemap_entries().await? {
                 for page in 1..=entry.pages {
-                    body.push_str(&format!("<sitemap><loc>{}</loc></sitemap>", xml_text(&self.sitemap_url(entry.provider, entry.subtype.as_deref(), page))));
+                    body.push_str(&format!(
+                        "<sitemap><loc>{}</loc></sitemap>",
+                        xml_text(&self.sitemap_url(entry.provider, entry.subtype.as_deref(), page))
+                    ));
                 }
             }
-            let head = format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<?xml-stylesheet type=\"text/xsl\" href=\"{}\" ?>\n", esc_url(&stylesheet_url("wp-sitemap-index.xsl", "index")));
+            let head = format!(
+                "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<?xml-stylesheet type=\"text/xsl\" href=\"{}\" ?>\n",
+                esc_url(&stylesheet_url("wp-sitemap-index.xsl", "index"))
+            );
             let xml = if body.is_empty() {
-                format!("{head}<sitemapindex xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\"/>\n")
+                format!(
+                    "{head}<sitemapindex xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\"/>\n"
+                )
             } else {
-                format!("{head}<sitemapindex xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">{body}</sitemapindex>\n")
+                format!(
+                    "{head}<sitemapindex xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">{body}</sitemapindex>\n"
+                )
             };
             return Ok(SitemapOutput::Xml(xml));
         }
@@ -176,8 +267,12 @@ impl Site {
         let page = q.vars.u64("paged").filter(|p| *p > 0).unwrap_or(1);
         let subtype = q.vars.get("sitemap-subtype").unwrap_or("");
         let urls = match (sitemap, subtype) {
-            ("posts", t) if self.sitemap_post_types().contains(&t) => self.post_sitemap_urls(t, page).await?,
-            ("taxonomies", t) if self.sitemap_taxonomies().iter().any(|x| x == t) => self.taxonomy_sitemap_urls(t, page).await?,
+            ("posts", t) if self.sitemap_post_types().contains(&t) => {
+                self.post_sitemap_urls(t, page).await?
+            }
+            ("taxonomies", t) if self.sitemap_taxonomies().iter().any(|x| x == t) => {
+                self.taxonomy_sitemap_urls(t, page).await?
+            }
             ("users", _) => self.user_sitemap_urls(page).await?,
             _ => Vec::new(),
         };
@@ -192,8 +287,13 @@ impl Site {
             }
             body.push_str("</url>");
         }
-        let head = format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<?xml-stylesheet type=\"text/xsl\" href=\"{}\" ?>\n", esc_url(&stylesheet_url("wp-sitemap.xsl", "sitemap")));
-        Ok(SitemapOutput::Xml(format!("{head}<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">{body}</urlset>\n")))
+        let head = format!(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<?xml-stylesheet type=\"text/xsl\" href=\"{}\" ?>\n",
+            esc_url(&stylesheet_url("wp-sitemap.xsl", "sitemap"))
+        );
+        Ok(SitemapOutput::Xml(format!(
+            "{head}<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">{body}</urlset>\n"
+        )))
     }
 
     /// `wp_date( DATE_W3C, strtotime( $gmt ) )`.
@@ -201,14 +301,27 @@ impl Site {
         SiteTimezone::gmt_timestamp(gmt).map(|ts| self.date("Y-m-d\\TH:i:sP", ts))
     }
 
-    async fn post_sitemap_urls(&self, post_type: &str, page: u64) -> Result<Vec<(String, Option<String>)>> {
+    async fn post_sitemap_urls(
+        &self,
+        post_type: &str,
+        page: u64,
+    ) -> Result<Vec<(String, Option<String>)>> {
         let mut urls = Vec::new();
         if post_type == "page" && page == 1 && self.settings.show_on_front == ShowOnFront::Posts {
             let latest = self
                 .db
-                .posts(&rustpress_db::PostQuery { post_types: vec!["post".into()], statuses: vec!["publish".into()], limit: Some(self.settings.posts_per_page), ..Default::default() })
+                .posts(&rustpress_db::PostQuery {
+                    post_types: vec!["post".into()],
+                    statuses: vec!["publish".into()],
+                    limit: Some(self.settings.posts_per_page),
+                    ..Default::default()
+                })
                 .await?;
-            let lastmod = latest.iter().map(|p| p.post_modified_gmt.clone()).max().and_then(|m| self.w3c(&m));
+            let lastmod = latest
+                .iter()
+                .map(|p| p.post_modified_gmt.clone())
+                .max()
+                .and_then(|m| self.w3c(&m));
             urls.push((self.home_url("/"), lastmod));
         }
         let posts = self
@@ -224,36 +337,68 @@ impl Site {
             })
             .await?;
         for post in posts {
-            urls.push((self.permalink(&post).await?, self.w3c(&post.post_modified_gmt)));
+            urls.push((
+                self.permalink(&post).await?,
+                self.w3c(&post.post_modified_gmt),
+            ));
         }
         Ok(urls)
     }
 
-    async fn taxonomy_sitemap_urls(&self, taxonomy: &str, page: u64) -> Result<Vec<(String, Option<String>)>> {
-        let mut terms: Vec<_> = self.db.terms(taxonomy).await?.into_iter().filter(|t| t.count > 0).collect();
+    async fn taxonomy_sitemap_urls(
+        &self,
+        taxonomy: &str,
+        page: u64,
+    ) -> Result<Vec<(String, Option<String>)>> {
+        let mut terms: Vec<_> = self
+            .db
+            .terms(taxonomy)
+            .await?
+            .into_iter()
+            .filter(|t| t.count > 0)
+            .collect();
         terms.sort_by_key(|t| t.term_id);
         let mut urls = Vec::new();
-        for term in terms.iter().skip(((page - 1).saturating_mul(MAX_URLS)) as usize).take(MAX_URLS as usize) {
+        for term in terms
+            .iter()
+            .skip(((page - 1).saturating_mul(MAX_URLS)) as usize)
+            .take(MAX_URLS as usize)
+        {
             urls.push((self.term_link(term).await?, None));
         }
         Ok(urls)
     }
 
     async fn user_sitemap_urls(&self, page: u64) -> Result<Vec<(String, Option<String>)>> {
-        let users = self.db.users_with_published_posts(&self.sitemap_author_types(), MAX_URLS, (page - 1).saturating_mul(MAX_URLS)).await?;
+        let users = self
+            .db
+            .users_with_published_posts(
+                &self.sitemap_author_types(),
+                MAX_URLS,
+                (page - 1).saturating_mul(MAX_URLS),
+            )
+            .await?;
         Ok(users.iter().map(|u| (self.author_url(u), None)).collect())
     }
 
     /// `do_robots()`.
     pub fn robots_txt(&self) -> String {
         let admin_path = {
-            let siteurl = self.settings.siteurl.split_once("://").map_or(self.settings.siteurl.as_str(), |(_, rest)| rest);
+            let siteurl = self
+                .settings
+                .siteurl
+                .split_once("://")
+                .map_or(self.settings.siteurl.as_str(), |(_, rest)| rest);
             let path = siteurl.find('/').map_or("", |i| &siteurl[i..]);
             format!("{}/wp-admin/", path.trim_end_matches('/'))
         };
-        let mut output = format!("User-agent: *\nDisallow: {admin_path}\nAllow: {admin_path}admin-ajax.php\n");
+        let mut output =
+            format!("User-agent: *\nDisallow: {admin_path}\nAllow: {admin_path}admin-ajax.php\n");
         if self.sitemaps_enabled() {
-            output.push_str(&format!("\nSitemap: {}\n", esc_url(&self.sitemap_url_for("index", None, 1))));
+            output.push_str(&format!(
+                "\nSitemap: {}\n",
+                esc_url(&self.sitemap_url_for("index", None, 1))
+            ));
         }
         self.plugins.robots_txt(self, output)
     }
@@ -265,21 +410,39 @@ mod tests {
     use crate::options::Options;
 
     fn site(blog_public: &str) -> Site {
-        let options = Options::from_pairs([("blog_public", blog_public), ("siteurl", "http://example.com/blog"), ("home", "http://example.com/blog"), ("permalink_structure", "/%postname%/")]);
-        Site::from_parts(rustpress_db::Db::connect_lazy("mysql://nobody@127.0.0.1:1/none", "wp_").expect("lazy pool"), options)
+        let options = Options::from_pairs([
+            ("blog_public", blog_public),
+            ("siteurl", "http://example.com/blog"),
+            ("home", "http://example.com/blog"),
+            ("permalink_structure", "/%postname%/"),
+        ]);
+        Site::from_parts(
+            rustpress_db::Db::connect_lazy("mysql://nobody@127.0.0.1:1/none", "wp_")
+                .expect("lazy pool"),
+            options,
+        )
     }
 
     #[tokio::test]
     async fn robots_txt_lists_the_sitemap_only_for_public_sites() {
         let public = site("1").robots_txt();
-        assert_eq!(public, "User-agent: *\nDisallow: /blog/wp-admin/\nAllow: /blog/wp-admin/admin-ajax.php\n\nSitemap: http://example.com/blog/wp-sitemap.xml\n");
+        assert_eq!(
+            public,
+            "User-agent: *\nDisallow: /blog/wp-admin/\nAllow: /blog/wp-admin/admin-ajax.php\n\nSitemap: http://example.com/blog/wp-sitemap.xml\n"
+        );
         assert!(!site("0").robots_txt().contains("Sitemap"));
     }
 
     #[tokio::test]
     async fn sitemap_urls_follow_the_permalink_setting() {
         let pretty = site("1");
-        assert_eq!(pretty.sitemap_url("posts", Some("post"), 2), "http://example.com/blog/wp-sitemap-posts-post-2.xml");
-        assert_eq!(pretty.sitemap_url("users", None, 1), "http://example.com/blog/wp-sitemap-users-1.xml");
+        assert_eq!(
+            pretty.sitemap_url("posts", Some("post"), 2),
+            "http://example.com/blog/wp-sitemap-posts-post-2.xml"
+        );
+        assert_eq!(
+            pretty.sitemap_url("users", None, 1),
+            "http://example.com/blog/wp-sitemap-users-1.xml"
+        );
     }
 }

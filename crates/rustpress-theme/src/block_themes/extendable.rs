@@ -31,7 +31,8 @@ impl BlockThemePort for Extendable {
             priority: 10,
             ..Asset::default()
         };
-        let data = json!({ "logoUrl": ctx.custom_logo_url, "siteTitle": ctx.site.settings.blogname });
+        let data =
+            json!({ "logoUrl": ctx.custom_logo_url, "siteTitle": ctx.site.settings.blogname });
         let navigation = Asset {
             handle: "extendable-navigation_customizations".to_owned(),
             src: format!("{}/assets/js/navigation-customization.js", ctx.template_uri),

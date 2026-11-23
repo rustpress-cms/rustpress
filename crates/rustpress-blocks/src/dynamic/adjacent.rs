@@ -14,7 +14,10 @@ use super::global_post;
 /// `get_adjacent_post()` within the same post type, by publication date (then ID).
 async fn adjacent(bc: &BlockCtx<'_>, post: &Post, previous: bool) -> Result<Option<Post>> {
     let db = &bc.env.site.db;
-    match db.adjacent_post_id(&post.post_type, &post.post_date, post.id, previous).await? {
+    match db
+        .adjacent_post_id(&post.post_type, &post.post_date, post.id, previous)
+        .await?
+    {
         Some(id) => Ok(db.post(id).await?),
         None => Ok(None),
     }
@@ -37,25 +40,41 @@ pub(super) async fn render(bc: &BlockCtx<'_>) -> Result<String> {
 
     let mut format = "%link".to_owned();
     let site = bc.env.site;
-    let mut link = if kind == "next" { site.trx("Next", "label for next post link") } else { site.trx("Previous", "label for previous post link") };
+    let mut link = if kind == "next" {
+        site.trx("Next", "label for next post link")
+    } else {
+        site.trx("Previous", "label for previous post link")
+    };
     let mut label = String::new();
     if let Some(l) = bc.attr_str("label").filter(|l| !l.is_empty()) {
         label = l.to_owned();
         link = kses_post(&label);
     }
     let show_title = bc.attr_bool("showTitle");
-    let link_label = bc.attrs.get("linkLabel").is_some_and(|v| !crate::style_engine::is_empty(v));
+    let link_label = bc
+        .attrs
+        .get("linkLabel")
+        .is_some_and(|v| !crate::style_engine::is_empty(v));
     if show_title {
         if !link_label {
             if !label.is_empty() {
-                format = format!("<span class=\"post-navigation-link__label\">{label}</span> %link");
+                format =
+                    format!("<span class=\"post-navigation-link__label\">{label}</span> %link");
             }
             link = "%title".to_owned();
         } else if !label.is_empty() {
-            link = format!("<span class=\"post-navigation-link__label\">{label}</span> <span class=\"post-navigation-link__title\">%title</span>");
+            link = format!(
+                "<span class=\"post-navigation-link__label\">{label}</span> <span class=\"post-navigation-link__title\">%title</span>"
+            );
         } else {
-            let label = if kind == "next" { site.trx("Next:", "label before the title of the next post") } else { site.trx("Previous:", "label before the title of the previous post") };
-            link = format!("<span class=\"post-navigation-link__label\">{label}</span> <span class=\"post-navigation-link__title\">%title</span>");
+            let label = if kind == "next" {
+                site.trx("Next:", "label before the title of the next post")
+            } else {
+                site.trx("Previous:", "label before the title of the previous post")
+            };
+            link = format!(
+                "<span class=\"post-navigation-link__label\">{label}</span> <span class=\"post-navigation-link__title\">%title</span>"
+            );
         }
     }
     if let Some(arrow) = bc.attr_str("arrow").filter(|a| *a != "none") {
@@ -68,26 +87,45 @@ pub(super) async fn render(bc: &BlockCtx<'_>) -> Result<String> {
         };
         if let Some(glyph) = glyph {
             format = if kind == "next" {
-                format!("%link<span class=\"wp-block-post-navigation-link__arrow-next is-arrow-{arrow}\" aria-hidden=\"true\">{glyph}</span>")
+                format!(
+                    "%link<span class=\"wp-block-post-navigation-link__arrow-next is-arrow-{arrow}\" aria-hidden=\"true\">{glyph}</span>"
+                )
             } else {
-                format!("<span class=\"wp-block-post-navigation-link__arrow-previous is-arrow-{arrow}\" aria-hidden=\"true\">{glyph}</span>%link")
+                format!(
+                    "<span class=\"wp-block-post-navigation-link__arrow-previous is-arrow-{arrow}\" aria-hidden=\"true\">{glyph}</span>%link"
+                )
             };
         }
     }
 
-    let Some(post) = global_post(bc).await? else { return Ok(String::new()) };
+    let Some(post) = global_post(bc).await? else {
+        return Ok(String::new());
+    };
     let content = match adjacent(bc, &post, kind == "previous").await? {
         None => String::new(),
         Some(other) => {
             let title = if other.post_title.is_empty() {
-                if kind == "next" { site.tr("Next Post") } else { site.tr("Previous Post") }
+                if kind == "next" {
+                    site.tr("Next Post")
+                } else {
+                    site.tr("Previous Post")
+                }
             } else {
-                the_title_for(site, &Post { post_password: String::new(), ..other.clone() })
+                the_title_for(
+                    site,
+                    &Post {
+                        post_password: String::new(),
+                        ..other.clone()
+                    },
+                )
             };
             let inlink = link.replace("%title", &title);
             let permalink = bc.env.site.permalink(&other).await?;
             let rel = if kind == "next" { "next" } else { "prev" };
-            let anchor = format!("<a href=\"{}\" rel=\"{rel}\">{inlink}</a>", esc_url(&permalink));
+            let anchor = format!(
+                "<a href=\"{}\" rel=\"{rel}\">{inlink}</a>",
+                esc_url(&permalink)
+            );
             format.replace("%link", &anchor)
         }
     };

@@ -8,11 +8,23 @@ use super::{AdminEnv, AdminResponse, page_headers, redirect};
 /// A response with the headers of an admin page and no body.
 /// A file of `wp-admin` that only defines functions: asked directly it answers with nothing but the type of its content.
 pub fn include_only(status: u16) -> AdminResponse {
-    AdminResponse { status, headers: vec![("Content-Type".into(), "text/html; charset=UTF-8".into())], cookies: Vec::new(), body: String::new(), bytes: Vec::new() }
+    AdminResponse {
+        status,
+        headers: vec![("Content-Type".into(), "text/html; charset=UTF-8".into())],
+        cookies: Vec::new(),
+        body: String::new(),
+        bytes: Vec::new(),
+    }
 }
 
 pub fn empty() -> AdminResponse {
-    AdminResponse { status: 200, headers: page_headers(), cookies: Vec::new(), body: String::new(), bytes: Vec::new() }
+    AdminResponse {
+        status: 200,
+        headers: page_headers(),
+        cookies: Vec::new(),
+        body: String::new(),
+        bytes: Vec::new(),
+    }
 }
 
 /// The styles of the installer (`wp_admin_css( 'install', true )`).
@@ -25,7 +37,10 @@ fn install_styles(env: &AdminEnv<'_>) -> String {
         ("buttons", "wp-includes/css/buttons.min.css"),
         ("forms", "wp-admin/css/forms.min.css"),
         ("l10n", "wp-admin/css/l10n.min.css"),
-        ("wp-base-styles", "wp-includes/css/dist/base-styles/admin-schemes.min.css"),
+        (
+            "wp-base-styles",
+            "wp-includes/css/dist/base-styles/admin-schemes.min.css",
+        ),
         ("install", "wp-admin/css/install.min.css"),
     ] {
         out.push_str(&format!("<link rel='stylesheet' id='{id}-css' href='{siteurl}/{path}?ver={version}' media='all' />\n"));
@@ -35,7 +50,11 @@ fn install_styles(env: &AdminEnv<'_>) -> String {
 
 fn lang_attrs(env: &AdminEnv<'_>) -> String {
     let lang = env.site.language_tag();
-    if env.site.is_rtl() { format!("dir=\"rtl\" lang=\"{}\"", esc_attr(&lang)) } else { format!("lang=\"{}\"", esc_attr(&lang)) }
+    if env.site.is_rtl() {
+        format!("dir=\"rtl\" lang=\"{}\"", esc_attr(&lang))
+    } else {
+        format!("lang=\"{}\"", esc_attr(&lang))
+    }
 }
 
 /// `upgrade.php` of a site whose database is up to date.
@@ -47,10 +66,17 @@ pub fn upgrade(env: &AdminEnv<'_>) -> AdminResponse {
         env.site.tr("WordPress &rsaquo; Update"),
         install_styles(env),
         env.site.tr("No Update Required"),
-        env.site.tr("Your WordPress database is already up to date!"),
+        env.site
+            .tr("Your WordPress database is already up to date!"),
         env.site.tr("Continue")
     );
-    AdminResponse { status: 200, headers: page_headers(), cookies: Vec::new(), body, bytes: Vec::new() }
+    AdminResponse {
+        status: 200,
+        headers: page_headers(),
+        cookies: Vec::new(),
+        body,
+        bytes: Vec::new(),
+    }
 }
 
 /// `install.php` of a site that is installed.
@@ -66,10 +92,19 @@ pub fn install(env: &AdminEnv<'_>) -> AdminResponse {
         env.site.tr("Log In")
     );
     let mut headers = page_headers();
-    for header in headers.iter_mut().filter(|(name, _)| name == "Content-Type") {
+    for header in headers
+        .iter_mut()
+        .filter(|(name, _)| name == "Content-Type")
+    {
         header.1 = "text/html; charset=utf-8".into();
     }
-    AdminResponse { status: 200, headers, cookies: Vec::new(), body, bytes: Vec::new() }
+    AdminResponse {
+        status: 200,
+        headers,
+        cookies: Vec::new(),
+        body,
+        bytes: Vec::new(),
+    }
 }
 
 /// `setup-config.php` of a site that has its `wp-config.php`.
@@ -81,8 +116,19 @@ pub fn setup_config(env: &AdminEnv<'_>) -> AdminResponse {
             &["<code>wp-config.php</code>", "install.php"]
         )
     );
-    let body = crate::die::page_with_robots(env.site, &env.site.tr("WordPress &rsaquo; Error"), &message, "noindex, nofollow");
-    AdminResponse { status: 409, headers: page_headers(), cookies: Vec::new(), body, bytes: Vec::new() }
+    let body = crate::die::page_with_robots(
+        env.site,
+        &env.site.tr("WordPress &rsaquo; Error"),
+        &message,
+        "noindex, nofollow",
+    );
+    AdminResponse {
+        status: 409,
+        headers: page_headers(),
+        cookies: Vec::new(),
+        body,
+        bytes: Vec::new(),
+    }
 }
 
 /// `media.php`: the media editing screen that was removed.

@@ -68,17 +68,35 @@ pub struct FooterScripts {
 
 impl FooterScripts {
     /// The registry of the WordPress files, with the scripts the head printed marked as done.
-    pub fn new(site: &Site, wp_root: &Path, theme_scripts: &[ThemeScript<'_>], printed: &[&str]) -> Self {
+    pub fn new(
+        site: &Site,
+        wp_root: &Path,
+        theme_scripts: &[ThemeScript<'_>],
+        printed: &[&str],
+    ) -> Self {
         let env = crate::plugin_assets::loader_env(site, wp_root).in_language_of(site);
         let mut scripts = crate::script_loader::registry::default_scripts(&env);
         for script in theme_scripts {
-            scripts.add(script.handle, Some(&script.src), script.deps, Ver::Value(script.ver.to_owned()), Some(Arg::Int(1)));
+            scripts.add(
+                script.handle,
+                Some(&script.src),
+                script.deps,
+                Ver::Value(script.ver.to_owned()),
+                Some(Arg::Int(1)),
+            );
             if let Some(strategy) = script.strategy {
                 scripts.add_data(script.handle, "strategy", Extra::Text(strategy.to_owned()));
             }
         }
         // `wp_default_scripts()` adds the texts of the players on `init`.
-        scripts.add_inline_script("mediaelement-core", &format!("var mejsL10n = {};", crate::document::mejs_l10n(site, wp_root)), "before");
+        scripts.add_inline_script(
+            "mediaelement-core",
+            &format!(
+                "var mejsL10n = {};",
+                crate::document::mejs_l10n(site, wp_root)
+            ),
+            "before",
+        );
         for handle in printed {
             scripts.deps.done.push((*handle).to_owned());
         }
@@ -104,7 +122,6 @@ impl FooterScripts {
     pub fn is_done(&self, handle: &str) -> bool {
         self.scripts.deps.done.iter().any(|h| h == handle)
     }
-
 }
 
 /// `load_script_textdomain()` for the scripts of WordPress.
@@ -114,13 +131,28 @@ fn script_translations(site: &Site, wp_root: &Path, scripts: &mut Scripts) {
     }
     let languages = wp_root.join("wp-content").join("languages");
     let locale = site.locale();
-    let sources: std::collections::HashMap<String, String> = scripts.deps.registered().iter().filter_map(|dep| Some((dep.handle.clone(), dep.src.clone()?))).collect();
+    let sources: std::collections::HashMap<String, String> = scripts
+        .deps
+        .registered()
+        .iter()
+        .filter_map(|dep| Some((dep.handle.clone(), dep.src.clone()?)))
+        .collect();
     scripts.set_translation_loader(Box::new(move |handle, domain, _path| {
         let relative = sources.get(handle)?.strip_prefix('/')?;
         // The files are named after the script that is not minified.
-        let relative = relative.strip_suffix(".min.js").map_or_else(|| relative.to_owned(), |base| format!("{base}.js"));
-        let base = if domain == "default" { locale.clone() } else { format!("{domain}-{locale}") };
-        rustpress_core::files::read(&languages.join(format!("{base}-{:x}.json", md5::compute(relative.as_bytes())))).map(|text| text.to_string())
+        let relative = relative
+            .strip_suffix(".min.js")
+            .map_or_else(|| relative.to_owned(), |base| format!("{base}.js"));
+        let base = if domain == "default" {
+            locale.clone()
+        } else {
+            format!("{domain}-{locale}")
+        };
+        rustpress_core::files::read(&languages.join(format!(
+            "{base}-{:x}.json",
+            md5::compute(relative.as_bytes())
+        )))
+        .map(|text| text.to_string())
     }));
 }
 
@@ -136,7 +168,13 @@ pub async fn render_partials(
     let (contents, header) = if crate::classic::is_ported(theme) {
         crate::classic::render_partials(theme, site, q, registry, partials).await?
     } else {
-        (partials.iter().map(|(id, _)| (id.clone(), serde_json::Value::Null)).collect(), None)
+        (
+            partials
+                .iter()
+                .map(|(id, _)| (id.clone(), serde_json::Value::Null))
+                .collect(),
+            None,
+        )
     };
     let mut data = serde_json::Map::new();
     data.insert("contents".into(), serde_json::Value::Object(contents));
@@ -165,5 +203,8 @@ pub fn nav_menus_exports(preview: &Preview) -> String {
 
 /// `wp_json_encode( $data, JSON_HEX_TAG | JSON_UNESCAPED_SLASHES )`.
 pub fn json_hex_tag(value: &serde_json::Value) -> String {
-    rustpress_blocks::php_json::encode(value).replace("\\/", "/").replace('<', "\\u003C").replace('>', "\\u003E")
+    rustpress_blocks::php_json::encode(value)
+        .replace("\\/", "/")
+        .replace('<', "\\u003C")
+        .replace('>', "\\u003E")
 }

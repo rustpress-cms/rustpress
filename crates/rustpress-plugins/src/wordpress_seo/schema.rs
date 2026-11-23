@@ -5,10 +5,10 @@ use rustpress_core::Result;
 use rustpress_core::formatting::{esc_html, wp_strip_all_tags};
 use serde_json::{Map, Value, json};
 
+use super::Page;
 use super::images::{self, ImageData};
 use super::presentation::{Kind, Model, Object, Presentation};
 use super::replace_vars::{self, author_meta, php_trim};
-use super::Page;
 
 /// `Meta_Tags_Context::generate_site_represents()`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -20,7 +20,12 @@ pub enum Represents {
 
 /// `generate_company_logo_id()`: the logo of the settings, else the site logo.
 async fn company_logo_id(page: &Page<'_>) -> Result<u64> {
-    let id = page.options.string("company_logo_id").trim().parse::<u64>().unwrap_or(0);
+    let id = page
+        .options
+        .string("company_logo_id")
+        .trim()
+        .parse::<u64>()
+        .unwrap_or(0);
     if id != 0 {
         return Ok(id);
     }
@@ -36,24 +41,39 @@ async fn company_logo_id(page: &Page<'_>) -> Result<u64> {
 
 /// `fallback_to_site_logo()`: the `site_logo` option, else the theme's `custom_logo`.
 async fn fallback_to_site_logo(page: &Page<'_>) -> Result<u64> {
-    let site_logo = page.site.options.fetch(&page.site.db, "site_logo").await?.unwrap_or_default();
+    let site_logo = page
+        .site
+        .options
+        .fetch(&page.site.db, "site_logo")
+        .await?
+        .unwrap_or_default();
     let id = super::php_int(&site_logo);
     if id > 0 {
         return Ok(id as u64);
     }
-    Ok(rustpress_blocks::images::custom_logo_id(page.site).await.unwrap_or(0))
+    Ok(rustpress_blocks::images::custom_logo_id(page.site)
+        .await
+        .unwrap_or(0))
 }
 
 /// `generate_company_name()`.
 fn company_name(page: &Page<'_>) -> String {
     let name = page.options.string("company_name");
-    if name.is_empty() { site_name(page) } else { name }
+    if name.is_empty() {
+        site_name(page)
+    } else {
+        name
+    }
 }
 
 /// `generate_site_name()`.
 fn site_name(page: &Page<'_>) -> String {
     let name = page.options.string("website_name");
-    if name.is_empty() { page.site.settings.blogname.clone() } else { name }
+    if name.is_empty() {
+        page.site.settings.blogname.clone()
+    } else {
+        name
+    }
 }
 
 /// `generate_site_represents()`.
@@ -66,7 +86,8 @@ pub async fn site_represents(page: &Page<'_>) -> Result<Represents> {
             Ok(Represents::Company)
         }
         "person" => {
-            let id = super::php_int(&page.options.string("company_or_person_user_id")).max(0) as u64;
+            let id =
+                super::php_int(&page.options.string("company_or_person_user_id")).max(0) as u64;
             if page.site.db.user(id).await?.is_none() {
                 return Ok(Represents::None);
             }
@@ -79,10 +100,14 @@ pub async fn site_represents(page: &Page<'_>) -> Result<Represents> {
 /// `HTML_Helper::smart_strip_tags()`.
 pub fn smart_strip_tags(html: &str) -> String {
     use std::sync::LazyLock;
-    static BR: LazyLock<regex::Regex> = LazyLock::new(|| regex::Regex::new(r"(?i)<br(\s*)?/?>").expect("valid pattern"));
-    static CLOSE: LazyLock<regex::Regex> = LazyLock::new(|| regex::Regex::new(r"(?i)</(p|div|h\d)>").expect("valid pattern"));
-    static LI: LazyLock<regex::Regex> = LazyLock::new(|| regex::Regex::new(r"(?i)(<li[^>]*>)").expect("valid pattern"));
-    static SPACES: LazyLock<regex::Regex> = LazyLock::new(|| regex::Regex::new(r"[\t\n\x0b\x0c\r ]+").expect("valid pattern"));
+    static BR: LazyLock<regex::Regex> =
+        LazyLock::new(|| regex::Regex::new(r"(?i)<br(\s*)?/?>").expect("valid pattern"));
+    static CLOSE: LazyLock<regex::Regex> =
+        LazyLock::new(|| regex::Regex::new(r"(?i)</(p|div|h\d)>").expect("valid pattern"));
+    static LI: LazyLock<regex::Regex> =
+        LazyLock::new(|| regex::Regex::new(r"(?i)(<li[^>]*>)").expect("valid pattern"));
+    static SPACES: LazyLock<regex::Regex> =
+        LazyLock::new(|| regex::Regex::new(r"[\t\n\x0b\x0c\r ]+").expect("valid pattern"));
     if html.is_empty() {
         return String::new();
     }
@@ -124,7 +149,11 @@ impl Context<'_> {
     }
 
     fn article_needed(&self, page: &Page<'_>) -> bool {
-        self.model().object_type == "post" && page.site.post_type_supports(&self.model().object_sub_type, "author") && self.article_type != ["None"]
+        self.model().object_type == "post"
+            && page
+                .site
+                .post_type_supports(&self.model().object_sub_type, "author")
+            && self.article_type != ["None"]
     }
 }
 
@@ -135,20 +164,42 @@ fn search_query(page: &Page<'_>) -> String {
 
 /// `ID_Helper::get_user_schema_id()`.
 fn person_id(page: &Page<'_>, site_url: &str, user_id: u64) -> String {
-    let login = page.users.get(&user_id).map(|u| u.user_login.clone()).unwrap_or_default();
+    let login = page
+        .users
+        .get(&user_id)
+        .map(|u| u.user_login.clone())
+        .unwrap_or_default();
     if !page.users.contains_key(&user_id) {
         return String::new();
     }
-    format!("{site_url}#/schema/person/{}", rustpress_blocks::commenter::wp_hash(&format!("{login}{user_id}"), "auth"))
+    format!(
+        "{site_url}#/schema/person/{}",
+        rustpress_blocks::commenter::wp_hash(&format!("{login}{user_id}"), "auth")
+    )
 }
 
 /// A value for `@type`: one type as a string.
 fn type_value(types: &[String]) -> Value {
-    if types.len() == 1 { Value::String(types[0].clone()) } else { json!(types) }
+    if types.len() == 1 {
+        Value::String(types[0].clone())
+    } else {
+        json!(types)
+    }
 }
 
 /// `Schema_Types::ARTICLE_TYPES`.
-const ARTICLE_TYPES: &[&str] = &["Article", "BlogPosting", "SocialMediaPosting", "NewsArticle", "AdvertiserContentArticle", "SatiricalArticle", "ScholarlyArticle", "TechArticle", "Report", "None"];
+const ARTICLE_TYPES: &[&str] = &[
+    "Article",
+    "BlogPosting",
+    "SocialMediaPosting",
+    "NewsArticle",
+    "AdvertiserContentArticle",
+    "SatiricalArticle",
+    "ScholarlyArticle",
+    "TechArticle",
+    "Report",
+    "None",
+];
 
 /// Builds the context (`Meta_Tags_Context`).
 pub async fn context<'p>(page: &Page<'_>, p: &'p Presentation) -> Result<Context<'p>> {
@@ -157,18 +208,28 @@ pub async fn context<'p>(page: &Page<'_>, p: &'p Presentation) -> Result<Context
     let title = replace_vars::replace(page, &p.title, p.source()).await?;
     let description = replace_vars::replace(page, &p.meta_description, p.source()).await?;
     let permalink = if page.query.flags.is_search {
-        rustpress_core::urls::add_query_arg(&rustpress_core::urls::trailingslashit(&page.home()), "s", &rustpress_core::canonical::rawurlencode(&search_query(page)))
+        rustpress_core::urls::add_query_arg(
+            &rustpress_core::urls::trailingslashit(&page.home()),
+            "s",
+            &rustpress_core::canonical::rawurlencode(&search_query(page)),
+        )
     } else {
         p.permalink.clone()
     };
     let site_url = rustpress_core::urls::trailingslashit(&page.home());
     let page_type: Vec<String> = match model.object_type {
-        "system-page" if model.object_sub_type == "search-result" => vec!["CollectionPage".into(), "SearchResultsPage".into()],
+        "system-page" if model.object_sub_type == "search-result" => {
+            vec!["CollectionPage".into(), "SearchResultsPage".into()]
+        }
         "system-page" => vec!["WebPage".into()],
         "user" => vec!["ProfilePage".into()],
-        "home-page" | "date-archive" | "term" | "post-type-archive" => vec!["CollectionPage".into()],
+        "home-page" | "date-archive" | "term" | "post-type-archive" => {
+            vec!["CollectionPage".into()]
+        }
         _ => {
-            let additional = model.schema_page_type.clone().unwrap_or_else(|| o.string(&format!("schema-page-type-{}", model.object_sub_type)));
+            let additional = model.schema_page_type.clone().unwrap_or_else(|| {
+                o.string(&format!("schema-page-type-{}", model.object_sub_type))
+            });
             let mut types = vec!["WebPage".to_owned(), additional];
             if page.site.settings.page_for_posts == model.object_id && model.object_type == "post" {
                 types.push("CollectionPage".into());
@@ -183,7 +244,10 @@ pub async fn context<'p>(page: &Page<'_>, p: &'p Presentation) -> Result<Context
         }
     };
     let article_type = {
-        let mut additional = model.schema_article_type.clone().unwrap_or_else(|| o.string(&format!("schema-article-type-{}", model.object_sub_type)));
+        let mut additional = model
+            .schema_article_type
+            .clone()
+            .unwrap_or_else(|| o.string(&format!("schema-article-type-{}", model.object_sub_type)));
         if !ARTICLE_TYPES.contains(&additional.as_str()) {
             additional = o.title_default(&format!("schema-article-type-{}", model.object_sub_type));
         }
@@ -208,10 +272,19 @@ pub async fn context<'p>(page: &Page<'_>, p: &'p Presentation) -> Result<Context
         }
     } else if q.flags.is_singular() {
         match p.post() {
-            Some(post) => singular_post_image(page, post.id, post.post_type == "attachment").await?,
+            Some(post) => {
+                singular_post_image(page, post.id, post.post_type == "attachment").await?
+            }
             None => None,
         }
-    } else if q.flags.is_author || q.flags.is_tax || q.flags.is_tag || q.flags.is_category || q.flags.is_search || q.flags.is_date || q.flags.is_post_type_archive {
+    } else if q.flags.is_author
+        || q.flags.is_tax
+        || q.flags.is_tag
+        || q.flags.is_category
+        || q.flags.is_search
+        || q.flags.is_date
+        || q.flags.is_post_type_archive
+    {
         match q.posts.first() {
             Some(first) => singular_post_image(page, first.id, false).await?,
             None => None,
@@ -222,14 +295,32 @@ pub async fn context<'p>(page: &Page<'_>, p: &'p Presentation) -> Result<Context
     // generate_main_image_url()
     let main_image_url = match main_image_id {
         Some(id) => Some(images::attachment_image_url(page, id).await?),
-        None if q.flags.is_singular() || (rest && p.kind == Kind::PostType) => p.post().and_then(|post| images::first_content_image(&post.post_content)),
+        None if q.flags.is_singular() || (rest && p.kind == Kind::PostType) => p
+            .post()
+            .and_then(|post| images::first_content_image(&post.post_content)),
         None => None,
     };
-    Ok(Context { p, title, description, canonical: p.canonical.clone(), permalink, site_url, represents: site_represents(page).await?, page_type, article_type, main_image_id, main_image_url })
+    Ok(Context {
+        p,
+        title,
+        description,
+        canonical: p.canonical.clone(),
+        permalink,
+        site_url,
+        represents: site_represents(page).await?,
+        page_type,
+        article_type,
+        main_image_id,
+        main_image_url,
+    })
 }
 
 /// `get_singular_post_image()`.
-async fn singular_post_image(page: &Page<'_>, post_id: u64, attachment: bool) -> Result<Option<u64>> {
+async fn singular_post_image(
+    page: &Page<'_>,
+    post_id: u64,
+    attachment: bool,
+) -> Result<Option<u64>> {
     let thumbnail = super::presentation::thumbnail_id(page, post_id).await?;
     if thumbnail > 0 {
         return Ok(Some(thumbnail));
@@ -246,12 +337,21 @@ fn add_language(page: &Page<'_>, data: &mut Map<String, Value>) {
 }
 
 /// `Image_Helper::generate_from_attachment_id()`.
-async fn image_from_attachment(page: &Page<'_>, schema_id: &str, id: u64, caption: &str) -> Result<Value> {
+async fn image_from_attachment(
+    page: &Page<'_>,
+    schema_id: &str,
+    id: u64,
+    caption: &str,
+) -> Result<Value> {
     let mut data = Map::new();
     data.insert("@type".into(), "ImageObject".into());
     add_language(page, &mut data);
     let attachment = images::attachment(page, id).await?;
-    let url = attachment.as_ref().and_then(|a| a.image_src(page, "full")).map(|s| s.0).unwrap_or_default();
+    let url = attachment
+        .as_ref()
+        .and_then(|a| a.image_src(page, "full"))
+        .map(|s| s.0)
+        .unwrap_or_default();
     data.insert("@id".into(), schema_id.into());
     data.insert("url".into(), url.clone().into());
     data.insert("contentUrl".into(), url.into());
@@ -259,8 +359,14 @@ async fn image_from_attachment(page: &Page<'_>, schema_id: &str, id: u64, captio
         && meta.width() != 0
         && meta.height() != 0
     {
-        data.insert("width".into(), meta.0.get("width").cloned().unwrap_or_default());
-        data.insert("height".into(), meta.0.get("height").cloned().unwrap_or_default());
+        data.insert(
+            "width".into(),
+            meta.0.get("width").cloned().unwrap_or_default(),
+        );
+        data.insert(
+            "height".into(),
+            meta.0.get("height").cloned().unwrap_or_default(),
+        );
     }
     if !caption.is_empty() {
         data.insert("caption".into(), caption.into());
@@ -312,7 +418,6 @@ pub struct Crumb {
     pub without_url: bool,
 }
 
-
 /// `Breadcrumbs_Generator::generate()`.
 pub async fn breadcrumbs(page: &Page<'_>, p: &Presentation) -> Result<Vec<Crumb>> {
     let o = page.options;
@@ -323,9 +428,17 @@ pub async fn breadcrumbs(page: &Page<'_>, p: &Presentation) -> Result<Vec<Crumb>
     let static_front = settings.show_on_front == rustpress_core::settings::ShowOnFront::Page;
     let mut statics: Vec<Crumb> = Vec::new();
     if !home_text.is_empty() && !home_kinds {
-        let front = if static_front { settings.page_on_front } else { 0 };
+        let front = if static_front {
+            settings.page_on_front
+        } else {
+            0
+        };
         if front == 0 {
-            statics.push(Crumb { url: Some(page.home()), text: o.string("breadcrumbs-home"), without_url: false });
+            statics.push(Crumb {
+                url: Some(page.home()),
+                text: o.string("breadcrumbs-home"),
+                without_url: false,
+            });
         } else if let Some(front) = page.site.db.post(front).await? {
             statics.push(post_crumb(page, &front).await?);
         }
@@ -335,13 +448,23 @@ pub async fn breadcrumbs(page: &Page<'_>, p: &Presentation) -> Result<Vec<Crumb>
         let blog_crumb = if model.object_type == "term" {
             taxonomy_parent(page, &model.object_sub_type).as_deref() == Some("post")
         } else {
-            o.is_true("breadcrumbs-display-blog-page") && !page.query.flags.is_home && !page.query.flags.is_search && page.query.flags.is_single && p.post().is_some_and(|post| post.post_type == "post")
+            o.is_true("breadcrumbs-display-blog-page")
+                && !page.query.flags.is_home
+                && !page.query.flags.is_search
+                && page.query.flags.is_single
+                && p.post().is_some_and(|post| post.post_type == "post")
         };
         if blog_crumb && let Some(blog) = page.site.db.post(page_for_posts).await? {
             statics.push(post_crumb(page, &blog).await?);
         }
     }
-    if model.object_type == "post" && !matches!(model.object_sub_type.as_str(), "post" | "page") && page.site.post_type_archive_link(&model.object_sub_type).is_some() {
+    if model.object_type == "post"
+        && !matches!(model.object_sub_type.as_str(), "post" | "page")
+        && page
+            .site
+            .post_type_archive_link(&model.object_sub_type)
+            .is_some()
+    {
         statics.push(post_type_archive_crumb(page, &model.object_sub_type));
     }
     if model.object_type == "term"
@@ -366,7 +489,14 @@ pub async fn breadcrumbs(page: &Page<'_>, p: &Presentation) -> Result<Vec<Crumb>
     if (simple || page.query.flags.is_paged) && !(simple && model.number_of_pages.is_none()) {
         let number = page.page_number();
         if number > 1 {
-            crumbs.push(Crumb { url: None, text: rustpress_core::i18n::sprintf(&page.site.trd(super::DOMAIN, "Page %s"), &[&number.to_string()]), without_url: true });
+            crumbs.push(Crumb {
+                url: None,
+                text: rustpress_core::i18n::sprintf(
+                    &page.site.trd(super::DOMAIN, "Page %s"),
+                    &[&number.to_string()],
+                ),
+                without_url: true,
+            });
         }
     }
     Ok(crumbs)
@@ -374,24 +504,52 @@ pub async fn breadcrumbs(page: &Page<'_>, p: &Presentation) -> Result<Vec<Crumb>
 
 /// `get_taxonomy_post_type_parent()`.
 fn taxonomy_parent(page: &Page<'_>, taxonomy: &str) -> Option<String> {
-    let parent = page.options.string(&format!("taxonomy-{taxonomy}-ptparent"));
+    let parent = page
+        .options
+        .string(&format!("taxonomy-{taxonomy}-ptparent"));
     (!parent.is_empty() && parent != "0").then_some(parent)
 }
 
 async fn post_crumb(page: &Page<'_>, post: &rustpress_db::Post) -> Result<Crumb> {
     let model = super::presentation::post_model(page, post).await?;
-    Ok(Crumb { url: model.permalink, text: model.breadcrumb_title.unwrap_or_default(), without_url: false })
+    Ok(Crumb {
+        url: model.permalink,
+        text: model.breadcrumb_title.unwrap_or_default(),
+        without_url: false,
+    })
 }
 
 fn post_type_archive_crumb(page: &Page<'_>, post_type: &str) -> Crumb {
-    let bctitle = page.options.string(&format!("bctitle-ptarchive-{post_type}"));
-    Crumb { url: page.site.post_type_archive_link(post_type), text: if bctitle.is_empty() { page.site.post_type_label(post_type) } else { bctitle }, without_url: false }
+    let bctitle = page
+        .options
+        .string(&format!("bctitle-ptarchive-{post_type}"));
+    Crumb {
+        url: page.site.post_type_archive_link(post_type),
+        text: if bctitle.is_empty() {
+            page.site.post_type_label(post_type)
+        } else {
+            bctitle
+        },
+        without_url: false,
+    }
 }
 
 async fn term_crumb(page: &Page<'_>, term: &rustpress_db::Term) -> Result<Crumb> {
     let meta = page.options.term_meta(&term.taxonomy, term.term_id);
-    let bctitle = meta.iter().find(|(k, _)| k == "wpseo_bctitle").map(|(_, v)| v.clone()).unwrap_or_default();
-    Ok(Crumb { url: Some(page.site.term_link(term).await?), text: if bctitle.is_empty() { page.site.term_name(term) } else { bctitle }, without_url: false })
+    let bctitle = meta
+        .iter()
+        .find(|(k, _)| k == "wpseo_bctitle")
+        .map(|(_, v)| v.clone())
+        .unwrap_or_default();
+    Ok(Crumb {
+        url: Some(page.site.term_link(term).await?),
+        text: if bctitle.is_empty() {
+            page.site.term_name(term)
+        } else {
+            bctitle
+        },
+        without_url: false,
+    })
 }
 
 /// `Indexable_Hierarchy_Builder`: the parents of a post (or its primary term and that term's parents) and of a term,
@@ -404,14 +562,19 @@ async fn ancestors(page: &Page<'_>, p: &Presentation) -> Result<Vec<Crumb>> {
             let mut seen = vec![post.id];
             let mut chain = Vec::new();
             while parent != 0 && !seen.contains(&parent) {
-                let Some(parent_post) = page.site.db.post(parent).await? else { break };
+                let Some(parent_post) = page.site.db.post(parent).await? else {
+                    break;
+                };
                 seen.push(parent);
                 parent = parent_post.post_parent;
                 chain.push(post_crumb(page, &parent_post).await?);
             }
             if post.post_parent == 0 {
-                let main = page.options.string(&format!("post_types-{}-maintax", post.post_type));
-                if !main.is_empty() && main != "0"
+                let main = page
+                    .options
+                    .string(&format!("post_types-{}-maintax", post.post_type));
+                if !main.is_empty()
+                    && main != "0"
                     && let Some(term) = primary_term(page, post, &main).await?
                 {
                     let mut terms = vec![term_crumb(page, &term).await?];
@@ -436,7 +599,14 @@ async fn term_parents(page: &Page<'_>, term: &rustpress_db::Term) -> Result<Vec<
     let mut out = Vec::new();
     let mut parent = term.parent;
     while parent != 0 {
-        let Some(t) = page.site.db.term_by_id(Some(&term.taxonomy), parent).await? else { break };
+        let Some(t) = page
+            .site
+            .db
+            .term_by_id(Some(&term.taxonomy), parent)
+            .await?
+        else {
+            break;
+        };
         parent = t.parent;
         out.push(term_crumb(page, &t).await?);
         if out.len() > 50 {
@@ -447,8 +617,16 @@ async fn term_parents(page: &Page<'_>, term: &rustpress_db::Term) -> Result<Vec<
 }
 
 /// `find_primary_term_id_for_post()`: the primary term, else the deepest of the post's terms.
-async fn primary_term(page: &Page<'_>, post: &rustpress_db::Post, taxonomy: &str) -> Result<Option<rustpress_db::Term>> {
-    let primary = super::presentation::post_meta(page, post.id, &format!("primary_{taxonomy}")).await?.trim().parse::<u64>().unwrap_or(0);
+async fn primary_term(
+    page: &Page<'_>,
+    post: &rustpress_db::Post,
+    taxonomy: &str,
+) -> Result<Option<rustpress_db::Term>> {
+    let primary = super::presentation::post_meta(page, post.id, &format!("primary_{taxonomy}"))
+        .await?
+        .trim()
+        .parse::<u64>()
+        .unwrap_or(0);
     if primary != 0
         && let Some(term) = page.site.db.term_by_id(None, primary).await?
     {
@@ -460,7 +638,10 @@ async fn primary_term(page: &Page<'_>, post: &rustpress_db::Post, taxonomy: &str
     }
     // `find_deepest_term_id()`: leave out terms that are the parent of another one, then take the one with the most
     // parents.
-    let mut candidates: Vec<&rustpress_db::Term> = terms.iter().filter(|t| !terms.iter().any(|o| o.parent == t.term_id)).collect();
+    let mut candidates: Vec<&rustpress_db::Term> = terms
+        .iter()
+        .filter(|t| !terms.iter().any(|o| o.parent == t.term_id))
+        .collect();
     if candidates.is_empty() {
         candidates = terms.iter().collect();
     }
@@ -483,11 +664,19 @@ async fn primary_term(page: &Page<'_>, post: &rustpress_db::Post, taxonomy: &str
 async fn own_crumb(page: &Page<'_>, p: &Presentation) -> Result<Crumb> {
     let model = &p.model;
     let o = page.options;
-    let mut crumb = Crumb { url: model.permalink.clone(), text: model.breadcrumb_title.clone().unwrap_or_default(), without_url: false };
+    let mut crumb = Crumb {
+        url: model.permalink.clone(),
+        text: model.breadcrumb_title.clone().unwrap_or_default(),
+        without_url: false,
+    };
     match model.object_type {
         "system-page" if model.object_sub_type == "search-result" => {
             let words = page.query.vars.get("s").unwrap_or_default();
-            crumb.text = format!("{} {}", o.string("breadcrumbs-searchprefix"), esc_html(&search_query(page)));
+            crumb.text = format!(
+                "{} {}",
+                o.string("breadcrumbs-searchprefix"),
+                esc_html(&search_query(page))
+            );
             crumb.url = Some(super::presentation::search_link(page, words));
         }
         "system-page" => crumb.text = o.string("breadcrumbs-404crumb"),
@@ -499,14 +688,30 @@ async fn own_crumb(page: &Page<'_>, p: &Presentation) -> Result<Crumb> {
             let home = page.home();
             let prefix = o.string("breadcrumbs-archiveprefix");
             let q = page.query;
-            let date = page.global_post.map(|p| p.post_date.clone()).unwrap_or_default();
+            let date = page
+                .global_post
+                .map(|p| p.post_date.clone())
+                .unwrap_or_default();
             // `get_the_date()`, `false` while a plugin hides the dates.
-            let formatted = |format: &str| if page.dates_hidden { String::new() } else { replace_vars::format_translated(page, &date, format) };
+            let formatted = |format: &str| {
+                if page.dates_hidden {
+                    String::new()
+                } else {
+                    replace_vars::format_translated(page, &date, format)
+                }
+            };
             if q.flags.is_day {
                 crumb.url = Some(format!("{home}{}/", formatted("Y/m/d")));
-                crumb.text = format!("{prefix} {}", esc_html(&formatted(&page.site.options.string("date_format", "F j, Y"))));
+                crumb.text = format!(
+                    "{prefix} {}",
+                    esc_html(&formatted(
+                        &page.site.options.string("date_format", "F j, Y")
+                    ))
+                );
             } else if q.flags.is_month {
-                let month = esc_html(php_trim(&replace_vars::single_month_title(page, " ").unwrap_or_default()));
+                let month = esc_html(php_trim(
+                    &replace_vars::single_month_title(page, " ").unwrap_or_default(),
+                ));
                 crumb.url = Some(format!("{home}{}/", formatted("Y/m")));
                 crumb.text = format!("{prefix} {month}");
             } else if q.flags.is_year {
@@ -524,10 +729,14 @@ async fn own_crumb(page: &Page<'_>, p: &Presentation) -> Result<Crumb> {
 pub async fn graph(page: &Page<'_>, ctx: &mut Context<'_>) -> Result<Value> {
     let p = ctx.p;
     let model = &p.model;
-    let protected = model.object_type == "post" && p.post().is_some_and(super::Page::password_required);
+    let protected =
+        model.object_type == "post" && p.post().is_some_and(super::Page::password_required);
     let mut graph: Vec<Value> = Vec::new();
     let article = !protected && ctx.article_needed(page);
-    let toc = p.post().is_some_and(|post| post.post_content.contains("<!-- wp:yoast-seo/table-of-contents"));
+    let toc = p.post().is_some_and(|post| {
+        post.post_content
+            .contains("<!-- wp:yoast-seo/table-of-contents")
+    });
 
     if article {
         let mut piece = article_piece(page, ctx).await?;
@@ -537,10 +746,22 @@ pub async fn graph(page: &Page<'_>, ctx: &mut Context<'_>) -> Result<Value> {
         graph.push(piece);
     }
     // WebPage
-    if model.object_type != "unknown" && !(model.object_type == "system-page" && model.object_sub_type == "404") {
+    if model.object_type != "unknown"
+        && !(model.object_type == "system-page" && model.object_sub_type == "404")
+    {
         let mut piece = webpage_piece(page, ctx).await?;
         if protected {
-            let keep = ["@type", "@id", "url", "name", "isPartOf", "inLanguage", "datePublished", "dateModified", "breadcrumb"];
+            let keep = [
+                "@type",
+                "@id",
+                "url",
+                "name",
+                "isPartOf",
+                "inLanguage",
+                "datePublished",
+                "dateModified",
+                "breadcrumb",
+            ];
             if let Value::Object(map) = &mut piece {
                 map.retain(|k, _| keep.contains(&k.as_str()));
                 map.insert("@type".into(), "WebPage".into());
@@ -559,10 +780,15 @@ pub async fn graph(page: &Page<'_>, ctx: &mut Context<'_>) -> Result<Value> {
             graph.push(piece);
         } else if let Some(url) = ctx.main_image_url.clone().filter(|u| !u.is_empty()) {
             let id = images::attachment_by_url_linked(page, &url).await?;
-            graph.push(if id > 0 { image_from_attachment(page, &image_id, id, "").await? } else { simple_image(page, &image_id, &url, "") });
+            graph.push(if id > 0 {
+                image_from_attachment(page, &image_id, id, "").await?
+            } else {
+                simple_image(page, &image_id, &url, "")
+            });
         }
         // Breadcrumb
-        if model.object_type != "unknown" && !(model.object_type == "system-page" && model.object_sub_type == "404")
+        if model.object_type != "unknown"
+            && !(model.object_type == "system-page" && model.object_sub_type == "404")
             && let Some(piece) = breadcrumb_piece(page, ctx).await?
         {
             graph.push(piece);
@@ -605,7 +831,8 @@ pub async fn graph(page: &Page<'_>, ctx: &mut Context<'_>) -> Result<Value> {
                 if model.object_type == "user" {
                     map.insert("mainEntityOfPage".into(), json!({"@id": ctx.permalink}));
                 }
-                if model.object_type == "post" && !page.options.is_true("disable-author")
+                if model.object_type == "post"
+                    && !page.options.is_true("disable-author")
                     && let Some(user) = page.users.get(&id)
                 {
                     map.insert("url".into(), page.site.author_url(user).into());
@@ -638,23 +865,42 @@ fn validate_type(mut piece: Value) -> Value {
                 unique.push(t);
             }
         }
-        piece["@type"] = if unique.len() == 1 { unique.remove(0) } else { Value::Array(unique) };
+        piece["@type"] = if unique.len() == 1 {
+            unique.remove(0)
+        } else {
+            Value::Array(unique)
+        };
     }
     piece
 }
 
 /// `remove_empty_breadcrumb()`.
-fn remove_empty_breadcrumb(page: &Page<'_>, ctx: &Context<'_>, mut graph: Vec<Value>) -> Vec<Value> {
+fn remove_empty_breadcrumb(
+    page: &Page<'_>,
+    ctx: &Context<'_>,
+    mut graph: Vec<Value>,
+) -> Vec<Value> {
     if matches!(page.current_kind(), Kind::StaticHomePage | Kind::HomePage) {
         return graph;
     }
-    let index = graph.iter().position(|piece| piece.get("@type").and_then(Value::as_str) == Some("BreadcrumbList") && piece.get("itemListElement").and_then(Value::as_array).is_some_and(|l| l.len() == 1));
-    let Some(index) = index.filter(|i| *i != 0) else { return graph };
+    let index = graph.iter().position(|piece| {
+        piece.get("@type").and_then(Value::as_str) == Some("BreadcrumbList")
+            && piece
+                .get("itemListElement")
+                .and_then(Value::as_array)
+                .is_some_and(|l| l.len() == 1)
+    });
+    let Some(index) = index.filter(|i| *i != 0) else {
+        return graph;
+    };
     graph.remove(index);
     for piece in &mut graph {
         let types: Vec<String> = match piece.get("@type") {
             Some(Value::String(s)) => vec![s.clone()],
-            Some(Value::Array(a)) => a.iter().filter_map(|v| v.as_str().map(str::to_owned)).collect(),
+            Some(Value::Array(a)) => a
+                .iter()
+                .filter_map(|v| v.as_str().map(str::to_owned))
+                .collect(),
             _ => Vec::new(),
         };
         if types.iter().any(|t| ctx.page_type.contains(t))
@@ -681,12 +927,21 @@ async fn article_piece(page: &Page<'_>, ctx: &Context<'_>) -> Result<Value> {
         headline = page.site.trd(super::DOMAIN, "No title");
     }
     data.insert("headline".into(), smart_strip_tags(&headline).into());
-    data.insert("datePublished".into(), super::presentation::w3c(&post.post_date_gmt).into());
+    data.insert(
+        "datePublished".into(),
+        super::presentation::w3c(&post.post_date_gmt).into(),
+    );
     if gmt(&post.post_modified_gmt) > gmt(&post.post_date_gmt) {
-        data.insert("dateModified".into(), super::presentation::w3c(&post.post_modified_gmt).into());
+        data.insert(
+            "dateModified".into(),
+            super::presentation::w3c(&post.post_modified_gmt).into(),
+        );
     }
     data.insert("mainEntityOfPage".into(), json!({"@id": ctx.permalink}));
-    data.insert("wordCount".into(), word_count(&post.post_content, &post.post_title).into());
+    data.insert(
+        "wordCount".into(),
+        word_count(&post.post_content, &post.post_title).into(),
+    );
     if post.comment_status == "open" {
         data.insert("commentCount".into(), post.comment_count.into());
     }
@@ -694,12 +949,20 @@ async fn article_piece(page: &Page<'_>, ctx: &Context<'_>) -> Result<Value> {
         data.insert("publisher".into(), reference);
     }
     if let Some(url) = &ctx.main_image_url {
-        data.insert("image".into(), json!({"@id": format!("{}#primaryimage", ctx.canonical)}));
+        data.insert(
+            "image".into(),
+            json!({"@id": format!("{}#primaryimage", ctx.canonical)}),
+        );
         data.insert("thumbnailUrl".into(), url.clone().into());
     }
     let uncategorized = page.site.tr("Uncategorized");
     for (key, taxonomy) in [("keywords", "post_tag"), ("articleSection", "category")] {
-        let names: Vec<String> = replace_vars::post_terms(page, post.id, taxonomy).await?.iter().map(|t| page.site.term_name(t)).filter(|n| *n != uncategorized).collect();
+        let names: Vec<String> = replace_vars::post_terms(page, post.id, taxonomy)
+            .await?
+            .iter()
+            .map(|t| page.site.term_name(t))
+            .filter(|n| *n != uncategorized)
+            .collect();
         if !names.is_empty() {
             data.insert(key.into(), json!(names));
         }
@@ -723,9 +986,20 @@ async fn webpage_piece(page: &Page<'_>, ctx: &Context<'_>) -> Result<Value> {
     data.insert("@id".into(), ctx.permalink.clone().into());
     data.insert("url".into(), ctx.canonical.clone().into());
     data.insert("name".into(), smart_strip_tags(&ctx.title).into());
-    data.insert("isPartOf".into(), json!({"@id": format!("{}#website", ctx.site_url)}));
+    data.insert(
+        "isPartOf".into(),
+        json!({"@id": format!("{}#website", ctx.site_url)}),
+    );
     if ctx.canonical.is_empty() && page.query.flags.is_search {
-        data.insert("url".into(), format!("{}?s={}", ctx.site_url, rustpress_core::canonical::rawurlencode(&search_query(page))).into());
+        data.insert(
+            "url".into(),
+            format!(
+                "{}?s={}",
+                ctx.site_url,
+                rustpress_core::canonical::rawurlencode(&search_query(page))
+            )
+            .into(),
+        );
     }
     if page.query.flags.is_front_page
         && let Some(reference) = ctx.reference(page)
@@ -741,23 +1015,41 @@ async fn webpage_piece(page: &Page<'_>, ctx: &Context<'_>) -> Result<Value> {
     if model.object_type == "post"
         && let Some(post) = ctx.p.post()
     {
-        data.insert("datePublished".into(), super::presentation::w3c(&post.post_date_gmt).into());
+        data.insert(
+            "datePublished".into(),
+            super::presentation::w3c(&post.post_date_gmt).into(),
+        );
         if gmt(&post.post_modified_gmt) > gmt(&post.post_date_gmt) {
-            data.insert("dateModified".into(), super::presentation::w3c(&post.post_modified_gmt).into());
+            data.insert(
+                "dateModified".into(),
+                super::presentation::w3c(&post.post_modified_gmt).into(),
+            );
         }
         if model.object_sub_type == "post" && ctx.represents == Represents::None {
-            data.insert("author".into(), json!({"@id": person_id(page, &ctx.site_url, post.post_author)}));
+            data.insert(
+                "author".into(),
+                json!({"@id": person_id(page, &ctx.site_url, post.post_author)}),
+            );
         }
     }
     if !ctx.description.is_empty() {
-        data.insert("description".into(), smart_strip_tags(&ctx.description).into());
+        data.insert(
+            "description".into(),
+            smart_strip_tags(&ctx.description).into(),
+        );
     }
     if !(model.object_type == "system-page" && model.object_sub_type == "404") {
-        data.insert("breadcrumb".into(), json!({"@id": format!("{}#breadcrumb", ctx.canonical)}));
+        data.insert(
+            "breadcrumb".into(),
+            json!({"@id": format!("{}#breadcrumb", ctx.canonical)}),
+        );
     }
     add_language(page, &mut data);
     if !ctx.page_type.iter().any(|t| t == "CollectionPage") {
-        data.insert("potentialAction".into(), json!([{"@type": "ReadAction", "target": [ctx.canonical]}]));
+        data.insert(
+            "potentialAction".into(),
+            json!([{"@type": "ReadAction", "target": [ctx.canonical]}]),
+        );
     }
     Ok(Value::Object(data))
 }
@@ -783,7 +1075,10 @@ async fn breadcrumb_piece(page: &Page<'_>, ctx: &Context<'_>) -> Result<Option<V
         last.text = home;
         crumbs = vec![last];
     }
-    let crumbs: Vec<Crumb> = crumbs.into_iter().filter(|c| !c.text.is_empty() && c.text != "0").collect();
+    let crumbs: Vec<Crumb> = crumbs
+        .into_iter()
+        .filter(|c| !c.text.is_empty() && c.text != "0")
+        .collect();
     let items: Vec<Value> = crumbs
         .iter()
         .enumerate()
@@ -798,7 +1093,9 @@ async fn breadcrumb_piece(page: &Page<'_>, ctx: &Context<'_>) -> Result<Option<V
             Value::Object(item)
         })
         .collect();
-    Ok(Some(json!({"@type": "BreadcrumbList", "@id": format!("{}#breadcrumb", ctx.canonical), "itemListElement": items})))
+    Ok(Some(
+        json!({"@type": "BreadcrumbList", "@id": format!("{}#breadcrumb", ctx.canonical), "itemListElement": items}),
+    ))
 }
 
 /// `Website::generate()`.
@@ -808,7 +1105,10 @@ fn website_piece(page: &Page<'_>, ctx: &Context<'_>) -> Value {
     data.insert("@id".into(), format!("{}#website", ctx.site_url).into());
     data.insert("url".into(), ctx.site_url.clone().into());
     data.insert("name".into(), smart_strip_tags(&site_name(page)).into());
-    data.insert("description".into(), page.site.settings.blogdescription.clone().into());
+    data.insert(
+        "description".into(),
+        page.site.settings.blogdescription.clone().into(),
+    );
     if let Some(reference) = ctx.reference(page) {
         data.insert("publisher".into(), reference);
     }
@@ -836,7 +1136,10 @@ async fn organization_piece(page: &Page<'_>, ctx: &Context<'_>) -> Result<Value>
     };
     let mut data = Map::new();
     data.insert("@type".into(), "Organization".into());
-    data.insert("@id".into(), format!("{}#organization", ctx.site_url).into());
+    data.insert(
+        "@id".into(),
+        format!("{}#organization", ctx.site_url).into(),
+    );
     data.insert("name".into(), smart_strip_tags(&name).into());
     let alternate = o.string("company_alternate_name");
     if !alternate.is_empty() && alternate != "0" {
@@ -878,17 +1181,38 @@ async fn organization_piece(page: &Page<'_>, ctx: &Context<'_>) -> Result<Value>
 /// The `company_logo_meta` option (an array of `WPSEO_Image_Utils::get_data()`).
 fn company_logo_meta(page: &Page<'_>) -> Option<ImageData> {
     let value = page.options.get("company_logo_meta")?;
-    let url = value.get("url").map(super::options::php_string).filter(|u| !u.is_empty())?;
-    let num = |key: &str| value.get(key).map(super::options::php_string).and_then(|v| v.parse::<u64>().ok()).unwrap_or(0);
-    Some(ImageData { url, width: num("width"), height: num("height"), ..ImageData::default() })
+    let url = value
+        .get("url")
+        .map(super::options::php_string)
+        .filter(|u| !u.is_empty())?;
+    let num = |key: &str| {
+        value
+            .get(key)
+            .map(super::options::php_string)
+            .and_then(|v| v.parse::<u64>().ok())
+            .unwrap_or(0)
+    };
+    Some(ImageData {
+        url,
+        width: num("width"),
+        height: num("height"),
+        ..ImageData::default()
+    })
 }
 
 /// `Person::build_person_data()`.
-async fn person_piece(page: &Page<'_>, ctx: &Context<'_>, user_id: u64, represents: bool) -> Result<Value> {
+async fn person_piece(
+    page: &Page<'_>,
+    ctx: &Context<'_>,
+    user_id: u64,
+    represents: bool,
+) -> Result<Value> {
     let mut data = Map::new();
     data.insert("@type".into(), json!(["Person", "Organization"]));
     data.insert("@id".into(), person_id(page, &ctx.site_url, user_id).into());
-    let Some(user) = page.users.get(&user_id) else { return Ok(Value::Object(data)) };
+    let Some(user) = page.users.get(&user_id) else {
+        return Ok(Value::Object(data));
+    };
     let name = smart_strip_tags(&user.display_name);
     data.insert("name".into(), name.clone().into());
     let pronouns = smart_strip_tags(&author_meta(page, user_id, "wpseo_pronouns").await?);
@@ -898,9 +1222,7 @@ async fn person_piece(page: &Page<'_>, ctx: &Context<'_>, user_id: u64, represen
     // add_image()
     let logo_id = format!("{}#/schema/person/image/", ctx.site_url);
     let mut image_id = None;
-    if represents
-        && let Some(meta) = person_logo_meta(page).await?
-    {
+    if represents && let Some(meta) = person_logo_meta(page).await? {
         let image = image_from_meta(page, &meta.url, &meta, &name);
         image_id = image.get("@id").cloned();
         data.insert("image".into(), image);
@@ -911,7 +1233,10 @@ async fn person_piece(page: &Page<'_>, ctx: &Context<'_>, user_id: u64, represen
         image_id = image.get("@id").cloned();
         data.insert("image".into(), image);
     }
-    data.insert("logo".into(), json!({"@id": image_id.unwrap_or_else(|| logo_id.into())}));
+    data.insert(
+        "logo".into(),
+        json!({"@id": image_id.unwrap_or_else(|| logo_id.into())}),
+    );
     let description = author_meta(page, user_id, "description").await?;
     if !description.is_empty() {
         data.insert("description".into(), smart_strip_tags(&description).into());
@@ -920,7 +1245,18 @@ async fn person_piece(page: &Page<'_>, ctx: &Context<'_>, user_id: u64, represen
     if !user.user_url.is_empty() {
         same_as.push(user.user_url.clone());
     }
-    for profile in ["facebook", "instagram", "linkedin", "pinterest", "twitter", "myspace", "youtube", "soundcloud", "tumblr", "wikipedia"] {
+    for profile in [
+        "facebook",
+        "instagram",
+        "linkedin",
+        "pinterest",
+        "twitter",
+        "myspace",
+        "youtube",
+        "soundcloud",
+        "tumblr",
+        "wikipedia",
+    ] {
         let mut url = author_meta(page, user_id, profile).await?;
         if !url.is_empty() && profile == "twitter" {
             url = format!("https://x.com/{url}");
@@ -946,16 +1282,37 @@ async fn person_piece(page: &Page<'_>, ctx: &Context<'_>, user_id: u64, represen
 async fn person_logo_meta(page: &Page<'_>) -> Result<Option<ImageData>> {
     let value = page.options.get("person_logo_meta");
     if let Some(value) = value
-        && let Some(url) = value.get("url").map(super::options::php_string).filter(|u| !u.is_empty())
+        && let Some(url) = value
+            .get("url")
+            .map(super::options::php_string)
+            .filter(|u| !u.is_empty())
     {
-        let num = |key: &str| value.get(key).map(super::options::php_string).and_then(|v| v.parse::<u64>().ok()).unwrap_or(0);
-        return Ok(Some(ImageData { url, width: num("width"), height: num("height"), ..ImageData::default() }));
+        let num = |key: &str| {
+            value
+                .get(key)
+                .map(super::options::php_string)
+                .and_then(|v| v.parse::<u64>().ok())
+                .unwrap_or(0)
+        };
+        return Ok(Some(ImageData {
+            url,
+            width: num("width"),
+            height: num("height"),
+            ..ImageData::default()
+        }));
     }
-    let mut id = page.options.string("person_logo_id").trim().parse::<u64>().unwrap_or(0);
+    let mut id = page
+        .options
+        .string("person_logo_id")
+        .trim()
+        .parse::<u64>()
+        .unwrap_or(0);
     if id == 0 {
         id = fallback_to_site_logo(page).await?;
     }
-    let Some(a) = images::attachment(page, id).await? else { return Ok(None) };
+    let Some(a) = images::attachment(page, id).await? else {
+        return Ok(None);
+    };
     Ok(images::best_variation(page, &a).await)
 }
 
@@ -963,15 +1320,20 @@ async fn person_logo_meta(page: &Page<'_>) -> Result<Option<ImageData>> {
 /// `str_word_count()` (with the Cyrillic letters when the text has some).
 fn word_count(content: &str, title: &str) -> usize {
     use std::sync::LazyLock;
-    static CODE: LazyLock<fancy_regex::Regex> = LazyLock::new(|| rustpress_core::formatting::pcre(r"(?si)<(pre|code)[^>]*?>.*?</\1>").expect("valid pattern"));
-    static ENTITY: LazyLock<regex::Regex> = LazyLock::new(|| regex::Regex::new(r"(?i)&[a-z0-9]+;").expect("valid pattern"));
-    static CYRILLIC: LazyLock<regex::Regex> = LazyLock::new(|| regex::Regex::new(r"(?i)[а-я]").expect("valid pattern"));
+    static CODE: LazyLock<fancy_regex::Regex> = LazyLock::new(|| {
+        rustpress_core::formatting::pcre(r"(?si)<(pre|code)[^>]*?>.*?</\1>").expect("valid pattern")
+    });
+    static ENTITY: LazyLock<regex::Regex> =
+        LazyLock::new(|| regex::Regex::new(r"(?i)&[a-z0-9]+;").expect("valid pattern"));
+    static CYRILLIC: LazyLock<regex::Regex> =
+        LazyLock::new(|| regex::Regex::new(r"(?i)[а-я]").expect("valid pattern"));
     let text = format!("{title} {content}");
     let text = CODE.replace_all(&text, "").replace("><", "> <");
     let text = wp_strip_all_tags(&text);
     let characters = if CYRILLIC.is_match(&text) {
         let mut chars: Vec<char> = Vec::new();
-        for c in "абвгдеёжзийклмнопрстуфхцчшщъыьэюяабвгґдеєжзиіїйклмнопрстуфхцчшщьюя".chars() {
+        for c in "абвгдеёжзийклмнопрстуфхцчшщъыьэюяабвгґдеєжзиіїйклмнопрстуфхцчшщьюя".chars()
+        {
             if !chars.contains(&c) {
                 chars.push(c);
             }
@@ -1020,7 +1382,10 @@ pub fn str_word_count(text: &str, characters: &str) -> usize {
     let bytes = text.as_bytes();
     let mut start = 0;
     let mut end = bytes.len();
-    if end > 0 && ((bytes[0] == b'\'' && !extra[b'\'' as usize]) || (bytes[0] == b'-' && !extra[b'-' as usize])) {
+    if end > 0
+        && ((bytes[0] == b'\'' && !extra[b'\'' as usize])
+            || (bytes[0] == b'-' && !extra[b'-' as usize]))
+    {
         start = 1;
     }
     if end > start && bytes[end - 1] == b'-' && !extra[b'-' as usize] {

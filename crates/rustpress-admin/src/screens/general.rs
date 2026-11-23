@@ -14,9 +14,20 @@ fn form_option(ctx: &Ctx<'_>, name: &str) -> String {
 /// The roles of `wp_user_roles` in stored order, with their display names.
 pub async fn role_names(ctx: &Ctx<'_>) -> Vec<(String, String)> {
     let key = format!("{}user_roles", ctx.env.db.table_prefix());
-    let raw = ctx.site().options.fetch(ctx.env.db, &key).await.ok().flatten().unwrap_or_default();
-    let Ok(value) = rustpress_phpser::unserialize(raw.as_bytes()) else { return Vec::new() };
-    let Some(items) = value.as_array() else { return Vec::new() };
+    let raw = ctx
+        .site()
+        .options
+        .fetch(ctx.env.db, &key)
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or_default();
+    let Ok(value) = rustpress_phpser::unserialize(raw.as_bytes()) else {
+        return Vec::new();
+    };
+    let Some(items) = value.as_array() else {
+        return Vec::new();
+    };
     items
         .iter()
         .map(|(slug, role)| {
@@ -24,7 +35,11 @@ pub async fn role_names(ctx: &Ctx<'_>) -> Vec<(String, String)> {
                 rustpress_phpser::Key::Str(s) => String::from_utf8_lossy(s).into_owned(),
                 rustpress_phpser::Key::Int(i) => i.to_string(),
             };
-            let name = role.get("name").and_then(|n| n.as_str()).unwrap_or(&slug).to_owned();
+            let name = role
+                .get("name")
+                .and_then(|n| n.as_str())
+                .unwrap_or(&slug)
+                .to_owned();
             (slug, name)
         })
         .collect()
@@ -36,9 +51,15 @@ fn dropdown_roles(ctx: &Ctx<'_>, roles: &[(String, String)], selected: &str) -> 
     for (slug, name) in roles {
         let name = ctx.site().trx(name, "User role");
         if slug == selected {
-            out.push_str(&format!("\n\t<option selected='selected' value='{}'>{name}</option>", esc_attr(slug)));
+            out.push_str(&format!(
+                "\n\t<option selected='selected' value='{}'>{name}</option>",
+                esc_attr(slug)
+            ));
         } else {
-            out.push_str(&format!("\n\t<option value='{}'>{name}</option>", esc_attr(slug)));
+            out.push_str(&format!(
+                "\n\t<option value='{}'>{name}</option>",
+                esc_attr(slug)
+            ));
         }
     }
     out
@@ -47,32 +68,72 @@ fn dropdown_roles(ctx: &Ctx<'_>, roles: &[(String, String)], selected: &str) -> 
 /// `wp_dropdown_languages()`: the installed languages and, when WordPress knows them, the available translations.
 fn dropdown_languages(ctx: &Ctx<'_>, selected: &str) -> String {
     let selected = if selected == "en_US" { "" } else { selected };
-    let installed: Vec<&str> = ctx.env.languages.iter().map(|l| l.locale.as_str()).collect();
-    let available: Vec<&(String, String, String)> = ctx.env.available_translations.iter().filter(|(locale, _, _)| !installed.contains(&locale.as_str())).collect();
+    let installed: Vec<&str> = ctx
+        .env
+        .languages
+        .iter()
+        .map(|l| l.locale.as_str())
+        .collect();
+    let available: Vec<&(String, String, String)> = ctx
+        .env
+        .available_translations
+        .iter()
+        .filter(|(locale, _, _)| !installed.contains(&locale.as_str()))
+        .collect();
     let show_available = !available.is_empty();
     let mut structure: Vec<String> = Vec::new();
     if show_available {
-        structure.push(format!("<optgroup label=\"{}\">", esc_attr(&ctx.site().trx("Installed", "translations"))));
+        structure.push(format!(
+            "<optgroup label=\"{}\">",
+            esc_attr(&ctx.site().trx("Installed", "translations"))
+        ));
     }
-    structure.push(format!("<option value=\"\" lang=\"en\" data-installed=\"1\"{}>English (United States)</option>", if selected.is_empty() { " selected='selected'" } else { "" }));
+    structure.push(format!(
+        "<option value=\"\" lang=\"en\" data-installed=\"1\"{}>English (United States)</option>",
+        if selected.is_empty() {
+            " selected='selected'"
+        } else {
+            ""
+        }
+    ));
     for language in &ctx.env.languages {
         structure.push(format!(
             "<option value=\"{}\" lang=\"{}\"{} data-installed=\"1\">{}</option>",
             esc_attr(&language.locale),
             esc_attr(&language.lang),
-            if language.locale == selected { " selected='selected'" } else { "" },
+            if language.locale == selected {
+                " selected='selected'"
+            } else {
+                ""
+            },
             esc_html(&language.native_name)
         ));
     }
     if show_available {
         structure.push("</optgroup>".to_owned());
-        structure.push(format!("<optgroup label=\"{}\">", esc_attr(&ctx.site().trx("Available", "translations"))));
+        structure.push(format!(
+            "<optgroup label=\"{}\">",
+            esc_attr(&ctx.site().trx("Available", "translations"))
+        ));
         for (locale, native_name, lang) in available {
-            structure.push(format!("<option value=\"{}\" lang=\"{}\"{}>{}</option>", esc_attr(locale), esc_attr(lang), if locale == selected { " selected='selected'" } else { "" }, esc_html(native_name)));
+            structure.push(format!(
+                "<option value=\"{}\" lang=\"{}\"{}>{}</option>",
+                esc_attr(locale),
+                esc_attr(lang),
+                if locale == selected {
+                    " selected='selected'"
+                } else {
+                    ""
+                },
+                esc_html(native_name)
+            ));
         }
         structure.push("</optgroup>".to_owned());
     }
-    format!("<select name=\"WPLANG\" id=\"WPLANG\">{}</select>", structure.join("\n"))
+    format!(
+        "<select name=\"WPLANG\" id=\"WPLANG\">{}</select>",
+        structure.join("\n")
+    )
 }
 
 /// When the offset of `zone` next changes after `now`: `(timestamp, daylight saving begins)`.
@@ -82,7 +143,10 @@ fn next_transition(zone: chrono_tz::Tz, now: i64) -> Option<(i64, bool)> {
         let local = zone.timestamp_opt(ts, 0).single()?;
         let offset = local.offset();
         use chrono_tz::OffsetComponents;
-        Some((offset.fix().local_minus_utc(), offset.dst_offset().num_seconds() as i32))
+        Some((
+            offset.fix().local_minus_utc(),
+            offset.dst_offset().num_seconds() as i32,
+        ))
     };
     let start = offsets(now)?;
     let mut low = now;
@@ -95,7 +159,11 @@ fn next_transition(zone: chrono_tz::Tz, now: i64) -> Option<(i64, bool)> {
             let (mut lo, mut hi) = (high - step, high);
             while hi - lo > 1 {
                 let mid = lo + (hi - lo) / 2;
-                if offsets(mid)? == start { lo = mid } else { hi = mid }
+                if offsets(mid)? == start {
+                    lo = mid
+                } else {
+                    hi = mid
+                }
             }
             let after = offsets(hi)?;
             return Some((hi, after.1 != 0));
@@ -108,7 +176,15 @@ fn next_transition(zone: chrono_tz::Tz, now: i64) -> Option<(i64, bool)> {
 
 pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     if !ctx.can("manage_options") {
-        return super::die(ctx.env, 403, "WordPress &rsaquo; Error", &format!("<p>{}</p>", ctx.tr("Sorry, you are not allowed to manage options for this site.")));
+        return super::die(
+            ctx.env,
+            403,
+            "WordPress &rsaquo; Error",
+            &format!(
+                "<p>{}</p>",
+                ctx.tr("Sorry, you are not allowed to manage options for this site.")
+            ),
+        );
     }
     let site = ctx.site();
     let tr = |s: &str| ctx.tr(s);
@@ -126,8 +202,18 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
             let errors: Vec<SettingsError> = items
                 .iter()
                 .map(|(_, e)| {
-                    let field = |n: &str| e.get(n).and_then(|v| v.as_str()).unwrap_or_default().to_owned();
-                    SettingsError { setting: field("setting"), code: field("code"), message: field("message"), kind: field("type") }
+                    let field = |n: &str| {
+                        e.get(n)
+                            .and_then(|v| v.as_str())
+                            .unwrap_or_default()
+                            .to_owned()
+                    };
+                    SettingsError {
+                        setting: field("setting"),
+                        code: field("code"),
+                        message: field("message"),
+                        kind: field("type"),
+                    }
                 })
                 .collect();
             notices_html = notices::render_settings_errors(&errors, false);
@@ -144,7 +230,10 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         tr("Site Title"),
         form_option(ctx, "blogname")
     ));
-    let tagline = rustpress_core::i18n::sprintf(&tr("In a few words, explain what this site is about. Example: &#8220;%s.&#8221;"), &[&tr("Just another WordPress site")]);
+    let tagline = rustpress_core::i18n::sprintf(
+        &tr("In a few words, explain what this site is about. Example: &#8220;%s.&#8221;"),
+        &[&tr("Just another WordPress site")],
+    );
     h.push_str(&format!(
         "<tr>\n<th scope=\"row\"><label for=\"blogdescription\">{}</label></th>\n<td><input name=\"blogdescription\" type=\"text\" id=\"blogdescription\" aria-describedby=\"tagline-description\" value=\"{}\" class=\"regular-text\" />\n<p class=\"description\" id=\"tagline-description\">{tagline}</p></td>\n</tr>\n\n",
         tr("Tagline"),
@@ -160,7 +249,14 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         tr("WordPress Address (URL)"),
         form_option(ctx, "siteurl")
     ));
-    let home_help = rustpress_core::i18n::sprintf(&tr("Enter the same address here unless you <a href=\"%s\">want your site home page to be different from your WordPress installation directory</a>."), &[&tr("https://developer.wordpress.org/advanced-administration/server/wordpress-in-directory/")]);
+    let home_help = rustpress_core::i18n::sprintf(
+        &tr(
+            "Enter the same address here unless you <a href=\"%s\">want your site home page to be different from your WordPress installation directory</a>.",
+        ),
+        &[&tr(
+            "https://developer.wordpress.org/advanced-administration/server/wordpress-in-directory/",
+        )],
+    );
     h.push_str(&format!(
         "<tr>\n<th scope=\"row\"><label for=\"home\">{}</label></th>\n<td><input name=\"home\" type=\"url\" id=\"home\" aria-describedby=\"home-description\" value=\"{}\" class=\"regular-text code\" />\n\t<p class=\"description\" id=\"home-description\">\n\t\t{home_help}</p>\n</td>\n</tr>\n\n",
         tr("Site Address (URL)"),
@@ -171,9 +267,23 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     let mut pending = String::new();
     let new_admin_email = site.options.string("new_admin_email", "");
     if !new_admin_email.is_empty() && new_admin_email != admin_email {
-        let message = rustpress_core::i18n::sprintf(&tr("There is a pending change of the admin email to %s."), &[&format!("<code>{}</code>", esc_html(&new_admin_email))]);
-        let dismiss = esc_url(&format!("{}&_wpnonce={}", ctx.admin_url("options.php?dismiss=new_admin_email"), ctx.create_nonce("dismiss-1-new_admin_email")));
-        pending = notices::notice(&format!("{message} <a href=\"{dismiss}\">{}</a>", tr("Cancel")), "", false, "", &["updated", "inline"], true);
+        let message = rustpress_core::i18n::sprintf(
+            &tr("There is a pending change of the admin email to %s."),
+            &[&format!("<code>{}</code>", esc_html(&new_admin_email))],
+        );
+        let dismiss = esc_url(&format!(
+            "{}&_wpnonce={}",
+            ctx.admin_url("options.php?dismiss=new_admin_email"),
+            ctx.create_nonce("dismiss-1-new_admin_email")
+        ));
+        pending = notices::notice(
+            &format!("{message} <a href=\"{dismiss}\">{}</a>", tr("Cancel")),
+            "",
+            false,
+            "",
+            &["updated", "inline"],
+            true,
+        );
     }
     h.push_str(&format!(
         "\n<tr>\n<th scope=\"row\"><label for=\"new_admin_email\">{}</label></th>\n<td><input name=\"new_admin_email\" type=\"email\" id=\"new_admin_email\" aria-describedby=\"new-admin-email-description\" value=\"{}\" class=\"regular-text ltr\" />\n<p class=\"description\" id=\"new-admin-email-description\">{}</p>\n{pending}</td>\n</tr>\n\n",
@@ -193,7 +303,9 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     let default_role = site.options.string("default_role", "subscriber");
     let mut roles = role_names(ctx).await;
     roles.reverse();
-    roles.retain(|(slug, _)| !(matches!(slug.as_str(), "administrator" | "editor") && *slug != default_role));
+    roles.retain(|(slug, _)| {
+        !(matches!(slug.as_str(), "administrator" | "editor") && *slug != default_role)
+    });
     h.push_str(&format!(
         "<tr>\n<th scope=\"row\"><label for=\"default_role\">{}</label></th>\n<td>\n\t\t<select name=\"default_role\" id=\"default_role\">{}</select>\n</td>\n</tr>\n\n",
         tr("New User Default Role"),
@@ -201,7 +313,11 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     ));
 
     let locale = site.locale();
-    let locale = if ctx.env.languages.iter().any(|l| l.locale == locale) { locale } else { String::new() };
+    let locale = if ctx.env.languages.iter().any(|l| l.locale == locale) {
+        locale
+    } else {
+        String::new()
+    };
     h.push_str(&format!(
         "\t\t<tr>\n\t\t<th scope=\"row\"><label for=\"WPLANG\">{}<span class=\"dashicons dashicons-translation\" aria-hidden=\"true\"></span></label></th>\n\t\t<td>\n\t\t\t{}\t\t</td>\n\t</tr>\n",
         tr("Site Language"),
@@ -218,7 +334,13 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     if tzstring.is_empty() {
         check_zone_info = false;
         let value: f64 = offset.parse().unwrap_or(0.0);
-        tzstring = if value == 0.0 { "UTC+0".to_owned() } else if value < 0.0 { format!("UTC{offset}") } else { format!("UTC+{offset}") };
+        tzstring = if value == 0.0 {
+            "UTC+0".to_owned()
+        } else if value < 0.0 {
+            format!("UTC{offset}")
+        } else {
+            format!("UTC+{offset}")
+        };
     }
     let format = site.trx("Y-m-d H:i:s", "timezone date format");
     h.push_str(&format!(
@@ -227,9 +349,26 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         timezones::choice(site, &tzstring),
         rustpress_core::i18n::sprintf(&tr("Choose either a city in the same timezone as you or a %s (Coordinated Universal Time) time offset."), &["<abbr>UTC</abbr>"])
     ));
-    h.push_str(&format!("<p class=\"timezone-info\">\n\t<span id=\"utc-time\">\n\t{}\t</span>\n", rustpress_core::i18n::sprintf(&tr("Universal time is %s."), &[&format!("<code>{}</code>", site.date_utc(&format, ctx.env.now))])));
-    if !site.options.string("timezone_string", "").is_empty() || !offset.is_empty() && offset.parse::<f64>().unwrap_or(0.0) != 0.0 {
-        h.push_str(&format!("	<span id=\"local-time\">\n\t{}\t</span>\n", rustpress_core::i18n::sprintf(&tr("Local time is %s."), &[&format!("<code>{}</code>", site.date(&format, ctx.env.now))])));
+    h.push_str(&format!(
+        "<p class=\"timezone-info\">\n\t<span id=\"utc-time\">\n\t{}\t</span>\n",
+        rustpress_core::i18n::sprintf(
+            &tr("Universal time is %s."),
+            &[&format!(
+                "<code>{}</code>",
+                site.date_utc(&format, ctx.env.now)
+            )]
+        )
+    ));
+    if !site.options.string("timezone_string", "").is_empty()
+        || !offset.is_empty() && offset.parse::<f64>().unwrap_or(0.0) != 0.0
+    {
+        h.push_str(&format!(
+            "	<span id=\"local-time\">\n\t{}\t</span>\n",
+            rustpress_core::i18n::sprintf(
+                &tr("Local time is %s."),
+                &[&format!("<code>{}</code>", site.date(&format, ctx.env.now))]
+            )
+        ));
     }
     h.push_str("</p>\n\n");
     if check_zone_info && let Ok(zone) = tzstring.parse::<chrono_tz::Tz>() {
@@ -237,41 +376,114 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         let dst_now = {
             use chrono::TimeZone;
             use chrono_tz::OffsetComponents;
-            zone.timestamp_opt(now, 0).single().is_some_and(|t| t.offset().dst_offset().num_seconds() != 0)
+            zone.timestamp_opt(now, 0)
+                .single()
+                .is_some_and(|t| t.offset().dst_offset().num_seconds() != 0)
         };
-        let status = if dst_now { tr("This timezone is currently in daylight saving time.") } else { tr("This timezone is currently in standard time.") };
+        let status = if dst_now {
+            tr("This timezone is currently in daylight saving time.")
+        } else {
+            tr("This timezone is currently in standard time.")
+        };
         let next = match next_transition(zone, now) {
             Some((ts, begins_dst)) => {
-                let message = if begins_dst { tr("Daylight saving time begins on: %s.") } else { tr("Standard time begins on: %s.") };
-                format!(" {}", rustpress_core::i18n::sprintf(&message, &[&format!("<code>{}</code>", site.date(&tr("F j, Y g:i a"), ts))]))
+                let message = if begins_dst {
+                    tr("Daylight saving time begins on: %s.")
+                } else {
+                    tr("Standard time begins on: %s.")
+                };
+                format!(
+                    " {}",
+                    rustpress_core::i18n::sprintf(
+                        &message,
+                        &[&format!(
+                            "<code>{}</code>",
+                            site.date(&tr("F j, Y g:i a"), ts)
+                        )]
+                    )
+                )
             }
             None => tr("This timezone does not observe daylight saving time."),
         };
-        h.push_str(&format!("<p class=\"timezone-info\">\n<span>\n\t{status}\t<br />\n\t{next}\t</span>\n</p>\n"));
+        h.push_str(&format!(
+            "<p class=\"timezone-info\">\n<span>\n\t{status}\t<br />\n\t{next}\t</span>\n</p>\n"
+        ));
     }
     h.push_str("</td>\n</tr>\n\n");
 
     // Date and time format
-    h.push_str(&format_rows(ctx, "date_format", &tr("Date Format"), &[tr("F j, Y"), "Y-m-d".into(), "m/d/Y".into(), "d/m/Y".into(), "d.m.Y".into()], false));
-    h.push_str(&format_rows(ctx, "time_format", &tr("Time Format"), &[tr("g:i a"), "g:i A".into(), "H:i".into()], true));
+    h.push_str(&format_rows(
+        ctx,
+        "date_format",
+        &tr("Date Format"),
+        &[
+            tr("F j, Y"),
+            "Y-m-d".into(),
+            "m/d/Y".into(),
+            "d/m/Y".into(),
+            "d.m.Y".into(),
+        ],
+        false,
+    ));
+    h.push_str(&format_rows(
+        ctx,
+        "time_format",
+        &tr("Time Format"),
+        &[tr("g:i a"), "g:i A".into(), "H:i".into()],
+        true,
+    ));
 
     // Week starts on
-    let start = site.options.string("start_of_week", "0").parse::<i64>().unwrap_or(0);
-    let days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+    let start = site
+        .options
+        .string("start_of_week", "0")
+        .parse::<i64>()
+        .unwrap_or(0);
+    let days = [
+        "Sunday",
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday",
+        "Saturday",
+    ];
     let mut weekdays = String::new();
     for (index, day) in days.iter().enumerate() {
-        let selected = if start == index as i64 { "selected=\"selected\"" } else { "" };
-        weekdays.push_str(&format!("\n\t<option value='{index}' {selected}>{}</option>", site.locale_data().weekday[index]));
+        let selected = if start == index as i64 {
+            "selected=\"selected\""
+        } else {
+            ""
+        };
+        weekdays.push_str(&format!(
+            "\n\t<option value='{index}' {selected}>{}</option>",
+            site.locale_data().weekday[index]
+        ));
         let _ = day;
     }
     h.push_str(&format!("<tr>\n<th scope=\"row\"><label for=\"start_of_week\">{}</label></th>\n<td><select name=\"start_of_week\" id=\"start_of_week\">\n{weekdays}</select></td>\n</tr>\n", tr("Week Starts On")));
     h.push_str("</table>\n\n\n");
     h.push_str(&format!("<p class=\"submit\"><input type=\"submit\" name=\"submit\" id=\"submit\" class=\"button button-primary\" value=\"{}\"  /></p></form>\n\n</div>\n\n", esc_attr(&tr("Save Changes"))));
 
-    let screen = Screen { file: "options-general.php".into(), parent_file: "options-general.php".into(), submenu_file: Some("options-general.php".into()), title, help: Some(help(ctx)), ..Default::default() };
+    let screen = Screen {
+        file: "options-general.php".into(),
+        parent_file: "options-general.php".into(),
+        submenu_file: Some("options-general.php".into()),
+        title,
+        help: Some(help(ctx)),
+        ..Default::default()
+    };
     // The language drop-down sets the global `$locale` to '' when the site's language is not installed.
-    let installed = ctx.env.languages.iter().any(|l| l.locale == ctx.site().locale());
-    let mut assets = Assets { head: options_general_js(ctx), empty_locale: !installed, ..Default::default() };
+    let installed = ctx
+        .env
+        .languages
+        .iter()
+        .any(|l| l.locale == ctx.site().locale());
+    let mut assets = Assets {
+        head: options_general_js(ctx),
+        empty_locale: !installed,
+        ..Default::default()
+    };
     if ctx.can("upload_files") {
         super::media_ui::enqueue(ctx, &mut assets, 0).await;
         // `wp_enqueue_media()` runs in the page, after the header was printed.
@@ -286,7 +498,9 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
 fn format_rows(ctx: &Ctx<'_>, option: &str, title: &str, formats: &[String], time: bool) -> String {
     let site = ctx.site();
     let current = site.options.string(option, "");
-    let mut out = format!("<tr>\n<th scope=\"row\">{title}</th>\n<td>\n\t<fieldset><legend class=\"screen-reader-text\"><span>{title}</span></legend>\n");
+    let mut out = format!(
+        "<tr>\n<th scope=\"row\">{title}</th>\n<td>\n\t<fieldset><legend class=\"screen-reader-text\"><span>{title}</span></legend>\n"
+    );
     let mut seen: Vec<&String> = Vec::new();
     let mut custom = true;
     for format in formats {
@@ -294,7 +508,10 @@ fn format_rows(ctx: &Ctx<'_>, option: &str, title: &str, formats: &[String], tim
             continue;
         }
         seen.push(format);
-        out.push_str(&format!("\t<label><input type='radio' name='{option}' value='{}'", esc_attr(format)));
+        out.push_str(&format!(
+            "\t<label><input type='radio' name='{option}' value='{}'",
+            esc_attr(format)
+        ));
         if current == *format {
             out.push_str(" checked='checked'");
             custom = false;
@@ -302,9 +519,17 @@ fn format_rows(ctx: &Ctx<'_>, option: &str, title: &str, formats: &[String], tim
         out.push_str(&format!(" /> <span class=\"date-time-text format-i18n\">{}</span><code>{}</code></label><br />\n", site.date(format, ctx.env.now), esc_html(format)));
     }
     let (what, enter, label) = if time {
-        (ctx.tr("Custom:"), ctx.tr("enter a custom time format in the following field"), ctx.tr("Custom time format:"))
+        (
+            ctx.tr("Custom:"),
+            ctx.tr("enter a custom time format in the following field"),
+            ctx.tr("Custom time format:"),
+        )
     } else {
-        (ctx.tr("Custom:"), ctx.tr("enter a custom date format in the following field"), ctx.tr("Custom date format:"))
+        (
+            ctx.tr("Custom:"),
+            ctx.tr("enter a custom date format in the following field"),
+            ctx.tr("Custom date format:"),
+        )
     };
     let kind = if time { "time" } else { "date" };
     out.push_str(&format!(
@@ -333,19 +558,44 @@ async fn site_icon_section(ctx: &Ctx<'_>) -> String {
     if id != 0
         && let Ok(rows) = site.db.post_meta(id).await
     {
-        let value = |key: &str| rows.iter().find(|m| m.meta_key.as_deref() == Some(key)).and_then(|m| m.meta_value.clone());
+        let value = |key: &str| {
+            rows.iter()
+                .find(|m| m.meta_key.as_deref() == Some(key))
+                .and_then(|m| m.meta_value.clone())
+        };
         if let Some(file) = value("_wp_attached_file") {
             let full = rustpress_blocks::images::attachment_url(site, &file);
-            url = value("_wp_attachment_metadata").and_then(|raw| rustpress_blocks::images::Metadata::parse(&raw)).and_then(|meta| rustpress_blocks::images::intermediate_url(&full, &meta, 512, 512)).unwrap_or(full);
+            url = value("_wp_attachment_metadata")
+                .and_then(|raw| rustpress_blocks::images::Metadata::parse(&raw))
+                .and_then(|meta| rustpress_blocks::images::intermediate_url(&full, &meta, 512, 512))
+                .unwrap_or(full);
         }
     }
     let has = !url.is_empty();
-    let (wrapper, button_classes, change_classes) = if has { (" has-site-icon", "button", "upload-button button-hero button") } else { (" hidden", "upload-button button-hero button", "button") };
+    let (wrapper, button_classes, change_classes) = if has {
+        (
+            " has-site-icon",
+            "button",
+            "upload-button button-hero button",
+        )
+    } else {
+        (" hidden", "upload-button button-hero button", "button")
+    };
     let filename = url.rsplit('/').next().unwrap_or_default().to_owned();
     let (app_alt, browser_alt) = if id != 0 {
         (
-            rustpress_core::i18n::sprintf(&tr("App icon preview: The current image has no alternative text. The file name is: %s"), &[&filename]),
-            rustpress_core::i18n::sprintf(&tr("Browser icon preview: The current image has no alternative text. The file name is: %s"), &[&filename]),
+            rustpress_core::i18n::sprintf(
+                &tr(
+                    "App icon preview: The current image has no alternative text. The file name is: %s",
+                ),
+                &[&filename],
+            ),
+            rustpress_core::i18n::sprintf(
+                &tr(
+                    "Browser icon preview: The current image has no alternative text. The file name is: %s",
+                ),
+                &[&filename],
+            ),
         )
     } else {
         (String::new(), String::new())
@@ -361,10 +611,19 @@ async fn site_icon_section(ctx: &Ctx<'_>) -> String {
         esc_attr(&tr("Change Site Icon")),
         esc_attr(&tr("Set as Site Icon")),
         if has { "1" } else { "" },
-        if has { tr("Change Site Icon") } else { tr("Choose a Site Icon") },
+        if has {
+            tr("Change Site Icon")
+        } else {
+            tr("Choose a Site Icon")
+        },
         if has { "" } else { " hidden" },
         tr("Remove Site Icon"),
-        rustpress_core::i18n::sprintf(&tr("The Site Icon is what you see in browser tabs, bookmark bars, and within the WordPress mobile apps. It should be square and at least <strong>%1$s by %2$s</strong> pixels."), &["512", "512"]),
+        rustpress_core::i18n::sprintf(
+            &tr(
+                "The Site Icon is what you see in browser tabs, bookmark bars, and within the WordPress mobile apps. It should be square and at least <strong>%1$s by %2$s</strong> pixels."
+            ),
+            &["512", "512"]
+        ),
         icon = tr("Site Icon"),
     )
 }
@@ -381,7 +640,13 @@ fn options_general_js(ctx: &Ctx<'_>) -> String {
 /// The contextual help of the screen.
 fn help(ctx: &Ctx<'_>) -> crate::chrome::Help {
     let tr = |s: &str| ctx.tr(s);
-    let mut overview = format!("<p>{}</p><p>{}</p>", tr("The fields on this screen determine some of the basics of your site setup."), tr("Most themes show the site title at the top of every page, in the title bar of the browser, and as the identifying name for syndicated feeds. Many themes also show the tagline."));
+    let mut overview = format!(
+        "<p>{}</p><p>{}</p>",
+        tr("The fields on this screen determine some of the basics of your site setup."),
+        tr(
+            "Most themes show the site title at the top of every page, in the title bar of the browser, and as the identifying name for syndicated feeds. Many themes also show the tagline."
+        )
+    );
     overview.push_str(&format!(
         "<p>{}</p><p>{}</p><p>{}</p><p>{}</p>",
         tr("Two terms you will want to know are the WordPress URL and the site URL. The WordPress URL is where the core WordPress installation files are, and the site URL is the address a visitor uses in the browser to go to your site."),
@@ -402,7 +667,18 @@ fn help(ctx: &Ctx<'_>) -> crate::chrome::Help {
         tr("You must click the Save Changes button at the bottom of the screen for new settings to take effect.")
     ));
     crate::chrome::Help {
-        tabs: vec![crate::chrome::HelpTab { id: "overview".into(), title: tr("Overview"), content: overview }],
-        sidebar: format!("<p><strong>{}</strong></p><p>{}</p><p>{}</p>", tr("For more information:"), tr("<a href=\"https://wordpress.org/documentation/article/settings-general-screen/\">Documentation on General Settings</a>"), tr("<a href=\"https://wordpress.org/support/forums/\">Support forums</a>")),
+        tabs: vec![crate::chrome::HelpTab {
+            id: "overview".into(),
+            title: tr("Overview"),
+            content: overview,
+        }],
+        sidebar: format!(
+            "<p><strong>{}</strong></p><p>{}</p><p>{}</p>",
+            tr("For more information:"),
+            tr(
+                "<a href=\"https://wordpress.org/documentation/article/settings-general-screen/\">Documentation on General Settings</a>"
+            ),
+            tr("<a href=\"https://wordpress.org/support/forums/\">Support forums</a>")
+        ),
     }
 }

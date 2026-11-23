@@ -3,25 +3,54 @@
 use rustpress_core::formatting::{esc_attr, esc_html};
 use rustpress_core::i18n::sprintf;
 
-use super::common::{checked, dropdown_pages, dropdown_terms, form_option, forbidden, selected, settings_errors, submit};
+use super::common::{
+    checked, dropdown_pages, dropdown_terms, forbidden, form_option, selected, settings_errors,
+    submit,
+};
 use super::{AdminResponse, Ctx, render};
 use crate::chrome::{Assets, Help, HelpTab, Screen};
 
 fn help(ctx: &Ctx<'_>, overview: &str, docs: &str) -> Help {
     Help {
-        tabs: vec![HelpTab { id: "overview".into(), title: ctx.tr("Overview"), content: overview.to_owned() }],
-        sidebar: format!("<p><strong>{}</strong></p><p>{docs}</p><p>{}</p>", ctx.tr("For more information:"), ctx.tr("<a href=\"https://wordpress.org/support/forums/\">Support forums</a>")),
+        tabs: vec![HelpTab {
+            id: "overview".into(),
+            title: ctx.tr("Overview"),
+            content: overview.to_owned(),
+        }],
+        sidebar: format!(
+            "<p><strong>{}</strong></p><p>{docs}</p><p>{}</p>",
+            ctx.tr("For more information:"),
+            ctx.tr("<a href=\"https://wordpress.org/support/forums/\">Support forums</a>")
+        ),
     }
 }
 
 /// `add_help_tab()` after the overview.
 fn with_tab(mut help: Help, id: &str, title: String, content: String) -> Help {
-    help.tabs.push(HelpTab { id: id.into(), title, content });
+    help.tabs.push(HelpTab {
+        id: id.into(),
+        title,
+        content,
+    });
     help
 }
 
-async fn finish(ctx: &Ctx<'_>, file: &str, title: String, body: String, help: Help, assets: Assets) -> AdminResponse {
-    let screen = Screen { file: file.into(), parent_file: "options-general.php".into(), submenu_file: Some(file.into()), title, help: Some(help), ..Default::default() };
+async fn finish(
+    ctx: &Ctx<'_>,
+    file: &str,
+    title: String,
+    body: String,
+    help: Help,
+    assets: Assets,
+) -> AdminResponse {
+    let screen = Screen {
+        file: file.into(),
+        parent_file: "options-general.php".into(),
+        submenu_file: Some(file.into()),
+        title,
+        help: Some(help),
+        ..Default::default()
+    };
     render(ctx, &screen, &body, &assets).await
 }
 
@@ -32,7 +61,10 @@ fn option_is(ctx: &Ctx<'_>, name: &str, value: &str) -> bool {
 /// `options-writing.php`.
 pub async fn writing(ctx: &Ctx<'_>) -> AdminResponse {
     if !ctx.can("manage_options") {
-        return forbidden(ctx, "Sorry, you are not allowed to manage options for this site.");
+        return forbidden(
+            ctx,
+            "Sorry, you are not allowed to manage options for this site.",
+        );
     }
     let tr = |s: &str| ctx.tr(s);
     let site = ctx.site();
@@ -47,30 +79,63 @@ pub async fn writing(ctx: &Ctx<'_>) -> AdminResponse {
         dropdown_terms(ctx, "category", "default_category", "default_category", default_category, "postform", None, &[]).await
     ));
     let current_format = site.options.string("default_post_format", "0");
-    let formats = [("0", "Standard"), ("aside", "Aside"), ("chat", "Chat"), ("gallery", "Gallery"), ("link", "Link"), ("image", "Image"), ("quote", "Quote"), ("status", "Status"), ("video", "Video"), ("audio", "Audio")];
+    let formats = [
+        ("0", "Standard"),
+        ("aside", "Aside"),
+        ("chat", "Chat"),
+        ("gallery", "Gallery"),
+        ("link", "Link"),
+        ("image", "Image"),
+        ("quote", "Quote"),
+        ("status", "Status"),
+        ("video", "Video"),
+        ("audio", "Audio"),
+    ];
     let mut options = String::new();
     for (value, label) in formats {
         let label = site.trx(label, "Post format");
-        options.push_str(&format!("\t\t<option value=\"{value}\"{}>{label}</option>\n", if current_format == value && value != "0" { " selected=\"selected\"" } else { "" }));
+        options.push_str(&format!(
+            "\t\t<option value=\"{value}\"{}>{label}</option>\n",
+            if current_format == value && value != "0" {
+                " selected=\"selected\""
+            } else {
+                ""
+            }
+        ));
     }
     h.push_str(&format!("<tr>\n<th scope=\"row\"><label for=\"default_post_format\">{}</label></th>\n<td>\n\t<select name=\"default_post_format\" id=\"default_post_format\">\n{options}\t</select>\n</td>\n</tr>\n\n", tr("Default Post Format")));
     // `do_settings_fields( 'writing', 'default' )`: the fields plugins add with `add_settings_field()`.
     if !site.plugins.is_empty() {
         let parts = ctx.plugin_parts();
         let plugin_ctx = ctx.plugin_context(&parts, "options-writing.php");
-        for (title, html) in site.plugins.settings_fields(&plugin_ctx, "writing").await.unwrap_or_else(|e| {
-            eprintln!("settings_fields: {e}");
-            Vec::new()
-        }) {
-            h.push_str(&format!("<tr><th scope=\"row\">{title}</th><td>{html}</td></tr>"));
+        for (title, html) in site
+            .plugins
+            .settings_fields(&plugin_ctx, "writing")
+            .await
+            .unwrap_or_else(|e| {
+                eprintln!("settings_fields: {e}");
+                Vec::new()
+            })
+        {
+            h.push_str(&format!(
+                "<tr><th scope=\"row\">{title}</th><td>{html}</td></tr>"
+            ));
         }
     }
     h.push_str("</table>\n\n");
 
     let strings: Vec<String> = ["a", "b", "c"].iter().map(|_| random_string(8)).collect();
     let email_help = sprintf(
-        &tr("To post to WordPress by email, you must set up a secret email account with POP3 access. Any mail received at this address will be posted, so it&#8217;s a good idea to keep this address very secret. Here are three random strings you could use: %1$s, %2$s, %3$s."),
-        &strings.iter().map(|s| format!("<kbd>{s}</kbd>")).collect::<Vec<_>>().iter().map(String::as_str).collect::<Vec<_>>(),
+        &tr(
+            "To post to WordPress by email, you must set up a secret email account with POP3 access. Any mail received at this address will be posted, so it&#8217;s a good idea to keep this address very secret. Here are three random strings you could use: %1$s, %2$s, %3$s.",
+        ),
+        &strings
+            .iter()
+            .map(|s| format!("<kbd>{s}</kbd>"))
+            .collect::<Vec<_>>()
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>(),
     );
     h.push_str(&format!("<h2 id=\"wp-settings-section-post-via-email\" class=\"title\">{}</h2>\n<p>\n\t{email_help}</p>\n\n<table class=\"form-table\" role=\"presentation\">\n", tr("Post via email")));
     h.push_str(&format!(
@@ -102,7 +167,15 @@ pub async fn writing(ctx: &Ctx<'_>) -> AdminResponse {
     ));
     h.push_str(&submit(ctx));
     h.push_str("</form>\n</div>\n\n");
-    let overview = format!("<p>{}</p><p>{}</p>", tr("You can submit content in several different ways; this screen holds the settings for all of them. The top section controls the editor within the dashboard, while the rest control external publishing methods. For more information on any of these methods, use the documentation links."), tr("You must click the Save Changes button at the bottom of the screen for new settings to take effect."));
+    let overview = format!(
+        "<p>{}</p><p>{}</p>",
+        tr(
+            "You can submit content in several different ways; this screen holds the settings for all of them. The top section controls the editor within the dashboard, while the rest control external publishing methods. For more information on any of these methods, use the documentation links."
+        ),
+        tr(
+            "You must click the Save Changes button at the bottom of the screen for new settings to take effect."
+        )
+    );
     finish(ctx, "options-writing.php", title, h, with_tab(
             with_tab(
                 help(ctx, &overview, &tr("<a href=\"https://wordpress.org/documentation/article/settings-writing-screen/\">Documentation on Writing Settings</a>")),
@@ -118,7 +191,10 @@ pub async fn writing(ctx: &Ctx<'_>) -> AdminResponse {
 
 fn random_string(len: usize) -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
-    let mut seed = SystemTime::now().duration_since(UNIX_EPOCH).map_or(1, |d| d.as_nanos() as u64) | 1;
+    let mut seed = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(1, |d| d.as_nanos() as u64)
+        | 1;
     let alphabet = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
     (0..len)
         .map(|_| {
@@ -133,7 +209,10 @@ fn random_string(len: usize) -> String {
 /// `options-reading.php`.
 pub async fn reading(ctx: &Ctx<'_>) -> AdminResponse {
     if !ctx.can("manage_options") {
-        return forbidden(ctx, "Sorry, you are not allowed to manage options for this site.");
+        return forbidden(
+            ctx,
+            "Sorry, you are not allowed to manage options for this site.",
+        );
     }
     let tr = |s: &str| ctx.tr(s);
     let site = ctx.site();
@@ -143,8 +222,22 @@ pub async fn reading(ctx: &Ctx<'_>) -> AdminResponse {
     h.push_str(&format!("<form method=\"post\" action=\"options.php\">\n{}\n<table class=\"form-table\" role=\"presentation\">\n", ctx.settings_fields("reading")));
     let on_front = site.options.string("show_on_front", "posts");
     let none = tr("&mdash; Select &mdash;");
-    let front = dropdown_pages(ctx, "page_on_front", "page_on_front", site.options.u64("page_on_front", 0), Some(&none)).await;
-    let posts = dropdown_pages(ctx, "page_for_posts", "page_for_posts", site.options.u64("page_for_posts", 0), Some(&none)).await;
+    let front = dropdown_pages(
+        ctx,
+        "page_on_front",
+        "page_on_front",
+        site.options.u64("page_on_front", 0),
+        Some(&none),
+    )
+    .await;
+    let posts = dropdown_pages(
+        ctx,
+        "page_for_posts",
+        "page_for_posts",
+        site.options.u64("page_for_posts", 0),
+        Some(&none),
+    )
+    .await;
     h.push_str(&format!(
         "<tr>\n<th scope=\"row\">{homepage}</th>\n<td id=\"front-static-pages\"><fieldset>\n\t<legend class=\"screen-reader-text\"><span>{homepage}</span></legend>\n\t<p><label>\n\t\t<input name=\"show_on_front\" type=\"radio\" value=\"posts\" {c1} />\n\t\t{latest}\t</label>\n\t</p>\n\t<p><label>\n\t\t<input name=\"show_on_front\" type=\"radio\" value=\"page\" {c2} />\n\t\t{page}\t</label>\n\t</p>\n<ul>\n\t<li><label for=\"page_on_front\">\n\t{front_label} {front}</label></li>\n\t<li><label for=\"page_for_posts\">\n\t{posts_label} {posts}</label></li>\n</ul>\n",
         homepage = tr("Your homepage displays"),
@@ -197,9 +290,23 @@ pub async fn reading(ctx: &Ctx<'_>) -> AdminResponse {
     let overview = format!(
         "<p>{}</p><p>{}</p><p>{}</p><p>{}</p>",
         tr("This screen contains the settings that affect the display of your content."),
-        sprintf(&tr("You can choose what&#8217;s displayed on the homepage of your site. It can be posts in reverse chronological order (classic blog), or a fixed/static page. To set a static homepage, you first need to create two <a href=\"%s\">Pages</a>. One will become the homepage, and the other will be where your posts are displayed."), &["post-new.php?post_type=page"]),
-        sprintf(&tr("You can also control the display of your content in RSS feeds, including the maximum number of posts to display and whether to show full text or an excerpt. <a href=\"%s\">Learn more about feeds</a>."), &[&tr("https://developer.wordpress.org/advanced-administration/wordpress/feeds/")]),
-        tr("You must click the Save Changes button at the bottom of the screen for new settings to take effect.")
+        sprintf(
+            &tr(
+                "You can choose what&#8217;s displayed on the homepage of your site. It can be posts in reverse chronological order (classic blog), or a fixed/static page. To set a static homepage, you first need to create two <a href=\"%s\">Pages</a>. One will become the homepage, and the other will be where your posts are displayed."
+            ),
+            &["post-new.php?post_type=page"]
+        ),
+        sprintf(
+            &tr(
+                "You can also control the display of your content in RSS feeds, including the maximum number of posts to display and whether to show full text or an excerpt. <a href=\"%s\">Learn more about feeds</a>."
+            ),
+            &[&tr(
+                "https://developer.wordpress.org/advanced-administration/wordpress/feeds/"
+            )]
+        ),
+        tr(
+            "You must click the Save Changes button at the bottom of the screen for new settings to take effect."
+        )
     );
     let assets = Assets {
         head: "<script>\n\tjQuery( function($) {\n\t\tvar section = $('#front-static-pages'),\n\t\t\tstaticPage = section.find('input:radio[value=\"page\"]'),\n\t\t\tselects = section.find('select'),\n\t\t\tcheck_disabled = function(){\n\t\t\t\tselects.prop( 'disabled', ! staticPage.prop('checked') );\n\t\t\t};\n\t\tcheck_disabled();\n\t\tsection.find( 'input:radio' ).on( 'change', check_disabled );\n\t} );\n</script>\n".into(),
@@ -221,25 +328,49 @@ pub async fn reading(ctx: &Ctx<'_>) -> AdminResponse {
 fn avatar_choice(ctx: &Ctx<'_>, key: &str, label: &str, current: &str) -> String {
     use sha2::{Digest, Sha256};
     let email = ctx.user.email.trim().to_lowercase();
-    let hash: String = Sha256::digest(email.as_bytes()).iter().map(|b| format!("{b:02x}")).collect();
+    let hash: String = Sha256::digest(email.as_bytes())
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
     let default = match key {
         "mystery" => "&d=mm".to_owned(),
         "gravatar_default" => String::new(),
         other => format!("&d={other}"),
     };
-    let rating = ctx.site().options.string("avatar_rating", "G").to_lowercase();
+    let rating = ctx
+        .site()
+        .options
+        .string("avatar_rating", "G")
+        .to_lowercase();
     let initials = if key == "initials" {
         let name = ctx.user.display_name.to_lowercase();
         let words: Vec<&str> = name.split_whitespace().collect();
-        let value = if words.len() >= 2 { format!("{}{}", words[0].chars().next().unwrap_or(' '), words[words.len() - 1].chars().next().unwrap_or(' ')) } else { name.chars().take(2).collect() };
+        let value = if words.len() >= 2 {
+            format!(
+                "{}{}",
+                words[0].chars().next().unwrap_or(' '),
+                words[words.len() - 1].chars().next().unwrap_or(' ')
+            )
+        } else {
+            name.chars().take(2).collect()
+        };
         format!("&initials={value}")
     } else {
         String::new()
     };
-    let url = |size: u32| format!("https://secure.gravatar.com/avatar/{hash}?s={size}{default}&f=y&r={rating}{initials}").replace('&', "&#038;");
+    let url = |size: u32| {
+        format!(
+            "https://secure.gravatar.com/avatar/{hash}?s={size}{default}&f=y&r={rating}{initials}"
+        )
+        .replace('&', "&#038;")
+    };
     format!(
         "\t<label><input type='radio' name='avatar_default' id='avatar_{key}' value='{key}'{} /> <img alt='' src='{}' srcset='{} 2x' class='avatar avatar-32 photo avatar-default' height='32' width='32' loading='lazy' decoding='async'/> {label}</label><br />\n",
-        if current == key { " checked=\"checked\"" } else { "" },
+        if current == key {
+            " checked=\"checked\""
+        } else {
+            ""
+        },
         url(32),
         url(64)
     )
@@ -248,7 +379,10 @@ fn avatar_choice(ctx: &Ctx<'_>, key: &str, label: &str, current: &str) -> String
 /// `options-discussion.php`.
 pub async fn discussion(ctx: &Ctx<'_>) -> AdminResponse {
     if !ctx.can("manage_options") {
-        return forbidden(ctx, "Sorry, you are not allowed to manage options for this site.");
+        return forbidden(
+            ctx,
+            "Sorry, you are not allowed to manage options for this site.",
+        );
     }
     let tr = |s: &str| ctx.tr(s);
     let site = ctx.site();
@@ -258,7 +392,9 @@ pub async fn discussion(ctx: &Ctx<'_>) -> AdminResponse {
     let mut h = format!("<div class=\"wrap\">\n<h1>{}</h1>\n\n", esc_html(&title));
     h.push_str(&settings_errors(ctx).await);
     h.push_str(&format!("<form method=\"post\" action=\"options.php\">\n{}\n<table class=\"form-table indent-children\" role=\"presentation\">\n", ctx.settings_fields("discussion")));
-    let legend = |t: &str| format!("<fieldset><legend class=\"screen-reader-text\"><span>{t}</span></legend>\n");
+    let legend = |t: &str| {
+        format!("<fieldset><legend class=\"screen-reader-text\"><span>{t}</span></legend>\n")
+    };
     // Default post settings.
     h.push_str(&format!(
         "<tr>\n<th scope=\"row\">{t}</th>\n<td>{legend}<label for=\"default_pingback_flag\">\n<input name=\"default_pingback_flag\" type=\"checkbox\" id=\"default_pingback_flag\" value=\"1\" {c1} />\n{l1}</label>\n<br />\n<label for=\"default_ping_status\">\n<input name=\"default_ping_status\" type=\"checkbox\" id=\"default_ping_status\" value=\"open\" {c2} />\n{l2}</label>\n<br />\n<label for=\"default_comment_status\">\n<input name=\"default_comment_status\" type=\"checkbox\" id=\"default_comment_status\" value=\"open\" {c3} />\n{l3}</label>\n<br />\n<p class=\"description\">{d}</p>\n</fieldset></td>\n</tr>\n",
@@ -274,7 +410,9 @@ pub async fn discussion(ctx: &Ctx<'_>) -> AdminResponse {
     ));
     // Other comment settings.
     let depth = site.options.u64("thread_comments_depth", 5);
-    let depth_options: String = (2..=10).map(|d| format!("<option value='{d}'{}>{d}</option>", selected(depth == d))).collect();
+    let depth_options: String = (2..=10)
+        .map(|d| format!("<option value='{d}'{}>{d}</option>", selected(depth == d)))
+        .collect();
     h.push_str(&format!(
         "<tr>\n<th scope=\"row\">{t}</th>\n<td>{legend}<label for=\"require_name_email\"><input type=\"checkbox\" name=\"require_name_email\" id=\"require_name_email\" value=\"1\" {c1} /> {l1}</label>\n<br />\n<label for=\"comment_registration\">\n<input name=\"comment_registration\" type=\"checkbox\" id=\"comment_registration\" value=\"1\" {c2} />\n{l2}</label>\n<br />\n<input name=\"close_comments_for_old_posts\" type=\"checkbox\" id=\"close_comments_for_old_posts\" value=\"1\" {c3} /> <label for=\"close_comments_for_old_posts\">{l3}</label>\n<ul>\n\t<li>\n\t\t<label for=\"close_comments_days_old\">{l4}</label>\n\t\t<input name=\"close_comments_days_old\" type=\"number\" step=\"1\" min=\"0\" id=\"close_comments_days_old\" value=\"{days}\" class=\"small-text\" />\n\t</li>\n</ul>\n\n<input name=\"show_comments_cookies_opt_in\" type=\"checkbox\" id=\"show_comments_cookies_opt_in\" value=\"1\" {c5} />\n<label for=\"show_comments_cookies_opt_in\">{l5}</label>\n<br />\n<input name=\"thread_comments\" type=\"checkbox\" id=\"thread_comments\" value=\"1\" {c6} />\n<label for=\"thread_comments\">{l6}</label>\n\n<ul>\n\t<li>\n\t\t<label for=\"thread_comments_depth\">{l7}</label>\n\t\t<select name=\"thread_comments_depth\" id=\"thread_comments_depth\">{depth_options}</select>\t</li>\n</ul>\n</fieldset></td>\n</tr>\n\n",
         t = tr("Other comment settings"),
@@ -360,7 +498,15 @@ pub async fn discussion(ctx: &Ctx<'_>) -> AdminResponse {
         tr("Show Avatars")
     ));
     let rating = site.options.string("avatar_rating", "G");
-    let ratings = [("G", tr("G &#8212; Suitable for all audiences")), ("PG", tr("PG &#8212; Possibly offensive, usually for audiences 13 and above")), ("R", tr("R &#8212; Intended for adult audiences above 17")), ("X", tr("X &#8212; Even more mature than above"))];
+    let ratings = [
+        ("G", tr("G &#8212; Suitable for all audiences")),
+        (
+            "PG",
+            tr("PG &#8212; Possibly offensive, usually for audiences 13 and above"),
+        ),
+        ("R", tr("R &#8212; Intended for adult audiences above 17")),
+        ("X", tr("X &#8212; Even more mature than above")),
+    ];
     let mut rating_html = String::new();
     for (key, label) in &ratings {
         rating_html.push_str(&format!("\n\t<label><input type='radio' name='avatar_rating' value='{key}'{}/> {label}</label><br />", if rating == *key { " checked=\"checked\"" } else { " " }));
@@ -394,7 +540,15 @@ pub async fn discussion(ctx: &Ctx<'_>) -> AdminResponse {
     ));
     h.push_str(&submit(ctx));
     h.push_str("</form>\n</div>\n\n");
-    let overview = format!("<p>{}</p><p>{}</p>", tr("This screen provides many options for controlling the management and display of comments and links to your posts/pages. So many, in fact, they will not all fit here! :) Use the documentation links to get information on what each discussion setting does."), tr("You must click the Save Changes button at the bottom of the screen for new settings to take effect."));
+    let overview = format!(
+        "<p>{}</p><p>{}</p>",
+        tr(
+            "This screen provides many options for controlling the management and display of comments and links to your posts/pages. So many, in fact, they will not all fit here! :) Use the documentation links to get information on what each discussion setting does."
+        ),
+        tr(
+            "You must click the Save Changes button at the bottom of the screen for new settings to take effect."
+        )
+    );
     // `options_discussion_add_js()` on `admin_print_footer_scripts`.
     let assets = Assets {
         footer_early: "\t<script>\n\t(function($){\n\t\tvar parent = $( '#show_avatars' ),\n\t\t\tchildren = $( '.avatar-settings' );\n\t\tparent.on( 'change', function(){\n\t\t\tchildren.toggleClass( 'hide-if-js', ! this.checked );\n\t\t});\n\t})(jQuery);\n\t</script>\n\t".into(),
@@ -406,14 +560,20 @@ pub async fn discussion(ctx: &Ctx<'_>) -> AdminResponse {
 /// `options-media.php`.
 pub async fn media(ctx: &Ctx<'_>) -> AdminResponse {
     if !ctx.can("manage_options") {
-        return forbidden(ctx, "Sorry, you are not allowed to manage options for this site.");
+        return forbidden(
+            ctx,
+            "Sorry, you are not allowed to manage options for this site.",
+        );
     }
     let tr = |s: &str| ctx.tr(s);
     let site = ctx.site();
     let title = tr("Media Settings");
     let mut h = format!("<div class=\"wrap\">\n<h1>{}</h1>\n\n", esc_html(&title));
     h.push_str(&settings_errors(ctx).await);
-    h.push_str(&format!("<form action=\"options.php\" method=\"post\">\n{}\n", ctx.settings_fields("media")));
+    h.push_str(&format!(
+        "<form action=\"options.php\" method=\"post\">\n{}\n",
+        ctx.settings_fields("media")
+    ));
     h.push_str(&format!("<h2 id=\"wp-settings-section-image-sizes\" class=\"title\">{}</h2>\n<p>{}</p>\n\n<table class=\"form-table\" role=\"presentation\">\n", tr("Image sizes"), tr("The sizes listed below determine the maximum dimensions in pixels to use when adding an image to the Media Library.")));
     let size = |name: &str, label_w: &str, label_h: &str, row_title: &str, extra: &str| {
         format!(
@@ -424,12 +584,34 @@ pub async fn media(ctx: &Ctx<'_>) -> AdminResponse {
     };
     let crop = format!(
         "\n<input name=\"thumbnail_crop\" type=\"checkbox\" id=\"thumbnail_crop\" value=\"1\"{} />\n<label for=\"thumbnail_crop\">{}</label>\n",
-        checked(site.options.get("thumbnail_crop").is_some_and(|v| !v.is_empty() && v != "0")),
+        checked(
+            site.options
+                .get("thumbnail_crop")
+                .is_some_and(|v| !v.is_empty() && v != "0")
+        ),
         tr("Crop thumbnail to exact dimensions (normally thumbnails are proportional)")
     );
-    h.push_str(&size("thumbnail", &tr("Width"), &tr("Height"), &tr("Thumbnail size"), &crop));
-    h.push_str(&size("medium", &tr("Max Width"), &tr("Max Height"), &tr("Medium size"), ""));
-    h.push_str(&size("large", &tr("Max Width"), &tr("Max Height"), &tr("Large size"), ""));
+    h.push_str(&size(
+        "thumbnail",
+        &tr("Width"),
+        &tr("Height"),
+        &tr("Thumbnail size"),
+        &crop,
+    ));
+    h.push_str(&size(
+        "medium",
+        &tr("Max Width"),
+        &tr("Max Height"),
+        &tr("Medium size"),
+        "",
+    ));
+    h.push_str(&size(
+        "large",
+        &tr("Max Width"),
+        &tr("Max Height"),
+        &tr("Large size"),
+        "",
+    ));
     h.push_str("</table>\n\n\n");
     h.push_str(&format!(
         "<h2 id=\"wp-settings-section-uploading-files\" class=\"title\">{}</h2>\n<table class=\"form-table\" role=\"presentation\">\n\t<tr>\n<td class=\"td-full\">\n<label for=\"uploads_use_yearmonth_folders\">\n<input name=\"uploads_use_yearmonth_folders\" type=\"checkbox\" id=\"uploads_use_yearmonth_folders\" value=\"1\"{} />\n\t{}</label>\n</td>\n</tr>\n\n\t</table>\n\n\n",
@@ -442,8 +624,14 @@ pub async fn media(ctx: &Ctx<'_>) -> AdminResponse {
     // The paths of the uploads only show where they were changed (`upload_url_path`, `upload_path`).
     let options = &ctx.site().options;
     let upload_path = options.string("upload_path", "");
-    let custom_uploads = !options.string("upload_url_path", "").is_empty() || (!upload_path.is_empty() && upload_path != "wp-content/uploads");
-    let mut overview = format!("<p>{}</p>", tr("You can set maximum sizes for images inserted into your written content; you can also insert an image as Full Size."));
+    let custom_uploads = !options.string("upload_url_path", "").is_empty()
+        || (!upload_path.is_empty() && upload_path != "wp-content/uploads");
+    let mut overview = format!(
+        "<p>{}</p>",
+        tr(
+            "You can set maximum sizes for images inserted into your written content; you can also insert an image as Full Size."
+        )
+    );
     if custom_uploads {
         overview.push_str(&format!("<p>{}</p>", tr("Uploading Files allows you to choose the folder and path for storing your uploaded files.")));
     }

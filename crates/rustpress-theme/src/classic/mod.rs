@@ -29,7 +29,8 @@ pub const PORTS: &[&str] = &["twentyseventeen", "twentytwenty", "twentytwentyone
 
 /// Whether the active theme is a classic theme with a port (a theme without `theme.json`).
 pub fn is_ported(theme: &Theme) -> bool {
-    !rustpress_core::files::is_file(&theme.template_dir().join("theme.json")) && PORTS.contains(&theme.template.as_str())
+    !rustpress_core::files::is_file(&theme.template_dir().join("theme.json"))
+        && PORTS.contains(&theme.template.as_str())
 }
 
 /// `wp_site_icon()`.
@@ -38,36 +39,72 @@ pub async fn wp_site_icon(site: &Site) -> Result<String> {
     if id == 0 {
         return Ok(String::new());
     }
-    let Some(post) = site.db.post(id).await? else { return Ok(String::new()) };
+    let Some(post) = site.db.post(id).await? else {
+        return Ok(String::new());
+    };
     let (meta, _) = rustpress_blocks::images::load_metadata(site, &post).await?;
-    let Some(meta) = meta else { return Ok(String::new()) };
-    let Some(file) = meta.file() else { return Ok(String::new()) };
+    let Some(meta) = meta else {
+        return Ok(String::new());
+    };
+    let Some(file) = meta.file() else {
+        return Ok(String::new());
+    };
     let dir = file.rsplit_once('/').map_or("", |(d, _)| d);
     let base = rustpress_blocks::images::upload_baseurl(site);
     let sized = |size: u64| -> Option<String> {
-        let name = meta.sizes()?.values().find_map(|s| (s.get("width").and_then(serde_json::Value::as_u64) == Some(size) && s.get("height").and_then(serde_json::Value::as_u64) == Some(size)).then(|| s.get("file").and_then(serde_json::Value::as_str).map(str::to_owned)).flatten())?;
-        Some(if dir.is_empty() { format!("{base}/{name}") } else { format!("{base}/{dir}/{name}") })
+        let name = meta.sizes()?.values().find_map(|s| {
+            (s.get("width").and_then(serde_json::Value::as_u64) == Some(size)
+                && s.get("height").and_then(serde_json::Value::as_u64) == Some(size))
+            .then(|| {
+                s.get("file")
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::to_owned)
+            })
+            .flatten()
+        })?;
+        Some(if dir.is_empty() {
+            format!("{base}/{name}")
+        } else {
+            format!("{base}/{dir}/{name}")
+        })
     };
     let mut out = String::new();
     for (rel, size) in [("icon", 32u64), ("icon", 192), ("apple-touch-icon", 180)] {
         if let Some(url) = sized(size) {
             if rel == "icon" {
-                out.push_str(&format!("<link rel=\"icon\" href=\"{}\" sizes=\"{size}x{size}\" />\n", esc_url(&url)));
+                out.push_str(&format!(
+                    "<link rel=\"icon\" href=\"{}\" sizes=\"{size}x{size}\" />\n",
+                    esc_url(&url)
+                ));
             } else {
-                out.push_str(&format!("<link rel=\"apple-touch-icon\" href=\"{}\" />\n", esc_url(&url)));
+                out.push_str(&format!(
+                    "<link rel=\"apple-touch-icon\" href=\"{}\" />\n",
+                    esc_url(&url)
+                ));
             }
         }
     }
     if let Some(url) = sized(270) {
-        out.push_str(&format!("<meta name=\"msapplication-TileImage\" content=\"{}\" />\n", esc_url(&url)));
+        out.push_str(&format!(
+            "<meta name=\"msapplication-TileImage\" content=\"{}\" />\n",
+            esc_url(&url)
+        ));
     }
     Ok(out)
 }
 
 /// `wp_get_custom_css()`.
 pub async fn wp_get_custom_css(site: &Site, mods: &Value) -> Result<String> {
-    let Some(id) = mods.get("custom_css_post_id").and_then(Value::as_i64).filter(|id| *id > 0) else { return Ok(String::new()) };
-    let Some(post) = site.db.post(id as u64).await? else { return Ok(String::new()) };
+    let Some(id) = mods
+        .get("custom_css_post_id")
+        .and_then(Value::as_i64)
+        .filter(|id| *id > 0)
+    else {
+        return Ok(String::new());
+    };
+    let Some(post) = site.db.post(id as u64).await? else {
+        return Ok(String::new());
+    };
     if post.post_type != "custom_css" || post.post_status != "publish" {
         return Ok(String::new());
     }
@@ -77,11 +114,17 @@ pub async fn wp_get_custom_css(site: &Site, mods: &Value) -> Result<String> {
 /// `get_theme_support( 'post-formats' )`, in the order of the theme.
 pub fn post_formats(theme: &str) -> &'static [&'static str] {
     match theme {
-        "twentyseventeen" => &["aside", "image", "video", "quote", "link", "gallery", "audio"],
-        "twentytwentyone" => &["link", "aside", "gallery", "image", "quote", "status", "video", "audio", "chat"],
+        "twentyseventeen" => &[
+            "aside", "image", "video", "quote", "link", "gallery", "audio",
+        ],
+        "twentytwentyone" => &[
+            "link", "aside", "gallery", "image", "quote", "status", "video", "audio", "chat",
+        ],
         // Twenty Twenty does not support post formats.
         "twentytwenty" => &[],
-        _ => &["aside", "audio", "chat", "gallery", "image", "link", "quote", "status", "video"],
+        _ => &[
+            "aside", "audio", "chat", "gallery", "image", "link", "quote", "status", "video",
+        ],
     }
 }
 
@@ -99,12 +142,18 @@ pub fn content_width(theme: &str) -> Option<u64> {
 
 /// The names of the sizes a ported theme registers with `add_image_size()`, in its order.
 pub fn image_size_names(theme: &str) -> Vec<&'static str> {
-    rustpress_core::image_sizes::of_theme(theme).iter().map(|(name, ..)| *name).collect()
+    rustpress_core::image_sizes::of_theme(theme)
+        .iter()
+        .map(|(name, ..)| *name)
+        .collect()
 }
 
 /// The sizes a ported theme registers with `add_image_size()`.
 pub fn image_size(theme: &str, name: &str) -> Option<(u64, u64)> {
-    rustpress_core::image_sizes::of_theme(theme).iter().find(|(size, ..)| *size == name).map(|(_, width, height, _)| (u64::from(*width), u64::from(*height)))
+    rustpress_core::image_sizes::of_theme(theme)
+        .iter()
+        .find(|(size, ..)| *size == name)
+        .map(|(_, width, height, _)| (u64::from(*width), u64::from(*height)))
 }
 
 /// Everything a classic template needs.
@@ -129,15 +178,35 @@ impl Ctx<'_> {
 
     /// The path and query of the request, for menu items that link to the current URL.
     pub fn request_uri(&self) -> String {
-        format!("{}{}", self.q.url_path, if self.q.raw_query.is_empty() { String::new() } else { format!("?{}", self.q.raw_query) })
+        format!(
+            "{}{}",
+            self.q.url_path,
+            if self.q.raw_query.is_empty() {
+                String::new()
+            } else {
+                format!("?{}", self.q.raw_query)
+            }
+        )
     }
 }
 
 /// `body_class` of the ported theme for a page it does not render itself.
-pub async fn add_body_classes(theme: &Theme, site: &Site, q: &QueryResult, registry: &Registry, classes: &mut Vec<String>) -> Result<()> {
+pub async fn add_body_classes(
+    theme: &Theme,
+    site: &Site,
+    q: &QueryResult,
+    registry: &Registry,
+    classes: &mut Vec<String>,
+) -> Result<()> {
     let env = Env::new(site, q, theme, registry);
     let mods = menu::theme_mod(site, &theme.stylesheet);
-    let ctx = Ctx { theme, site, q, env, mods };
+    let ctx = Ctx {
+        theme,
+        site,
+        q,
+        env,
+        mods,
+    };
     if is_twentyone(theme) {
         return twentyone::add_body_classes(&ctx, classes).await;
     }
@@ -159,10 +228,23 @@ pub fn is_twentytwenty(theme: &Theme) -> bool {
 
 /// Renders a request with the ported theme.
 /// The preview of a legacy widget in a page of the theme.
-pub async fn legacy_widget_preview(theme: &Theme, site: &Site, q: &QueryResult, registry: &Registry, id_base: &str, instance: Option<&Value>) -> Result<String> {
+pub async fn legacy_widget_preview(
+    theme: &Theme,
+    site: &Site,
+    q: &QueryResult,
+    registry: &Registry,
+    id_base: &str,
+    instance: Option<&Value>,
+) -> Result<String> {
     let env = Env::new(site, q, theme, registry);
     let mods = menu::theme_mod(site, &theme.stylesheet);
-    let ctx = Ctx { theme, site, q, env, mods };
+    let ctx = Ctx {
+        theme,
+        site,
+        q,
+        env,
+        mods,
+    };
     if is_twentyone(theme) {
         return twentyone::legacy_widget_preview(&ctx, registry, id_base, instance).await;
     }
@@ -174,10 +256,25 @@ pub async fn legacy_widget_preview(theme: &Theme, site: &Site, q: &QueryResult, 
 
 /// The partials of a request of selective refresh (`handle_render_partials_request()`), each for its placements, and
 /// the settings of the header video when the header is one of them (`export_header_video_settings()`).
-pub async fn render_partials(theme: &Theme, site: &Site, q: &QueryResult, registry: &Registry, partials: &[(String, serde_json::Value)]) -> Result<(serde_json::Map<String, serde_json::Value>, Option<serde_json::Value>)> {
+pub async fn render_partials(
+    theme: &Theme,
+    site: &Site,
+    q: &QueryResult,
+    registry: &Registry,
+    partials: &[(String, serde_json::Value)],
+) -> Result<(
+    serde_json::Map<String, serde_json::Value>,
+    Option<serde_json::Value>,
+)> {
     let env = Env::new(site, q, theme, registry);
     let mods = menu::theme_mod(site, &theme.stylesheet);
-    let ctx = Ctx { theme, site, q, env, mods };
+    let ctx = Ctx {
+        theme,
+        site,
+        q,
+        env,
+        mods,
+    };
     let mut contents = serde_json::Map::new();
     for (id, contexts) in partials {
         let placements: Vec<Option<&serde_json::Value>> = match contexts.as_array() {
@@ -200,16 +297,41 @@ pub async fn render_partials(theme: &Theme, site: &Site, q: &QueryResult, regist
                 None => missing = true,
             }
         }
-        contents.insert(id.clone(), if missing { serde_json::Value::Null } else { serde_json::Value::Array(rendered) });
+        contents.insert(
+            id.clone(),
+            if missing {
+                serde_json::Value::Null
+            } else {
+                serde_json::Value::Array(rendered)
+            },
+        );
     }
-    let header = if theme.template == "twentyseventeen" && partials.iter().any(|(id, _)| id == "custom_header") { Some(seventeen::header_video_export(&ctx).await?) } else { None };
+    let header = if theme.template == "twentyseventeen"
+        && partials.iter().any(|(id, _)| id == "custom_header")
+    {
+        Some(seventeen::header_video_export(&ctx).await?)
+    } else {
+        None
+    };
     Ok((contents, header))
 }
 
-pub async fn render_document(theme: &Theme, site: &Site, q: &QueryResult, registry: &Registry, extras: &crate::document::Extras) -> Result<Document> {
+pub async fn render_document(
+    theme: &Theme,
+    site: &Site,
+    q: &QueryResult,
+    registry: &Registry,
+    extras: &crate::document::Extras,
+) -> Result<Document> {
     let env = Env::new(site, q, theme, registry);
     let mods = menu::theme_mod(site, &theme.stylesheet);
-    let ctx = Ctx { theme, site, q, env, mods };
+    let ctx = Ctx {
+        theme,
+        site,
+        q,
+        env,
+        mods,
+    };
     if is_twentyone(theme) {
         return twentyone::render(&ctx, registry, extras).await;
     }
@@ -222,7 +344,11 @@ pub async fn render_document(theme: &Theme, site: &Site, q: &QueryResult, regist
 /// What `WP_Theme_JSON_Resolver::get_theme_data()` makes of the theme supports of a ported classic theme without a
 /// `theme.json`: `WP_Theme_JSON::get_from_editor_settings( get_classic_theme_supports_block_editor_settings() )` and the
 /// defaults it adds for classic themes.
-pub fn theme_supports_json(template: &str, i18n: &rustpress_core::i18n::I18n, mods: &Value) -> Option<serde_json::Value> {
+pub fn theme_supports_json(
+    template: &str,
+    i18n: &rustpress_core::i18n::I18n,
+    mods: &Value,
+) -> Option<serde_json::Value> {
     use serde_json::json;
     // Twenty Seventeen was compared without this layer; it adds no presets.
     if template != "twentytwentyone" && template != "twentytwenty" {
@@ -254,7 +380,12 @@ pub fn theme_supports_json(template: &str, i18n: &rustpress_core::i18n::I18n, mo
             ("Yellow", "yellow", "#EEEADD"),
             ("White", "white", "#FFFFFF"),
         ];
-        let color = |slug: &str| palette.iter().find(|(_, s, _)| *s == slug).map_or("", |(_, _, c)| *c);
+        let color = |slug: &str| {
+            palette
+                .iter()
+                .find(|(_, s, _)| *s == slug)
+                .map_or("", |(_, _, c)| *c)
+        };
         let gradients = [
             ("Purple to yellow", "purple-to-yellow", "purple", "yellow"),
             ("Yellow to purple", "yellow-to-purple", "yellow", "purple"),
@@ -275,8 +406,12 @@ pub fn theme_supports_json(template: &str, i18n: &rustpress_core::i18n::I18n, mo
             ("Gigantic", "XXXL", 144, "gigantic"),
         ];
         settings["typography"]["lineHeight"] = json!(true);
-        settings["spacing"] = json!({ "units": ["px", "em", "rem", "vh", "vw", "%"], "padding": true });
-        settings["color"]["palette"] = palette.iter().map(|(name, slug, value)| json!({ "name": t(name), "slug": slug, "color": value })).collect();
+        settings["spacing"] =
+            json!({ "units": ["px", "em", "rem", "vh", "vw", "%"], "padding": true });
+        settings["color"]["palette"] = palette
+            .iter()
+            .map(|(name, slug, value)| json!({ "name": t(name), "slug": slug, "color": value }))
+            .collect();
         settings["color"]["gradients"] = gradients
             .iter()
             .map(|(name, slug, from, to)| json!({ "name": t(name), "gradient": format!("linear-gradient(160deg, {} 0%, {} 100%)", color(from), color(to)), "slug": slug }))
@@ -288,8 +423,14 @@ pub fn theme_supports_json(template: &str, i18n: &rustpress_core::i18n::I18n, mo
             })
             .collect();
     }
-    let has = |settings: &serde_json::Value, section: &str, key: &str| settings[section].get(key).is_some();
-    let (palette, gradients, sizes) = (has(&settings, "color", "palette"), has(&settings, "color", "gradients"), has(&settings, "typography", "fontSizes"));
+    let has = |settings: &serde_json::Value, section: &str, key: &str| {
+        settings[section].get(key).is_some()
+    };
+    let (palette, gradients, sizes) = (
+        has(&settings, "color", "palette"),
+        has(&settings, "color", "gradients"),
+        has(&settings, "typography", "fontSizes"),
+    );
     settings["color"]["defaultPalette"] = json!(!palette);
     settings["color"]["defaultGradients"] = json!(!gradients);
     settings["typography"]["defaultFontSizes"] = json!(!sizes);

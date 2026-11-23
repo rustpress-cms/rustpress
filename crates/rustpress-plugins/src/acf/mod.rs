@@ -13,15 +13,15 @@
 
 mod admin;
 mod admin_lists;
-mod field_group_edit;
-mod field_settings;
-mod field_types;
 mod dashicons;
 mod edit_attachment;
 mod edit_comment;
+mod edit_post;
 mod edit_term;
 mod edit_user;
-mod edit_post;
+mod field_group_edit;
+mod field_settings;
+mod field_types;
 mod fields;
 mod form;
 mod format;
@@ -40,7 +40,9 @@ mod tools;
 mod value;
 
 use futures::future::BoxFuture;
-use rustpress_core::native::{ActivePlugin, MetaType, NativePlugin, RegisteredMeta, RestFieldContext, RestLink, RestObject};
+use rustpress_core::native::{
+    ActivePlugin, MetaType, NativePlugin, RegisteredMeta, RestFieldContext, RestLink, RestObject,
+};
 use rustpress_core::types::Registration;
 use rustpress_core::{Result, Site};
 use rustpress_db::MetaKind;
@@ -66,7 +68,11 @@ impl NativePlugin for Acf {
         Some("acf")
     }
 
-    fn registrations<'a>(&'a self, site: &'a Site, _wp_root: &'a std::path::Path) -> BoxFuture<'a, Result<Vec<Registration>>> {
+    fn registrations<'a>(
+        &'a self,
+        site: &'a Site,
+        _wp_root: &'a std::path::Path,
+    ) -> BoxFuture<'a, Result<Vec<Registration>>> {
         Box::pin(async move {
             let post_types = site.db.acf_posts("acf-post-type").await?;
             let taxonomies = site.db.acf_posts("acf-taxonomy").await?;
@@ -75,7 +81,13 @@ impl NativePlugin for Acf {
     }
 
     fn load<'a>(&'a self, site: &'a Site) -> BoxFuture<'a, Result<Box<dyn ActivePlugin>>> {
-        Box::pin(async move { Ok(Box::new(Loaded { groups: fields::load(&site.db).await?, shortcode: shortcode::enabled(&site.options), banner_state: site.db.option("acf_email_opt_in_banner_state").await? }) as Box<dyn ActivePlugin>) })
+        Box::pin(async move {
+            Ok(Box::new(Loaded {
+                groups: fields::load(&site.db).await?,
+                shortcode: shortcode::enabled(&site.options),
+                banner_state: site.db.option("acf_email_opt_in_banner_state").await?,
+            }) as Box<dyn ActivePlugin>)
+        })
     }
 }
 
@@ -112,15 +124,27 @@ fn parse_request(site: &Site, route: &str) -> Option<Request> {
             [id] => numeric(id),
             _ => false,
         };
-        return supported.then(|| Request { object_type: "user", sub_type: "user".into(), child: None });
+        return supported.then(|| Request {
+            object_type: "user",
+            sub_type: "user".into(),
+            child: None,
+        });
     }
     if base == "comments" {
-        return (tail.is_empty() || (tail.len() == 1 && numeric(tail[0]))).then(|| Request { object_type: "comment", sub_type: "comment".into(), child: None });
+        return (tail.is_empty() || (tail.len() == 1 && numeric(tail[0]))).then(|| Request {
+            object_type: "comment",
+            sub_type: "comment".into(),
+            child: None,
+        });
     }
     let shape_ok = |revisions: bool, autosaves: bool| match tail.as_slice() {
         [] => Some(None),
         [id] if numeric(id) => Some(None),
-        [id, child] | [id, child, _] if numeric(id) && ((*child == "revisions" && revisions) || (*child == "autosaves" && autosaves)) => {
+        [id, child] | [id, child, _]
+            if numeric(id)
+                && ((*child == "revisions" && revisions)
+                    || (*child == "autosaves" && autosaves)) =>
+        {
             (tail.len() == 2 || numeric(tail[2])).then_some(Some(()))
         }
         _ => None,
@@ -131,13 +155,27 @@ fn parse_request(site: &Site, route: &str) -> Option<Request> {
         }
         let revisions = site.post_type_supports(&name, "revisions");
         return match shape_ok(revisions, name != "attachment")? {
-            None => Some(Request { object_type: "post", sub_type: name, child: None }),
-            Some(()) => Some(Request { object_type: "post", child: Some(format!("{name}-revision")), sub_type: name }),
+            None => Some(Request {
+                object_type: "post",
+                sub_type: name,
+                child: None,
+            }),
+            Some(()) => Some(Request {
+                object_type: "post",
+                child: Some(format!("{name}-revision")),
+                sub_type: name,
+            }),
         };
     }
     for (name, rest_base) in taxonomies(site) {
-        if rest_base.to_ascii_lowercase() == base && (tail.is_empty() || (tail.len() == 1 && numeric(tail[0]))) {
-            return Some(Request { object_type: "term", sub_type: name, child: None });
+        if rest_base.to_ascii_lowercase() == base
+            && (tail.is_empty() || (tail.len() == 1 && numeric(tail[0])))
+        {
+            return Some(Request {
+                object_type: "term",
+                sub_type: name,
+                child: None,
+            });
         }
     }
     None
@@ -146,7 +184,11 @@ fn parse_request(site: &Site, route: &str) -> Option<Request> {
 /// `register_rest_field( $base, 'acf' )` happened for the object's type: on the current request or an earlier one of
 /// the same process (`ACF_Rest_Api::initialize()` on every `rest_pre_dispatch`). The terms controller names
 /// `post_tag` `tag`, so that field never shows; revisions are left out.
-fn registered_for(ctx: &RestFieldContext<'_>, object: RestObject<'_>, current: Option<&Request>) -> bool {
+fn registered_for(
+    ctx: &RestFieldContext<'_>,
+    object: RestObject<'_>,
+    current: Option<&Request>,
+) -> bool {
     let base = match object {
         RestObject::Post(post) if post.post_type != "revision" => post.post_type.clone(),
         RestObject::Template(post_type) => post_type.to_owned(),
@@ -156,16 +198,39 @@ fn registered_for(ctx: &RestFieldContext<'_>, object: RestObject<'_>, current: O
         _ => return false,
     };
     let base_of = |r: &Request| r.child.clone().unwrap_or_else(|| r.sub_type.clone());
-    current.is_some_and(|r| base_of(r) == base) || ctx.earlier_routes.iter().filter_map(|route| parse_request(ctx.site, route)).any(|r| base_of(&r) == base)
+    current.is_some_and(|r| base_of(r) == base)
+        || ctx
+            .earlier_routes
+            .iter()
+            .filter_map(|route| parse_request(ctx.site, route))
+            .any(|r| base_of(&r) == base)
 }
 
 /// `get_post_types( [ 'show_in_rest' => true ] )` with their REST bases (`acf_get_object_type_rest_base()`).
 fn post_types(site: &Site) -> Vec<(String, String)> {
-    let mut out: Vec<(String, String)> = [("post", "posts"), ("page", "pages"), ("attachment", "media"), ("nav_menu_item", "menu-items"), ("wp_block", "blocks"), ("wp_template", "templates"), ("wp_template_part", "template-parts"), ("wp_global_styles", "global-styles"), ("wp_navigation", "navigation"), ("wp_font_family", "font-families"), ("wp_font_face", "font-faces")]
+    let mut out: Vec<(String, String)> = [
+        ("post", "posts"),
+        ("page", "pages"),
+        ("attachment", "media"),
+        ("nav_menu_item", "menu-items"),
+        ("wp_block", "blocks"),
+        ("wp_template", "templates"),
+        ("wp_template_part", "template-parts"),
+        ("wp_global_styles", "global-styles"),
+        ("wp_navigation", "navigation"),
+        ("wp_font_family", "font-families"),
+        ("wp_font_face", "font-faces"),
+    ]
+    .iter()
+    .map(|(n, b)| ((*n).to_owned(), (*b).to_owned()))
+    .collect();
+    for info in site
+        .types
+        .rewrite_post_types()
         .iter()
-        .map(|(n, b)| ((*n).to_owned(), (*b).to_owned()))
-        .collect();
-    for info in site.types.rewrite_post_types().iter().chain(site.types.post_types.iter()).filter(|t| t.show_in_rest) {
+        .chain(site.types.post_types.iter())
+        .filter(|t| t.show_in_rest)
+    {
         if !out.iter().any(|(n, _)| *n == info.name) {
             out.push((info.name.clone(), info.rest_base().to_owned()));
         }
@@ -175,8 +240,22 @@ fn post_types(site: &Site) -> Vec<(String, String)> {
 
 /// `get_taxonomies( [ 'show_in_rest' => true ] )` with their REST bases.
 fn taxonomies(site: &Site) -> Vec<(String, String)> {
-    let mut out: Vec<(String, String)> = [("category", "categories"), ("post_tag", "tags"), ("nav_menu", "menus"), ("wp_pattern_category", "wp_pattern_category")].iter().map(|(n, b)| ((*n).to_owned(), (*b).to_owned())).collect();
-    for info in site.types.rewrite_taxonomies().iter().chain(site.types.taxonomies.iter()).filter(|t| t.show_in_rest) {
+    let mut out: Vec<(String, String)> = [
+        ("category", "categories"),
+        ("post_tag", "tags"),
+        ("nav_menu", "menus"),
+        ("wp_pattern_category", "wp_pattern_category"),
+    ]
+    .iter()
+    .map(|(n, b)| ((*n).to_owned(), (*b).to_owned()))
+    .collect();
+    for info in site
+        .types
+        .rewrite_taxonomies()
+        .iter()
+        .chain(site.types.taxonomies.iter())
+        .filter(|t| t.show_in_rest)
+    {
         if !out.iter().any(|(n, _)| *n == info.name) {
             out.push((info.name.clone(), info.rest_base().to_owned()));
         }
@@ -193,7 +272,12 @@ struct Target<'a> {
 impl Loaded {
     /// `ACF_Rest_Api::register_field()`: the field is registered for the object type of the route only, so an
     /// object of another type (embedded, or an attachment in a post list) gets none.
-    async fn target<'a>(&self, object: RestObject<'a>, request: &'a Request, ctx: &RestFieldContext<'_>) -> Result<Option<Target<'a>>> {
+    async fn target<'a>(
+        &self,
+        object: RestObject<'a>,
+        request: &'a Request,
+        ctx: &RestFieldContext<'_>,
+    ) -> Result<Option<Target<'a>>> {
         let base = request.child.as_deref().unwrap_or(&request.sub_type);
         Ok(match object {
             RestObject::Post(post) => {
@@ -203,17 +287,56 @@ impl Loaded {
                     None => post.post_type == base,
                 };
                 matches.then(|| Target {
-                    object: Object { kind: MetaKind::Post, id: post.id },
-                    screen: Screen::Post { post, post_type: request.child.as_ref().map(|_| request.sub_type.as_str()) },
+                    object: Object {
+                        kind: MetaKind::Post,
+                        id: post.id,
+                    },
+                    screen: Screen::Post {
+                        post,
+                        post_type: request.child.as_ref().map(|_| request.sub_type.as_str()),
+                    },
                 })
             }
             // The terms controller names its object type `tag` for `post_tag`, so a field registered for
             // `post_tag` never shows.
-            RestObject::Term(term) if term.taxonomy == base && request.object_type == "term" && base != "post_tag" => Some(Target { object: Object { kind: MetaKind::Term, id: term.term_id }, screen: Screen::Term { taxonomy: &term.taxonomy } }),
-            RestObject::User(user) if base == "user" => Some(Target { object: Object { kind: MetaKind::User, id: user.id }, screen: Screen::User { user_id: Some(user.id), form: None } }),
+            RestObject::Term(term)
+                if term.taxonomy == base && request.object_type == "term" && base != "post_tag" =>
+            {
+                Some(Target {
+                    object: Object {
+                        kind: MetaKind::Term,
+                        id: term.term_id,
+                    },
+                    screen: Screen::Term {
+                        taxonomy: &term.taxonomy,
+                    },
+                })
+            }
+            RestObject::User(user) if base == "user" => Some(Target {
+                object: Object {
+                    kind: MetaKind::User,
+                    id: user.id,
+                },
+                screen: Screen::User {
+                    user_id: Some(user.id),
+                    form: None,
+                },
+            }),
             RestObject::Comment(comment) if base == "comment" => {
-                let post_type = ctx.site.db.post(comment.comment_post_id).await?.map(|p| p.post_type).unwrap_or_default();
-                Some(Target { object: Object { kind: MetaKind::Comment, id: comment.comment_id }, screen: Screen::Comment { post_type } })
+                let post_type = ctx
+                    .site
+                    .db
+                    .post(comment.comment_post_id)
+                    .await?
+                    .map(|p| p.post_type)
+                    .unwrap_or_default();
+                Some(Target {
+                    object: Object {
+                        kind: MetaKind::Comment,
+                        id: comment.comment_id,
+                    },
+                    screen: Screen::Comment { post_type },
+                })
             }
             _ => None,
         })
@@ -221,25 +344,60 @@ impl Loaded {
 
     /// The groups of an object of the route when the caller may read it (`current_user_can_read_request_object()`:
     /// the controller's `get_item_permissions_check()` in the `view` context), else `None`.
-    async fn readable_object_groups<'a>(&'a self, ctx: &RestFieldContext<'_>, request: &Request, id: u64) -> Result<Option<Vec<&'a FieldGroup>>> {
+    async fn readable_object_groups<'a>(
+        &'a self,
+        ctx: &RestFieldContext<'_>,
+        request: &Request,
+        id: u64,
+    ) -> Result<Option<Vec<&'a FieldGroup>>> {
         let db = &ctx.site.db;
         let viewer = ctx.query.viewer.as_ref();
         let can = |capability: &str| viewer.is_some_and(|v| v.can(capability));
-        let matcher = MatchContext { site: ctx.site, user: fields::MatchUser::of(viewer), admin: false };
+        let matcher = MatchContext {
+            site: ctx.site,
+            user: fields::MatchUser::of(viewer),
+            admin: false,
+        };
         match request.object_type {
             "post" => {
-                let Some(post) = db.post(id).await?.filter(|p| p.post_type == request.sub_type) else { return Ok(None) };
-                let readable = post.post_status == "publish" || viewer.is_some_and(|v| v.can_edit_post(&post)) || (post.post_status == "private" && viewer.is_some_and(|v| v.can_read_private(&post.post_type)));
+                let Some(post) = db
+                    .post(id)
+                    .await?
+                    .filter(|p| p.post_type == request.sub_type)
+                else {
+                    return Ok(None);
+                };
+                let readable = post.post_status == "publish"
+                    || viewer.is_some_and(|v| v.can_edit_post(&post))
+                    || (post.post_status == "private"
+                        && viewer.is_some_and(|v| v.can_read_private(&post.post_type)));
                 if !readable {
                     return Ok(None);
                 }
-                Ok(Some(self.visible_rest_groups(&Screen::Post { post: &post, post_type: None }, &matcher).await?))
+                Ok(Some(
+                    self.visible_rest_groups(
+                        &Screen::Post {
+                            post: &post,
+                            post_type: None,
+                        },
+                        &matcher,
+                    )
+                    .await?,
+                ))
             }
             "term" => {
                 if db.term_by_id(Some(&request.sub_type), id).await?.is_none() {
                     return Ok(None);
                 }
-                Ok(Some(self.visible_rest_groups(&Screen::Term { taxonomy: &request.sub_type }, &matcher).await?))
+                Ok(Some(
+                    self.visible_rest_groups(
+                        &Screen::Term {
+                            taxonomy: &request.sub_type,
+                        },
+                        &matcher,
+                    )
+                    .await?,
+                ))
             }
             "user" => {
                 if db.user(id).await?.is_none() {
@@ -255,24 +413,44 @@ impl Loaded {
                         return Ok(None);
                     }
                 }
-                Ok(Some(self.visible_rest_groups(&Screen::User { user_id: Some(id), form: None }, &matcher).await?))
+                Ok(Some(
+                    self.visible_rest_groups(
+                        &Screen::User {
+                            user_id: Some(id),
+                            form: None,
+                        },
+                        &matcher,
+                    )
+                    .await?,
+                ))
             }
             "comment" => {
-                let Some(comment) = db.comment_any(id).await? else { return Ok(None) };
+                let Some(comment) = db.comment_any(id).await? else {
+                    return Ok(None);
+                };
                 let post = db.post(comment.comment_post_id).await?;
-                let readable = can("moderate_comments") || (comment.comment_approved == "1" && post.as_ref().is_some_and(|p| p.post_status == "publish"));
+                let readable = can("moderate_comments")
+                    || (comment.comment_approved == "1"
+                        && post.as_ref().is_some_and(|p| p.post_status == "publish"));
                 if !readable {
                     return Ok(None);
                 }
                 let post_type = post.map(|p| p.post_type).unwrap_or_default();
-                Ok(Some(self.visible_rest_groups(&Screen::Comment { post_type }, &matcher).await?))
+                Ok(Some(
+                    self.visible_rest_groups(&Screen::Comment { post_type }, &matcher)
+                        .await?,
+                ))
             }
             _ => Ok(None),
         }
     }
 
     /// The groups that show in REST and match `screen`.
-    async fn visible_rest_groups<'a>(&'a self, screen: &Screen<'_>, matcher: &MatchContext<'_>) -> Result<Vec<&'a FieldGroup>> {
+    async fn visible_rest_groups<'a>(
+        &'a self,
+        screen: &Screen<'_>,
+        matcher: &MatchContext<'_>,
+    ) -> Result<Vec<&'a FieldGroup>> {
         let mut out = Vec::new();
         for group in self.groups.iter().filter(|g| g.show_in_rest) {
             if group.visible(screen, matcher).await? {
@@ -283,12 +461,25 @@ impl Loaded {
     }
 
     /// `ACF_Rest_Api::get_field_groups_by_id()` and `get_fields()`: the fields of the visible groups that show in REST.
-    async fn rest_fields<'a>(&'a self, target: &Target<'_>, ctx: &RestFieldContext<'_>) -> Result<Vec<&'a Field>> {
-        let matcher = MatchContext { site: ctx.site, user: fields::MatchUser::of(ctx.query.viewer.as_ref()), admin: false };
+    async fn rest_fields<'a>(
+        &'a self,
+        target: &Target<'_>,
+        ctx: &RestFieldContext<'_>,
+    ) -> Result<Vec<&'a Field>> {
+        let matcher = MatchContext {
+            site: ctx.site,
+            user: fields::MatchUser::of(ctx.query.viewer.as_ref()),
+            admin: false,
+        };
         let mut out = Vec::new();
         for group in self.groups.iter().filter(|g| g.show_in_rest) {
             if group.visible(&target.screen, &matcher).await? {
-                out.extend(group.fields.iter().filter(|f| fields::show_in_rest(&f.kind)));
+                out.extend(
+                    group
+                        .fields
+                        .iter()
+                        .filter(|f| fields::show_in_rest(&f.kind)),
+                );
             }
         }
         Ok(out)
@@ -306,19 +497,43 @@ impl ActivePlugin for Loaded {
         admin::admin_pages(site)
     }
 
-    fn admin_page<'a>(&'a self, slug: &'a str, ctx: &'a rustpress_core::native::AdminContext<'a>) -> BoxFuture<'a, Result<String>> {
+    fn admin_page<'a>(
+        &'a self,
+        slug: &'a str,
+        ctx: &'a rustpress_core::native::AdminContext<'a>,
+    ) -> BoxFuture<'a, Result<String>> {
         Box::pin(tools::admin_page(slug, ctx))
     }
 
-    fn admin_page_load<'a>(&'a self, slug: &'a str, ctx: &'a rustpress_core::native::AdminContext<'a>) -> BoxFuture<'a, Result<Option<rustpress_core::native::PageLoad>>> {
+    fn admin_page_load<'a>(
+        &'a self,
+        slug: &'a str,
+        ctx: &'a rustpress_core::native::AdminContext<'a>,
+    ) -> BoxFuture<'a, Result<Option<rustpress_core::native::PageLoad>>> {
         Box::pin(tools::load(slug, ctx))
     }
 
-    fn admin_page_parts<'a>(&'a self, slug: &'a str, ctx: &'a rustpress_core::native::AdminContext<'a>) -> BoxFuture<'a, Result<Option<(Vec<rustpress_core::native::FormPart>, Vec<rustpress_core::native::PluginMetaBox>)>>> {
+    fn admin_page_parts<'a>(
+        &'a self,
+        slug: &'a str,
+        ctx: &'a rustpress_core::native::AdminContext<'a>,
+    ) -> BoxFuture<
+        'a,
+        Result<
+            Option<(
+                Vec<rustpress_core::native::FormPart>,
+                Vec<rustpress_core::native::PluginMetaBox>,
+            )>,
+        >,
+    > {
         Box::pin(tools::admin_page_parts(slug, ctx))
     }
 
-    fn admin_enqueue(&self, ctx: &rustpress_core::native::AdminContext<'_>, assets: &mut rustpress_core::native::Assets) {
+    fn admin_enqueue(
+        &self,
+        ctx: &rustpress_core::native::AdminContext<'_>,
+        assets: &mut rustpress_core::native::Assets,
+    ) {
         admin::admin_enqueue(ctx.site, assets);
         admin_lists::admin_enqueue(ctx, assets, self.banner_state.as_deref());
         field_group_edit::admin_enqueue(ctx, assets);
@@ -331,11 +546,24 @@ impl ActivePlugin for Loaded {
         edit_attachment::admin_enqueue(ctx, assets);
     }
 
-    fn attachment_fields_to_edit<'a>(&'a self, ctx: &'a rustpress_core::native::AdminContext<'a>, attachment: &'a rustpress_db::Post, in_modal: bool) -> BoxFuture<'a, Result<Vec<rustpress_core::native::AttachmentField>>> {
-        Box::pin(edit_attachment::attachment_fields_to_edit(&self.groups, ctx, attachment, in_modal))
+    fn attachment_fields_to_edit<'a>(
+        &'a self,
+        ctx: &'a rustpress_core::native::AdminContext<'a>,
+        attachment: &'a rustpress_db::Post,
+        in_modal: bool,
+    ) -> BoxFuture<'a, Result<Vec<rustpress_core::native::AttachmentField>>> {
+        Box::pin(edit_attachment::attachment_fields_to_edit(
+            &self.groups,
+            ctx,
+            attachment,
+            in_modal,
+        ))
     }
 
-    fn attachment_fields_to_save<'a>(&'a self, ctx: &'a rustpress_core::native::AttachmentSaved<'a>) -> BoxFuture<'a, Result<Option<rustpress_core::native::Die>>> {
+    fn attachment_fields_to_save<'a>(
+        &'a self,
+        ctx: &'a rustpress_core::native::AttachmentSaved<'a>,
+    ) -> BoxFuture<'a, Result<Option<rustpress_core::native::Die>>> {
         Box::pin(save::save_attachment(&self.groups, ctx))
     }
 
@@ -343,62 +571,125 @@ impl ActivePlugin for Loaded {
     /// groups, or – on an object's route, where the caller may read it – the groups of the object
     /// (`maybe_apply_per_object_schema()`, `enrich_options_endpoint_args()`). The terms controller names `post_tag`
     /// `tag`, so that schema has none.
-    fn rest_schema_fields<'a>(&'a self, ctx: &'a RestFieldContext<'a>) -> BoxFuture<'a, Result<Vec<(String, serde_json::Value)>>> {
+    fn rest_schema_fields<'a>(
+        &'a self,
+        ctx: &'a RestFieldContext<'a>,
+    ) -> BoxFuture<'a, Result<Vec<(String, serde_json::Value)>>> {
         Box::pin(async move {
-            let Some(request) = parse_request(ctx.site, ctx.route) else { return Ok(Vec::new()) };
-            let base = request.child.clone().unwrap_or_else(|| request.sub_type.clone());
+            let Some(request) = parse_request(ctx.site, ctx.route) else {
+                return Ok(Vec::new());
+            };
+            let base = request
+                .child
+                .clone()
+                .unwrap_or_else(|| request.sub_type.clone());
             if base == "post_tag" || request.child.is_some() {
                 return Ok(Vec::new());
             }
             let viewer = ctx.query.viewer.as_ref();
             let can_upload = viewer.is_some_and(|v| v.can("upload_files"));
-            let mut groups: Vec<&FieldGroup> = self.groups.iter().filter(|g| g.show_in_rest && rest_schema::object_type_has_field_group(g, request.object_type, &request.sub_type)).collect();
-            let id = ctx.route.trim_end_matches('/').rsplit('/').next().and_then(|s| s.parse::<u64>().ok());
+            let mut groups: Vec<&FieldGroup> = self
+                .groups
+                .iter()
+                .filter(|g| {
+                    g.show_in_rest
+                        && rest_schema::object_type_has_field_group(
+                            g,
+                            request.object_type,
+                            &request.sub_type,
+                        )
+                })
+                .collect();
+            let id = ctx
+                .route
+                .trim_end_matches('/')
+                .rsplit('/')
+                .next()
+                .and_then(|s| s.parse::<u64>().ok());
             if let Some(id) = id
                 && let Some(visible) = self.readable_object_groups(ctx, &request, id).await?
             {
                 groups = visible;
             }
-            Ok(vec![("acf".to_owned(), rest_schema::build(ctx.site, can_upload, &groups))])
+            Ok(vec![(
+                "acf".to_owned(),
+                rest_schema::build(ctx.site, can_upload, &groups),
+            )])
         })
     }
 
-    fn query_attachments_sizes(&self, ctx: &rustpress_core::native::AdminContext<'_>) -> Vec<String> {
+    fn query_attachments_sizes(
+        &self,
+        ctx: &rustpress_core::native::AdminContext<'_>,
+    ) -> Vec<String> {
         edit_attachment::query_attachments_sizes(&self.groups, ctx)
     }
 
-    fn query_attachment_js(&self, ctx: &rustpress_core::native::AdminContext<'_>, response: &mut serde_json::Map<String, serde_json::Value>) {
+    fn query_attachment_js(
+        &self,
+        ctx: &rustpress_core::native::AdminContext<'_>,
+        response: &mut serde_json::Map<String, serde_json::Value>,
+    ) {
         edit_attachment::query_attachment_js(&self.groups, ctx, response);
     }
 
     /// `ACF_Media::enqueue_scripts()` localizes `wp_mime_type_icon()` wherever `acf-input` is enqueued.
-    fn admin_mime_icon_ext(&self, ctx: &rustpress_core::native::AdminContext<'_>) -> Option<&'static str> {
+    fn admin_mime_icon_ext(
+        &self,
+        ctx: &rustpress_core::native::AdminContext<'_>,
+    ) -> Option<&'static str> {
         let mut assets = rustpress_core::native::Assets::default();
         self.admin_enqueue(ctx, &mut assets);
-        assets.scripts.iter().any(|a| a.handle == "acf-input").then_some("png")
+        assets
+            .scripts
+            .iter()
+            .any(|a| a.handle == "acf-input")
+            .then_some("png")
     }
 
-    fn screen_uploader<'a>(&'a self, ctx: &'a rustpress_core::native::AdminContext<'a>) -> BoxFuture<'a, Result<rustpress_core::native::MetaBoxes>> {
+    fn screen_uploader<'a>(
+        &'a self,
+        ctx: &'a rustpress_core::native::AdminContext<'a>,
+    ) -> BoxFuture<'a, Result<rustpress_core::native::MetaBoxes>> {
         Box::pin(async move { Ok(edit_attachment::screen_uploader(ctx)) })
     }
 
-    fn user_form<'a>(&'a self, ctx: &'a rustpress_core::native::AdminContext<'a>, user_id: Option<u64>) -> BoxFuture<'a, Result<rustpress_core::native::MetaBoxes>> {
+    fn user_form<'a>(
+        &'a self,
+        ctx: &'a rustpress_core::native::AdminContext<'a>,
+        user_id: Option<u64>,
+    ) -> BoxFuture<'a, Result<rustpress_core::native::MetaBoxes>> {
         Box::pin(edit_user::user_form(&self.groups, ctx, user_id))
     }
 
-    fn saved_user<'a>(&'a self, ctx: &'a rustpress_core::native::UserSaved<'a>) -> BoxFuture<'a, Result<Option<rustpress_core::native::Die>>> {
+    fn saved_user<'a>(
+        &'a self,
+        ctx: &'a rustpress_core::native::UserSaved<'a>,
+    ) -> BoxFuture<'a, Result<Option<rustpress_core::native::Die>>> {
         Box::pin(save::save_user(&self.groups, ctx))
     }
 
-    fn term_form<'a>(&'a self, ctx: &'a rustpress_core::native::AdminContext<'a>, taxonomy: &'a str, term: Option<&'a rustpress_db::Term>) -> BoxFuture<'a, Result<rustpress_core::native::MetaBoxes>> {
+    fn term_form<'a>(
+        &'a self,
+        ctx: &'a rustpress_core::native::AdminContext<'a>,
+        taxonomy: &'a str,
+        term: Option<&'a rustpress_db::Term>,
+    ) -> BoxFuture<'a, Result<rustpress_core::native::MetaBoxes>> {
         Box::pin(edit_term::term_form(&self.groups, ctx, taxonomy, term))
     }
 
-    fn saved_term<'a>(&'a self, ctx: &'a rustpress_core::native::TermSaved<'a>) -> BoxFuture<'a, Result<Option<rustpress_core::native::Die>>> {
+    fn saved_term<'a>(
+        &'a self,
+        ctx: &'a rustpress_core::native::TermSaved<'a>,
+    ) -> BoxFuture<'a, Result<Option<rustpress_core::native::Die>>> {
         Box::pin(save::save_term(&self.groups, ctx))
     }
 
-    fn post_meta_boxes<'a>(&'a self, ctx: &'a rustpress_core::native::AdminContext<'a>, post: &'a rustpress_db::Post) -> BoxFuture<'a, Result<rustpress_core::native::PostMetaBoxes>> {
+    fn post_meta_boxes<'a>(
+        &'a self,
+        ctx: &'a rustpress_core::native::AdminContext<'a>,
+        post: &'a rustpress_db::Post,
+    ) -> BoxFuture<'a, Result<rustpress_core::native::PostMetaBoxes>> {
         Box::pin(async move {
             if field_group_edit::edited_group(ctx).is_some() {
                 return field_group_edit::meta_boxes(&self.groups, ctx, post).await;
@@ -410,7 +701,10 @@ impl ActivePlugin for Loaded {
         })
     }
 
-    fn save_post<'a>(&'a self, ctx: &'a rustpress_core::native::PostSaved<'a>) -> BoxFuture<'a, Result<()>> {
+    fn save_post<'a>(
+        &'a self,
+        ctx: &'a rustpress_core::native::PostSaved<'a>,
+    ) -> BoxFuture<'a, Result<()>> {
         Box::pin(async move {
             if ctx.post.post_type == "acf-field-group" {
                 return save_group::save_post(ctx).await;
@@ -422,11 +716,25 @@ impl ActivePlugin for Loaded {
         })
     }
 
-    fn revision_post_has_changed<'a>(&'a self, ctx: &'a rustpress_core::native::PostSaved<'a>, latest_revision: u64, changed: bool) -> BoxFuture<'a, Result<bool>> {
-        Box::pin(save::revision_post_has_changed(&self.groups, ctx, latest_revision, changed))
+    fn revision_post_has_changed<'a>(
+        &'a self,
+        ctx: &'a rustpress_core::native::PostSaved<'a>,
+        latest_revision: u64,
+        changed: bool,
+    ) -> BoxFuture<'a, Result<bool>> {
+        Box::pin(save::revision_post_has_changed(
+            &self.groups,
+            ctx,
+            latest_revision,
+            changed,
+        ))
     }
 
-    fn put_post_revision<'a>(&'a self, ctx: &'a rustpress_core::native::PostSaved<'a>, revision_id: u64) -> BoxFuture<'a, Result<()>> {
+    fn put_post_revision<'a>(
+        &'a self,
+        ctx: &'a rustpress_core::native::PostSaved<'a>,
+        revision_id: u64,
+    ) -> BoxFuture<'a, Result<()>> {
         Box::pin(save::maybe_save_revision(&self.groups, ctx, revision_id))
     }
 
@@ -437,18 +745,43 @@ impl ActivePlugin for Loaded {
 
     /// `ACF\Blocks\Bindings::register_binding_sources()`.
     fn block_bindings_sources(&self, site: &Site) -> Vec<(String, String, Option<Vec<String>>)> {
-        vec![("acf/field".into(), site.i18n().pgettext("acf", "The core ACF block binding source name for fields on the current page", "Custom Fields"), None)]
+        vec![(
+            "acf/field".into(),
+            site.i18n().pgettext(
+                "acf",
+                "The core ACF block binding source name for fields on the current page",
+                "Custom Fields",
+            ),
+            None,
+        )]
     }
 
-    fn comment_meta_boxes<'a>(&'a self, ctx: &'a rustpress_core::native::AdminContext<'a>, comment: &'a rustpress_db::Comment) -> BoxFuture<'a, Result<rustpress_core::native::MetaBoxes>> {
+    fn comment_meta_boxes<'a>(
+        &'a self,
+        ctx: &'a rustpress_core::native::AdminContext<'a>,
+        comment: &'a rustpress_db::Comment,
+    ) -> BoxFuture<'a, Result<rustpress_core::native::MetaBoxes>> {
         Box::pin(edit_comment::meta_boxes(&self.groups, ctx, comment))
     }
 
-    fn admin_footer<'a>(&'a self, ctx: &'a rustpress_core::native::AdminContext<'a>) -> BoxFuture<'a, Result<String>> {
-        Box::pin(async move { Ok(format!("{}{}{}", admin_lists::admin_footer(ctx, self.banner_state.as_deref()), edit_comment::admin_footer(ctx), edit_term::admin_footer(ctx))) })
+    fn admin_footer<'a>(
+        &'a self,
+        ctx: &'a rustpress_core::native::AdminContext<'a>,
+    ) -> BoxFuture<'a, Result<String>> {
+        Box::pin(async move {
+            Ok(format!(
+                "{}{}{}",
+                admin_lists::admin_footer(ctx, self.banner_state.as_deref()),
+                edit_comment::admin_footer(ctx),
+                edit_term::admin_footer(ctx)
+            ))
+        })
     }
 
-    fn admin_print_footer_scripts<'a>(&'a self, ctx: &'a rustpress_core::native::AdminContext<'a>) -> BoxFuture<'a, Result<String>> {
+    fn admin_print_footer_scripts<'a>(
+        &'a self,
+        ctx: &'a rustpress_core::native::AdminContext<'a>,
+    ) -> BoxFuture<'a, Result<String>> {
         Box::pin(async move {
             if let Some(footer) = admin_lists::footer_scripts(ctx) {
                 return Ok(footer);
@@ -478,48 +811,108 @@ impl ActivePlugin for Loaded {
         })
     }
 
-    fn admin_body_class(&self, ctx: &rustpress_core::native::AdminContext<'_>, classes: String) -> String {
-        tools::admin_body_class(ctx, internal_edit::admin_body_class(ctx, field_group_edit::admin_body_class(ctx, admin_lists::admin_body_class(ctx, admin::admin_body_class(ctx, classes)))))
+    fn admin_body_class(
+        &self,
+        ctx: &rustpress_core::native::AdminContext<'_>,
+        classes: String,
+    ) -> String {
+        tools::admin_body_class(
+            ctx,
+            internal_edit::admin_body_class(
+                ctx,
+                field_group_edit::admin_body_class(
+                    ctx,
+                    admin_lists::admin_body_class(ctx, admin::admin_body_class(ctx, classes)),
+                ),
+            ),
+        )
     }
 
-    fn post_trash_change<'a>(&'a self, change: &'a rustpress_core::native::PostChange<'a>) -> BoxFuture<'a, Result<()>> {
+    fn post_trash_change<'a>(
+        &'a self,
+        change: &'a rustpress_core::native::PostChange<'a>,
+    ) -> BoxFuture<'a, Result<()>> {
         Box::pin(save_group::post_trash_change(change))
     }
 
-    fn untrash_post_status(&self, post: &rustpress_db::Post, _new_status: &str, previous: &str) -> Option<String> {
+    fn untrash_post_status(
+        &self,
+        post: &rustpress_db::Post,
+        _new_status: &str,
+        previous: &str,
+    ) -> Option<String> {
         save_group::untrash_post_status(post, previous)
     }
 
-    fn list_load<'a>(&'a self, ctx: &'a rustpress_core::native::AdminContext<'a>) -> BoxFuture<'a, Result<Option<rustpress_core::native::PageLoad>>> {
+    fn list_load<'a>(
+        &'a self,
+        ctx: &'a rustpress_core::native::AdminContext<'a>,
+    ) -> BoxFuture<'a, Result<Option<rustpress_core::native::PageLoad>>> {
         Box::pin(list_actions::load(ctx))
     }
 
-    fn admin_notices<'a>(&'a self, ctx: &'a rustpress_core::native::AdminContext<'a>) -> BoxFuture<'a, Result<String>> {
+    fn admin_notices<'a>(
+        &'a self,
+        ctx: &'a rustpress_core::native::AdminContext<'a>,
+    ) -> BoxFuture<'a, Result<String>> {
         Box::pin(list_actions::notices(ctx))
     }
 
-    fn post_updated_message(&self, site: &Site, post: &rustpress_db::Post, number: u32, nonce: &dyn Fn(&str) -> String) -> Option<Option<String>> {
-        save_group::post_updated_message(site, &post.post_type, number).or_else(|| internal_edit::post_updated_message(site, post, number, nonce))
+    fn post_updated_message(
+        &self,
+        site: &Site,
+        post: &rustpress_db::Post,
+        number: u32,
+        nonce: &dyn Fn(&str) -> String,
+    ) -> Option<Option<String>> {
+        save_group::post_updated_message(site, &post.post_type, number)
+            .or_else(|| internal_edit::post_updated_message(site, post, number, nonce))
     }
 
-    fn screen_layout(&self, _ctx: &rustpress_core::native::AdminContext<'_>, screen_id: &str) -> Option<u32> {
-        field_group_edit::screen_layout(screen_id).or_else(|| internal_edit::screen_layout(screen_id))
+    fn screen_layout(
+        &self,
+        _ctx: &rustpress_core::native::AdminContext<'_>,
+        screen_id: &str,
+    ) -> Option<u32> {
+        field_group_edit::screen_layout(screen_id)
+            .or_else(|| internal_edit::screen_layout(screen_id))
     }
 
-    fn screen_settings<'a>(&'a self, ctx: &'a rustpress_core::native::AdminContext<'a>, html: String) -> BoxFuture<'a, Result<String>> {
+    fn screen_settings<'a>(
+        &'a self,
+        ctx: &'a rustpress_core::native::AdminContext<'a>,
+        html: String,
+    ) -> BoxFuture<'a, Result<String>> {
         Box::pin(field_group_edit::screen_settings(ctx, html))
     }
 
-    fn parent_file(&self, _ctx: &rustpress_core::native::AdminContext<'_>, parent_file: String) -> String {
+    fn parent_file(
+        &self,
+        _ctx: &rustpress_core::native::AdminContext<'_>,
+        parent_file: String,
+    ) -> String {
         admin_lists::parent_file(parent_file)
     }
 
-    fn submenu_file(&self, _ctx: &rustpress_core::native::AdminContext<'_>, submenu_file: String) -> String {
+    fn submenu_file(
+        &self,
+        _ctx: &rustpress_core::native::AdminContext<'_>,
+        submenu_file: String,
+    ) -> String {
         admin_lists::submenu_file(submenu_file)
     }
 
-    fn in_admin_header<'a>(&'a self, ctx: &'a rustpress_core::native::AdminContext<'a>) -> BoxFuture<'a, Result<String>> {
-        Box::pin(async move { Ok(format!("{}{}", admin_lists::in_admin_header(ctx), internal_edit::form_top(ctx).await?)) })
+    fn in_admin_header<'a>(
+        &'a self,
+        ctx: &'a rustpress_core::native::AdminContext<'a>,
+    ) -> BoxFuture<'a, Result<String>> {
+        Box::pin(async move {
+            Ok(format!(
+                "{}{}",
+                admin_lists::in_admin_header(ctx),
+                internal_edit::form_top(ctx).await?
+            ))
+        })
     }
 
     fn admin_footer_text(&self, ctx: &rustpress_core::native::AdminContext<'_>) -> Option<String> {
@@ -530,7 +923,10 @@ impl ActivePlugin for Loaded {
         admin_lists::update_footer(ctx)
     }
 
-    fn screen_help(&self, ctx: &rustpress_core::native::AdminContext<'_>) -> Option<rustpress_core::native::AdminHelp> {
+    fn screen_help(
+        &self,
+        ctx: &rustpress_core::native::AdminContext<'_>,
+    ) -> Option<rustpress_core::native::AdminHelp> {
         admin_lists::help(ctx)
     }
 
@@ -538,53 +934,119 @@ impl ActivePlugin for Loaded {
         admin_lists::list_statuses()
     }
 
-    fn status_label_count(&self, ctx: &rustpress_core::native::AdminContext<'_>, status: &str, n: u64) -> Option<String> {
+    fn status_label_count(
+        &self,
+        ctx: &rustpress_core::native::AdminContext<'_>,
+        status: &str,
+        n: u64,
+    ) -> Option<String> {
         admin_lists::status_label_count(ctx, status, n)
     }
 
-    fn posts_columns(&self, ctx: &rustpress_core::native::AdminContext<'_>, post_type: &str, columns: Vec<(String, String)>) -> Vec<(String, String)> {
+    fn posts_columns(
+        &self,
+        ctx: &rustpress_core::native::AdminContext<'_>,
+        post_type: &str,
+        columns: Vec<(String, String)>,
+    ) -> Vec<(String, String)> {
         admin_lists::posts_columns(ctx, post_type, columns)
     }
 
-    fn posts_custom_column<'a>(&'a self, ctx: &'a rustpress_core::native::AdminContext<'a>, column: &'a str, post: &'a rustpress_db::Post) -> BoxFuture<'a, Result<String>> {
-        Box::pin(admin_lists::posts_custom_column(&self.groups, ctx, column, post))
+    fn posts_custom_column<'a>(
+        &'a self,
+        ctx: &'a rustpress_core::native::AdminContext<'a>,
+        column: &'a str,
+        post: &'a rustpress_db::Post,
+    ) -> BoxFuture<'a, Result<String>> {
+        Box::pin(admin_lists::posts_custom_column(
+            &self.groups,
+            ctx,
+            column,
+            post,
+        ))
     }
 
-    fn post_row_actions<'a>(&'a self, ctx: &'a rustpress_core::native::AdminContext<'a>, post: &'a rustpress_db::Post, hierarchical: bool, actions: Vec<(String, String)>) -> BoxFuture<'a, Result<Vec<(String, String)>>> {
-        Box::pin(async move { Ok(admin_lists::post_row_actions(ctx, post, hierarchical, actions)) })
+    fn post_row_actions<'a>(
+        &'a self,
+        ctx: &'a rustpress_core::native::AdminContext<'a>,
+        post: &'a rustpress_db::Post,
+        hierarchical: bool,
+        actions: Vec<(String, String)>,
+    ) -> BoxFuture<'a, Result<Vec<(String, String)>>> {
+        Box::pin(async move {
+            Ok(admin_lists::post_row_actions(
+                ctx,
+                post,
+                hierarchical,
+                actions,
+            ))
+        })
     }
 
-    fn bulk_actions(&self, ctx: &rustpress_core::native::AdminContext<'_>, _screen_id: &str, actions: Vec<(String, String)>) -> Vec<(String, String)> {
+    fn bulk_actions(
+        &self,
+        ctx: &rustpress_core::native::AdminContext<'_>,
+        _screen_id: &str,
+        actions: Vec<(String, String)>,
+    ) -> Vec<(String, String)> {
         admin_lists::bulk_actions(ctx, actions)
     }
 
-    fn list_views(&self, ctx: &rustpress_core::native::AdminContext<'_>, _screen_id: &str, views: Vec<(String, String)>) -> Vec<(String, String)> {
+    fn list_views(
+        &self,
+        ctx: &rustpress_core::native::AdminContext<'_>,
+        _screen_id: &str,
+        views: Vec<(String, String)>,
+    ) -> Vec<(String, String)> {
         admin_lists::list_views(ctx, views)
     }
 
-    fn display_post_states<'a>(&'a self, ctx: &'a rustpress_core::native::AdminContext<'a>, post: &'a rustpress_db::Post, states: Vec<(String, String)>) -> BoxFuture<'a, Result<Vec<(String, String)>>> {
+    fn display_post_states<'a>(
+        &'a self,
+        ctx: &'a rustpress_core::native::AdminContext<'a>,
+        post: &'a rustpress_db::Post,
+        states: Vec<(String, String)>,
+    ) -> BoxFuture<'a, Result<Vec<(String, String)>>> {
         Box::pin(async move { Ok(admin_lists::display_post_states(ctx, post, states)) })
     }
 
-    fn list_not_found(&self, ctx: &rustpress_core::native::AdminContext<'_>, post_type: &str) -> Option<String> {
+    fn list_not_found(
+        &self,
+        ctx: &rustpress_core::native::AdminContext<'_>,
+        post_type: &str,
+    ) -> Option<String> {
         admin_lists::list_not_found(ctx, post_type)
     }
 
-    fn admin_ajax<'a>(&'a self, action: &'a str, ctx: &'a rustpress_core::native::AdminContext<'a>) -> BoxFuture<'a, Result<Option<rustpress_core::native::AjaxAnswer>>> {
+    fn admin_ajax<'a>(
+        &'a self,
+        action: &'a str,
+        ctx: &'a rustpress_core::native::AdminContext<'a>,
+    ) -> BoxFuture<'a, Result<Option<rustpress_core::native::AjaxAnswer>>> {
         Box::pin(async move {
             Ok(match action {
                 "acf/validate_save_post" => Some(save::ajax_validate(&self.groups, ctx).await?),
-                "acf/field_group/render_field_settings" => Some(field_group_edit::ajax_render_field_settings(&self.groups, ctx).await?),
-                "acf/field_group/render_location_rule" => Some(field_group_edit::ajax_render_location_rule(ctx).await?),
+                "acf/field_group/render_field_settings" => {
+                    Some(field_group_edit::ajax_render_field_settings(&self.groups, ctx).await?)
+                }
+                "acf/field_group/render_location_rule" => {
+                    Some(field_group_edit::ajax_render_location_rule(ctx).await?)
+                }
                 "acf/field_group/move_field" => Some(field_group_edit::ajax_move_field(ctx).await?),
                 "acf/link_field_groups" => Some(internal_edit::ajax_link_field_groups(ctx).await?),
-                "acf/email_opt_in_banner/state" | "acf/email_opt_in_banner/submit" => Some(admin_lists::ajax_banner(action, ctx).await?),
+                "acf/email_opt_in_banner/state" | "acf/email_opt_in_banner/submit" => {
+                    Some(admin_lists::ajax_banner(action, ctx).await?)
+                }
                 _ => None,
             })
         })
     }
 
-    fn admin_ajax_nopriv<'a>(&'a self, action: &'a str, ctx: &'a rustpress_core::native::AdminContext<'a>) -> BoxFuture<'a, Result<Option<rustpress_core::native::AjaxAnswer>>> {
+    fn admin_ajax_nopriv<'a>(
+        &'a self,
+        action: &'a str,
+        ctx: &'a rustpress_core::native::AdminContext<'a>,
+    ) -> BoxFuture<'a, Result<Option<rustpress_core::native::AjaxAnswer>>> {
         Box::pin(async move {
             if action != "acf/validate_save_post" {
                 return Ok(None);
@@ -593,11 +1055,18 @@ impl ActivePlugin for Loaded {
         })
     }
 
-    fn comment_post<'a>(&'a self, ctx: &'a rustpress_core::native::CommentSaved<'a>) -> BoxFuture<'a, Result<Option<rustpress_core::native::Die>>> {
+    fn comment_post<'a>(
+        &'a self,
+        ctx: &'a rustpress_core::native::CommentSaved<'a>,
+    ) -> BoxFuture<'a, Result<Option<rustpress_core::native::Die>>> {
         Box::pin(save::save_comment(&self.groups, ctx))
     }
 
-    fn comment_form_field_comment<'a>(&'a self, ctx: &'a rustpress_core::native::CommentFormContext<'a>, html: String) -> BoxFuture<'a, Result<String>> {
+    fn comment_form_field_comment<'a>(
+        &'a self,
+        ctx: &'a rustpress_core::native::CommentFormContext<'a>,
+        html: String,
+    ) -> BoxFuture<'a, Result<String>> {
         Box::pin(form::comment_form_field_comment(&self.groups, ctx, html))
     }
 
@@ -605,16 +1074,30 @@ impl ActivePlugin for Loaded {
         &["acf"]
     }
 
-    fn shortcode<'a>(&'a self, _tag: &'a str, atts: &'a rustpress_core::shortcodes::Atts, _content: Option<&'a str>, ctx: &'a rustpress_core::native::ShortcodeContext<'a>) -> BoxFuture<'a, Result<String>> {
+    fn shortcode<'a>(
+        &'a self,
+        _tag: &'a str,
+        atts: &'a rustpress_core::shortcodes::Atts,
+        _content: Option<&'a str>,
+        ctx: &'a rustpress_core::native::ShortcodeContext<'a>,
+    ) -> BoxFuture<'a, Result<String>> {
         Box::pin(shortcode::render(&self.groups, self.shortcode, atts, ctx))
     }
 
     /// `ACF_Revisions::register_meta()`.
     fn registered_post_meta(&self) -> Vec<RegisteredMeta> {
-        vec![RegisteredMeta { key: "_acf_changed", post_type: None, kind: MetaType::Boolean }]
+        vec![RegisteredMeta {
+            key: "_acf_changed",
+            post_type: None,
+            kind: MetaType::Boolean,
+        }]
     }
 
-    fn rest_fields<'a>(&'a self, object: RestObject<'a>, ctx: &'a RestFieldContext<'a>) -> BoxFuture<'a, Result<Vec<(String, serde_json::Value)>>> {
+    fn rest_fields<'a>(
+        &'a self,
+        object: RestObject<'a>,
+        ctx: &'a RestFieldContext<'a>,
+    ) -> BoxFuture<'a, Result<Vec<(String, serde_json::Value)>>> {
         Box::pin(async move {
             let request = parse_request(ctx.site, ctx.route);
             let target = match &request {
@@ -624,7 +1107,11 @@ impl ActivePlugin for Loaded {
             let (Some(_), Some(target)) = (&request, target) else {
                 // The field is registered for the object's type, but the request names no object of it:
                 // `load_fields()` finds no ID or no object type.
-                return Ok(if registered_for(ctx, object, request.as_ref()) { vec![("acf".to_owned(), serde_json::Value::Array(Vec::new()))] } else { Vec::new() });
+                return Ok(if registered_for(ctx, object, request.as_ref()) {
+                    vec![("acf".to_owned(), serde_json::Value::Array(Vec::new()))]
+                } else {
+                    Vec::new()
+                });
             };
             // `ACF_Rest_Api::load_fields()`: `$request->get_param( 'acf_format' )`, else the `light` default.
             let standard = acf_format(ctx.query_string).as_deref() == Some("standard");
@@ -632,8 +1119,15 @@ impl ActivePlugin for Loaded {
                 RestObject::Post(post) => Some(post),
                 _ => None,
             };
-            let formatter = format::Formatter { site: ctx.site, services: ctx.services, global_post };
-            let sanitizer = rest_format::Sanitizer { site: ctx.site, viewer: ctx.query.viewer.as_ref() };
+            let formatter = format::Formatter {
+                site: ctx.site,
+                services: ctx.services,
+                global_post,
+            };
+            let sanitizer = rest_format::Sanitizer {
+                site: ctx.site,
+                viewer: ctx.query.viewer.as_ref(),
+            };
             let mut values: Vec<(Key, Value)> = Vec::new();
             for field in self.rest_fields(&target, ctx).await? {
                 let raw = value::get_value(&ctx.site.db, target.object, field, &field.name).await?;
@@ -645,13 +1139,22 @@ impl ActivePlugin for Loaded {
                 };
                 php::set(&mut values, &field.name, formatted);
             }
-            Ok(vec![("acf".to_owned(), rustpress_core::options::php_to_json(&Value::Array(values)))])
+            Ok(vec![(
+                "acf".to_owned(),
+                rustpress_core::options::php_to_json(&Value::Array(values)),
+            )])
         })
     }
 
-    fn rest_links<'a>(&'a self, object: RestObject<'a>, ctx: &'a RestFieldContext<'a>) -> BoxFuture<'a, Result<Vec<RestLink>>> {
+    fn rest_links<'a>(
+        &'a self,
+        object: RestObject<'a>,
+        ctx: &'a RestFieldContext<'a>,
+    ) -> BoxFuture<'a, Result<Vec<RestLink>>> {
         Box::pin(async move {
-            let Some(request) = parse_request(ctx.site, ctx.route) else { return Ok(Vec::new()) };
+            let Some(request) = parse_request(ctx.site, ctx.route) else {
+                return Ok(Vec::new());
+            };
             // The links are gathered while `load_fields()` runs, which it does not when `_fields` leaves `acf` out.
             if !(ctx.field_included)("acf") {
                 return Ok(Vec::new());
@@ -660,7 +1163,9 @@ impl ActivePlugin for Loaded {
             if matches!(object, RestObject::Comment(_)) {
                 return Ok(Vec::new());
             }
-            let Some(target) = self.target(object, &request, ctx).await? else { return Ok(Vec::new()) };
+            let Some(target) = self.target(object, &request, ctx).await? else {
+                return Ok(Vec::new());
+            };
             // `prepare_links()`: one link per `rel:href`, the later one in the place of the first.
             let mut links: Vec<(String, RestLink)> = Vec::new();
             for field in self.rest_fields(&target, ctx).await? {
@@ -685,7 +1190,10 @@ fn acf_format(query_string: &str) -> Option<String> {
         .split('&')
         .map(|pair| pair.split_once('=').unwrap_or((pair, "")))
         .filter(|(name, _)| rustpress_core::rewrite::urldecode(name.as_bytes()) == b"acf_format")
-        .map(|(_, value)| String::from_utf8_lossy(&rustpress_core::rewrite::urldecode(value.as_bytes())).into_owned())
+        .map(|(_, value)| {
+            String::from_utf8_lossy(&rustpress_core::rewrite::urldecode(value.as_bytes()))
+                .into_owned()
+        })
         .next_back()
 }
 
@@ -698,7 +1206,11 @@ fn ids(value: &Value) -> Vec<String> {
 }
 
 /// `get_rest_links()` of the post object, page link, relationship, taxonomy and user fields.
-async fn field_links(ctx: &RestFieldContext<'_>, field: &Field, value: &Value) -> Result<Vec<RestLink>> {
+async fn field_links(
+    ctx: &RestFieldContext<'_>,
+    field: &Field,
+    value: &Value,
+) -> Result<Vec<RestLink>> {
     let mut out = Vec::new();
     if !php::truthy(Some(value)) {
         return Ok(out);
@@ -709,28 +1221,68 @@ async fn field_links(ctx: &RestFieldContext<'_>, field: &Field, value: &Value) -
         "post_object" | "page_link" | "relationship" => {
             for id in ids(value) {
                 // `get_post_type( $object_id )`: a number, or a string PHP casts to one.
-                let Ok(post_id) = id.trim().parse::<u64>() else { continue };
-                let Some(post) = site.db.post(post_id).await? else { continue };
-                let Some((_, rest_base)) = post_types(site).into_iter().find(|(n, _)| *n == post.post_type).or_else(|| (site.types.is_post_type(&post.post_type) || site.types.hidden_post_types.contains(&post.post_type)).then(|| (post.post_type.clone(), post.post_type.clone()))) else {
+                let Ok(post_id) = id.trim().parse::<u64>() else {
                     continue;
                 };
-                let rel = if post.post_type == "attachment" { "acf:attachment" } else { "acf:post" };
-                out.push(RestLink { rel: rel.to_owned(), attributes: embeddable(), href: site.rest_url(&format!("/wp/v2/{rest_base}/{id}")) });
+                let Some(post) = site.db.post(post_id).await? else {
+                    continue;
+                };
+                let Some((_, rest_base)) = post_types(site)
+                    .into_iter()
+                    .find(|(n, _)| *n == post.post_type)
+                    .or_else(|| {
+                        (site.types.is_post_type(&post.post_type)
+                            || site.types.hidden_post_types.contains(&post.post_type))
+                        .then(|| (post.post_type.clone(), post.post_type.clone()))
+                    })
+                else {
+                    continue;
+                };
+                let rel = if post.post_type == "attachment" {
+                    "acf:attachment"
+                } else {
+                    "acf:post"
+                };
+                out.push(RestLink {
+                    rel: rel.to_owned(),
+                    attributes: embeddable(),
+                    href: site.rest_url(&format!("/wp/v2/{rest_base}/{id}")),
+                });
             }
         }
         "taxonomy" => {
             for id in ids(value) {
-                let Ok(term_id) = id.trim().parse::<u64>() else { continue };
-                let Some(term) = site.db.term_by_id(None, term_id).await? else { continue };
-                let Some((_, rest_base)) = taxonomies(site).into_iter().find(|(n, _)| *n == term.taxonomy) else { continue };
+                let Ok(term_id) = id.trim().parse::<u64>() else {
+                    continue;
+                };
+                let Some(term) = site.db.term_by_id(None, term_id).await? else {
+                    continue;
+                };
+                let Some((_, rest_base)) = taxonomies(site)
+                    .into_iter()
+                    .find(|(n, _)| *n == term.taxonomy)
+                else {
+                    continue;
+                };
                 let mut attributes = embeddable();
-                attributes.push(("taxonomy".to_owned(), serde_json::Value::from(term.taxonomy.clone())));
-                out.push(RestLink { rel: "acf:term".to_owned(), attributes, href: site.rest_url(&format!("/wp/v2/{rest_base}/{id}")) });
+                attributes.push((
+                    "taxonomy".to_owned(),
+                    serde_json::Value::from(term.taxonomy.clone()),
+                ));
+                out.push(RestLink {
+                    rel: "acf:term".to_owned(),
+                    attributes,
+                    href: site.rest_url(&format!("/wp/v2/{rest_base}/{id}")),
+                });
             }
         }
         "user" => {
             for id in ids(value) {
-                out.push(RestLink { rel: "acf:user".to_owned(), attributes: embeddable(), href: site.rest_url(&format!("/wp/v2/users/{id}")) });
+                out.push(RestLink {
+                    rel: "acf:user".to_owned(),
+                    attributes: embeddable(),
+                    href: site.rest_url(&format!("/wp/v2/users/{id}")),
+                });
             }
         }
         _ => {}

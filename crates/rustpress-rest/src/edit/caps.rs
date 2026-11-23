@@ -25,7 +25,10 @@ impl Rest<'_> {
     pub(crate) fn can_read_post(&self, post: &Post) -> bool {
         match self.user() {
             Some(user) => user.can_read_post(post),
-            None => post.post_status == "publish" || (post.post_type == "attachment" && post.post_status == "inherit"),
+            None => {
+                post.post_status == "publish"
+                    || (post.post_type == "attachment" && post.post_status == "inherit")
+            }
         }
     }
 
@@ -41,7 +44,11 @@ impl Rest<'_> {
             None => "publish".to_owned(),
             Some(parent) if parent.post_status == "trash" => {
                 let meta = self.site.db.post_meta(parent.id).await.unwrap_or_default();
-                meta.iter().find(|m| m.meta_key.as_deref() == Some("_wp_trash_meta_status")).and_then(|m| m.meta_value.clone()).filter(|s| !s.is_empty()).unwrap_or_else(|| "publish".to_owned())
+                meta.iter()
+                    .find(|m| m.meta_key.as_deref() == Some("_wp_trash_meta_status"))
+                    .and_then(|m| m.meta_value.clone())
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or_else(|| "publish".to_owned())
             }
             Some(parent) => parent.post_status,
         }

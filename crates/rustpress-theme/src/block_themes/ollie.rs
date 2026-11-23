@@ -22,7 +22,9 @@ impl BlockThemePort for Ollie {
     /// `enqueue_custom_block_styles()`: every `assets/styles/*.css` (in `glob()` order, which sorts) for the block
     /// named by the file, `core-` replaced by `core/` (`str_replace()`, so every occurrence).
     fn block_stylesheets(&self, template_dir: &Path) -> Vec<BlockStylesheet> {
-        let Ok(entries) = std::fs::read_dir(template_dir.join("assets").join("styles")) else { return Vec::new() };
+        let Ok(entries) = std::fs::read_dir(template_dir.join("assets").join("styles")) else {
+            return Vec::new();
+        };
         let mut names: Vec<String> = entries
             .filter_map(|e| e.ok())
             .filter(|e| e.file_type().is_ok_and(|t| t.is_file()))
@@ -34,7 +36,12 @@ impl BlockThemePort for Ollie {
             .into_iter()
             .map(|file| {
                 let filename = file.trim_end_matches(".css").to_owned();
-                BlockStylesheet { block: filename.replace("core-", "core/"), handle: format!("ollie-block-{filename}"), path: format!("assets/styles/{filename}.css"), theme_version: false }
+                BlockStylesheet {
+                    block: filename.replace("core-", "core/"),
+                    handle: format!("ollie-block-{filename}"),
+                    path: format!("assets/styles/{filename}.css"),
+                    theme_version: false,
+                }
             })
             .collect()
     }
@@ -70,11 +77,17 @@ fn rebind_submenu_toggles(html: &str) -> String {
     let mut out = String::with_capacity(html.len());
     let mut rest = html;
     while let Some(start) = find_ci(rest, "<button") {
-        let Some(len) = rest[start..].find('>') else { break };
+        let Some(len) = rest[start..].find('>') else {
+            break;
+        };
         let tag = &rest[start..start + len + 1];
         out.push_str(&rest[..start]);
         if has_class(tag, "wp-block-navigation-submenu__toggle") {
-            out.push_str(&tag.replacen("data-wp-bind--aria-expanded=\"state.isSubmenuOpen\"", "data-wp-bind--aria-expanded=\"state.isMenuOpen\"", 1));
+            out.push_str(&tag.replacen(
+                "data-wp-bind--aria-expanded=\"state.isSubmenuOpen\"",
+                "data-wp-bind--aria-expanded=\"state.isMenuOpen\"",
+                1,
+            ));
         } else {
             out.push_str(tag);
         }
@@ -85,11 +98,16 @@ fn rebind_submenu_toggles(html: &str) -> String {
 }
 
 fn find_ci(haystack: &str, needle: &str) -> Option<usize> {
-    haystack.as_bytes().windows(needle.len()).position(|w| w.eq_ignore_ascii_case(needle.as_bytes()))
+    haystack
+        .as_bytes()
+        .windows(needle.len())
+        .position(|w| w.eq_ignore_ascii_case(needle.as_bytes()))
 }
 
 fn has_class(tag: &str, class: &str) -> bool {
-    let Some(at) = tag.find("class=\"") else { return false };
+    let Some(at) = tag.find("class=\"") else {
+        return false;
+    };
     let value = &tag[at + 7..];
     let value = &value[..value.find('"').unwrap_or(value.len())];
     value.split_ascii_whitespace().any(|c| c == class)

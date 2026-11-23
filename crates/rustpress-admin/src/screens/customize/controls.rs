@@ -26,7 +26,11 @@ pub(super) fn link(setting_id: &str) -> String {
 
 /// `checked()` / `selected()`: the attribute when both are equal as strings.
 fn mark(name: &str, helper: &str, current: &str) -> String {
-    if helper == current { format!(" {name}='{name}'") } else { String::new() }
+    if helper == current {
+        format!(" {name}='{name}'")
+    } else {
+        String::new()
+    }
 }
 
 impl Field<'_> {
@@ -39,7 +43,14 @@ impl Field<'_> {
     }
 
     fn describedby(&self) -> String {
-        if self.description.is_empty() { String::new() } else { format!(" aria-describedby=\"{}\" ", esc_attr(&self.description_id())) }
+        if self.description.is_empty() {
+            String::new()
+        } else {
+            format!(
+                " aria-describedby=\"{}\" ",
+                esc_attr(&self.description_id())
+            )
+        }
     }
 
     /// The label as a title and the description, each in its `<?php if ... : ?>`.
@@ -68,7 +79,11 @@ impl Field<'_> {
         let input_id = esc_attr(&self.input_id());
         match self.kind {
             "checkbox" => {
-                let checked = if self.value_true { mark("checked", "1", "1") } else { mark("checked", &self.value, "1") };
+                let checked = if self.value_true {
+                    mark("checked", "1", "1")
+                } else {
+                    mark("checked", &self.value, "1")
+                };
                 let mut out = format!(
                     "\t\t\t\t<span class=\"customize-inside-control-row\">\n\t\t\t\t\t<input\n\t\t\t\t\t\tid=\"{input_id}\"\n\t\t\t\t\t\t{}\t\t\t\t\t\ttype=\"checkbox\"\n\t\t\t\t\t\tvalue=\"{}\"\n\t\t\t\t\t\t{}\t\t\t\t\t\t{checked}\t\t\t\t\t/>\n\t\t\t\t\t<label for=\"{input_id}\">{}</label>\n",
                     self.describedby(),
@@ -106,9 +121,18 @@ impl Field<'_> {
                     return String::new();
                 }
                 let mut out = self.title("label");
-                out.push_str(&format!("\n\t\t\t\t<select id=\"{input_id}\" {} {}>\n\t\t\t\t\t", self.describedby(), self.link));
+                out.push_str(&format!(
+                    "\n\t\t\t\t<select id=\"{input_id}\" {} {}>\n\t\t\t\t\t",
+                    self.describedby(),
+                    self.link
+                ));
                 for (value, label) in self.choices {
-                    out.push_str(&format!("<option value=\"{}\"{}>{}</option>", esc_attr(value), mark("selected", &self.value, value), esc_html(label)));
+                    out.push_str(&format!(
+                        "<option value=\"{}\"{}>{}</option>",
+                        esc_attr(value),
+                        mark("selected", &self.value, value),
+                        esc_html(label)
+                    ));
                 }
                 out.push_str("\t\t\t\t</select>\n\t\t\t\t");
                 out
@@ -130,7 +154,14 @@ impl Field<'_> {
             }
             _ => {
                 let mut out = self.title("label");
-                let value = if self.input_attrs.iter().any(|(name, _)| name == "value") { String::new() } else { format!("\t\t\t\t\t\tvalue=\"{}\"\n\t\t\t\t\t", esc_attr(&self.value)) };
+                let value = if self.input_attrs.iter().any(|(name, _)| name == "value") {
+                    String::new()
+                } else {
+                    format!(
+                        "\t\t\t\t\t\tvalue=\"{}\"\n\t\t\t\t\t",
+                        esc_attr(&self.value)
+                    )
+                };
                 out.push_str(&format!(
                     "\t\t\t\t<input\n\t\t\t\t\tid=\"{input_id}\"\n\t\t\t\t\ttype=\"{}\"\n\t\t\t\t\t{}\t\t\t\t\t{}\t\t\t\t\t{value}\t\t\t\t\t{}\t\t\t\t\t/>\n\t\t\t\t",
                     esc_attr(self.kind),
@@ -145,11 +176,23 @@ impl Field<'_> {
 
     /// `render_content()` of a `dropdown-pages` control: `dropdown` is what `wp_dropdown_pages()` printed, `add_new_item`
     /// the label of the pages when the control offers to add one.
-    pub fn dropdown_pages(&self, dropdown: &str, add_new_item: Option<(&str, &dyn Fn(&str) -> String)>) -> String {
+    pub fn dropdown_pages(
+        &self,
+        dropdown: &str,
+        add_new_item: Option<(&str, &dyn Fn(&str) -> String)>,
+    ) -> String {
         let mut out = self.title("label");
         out.push_str("\n\t\t\t\t");
         // "Hackily add in the data link parameter."
-        out.push_str(&dropdown.replace("<select", &format!("<select {} id=\"{}\" {}", self.link, esc_attr(&self.input_id()), self.describedby())));
+        out.push_str(&dropdown.replace(
+            "<select",
+            &format!(
+                "<select {} id=\"{}\" {}",
+                self.link,
+                esc_attr(&self.input_id()),
+                self.describedby()
+            ),
+        ));
         out.push_str("\t\t\t\t");
         if let Some((label, tr)) = add_new_item {
             let id = esc_attr(self.id);
@@ -168,28 +211,69 @@ impl Field<'_> {
 
 /// `input_attrs()`.
 fn attributes(attrs: &[(String, String)]) -> String {
-    attrs.iter().map(|(name, value)| format!("{name}=\"{}\" ", esc_attr(value))).collect()
+    attrs
+        .iter()
+        .map(|(name, value)| format!("{name}=\"{}\" ", esc_attr(value)))
+        .collect()
 }
 
 /// `WP_Customize_Header_Image_Control::render_content()`.
-pub(super) fn header_image(tr: &dyn Fn(&str) -> String, trx: &dyn Fn(&str, &str) -> String, label: &str, video: bool, width: u64, height: u64, has_image: bool, can_upload: bool) -> String {
-    let visibility = if has_image { "" } else { " style=\"display:none\" " };
-    let title = if video { format!("<span class=\"customize-control-title\">{label}</span>") } else { String::new() };
-    let intro = if video {
-        tr("Click &#8220;Add Image&#8221; to upload an image file from your computer. Your theme works best with an image that matches the size of your video &#8212; you&#8217;ll be able to crop your image once you upload it for a perfect fit.")
-    } else if width > 0 && height > 0 {
-        rustpress_core::i18n::sprintf(&tr("Click &#8220;Add Image&#8221; to upload an image file from your computer. Your theme works best with an image with a header size of %s pixels &#8212; you&#8217;ll be able to crop your image once you upload it for a perfect fit."), &[&format!("<strong>{width} &times; {height}</strong>")])
-    } else if width > 0 {
-        rustpress_core::i18n::sprintf(&tr("Click &#8220;Add Image&#8221; to upload an image file from your computer. Your theme works best with an image with a header width of %s pixels &#8212; you&#8217;ll be able to crop your image once you upload it for a perfect fit."), &[&format!("<strong>{width}</strong>")])
+pub(super) fn header_image(
+    tr: &dyn Fn(&str) -> String,
+    trx: &dyn Fn(&str, &str) -> String,
+    label: &str,
+    video: bool,
+    width: u64,
+    height: u64,
+    has_image: bool,
+    can_upload: bool,
+) -> String {
+    let visibility = if has_image {
+        ""
     } else {
-        rustpress_core::i18n::sprintf(&tr("Click &#8220;Add Image&#8221; to upload an image file from your computer. Your theme works best with an image with a header height of %s pixels &#8212; you&#8217;ll be able to crop your image once you upload it for a perfect fit."), &[&format!("<strong>{height}</strong>")])
+        " style=\"display:none\" "
+    };
+    let title = if video {
+        format!("<span class=\"customize-control-title\">{label}</span>")
+    } else {
+        String::new()
+    };
+    let intro = if video {
+        tr(
+            "Click &#8220;Add Image&#8221; to upload an image file from your computer. Your theme works best with an image that matches the size of your video &#8212; you&#8217;ll be able to crop your image once you upload it for a perfect fit.",
+        )
+    } else if width > 0 && height > 0 {
+        rustpress_core::i18n::sprintf(
+            &tr(
+                "Click &#8220;Add Image&#8221; to upload an image file from your computer. Your theme works best with an image with a header size of %s pixels &#8212; you&#8217;ll be able to crop your image once you upload it for a perfect fit.",
+            ),
+            &[&format!("<strong>{width} &times; {height}</strong>")],
+        )
+    } else if width > 0 {
+        rustpress_core::i18n::sprintf(
+            &tr(
+                "Click &#8220;Add Image&#8221; to upload an image file from your computer. Your theme works best with an image with a header width of %s pixels &#8212; you&#8217;ll be able to crop your image once you upload it for a perfect fit.",
+            ),
+            &[&format!("<strong>{width}</strong>")],
+        )
+    } else {
+        rustpress_core::i18n::sprintf(
+            &tr(
+                "Click &#8220;Add Image&#8221; to upload an image file from your computer. Your theme works best with an image with a header height of %s pixels &#8212; you&#8217;ll be able to crop your image once you upload it for a perfect fit.",
+            ),
+            &[&format!("<strong>{height}</strong>")],
+        )
     };
     let actions = if can_upload {
         format!(
             "\t\t\t\t<button type=\"button\"{visibility} class=\"button remove\" aria-label=\"{}\">{}</button>\n\t\t\t\t<button type=\"button\" class=\"button new {}\" id=\"header_image-button\" aria-label=\"{}\">{}</button>\n\t\t\t\t",
             esc_attr(&tr("Hide header image")),
             tr("Hide image"),
-            if has_image { "customize-header-image-not-selected" } else { "" },
+            if has_image {
+                "customize-header-image-not-selected"
+            } else {
+                ""
+            },
             esc_attr(&tr("Add Header Image")),
             tr("Add Image")
         )

@@ -32,7 +32,11 @@ const SETTINGS: &[(&str, &str, Kind)] = &[
     ("page_on_front", "page_on_front", Kind::Int),
     ("page_for_posts", "page_for_posts", Kind::Int),
     ("default_ping_status", "default_ping_status", Kind::Text),
-    ("default_comment_status", "default_comment_status", Kind::Text),
+    (
+        "default_comment_status",
+        "default_comment_status",
+        Kind::Text,
+    ),
     ("site_logo", "site_logo", Kind::Int),
     ("site_icon", "site_icon", Kind::Int),
 ];
@@ -76,7 +80,10 @@ impl Rest<'_> {
 
     pub(crate) async fn settings(&self, method: &str, args: &Args) -> Result<Outcome> {
         if !self.can("manage_options") {
-            return Ok(Err(self.forbidden("rest_forbidden", "Sorry, you are not allowed to do that.")));
+            return Ok(Err(self.forbidden(
+                "rest_forbidden",
+                "Sorry, you are not allowed to do that.",
+            )));
         }
         if matches!(method, "POST" | "PUT" | "PATCH") {
             let writer = match self.writer() {
@@ -84,19 +91,40 @@ impl Rest<'_> {
                 Err(e) => return Ok(Err(e)),
             };
             for (name, option, kind) in SETTINGS {
-                let Some(value) = args.get(name) else { continue };
+                let Some(value) = args.get(name) else {
+                    continue;
+                };
                 let stored = match (kind, value) {
                     (Kind::Bool, Value::Bool(b)) => (if *b { "1" } else { "0" }).to_owned(),
-                    (Kind::Bool, other) => (if args.bool(name).unwrap_or(false) || other == &json!(1) { "1" } else { "0" }).to_owned(),
+                    (Kind::Bool, other) => {
+                        (if args.bool(name).unwrap_or(false) || other == &json!(1) {
+                            "1"
+                        } else {
+                            "0"
+                        })
+                        .to_owned()
+                    }
                     (Kind::Int, _) => args.i64(name).unwrap_or(0).to_string(),
                     (Kind::Text, Value::Null) => String::new(),
                     (Kind::Text, _) => args.str(name).unwrap_or_default(),
                 };
-                let stored = if *option == "blogname" || *option == "blogdescription" { rustpress_core::formatting::esc_html(&stored) } else { stored };
+                let stored = if *option == "blogname" || *option == "blogdescription" {
+                    rustpress_core::formatting::esc_html(&stored)
+                } else {
+                    stored
+                };
                 // `sanitize_option( 'show_on_front' )` (WordPress 7.1.5): anything but 'page' is 'posts'.
-                let stored = if *option == "show_on_front" && stored != "page" { "posts".to_owned() } else { stored };
+                let stored = if *option == "show_on_front" && stored != "page" {
+                    "posts".to_owned()
+                } else {
+                    stored
+                };
                 if let Err(e) = writer.update_option(option, &stored).await {
-                    return Ok(Err(RestError::new("rest_cannot_update", &e.to_string(), 500)));
+                    return Ok(Err(RestError::new(
+                        "rest_cannot_update",
+                        &e.to_string(),
+                        500,
+                    )));
                 }
             }
         }

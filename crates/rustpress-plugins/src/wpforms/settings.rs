@@ -36,7 +36,9 @@ pub fn json(value: &rustpress_phpser::Value) -> Value {
 impl Settings {
     /// From the serialized option.
     pub fn parse(raw: Option<&str>) -> Self {
-        let Some(raw) = raw else { return Self::default() };
+        let Some(raw) = raw else {
+            return Self::default();
+        };
         match rustpress_phpser::unserialize(raw.as_bytes()).map(|v| json(&v)) {
             Ok(Value::Object(m)) => Self(m),
             _ => Self::default(),
@@ -45,7 +47,12 @@ impl Settings {
 
     /// From pairs (tests).
     pub fn from_pairs(pairs: &[(&str, &str)]) -> Self {
-        Self(pairs.iter().map(|(k, v)| ((*k).to_owned(), Value::String((*v).to_owned()))).collect())
+        Self(
+            pairs
+                .iter()
+                .map(|(k, v)| ((*k).to_owned(), Value::String((*v).to_owned())))
+                .collect(),
+        )
     }
 
     /// `! empty( wpforms_setting( $key ) )`.

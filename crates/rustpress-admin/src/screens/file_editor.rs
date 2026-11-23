@@ -15,8 +15,9 @@ use crate::plugins::{self as plugin_scan, PluginInfo};
 use crate::themes::{self, ThemeInfo};
 
 const EDITABLE_TYPES: [&str; 33] = [
-    "bash", "conf", "css", "diff", "htm", "html", "http", "inc", "include", "js", "mjs", "json", "jsx", "less", "md", "patch", "php", "php3", "php4", "php5", "php7", "phps", "phtml", "sass", "scss", "sh", "sql", "svg", "text", "txt",
-    "xml", "yaml", "yml",
+    "bash", "conf", "css", "diff", "htm", "html", "http", "inc", "include", "js", "mjs", "json",
+    "jsx", "less", "md", "patch", "php", "php3", "php4", "php5", "php7", "phps", "phtml", "sass",
+    "scss", "sh", "sql", "svg", "text", "txt", "xml", "yaml", "yml",
 ];
 
 /// An error of `WP_Error`: code, message and the data of `wp_send_json_error()`.
@@ -26,7 +27,10 @@ pub struct EditError {
 }
 
 fn error(code: &'static str, message: impl Into<String>) -> EditError {
-    EditError { code, message: message.into() }
+    EditError {
+        code,
+        message: message.into(),
+    }
 }
 
 fn wp_root(env: &AdminEnv<'_>) -> Option<PathBuf> {
@@ -58,12 +62,19 @@ fn validate_file(file: &str, allowed: &[String]) -> u8 {
 
 /// `WP_Theme::scandir()`: the files with one of the extensions, below `path`, by name.
 fn scandir(path: &Path, extension: &str, depth: i32, relative: &str) -> Vec<(String, PathBuf)> {
-    let Ok(entries) = std::fs::read_dir(path) else { return Vec::new() };
-    let mut names: Vec<String> = entries.flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect();
+    let Ok(entries) = std::fs::read_dir(path) else {
+        return Vec::new();
+    };
+    let mut names: Vec<String> = entries
+        .flatten()
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .collect();
     names.sort();
     let mut files: Vec<(String, PathBuf)> = Vec::new();
     for name in names {
-        if name.starts_with('.') || ["CVS", "node_modules", "vendor", "bower_components"].contains(&name.as_str()) {
+        if name.starts_with('.')
+            || ["CVS", "node_modules", "vendor", "bower_components"].contains(&name.as_str())
+        {
             continue;
         }
         let full = path.join(&name);
@@ -71,7 +82,12 @@ fn scandir(path: &Path, extension: &str, depth: i32, relative: &str) -> Vec<(Str
             if depth == 0 {
                 continue;
             }
-            files.extend(scandir(&full, extension, depth - 1, &format!("{relative}{name}/")));
+            files.extend(scandir(
+                &full,
+                extension,
+                depth - 1,
+                &format!("{relative}{name}/"),
+            ));
         } else if name.ends_with(&format!(".{extension}")) {
             files.push((format!("{relative}{name}"), full));
         }
@@ -94,9 +110,10 @@ fn theme_files(theme: &ThemeInfo) -> Vec<(String, PathBuf)> {
     for kind in EDITABLE_TYPES {
         let found = scandir(&theme.dir, kind, -1, "");
         if kind == "css"
-            && let Some(style) = found.iter().find(|(k, _)| k == "style.css").cloned() {
-                union(&mut allowed, vec![style]);
-            }
+            && let Some(style) = found.iter().find(|(k, _)| k == "style.css").cloned()
+        {
+            union(&mut allowed, vec![style]);
+        }
         union(&mut allowed, found);
     }
     if let Some(at) = allowed.iter().position(|(k, _)| k == "functions.php") {
@@ -113,8 +130,13 @@ fn theme_files(theme: &ThemeInfo) -> Vec<(String, PathBuf)> {
 /// `list_files()` of a plugin folder: every file below it (hidden files and the usual folders left out).
 fn list_files(folder: &Path, levels: u32, exclusions: &[&str]) -> Vec<String> {
     let mut out = Vec::new();
-    let Ok(entries) = std::fs::read_dir(folder) else { return out };
-    let mut names: Vec<String> = entries.flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect();
+    let Ok(entries) = std::fs::read_dir(folder) else {
+        return out;
+    };
+    let mut names: Vec<String> = entries
+        .flatten()
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .collect();
     names.sort();
     for name in names {
         if name.starts_with('.') || exclusions.contains(&name.as_str()) {
@@ -122,14 +144,30 @@ fn list_files(folder: &Path, levels: u32, exclusions: &[&str]) -> Vec<String> {
         }
         let full = folder.join(&name);
         if full.is_dir() {
-            let inner = if levels > 1 { list_files(&full, levels - 1, &[]) } else { Vec::new() };
+            let inner = if levels > 1 {
+                list_files(&full, levels - 1, &[])
+            } else {
+                Vec::new()
+            };
             if inner.is_empty() {
-                out.push(format!("{}/{name}/", folder.to_string_lossy().replace('\\', "/").trim_end_matches('/')));
+                out.push(format!(
+                    "{}/{name}/",
+                    folder
+                        .to_string_lossy()
+                        .replace('\\', "/")
+                        .trim_end_matches('/')
+                ));
             } else {
                 out.extend(inner);
             }
         } else {
-            out.push(format!("{}/{name}", folder.to_string_lossy().replace('\\', "/").trim_end_matches('/')));
+            out.push(format!(
+                "{}/{name}",
+                folder
+                    .to_string_lossy()
+                    .replace('\\', "/")
+                    .trim_end_matches('/')
+            ));
         }
     }
     out
@@ -145,8 +183,14 @@ fn plugin_files(root: &Path, plugin: &str) -> Vec<String> {
         && dir != plugins_dir
     {
         let base = plugins_dir.to_string_lossy().replace('\\', "/");
-        for file in list_files(dir, 100, &["CVS", "node_modules", "vendor", "bower_components"]) {
-            let relative = file.strip_prefix(&base).map_or(file.clone(), |r| r.trim_start_matches('/').to_owned());
+        for file in list_files(
+            dir,
+            100,
+            &["CVS", "node_modules", "vendor", "bower_components"],
+        ) {
+            let relative = file
+                .strip_prefix(&base)
+                .map_or(file.clone(), |r| r.trim_start_matches('/').to_owned());
             if !files.contains(&relative) {
                 files.push(relative);
             }
@@ -158,34 +202,62 @@ fn plugin_files(root: &Path, plugin: &str) -> Vec<String> {
 fn extension_of(file: &str) -> Option<String> {
     let name = file.rsplit('/').next().unwrap_or(file);
     let (stem, ext) = name.rsplit_once('.')?;
-    (!ext.is_empty() && !stem.is_empty() || name.starts_with('.') && !ext.is_empty()).then(|| ext.to_owned())
+    (!ext.is_empty() && !stem.is_empty() || name.starts_with('.') && !ext.is_empty())
+        .then(|| ext.to_owned())
 }
 
 /// `wp_edit_theme_plugin_file()` for a file of a theme or a plugin.
-pub async fn edit_file(env: &AdminEnv<'_>, request: &AdminRequest, user: &rustpress_auth::CurrentUser, token: &str, field: &(dyn Fn(&str) -> Option<String> + Sync)) -> Result<(), EditError> {
-    let Some(file) = field("file").filter(|f| !f.is_empty()) else { return Err(error("missing_file", "")) };
+pub async fn edit_file(
+    env: &AdminEnv<'_>,
+    request: &AdminRequest,
+    user: &rustpress_auth::CurrentUser,
+    token: &str,
+    field: &(dyn Fn(&str) -> Option<String> + Sync),
+) -> Result<(), EditError> {
+    let Some(file) = field("file").filter(|f| !f.is_empty()) else {
+        return Err(error("missing_file", ""));
+    };
     if validate_file(&file, &[]) != 0 {
         return Err(error("bad_file", ""));
     }
-    let Some(content) = field("newcontent") else { return Err(error("missing_content", "")) };
-    let Some(nonce) = field("nonce") else { return Err(error("missing_nonce", "")) };
+    let Some(content) = field("newcontent") else {
+        return Err(error("missing_content", ""));
+    };
+    let Some(nonce) = field("nonce") else {
+        return Err(error("missing_nonce", ""));
+    };
     let tr = |s: &str| env.site.tr(s);
     let _ = request;
-    let nonce_ok = |action: &str| env.auth.verify_nonce(&nonce, action, user.id, token, env.now).is_some();
-    let Some(root) = wp_root(env) else { return Err(error("missing_theme_or_plugin", "")) };
+    let nonce_ok = |action: &str| {
+        env.auth
+            .verify_nonce(&nonce, action, user.id, token, env.now)
+            .is_some()
+    };
+    let Some(root) = wp_root(env) else {
+        return Err(error("missing_theme_or_plugin", ""));
+    };
     let real_file: PathBuf;
     if let Some(plugin) = field("plugin").filter(|p| !p.is_empty()) {
         if !user.can("edit_plugins") {
-            return Err(error("unauthorized", tr("Sorry, you are not allowed to edit plugins for this site.")));
+            return Err(error(
+                "unauthorized",
+                tr("Sorry, you are not allowed to edit plugins for this site."),
+            ));
         }
         if !nonce_ok(&format!("edit-plugin_{file}")) {
             return Err(error("nonce_failure", ""));
         }
-        if !plugin_scan::installed(&root).iter().any(|p| p.file == plugin) {
+        if !plugin_scan::installed(&root)
+            .iter()
+            .any(|p| p.file == plugin)
+        {
             return Err(error("invalid_plugin", ""));
         }
         if validate_file(&file, &plugin_files(&root, &plugin)) != 0 {
-            return Err(error("bad_plugin_file_path", tr("Sorry, that file cannot be edited.")));
+            return Err(error(
+                "bad_plugin_file_path",
+                tr("Sorry, that file cannot be edited."),
+            ));
         }
         real_file = root.join("wp-content").join("plugins").join(&file);
     } else if let Some(stylesheet) = field("theme").filter(|t| !t.is_empty()) {
@@ -193,27 +265,44 @@ pub async fn edit_file(env: &AdminEnv<'_>, request: &AdminRequest, user: &rustpr
             return Err(error("bad_theme_path", ""));
         }
         if !user.can("edit_themes") {
-            return Err(error("unauthorized", tr("Sorry, you are not allowed to edit templates for this site.")));
+            return Err(error(
+                "unauthorized",
+                tr("Sorry, you are not allowed to edit templates for this site."),
+            ));
         }
-        let Some(theme) = themes::find(&root, &stylesheet) else { return Err(error("non_existent_theme", tr("The requested theme does not exist."))) };
+        let Some(theme) = themes::find(&root, &stylesheet) else {
+            return Err(error(
+                "non_existent_theme",
+                tr("The requested theme does not exist."),
+            ));
+        };
         if !nonce_ok(&format!("edit-theme_{stylesheet}_{file}")) {
             return Err(error("nonce_failure", ""));
         }
         let allowed: Vec<String> = theme_files(&theme).into_iter().map(|(k, _)| k).collect();
         if validate_file(&file, &allowed) != 0 {
-            return Err(error("disallowed_theme_file", tr("Sorry, that file cannot be edited.")));
+            return Err(error(
+                "disallowed_theme_file",
+                tr("Sorry, that file cannot be edited."),
+            ));
         }
         real_file = theme.dir.join(&file);
     } else {
         return Err(error("missing_theme_or_plugin", ""));
     }
     if !real_file.is_file() {
-        return Err(error("file_does_not_exist", tr("File does not exist! Please double check the name and try again.")));
+        return Err(error(
+            "file_does_not_exist",
+            tr("File does not exist! Please double check the name and try again."),
+        ));
     }
     if let Some(extension) = extension_of(&real_file.to_string_lossy()).map(|e| e.to_lowercase())
         && !EDITABLE_TYPES.contains(&extension.as_str())
     {
-        return Err(error("illegal_file_type", tr("Files of this type are not editable.")));
+        return Err(error(
+            "illegal_file_type",
+            tr("Files of this type are not editable."),
+        ));
     }
     if std::fs::metadata(&real_file).map_or(true, |m| m.permissions().readonly()) {
         return Err(error("file_not_writable", ""));
@@ -228,11 +317,22 @@ pub async fn edit_file(env: &AdminEnv<'_>, request: &AdminRequest, user: &rustpr
 }
 
 /// The Ajax action `edit-theme-plugin-file`.
-pub async fn ajax_edit(env: &AdminEnv<'_>, request: &AdminRequest, user: &rustpress_auth::CurrentUser, token: &str) -> AdminResponse {
+pub async fn ajax_edit(
+    env: &AdminEnv<'_>,
+    request: &AdminRequest,
+    user: &rustpress_auth::CurrentUser,
+    token: &str,
+) -> AdminResponse {
     let field = |name: &str| request.post_field(name).map(str::to_owned);
     match edit_file(env, request, user, token, &field).await {
-        Ok(()) => super::ajax::json(200, &serde_json::json!({"success": true, "data": {"message": env.site.tr("File edited successfully.")}})),
-        Err(e) => super::ajax::json(200, &serde_json::json!({"success": false, "data": {"code": e.code, "message": e.message}})),
+        Ok(()) => super::ajax::json(
+            200,
+            &serde_json::json!({"success": true, "data": {"message": env.site.tr("File edited successfully.")}}),
+        ),
+        Err(e) => super::ajax::json(
+            200,
+            &serde_json::json!({"success": false, "data": {"code": e.code, "message": e.message}}),
+        ),
     }
 }
 
@@ -243,7 +343,9 @@ enum Entry {
 }
 
 fn insert(tree: &mut Vec<(String, Entry)>, parts: &[&str], file: &str) {
-    let Some((first, rest)) = parts.split_first() else { return };
+    let Some((first, rest)) = parts.split_first() else {
+        return;
+    };
     if rest.is_empty() {
         match tree.iter_mut().find(|(k, _)| k == first) {
             Some(slot) => slot.1 = Entry::File(file.to_owned()),
@@ -251,7 +353,10 @@ fn insert(tree: &mut Vec<(String, Entry)>, parts: &[&str], file: &str) {
         }
         return;
     }
-    let position = match tree.iter().position(|(k, e)| k == first && matches!(e, Entry::Dir(_))) {
+    let position = match tree
+        .iter()
+        .position(|(k, e)| k == first && matches!(e, Entry::Dir(_)))
+    {
         Some(p) => p,
         None => {
             tree.retain(|(k, _)| k != first);
@@ -324,7 +429,11 @@ fn file_description(ctx: &Ctx<'_>, file: &str, path: &Path) -> String {
         // `|Template Name:(.*)$|mi`
         for line in text.lines() {
             if let Some(at) = line.to_lowercase().find("template name:") {
-                let name = line[at + "template name:".len()..].trim().trim_end_matches("*/").trim().to_owned();
+                let name = line[at + "template name:".len()..]
+                    .trim()
+                    .trim_end_matches("*/")
+                    .trim()
+                    .to_owned();
                 return sprintf(&tr("%s Page Template"), &[&name]);
             }
         }
@@ -333,7 +442,15 @@ fn file_description(ctx: &Ctx<'_>, file: &str, path: &Path) -> String {
 }
 
 /// `wp_print_theme_file_tree()`.
-fn print_theme_tree(ctx: &Ctx<'_>, tree: &[(String, Entry)], paths: &[(String, PathBuf)], relative_file: &str, stylesheet: &str, level: usize, out: &mut String) {
+fn print_theme_tree(
+    ctx: &Ctx<'_>,
+    tree: &[(String, Entry)],
+    paths: &[(String, PathBuf)],
+    relative_file: &str,
+    stylesheet: &str,
+    level: usize,
+    out: &mut String,
+) {
     let size = tree.len();
     for (position, (label, entry)) in tree.iter().enumerate() {
         let index = position + 1;
@@ -344,20 +461,44 @@ fn print_theme_tree(ctx: &Ctx<'_>, tree: &[(String, Entry)], paths: &[(String, P
                     esc_html(label),
                     ctx.tr("folder")
                 ));
-                print_theme_tree(ctx, children, paths, relative_file, stylesheet, level + 1, out);
+                print_theme_tree(
+                    ctx,
+                    children,
+                    paths,
+                    relative_file,
+                    stylesheet,
+                    level + 1,
+                    out,
+                );
                 out.push_str("</ul>\n\t\t\t</li>\n\t\t\t");
             }
             Entry::File(filename) => {
                 // The arguments of the recursive call are swapped: the set size is the position, the position the size.
-                let url = format!("{}?file={}&theme={}", ctx.admin_url("theme-editor.php"), rawurlencode(filename), rawurlencode(stylesheet));
+                let url = format!(
+                    "{}?file={}&theme={}",
+                    ctx.admin_url("theme-editor.php"),
+                    rawurlencode(filename),
+                    rawurlencode(stylesheet)
+                );
                 let current = relative_file == filename;
-                let path = paths.iter().find(|(k, _)| k == filename).map(|(_, p)| p.clone()).unwrap_or_default();
+                let path = paths
+                    .iter()
+                    .find(|(k, _)| k == filename)
+                    .map(|(_, p)| p.clone())
+                    .unwrap_or_default();
                 let mut description = esc_html(&file_description(ctx, filename, &path));
                 let basename = filename.rsplit('/').next().unwrap_or(filename);
                 if description != *filename && basename != description {
-                    description.push_str(&format!("<br /><span class=\"nonessential\">({})</span>", esc_html(filename)));
+                    description.push_str(&format!(
+                        "<br /><span class=\"nonessential\">({})</span>",
+                        esc_html(filename)
+                    ));
                 }
-                let description = if current { format!("<span class=\"notice notice-info\">{description}</span>") } else { description };
+                let description = if current {
+                    format!("<span class=\"notice notice-info\">{description}</span>")
+                } else {
+                    description
+                };
                 out.push_str(&format!(
                     "\t\t<li role=\"none\" class=\"{}\">\n\t\t\t<a role=\"treeitem\" tabindex=\"{}\"\n\t\t\t\thref=\"{}\"\n\t\t\t\taria-level=\"{level}\"\n\t\t\t\taria-setsize=\"{index}\"\n\t\t\t\taria-posinset=\"{size}\">\n\t\t\t\t{description}\t\t\t</a>\n\t\t</li>\n\t\t",
                     if current { "current-file" } else { "" },
@@ -370,7 +511,14 @@ fn print_theme_tree(ctx: &Ctx<'_>, tree: &[(String, Entry)], paths: &[(String, P
 }
 
 /// `wp_print_plugin_file_tree()`.
-fn print_plugin_tree(ctx: &Ctx<'_>, tree: &[(String, Entry)], current: &str, plugin: &str, level: usize, out: &mut String) {
+fn print_plugin_tree(
+    ctx: &Ctx<'_>,
+    tree: &[(String, Entry)],
+    current: &str,
+    plugin: &str,
+    level: usize,
+    out: &mut String,
+) {
     let size = tree.len();
     for (position, (label, entry)) in tree.iter().enumerate() {
         let index = position + 1;
@@ -385,7 +533,12 @@ fn print_plugin_tree(ctx: &Ctx<'_>, tree: &[(String, Entry)], current: &str, plu
                 out.push_str("</ul>\n\t\t\t</li>\n\t\t\t");
             }
             Entry::File(plugin_file) => {
-                let url = format!("{}?file={}&plugin={}", ctx.admin_url("plugin-editor.php"), rawurlencode(plugin_file), rawurlencode(plugin));
+                let url = format!(
+                    "{}?file={}&plugin={}",
+                    ctx.admin_url("plugin-editor.php"),
+                    rawurlencode(plugin_file),
+                    rawurlencode(plugin)
+                );
                 let is_current = current == plugin_file;
                 out.push_str(&format!(
                     "\t\t<li role=\"none\" class=\"{}\">\n\t\t\t<a role=\"treeitem\" tabindex=\"{}\"\n\t\t\t\thref=\"{}\"\n\t\t\t\taria-level=\"{level}\"\n\t\t\t\taria-setsize=\"{index}\"\n\t\t\t\taria-posinset=\"{size}\">\n\t\t\t\t{}{}\t\t\t</a>\n\t\t</li>\n\t\t",
@@ -411,17 +564,91 @@ fn doc_link_parse(content: &str) -> Vec<String> {
     let is_ident_start = |b: u8| b.is_ascii_alphabetic() || b == b'_' || b >= 0x7f;
     let is_ident = |b: u8| b.is_ascii_alphanumeric() || b == b'_' || b >= 0x7f;
     let keywords = [
-        "abstract", "and", "array", "as", "break", "callable", "case", "catch", "class", "clone", "const", "continue", "declare", "default", "die", "do", "echo", "else", "elseif", "empty", "enddeclare", "endfor", "endforeach", "endif", "endswitch",
-        "endwhile", "eval", "exit", "extends", "final", "finally", "fn", "for", "foreach", "function", "global", "goto", "if", "implements", "include", "include_once", "instanceof", "insteadof", "interface", "isset", "list", "match", "namespace", "new",
-        "or", "print", "private", "protected", "public", "readonly", "require", "require_once", "return", "static", "switch", "throw", "trait", "try", "unset", "use", "var", "while", "xor", "yield",
+        "abstract",
+        "and",
+        "array",
+        "as",
+        "break",
+        "callable",
+        "case",
+        "catch",
+        "class",
+        "clone",
+        "const",
+        "continue",
+        "declare",
+        "default",
+        "die",
+        "do",
+        "echo",
+        "else",
+        "elseif",
+        "empty",
+        "enddeclare",
+        "endfor",
+        "endforeach",
+        "endif",
+        "endswitch",
+        "endwhile",
+        "eval",
+        "exit",
+        "extends",
+        "final",
+        "finally",
+        "fn",
+        "for",
+        "foreach",
+        "function",
+        "global",
+        "goto",
+        "if",
+        "implements",
+        "include",
+        "include_once",
+        "instanceof",
+        "insteadof",
+        "interface",
+        "isset",
+        "list",
+        "match",
+        "namespace",
+        "new",
+        "or",
+        "print",
+        "private",
+        "protected",
+        "public",
+        "readonly",
+        "require",
+        "require_once",
+        "return",
+        "static",
+        "switch",
+        "throw",
+        "trait",
+        "try",
+        "unset",
+        "use",
+        "var",
+        "while",
+        "xor",
+        "yield",
     ];
     let mut previous: Vec<String> = Vec::new();
     let mut previous_object_operator = false;
     while index < bytes.len() {
         if !in_php {
-            match content[index..].find("<?php").or_else(|| content[index..].find("<?=")) {
+            match content[index..]
+                .find("<?php")
+                .or_else(|| content[index..].find("<?="))
+            {
                 Some(at) => {
-                    index += at + if content[index + at..].starts_with("<?php") { 5 } else { 3 };
+                    index += at
+                        + if content[index + at..].starts_with("<?php") {
+                            5
+                        } else {
+                            3
+                        };
                     in_php = true;
                     continue;
                 }
@@ -439,7 +666,9 @@ fn doc_link_parse(content: &str) -> Vec<String> {
             continue;
         }
         if content[index..].starts_with("/*") {
-            index += content[index..].find("*/").map_or(bytes.len() - index, |e| e + 2);
+            index += content[index..]
+                .find("*/")
+                .map_or(bytes.len() - index, |e| e + 2);
             continue;
         }
         if b == b'\'' || b == b'"' {
@@ -466,9 +695,13 @@ fn doc_link_parse(content: &str) -> Vec<String> {
             }
             let word = &content[start..index];
             let after = content[index..].trim_start_matches([' ', '\t', '\r', '\n']);
-            let is_call = after.starts_with('(') && !keywords.contains(&word.to_lowercase().as_str());
+            let is_call =
+                after.starts_with('(') && !keywords.contains(&word.to_lowercase().as_str());
             if is_call {
-                let defined = previous.last().is_some_and(|p| p == "function" || p == "class") || previous_object_operator;
+                let defined = previous
+                    .last()
+                    .is_some_and(|p| p == "function" || p == "class")
+                    || previous_object_operator;
                 if defined {
                     ignore.push(word.to_owned());
                 }
@@ -486,7 +719,10 @@ fn doc_link_parse(content: &str) -> Vec<String> {
     }
     functions.sort();
     functions.dedup();
-    functions.into_iter().filter(|f| !ignore.contains(f)).collect()
+    functions
+        .into_iter()
+        .filter(|f| !ignore.contains(f))
+        .collect()
 }
 
 /// `esc_textarea()`.
@@ -510,12 +746,19 @@ pub(super) fn code_editor_settings(ctx: &Ctx<'_>, file: &str) -> serde_json::Val
         "direction": "ltr",
         "gutters": []
     });
-    let includes_url = format!("{}/wp-includes/", site.settings.siteurl.trim_end_matches('/'));
+    let includes_url = format!(
+        "{}/wp-includes/",
+        site.settings.siteurl.trim_end_matches('/')
+    );
     let mut htmlhint = json!({
         "tagname-lowercase": true, "attr-lowercase": true, "attr-value-double-quotes": false, "doctype-first": false, "tag-pair": true, "spec-char-escape": true, "id-unique": true,
         "src-not-empty": true, "attr-no-duplication": true, "alt-require": true, "space-tab-mixed-disabled": "tab", "attr-unsafe-chars": true
     });
-    let extension = if file.rsplit('/').next().is_some_and(|b| b.contains('.')) { file.rsplit('.').next().unwrap_or_default().to_lowercase() } else { String::new() };
+    let extension = if file.rsplit('/').next().is_some_and(|b| b.contains('.')) {
+        file.rsplit('.').next().unwrap_or_default().to_lowercase()
+    } else {
+        String::new()
+    };
     // `wp_get_mime_types()` first, then the types it does not have.
     let kind = match extension.as_str() {
         "css" => "text/css",
@@ -547,24 +790,43 @@ pub(super) fn code_editor_settings(ctx: &Ctx<'_>, file: &str) -> serde_json::Val
         }
     };
     match kind {
-        "text/css" | "text/x-scss" | "text/x-less" | "text/x-sass" => merge(json!({"mode": kind, "lint": false, "autoCloseBrackets": true, "matchBrackets": true})),
+        "text/css" | "text/x-scss" | "text/x-less" | "text/x-sass" => merge(
+            json!({"mode": kind, "lint": false, "autoCloseBrackets": true, "matchBrackets": true}),
+        ),
         "text/x-diff" => merge(json!({"mode": "diff"})),
         "text/html" => {
-            merge(json!({"mode": "htmlmixed", "lint": true, "autoCloseBrackets": true, "autoCloseTags": true, "matchTags": {"bothTags": true}}));
+            merge(
+                json!({"mode": "htmlmixed", "lint": true, "autoCloseBrackets": true, "autoCloseTags": true, "matchTags": {"bothTags": true}}),
+            );
             let _ = &mut htmlhint;
         }
         "text/x-gfm" => merge(json!({"mode": "gfm", "highlightFormatting": true})),
-        "application/javascript" | "text/javascript" => merge(json!({"mode": "javascript", "lint": true, "autoCloseBrackets": true, "matchBrackets": true})),
-        k if k.contains("json") => merge(json!({"mode": {"name": "javascript", "json": true}, "lint": true, "autoCloseBrackets": true, "matchBrackets": true})),
-        k if k.contains("jsx") => merge(json!({"mode": "jsx", "autoCloseBrackets": true, "matchBrackets": true})),
+        "application/javascript" | "text/javascript" => merge(
+            json!({"mode": "javascript", "lint": true, "autoCloseBrackets": true, "matchBrackets": true}),
+        ),
+        k if k.contains("json") => merge(
+            json!({"mode": {"name": "javascript", "json": true}, "lint": true, "autoCloseBrackets": true, "matchBrackets": true}),
+        ),
+        k if k.contains("jsx") => {
+            merge(json!({"mode": "jsx", "autoCloseBrackets": true, "matchBrackets": true}))
+        }
         "text/nginx" => merge(json!({"mode": "nginx"})),
-        "application/x-httpd-php" => merge(json!({"mode": "php", "autoCloseBrackets": true, "autoCloseTags": true, "matchBrackets": true, "matchTags": {"bothTags": true}})),
-        "text/x-sql" | "text/x-mysql" => merge(json!({"mode": "sql", "autoCloseBrackets": true, "matchBrackets": true})),
-        k if k.contains("xml") => merge(json!({"mode": "xml", "autoCloseBrackets": true, "autoCloseTags": true, "matchTags": {"bothTags": true}})),
+        "application/x-httpd-php" => merge(
+            json!({"mode": "php", "autoCloseBrackets": true, "autoCloseTags": true, "matchBrackets": true, "matchTags": {"bothTags": true}}),
+        ),
+        "text/x-sql" | "text/x-mysql" => {
+            merge(json!({"mode": "sql", "autoCloseBrackets": true, "matchBrackets": true}))
+        }
+        k if k.contains("xml") => merge(
+            json!({"mode": "xml", "autoCloseBrackets": true, "autoCloseTags": true, "matchTags": {"bothTags": true}}),
+        ),
         "text/x-yaml" => merge(json!({"mode": "yaml"})),
         other => merge(json!({"mode": other})),
     }
-    if codemirror.get("lint").and_then(Json::as_bool).unwrap_or(false)
+    if codemirror
+        .get("lint")
+        .and_then(Json::as_bool)
+        .unwrap_or(false)
         && let Some(gutters) = codemirror.get_mut("gutters").and_then(Json::as_array_mut)
     {
         gutters.push(json!("CodeMirror-lint-markers"));
@@ -572,8 +834,26 @@ pub(super) fn code_editor_settings(ctx: &Ctx<'_>, file: &str) -> serde_json::Val
     let mut jshint = Map::new();
     jshint.insert("esversion".into(), json!(11));
     jshint.insert("module".into(), json!(file.ends_with(".mjs")));
-    jshint.insert("espreeModuleUrl".into(), json!(format!("{includes_url}js/codemirror/espree.min.js?ver=9.6.1")));
-    for (k, v) in [("boss", json!(true)), ("curly", json!(true)), ("eqeqeq", json!(true)), ("eqnull", json!(true)), ("expr", json!(true)), ("immed", json!(true)), ("noarg", json!(true)), ("nonbsp", json!(true)), ("quotmark", json!("single")), ("undef", json!(true)), ("unused", json!(true)), ("browser", json!(true))] {
+    jshint.insert(
+        "espreeModuleUrl".into(),
+        json!(format!(
+            "{includes_url}js/codemirror/espree.min.js?ver=9.6.1"
+        )),
+    );
+    for (k, v) in [
+        ("boss", json!(true)),
+        ("curly", json!(true)),
+        ("eqeqeq", json!(true)),
+        ("eqnull", json!(true)),
+        ("expr", json!(true)),
+        ("immed", json!(true)),
+        ("noarg", json!(true)),
+        ("nonbsp", json!(true)),
+        ("quotmark", json!("single")),
+        ("undef", json!(true)),
+        ("unused", json!(true)),
+        ("browser", json!(true)),
+    ] {
         jshint.insert(k.into(), v);
     }
     jshint.insert(
@@ -611,37 +891,84 @@ fn json_hex_tag(value: &serde_json::Value) -> String {
 fn editor_assets(ctx: &Ctx<'_>, file: &str, kind: &str) -> Assets {
     let settings = code_editor_settings(ctx, file);
     let mode = settings["codemirror"]["mode"].clone();
-    let mode_name = mode.as_str().map(str::to_owned).or_else(|| mode["name"].as_str().map(str::to_owned)).unwrap_or_default();
-    let mut assets = Assets { scripts: vec!["code-editor".into(), "wp-theme-plugin-editor".into()], styles: vec!["code-editor".into()], ..Default::default() };
+    let mode_name = mode
+        .as_str()
+        .map(str::to_owned)
+        .or_else(|| mode["name"].as_str().map(str::to_owned))
+        .unwrap_or_default();
+    let mut assets = Assets {
+        scripts: vec!["code-editor".into(), "wp-theme-plugin-editor".into()],
+        styles: vec!["code-editor".into()],
+        ..Default::default()
+    };
     if settings["codemirror"]["lint"].as_bool().unwrap_or(false) {
         match mode_name.as_str() {
-            "css" | "text/css" | "text/x-scss" | "text/x-less" => assets.scripts.insert(1, "csslint".into()),
+            "css" | "text/css" | "text/x-scss" | "text/x-less" => {
+                assets.scripts.insert(1, "csslint".into())
+            }
             "htmlmixed" | "text/html" | "php" | "application/x-httpd-php" | "text/x-php" => {
                 assets.scripts.insert(1, "htmlhint".into());
                 assets.scripts.insert(2, "csslint".into());
             }
-            "javascript" | "application/ecmascript" | "application/json" | "application/javascript" | "application/ld+json" | "text/typescript" | "application/typescript" => assets.scripts.insert(1, "jsonlint".into()),
+            "javascript"
+            | "application/ecmascript"
+            | "application/json"
+            | "application/javascript"
+            | "application/ld+json"
+            | "text/typescript"
+            | "application/typescript" => assets.scripts.insert(1, "jsonlint".into()),
             _ => {}
         }
     }
-    assets.inline.push(("code-editor".into(), format!("jQuery.extend( wp.codeEditor.defaultSettings, {} );", json_hex_tag(&settings)), "after".into()));
+    assets.inline.push((
+        "code-editor".into(),
+        format!(
+            "jQuery.extend( wp.codeEditor.defaultSettings, {} );",
+            json_hex_tag(&settings)
+        ),
+        "after".into(),
+    ));
     let page_settings = serde_json::json!({"codeEditor": settings});
-    assets.inline.push(("wp-theme-plugin-editor".into(), format!("jQuery( function( $ ) {{ wp.themePluginEditor.init( $( \"#template\" ), {} ); }} )", json_hex_tag(&page_settings)), "after".into()));
-    assets.inline.push(("wp-theme-plugin-editor".into(), format!("wp.themePluginEditor.themeOrPlugin = \"{kind}\";"), "after".into()));
+    assets.inline.push((
+        "wp-theme-plugin-editor".into(),
+        format!(
+            "jQuery( function( $ ) {{ wp.themePluginEditor.init( $( \"#template\" ), {} ); }} )",
+            json_hex_tag(&page_settings)
+        ),
+        "after".into(),
+    ));
+    assets.inline.push((
+        "wp-theme-plugin-editor".into(),
+        format!("wp.themePluginEditor.themeOrPlugin = \"{kind}\";"),
+        "after".into(),
+    ));
     assets
 }
 
 /// The warning dialog of the file editors, until it is dismissed.
 async fn warning_dialog(ctx: &Ctx<'_>, pointer: &str, theme: Option<&ThemeInfo>) -> String {
     let tr = |s: &str| ctx.tr(s);
-    let dismissed = ctx.env.db.user_meta(ctx.user.id, "dismissed_wp_pointers").await.ok().flatten().unwrap_or_default();
+    let dismissed = ctx
+        .env
+        .db
+        .user_meta(ctx.user.id, "dismissed_wp_pointers")
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or_default();
     if dismissed.split(',').any(|p| p == pointer) {
         return String::new();
     }
     let return_url = super::common::wp_get_referer(ctx)
-        .filter(|r| !r.contains("theme-editor.php") && !r.contains("plugin-editor.php") && !r.contains("wp-login.php"))
+        .filter(|r| {
+            !r.contains("theme-editor.php")
+                && !r.contains("plugin-editor.php")
+                && !r.contains("wp-login.php")
+        })
         .unwrap_or_else(|| ctx.admin_url(""));
-    let mut h = String::from("\t<div id=\"file-editor-warning\" class=\"notification-dialog-wrap file-editor-warning hide-if-no-js hidden\">\n\t\t<div class=\"notification-dialog-background\"></div>\n\t\t<div class=\"notification-dialog\">\n\t\t\t<div class=\"file-editor-warning-content\">\n\t\t\t\t<div class=\"file-editor-warning-message\">\n");
+    let mut h = String::from(
+        "\t<div id=\"file-editor-warning\" class=\"notification-dialog-wrap file-editor-warning hide-if-no-js hidden\">\n\t\t<div class=\"notification-dialog-background\"></div>\n\t\t<div class=\"notification-dialog\">\n\t\t\t<div class=\"file-editor-warning-content\">\n\t\t\t\t<div class=\"file-editor-warning-message\">\n",
+    );
     h.push_str(&format!("\t\t\t\t\t<h1>{}</h1>\n", tr("Heads up!")));
     if let Some(theme) = theme {
         h.push_str(&format!(
@@ -683,25 +1010,51 @@ fn editor_templates(ctx: &Ctx<'_>) -> String {
     let tr = |s: &str| ctx.tr(s);
     format!(
         "\t<script type=\"text/html\" id=\"tmpl-wp-file-editor-notice\">\n\t\t<div class=\"notice inline notice-{{{{ data.type || 'info' }}}} {{{{ data.alt ? 'notice-alt' : '' }}}} {{{{ data.dismissible ? 'is-dismissible' : '' }}}} {{{{ data.classes || '' }}}}\">\n\t\t\t<# if ( 'php_error' === data.code ) {{ #>\n\t\t\t\t<p>\n\t\t\t\t\t{}\t\t\t\t</p>\n\t\t\t\t<pre>{{{{ data.message }}}}</pre>\n\t\t\t<# }} else if ( 'file_not_writable' === data.code ) {{ #>\n\t\t\t\t<p>\n\t\t\t\t\t{}\t\t\t\t</p>\n\t\t\t<# }} else {{ #>\n\t\t\t\t<p>{{{{ data.message || data.code }}}}</p>\n\n\t\t\t\t<# if ( 'lint_errors' === data.code ) {{ #>\n\t\t\t\t\t<p>\n\t\t\t\t\t\t<# var elementId = 'el-' + String( Math.random() ); #>\n\t\t\t\t\t\t<input id=\"{{{{ elementId }}}}\"  type=\"checkbox\">\n\t\t\t\t\t\t<label for=\"{{{{ elementId }}}}\">{}</label>\n\t\t\t\t\t</p>\n\t\t\t\t<# }} #>\n\t\t\t<# }} #>\n\t\t\t<# if ( data.dismissible ) {{ #>\n\t\t\t\t<button type=\"button\" class=\"notice-dismiss\"><span class=\"screen-reader-text\">\n\t\t\t\t\t{}\t\t\t\t</span></button>\n\t\t\t<# }} #>\n\t\t</div>\n\t</script>\n\t",
-        sprintf(&tr("Your PHP code changes were not applied due to an error on line %1$s of file %2$s. Please fix and try saving again."), &["{{ data.line }}", "{{ data.file }}"]),
-        sprintf(&tr("You need to make this file writable before you can save your changes. See <a href=\"%s\">Changing File Permissions</a> for more information."), &[&tr("https://developer.wordpress.org/advanced-administration/server/file-permissions/")]),
+        sprintf(
+            &tr(
+                "Your PHP code changes were not applied due to an error on line %1$s of file %2$s. Please fix and try saving again."
+            ),
+            &["{{ data.line }}", "{{ data.file }}"]
+        ),
+        sprintf(
+            &tr(
+                "You need to make this file writable before you can save your changes. See <a href=\"%s\">Changing File Permissions</a> for more information."
+            ),
+            &[&tr(
+                "https://developer.wordpress.org/advanced-administration/server/file-permissions/"
+            )]
+        ),
         tr("Update anyway, even though it might break your site?"),
         tr("Dismiss")
     )
 }
 
 fn doc_select(ctx: &Ctx<'_>, functions: &[String]) -> String {
-    let mut select = format!("<select name=\"docs-list\" id=\"docs-list\"><option value=\"\">{}</option>", esc_html(&ctx.tr("Function Name&hellip;")));
+    let mut select = format!(
+        "<select name=\"docs-list\" id=\"docs-list\"><option value=\"\">{}</option>",
+        esc_html(&ctx.tr("Function Name&hellip;"))
+    );
     for function in functions {
-        select.push_str(&format!("<option value=\"{}\">{}()</option>", esc_attr(function), esc_html(function)));
+        select.push_str(&format!(
+            "<option value=\"{}\">{}()</option>",
+            esc_attr(function),
+            esc_html(function)
+        ));
     }
     select.push_str("</select>");
     select
 }
 
 fn documentation(ctx: &Ctx<'_>, select: &str, indent: &str, inner: &str) -> String {
-    let version = ctx.site().options.string("wp_version_reference", rustpress_core::WP_VERSION);
-    let version = if version.is_empty() { rustpress_core::WP_VERSION.to_owned() } else { version };
+    let version = ctx
+        .site()
+        .options
+        .string("wp_version_reference", rustpress_core::WP_VERSION);
+    let version = if version.is_empty() {
+        rustpress_core::WP_VERSION.to_owned()
+    } else {
+        version
+    };
     let outer = &indent[..indent.len() - 1];
     format!(
         "{indent}<div id=\"documentation\" class=\"hide-if-no-js\">\n{inner}<label for=\"docs-list\">{}</label>\n{inner}{select}{inner}<input disabled id=\"docs-lookup\" type=\"button\" class=\"button\" value=\"{}\" onclick=\"if ( '' !== jQuery('#docs-list').val() ) {{ window.open( 'https://api.wordpress.org/core/handbook/1.0/?function=' + escape( jQuery( '#docs-list' ).val() ) + '&amp;locale={}&amp;version={}&amp;redirect=true'); }}\" />\n{indent}</div>\n{outer}",
@@ -716,50 +1069,99 @@ fn help_theme(ctx: &Ctx<'_>) -> Help {
     let tr = |s: &str| ctx.tr(s);
     let content = format!(
         "<p>{}</p><p>{}</p><p>{}</p><p id=\"editor-keyboard-trap-help-1\">{}</p><ul><li id=\"editor-keyboard-trap-help-2\">{}</li><li id=\"editor-keyboard-trap-help-3\">{}</li><li id=\"editor-keyboard-trap-help-4\">{}</li></ul><p>{}</p><p>{}</p><p>{}</p>",
-        tr("You can use the theme file editor to edit the individual CSS and PHP files which make up your theme."),
-        tr("Begin by choosing a theme to edit from the dropdown menu and clicking the Select button. A list then appears of the theme&#8217;s template files. Clicking once on any file name causes the file to appear in the large Editor box."),
-        tr("For PHP files, you can use the documentation dropdown to select from functions recognized in that file. Look Up takes you to a web page with reference material about that particular function."),
+        tr(
+            "You can use the theme file editor to edit the individual CSS and PHP files which make up your theme."
+        ),
+        tr(
+            "Begin by choosing a theme to edit from the dropdown menu and clicking the Select button. A list then appears of the theme&#8217;s template files. Clicking once on any file name causes the file to appear in the large Editor box."
+        ),
+        tr(
+            "For PHP files, you can use the documentation dropdown to select from functions recognized in that file. Look Up takes you to a web page with reference material about that particular function."
+        ),
         tr("When using a keyboard to navigate:"),
         tr("In the editing area, the Tab key enters a tab character."),
         tr("To move away from this area, press the Esc key followed by the Tab key."),
         tr("Screen reader users: when in forms mode, you may need to press the Esc key twice."),
         tr("After typing in your edits, click Update File."),
-        tr("<strong>Advice:</strong> Think very carefully about your site crashing if you are live-editing the theme currently in use."),
-        sprintf(&tr("Upgrading to a newer version of the same theme will override changes made here. To avoid this, consider creating a <a href=\"%s\">child theme</a> instead."), &[&tr("https://developer.wordpress.org/themes/advanced-topics/child-themes/")])
+        tr(
+            "<strong>Advice:</strong> Think very carefully about your site crashing if you are live-editing the theme currently in use."
+        ),
+        sprintf(
+            &tr(
+                "Upgrading to a newer version of the same theme will override changes made here. To avoid this, consider creating a <a href=\"%s\">child theme</a> instead."
+            ),
+            &[&tr(
+                "https://developer.wordpress.org/themes/advanced-topics/child-themes/"
+            )]
+        )
     );
     let sidebar = format!(
         "<p><strong>{}</strong></p><p>{}</p><p>{}</p><p>{}</p><p>{}</p><p>{}</p>",
         tr("For more information:"),
-        tr("<a href=\"https://developer.wordpress.org/themes/\">Documentation on Theme Development</a>"),
-        tr("<a href=\"https://wordpress.org/documentation/article/appearance-theme-file-editor-screen/\">Documentation on Editing Themes</a>"),
-        tr("<a href=\"https://developer.wordpress.org/advanced-administration/wordpress/edit-files/\">Documentation on Editing Files</a>"),
-        tr("<a href=\"https://developer.wordpress.org/themes/basics/template-tags/\">Documentation on Template Tags</a>"),
+        tr(
+            "<a href=\"https://developer.wordpress.org/themes/\">Documentation on Theme Development</a>"
+        ),
+        tr(
+            "<a href=\"https://wordpress.org/documentation/article/appearance-theme-file-editor-screen/\">Documentation on Editing Themes</a>"
+        ),
+        tr(
+            "<a href=\"https://developer.wordpress.org/advanced-administration/wordpress/edit-files/\">Documentation on Editing Files</a>"
+        ),
+        tr(
+            "<a href=\"https://developer.wordpress.org/themes/basics/template-tags/\">Documentation on Template Tags</a>"
+        ),
         tr("<a href=\"https://wordpress.org/support/forums/\">Support forums</a>")
     );
-    Help { tabs: vec![HelpTab { id: "overview".into(), title: tr("Overview"), content }], sidebar }
+    Help {
+        tabs: vec![HelpTab {
+            id: "overview".into(),
+            title: tr("Overview"),
+            content,
+        }],
+        sidebar,
+    }
 }
 
 fn help_plugin(ctx: &Ctx<'_>) -> Help {
     let tr = |s: &str| ctx.tr(s);
     let content = format!(
         "<p>{}</p><p>{}</p><p>{}</p><p id=\"editor-keyboard-trap-help-1\">{}</p><ul><li id=\"editor-keyboard-trap-help-2\">{}</li><li id=\"editor-keyboard-trap-help-3\">{}</li><li id=\"editor-keyboard-trap-help-4\">{}</li></ul><p>{}</p>",
-        tr("You can use the plugin file editor to make changes to any of your plugins&#8217; individual PHP files. Be aware that if you make changes, plugins updates will overwrite your customizations."),
-        tr("Choose a plugin to edit from the dropdown menu and click the Select button. Click once on any file name to load it in the editor, and make your changes. Do not forget to save your changes (Update File) when you are finished."),
-        tr("The documentation menu below the editor lists the PHP functions recognized in the plugin file. Clicking Look Up takes you to a web page about that particular function."),
+        tr(
+            "You can use the plugin file editor to make changes to any of your plugins&#8217; individual PHP files. Be aware that if you make changes, plugins updates will overwrite your customizations."
+        ),
+        tr(
+            "Choose a plugin to edit from the dropdown menu and click the Select button. Click once on any file name to load it in the editor, and make your changes. Do not forget to save your changes (Update File) when you are finished."
+        ),
+        tr(
+            "The documentation menu below the editor lists the PHP functions recognized in the plugin file. Clicking Look Up takes you to a web page about that particular function."
+        ),
         tr("When using a keyboard to navigate:"),
         tr("In the editing area, the Tab key enters a tab character."),
         tr("To move away from this area, press the Esc key followed by the Tab key."),
         tr("Screen reader users: when in forms mode, you may need to press the Esc key twice."),
-        tr("If you want to make changes but do not want them to be overwritten when the plugin is updated, you may be ready to think about writing your own plugin. For information on how to edit plugins, write your own from scratch, or just better understand their anatomy, check out the links below.")
+        tr(
+            "If you want to make changes but do not want them to be overwritten when the plugin is updated, you may be ready to think about writing your own plugin. For information on how to edit plugins, write your own from scratch, or just better understand their anatomy, check out the links below."
+        )
     );
     let sidebar = format!(
         "<p><strong>{}</strong></p><p>{}</p><p>{}</p><p>{}</p>",
         tr("For more information:"),
-        tr("<a href=\"https://developer.wordpress.org/advanced-administration/plugins/editor-screen/\">Documentation on Editing Plugins</a>"),
-        tr("<a href=\"https://developer.wordpress.org/plugins/\">Documentation on Writing Plugins</a>"),
+        tr(
+            "<a href=\"https://developer.wordpress.org/advanced-administration/plugins/editor-screen/\">Documentation on Editing Plugins</a>"
+        ),
+        tr(
+            "<a href=\"https://developer.wordpress.org/plugins/\">Documentation on Writing Plugins</a>"
+        ),
         tr("<a href=\"https://wordpress.org/support/forums/\">Support forums</a>")
     );
-    Help { tabs: vec![HelpTab { id: "overview".into(), title: tr("Overview"), content }], sidebar }
+    Help {
+        tabs: vec![HelpTab {
+            id: "overview".into(),
+            title: tr("Overview"),
+            content,
+        }],
+        sidebar,
+    }
 }
 
 fn error_message(code: &str, message: &str) -> String {
@@ -767,7 +1169,10 @@ fn error_message(code: &str, message: &str) -> String {
 }
 
 fn sanitize_text_field(text: &str) -> String {
-    rustpress_core::formatting::strip_tags(text).replace(['\r', '\n', '\t'], " ").trim().to_owned()
+    rustpress_core::formatting::strip_tags(text)
+        .replace(['\r', '\n', '\t'], " ")
+        .trim()
+        .to_owned()
 }
 
 /// `theme-editor.php`.
@@ -775,18 +1180,47 @@ pub async fn theme_editor(ctx: &Ctx<'_>) -> AdminResponse {
     let tr = |s: &str| ctx.tr(s);
     let request = ctx.request;
     if !ctx.can("edit_themes") {
-        return die(ctx.env, 500, "WordPress &rsaquo; Error", &format!("<p>{}</p>", tr("Sorry, you are not allowed to edit templates for this site.")));
+        return die(
+            ctx.env,
+            500,
+            "WordPress &rsaquo; Error",
+            &format!(
+                "<p>{}</p>",
+                tr("Sorry, you are not allowed to edit templates for this site.")
+            ),
+        );
     }
-    let Some(root) = wp_root(ctx.env) else { return die(ctx.env, 500, "WordPress &rsaquo; Error", "<p>The WordPress files are not available.</p>") };
+    let Some(root) = wp_root(ctx.env) else {
+        return die(
+            ctx.env,
+            500,
+            "WordPress &rsaquo; Error",
+            "<p>The WordPress files are not available.</p>",
+        );
+    };
     let site = ctx.site();
     let active = site.options.string("stylesheet", "");
-    let requested = request.request("theme").map(sanitize_text_field).unwrap_or_default();
-    let stylesheet = if requested.is_empty() { active.clone() } else { requested };
-    let Some(theme) = themes::find(&root, &stylesheet) else { return super::common::die_plain(ctx, "The requested theme does not exist.") };
+    let requested = request
+        .request("theme")
+        .map(sanitize_text_field)
+        .unwrap_or_default();
+    let stylesheet = if requested.is_empty() {
+        active.clone()
+    } else {
+        requested
+    };
+    let Some(theme) = themes::find(&root, &stylesheet) else {
+        return super::common::die_plain(ctx, "The requested theme does not exist.");
+    };
     let allowed = theme_files(&theme);
-    let file_param = request.request("file").map(sanitize_text_field).unwrap_or_default();
+    let file_param = request
+        .request("file")
+        .map(sanitize_text_field)
+        .unwrap_or_default();
     let (relative_file, file): (String, PathBuf) = if file_param.is_empty() {
-        let Some((_, path)) = allowed.iter().find(|(k, _)| k == "style.css") else { return super::common::die_plain(ctx, "Sorry, that file cannot be edited.") };
+        let Some((_, path)) = allowed.iter().find(|(k, _)| k == "style.css") else {
+            return super::common::die_plain(ctx, "Sorry, that file cannot be edited.");
+        };
         ("style.css".to_owned(), path.clone())
     } else {
         (file_param.clone(), theme.dir.join(&file_param))
@@ -804,13 +1238,29 @@ pub async fn theme_editor(ctx: &Ctx<'_>) -> AdminResponse {
         let field = |name: &str| request.post_field(name).map(str::to_owned);
         match edit_file(ctx.env, request, &ctx.user, &ctx.token, &field).await {
             Err(e) => {
-                if ctx.env.auth.verify_nonce(request.post_field("nonce").unwrap_or_default(), &format!("edit-theme_{stylesheet}_{relative_file}"), ctx.user.id, &ctx.token, ctx.env.now).is_some() {
+                if ctx
+                    .env
+                    .auth
+                    .verify_nonce(
+                        request.post_field("nonce").unwrap_or_default(),
+                        &format!("edit-theme_{stylesheet}_{relative_file}"),
+                        ctx.user.id,
+                        &ctx.token,
+                        ctx.env.now,
+                    )
+                    .is_some()
+                {
                     posted_content = request.post_field("newcontent").map(str::to_owned);
                 }
                 edit_error = Some(e);
             }
             Ok(()) => {
-                let location = format!("{}?a=1&theme={}&file={}", ctx.admin_url("theme-editor.php"), rawurlencode(&stylesheet), rawurlencode(&relative_file));
+                let location = format!(
+                    "{}?a=1&theme={}&file={}",
+                    ctx.admin_url("theme-editor.php"),
+                    rawurlencode(&stylesheet),
+                    rawurlencode(&relative_file)
+                );
                 return redirect(&location);
             }
         }
@@ -824,20 +1274,46 @@ pub async fn theme_editor(ctx: &Ctx<'_>) -> AdminResponse {
     let mut functions: Vec<String> = Vec::new();
     if let Some(posted) = posted_content.filter(|p| !p.is_empty()) {
         content = posted;
-    } else if !error && let Ok(bytes) = std::fs::read(&file) && !bytes.is_empty() {
+    } else if !error
+        && let Ok(bytes) = std::fs::read(&file)
+        && !bytes.is_empty()
+    {
         content = String::from_utf8_lossy(&bytes).into_owned();
         if file.to_string_lossy().ends_with(".php") {
             functions = doc_link_parse(&content);
         }
         content = esc_textarea(&content);
     }
-    let file_show = allowed.iter().find(|(_, p)| *p == file).map(|(k, _)| k.clone()).unwrap_or_default();
+    let file_show = allowed
+        .iter()
+        .find(|(_, p)| *p == file)
+        .map(|(k, _)| k.clone())
+        .unwrap_or_default();
 
-    let mut h = format!("<div class=\"wrap\">\n<h1>{}</h1>\n\n", esc_html(&tr("Edit Themes")));
+    let mut h = format!(
+        "<div class=\"wrap\">\n<h1>{}</h1>\n\n",
+        esc_html(&tr("Edit Themes"))
+    );
     if request.get("a").is_some() {
-        h.push_str(notice(&tr("File edited successfully."), "", true, "message", &["updated"], true).trim_end_matches('\n'));
+        h.push_str(
+            notice(
+                &tr("File edited successfully."),
+                "",
+                true,
+                "message",
+                &["updated"],
+                true,
+            )
+            .trim_end_matches('\n'),
+        );
     } else if let Some(e) = &edit_error {
-        let message = format!("<p>{}</p>\n\t\t<pre>{}</pre>", tr("There was an error while trying to update the file. You may need to fix something and try updating again."), error_message(e.code, &e.message));
+        let message = format!(
+            "<p>{}</p>\n\t\t<pre>{}</pre>",
+            tr(
+                "There was an error while trying to update the file. You may need to fix something and try updating again."
+            ),
+            error_message(e.code, &e.message)
+        );
         h.push_str(notice(&message, "error", false, "message", &[], true).trim_end_matches('\n'));
     }
     let active_theme = themes::find(&root, &active);
@@ -847,19 +1323,43 @@ pub async fn theme_editor(ctx: &Ctx<'_>) -> AdminResponse {
             let message = format!(
                 "<p><strong>{}</strong></p><p>{}</p>",
                 tr("Did you know?"),
-                sprintf(&tr("There is no need to change your CSS here &mdash; you can edit and live preview CSS changes in the <a href=\"%s\">built-in CSS editor</a>."), &[&esc_url(url).replace("&#038;", "&amp;")])
+                sprintf(
+                    &tr(
+                        "There is no need to change your CSS here &mdash; you can edit and live preview CSS changes in the <a href=\"%s\">built-in CSS editor</a>."
+                    ),
+                    &[&esc_url(url).replace("&#038;", "&amp;")]
+                )
             );
-            notice(&message, "info", false, "message", &[], true).trim_end_matches('\n').to_owned()
+            notice(&message, "info", false, "message", &[], true)
+                .trim_end_matches('\n')
+                .to_owned()
         };
         if !active_block && ctx.can("customize") {
-            h.push_str(&info(&format!("{}?autofocus%5Bsection%5D=custom_css", ctx.admin_url("customize.php"))));
+            h.push_str(&info(&format!(
+                "{}?autofocus%5Bsection%5D=custom_css",
+                ctx.admin_url("customize.php")
+            )));
         } else if active_block && ctx.can("edit_theme_options") {
-            h.push_str(&info(&format!("{}?p=%2Fstyles&section=%2Fcss", ctx.admin_url("site-editor.php"))));
+            h.push_str(&info(&format!(
+                "{}?p=%2Fstyles&section=%2Fcss",
+                ctx.admin_url("site-editor.php")
+            )));
         }
-        let minified = Path::new(&file.to_string_lossy().trim_end_matches(".css").to_owned()).with_extension("").to_string_lossy().into_owned() + ".min.css";
+        let minified = Path::new(&file.to_string_lossy().trim_end_matches(".css").to_owned())
+            .with_extension("")
+            .to_string_lossy()
+            .into_owned()
+            + ".min.css";
         if Path::new(&minified).exists() {
-            let message = format!("<p><strong>{}</strong></p><p>{}</p>", tr("There is a minified version of this stylesheet."), tr("It is likely that this unminified stylesheet will not be served to visitors."));
-            h.push_str(notice(&message, "warning", false, "wp-css-min-warning", &[], true).trim_end_matches('\n'));
+            let message = format!(
+                "<p><strong>{}</strong></p><p>{}</p>",
+                tr("There is a minified version of this stylesheet."),
+                tr("It is likely that this unminified stylesheet will not be served to visitors.")
+            );
+            h.push_str(
+                notice(&message, "warning", false, "wp-css-min-warning", &[], true)
+                    .trim_end_matches('\n'),
+            );
         }
     }
     let is_active_name = active_theme.as_ref().is_some_and(|t| t.name == theme.name);
@@ -874,7 +1374,11 @@ pub async fn theme_editor(ctx: &Ctx<'_>) -> AdminResponse {
         h.push_str(&format!(
             "\n\t<option value=\"{}\"{}>{}</option>",
             esc_attr(&a_theme.stylesheet),
-            if a_theme.stylesheet == stylesheet { " selected=\"selected\"" } else { "" },
+            if a_theme.stylesheet == stylesheet {
+                " selected=\"selected\""
+            } else {
+                ""
+            },
             wptexturize(&a_theme.name)
         ));
     }
@@ -884,10 +1388,22 @@ pub async fn theme_editor(ctx: &Ctx<'_>) -> AdminResponse {
         tr("Theme Files")
     ));
     if theme.has_parent() {
-        let parent_name = themes::find(&root, &theme.template).map(|p| p.name).unwrap_or_default();
+        let parent_name = themes::find(&root, &theme.template)
+            .map(|p| p.name)
+            .unwrap_or_default();
         h.push_str(&format!(
             "\t\t\t<li class=\"howto\">\n\t\t\t\t{}\t\t\t</li>\n\t\t",
-            sprintf(&tr("This child theme inherits templates from a parent theme, %s."), &[&format!("<a href=\"{}\">{}</a>", ctx.admin_url(&format!("theme-editor.php?theme={}", urlencode(&theme.template))), wptexturize(&parent_name))])
+            sprintf(
+                &tr("This child theme inherits templates from a parent theme, %s."),
+                &[&format!(
+                    "<a href=\"{}\">{}</a>",
+                    ctx.admin_url(&format!(
+                        "theme-editor.php?theme={}",
+                        urlencode(&theme.template)
+                    )),
+                    wptexturize(&parent_name)
+                )]
+            )
         ));
     }
     let mut tree: Vec<(String, Entry)> = Vec::new();
@@ -899,11 +1415,28 @@ pub async fn theme_editor(ctx: &Ctx<'_>) -> AdminResponse {
     print_theme_tree(ctx, &tree, &allowed, &relative_file, &stylesheet, 2, &mut h);
     h.push_str("\t\t\t</ul>\n\t\t</li>\n\t</ul>\n</div>\n\n");
     if error {
-        h.push_str(&notice(&tr("File does not exist! Please double check the name and try again."), "", false, "", &["error"], true));
+        h.push_str(&notice(
+            &tr("File does not exist! Please double check the name and try again."),
+            "",
+            false,
+            "",
+            &["error"],
+            true,
+        ));
     } else {
         let writable = std::fs::metadata(&file).is_ok_and(|m| !m.permissions().readonly());
-        let child_notice = if active_theme.as_ref().is_some_and(|t| t.has_parent()) && theme.stylesheet == active_theme.as_ref().map_or("", |t| t.template.as_str()) {
-            let message = format!("{}{}", if writable { format!("<strong>{}</strong> ", tr("Caution:")) } else { String::new() }, tr("This is a file in your current parent theme."));
+        let child_notice = if active_theme.as_ref().is_some_and(|t| t.has_parent())
+            && theme.stylesheet == active_theme.as_ref().map_or("", |t| t.template.as_str())
+        {
+            let message = format!(
+                "{}{}",
+                if writable {
+                    format!("<strong>{}</strong> ", tr("Caution:"))
+                } else {
+                    String::new()
+                },
+                tr("This is a file in your current parent theme.")
+            );
             notice(&message, "warning", false, "", &["inline"], true)
         } else {
             String::new()
@@ -916,7 +1449,12 @@ pub async fn theme_editor(ctx: &Ctx<'_>) -> AdminResponse {
             esc_attr(&theme.stylesheet)
         ));
         if !functions.is_empty() {
-            h.push_str(&documentation(ctx, &doc_select(ctx, &functions), "\t\t\t", "\t\t\t\t"));
+            h.push_str(&documentation(
+                ctx,
+                &doc_select(ctx, &functions),
+                "\t\t\t",
+                "\t\t\t\t",
+            ));
         }
         h.push_str(&format!("\n\t\t<div>\n\t\t\t<div class=\"editor-notices\">\n\t\t\t\t{child_notice}\t\t\t</div>\n\t\t\t"));
         if writable {
@@ -936,8 +1474,27 @@ pub async fn theme_editor(ctx: &Ctx<'_>) -> AdminResponse {
     }
     h.push_str("<br class=\"clear\" />\n</div>\n");
     h.push_str(&warning_dialog(ctx, "theme_editor_notice", Some(&theme)).await);
-    let screen = Screen { file: "theme-editor.php".into(), content_inline: true, parent_file: if ctx.env.block_theme { "tools.php" } else { "themes.php" }.into(), submenu_file: Some("theme-editor.php".into()), title: tr("Edit Themes"), help: Some(help_theme(ctx)), ..Default::default() };
-    render(ctx, &screen, &h, &editor_assets(ctx, &file.to_string_lossy(), "theme")).await
+    let screen = Screen {
+        file: "theme-editor.php".into(),
+        content_inline: true,
+        parent_file: if ctx.env.block_theme {
+            "tools.php"
+        } else {
+            "themes.php"
+        }
+        .into(),
+        submenu_file: Some("theme-editor.php".into()),
+        title: tr("Edit Themes"),
+        help: Some(help_theme(ctx)),
+        ..Default::default()
+    };
+    render(
+        ctx,
+        &screen,
+        &h,
+        &editor_assets(ctx, &file.to_string_lossy(), "theme"),
+    )
+    .await
 }
 
 fn urlencode(text: &str) -> String {
@@ -957,14 +1514,54 @@ pub async fn plugin_editor(ctx: &Ctx<'_>) -> AdminResponse {
     let tr = |s: &str| ctx.tr(s);
     let request = ctx.request;
     if !ctx.can("edit_plugins") {
-        return super::common::die_plain(ctx, "Sorry, you are not allowed to edit plugins for this site.");
+        return super::common::die_plain(
+            ctx,
+            "Sorry, you are not allowed to edit plugins for this site.",
+        );
     }
-    let Some(root) = wp_root(ctx.env) else { return die(ctx.env, 500, "WordPress &rsaquo; Error", "<p>The WordPress files are not available.</p>") };
+    let Some(root) = wp_root(ctx.env) else {
+        return die(
+            ctx.env,
+            500,
+            "WordPress &rsaquo; Error",
+            "<p>The WordPress files are not available.</p>",
+        );
+    };
     let plugins: Vec<PluginInfo> = plugin_scan::installed(&root);
-    let screen = |title: String, help: Option<Help>| Screen { file: "plugin-editor.php".into(), content_inline: true, parent_file: if ctx.env.block_theme { "tools.php" } else { "plugins.php" }.into(), submenu_file: Some("plugin-editor.php".into()), title, help, ..Default::default() };
+    let screen = |title: String, help: Option<Help>| Screen {
+        file: "plugin-editor.php".into(),
+        content_inline: true,
+        parent_file: if ctx.env.block_theme {
+            "tools.php"
+        } else {
+            "plugins.php"
+        }
+        .into(),
+        submenu_file: Some("plugin-editor.php".into()),
+        title,
+        help,
+        ..Default::default()
+    };
     if plugins.is_empty() {
-        let h = format!("<div class=\"wrap\">\n\t\t<h1>{}</h1>\n\t\t{}\t</div>\n", esc_html(&tr("Edit Plugins")), notice(&tr("No plugins are currently available."), "", false, "message", &["error"], true));
-        return render(ctx, &screen(tr("Edit Plugins"), None), &h, &Assets::default()).await;
+        let h = format!(
+            "<div class=\"wrap\">\n\t\t<h1>{}</h1>\n\t\t{}\t</div>\n",
+            esc_html(&tr("Edit Plugins")),
+            notice(
+                &tr("No plugins are currently available."),
+                "",
+                false,
+                "message",
+                &["error"],
+                true
+            )
+        );
+        return render(
+            ctx,
+            &screen(tr("Edit Plugins"), None),
+            &h,
+            &Assets::default(),
+        )
+        .await;
     }
     let mut file = request.request("file").unwrap_or_default().to_owned();
     let mut plugin = request.request("plugin").unwrap_or_default().to_owned();
@@ -973,7 +1570,8 @@ pub async fn plugin_editor(ctx: &Ctx<'_>) -> AdminResponse {
             let file_dirname = file.rsplit_once('/').map_or(".", |(d, _)| d).to_owned();
             for candidate in &plugins {
                 let candidate_dir = candidate.file.rsplit_once('/').map_or(".", |(d, _)| d);
-                if candidate.file == file || (file_dirname != "." && candidate_dir == file_dirname) {
+                if candidate.file == file || (file_dirname != "." && candidate_dir == file_dirname)
+                {
                     plugin = candidate.file.clone();
                     break;
                 }
@@ -993,7 +1591,10 @@ pub async fn plugin_editor(ctx: &Ctx<'_>) -> AdminResponse {
         return super::common::die_plain(ctx, "Sorry, that file cannot be edited.");
     }
     let real_file = root.join("wp-content").join("plugins").join(&file);
-    let plugin_name = plugins.iter().find(|p| p.file == files[0]).map_or_else(|| files[0].clone(), |p| super::plugins::translated(ctx, &root, p).name);
+    let plugin_name = plugins.iter().find(|p| p.file == files[0]).map_or_else(
+        || files[0].clone(),
+        |p| super::plugins::translated(ctx, &root, p).name,
+    );
 
     let mut edit_error: Option<EditError> = None;
     let mut posted_content: Option<String> = None;
@@ -1001,43 +1602,93 @@ pub async fn plugin_editor(ctx: &Ctx<'_>) -> AdminResponse {
         let field = |name: &str| request.post_field(name).map(str::to_owned);
         match edit_file(ctx.env, request, &ctx.user, &ctx.token, &field).await {
             Err(e) => {
-                if ctx.env.auth.verify_nonce(request.post_field("nonce").unwrap_or_default(), &format!("edit-plugin_{file}"), ctx.user.id, &ctx.token, ctx.env.now).is_some() {
+                if ctx
+                    .env
+                    .auth
+                    .verify_nonce(
+                        request.post_field("nonce").unwrap_or_default(),
+                        &format!("edit-plugin_{file}"),
+                        ctx.user.id,
+                        &ctx.token,
+                        ctx.env.now,
+                    )
+                    .is_some()
+                {
                     posted_content = request.post_field("newcontent").map(str::to_owned);
                 }
                 edit_error = Some(e);
             }
             Ok(()) => {
-                let location = format!("{}?a=1&plugin={}&file={}", ctx.admin_url("plugin-editor.php"), rawurlencode(&plugin), rawurlencode(&file));
+                let location = format!(
+                    "{}?a=1&plugin={}&file={}",
+                    ctx.admin_url("plugin-editor.php"),
+                    rawurlencode(&plugin),
+                    rawurlencode(&file)
+                );
                 return redirect(&location);
             }
         }
     }
     if !real_file.is_file() {
-        return super::common::die_plain_html(ctx, &format!("<p>{}</p>", tr("File does not exist! Please double check the name and try again.")));
+        return super::common::die_plain_html(
+            ctx,
+            &format!(
+                "<p>{}</p>",
+                tr("File does not exist! Please double check the name and try again.")
+            ),
+        );
     }
     if let Some(extension) = extension_of(&real_file.to_string_lossy()).map(|e| e.to_lowercase())
         && !EDITABLE_TYPES.contains(&extension.as_str())
     {
-        return super::common::die_plain_html(ctx, &format!("<p>{}</p>", tr("Files of this type are not editable.")));
+        return super::common::die_plain_html(
+            ctx,
+            &format!("<p>{}</p>", tr("Files of this type are not editable.")),
+        );
     }
     let content_raw = match posted_content.filter(|p| !p.is_empty()) {
         Some(posted) => posted,
-        None => String::from_utf8_lossy(&std::fs::read(&real_file).unwrap_or_default()).into_owned(),
+        None => {
+            String::from_utf8_lossy(&std::fs::read(&real_file).unwrap_or_default()).into_owned()
+        }
     };
-    let functions = if real_file.to_string_lossy().ends_with(".php") { doc_link_parse(&content_raw) } else { Vec::new() };
+    let functions = if real_file.to_string_lossy().ends_with(".php") {
+        doc_link_parse(&content_raw)
+    } else {
+        Vec::new()
+    };
     let content = esc_textarea(&content_raw);
     let writable = std::fs::metadata(&real_file).is_ok_and(|m| !m.permissions().readonly());
     let active_plugins: Vec<String> = match ctx.site().options.value("active_plugins") {
-        Some(Value::Array(items)) => items.iter().filter_map(|(_, v)| v.as_str().map(str::to_owned)).collect(),
+        Some(Value::Array(items)) => items
+            .iter()
+            .filter_map(|(_, v)| v.as_str().map(str::to_owned))
+            .collect(),
         _ => Vec::new(),
     };
     let is_active = active_plugins.contains(&plugin);
 
-    let mut h = format!("<div class=\"wrap\">\n<h1>{}</h1>\n\n", esc_html(&tr("Edit Plugins")));
+    let mut h = format!(
+        "<div class=\"wrap\">\n<h1>{}</h1>\n\n",
+        esc_html(&tr("Edit Plugins"))
+    );
     if request.get("a").is_some() {
-        h.push_str(&notice(&tr("File edited successfully."), "", false, "message", &["updated", "is-dismissible"], true));
+        h.push_str(&notice(
+            &tr("File edited successfully."),
+            "",
+            false,
+            "message",
+            &["updated", "is-dismissible"],
+            true,
+        ));
     } else if let Some(e) = &edit_error {
-        let message = format!("<p>{}</p>\n\t\t<pre>{}</pre>", tr("There was an error while trying to update the file. You may need to fix something and try updating again."), error_message(e.code, &e.message));
+        let message = format!(
+            "<p>{}</p>\n\t\t<pre>{}</pre>",
+            tr(
+                "There was an error while trying to update the file. You may need to fix something and try updating again."
+            ),
+            error_message(e.code, &e.message)
+        );
         h.push_str(&notice(&message, "error", false, "message", &[], false));
     }
     let heading = match (is_active, writable) {
@@ -1053,7 +1704,16 @@ pub async fn plugin_editor(ctx: &Ctx<'_>) -> AdminResponse {
         tr("Select plugin to edit:")
     ));
     for a_plugin in &plugins {
-        h.push_str(&format!("\n\t<option value=\"{}\" {}>{}</option>", esc_attr(&a_plugin.file), if a_plugin.file == plugin { " selected='selected'" } else { "" }, esc_attr(&a_plugin.name)));
+        h.push_str(&format!(
+            "\n\t<option value=\"{}\" {}>{}</option>",
+            esc_attr(&a_plugin.file),
+            if a_plugin.file == plugin {
+                " selected='selected'"
+            } else {
+                ""
+            },
+            esc_attr(&a_plugin.name)
+        ));
     }
     h.push_str(&format!(
         "\t\t</select>\n\t\t{}\t</form>\n</div>\n<br class=\"clear\" />\n</div>\n\n<div id=\"templateside\">\n\t<h2 id=\"plugin-files-label\">{}</h2>\n\n\t",
@@ -1061,9 +1721,14 @@ pub async fn plugin_editor(ctx: &Ctx<'_>) -> AdminResponse {
         tr("Plugin Files")
     ));
     let mut tree: Vec<(String, Entry)> = Vec::new();
-    for plugin_file in files.iter().filter(|f| extension_of(f).is_some_and(|e| EDITABLE_TYPES.contains(&e.as_str()))) {
+    for plugin_file in files
+        .iter()
+        .filter(|f| extension_of(f).is_some_and(|e| EDITABLE_TYPES.contains(&e.as_str())))
+    {
         // `preg_replace( '#^.+?/#', '', $plugin_file )`: without the folder of the plugin.
-        let trimmed = plugin_file.split_once('/').map_or(plugin_file.as_str(), |(_, rest)| rest);
+        let trimmed = plugin_file
+            .split_once('/')
+            .map_or(plugin_file.as_str(), |(_, rest)| rest);
         let parts: Vec<&str> = trimmed.split('/').collect();
         insert(&mut tree, &parts, plugin_file);
     }
@@ -1078,12 +1743,26 @@ pub async fn plugin_editor(ctx: &Ctx<'_>) -> AdminResponse {
         esc_attr(&plugin)
     ));
     if !functions.is_empty() {
-        h.push_str(&documentation(ctx, &doc_select(ctx, &functions), "\t\t", "\t\t\t"));
+        h.push_str(&documentation(
+            ctx,
+            &doc_select(ctx, &functions),
+            "\t\t",
+            "\t\t\t",
+        ));
     }
     h.push_str("\n\t");
     if writable {
         let warning = if active_plugins.contains(&plugin) {
-            notice(&tr("<strong>Warning:</strong> Making changes to active plugins is not recommended."), "warning", false, "", &["inline", "active-plugin-edit-warning"], true)
+            notice(
+                &tr(
+                    "<strong>Warning:</strong> Making changes to active plugins is not recommended.",
+                ),
+                "warning",
+                false,
+                "",
+                &["inline", "active-plugin-edit-warning"],
+                true,
+            )
         } else {
             String::new()
         };
@@ -1102,5 +1781,11 @@ pub async fn plugin_editor(ctx: &Ctx<'_>) -> AdminResponse {
     h.push_str("</form>\n<br class=\"clear\" />\n</div>\n");
     h.push_str(&warning_dialog(ctx, "plugin_editor_notice", None).await);
     let _ = editor_notices_script();
-    render(ctx, &screen(tr("Edit Plugins"), Some(help_plugin(ctx))), &h, &editor_assets(ctx, &real_file.to_string_lossy(), "plugin")).await
+    render(
+        ctx,
+        &screen(tr("Edit Plugins"), Some(help_plugin(ctx))),
+        &h,
+        &editor_assets(ctx, &real_file.to_string_lossy(), "plugin"),
+    )
+    .await
 }

@@ -7,16 +7,26 @@ pub fn file_header(text: &str, header: &str) -> String {
     let lower = header.to_lowercase();
     for line in text.replace('\r', "\n").lines() {
         let trimmed = line.trim_start_matches([' ', '\t', '/', '*', '#', '@']);
-        let trimmed = trimmed.strip_prefix("<?php").map(str::trim_start).unwrap_or(trimmed);
-        let Some((key, value)) = trimmed.split_once(':') else { continue };
+        let trimmed = trimmed
+            .strip_prefix("<?php")
+            .map(str::trim_start)
+            .unwrap_or(trimmed);
+        let Some((key, value)) = trimmed.split_once(':') else {
+            continue;
+        };
         if key.trim().to_lowercase() == lower && key.len() == key.trim_end().len() {
-            let value = value.split("*/").next().unwrap_or(value).split("?>").next().unwrap_or(value);
+            let value = value
+                .split("*/")
+                .next()
+                .unwrap_or(value)
+                .split("?>")
+                .next()
+                .unwrap_or(value);
             return value.trim().to_owned();
         }
     }
     String::new()
 }
-
 
 #[derive(Debug, Clone, Default)]
 pub struct PluginInfo {
@@ -83,8 +93,14 @@ fn kses(text: &str, tags: impl Fn(&str) -> Option<&'static [&'static str]>) -> S
         rest = &rest[start + end + 1..];
         let closing = tag.starts_with('/');
         let body = tag.trim_start_matches('/').trim_end_matches('/').trim();
-        let name = body.split_whitespace().next().unwrap_or_default().to_lowercase();
-        let Some(allowed) = tags(name.as_str()) else { continue };
+        let name = body
+            .split_whitespace()
+            .next()
+            .unwrap_or_default()
+            .to_lowercase();
+        let Some(allowed) = tags(name.as_str()) else {
+            continue;
+        };
         if closing {
             out.push_str(&format!("</{name}>"));
             continue;
@@ -153,7 +169,9 @@ fn read_plugin(path: &Path, file: String) -> Option<PluginInfo> {
 pub fn installed(wp_root: &Path) -> Vec<PluginInfo> {
     let dir = wp_root.join("wp-content").join("plugins");
     let mut out = Vec::new();
-    let Ok(entries) = std::fs::read_dir(&dir) else { return out };
+    let Ok(entries) = std::fs::read_dir(&dir) else {
+        return out;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
         let name = entry.file_name().to_string_lossy().into_owned();
@@ -177,7 +195,9 @@ pub fn installed(wp_root: &Path) -> Vec<PluginInfo> {
 /// `get_mu_plugins()`.
 pub fn must_use(wp_root: &Path) -> Vec<PluginInfo> {
     let dir = wp_root.join("wp-content").join("mu-plugins");
-    let Ok(entries) = std::fs::read_dir(&dir) else { return Vec::new() };
+    let Ok(entries) = std::fs::read_dir(&dir) else {
+        return Vec::new();
+    };
     let mut out: Vec<PluginInfo> = entries
         .flatten()
         .filter(|e| e.path().is_file() && e.file_name().to_string_lossy().ends_with(".php"))
@@ -185,7 +205,11 @@ pub fn must_use(wp_root: &Path) -> Vec<PluginInfo> {
             let file = e.file_name().to_string_lossy().into_owned();
             // A file without a header still counts: WordPress lists it under its file name.
             let info = read_plugin(&e.path(), file.clone());
-            info.or(Some(PluginInfo { file: file.clone(), name: file, ..Default::default() }))
+            info.or(Some(PluginInfo {
+                file: file.clone(),
+                name: file,
+                ..Default::default()
+            }))
         })
         .collect();
     out.sort_by_key(|p| p.name.to_lowercase());

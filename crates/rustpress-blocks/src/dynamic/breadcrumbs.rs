@@ -1,9 +1,9 @@
 //! `core/breadcrumbs`: port of `render_block_core_breadcrumbs()` and its helpers.
 
 use rustpress_core::Queried;
+use rustpress_core::ShowOnFront;
 use rustpress_core::formatting::{esc_attr, esc_html, esc_url, wp_trim_words_with};
 use rustpress_core::urls::untrailingslashit;
-use rustpress_core::ShowOnFront;
 use rustpress_db::Post;
 use serde_json::Value;
 
@@ -21,11 +21,19 @@ struct Item {
 
 impl Item {
     fn plain(label: impl Into<String>) -> Self {
-        Self { label: label.into(), url: None, allow_html: false }
+        Self {
+            label: label.into(),
+            url: None,
+            allow_html: false,
+        }
     }
 
     fn link(label: impl Into<String>, url: String) -> Self {
-        Self { label: label.into(), url: Some(url), allow_html: false }
+        Self {
+            label: label.into(),
+            url: Some(url),
+            allow_html: false,
+        }
     }
 }
 
@@ -51,27 +59,47 @@ fn is_paged(bc: &BlockCtx<'_>) -> bool {
 /// `get_pagenum_link( 1 )`.
 fn first_page_link(bc: &BlockCtx<'_>) -> String {
     let q = bc.env.query;
-    let request = format!("{}{}", q.url_path, if q.raw_query.is_empty() { String::new() } else { format!("?{}", q.raw_query) });
+    let request = format!(
+        "{}{}",
+        q.url_path,
+        if q.raw_query.is_empty() {
+            String::new()
+        } else {
+            format!("?{}", q.raw_query)
+        }
+    );
     bc.env.site.pagenum_link(&request, 1)
 }
 
 /// `block_core_breadcrumbs_create_item()`.
 fn create_item(bc: &BlockCtx<'_>, label: impl Into<String>, paged: bool) -> Item {
-    Item { label: label.into(), url: paged.then(|| first_page_link(bc)), allow_html: false }
+    Item {
+        label: label.into(),
+        url: paged.then(|| first_page_link(bc)),
+        allow_html: false,
+    }
 }
 
 /// `block_core_breadcrumbs_create_page_number_item()`.
 fn page_number_item(bc: &BlockCtx<'_>, var: &str) -> Item {
     let site = bc.env.site;
     let number = site.number_i18n(query_var(bc, var));
-    let template = if var == "cpage" { site.tr("Comments Page %s") } else { site.tr("Page %s") };
+    let template = if var == "cpage" {
+        site.tr("Comments Page %s")
+    } else {
+        site.tr("Page %s")
+    };
     Item::plain(rustpress_core::i18n::sprintf(&template, &[&number]))
 }
 
 /// `block_core_breadcrumbs_get_post_title()`.
 fn post_title(bc: &BlockCtx<'_>, post: &Post) -> String {
     let title = the_title_for(bc.env.site, post);
-    if title.is_empty() { bc.env.site.tr("(no title)") } else { title }
+    if title.is_empty() {
+        bc.env.site.tr("(no title)")
+    } else {
+        title
+    }
 }
 
 async fn post_title_of(bc: &BlockCtx<'_>, id: u64) -> Result<String> {
@@ -85,7 +113,12 @@ fn is_hierarchical_type(bc: &BlockCtx<'_>, post_type: &str) -> bool {
     match post_type {
         "page" => true,
         "post" | "attachment" => false,
-        other => bc.env.site.types.post_type(other).is_some_and(|t| t.hierarchical),
+        other => bc
+            .env
+            .site
+            .types
+            .post_type(other)
+            .is_some_and(|t| t.hierarchical),
     }
 }
 
@@ -93,7 +126,12 @@ fn is_hierarchical_taxonomy(bc: &BlockCtx<'_>, taxonomy: &str) -> bool {
     match taxonomy {
         "category" => true,
         "post_tag" | "post_format" => false,
-        other => bc.env.site.types.taxonomy(other).is_some_and(|t| t.hierarchical),
+        other => bc
+            .env
+            .site
+            .types
+            .taxonomy(other)
+            .is_some_and(|t| t.hierarchical),
     }
 }
 
@@ -112,19 +150,32 @@ fn object_taxonomies(bc: &BlockCtx<'_>, post_type: &str) -> Vec<String> {
 }
 
 /// `block_core_breadcrumbs_get_term_ancestors_items()`.
-async fn term_ancestor_items(bc: &BlockCtx<'_>, term: &rustpress_db::Term, taxonomy: &str) -> Result<Vec<Item>> {
+async fn term_ancestor_items(
+    bc: &BlockCtx<'_>,
+    term: &rustpress_db::Term,
+    taxonomy: &str,
+) -> Result<Vec<Item>> {
     let mut chain = Vec::new();
     if is_hierarchical_taxonomy(bc, taxonomy) {
         let mut parent = term.parent;
-        while parent != 0 && !chain.iter().any(|t: &rustpress_db::Term| t.term_id == parent) {
-            let Some(ancestor) = bc.env.site.db.term_by_id(Some(taxonomy), parent).await? else { break };
+        while parent != 0
+            && !chain
+                .iter()
+                .any(|t: &rustpress_db::Term| t.term_id == parent)
+        {
+            let Some(ancestor) = bc.env.site.db.term_by_id(Some(taxonomy), parent).await? else {
+                break;
+            };
             parent = ancestor.parent;
             chain.push(ancestor);
         }
     }
     let mut items = Vec::new();
     for ancestor in chain.iter().rev() {
-        items.push(Item::link(ancestor.name.clone(), bc.env.site.term_link(ancestor).await?));
+        items.push(Item::link(
+            ancestor.name.clone(),
+            bc.env.site.term_link(ancestor).await?,
+        ));
     }
     Ok(items)
 }
@@ -146,12 +197,19 @@ async fn archive_items(bc: &BlockCtx<'_>) -> Result<Vec<Item>> {
             day = m.get(6..8).and_then(|s| s.parse().ok()).unwrap_or(0);
         }
         let paged = is_paged(bc);
-        let month_name = |month: u64| site.date_utc("F", days_from_civil(year as i64, month as i64, 1) * 86400);
+        let month_name =
+            |month: u64| site.date_utc("F", days_from_civil(year as i64, month as i64, 1) * 86400);
         if year != 0 {
             if month != 0 {
-                items.push(Item::link(year.to_string(), site.date_link(year as u32, 0, 0)));
+                items.push(Item::link(
+                    year.to_string(),
+                    site.date_link(year as u32, 0, 0),
+                ));
                 if day != 0 {
-                    items.push(Item::link(month_name(month), site.date_link(year as u32, month as u32, 0)));
+                    items.push(Item::link(
+                        month_name(month),
+                        site.date_link(year as u32, month as u32, 0),
+                    ));
                     items.push(create_item(bc, day.to_string(), paged));
                 } else {
                     items.push(create_item(bc, month_name(month), paged));
@@ -177,7 +235,9 @@ async fn archive_items(bc: &BlockCtx<'_>) -> Result<Vec<Item>> {
             let title = site.post_type_archives_label(post_type);
             items.push(create_item(bc, title, paged));
         }
-        Queried::User(user) if q.flags.is_author => items.push(create_item(bc, user.display_name.clone(), paged)),
+        Queried::User(user) if q.flags.is_author => {
+            items.push(create_item(bc, user.display_name.clone(), paged))
+        }
         _ => {}
     }
     if paged {
@@ -220,7 +280,9 @@ async fn post_ancestors(bc: &BlockCtx<'_>, post_id: u64) -> Result<Vec<Post>> {
         None => 0,
     };
     while parent != 0 && !out.iter().any(|p| p.id == parent) && parent != post_id {
-        let Some(ancestor) = bc.env.site.db.post(parent).await? else { break };
+        let Some(ancestor) = bc.env.site.db.post(parent).await? else {
+            break;
+        };
         parent = ancestor.post_parent;
         out.push(ancestor);
     }
@@ -239,7 +301,9 @@ pub(super) async fn breadcrumbs(bc: &BlockCtx<'_>) -> Result<String> {
 
     if bc.attr_bool("showHomeItem") {
         let home = site.tr("Home");
-        if !is_front_page || (site.settings.show_on_front == ShowOnFront::Page && query_var(bc, "page") > 1) {
+        if !is_front_page
+            || (site.settings.show_on_front == ShowOnFront::Page && query_var(bc, "page") > 1)
+        {
             items.push(Item::link(home, site.home_url("/")));
         } else {
             items.push(create_item(bc, home, is_paged(bc)));
@@ -261,8 +325,13 @@ pub(super) async fn breadcrumbs(bc: &BlockCtx<'_>) -> Result<String> {
     } else if q.flags.is_search {
         let paged = is_paged(bc);
         let query = esc_attr(q.vars.get("s").unwrap_or(""));
-        let trimmed = wp_trim_words_with(&query, 10, "&hellip;", site.locale_data().word_count_type);
-        items.push(create_item(bc, rustpress_core::i18n::sprintf(&site.tr("Search results for: \"%s\""), &[&trimmed]), paged));
+        let trimmed =
+            wp_trim_words_with(&query, 10, "&hellip;", site.locale_data().word_count_type);
+        items.push(create_item(
+            bc,
+            rustpress_core::i18n::sprintf(&site.tr("Search results for: \"%s\""), &[&trimmed]),
+            paged,
+        ));
         if paged {
             items.push(page_number_item(bc, "paged"));
         }
@@ -271,7 +340,12 @@ pub(super) async fn breadcrumbs(bc: &BlockCtx<'_>) -> Result<String> {
     } else if q.flags.is_archive {
         items.extend(archive_items(bc).await?);
     } else {
-        let (Some(context_id), Some(context_type)) = (bc.context.post_id(), bc.context.get("postType").and_then(Value::as_str)) else { return Ok(String::new()) };
+        let (Some(context_id), Some(context_type)) = (
+            bc.context.post_id(),
+            bc.context.get("postType").and_then(Value::as_str),
+        ) else {
+            return Ok(String::new());
+        };
         let mut post_id = context_id;
         let mut post_type = context_type.to_owned();
         let Some(post) = (match global_post(bc).await? {
@@ -310,14 +384,24 @@ pub(super) async fn breadcrumbs(bc: &BlockCtx<'_>) -> Result<String> {
         } else {
             site.post_type_archive_link(&post_type)
         };
-        if let Some(link) = archive_link.filter(|l| untrailingslashit(&site.home_url("")) != untrailingslashit(l)) {
-            let label = if post_type == "post" && page_for_posts != 0 { post_title_of(bc, page_for_posts).await? } else { site.post_type_archives_label(&post_type) };
+        if let Some(link) =
+            archive_link.filter(|l| untrailingslashit(&site.home_url("")) != untrailingslashit(l))
+        {
+            let label = if post_type == "post" && page_for_posts != 0 {
+                post_title_of(bc, page_for_posts).await?
+            } else {
+                site.post_type_archives_label(&post_type)
+            };
             items.push(Item::link(label, link));
         }
 
         if !show_terms {
             for ancestor in post_ancestors(bc, post_id).await?.iter().rev() {
-                items.push(Item { label: post_title(bc, ancestor), url: Some(site.permalink(ancestor).await?), allow_html: true });
+                items.push(Item {
+                    label: post_title(bc, ancestor),
+                    url: Some(site.permalink(ancestor).await?),
+                    allow_html: true,
+                });
             }
         } else {
             items.extend(terms_items(bc, post_id, &post_type).await?);
@@ -327,10 +411,21 @@ pub(super) async fn breadcrumbs(bc: &BlockCtx<'_>) -> Result<String> {
         let cpage = query_var(bc, "cpage");
         let title = post_title(bc, &post);
         if page > 1 || cpage > 1 {
-            items.push(Item { label: title, url: Some(site.permalink(&post).await?), allow_html: true });
-            items.push(page_number_item(bc, if cpage > 1 { "cpage" } else { "page" }));
+            items.push(Item {
+                label: title,
+                url: Some(site.permalink(&post).await?),
+                allow_html: true,
+            });
+            items.push(page_number_item(
+                bc,
+                if cpage > 1 { "cpage" } else { "page" },
+            ));
         } else {
-            items.push(Item { label: title, url: None, allow_html: true });
+            items.push(Item {
+                label: title,
+                url: None,
+                allow_html: true,
+            });
         }
     }
 
@@ -342,12 +437,28 @@ pub(super) async fn breadcrumbs(bc: &BlockCtx<'_>) -> Result<String> {
     }
 
     let separator = bc.attr_str("separator").unwrap_or("/");
-    let escaped: String = separator.chars().flat_map(|c| if c == '\\' || c == '"' { vec!['\\', c] } else { vec![c] }).collect();
-    let wrapper = bc.wrapper_attributes(&[("style", format!("--separator: \"{escaped}\";")), ("aria-label", site.tr("Breadcrumbs"))]);
+    let escaped: String = separator
+        .chars()
+        .flat_map(|c| {
+            if c == '\\' || c == '"' {
+                vec!['\\', c]
+            } else {
+                vec![c]
+            }
+        })
+        .collect();
+    let wrapper = bc.wrapper_attributes(&[
+        ("style", format!("--separator: \"{escaped}\";")),
+        ("aria-label", site.tr("Breadcrumbs")),
+    ]);
     let list: String = items
         .iter()
         .map(|item| {
-            let label = if item.allow_html { item.label.clone() } else { esc_html(&item.label) };
+            let label = if item.allow_html {
+                item.label.clone()
+            } else {
+                esc_html(&item.label)
+            };
             match item.url.as_deref().filter(|u| !u.is_empty()) {
                 Some(url) => format!("<li><a href=\"{}\">{label}</a></li>", esc_url(url)),
                 None => format!("<li><span aria-current=\"page\">{label}</span></li>"),

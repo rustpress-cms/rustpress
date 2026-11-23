@@ -41,8 +41,21 @@ impl Styles {
     }
 
     /// `$styles->add()`.
-    pub fn add(&mut self, handle: &str, src: Option<&str>, deps: &[&str], ver: Ver, media: Option<&str>) -> bool {
-        self.deps.add(handle, src.map(str::to_owned), deps.iter().map(|d| (*d).to_owned()).collect(), ver, media.map(|m| Arg::Text(m.to_owned())))
+    pub fn add(
+        &mut self,
+        handle: &str,
+        src: Option<&str>,
+        deps: &[&str],
+        ver: Ver,
+        media: Option<&str>,
+    ) -> bool {
+        self.deps.add(
+            handle,
+            src.map(str::to_owned),
+            deps.iter().map(|d| (*d).to_owned()).collect(),
+            ver,
+            media.map(|m| Arg::Text(m.to_owned())),
+        )
     }
 
     pub fn is_registered(&self, handle: &str) -> bool {
@@ -105,12 +118,25 @@ impl Styles {
             let source_url = format!("css-inline-concat-{concat}");
             let mut chunks = String::new();
             for (key, chunk) in concat.as_bytes().chunks(128).enumerate() {
-                chunks.push_str(&format!("&load%5Bchunk_{key}%5D={}", String::from_utf8_lossy(chunk)));
+                chunks.push_str(&format!(
+                    "&load%5Bchunk_{key}%5D={}",
+                    String::from_utf8_lossy(chunk)
+                ));
             }
-            let href = format!("{}/wp-admin/load-styles.php?c={zip}&dir={}{chunks}&ver={}", self.base_url, self.text_direction, self.default_version);
-            self.out.push_str(&format!("<link rel='stylesheet' href='{}' media='all' />\n", esc_attr(&href)));
+            let href = format!(
+                "{}/wp-admin/load-styles.php?c={zip}&dir={}{chunks}&ver={}",
+                self.base_url, self.text_direction, self.default_version
+            );
+            self.out.push_str(&format!(
+                "<link rel='stylesheet' href='{}' media='all' />\n",
+                esc_attr(&href)
+            ));
             if !self.print_code.is_empty() {
-                let contents = format!("\n{}\n/*# sourceURL={} */\n", self.print_code, rawurlencode(&source_url));
+                let contents = format!(
+                    "\n{}\n/*# sourceURL={} */\n",
+                    self.print_code,
+                    rawurlencode(&source_url)
+                );
                 self.out.push_str(&format!("<style>{contents}</style>\n"));
             }
         }
@@ -125,7 +151,10 @@ impl Styles {
         self.deps.all_deps(&queue, false, None);
         let to_do = self.deps.to_do.clone();
         for handle in to_do {
-            if !self.deps.done.contains(&handle) && self.deps.is_registered(&handle) && self.do_item(&handle) {
+            if !self.deps.done.contains(&handle)
+                && self.deps.is_registered(&handle)
+                && self.do_item(&handle)
+            {
                 self.deps.done.push(handle.clone());
             }
             self.deps.to_do.retain(|h| h != &handle);
@@ -133,19 +162,27 @@ impl Styles {
     }
 
     fn in_default_dir(&self, src: &str) -> bool {
-        self.default_dirs.is_empty() || self.default_dirs.iter().any(|d| src.starts_with(d.as_str()))
+        self.default_dirs.is_empty()
+            || self
+                .default_dirs
+                .iter()
+                .any(|d| src.starts_with(d.as_str()))
     }
 
     /// `print_inline_style( $handle, false )`.
     fn inline_style_text(&self, handle: &str) -> Option<String> {
-        let Some(Extra::List(list)) = self.deps.get_data(handle, "after") else { return None };
+        let Some(Extra::List(list)) = self.deps.get_data(handle, "after") else {
+            return None;
+        };
         if list.is_empty() {
             return None;
         }
         let mut output = list.clone();
         if !self.do_concat {
             let source_url = match self.deps.get_data(handle, "inlined_src") {
-                Some(Extra::Text(src)) if list.len() == 1 && !src.is_empty() => rustpress_core::formatting::esc_url_raw(src),
+                Some(Extra::Text(src)) if list.len() == 1 && !src.is_empty() => {
+                    rustpress_core::formatting::esc_url_raw(src)
+                }
                 _ => rawurlencode(&format!("{handle}-inline-css")),
             };
             output.push(format!("/*# sourceURL={source_url} */"));
@@ -156,7 +193,8 @@ impl Styles {
     /// `_css_href()`.
     fn css_href(&self, src: &str, ver: &Ver, handle: &str) -> String {
         let mut src = src.to_owned();
-        let absolute = src.starts_with("http://") || src.starts_with("https://") || src.starts_with("//");
+        let absolute =
+            src.starts_with("http://") || src.starts_with("https://") || src.starts_with("//");
         if !absolute && !(!self.content_url.is_empty() && src.starts_with(&self.content_url)) {
             src = format!("{}{src}", self.base_url);
         }
@@ -173,10 +211,17 @@ impl Styles {
                 src.truncate(src.len() - fragment.len());
             }
             if !ver_to_add.is_empty() {
-                src.push_str(&format!("{}ver={}", if src.contains('?') { '&' } else { '?' }, rawurlencode(&ver_to_add)));
+                src.push_str(&format!(
+                    "{}ver={}",
+                    if src.contains('?') { '&' } else { '?' },
+                    rawurlencode(&ver_to_add)
+                ));
             }
             if !added_args.is_empty() {
-                src.push_str(&format!("{}{added_args}", if src.contains('?') { '&' } else { '?' }));
+                src.push_str(&format!(
+                    "{}{added_args}",
+                    if src.contains('?') { '&' } else { '?' }
+                ));
             }
             if let Some(fragment) = fragment {
                 src.push_str(&fragment);
@@ -186,12 +231,22 @@ impl Styles {
     }
 
     fn do_item(&mut self, handle: &str) -> bool {
-        let Some(obj) = self.deps.get(handle).cloned() else { return false };
+        let Some(obj) = self.deps.get(handle).cloned() else {
+            return false;
+        };
         if obj.extra.get("conditional").is_some_and(Extra::truthy) {
             return false;
         }
         let inline_style = self.inline_style_text(handle);
-        let inline_tag = inline_style.as_ref().map(|css| format!("{}\n", inline_style_tag(&format!("{handle}-inline-css"), css))).unwrap_or_default();
+        let inline_tag = inline_style
+            .as_ref()
+            .map(|css| {
+                format!(
+                    "{}\n",
+                    inline_style_tag(&format!("{handle}-inline-css"), css)
+                )
+            })
+            .unwrap_or_default();
         let src = obj.src.clone();
         if self.do_concat
             && let Some(src) = &src
@@ -223,23 +278,44 @@ impl Styles {
             return true;
         }
         let alternate = obj.extra.get("alt").is_some_and(Extra::truthy);
-        let rel = if alternate { "alternate stylesheet" } else { "stylesheet" };
+        let rel = if alternate {
+            "alternate stylesheet"
+        } else {
+            "stylesheet"
+        };
         let title = match obj.extra.get("title") {
             Some(Extra::Text(t)) if !t.is_empty() => format!(" title='{}'", esc_attr(t)),
             _ => String::new(),
         };
-        let mut tag = format!("<link rel='{rel}' id='{}-css'{title} href='{href}' media='{}' />\n", esc_attr(handle), esc_attr(&media));
+        let mut tag = format!(
+            "<link rel='{rel}' id='{}-css'{title} href='{href}' media='{}' />\n",
+            esc_attr(handle),
+            esc_attr(&media)
+        );
         if self.text_direction == "rtl"
             && let Some(rtl) = obj.extra.get("rtl").filter(|r| r.truthy())
         {
             let replace = matches!(rtl, Extra::Bool(true)) || rtl.text() == Some("replace");
             let rtl_href = if replace {
-                let suffix = obj.extra.get("suffix").and_then(Extra::text).unwrap_or_default();
-                self.css_href(&src, &obj.ver, &format!("{handle}-rtl")).replace(&format!("{suffix}.css"), &format!("-rtl{suffix}.css"))
+                let suffix = obj
+                    .extra
+                    .get("suffix")
+                    .and_then(Extra::text)
+                    .unwrap_or_default();
+                self.css_href(&src, &obj.ver, &format!("{handle}-rtl"))
+                    .replace(&format!("{suffix}.css"), &format!("-rtl{suffix}.css"))
             } else {
-                self.css_href(rtl.text().unwrap_or_default(), &obj.ver, &format!("{handle}-rtl"))
+                self.css_href(
+                    rtl.text().unwrap_or_default(),
+                    &obj.ver,
+                    &format!("{handle}-rtl"),
+                )
             };
-            let rtl_tag = format!("<link rel='{rel}' id='{}-rtl-css'{title} href='{rtl_href}' media='{}' />\n", esc_attr(handle), esc_attr(&media));
+            let rtl_tag = format!(
+                "<link rel='{rel}' id='{}-rtl-css'{title} href='{rtl_href}' media='{}' />\n",
+                esc_attr(handle),
+                esc_attr(&media)
+            );
             if rtl.text() == Some("replace") {
                 tag = rtl_tag;
             } else {
@@ -252,7 +328,10 @@ impl Styles {
         } else {
             self.out.push_str(&tag);
             if let Some(css) = &inline_style {
-                self.out.push_str(&format!("{}\n", inline_style_tag(&format!("{handle}-inline-css"), css)));
+                self.out.push_str(&format!(
+                    "{}\n",
+                    inline_style_tag(&format!("{handle}-inline-css"), css)
+                ));
             }
         }
         true
@@ -264,10 +343,33 @@ mod tests {
     use super::*;
 
     fn styles() -> Styles {
-        let mut s = Styles::new("http://example.org", "http://example.org/wp-content", "7.1", false);
-        s.add("dashicons", Some("/wp-includes/css/dashicons.min.css"), &[], Ver::Default, None);
-        s.add("login", Some("/wp-admin/css/login.min.css"), &["dashicons"], Ver::Default, None);
-        s.add("theme", Some("/wp-content/themes/x/style.css"), &["login"], Ver::Value("1.2".into()), None);
+        let mut s = Styles::new(
+            "http://example.org",
+            "http://example.org/wp-content",
+            "7.1",
+            false,
+        );
+        s.add(
+            "dashicons",
+            Some("/wp-includes/css/dashicons.min.css"),
+            &[],
+            Ver::Default,
+            None,
+        );
+        s.add(
+            "login",
+            Some("/wp-admin/css/login.min.css"),
+            &["dashicons"],
+            Ver::Default,
+            None,
+        );
+        s.add(
+            "theme",
+            Some("/wp-content/themes/x/style.css"),
+            &["login"],
+            Ver::Value("1.2".into()),
+            None,
+        );
         s
     }
 
@@ -276,7 +378,10 @@ mod tests {
         let mut s = styles();
         s.enqueue("login");
         let out = s.print_admin_styles(true);
-        assert_eq!(out, "<link rel='stylesheet' href='http://example.org/wp-admin/load-styles.php?c=0&amp;dir=ltr&amp;load%5Bchunk_0%5D=dashicons,login&amp;ver=7.1' media='all' />\n");
+        assert_eq!(
+            out,
+            "<link rel='stylesheet' href='http://example.org/wp-admin/load-styles.php?c=0&amp;dir=ltr&amp;load%5Bchunk_0%5D=dashicons,login&amp;ver=7.1' media='all' />\n"
+        );
     }
 
     #[test]

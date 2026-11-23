@@ -13,22 +13,30 @@ impl PcreRegex {
     pub fn new(pattern: &str, case_insensitive: bool) -> Self {
         let pattern = php::rawurldecode(pattern);
         let flags = if case_insensitive { "(?si)" } else { "(?s)" };
-        Self { re: fancy_regex::Regex::new(&format!("{flags}{pattern}")).ok() }
+        Self {
+            re: fancy_regex::Regex::new(&format!("{flags}{pattern}")).ok(),
+        }
     }
 
     /// `preg_match() > 0`.
     pub fn is_match(&self, target: &str) -> bool {
-        self.re.as_ref().is_some_and(|re| re.is_match(target).unwrap_or(false))
+        self.re
+            .as_ref()
+            .is_some_and(|re| re.is_match(target).unwrap_or(false))
     }
 
     /// `Red_Regex::replace()`: `preg_replace()` of every match, then spaces encoded (`%20` in the path, `+` in the
     /// query).
     pub fn replace(&self, replacement: &str, target: &str) -> String {
-        let Some(re) = &self.re else { return target.to_owned() };
+        let Some(re) = &self.re else {
+            return target.to_owned();
+        };
         let mut out = String::new();
         let mut last = 0;
         for caps in re.captures_iter(target) {
-            let Ok(caps) = caps else { return target.to_owned() };
+            let Ok(caps) = caps else {
+                return target.to_owned();
+            };
             let Some(whole) = caps.get(0) else { continue };
             out.push_str(&target[last..whole.start()]);
             out.push_str(&expand(&caps, replacement));
@@ -37,7 +45,11 @@ impl PcreRegex {
         out.push_str(&target[last..]);
         let split: Vec<&str> = out.split('?').collect();
         if split.len() == 2 {
-            format!("{}?{}", split[0].replace(' ', "%20"), split[1].replace(' ', "+"))
+            format!(
+                "{}?{}",
+                split[0].replace(' ', "%20"),
+                split[1].replace(' ', "+")
+            )
         } else {
             out.replace(' ', "%20")
         }
@@ -92,8 +104,14 @@ mod tests {
         let re = PcreRegex::new(r"^/blog/(\d+)/(.*)$", true);
         assert!(re.is_match("/blog/12/abc"));
         assert_eq!(re.replace("/$2?id=$1", "/blog/12/abc"), "/abc?id=12");
-        assert_eq!(PcreRegex::new("^/rx/(.*)", false).replace(r"/x/\1/y", "/rx/Q?z=1"), "/x/Q?z=1/y");
-        assert_eq!(PcreRegex::new("^/a/(.*)", false).replace("/b/${1}x $9", "/a/c d"), "/b/c%20dx%20");
+        assert_eq!(
+            PcreRegex::new("^/rx/(.*)", false).replace(r"/x/\1/y", "/rx/Q?z=1"),
+            "/x/Q?z=1/y"
+        );
+        assert_eq!(
+            PcreRegex::new("^/a/(.*)", false).replace("/b/${1}x $9", "/a/c d"),
+            "/b/c%20dx%20"
+        );
         assert!(!PcreRegex::new("(", false).is_match("("));
     }
 }

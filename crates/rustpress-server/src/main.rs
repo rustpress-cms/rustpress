@@ -14,17 +14,27 @@ fn main() {
         // One request: a thread per core of a large shared host only costs start-up time.
         builder.worker_threads(2);
     }
-    let runtime = builder.enable_all().thread_stack_size(16 * 1024 * 1024).build().expect("tokio runtime");
+    let runtime = builder
+        .enable_all()
+        .thread_stack_size(16 * 1024 * 1024)
+        .build()
+        .expect("tokio runtime");
     if !cgi && std::env::args().nth(1).as_deref() == Some("check") {
         let code = runtime.block_on(run_check());
         std::process::exit(code);
     }
-    let task = if cgi { runtime.spawn(run_cgi()) } else { runtime.spawn(run_server()) };
+    let task = if cgi {
+        runtime.spawn(run_cgi())
+    } else {
+        runtime.spawn(run_server())
+    };
     if runtime.block_on(task).is_err() {
         // The task panicked outside of a request handler (those answer with a 500 themselves): the web server
         // still gets an answer in CGI, and the error log its line.
         if cgi {
-            rustpress_server::cgi::write_failure("panicked while starting; the message is in the error log of the web server");
+            rustpress_server::cgi::write_failure(
+                "panicked while starting; the message is in the error log of the web server",
+            );
         }
         std::process::exit(1);
     }
@@ -32,12 +42,21 @@ fn main() {
 
 /// One request from the web server (CGI); log lines go to its error log.
 async fn run_cgi() {
+    use tracing_subscriber::Layer;
     use tracing_subscriber::layer::SubscriberExt;
     use tracing_subscriber::util::SubscriberInitExt;
-    use tracing_subscriber::Layer;
-    let log = tracing_subscriber::fmt::layer().with_writer(std::io::stderr).with_ansi(false).with_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("warn")));
-    let statements = rustpress_server::cgi::DbTiming.with_filter(tracing_subscriber::filter::Targets::new().with_target("sqlx::query", tracing::Level::TRACE));
-    tracing_subscriber::registry().with(log).with(statements).init();
+    let log = tracing_subscriber::fmt::layer()
+        .with_writer(std::io::stderr)
+        .with_ansi(false)
+        .with_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("warn")));
+    let statements = rustpress_server::cgi::DbTiming.with_filter(
+        tracing_subscriber::filter::Targets::new()
+            .with_target("sqlx::query", tracing::Level::TRACE),
+    );
+    tracing_subscriber::registry()
+        .with(log)
+        .with(statements)
+        .init();
     let started = std::time::Instant::now();
     let result = async {
         let config = rustpress_server::cgi::config().map_err(|e| e.to_string())?;
@@ -50,7 +69,14 @@ async fn run_cgi() {
         let router = if config.database_url.is_empty() {
             match Installer::needed(&config).await {
                 Some(installer) => installer.router(),
-                None => return Err(rustpress_server::Config::load_with(None, Some(config.wp_root.clone())).err().map_or_else(|| "no database configured".to_owned(), |e| e.to_string())),
+                None => {
+                    return Err(rustpress_server::Config::load_with(
+                        None,
+                        Some(config.wp_root.clone()),
+                    )
+                    .err()
+                    .map_or_else(|| "no database configured".to_owned(), |e| e.to_string()));
+                }
             }
         } else {
             match App::for_one_request(config.clone()).await {
@@ -63,9 +89,15 @@ async fn run_cgi() {
             }
         };
         let loaded = started.elapsed();
-        rustpress_server::cgi::serve(router, started, loaded).await.map_err(|e| e.to_string())?;
+        rustpress_server::cgi::serve(router, started, loaded)
+            .await
+            .map_err(|e| e.to_string())?;
         rustpress_core::files::save_snapshot();
-        tracing::debug!(load_ms = loaded.as_secs_f64() * 1000.0, total_ms = started.elapsed().as_secs_f64() * 1000.0, "cgi request");
+        tracing::debug!(
+            load_ms = loaded.as_secs_f64() * 1000.0,
+            total_ms = started.elapsed().as_secs_f64() * 1000.0,
+            "cgi request"
+        );
         Ok::<_, String>(())
     }
     .await;
@@ -99,7 +131,11 @@ async fn run_check() -> i32 {
 }
 
 async fn run_server() {
-    tracing_subscriber::fmt().with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"))).init();
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
+        )
+        .init();
     if let Err(message) = run().await {
         eprintln!("rustpress: {message}");
         std::process::exit(1);
@@ -107,12 +143,26 @@ async fn run_server() {
 }
 
 async fn run() -> Result<(), String> {
-    let load = || Config::load_without_database(std::env::var_os("RUSTPRESS_CONFIG").map(std::path::PathBuf::from), None);
+    let load = || {
+        Config::load_without_database(
+            std::env::var_os("RUSTPRESS_CONFIG").map(std::path::PathBuf::from),
+            None,
+        )
+    };
     let listen = load().map_err(|e| e.to_string())?.listen;
-    let listener = tokio::net::TcpListener::bind(&listen).await.map_err(|e| format!("cannot listen on {listen}: {e}"))?;
+    let listener = tokio::net::TcpListener::bind(&listen)
+        .await
+        .map_err(|e| format!("cannot listen on {listen}: {e}"))?;
     let gate = Gate::start(Box::new(load)).await?;
     tracing::info!(address = %listener.local_addr().map_err(|e| e.to_string())?, "listening");
-    axum::serve(listener, gate.router().into_make_service_with_connect_info::<std::net::SocketAddr>()).with_graceful_shutdown(shutdown()).await.map_err(|e| e.to_string())
+    axum::serve(
+        listener,
+        gate.router()
+            .into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown())
+    .await
+    .map_err(|e| e.to_string())
 }
 
 async fn shutdown() {

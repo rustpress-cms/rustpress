@@ -1,8 +1,8 @@
 //! `wp/v2/posts`, `pages` and the routes of custom post types for signed-in users
 //! (`WP_REST_Posts_Controller` and `WP_REST_Revisions_Controller` / `Autosaves`).
 
-use rustpress_core::OrLog;
 use rustpress_content::content::{PostData, TermRef};
+use rustpress_core::OrLog;
 use rustpress_core::slug::sanitize_title_save;
 use rustpress_db::{Order, OrderBy, Post, PostQuery};
 use serde_json::{Map, Value, json};
@@ -31,44 +31,89 @@ pub(super) fn allow_for(can_edit: bool, can_delete: bool) -> String {
 impl Rest<'_> {
     /// The refusal of `WP_REST_Posts_Controller::create_item_permissions_check()`, whatever the type is.
     fn type_not_allowed(&self) -> RestError {
-        self.forbidden("rest_cannot_create", "Sorry, you are not allowed to create posts as this user.")
+        self.forbidden(
+            "rest_cannot_create",
+            "Sorry, you are not allowed to create posts as this user.",
+        )
     }
 
-    pub(crate) async fn custom_edit_route(&self, base: &str, id: Option<&str>, method: &str, args: &Args, params: &Params) -> Result<Outcome> {
-        let Some(info) = self.site.types.post_types.iter().find(|t| t.show_in_rest && t.rest_base() == base) else {
+    pub(crate) async fn custom_edit_route(
+        &self,
+        base: &str,
+        id: Option<&str>,
+        method: &str,
+        args: &Args,
+        params: &Params,
+    ) -> Result<Outcome> {
+        let Some(info) = self
+            .site
+            .types
+            .post_types
+            .iter()
+            .find(|t| t.show_in_rest && t.rest_base() == base)
+        else {
             return self.terms_custom(base, id, method, args, params).await;
         };
-        self.posts_route(Kind::Custom(info), id, method, args, params).await
+        self.posts_route(Kind::Custom(info), id, method, args, params)
+            .await
     }
 
-    pub(crate) async fn posts_route(&self, kind: Kind<'_>, id: Option<&str>, method: &str, args: &Args, params: &Params) -> Result<Outcome> {
+    pub(crate) async fn posts_route(
+        &self,
+        kind: Kind<'_>,
+        id: Option<&str>,
+        method: &str,
+        args: &Args,
+        params: &Params,
+    ) -> Result<Outcome> {
         match (method, id) {
             ("GET", None) => self.edit_collection(kind, args, params).await,
             ("GET", Some(id)) => self.edit_item(kind, id, args, params).await,
             ("POST", None) => self.create_post(kind, args).await,
             ("POST" | "PUT" | "PATCH", Some(id)) => self.update_post(kind, id, args).await,
             ("DELETE", Some(id)) => self.delete_post_route(kind, id, args).await,
-            _ => Ok(Err(RestError::new("rest_no_route", "No route was found matching the URL and request method.", 404))),
+            _ => Ok(Err(RestError::new(
+                "rest_no_route",
+                "No route was found matching the URL and request method.",
+                404,
+            ))),
         }
     }
 
     // ------------------------------------------------------------------------------------------------ reading
 
-    async fn edit_collection(&self, kind: Kind<'_>, args: &Args, params: &Params) -> Result<Outcome> {
+    async fn edit_collection(
+        &self,
+        kind: Kind<'_>,
+        args: &Args,
+        params: &Params,
+    ) -> Result<Outcome> {
         let context = args.str("context").unwrap_or_else(|| "view".to_owned());
         let caps = TypeCaps::of(kind.name());
         let statuses: Vec<String> = match args.list("status") {
-            Some(list) if list.iter().any(|s| s == "any") => ALL_STATUSES.iter().map(|s| (*s).to_owned()).chain(["trash".to_owned()]).collect(),
+            Some(list) if list.iter().any(|s| s == "any") => ALL_STATUSES
+                .iter()
+                .map(|s| (*s).to_owned())
+                .chain(["trash".to_owned()])
+                .collect(),
             Some(list) => list,
             None => vec![kind.public_status().to_owned()],
         };
         let restricted = statuses.iter().any(|s| s != kind.public_status());
         if restricted && !self.can(&caps.edit_posts) {
-            return Ok(Err(RestError::invalid_param_with_data("status", "Status is forbidden.", "rest_forbidden_status", json!({"status": 403}))));
+            return Ok(Err(RestError::invalid_param_with_data(
+                "status",
+                "Status is forbidden.",
+                "rest_forbidden_status",
+                json!({"status": 403}),
+            )));
         }
         // The parameters are validated before the permission callback.
         if context == "edit" && !self.can(&caps.edit_posts) {
-            return Ok(Err(self.forbidden("rest_forbidden_context", "Sorry, you are not allowed to edit posts in this post type.")));
+            return Ok(Err(self.forbidden(
+                "rest_forbidden_context",
+                "Sorry, you are not allowed to edit posts in this post type.",
+            )));
         }
         // The query of the anonymous reader decides the filters; the statuses are the signed-in user's.
         let mut anonymous = params.clone();
@@ -87,17 +132,34 @@ impl Rest<'_> {
             Ok(r) => r,
             Err(e) => return Ok(Err(e)),
         };
-        resp.allow = Some(if self.can_create(kind.name()) { "GET, POST" } else { "GET" }.to_owned());
+        resp.allow = Some(
+            if self.can_create(kind.name()) {
+                "GET, POST"
+            } else {
+                "GET"
+            }
+            .to_owned(),
+        );
         Ok(Ok(resp))
     }
 
-    async fn run_edit_posts(&self, kind: Kind<'_>, params: &Params, mut query: PostQuery, context: &str) -> Result<Outcome> {
+    async fn run_edit_posts(
+        &self,
+        kind: Kind<'_>,
+        params: &Params,
+        mut query: PostQuery,
+        context: &str,
+    ) -> Result<Outcome> {
         let per_page = query.limit.unwrap_or(10);
         let page = params.integer("page", 1, 1, None).unwrap_or(1);
         let total = self.site.db.count_posts(&query).await?;
         let max_pages = total.div_ceil(per_page);
         if page > max_pages && total > 0 {
-            return Ok(Err(RestError::new("rest_post_invalid_page_number", "The page number requested is larger than the number of pages available.", 400)));
+            return Ok(Err(RestError::new(
+                "rest_post_invalid_page_number",
+                "The page number requested is larger than the number of pages available.",
+                400,
+            )));
         }
         if query.offset == 0 {
             query.offset = (page - 1).saturating_mul(per_page);
@@ -109,7 +171,11 @@ impl Rest<'_> {
         let mut items = Vec::with_capacity(posts.len());
         for post in &posts {
             // Posts the user may not see are left out; the totals stay those of the query, as in WordPress.
-            let permitted = if context == "edit" { self.can_edit_post(post) } else { self.check_read_permission(post).await };
+            let permitted = if context == "edit" {
+                self.can_edit_post(post)
+            } else {
+                self.check_read_permission(post).await
+            };
             if permitted {
                 items.push(self.prepare_post_edit(post, kind, context).await?);
             }
@@ -117,38 +183,86 @@ impl Rest<'_> {
         let mut resp = Resp::item(Value::Array(items));
         resp.total = Some(total);
         resp.total_pages = Some(max_pages);
-        resp.link = crate::util::link_header(self, &format!("wp/v2/{}", kind.base()), params, &crate::util::LinkParams { arrays: crate::posts::POST_ARRAYS, booleans: &["sticky"] }, page, max_pages);
+        resp.link = crate::util::link_header(
+            self,
+            &format!("wp/v2/{}", kind.base()),
+            params,
+            &crate::util::LinkParams {
+                arrays: crate::posts::POST_ARRAYS,
+                booleans: &["sticky"],
+            },
+            page,
+            max_pages,
+        );
         Ok(Ok(resp))
     }
 
-    async fn edit_item(&self, kind: Kind<'_>, id: &str, args: &Args, params: &Params) -> Result<Outcome> {
+    async fn edit_item(
+        &self,
+        kind: Kind<'_>,
+        id: &str,
+        args: &Args,
+        params: &Params,
+    ) -> Result<Outcome> {
         let Ok(id) = id.parse::<u64>() else {
-            return Ok(Err(RestError::new("rest_no_route", "No route was found matching the URL and request method.", 404)));
+            return Ok(Err(RestError::new(
+                "rest_no_route",
+                "No route was found matching the URL and request method.",
+                404,
+            )));
         };
-        let Some(post) = self.site.db.post(id).await?.filter(|p| p.post_type == kind.name()) else {
-            return Ok(Err(RestError::new("rest_post_invalid_id", "Invalid post ID.", 404)));
+        let Some(post) = self
+            .site
+            .db
+            .post(id)
+            .await?
+            .filter(|p| p.post_type == kind.name())
+        else {
+            return Ok(Err(RestError::new(
+                "rest_post_invalid_id",
+                "Invalid post ID.",
+                404,
+            )));
         };
         // The order of `WP_REST_Posts_Controller::get_item_permissions_check()`: the context, then reading.
         let context = args.str("context").unwrap_or_else(|| "view".to_owned());
         if context == "edit" && !self.can_edit_post(&post) {
-            return Ok(Err(self.forbidden("rest_forbidden_context", "Sorry, you are not allowed to edit this post.")));
+            return Ok(Err(self.forbidden(
+                "rest_forbidden_context",
+                "Sorry, you are not allowed to edit this post.",
+            )));
         }
         if !self.check_read_permission(&post).await {
-            return Ok(Err(self.forbidden("rest_forbidden", "Sorry, you are not allowed to do that.")));
+            return Ok(Err(self.forbidden(
+                "rest_forbidden",
+                "Sorry, you are not allowed to do that.",
+            )));
         }
         if let Some(given) = params.get("password").filter(|p| !p.is_empty())
             && !rustpress_core::hash_equals(&post.post_password, given)
         {
-            return Ok(Err(RestError::new("rest_post_incorrect_password", "Incorrect post password.", 403)));
+            return Ok(Err(RestError::new(
+                "rest_post_incorrect_password",
+                "Incorrect post password.",
+                403,
+            )));
         }
         let mut resp = Resp::item(self.prepare_post_edit(&post, kind, &context).await?);
-        resp.allow = Some(allow_for(self.can_edit_post(&post), self.can_delete_post(&post)));
+        resp.allow = Some(allow_for(
+            self.can_edit_post(&post),
+            self.can_delete_post(&post),
+        ));
         resp.alternate = Some(self.site.permalink(&post).await?);
         Ok(Ok(resp))
     }
 
     /// `prepare_item_for_response()` for the `edit` context, and the signed-in view of the other contexts.
-    pub(crate) async fn prepare_post_edit(&self, post: &Post, kind: Kind<'_>, context: &str) -> Result<Value> {
+    pub(crate) async fn prepare_post_edit(
+        &self,
+        post: &Post,
+        kind: Kind<'_>,
+        context: &str,
+    ) -> Result<Value> {
         if kind == Kind::Attachment {
             return self.prepare_media_edit(post, context).await;
         }
@@ -157,17 +271,33 @@ impl Rest<'_> {
         if !post.post_password.is_empty() && context == "edit" && self.can_edit_post(post) {
             params.set("password", &post.post_password);
         }
-        let mut data = self.prepare_post(post, kind, if context == "edit" { "view" } else { context }, &params).await?;
-        let Value::Object(map) = &mut data else { return Ok(data) };
+        let mut data = self
+            .prepare_post(
+                post,
+                kind,
+                if context == "edit" { "view" } else { context },
+                &params,
+            )
+            .await?;
+        let Value::Object(map) = &mut data else {
+            return Ok(data);
+        };
         if context == "edit" {
             let custom = matches!(kind, Kind::Custom(_));
             let has = |feature: &str| !custom || self.supports(kind, feature);
             let mut out = Map::new();
-            let guid_rendered = map.get("guid").and_then(|g| g.get("rendered")).cloned().unwrap_or(Value::Null);
+            let guid_rendered = map
+                .get("guid")
+                .and_then(|g| g.get("rendered"))
+                .cloned()
+                .unwrap_or(Value::Null);
             for (key, value) in std::mem::take(map) {
                 match key.as_str() {
                     "guid" => {
-                        out.insert("guid".into(), json!({"rendered": guid_rendered, "raw": post.guid}));
+                        out.insert(
+                            "guid".into(),
+                            json!({"rendered": guid_rendered, "raw": post.guid}),
+                        );
                     }
                     "slug" => {
                         out.insert("password".into(), json!(post.post_password));
@@ -175,17 +305,28 @@ impl Rest<'_> {
                     }
                     "title" if has("title") => {
                         let rendered = value.get("rendered").cloned().unwrap_or(Value::Null);
-                        out.insert("title".into(), json!({"raw": post.post_title, "rendered": rendered}));
+                        out.insert(
+                            "title".into(),
+                            json!({"raw": post.post_title, "rendered": rendered}),
+                        );
                     }
                     "content" if has("editor") => {
                         let rendered = value.get("rendered").cloned().unwrap_or(Value::Null);
-                        let protected = value.get("protected").cloned().unwrap_or(Value::Bool(false));
-                        let raw = self.hooked_raw_content(post, kind, context).unwrap_or_else(|| post.post_content.clone());
+                        let protected = value
+                            .get("protected")
+                            .cloned()
+                            .unwrap_or(Value::Bool(false));
+                        let raw = self
+                            .hooked_raw_content(post, kind, context)
+                            .unwrap_or_else(|| post.post_content.clone());
                         out.insert("content".into(), json!({"raw": raw, "rendered": rendered, "protected": protected, "block_version": i32::from(rustpress_blocks::content::has_blocks(&post.post_content))}));
                     }
                     "excerpt" if has("excerpt") => {
                         let rendered = value.get("rendered").cloned().unwrap_or(Value::Null);
-                        let protected = value.get("protected").cloned().unwrap_or(Value::Bool(false));
+                        let protected = value
+                            .get("protected")
+                            .cloned()
+                            .unwrap_or(Value::Bool(false));
                         out.insert("excerpt".into(), json!({"raw": post.post_excerpt, "rendered": rendered, "protected": protected}));
                     }
                     "class_list" => {
@@ -208,12 +349,16 @@ impl Rest<'_> {
             // `footnotes` stays; nothing else is registered for the REST API.
         }
         // Links.
-        let featured = map.get("featured_media").and_then(Value::as_u64).unwrap_or(0);
+        let featured = map
+            .get("featured_media")
+            .and_then(Value::as_u64)
+            .unwrap_or(0);
         let mut links = self.post_links(post, kind, featured).await?;
         self.add_action_links(&mut links, post, kind, context == "edit");
         map.insert("_links".into(), links);
         map.remove(crate::PLUGIN_LINKS);
-        self.add_plugin_links(rustpress_core::native::RestObject::Post(post), map).await?;
+        self.add_plugin_links(rustpress_core::native::RestObject::Post(post), map)
+            .await?;
         Ok(data)
     }
 
@@ -225,13 +370,33 @@ impl Rest<'_> {
         };
         // `get_sample_permalink( $post->ID, $post->post_title, '' )`: the empty name stands for the title.
         let wanted = sanitize_title_save(&post.post_title, &self.site.locale());
-        let wanted = if wanted.is_empty() { post.id.to_string() } else { wanted };
-        let generated = content.unique_post_slug(&wanted, post.id, &post.post_status, &post.post_type, post.post_parent).await.unwrap_or(wanted);
+        let wanted = if wanted.is_empty() {
+            post.id.to_string()
+        } else {
+            wanted
+        };
+        let generated = content
+            .unique_post_slug(
+                &wanted,
+                post.id,
+                &post.post_status,
+                &post.post_type,
+                post.post_parent,
+            )
+            .await
+            .unwrap_or(wanted);
         // `get_sample_permalink()` turns the token of a custom post type into `%pagename%` as well.
-        let placeholder = if post.post_type == "post" { "%postname%" } else { "%pagename%" };
+        let placeholder = if post.post_type == "post" {
+            "%postname%"
+        } else {
+            "%pagename%"
+        };
         let mut sample = post.clone();
         sample.post_name = placeholder.to_owned();
-        if matches!(sample.post_status.as_str(), "draft" | "pending" | "auto-draft" | "future") {
+        if matches!(
+            sample.post_status.as_str(),
+            "draft" | "pending" | "auto-draft" | "future"
+        ) {
             sample.post_status = "publish".to_owned();
         }
         let template = self.site.permalink(&sample).await?;
@@ -272,7 +437,9 @@ impl Rest<'_> {
         if kind == Kind::Post && self.can(&caps.edit_others) && self.can(&caps.publish) {
             action("sticky");
         }
-        if self.can(&caps.edit_others) && (!matches!(kind, Kind::Custom(_)) || self.supports(kind, "author")) {
+        if self.can(&caps.edit_others)
+            && (!matches!(kind, Kind::Custom(_)) || self.supports(kind, "author"))
+        {
             action("assign-author");
         }
         for tax in self.taxonomies_of(kind.name()) {
@@ -295,20 +462,45 @@ impl Rest<'_> {
     // ------------------------------------------------------------------------------------------------ writing
 
     /// `prepare_item_for_database()`: the fields of the request as the arguments of `wp_insert_post()`.
-    fn post_data(&self, kind: Kind<'_>, args: &Args, existing: Option<&Post>) -> std::result::Result<PostData, RestError> {
+    fn post_data(
+        &self,
+        kind: Kind<'_>,
+        args: &Args,
+        existing: Option<&Post>,
+    ) -> std::result::Result<PostData, RestError> {
         let caps = TypeCaps::of(kind.name());
-        let mut data = PostData { id: existing.map(|p| p.id), post_type: Some(kind.name().to_owned()), ..Default::default() };
+        let mut data = PostData {
+            id: existing.map(|p| p.id),
+            post_type: Some(kind.name().to_owned()),
+            ..Default::default()
+        };
         data.post_title = args.raw_text("title");
         data.post_content = args.raw_text("content");
         data.post_excerpt = args.raw_text("excerpt");
         if let Some(status) = args.str("status") {
             let status = status.to_lowercase();
-            if !matches!(status.as_str(), "publish" | "future" | "draft" | "pending" | "private" | "trash" | "auto-draft") {
-                return Err(RestError::invalid_param("status", rustpress_rest_not_in_enum("status", &["publish", "future", "draft", "pending", "private"]), "rest_not_in_enum"));
+            if !matches!(
+                status.as_str(),
+                "publish" | "future" | "draft" | "pending" | "private" | "trash" | "auto-draft"
+            ) {
+                return Err(RestError::invalid_param(
+                    "status",
+                    rustpress_rest_not_in_enum(
+                        "status",
+                        &["publish", "future", "draft", "pending", "private"],
+                    ),
+                    "rest_not_in_enum",
+                ));
             }
             let was = existing.map(|p| p.post_status.as_str()).unwrap_or("");
-            if matches!(status.as_str(), "publish" | "future" | "private") && !self.can(&caps.publish) && !matches!(was, "publish" | "future" | "private") {
-                return Err(self.forbidden("rest_cannot_publish", "Sorry, you are not allowed to publish posts in this post type."));
+            if matches!(status.as_str(), "publish" | "future" | "private")
+                && !self.can(&caps.publish)
+                && !matches!(was, "publish" | "future" | "private")
+            {
+                return Err(self.forbidden(
+                    "rest_cannot_publish",
+                    "Sorry, you are not allowed to publish posts in this post type.",
+                ));
             }
             data.post_status = Some(status);
         }
@@ -324,7 +516,10 @@ impl Rest<'_> {
         if let Some(author) = args.u64("author") {
             let own = self.user().map_or(0, |u| u.id);
             if author != own && !self.can(&caps.edit_others) {
-                return Err(self.forbidden("rest_cannot_edit_others", "Sorry, you are not allowed to update posts as this user."));
+                return Err(self.forbidden(
+                    "rest_cannot_edit_others",
+                    "Sorry, you are not allowed to update posts as this user.",
+                ));
             }
             data.post_author = Some(author);
         }
@@ -355,7 +550,11 @@ impl Rest<'_> {
             }
         }
         if let Some(template) = args.str("template") {
-            data.page_template = Some(if template.is_empty() { "default".to_owned() } else { template });
+            data.page_template = Some(if template.is_empty() {
+                "default".to_owned()
+            } else {
+                template
+            });
         }
         if let Some(featured) = args.i64("featured_media") {
             data.thumbnail_id = Some(featured);
@@ -365,13 +564,17 @@ impl Rest<'_> {
                 data.post_category = Some(ids);
             }
             if let Some(ids) = args.ids("tags") {
-                data.tax_input.push(("post_tag".into(), ids.into_iter().map(TermRef::Id).collect()));
+                data.tax_input.push((
+                    "post_tag".into(),
+                    ids.into_iter().map(TermRef::Id).collect(),
+                ));
             }
         }
         if let Kind::Custom(info) = kind {
             for tax in self.taxonomies_of(&info.name) {
                 if let Some(ids) = args.ids(&tax.base) {
-                    data.tax_input.push((tax.name.clone(), ids.into_iter().map(TermRef::Id).collect()));
+                    data.tax_input
+                        .push((tax.name.clone(), ids.into_iter().map(TermRef::Id).collect()));
                 }
             }
         }
@@ -388,7 +591,9 @@ impl Rest<'_> {
     }
 
     async fn after_write(&self, post_id: u64, kind: Kind<'_>, args: &Args) -> Result<()> {
-        let Ok(writer) = self.writer() else { return Ok(()) };
+        let Ok(writer) = self.writer() else {
+            return Ok(());
+        };
         let caps = TypeCaps::of(kind.name());
         if kind == Kind::Post
             && let Some(sticky) = args.bool("sticky")
@@ -400,40 +605,92 @@ impl Rest<'_> {
             if sticky {
                 ids.insert(0, post_id);
             }
-            let value = rustpress_phpser::Value::Array(ids.iter().enumerate().map(|(i, id)| (rustpress_phpser::Key::Int(i as i64), rustpress_phpser::Value::Int(*id as i64))).collect());
-            writer.update_option("sticky_posts", &String::from_utf8_lossy(&rustpress_phpser::serialize(&value))).await.or_log();
+            let value = rustpress_phpser::Value::Array(
+                ids.iter()
+                    .enumerate()
+                    .map(|(i, id)| {
+                        (
+                            rustpress_phpser::Key::Int(i as i64),
+                            rustpress_phpser::Value::Int(*id as i64),
+                        )
+                    })
+                    .collect(),
+            );
+            writer
+                .update_option(
+                    "sticky_posts",
+                    &String::from_utf8_lossy(&rustpress_phpser::serialize(&value)),
+                )
+                .await
+                .or_log();
         }
-        if (kind == Kind::Post || matches!(kind, Kind::Custom(info) if info.supports("post-formats")))
+        if (kind == Kind::Post
+            || matches!(kind, Kind::Custom(info) if info.supports("post-formats")))
             && let Some(format) = args.str("format")
             && let Ok(content) = self.content()
         {
-            let terms = if format == "standard" || format.is_empty() { Vec::new() } else { vec![TermRef::Name(format!("post-format-{format}"))] };
-            content.set_object_terms(post_id, &terms, "post_format", false).await.or_log();
+            let terms = if format == "standard" || format.is_empty() {
+                Vec::new()
+            } else {
+                vec![TermRef::Name(format!("post-format-{format}"))]
+            };
+            content
+                .set_object_terms(post_id, &terms, "post_format", false)
+                .await
+                .or_log();
         }
         // Meta the plugins registered for the REST API (`WP_REST_Meta_Fields::update_value()`): `null` deletes it, a
         // boolean is stored as `1` or an empty string.
         if let Some(Value::Object(meta)) = args.get("meta") {
             for field in self.site.plugins.registered_post_meta(kind.name()) {
-                let Some(value) = meta.get(field.key) else { continue };
+                let Some(value) = meta.get(field.key) else {
+                    continue;
+                };
                 let stored = match (field.kind, value) {
                     (_, Value::Null) => None,
                     (rustpress_core::native::MetaType::Boolean, value) => Some(match value {
                         Value::Bool(b) => b.then_some("1").unwrap_or_default().to_owned(),
-                        Value::String(s) => if matches!(s.to_lowercase().as_str(), "" | "0" | "false") { String::new() } else { "1".to_owned() },
-                        Value::Number(n) => if n.as_f64() == Some(0.0) { String::new() } else { "1".to_owned() },
+                        Value::String(s) => {
+                            if matches!(s.to_lowercase().as_str(), "" | "0" | "false") {
+                                String::new()
+                            } else {
+                                "1".to_owned()
+                            }
+                        }
+                        Value::Number(n) => {
+                            if n.as_f64() == Some(0.0) {
+                                String::new()
+                            } else {
+                                "1".to_owned()
+                            }
+                        }
                         _ => "1".to_owned(),
                     }),
-                    (rustpress_core::native::MetaType::String, value) => Some(value.as_str().map_or_else(|| value.to_string(), str::to_owned)),
+                    (rustpress_core::native::MetaType::String, value) => Some(
+                        value
+                            .as_str()
+                            .map_or_else(|| value.to_string(), str::to_owned),
+                    ),
                 };
                 match stored {
-                    Some(stored) => writer.update_post_meta(post_id, field.key, &stored).await.or_log(),
+                    Some(stored) => writer
+                        .update_post_meta(post_id, field.key, &stored)
+                        .await
+                        .or_log(),
                     None => {
                         writer.delete_post_meta(post_id, field.key).await.or_log();
                     }
                 }
             }
         }
-        writer.update_post_meta(post_id, "_edit_last", &self.user().map_or(0, |u| u.id).to_string()).await.or_log();
+        writer
+            .update_post_meta(
+                post_id,
+                "_edit_last",
+                &self.user().map_or(0, |u| u.id).to_string(),
+            )
+            .await
+            .or_log();
         Ok(())
     }
 
@@ -445,28 +702,52 @@ impl Rest<'_> {
 
     /// The arguments' schema check that runs before the permission check (`format: date-time`).
     fn check_dates(args: &Args) -> Option<RestError> {
-        ["date", "date_gmt"].into_iter().find_map(|name| args.str(name).filter(|d| !d.is_empty() && !Self::valid_date(d)).map(|_| RestError::invalid_param(name, "Invalid date.", "rest_invalid_date")))
+        ["date", "date_gmt"].into_iter().find_map(|name| {
+            args.str(name)
+                .filter(|d| !d.is_empty() && !Self::valid_date(d))
+                .map(|_| RestError::invalid_param(name, "Invalid date.", "rest_invalid_date"))
+        })
     }
 
     /// The references of `prepare_item_for_database()` and `handle_featured_media()`: the author, the parent and
     /// the featured image must exist. (WordPress checks the image after saving the post; here nothing is saved.)
     /// The author may also stay the post's current one (`is_user_member_of_blog()`, WordPress 7.1.5).
-    async fn check_references(&self, args: &Args, current_author: u64) -> Result<Option<RestError>> {
+    async fn check_references(
+        &self,
+        args: &Args,
+        current_author: u64,
+    ) -> Result<Option<RestError>> {
         let me = self.user().map_or(0, |u| u.id);
-        if let Some(author) = args.u64("author").filter(|a| *a != 0 && *a != me && *a != current_author)
+        if let Some(author) = args
+            .u64("author")
+            .filter(|a| *a != 0 && *a != me && *a != current_author)
             && self.site.db.user(author).await?.is_none()
         {
-            return Ok(Some(RestError::new("rest_invalid_author", "Invalid author ID.", 400)));
+            return Ok(Some(RestError::new(
+                "rest_invalid_author",
+                "Invalid author ID.",
+                400,
+            )));
         }
         if let Some(parent) = args.u64("parent").filter(|p| *p != 0)
             && self.site.db.post(parent).await?.is_none()
         {
-            return Ok(Some(RestError::new("rest_post_invalid_id", "Invalid post parent ID.", 400)));
+            return Ok(Some(RestError::new(
+                "rest_post_invalid_id",
+                "Invalid post parent ID.",
+                400,
+            )));
         }
         if let Some(media) = args.i64("featured_media").filter(|m| *m > 0) {
-            let image = self.site.db.post(media as u64).await?.is_some_and(|p| p.post_type == "attachment" && p.post_mime_type.starts_with("image/"));
+            let image = self.site.db.post(media as u64).await?.is_some_and(|p| {
+                p.post_type == "attachment" && p.post_mime_type.starts_with("image/")
+            });
             if !image {
-                return Ok(Some(RestError::new("rest_invalid_featured_media", "Invalid featured media ID.", 400)));
+                return Ok(Some(RestError::new(
+                    "rest_invalid_featured_media",
+                    "Invalid featured media ID.",
+                    400,
+                )));
             }
         }
         Ok(None)
@@ -477,15 +758,31 @@ impl Rest<'_> {
             return Ok(Err(e));
         }
         if args.has("id") {
-            return Ok(Err(RestError::new("rest_post_exists", "Cannot create existing post.", 400)));
+            return Ok(Err(RestError::new(
+                "rest_post_exists",
+                "Cannot create existing post.",
+                400,
+            )));
         }
         // The order of `WP_REST_Posts_Controller::create_item_permissions_check()`.
         let caps = TypeCaps::of(kind.name());
-        if args.u64("author").is_some_and(|author| author != 0 && author != self.user().map_or(0, |u| u.id)) && !self.can(&caps.edit_others) {
-            return Ok(Err(self.forbidden("rest_cannot_edit_others", "Sorry, you are not allowed to create posts as this user.")));
+        if args
+            .u64("author")
+            .is_some_and(|author| author != 0 && author != self.user().map_or(0, |u| u.id))
+            && !self.can(&caps.edit_others)
+        {
+            return Ok(Err(self.forbidden(
+                "rest_cannot_edit_others",
+                "Sorry, you are not allowed to create posts as this user.",
+            )));
         }
-        if args.bool("sticky") == Some(true) && !(self.can(&caps.edit_others) && self.can(&caps.publish)) {
-            return Ok(Err(self.forbidden("rest_cannot_assign_sticky", "Sorry, you are not allowed to make posts sticky.")));
+        if args.bool("sticky") == Some(true)
+            && !(self.can(&caps.edit_others) && self.can(&caps.publish))
+        {
+            return Ok(Err(self.forbidden(
+                "rest_cannot_assign_sticky",
+                "Sorry, you are not allowed to make posts sticky.",
+            )));
         }
         if !self.can_create(kind.name()) {
             return Ok(Err(self.type_not_allowed()));
@@ -512,7 +809,13 @@ impl Rest<'_> {
             Err(e) => return Ok(Err(RestError::new("db_insert_error", &e.to_string(), 500))),
         };
         self.after_write(id, kind, args).await?;
-        let Some(post) = self.site.db.post(id).await? else { return Ok(Err(RestError::new("rest_post_invalid_id", "Invalid post ID.", 404))) };
+        let Some(post) = self.site.db.post(id).await? else {
+            return Ok(Err(RestError::new(
+                "rest_post_invalid_id",
+                "Invalid post ID.",
+                404,
+            )));
+        };
         let mut resp = Resp::item(self.prepare_post_edit(&post, kind, "edit").await?);
         resp.allow = Some(allow_for(true, self.can_delete_post(&post)));
         let location = self.rest_url(&format!("wp/v2/{}/{id}", kind.base()));
@@ -521,24 +824,55 @@ impl Rest<'_> {
 
     async fn update_post(&self, kind: Kind<'_>, id: &str, args: &Args) -> Result<Outcome> {
         let Ok(id) = id.parse::<u64>() else {
-            return Ok(Err(RestError::new("rest_no_route", "No route was found matching the URL and request method.", 404)));
+            return Ok(Err(RestError::new(
+                "rest_no_route",
+                "No route was found matching the URL and request method.",
+                404,
+            )));
         };
         if let Some(e) = Self::check_dates(args) {
             return Ok(Err(e));
         }
-        let Some(post) = self.site.db.post(id).await?.filter(|p| p.post_type == kind.name()) else {
-            return Ok(Err(RestError::new("rest_post_invalid_id", "Invalid post ID.", 404)));
+        let Some(post) = self
+            .site
+            .db
+            .post(id)
+            .await?
+            .filter(|p| p.post_type == kind.name())
+        else {
+            return Ok(Err(RestError::new(
+                "rest_post_invalid_id",
+                "Invalid post ID.",
+                404,
+            )));
         };
         if !self.can_edit_post(&post) {
-            return Ok(Err(self.forbidden("rest_cannot_edit", "Sorry, you are not allowed to edit this post.")));
+            return Ok(Err(self.forbidden(
+                "rest_cannot_edit",
+                "Sorry, you are not allowed to edit this post.",
+            )));
         }
         // As in `WP_REST_Posts_Controller::update_item_permissions_check()`.
         let caps = TypeCaps::of(kind.name());
-        if args.u64("author").is_some_and(|author| author != 0 && author != self.user().map_or(0, |u| u.id)) && !self.can(&caps.edit_others) {
-            return Ok(Err(self.forbidden("rest_cannot_edit_others", "Sorry, you are not allowed to update posts as this user.")));
+        if args
+            .u64("author")
+            .is_some_and(|author| author != 0 && author != self.user().map_or(0, |u| u.id))
+            && !self.can(&caps.edit_others)
+        {
+            return Ok(Err(self.forbidden(
+                "rest_cannot_edit_others",
+                "Sorry, you are not allowed to update posts as this user.",
+            )));
         }
-        if args.bool("sticky").is_some_and(|sticky| sticky != self.site.settings.sticky_posts.contains(&post.id)) && !(self.can(&caps.edit_others) && self.can(&caps.publish)) {
-            return Ok(Err(self.forbidden("rest_cannot_assign_sticky", "Sorry, you are not allowed to make posts sticky.")));
+        if args
+            .bool("sticky")
+            .is_some_and(|sticky| sticky != self.site.settings.sticky_posts.contains(&post.id))
+            && !(self.can(&caps.edit_others) && self.can(&caps.publish))
+        {
+            return Ok(Err(self.forbidden(
+                "rest_cannot_assign_sticky",
+                "Sorry, you are not allowed to make posts sticky.",
+            )));
         }
         let mut data = match self.post_data(kind, args, Some(&post)) {
             Ok(d) => d,
@@ -561,7 +895,13 @@ impl Rest<'_> {
         // A saved post makes its autosaves obsolete.
         content.delete_user_autosave(id).await.ok();
         self.after_write(id, kind, args).await?;
-        let Some(updated) = self.site.db.post(id).await? else { return Ok(Err(RestError::new("rest_post_invalid_id", "Invalid post ID.", 404))) };
+        let Some(updated) = self.site.db.post(id).await? else {
+            return Ok(Err(RestError::new(
+                "rest_post_invalid_id",
+                "Invalid post ID.",
+                404,
+            )));
+        };
         let mut resp = Resp::item(self.prepare_post_edit(&updated, kind, "edit").await?);
         resp.allow = Some(allow_for(true, self.can_delete_post(&updated)));
         Ok(Ok(resp))
@@ -569,13 +909,30 @@ impl Rest<'_> {
 
     async fn delete_post_route(&self, kind: Kind<'_>, id: &str, args: &Args) -> Result<Outcome> {
         let Ok(id) = id.parse::<u64>() else {
-            return Ok(Err(RestError::new("rest_no_route", "No route was found matching the URL and request method.", 404)));
+            return Ok(Err(RestError::new(
+                "rest_no_route",
+                "No route was found matching the URL and request method.",
+                404,
+            )));
         };
-        let Some(post) = self.site.db.post(id).await?.filter(|p| p.post_type == kind.name()) else {
-            return Ok(Err(RestError::new("rest_post_invalid_id", "Invalid post ID.", 404)));
+        let Some(post) = self
+            .site
+            .db
+            .post(id)
+            .await?
+            .filter(|p| p.post_type == kind.name())
+        else {
+            return Ok(Err(RestError::new(
+                "rest_post_invalid_id",
+                "Invalid post ID.",
+                404,
+            )));
         };
         if !self.can_delete_post(&post) {
-            return Ok(Err(self.forbidden("rest_cannot_delete", "Sorry, you are not allowed to delete this post.")));
+            return Ok(Err(self.forbidden(
+                "rest_cannot_delete",
+                "Sorry, you are not allowed to delete this post.",
+            )));
         }
         let force = args.bool("force").unwrap_or(false);
         let content = match self.content() {
@@ -584,137 +941,358 @@ impl Rest<'_> {
         };
         if force || post.post_status == "trash" {
             let previous = self.prepare_post_edit(&post, kind, "edit").await?;
-            let ok = if kind == Kind::Attachment { content.delete_attachment(id, self.access.as_ref().map(|a| a.uploads.clone()).unwrap_or_default()).await } else { content.delete_post(id, true).await };
+            let ok = if kind == Kind::Attachment {
+                content
+                    .delete_attachment(
+                        id,
+                        self.access
+                            .as_ref()
+                            .map(|a| a.uploads.clone())
+                            .unwrap_or_default(),
+                    )
+                    .await
+            } else {
+                content.delete_post(id, true).await
+            };
             if !matches!(ok, Ok(true)) {
-                return Ok(Err(RestError::new("rest_cannot_delete", "The post cannot be deleted.", 500)));
+                return Ok(Err(RestError::new(
+                    "rest_cannot_delete",
+                    "The post cannot be deleted.",
+                    500,
+                )));
             }
-            return Ok(Ok(Resp::item(json!({"deleted": true, "previous": previous}))));
+            return Ok(Ok(Resp::item(
+                json!({"deleted": true, "previous": previous}),
+            )));
         }
         if !matches!(kind, Kind::Post | Kind::Page | Kind::Custom(_)) {
-            return Ok(Err(RestError::new("rest_trash_not_supported", Msg::new("The post does not support trashing. Set '%s' to delete.").with(&["force=true"]), 501)));
+            return Ok(Err(RestError::new(
+                "rest_trash_not_supported",
+                Msg::new("The post does not support trashing. Set '%s' to delete.")
+                    .with(&["force=true"]),
+                501,
+            )));
         }
         if !matches!(content.trash_post(id).await, Ok(true)) {
-            return Ok(Err(RestError::new("rest_cannot_delete", "The post cannot be deleted.", 500)));
+            return Ok(Err(RestError::new(
+                "rest_cannot_delete",
+                "The post cannot be deleted.",
+                500,
+            )));
         }
-        let Some(trashed) = self.site.db.post(id).await? else { return Ok(Err(RestError::new("rest_post_invalid_id", "Invalid post ID.", 404))) };
-        Ok(Ok(Resp::item(self.prepare_post_edit(&trashed, kind, "edit").await?)))
+        let Some(trashed) = self.site.db.post(id).await? else {
+            return Ok(Err(RestError::new(
+                "rest_post_invalid_id",
+                "Invalid post ID.",
+                404,
+            )));
+        };
+        Ok(Ok(Resp::item(
+            self.prepare_post_edit(&trashed, kind, "edit").await?,
+        )))
     }
 
     // ------------------------------------------------------------------------------------------------ revisions
 
-    pub(crate) async fn revisions_route(&self, kind: Kind<'_>, parent: &str, sub: &str, id: Option<&str>, method: &str, args: &Args) -> Result<Outcome> {
+    pub(crate) async fn revisions_route(
+        &self,
+        kind: Kind<'_>,
+        parent: &str,
+        sub: &str,
+        id: Option<&str>,
+        method: &str,
+        args: &Args,
+    ) -> Result<Outcome> {
         let Ok(parent_id) = parent.parse::<u64>() else {
-            return Ok(Err(RestError::new("rest_no_route", "No route was found matching the URL and request method.", 404)));
+            return Ok(Err(RestError::new(
+                "rest_no_route",
+                "No route was found matching the URL and request method.",
+                404,
+            )));
         };
-        let Some(parent_post) = self.site.db.post(parent_id).await?.filter(|p| p.post_type == kind.name()) else {
-            return Ok(Err(RestError::new("rest_post_invalid_parent", "Invalid post parent ID.", 404)));
+        let Some(parent_post) = self
+            .site
+            .db
+            .post(parent_id)
+            .await?
+            .filter(|p| p.post_type == kind.name())
+        else {
+            return Ok(Err(RestError::new(
+                "rest_post_invalid_parent",
+                "Invalid post parent ID.",
+                404,
+            )));
         };
         if self.access.is_none() {
             return self.revisions_denied(kind, parent, sub).await;
         }
         if method == "DELETE" && sub == "revisions" && !self.can_delete_post(&parent_post) {
-            return Ok(Err(self.forbidden("rest_cannot_delete", "Sorry, you are not allowed to delete revisions of this post.")));
+            return Ok(Err(self.forbidden(
+                "rest_cannot_delete",
+                "Sorry, you are not allowed to delete revisions of this post.",
+            )));
         }
         if !self.can_edit_post(&parent_post) {
-            return Ok(Err(self.forbidden("rest_cannot_read", &format!("Sorry, you are not allowed to view {sub} of this post."))));
+            return Ok(Err(self.forbidden(
+                "rest_cannot_read",
+                &format!("Sorry, you are not allowed to view {sub} of this post."),
+            )));
         }
         let context = args.str("context").unwrap_or_else(|| "view".to_owned());
         if sub == "autosaves" {
-            return self.autosaves(kind, &parent_post, method, args, &context, id).await;
+            return self
+                .autosaves(kind, &parent_post, method, args, &context, id)
+                .await;
         }
-        let revisions = self.site.db.posts(&PostQuery { post_types: vec!["revision".into()], statuses: vec!["inherit".into()], parent: Some(parent_id), order_by: OrderBy::Date, order: Order::Desc, ..Default::default() }).await?;
-        let revisions: Vec<Post> = revisions.into_iter().filter(|r| !r.post_name.contains("autosave")).collect();
+        let revisions = self
+            .site
+            .db
+            .posts(&PostQuery {
+                post_types: vec!["revision".into()],
+                statuses: vec!["inherit".into()],
+                parent: Some(parent_id),
+                order_by: OrderBy::Date,
+                order: Order::Desc,
+                ..Default::default()
+            })
+            .await?;
+        let revisions: Vec<Post> = revisions
+            .into_iter()
+            .filter(|r| !r.post_name.contains("autosave"))
+            .collect();
         match (method, id) {
             ("GET", None) => {
                 let mut items = Vec::new();
                 for revision in &revisions {
-                    items.push(self.prepare_revision(revision, &parent_post, kind, &context).await?);
+                    items.push(
+                        self.prepare_revision(revision, &parent_post, kind, &context)
+                            .await?,
+                    );
                 }
                 let mut resp = Resp::item(Value::Array(items));
                 resp.total = Some(revisions.len() as u64);
                 resp.total_pages = Some(1);
                 Ok(Ok(resp))
             }
-            ("GET", Some(rid)) => match rid.parse::<u64>().ok().and_then(|id| revisions.iter().find(|r| r.id == id)) {
-                Some(revision) => Ok(Ok(Resp::item(self.prepare_revision(revision, &parent_post, kind, &context).await?))),
-                None => Ok(Err(RestError::new("rest_post_invalid_id", "Invalid revision ID.", 404))),
+            ("GET", Some(rid)) => match rid
+                .parse::<u64>()
+                .ok()
+                .and_then(|id| revisions.iter().find(|r| r.id == id))
+            {
+                Some(revision) => Ok(Ok(Resp::item(
+                    self.prepare_revision(revision, &parent_post, kind, &context)
+                        .await?,
+                ))),
+                None => Ok(Err(RestError::new(
+                    "rest_post_invalid_id",
+                    "Invalid revision ID.",
+                    404,
+                ))),
             },
             ("DELETE", Some(rid)) => {
-                let Some(revision) = rid.parse::<u64>().ok().and_then(|id| revisions.iter().find(|r| r.id == id)) else {
-                    return Ok(Err(RestError::new("rest_post_invalid_id", "Invalid revision ID.", 404)));
+                let Some(revision) = rid
+                    .parse::<u64>()
+                    .ok()
+                    .and_then(|id| revisions.iter().find(|r| r.id == id))
+                else {
+                    return Ok(Err(RestError::new(
+                        "rest_post_invalid_id",
+                        "Invalid revision ID.",
+                        404,
+                    )));
                 };
                 // `delete_post` of a revision is `do_not_allow` in `map_meta_cap()`: nobody deletes revisions here.
                 if !self.can_delete_post(revision) {
-                    return Ok(Err(self.forbidden("rest_cannot_delete", "Sorry, you are not allowed to delete this revision.")));
+                    return Ok(Err(self.forbidden(
+                        "rest_cannot_delete",
+                        "Sorry, you are not allowed to delete this revision.",
+                    )));
                 }
                 if !args.bool("force").unwrap_or(false) {
-                    return Ok(Err(RestError::new("rest_trash_not_supported", Msg::new("Revisions do not support trashing. Set '%s' to delete.").with(&["force=true"]), 501)));
+                    return Ok(Err(RestError::new(
+                        "rest_trash_not_supported",
+                        Msg::new("Revisions do not support trashing. Set '%s' to delete.")
+                            .with(&["force=true"]),
+                        501,
+                    )));
                 }
-                let previous = self.prepare_revision(revision, &parent_post, kind, "edit").await?;
+                let previous = self
+                    .prepare_revision(revision, &parent_post, kind, "edit")
+                    .await?;
                 let content = match self.content() {
                     Ok(c) => c,
                     Err(e) => return Ok(Err(e)),
                 };
-                if !content.delete_post(revision.id, true).await.unwrap_or(false) {
-                    return Ok(Err(RestError::new("rest_cannot_delete", "The post cannot be deleted.", 500)));
+                if !content
+                    .delete_post(revision.id, true)
+                    .await
+                    .unwrap_or(false)
+                {
+                    return Ok(Err(RestError::new(
+                        "rest_cannot_delete",
+                        "The post cannot be deleted.",
+                        500,
+                    )));
                 }
-                Ok(Ok(Resp::item(json!({"deleted": true, "previous": previous}))))
+                Ok(Ok(Resp::item(
+                    json!({"deleted": true, "previous": previous}),
+                )))
             }
-            _ => Ok(Err(RestError::new("rest_no_route", "No route was found matching the URL and request method.", 404))),
+            _ => Ok(Err(RestError::new(
+                "rest_no_route",
+                "No route was found matching the URL and request method.",
+                404,
+            ))),
         }
     }
 
-    async fn prepare_revision(&self, revision: &Post, parent: &Post, kind: Kind<'_>, context: &str) -> Result<Value> {
+    async fn prepare_revision(
+        &self,
+        revision: &Post,
+        parent: &Post,
+        kind: Kind<'_>,
+        context: &str,
+    ) -> Result<Value> {
         let mut data = Map::new();
         data.insert("author".into(), json!(revision.post_author));
         data.insert("date".into(), json!(rfc3339(&revision.post_date)));
-        data.insert("date_gmt".into(), self.date_gmt(&revision.post_date_gmt, &revision.post_date));
+        data.insert(
+            "date_gmt".into(),
+            self.date_gmt(&revision.post_date_gmt, &revision.post_date),
+        );
         data.insert("id".into(), json!(revision.id));
         data.insert("modified".into(), json!(rfc3339(&revision.post_modified)));
-        data.insert("modified_gmt".into(), self.date_gmt(&revision.post_modified_gmt, &revision.post_modified));
+        data.insert(
+            "modified_gmt".into(),
+            self.date_gmt(&revision.post_modified_gmt, &revision.post_modified),
+        );
         data.insert("parent".into(), json!(parent.id));
         data.insert("slug".into(), json!(revision.post_name));
-        data.insert("guid".into(), if context == "edit" { json!({"rendered": revision.guid, "raw": revision.guid}) } else { json!({"rendered": revision.guid}) });
+        data.insert(
+            "guid".into(),
+            if context == "edit" {
+                json!({"rendered": revision.guid, "raw": revision.guid})
+            } else {
+                json!({"rendered": revision.guid})
+            },
+        );
         let rendered = |text: &str| rustpress_core::formatting::wpautop(&self.site.texturize(text));
         // The content of a revision is shown as the content of its post (`setup_postdata( $parent )`).
         let env = crate::util::env(self);
         let shared = std::sync::Arc::new(parent.clone());
-        let content_rendered = rustpress_blocks::content::the_content(&env, &shared, &revision.post_content).await?;
+        let content_rendered =
+            rustpress_blocks::content::the_content(&env, &shared, &revision.post_content).await?;
         data.insert("title".into(), if context == "edit" { json!({"raw": revision.post_title, "rendered": self.site.texturize(&revision.post_title)}) } else { json!({"rendered": self.site.texturize(&revision.post_title)}) });
-        data.insert("content".into(), if context == "edit" { json!({"raw": revision.post_content, "rendered": content_rendered}) } else { json!({"rendered": content_rendered}) });
-        data.insert("excerpt".into(), if context == "edit" { json!({"raw": revision.post_excerpt, "rendered": rendered(&revision.post_excerpt)}) } else { json!({"rendered": rendered(&revision.post_excerpt)}) });
+        data.insert(
+            "content".into(),
+            if context == "edit" {
+                json!({"raw": revision.post_content, "rendered": content_rendered})
+            } else {
+                json!({"rendered": content_rendered})
+            },
+        );
+        data.insert(
+            "excerpt".into(),
+            if context == "edit" {
+                json!({"raw": revision.post_excerpt, "rendered": rendered(&revision.post_excerpt)})
+            } else {
+                json!({"rendered": rendered(&revision.post_excerpt)})
+            },
+        );
         // Meta registered with `revisions_enabled` (the plugins' first, then `footnotes`).
-        let footnotes_registered = !matches!(kind, Kind::Custom(_)) || (self.supports(kind, "editor") && self.supports(kind, "revisions") && self.supports(kind, "custom-fields"));
+        let footnotes_registered = !matches!(kind, Kind::Custom(_))
+            || (self.supports(kind, "editor")
+                && self.supports(kind, "revisions")
+                && self.supports(kind, "custom-fields"));
         let mut meta = Map::new();
         for registered in self.site.plugins.registered_post_meta(kind.name()) {
-            let stored = self.site.db.post_meta_value(revision.id, registered.key).await.ok().flatten();
-            meta.insert(registered.key.to_owned(), registered.rest_value(stored.as_deref()));
+            let stored = self
+                .site
+                .db
+                .post_meta_value(revision.id, registered.key)
+                .await
+                .ok()
+                .flatten();
+            meta.insert(
+                registered.key.to_owned(),
+                registered.rest_value(stored.as_deref()),
+            );
         }
         if footnotes_registered {
-            let footnotes = self.site.db.post_meta_value(revision.id, "footnotes").await.ok().flatten().unwrap_or_default();
+            let footnotes = self
+                .site
+                .db
+                .post_meta_value(revision.id, "footnotes")
+                .await
+                .ok()
+                .flatten()
+                .unwrap_or_default();
             meta.insert("footnotes".into(), json!(footnotes));
         }
         if !meta.is_empty() {
             data.insert("meta".into(), Value::Object(meta));
         }
-        data.extend(self.plugin_fields(rustpress_core::native::RestObject::Post(revision)).await?);
+        data.extend(
+            self.plugin_fields(rustpress_core::native::RestObject::Post(revision))
+                .await?,
+        );
         let mut links = crate::util::Links::new();
-        links.add("parent", vec![], self.rest_url(&format!("wp/v2/{}/{}", kind.base(), parent.id)));
+        links.add(
+            "parent",
+            vec![],
+            self.rest_url(&format!("wp/v2/{}/{}", kind.base(), parent.id)),
+        );
         if revision.post_name.contains("autosave") {
-            links.self_link(self.rest_url(&format!("wp/v2/{}/{}/revisions/{}", kind.base(), parent.id, revision.id)));
+            links.self_link(self.rest_url(&format!(
+                "wp/v2/{}/{}/revisions/{}",
+                kind.base(),
+                parent.id,
+                revision.id
+            )));
         }
         data.insert("_links".into(), links.finish());
         Ok(Value::Object(data))
     }
 
-    async fn autosaves(&self, kind: Kind<'_>, parent: &Post, method: &str, args: &Args, context: &str, id: Option<&str>) -> Result<Outcome> {
+    async fn autosaves(
+        &self,
+        kind: Kind<'_>,
+        parent: &Post,
+        method: &str,
+        args: &Args,
+        context: &str,
+        id: Option<&str>,
+    ) -> Result<Outcome> {
         let user = self.user().map_or(0, |u| u.id);
-        let existing = self.site.db.posts(&PostQuery { post_types: vec!["revision".into()], statuses: vec!["inherit".into()], parent: Some(parent.id), author: Some(user), order_by: OrderBy::Date, order: Order::Desc, ..Default::default() }).await?;
-        let autosave = existing.into_iter().find(|r| r.post_name == format!("{}-autosave-v1", parent.id));
+        let existing = self
+            .site
+            .db
+            .posts(&PostQuery {
+                post_types: vec!["revision".into()],
+                statuses: vec!["inherit".into()],
+                parent: Some(parent.id),
+                author: Some(user),
+                order_by: OrderBy::Date,
+                order: Order::Desc,
+                ..Default::default()
+            })
+            .await?;
+        let autosave = existing
+            .into_iter()
+            .find(|r| r.post_name == format!("{}-autosave-v1", parent.id));
         match method {
-            "GET" if id.is_some() => match autosave.as_ref().filter(|a| id.and_then(|i| i.parse::<u64>().ok()) == Some(a.id)) {
-                Some(a) => Ok(Ok(Resp::item(self.prepare_revision(a, parent, kind, context).await?))),
-                None => Ok(Err(RestError::new("rest_post_no_autosave", "There is no autosave revision for this post.", 404))),
+            "GET" if id.is_some() => match autosave
+                .as_ref()
+                .filter(|a| id.and_then(|i| i.parse::<u64>().ok()) == Some(a.id))
+            {
+                Some(a) => Ok(Ok(Resp::item(
+                    self.prepare_revision(a, parent, kind, context).await?,
+                ))),
+                None => Ok(Err(RestError::new(
+                    "rest_post_no_autosave",
+                    "There is no autosave revision for this post.",
+                    404,
+                ))),
             },
             "GET" => {
                 let items = match &autosave {
@@ -723,7 +1301,14 @@ impl Rest<'_> {
                 };
                 // Creating an autosave needs the right to edit the post.
                 let mut resp = Resp::item(Value::Array(items));
-                resp.allow = Some(if self.user().is_some_and(|u| u.can_edit_post(parent)) { "GET, POST" } else { "GET" }.to_owned());
+                resp.allow = Some(
+                    if self.user().is_some_and(|u| u.can_edit_post(parent)) {
+                        "GET, POST"
+                    } else {
+                        "GET"
+                    }
+                    .to_owned(),
+                );
                 Ok(Ok(resp))
             }
             "POST" => {
@@ -731,38 +1316,92 @@ impl Rest<'_> {
                     Ok(c) => c,
                     Err(e) => return Ok(Err(e)),
                 };
-                let data = PostData { id: Some(parent.id), post_title: args.raw_text("title"), post_content: args.raw_text("content"), post_excerpt: args.raw_text("excerpt"), ..Default::default() };
+                let data = PostData {
+                    id: Some(parent.id),
+                    post_title: args.raw_text("title"),
+                    post_content: args.raw_text("content"),
+                    post_excerpt: args.raw_text("excerpt"),
+                    ..Default::default()
+                };
                 // The author of a draft saves it directly; everything else becomes an autosave.
-                if matches!(parent.post_status.as_str(), "draft" | "auto-draft") && parent.post_author == user {
+                if matches!(parent.post_status.as_str(), "draft" | "auto-draft")
+                    && parent.post_author == user
+                {
                     let mut data = data;
                     data.post_status = Some("draft".to_owned());
                     if let Err(e) = content.insert_post(&data).await {
-                        return Ok(Err(RestError::new("rest_autosave_no_changes", &e.to_string(), 500)));
+                        return Ok(Err(RestError::new(
+                            "rest_autosave_no_changes",
+                            &e.to_string(),
+                            500,
+                        )));
                     }
-                    let Some(updated) = self.site.db.post(parent.id).await? else { return Ok(Err(RestError::new("rest_post_invalid_id", "Invalid post ID.", 404))) };
-                    return Ok(Ok(Resp::item(self.prepare_post_edit(&updated, kind, "edit").await?)));
+                    let Some(updated) = self.site.db.post(parent.id).await? else {
+                        return Ok(Err(RestError::new(
+                            "rest_post_invalid_id",
+                            "Invalid post ID.",
+                            404,
+                        )));
+                    };
+                    return Ok(Ok(Resp::item(
+                        self.prepare_post_edit(&updated, kind, "edit").await?,
+                    )));
                 }
                 if let Err(e) = content.create_autosave(parent.id, &data).await {
-                    return Ok(Err(RestError::new("rest_autosave_no_changes", &e.to_string(), 500)));
+                    return Ok(Err(RestError::new(
+                        "rest_autosave_no_changes",
+                        &e.to_string(),
+                        500,
+                    )));
                 }
-                let existing = self.site.db.posts(&PostQuery { post_types: vec!["revision".into()], statuses: vec!["inherit".into()], parent: Some(parent.id), author: Some(user), ..Default::default() }).await?;
-                match existing.into_iter().find(|r| r.post_name == format!("{}-autosave-v1", parent.id)) {
+                let existing = self
+                    .site
+                    .db
+                    .posts(&PostQuery {
+                        post_types: vec!["revision".into()],
+                        statuses: vec!["inherit".into()],
+                        parent: Some(parent.id),
+                        author: Some(user),
+                        ..Default::default()
+                    })
+                    .await?;
+                match existing
+                    .into_iter()
+                    .find(|r| r.post_name == format!("{}-autosave-v1", parent.id))
+                {
                     Some(a) => {
                         let mut value = self.prepare_revision(&a, parent, kind, "edit").await?;
                         if let Value::Object(map) = &mut value {
-                            map.insert("preview_link".into(), json!(self.site.permalink(parent).await.unwrap_or_default()));
+                            map.insert(
+                                "preview_link".into(),
+                                json!(self.site.permalink(parent).await.unwrap_or_default()),
+                            );
                         }
-                        Ok(Ok(self.created(Resp::item(value), self.rest_url(&format!("wp/v2/{}/{}/autosaves/{}", kind.base(), parent.id, a.id)))))
+                        Ok(Ok(self.created(
+                            Resp::item(value),
+                            self.rest_url(&format!(
+                                "wp/v2/{}/{}/autosaves/{}",
+                                kind.base(),
+                                parent.id,
+                                a.id
+                            )),
+                        )))
                     }
                     None => Ok(Ok(Resp::item(json!({})))),
                 }
             }
-            _ => Ok(Err(RestError::new("rest_no_route", "No route was found matching the URL and request method.", 404))),
+            _ => Ok(Err(RestError::new(
+                "rest_no_route",
+                "No route was found matching the URL and request method.",
+                404,
+            ))),
         }
     }
 }
 
 /// The message of `rest_not_in_enum`.
 fn rustpress_rest_not_in_enum(param: &str, allowed: &[&str]) -> crate::error::Msg {
-    crate::error::Msg::new("%1$s is not one of %2$l.").with(&[param]).with_list(allowed)
+    crate::error::Msg::new("%1$s is not one of %2$l.")
+        .with(&[param])
+        .with_list(allowed)
 }

@@ -16,16 +16,63 @@ use crate::viewer::Viewer;
 /// Query variables WordPress reads from the query string (`$wp->public_query_vars`
 /// plus the ones core registers through the `query_vars` filter).
 const PUBLIC_QUERY_VARS: &[&str] = &[
-    "m", "p", "posts", "w", "cat", "withcomments", "withoutcomments", "s", "search", "exact", "sentence",
-    "calendar", "page", "paged", "more", "tb", "pb", "author", "order", "orderby", "year", "monthnum", "day",
-    "hour", "minute", "second", "name", "category_name", "tag", "feed", "author_name", "pagename", "page_id",
-    "attachment", "attachment_id", "subpost", "subpost_id", "preview", "robots", "favicon", "taxonomy", "term",
-    "cpage", "post_type", "embed", "tag_id", "post_format", "rest_route", "sitemap", "sitemap-stylesheet", "sitemap-subtype",
+    "m",
+    "p",
+    "posts",
+    "w",
+    "cat",
+    "withcomments",
+    "withoutcomments",
+    "s",
+    "search",
+    "exact",
+    "sentence",
+    "calendar",
+    "page",
+    "paged",
+    "more",
+    "tb",
+    "pb",
+    "author",
+    "order",
+    "orderby",
+    "year",
+    "monthnum",
+    "day",
+    "hour",
+    "minute",
+    "second",
+    "name",
+    "category_name",
+    "tag",
+    "feed",
+    "author_name",
+    "pagename",
+    "page_id",
+    "attachment",
+    "attachment_id",
+    "subpost",
+    "subpost_id",
+    "preview",
+    "robots",
+    "favicon",
+    "taxonomy",
+    "term",
+    "cpage",
+    "post_type",
+    "embed",
+    "tag_id",
+    "post_format",
+    "rest_route",
+    "sitemap",
+    "sitemap-stylesheet",
+    "sitemap-subtype",
 ];
 
 const SEARCH_STOPWORDS: &[&str] = &[
-    "about", "an", "are", "as", "at", "be", "by", "com", "for", "from", "how", "in", "is", "it", "of", "on", "or",
-    "that", "the", "this", "to", "was", "what", "when", "where", "who", "will", "with", "www",
+    "about", "an", "are", "as", "at", "be", "by", "com", "for", "from", "how", "in", "is", "it",
+    "of", "on", "or", "that", "the", "this", "to", "was", "what", "when", "where", "who", "will",
+    "with", "www",
 ];
 
 /// The `is_*()` conditionals of `WP_Query`.
@@ -119,7 +166,10 @@ pub struct QueryResult {
 impl QueryResult {
     /// `$_COOKIE[ $name ]`.
     pub fn cookie(&self, name: &str) -> Option<&str> {
-        self.cookies.iter().find(|(k, _)| k == name).map(|(_, v)| v.as_str())
+        self.cookies
+            .iter()
+            .find(|(k, _)| k == name)
+            .map(|(_, v)| v.as_str())
     }
 }
 
@@ -135,7 +185,9 @@ pub fn parse_cookies<'h>(headers: impl IntoIterator<Item = &'h str>) -> Vec<(Str
             if name.is_empty() {
                 continue;
             }
-            let decode = |s: &str| String::from_utf8_lossy(&crate::rewrite::urldecode(s.as_bytes())).into_owned();
+            let decode = |s: &str| {
+                String::from_utf8_lossy(&crate::rewrite::urldecode(s.as_bytes())).into_owned()
+            };
             let name = decode(name);
             let name = name.trim_start_matches(' ');
             if name.is_empty() || name.contains('[') {
@@ -174,8 +226,12 @@ impl QueryResult {
 /// `WP_Query::parse_search()`: the words of a search address (`/search/a%26b/`) are still encoded, those of
 /// `$_GET['s']` are not. Line breaks are removed from both.
 fn decode_search(vars: &mut QueryVars, query_string: &str) {
-    let Some(mut words) = vars.get("s").filter(|s| !s.is_empty()).map(str::to_owned) else { return };
-    let from_get = QueryVars::parse(query_string).get("s").is_some_and(|s| !s.is_empty() && s != "0");
+    let Some(mut words) = vars.get("s").filter(|s| !s.is_empty()).map(str::to_owned) else {
+        return;
+    };
+    let from_get = QueryVars::parse(query_string)
+        .get("s")
+        .is_some_and(|s| !s.is_empty() && s != "0");
     if !from_get {
         // Only `$_GET` carries the slashes `stripslashes()` removes again.
         let mut plain = String::with_capacity(words.len());
@@ -223,7 +279,11 @@ impl QueryResult {
     /// `WP_Query::set_404()`: all conditionals off except `is_404` and `is_feed` (a feed stays a feed, with nothing in it).
     pub fn into_404(mut self) -> Self {
         let is_feed = self.vars.get("feed").is_some_and(|f| !f.is_empty());
-        self.flags = Flags { is_404: true, is_feed, ..Flags::default() };
+        self.flags = Flags {
+            is_404: true,
+            is_feed,
+            ..Flags::default()
+        };
         self.posts.clear();
         self.queried = Queried::None;
         self.found_posts = 0;
@@ -247,10 +307,20 @@ impl QueryResult {
 
     /// `is_comment_feed()`. `WP_Query::set_404()` leaves it off: a 404 is a feed of (no) posts.
     pub fn is_comment_feed(&self) -> bool {
-        let truthy = |name: &str| self.vars.get(name).is_some_and(|v| !v.is_empty() && v != "0");
+        let truthy = |name: &str| {
+            self.vars
+                .get(name)
+                .is_some_and(|v| !v.is_empty() && v != "0")
+        };
         self.flags.is_feed
             && !self.flags.is_404
-            && (truthy("withcomments") || self.vars.get("feed").unwrap_or("feed").contains("comments-") || (!truthy("withoutcomments") && self.flags.is_singular()))
+            && (truthy("withcomments")
+                || self
+                    .vars
+                    .get("feed")
+                    .unwrap_or("feed")
+                    .contains("comments-")
+                || (!truthy("withoutcomments") && self.flags.is_singular()))
     }
 
     pub fn queried_post(&self) -> Option<&Post> {
@@ -269,7 +339,12 @@ impl Site {
     }
 
     /// [`Site::query`] for a signed-in viewer, who sees private posts and previews.
-    pub async fn query_as(&self, url_path: &str, query_string: &str, viewer: Option<&Viewer>) -> Result<QueryResult> {
+    pub async fn query_as(
+        &self,
+        url_path: &str,
+        query_string: &str,
+        viewer: Option<&Viewer>,
+    ) -> Result<QueryResult> {
         let request = request_path(url_path, &self.settings.home_path());
 
         let mut vars = QueryVars::new();
@@ -278,7 +353,17 @@ impl Site {
         if !request.is_empty() {
             unmatched = true;
             // The script named in the address (`/index.php/...`) takes part in the matching.
-            let file = if url_path.trim_matches('/').strip_prefix(self.settings.home_path().trim_matches('/')).unwrap_or(url_path).trim_matches('/').starts_with("index.php") { "index.php" } else { "" };
+            let file = if url_path
+                .trim_matches('/')
+                .strip_prefix(self.settings.home_path().trim_matches('/'))
+                .unwrap_or(url_path)
+                .trim_matches('/')
+                .starts_with("index.php")
+            {
+                "index.php"
+            } else {
+                ""
+            };
             for m in self.rewrite.matches_in_file(&request, file) {
                 // With "verbose" page rules (`%postname%` permalinks) a rule that
                 // yields `pagename` only applies if that page exists.
@@ -292,8 +377,18 @@ impl Site {
                 matched_rule = Some(m.rule.pattern.clone());
                 // Only the public query variables of a permalink reach the query (`WP::parse_request()`).
                 vars = m.vars;
-                let keep: Vec<String> = vars.iter().map(|(k, _)| k.to_owned()).filter(|k| PUBLIC_QUERY_VARS.contains(&k.as_str()) || self.is_type_query_var(k)).collect();
-                let dropped: Vec<String> = vars.iter().map(|(k, _)| k.to_owned()).filter(|k| !keep.contains(k)).collect();
+                let keep: Vec<String> = vars
+                    .iter()
+                    .map(|(k, _)| k.to_owned())
+                    .filter(|k| {
+                        PUBLIC_QUERY_VARS.contains(&k.as_str()) || self.is_type_query_var(k)
+                    })
+                    .collect();
+                let dropped: Vec<String> = vars
+                    .iter()
+                    .map(|(k, _)| k.to_owned())
+                    .filter(|k| !keep.contains(k))
+                    .collect();
                 for key in dropped {
                     vars.remove(&key);
                 }
@@ -323,16 +418,39 @@ impl Site {
         let mut result = self.run_main_query(result, viewer).await?;
         // `WP_Query::parse_query()`: only requests for one post, or ones that failed, can be embeds.
         // The query is still parsed there, so a term that turns out not to exist is no embed.
-        let singular_request = ["name", "p", "pagename", "page_id", "attachment", "attachment_id"].iter().any(|key| result.vars.get(key).is_some_and(|value| !value.is_empty() && value != "0"));
-        result.flags.is_embed = result.vars.get("embed").is_some() && (result.flags.is_singular() || singular_request || result.parse_error_404);
+        let singular_request = [
+            "name",
+            "p",
+            "pagename",
+            "page_id",
+            "attachment",
+            "attachment_id",
+        ]
+        .iter()
+        .any(|key| {
+            result
+                .vars
+                .get(key)
+                .is_some_and(|value| !value.is_empty() && value != "0")
+        });
+        result.flags.is_embed = result.vars.get("embed").is_some()
+            && (result.flags.is_singular() || singular_request || result.parse_error_404);
         Ok(result)
     }
 
-    async fn run_main_query(&self, mut r: QueryResult, viewer: Option<&Viewer>) -> Result<QueryResult> {
+    async fn run_main_query(
+        &self,
+        mut r: QueryResult,
+        viewer: Option<&Viewer>,
+    ) -> Result<QueryResult> {
         let s = &self.settings;
         let v = r.vars.clone();
         // "If we're previewing inside the write screen": any request with a `preview` variable.
-        let mut f = Flags { is_feed: v.get("feed").is_some_and(|feed| !feed.is_empty()), is_preview: v.get("preview").is_some_and(|p| !p.is_empty()), ..Flags::default() };
+        let mut f = Flags {
+            is_feed: v.get("feed").is_some_and(|feed| !feed.is_empty()),
+            is_preview: v.get("preview").is_some_and(|p| !p.is_empty()),
+            ..Flags::default()
+        };
         let mut queried = Queried::None;
         let mut posts: Vec<Post> = Vec::new();
         let mut found = 0;
@@ -346,7 +464,9 @@ impl Site {
             r.flags.is_robots = true;
             return Ok(r);
         }
-        if v.get("sitemap").is_some_and(|s| !s.is_empty()) || v.get("sitemap-stylesheet").is_some_and(|s| !s.is_empty()) {
+        if v.get("sitemap").is_some_and(|s| !s.is_empty())
+            || v.get("sitemap-stylesheet").is_some_and(|s| !s.is_empty())
+        {
             r.flags.is_sitemap = true;
             return Ok(r);
         }
@@ -368,7 +488,10 @@ impl Site {
 
             let num = |key: &str| v.get(key).and_then(|x| x.parse::<u32>().ok()).unwrap_or(0);
             let (mut year, mut month, mut day) = (num("year"), num("monthnum"), num("day"));
-            if let Some(m) = v.get("m").filter(|m| m.len() >= 4 && m.bytes().all(|b| b.is_ascii_digit())) {
+            if let Some(m) = v
+                .get("m")
+                .filter(|m| m.len() >= 4 && m.bytes().all(|b| b.is_ascii_digit()))
+            {
                 year = m[..4].parse().unwrap_or(0);
                 month = m.get(4..6).and_then(|x| x.parse().ok()).unwrap_or(0);
                 day = m.get(6..8).and_then(|x| x.parse().ok()).unwrap_or(0);
@@ -394,7 +517,10 @@ impl Site {
             // `hour`, `minute`, `second` and the week `w` are date archives, too.
             let time = |key: &str| v.get(key).map(|x| x.trim().parse::<u32>().unwrap_or(0));
             let (hour, minute, second) = (time("hour"), time("minute"), time("second"));
-            let week = v.get("w").map(|w| w.trim().parse::<u32>().unwrap_or(0)).filter(|w| *w != 0);
+            let week = v
+                .get("w")
+                .map(|w| w.trim().parse::<u32>().unwrap_or(0))
+                .filter(|w| *w != 0);
             if hour.is_some() || minute.is_some() || second.is_some() || week.is_some() {
                 f.is_date = true;
             }
@@ -412,57 +538,97 @@ impl Site {
             if let Some(path) = v.get("category_name") {
                 let slugs: Vec<String> = split_slugs(path.rsplit('/').next().unwrap_or(path));
                 let terms = self.terms_by_slugs("category", &slugs).await?;
-                let Some(first) = terms.first().cloned() else { return Ok(if f.is_feed { r.flags = Flags { is_category: true, ..f }; r } else { r.into_404() }) };
+                let Some(first) = terms.first().cloned() else {
+                    return Ok(if f.is_feed {
+                        r.flags = Flags {
+                            is_category: true,
+                            ..f
+                        };
+                        r
+                    } else {
+                        r.into_404()
+                    });
+                };
                 f.is_category = true;
-                q.tax_groups.push(self.with_descendants("category", &terms).await?);
+                q.tax_groups
+                    .push(self.with_descendants("category", &terms).await?);
                 queried = Queried::Term(first);
             } else if let Some(ids) = v.get("cat") {
                 // `intval()` of each entry: positive ids select, negative ones exclude.
-                let ids: Vec<i64> = ids.split(|c: char| c == ',' || c.is_whitespace()).filter(|s| !s.is_empty()).map(|i| i.trim().parse().unwrap_or(0)).collect();
+                let ids: Vec<i64> = ids
+                    .split(|c: char| c == ',' || c.is_whitespace())
+                    .filter(|s| !s.is_empty())
+                    .map(|i| i.trim().parse().unwrap_or(0))
+                    .collect();
                 let mut terms = Vec::new();
                 let mut excluded = Vec::new();
                 for id in &ids {
                     if *id > 0 {
                         terms.extend(self.db.term_by_id(Some("category"), *id as u64).await?);
                     } else if *id < 0 {
-                        excluded.extend(self.db.term_by_id(Some("category"), id.unsigned_abs()).await?);
+                        excluded.extend(
+                            self.db
+                                .term_by_id(Some("category"), id.unsigned_abs())
+                                .await?,
+                        );
                     }
                 }
                 if !excluded.is_empty() {
-                    q.tax_not.extend(self.with_descendants("category", &excluded).await?);
+                    q.tax_not
+                        .extend(self.with_descendants("category", &excluded).await?);
                 }
                 if terms.is_empty() && excluded.is_empty() {
                     if f.is_feed {
-                        r.flags = Flags { is_category: true, ..f };
+                        r.flags = Flags {
+                            is_category: true,
+                            ..f
+                        };
                         return Ok(r);
                     }
                     return Ok(r.into_404());
                 }
                 if let Some(first) = terms.first().cloned() {
                     f.is_category = true;
-                    q.tax_groups.push(self.with_descendants("category", &terms).await?);
+                    q.tax_groups
+                        .push(self.with_descendants("category", &terms).await?);
                     queried = Queried::Term(first);
                 }
             }
             if let Some(tag) = v.get("tag") {
                 // `a,b` matches either tag, `a b` (from `a+b`) requires both.
                 let any = tag.contains(',');
-                let slugs = if any { split_slugs(tag) } else { tag.split(|c: char| c == '+' || c.is_whitespace()).filter(|s| !s.is_empty()).map(str::to_owned).collect() };
+                let slugs = if any {
+                    split_slugs(tag)
+                } else {
+                    tag.split(|c: char| c == '+' || c.is_whitespace())
+                        .filter(|s| !s.is_empty())
+                        .map(str::to_owned)
+                        .collect()
+                };
                 let terms = self.terms_by_slugs("post_tag", &slugs).await?;
                 if terms.is_empty() || (!any && terms.len() < slugs.len()) {
-                    return Ok(if f.is_feed { r.flags = Flags { is_tag: true, ..f }; r } else { r.into_404() });
+                    return Ok(if f.is_feed {
+                        r.flags = Flags { is_tag: true, ..f };
+                        r
+                    } else {
+                        r.into_404()
+                    });
                 }
                 f.is_tag = true;
                 if any {
-                    q.tax_groups.push(terms.iter().map(|t| t.term_taxonomy_id).collect());
+                    q.tax_groups
+                        .push(terms.iter().map(|t| t.term_taxonomy_id).collect());
                 } else {
-                    q.tax_groups.extend(terms.iter().map(|t| vec![t.term_taxonomy_id]));
+                    q.tax_groups
+                        .extend(terms.iter().map(|t| vec![t.term_taxonomy_id]));
                 }
                 if matches!(queried, Queried::None) {
                     queried = Queried::Term(terms[0].clone());
                 }
             } else if let Some(id) = v.u64("tag_id") {
-                let Some(term) = self.db.term_by_id(Some("post_tag"), id).await? else { return Ok(r.into_404()) };
+                let Some(term) = self.db.term_by_id(Some("post_tag"), id).await? else {
+                    return Ok(r.into_404());
+                };
                 f.is_tag = true;
                 q.tax_groups.push(vec![term.term_taxonomy_id]);
                 if matches!(queried, Queried::None) {
@@ -473,23 +639,43 @@ impl Site {
             let custom_tax = self.types.taxonomies.iter().find_map(|t| {
                 v.get(&t.name).map(|term| {
                     // A hierarchical rewrite passes the whole path; the last segment is the term.
-                    let term = if t.rewrite_hierarchical { term.rsplit('/').next().unwrap_or(term) } else { term };
+                    let term = if t.rewrite_hierarchical {
+                        term.rsplit('/').next().unwrap_or(term)
+                    } else {
+                        term
+                    };
                     (t.name.clone(), term.to_owned())
                 })
             });
-            let tax_vars: Option<(String, String)> = match (v.get("taxonomy"), v.get("term"), v.get("post_format")) {
-                _ if custom_tax.is_some() => custom_tax,
-                (Some(taxonomy), Some(term), _) => Some((taxonomy.to_owned(), term.to_owned())),
-                (_, _, Some(format)) if !format.is_empty() => Some(("post_format".to_owned(), format!("post-format-{}", sanitize_title(format)))),
-                _ => None,
-            };
+            let tax_vars: Option<(String, String)> =
+                match (v.get("taxonomy"), v.get("term"), v.get("post_format")) {
+                    _ if custom_tax.is_some() => custom_tax,
+                    (Some(taxonomy), Some(term), _) => Some((taxonomy.to_owned(), term.to_owned())),
+                    (_, _, Some(format)) if !format.is_empty() => Some((
+                        "post_format".to_owned(),
+                        format!("post-format-{}", sanitize_title(format)),
+                    )),
+                    _ => None,
+                };
             if let Some((taxonomy, term)) = tax_vars {
                 let taxonomy = taxonomy.as_str();
-                let Some(term) = self.db.term_by_slug(taxonomy, &sanitize_title(&term)).await? else {
-                    return Ok(if f.is_feed { r.flags = Flags { is_tax: true, ..f }; r } else { r.into_404() });
+                let Some(term) = self
+                    .db
+                    .term_by_slug(taxonomy, &sanitize_title(&term))
+                    .await?
+                else {
+                    return Ok(if f.is_feed {
+                        r.flags = Flags { is_tax: true, ..f };
+                        r
+                    } else {
+                        r.into_404()
+                    });
                 };
                 f.is_tax = true;
-                q.tax_groups.push(self.with_descendants(taxonomy, std::slice::from_ref(&term)).await?);
+                q.tax_groups.push(
+                    self.with_descendants(taxonomy, std::slice::from_ref(&term))
+                        .await?,
+                );
                 if matches!(queried, Queried::None) {
                     queried = Queried::Term(term);
                 }
@@ -523,7 +709,10 @@ impl Site {
 
             // post_type=book is the archive of a type that has one.
             if let Some(post_type) = v.get("post_type").filter(|t| !t.contains(','))
-                && self.types.post_type(post_type).is_some_and(|t| t.archive_slug.is_some())
+                && self
+                    .types
+                    .post_type(post_type)
+                    .is_some_and(|t| t.archive_slug.is_some())
             {
                 f.is_post_type_archive = true;
                 if matches!(queried, Queried::None) {
@@ -531,7 +720,12 @@ impl Site {
                 }
             }
 
-            f.is_archive = f.is_date || f.is_author || f.is_category || f.is_tag || f.is_tax || f.is_post_type_archive;
+            f.is_archive = f.is_date
+                || f.is_author
+                || f.is_category
+                || f.is_tag
+                || f.is_tax
+                || f.is_post_type_archive;
             if !(f.is_archive || f.is_search || f.is_feed) {
                 f.is_home = true;
             }
@@ -554,7 +748,11 @@ impl Site {
 
         // --- WP_Query::get_posts ---------------------------------------------------
         let preview = v.get("preview").is_some_and(|p| !p.is_empty());
-        r.per_page = if f.is_feed { s.posts_per_rss } else { s.posts_per_page };
+        r.per_page = if f.is_feed {
+            s.posts_per_rss
+        } else {
+            s.posts_per_page
+        };
 
         if f.is_page {
             let page = match (pagename, page_id) {
@@ -563,7 +761,10 @@ impl Site {
                 _ => None,
             };
             let page = match page {
-                Some(page) if viewer.is_some() => self.visible(page, viewer, &mut f, preview, &r.raw_query).await?,
+                Some(page) if viewer.is_some() => {
+                    self.visible(page, viewer, &mut f, preview, &r.raw_query)
+                        .await?
+                }
                 other => other,
             };
             let Some(page) = page else {
@@ -602,7 +803,10 @@ impl Site {
         } else if f.is_single {
             let post = self.find_single(&v, &mut f, viewer).await?;
             let post = match post {
-                Some(post) if viewer.is_some() => self.visible(post, viewer, &mut f, preview, &r.raw_query).await?,
+                Some(post) if viewer.is_some() => {
+                    self.visible(post, viewer, &mut f, preview, &r.raw_query)
+                        .await?
+                }
                 other => other,
             };
             let Some(post) = post else {
@@ -621,11 +825,16 @@ impl Site {
         // `WP::handle_404`: paged content that exceeds the last `<!--nextpage-->`
         // (or has none) is a 404 whose post stays in the query, so that
         // `redirect_canonical` can send the visitor to the post's base URL.
-        let page_var = v.get("page").map(|p| p.trim_matches('/')).filter(|p| !p.is_empty() && *p != "0");
+        let page_var = v
+            .get("page")
+            .map(|p| p.trim_matches('/'))
+            .filter(|p| !p.is_empty() && *p != "0");
         if let Some(page_var) = page_var {
             let content_found = match posts.first() {
                 Some(post) if f.is_singular() => {
-                    post.post_content.contains("<!--nextpage-->") && page_var.parse::<u64>().unwrap_or(0) <= post.post_content.matches("<!--nextpage-->").count() as u64 + 1
+                    post.post_content.contains("<!--nextpage-->")
+                        && page_var.parse::<u64>().unwrap_or(0)
+                            <= post.post_content.matches("<!--nextpage-->").count() as u64 + 1
                 }
                 _ => !f.is_posts_page,
             };
@@ -645,7 +854,12 @@ impl Site {
             }
             if f.is_search {
                 if v.get("post_type").is_none() {
-                    q.post_types = self.types.searchable_post_types().into_iter().map(str::to_owned).collect();
+                    q.post_types = self
+                        .types
+                        .searchable_post_types()
+                        .into_iter()
+                        .map(str::to_owned)
+                        .collect();
                 }
                 if let Some(s) = v.get("s") {
                     q.search = parse_search_terms(s, v.has("sentence"));
@@ -659,7 +873,12 @@ impl Site {
             }
             if let Some(viewer) = viewer {
                 // Private posts: all of a type the viewer may read, otherwise their own.
-                q.private_types = q.post_types.iter().filter(|t| viewer.can_read_private(t)).cloned().collect();
+                q.private_types = q
+                    .post_types
+                    .iter()
+                    .filter(|t| viewer.can_read_private(t))
+                    .cloned()
+                    .collect();
                 q.private_author = Some(viewer.id);
             }
             q.limit = Some(r.per_page);
@@ -669,8 +888,15 @@ impl Site {
             r.max_pages = found.div_ceil(r.per_page);
             // `WP_Query::get_posts()`: the comment feed of an archive or a search takes the comments of the posts it
             // found, then its posts become those of the comments (`$where` is only their IDs).
-            let flag = |key: &str| v.get(key).is_some_and(|value| !value.is_empty() && value != "0");
-            if f.is_feed && (f.is_archive || f.is_search) && (flag("withcomments") || v.get("feed").is_some_and(|feed| feed.contains("comments-"))) {
+            let flag = |key: &str| {
+                v.get(key)
+                    .is_some_and(|value| !value.is_empty() && value != "0")
+            };
+            if f.is_feed
+                && (f.is_archive || f.is_search)
+                && (flag("withcomments")
+                    || v.get("feed").is_some_and(|feed| feed.contains("comments-")))
+            {
                 let comments = self.db.feed_comments_of_posts(&q, s.posts_per_rss).await?;
                 let mut ids: Vec<u64> = comments.iter().map(|c| c.comment_post_id).collect();
                 ids.sort_unstable();
@@ -678,7 +904,16 @@ impl Site {
                 posts = if ids.is_empty() {
                     Vec::new()
                 } else {
-                    self.db.posts(&PostQuery { ids, post_types: Vec::new(), statuses: Vec::new(), limit: q.limit, offset: q.offset, ..PostQuery::default() }).await?
+                    self.db
+                        .posts(&PostQuery {
+                            ids,
+                            post_types: Vec::new(),
+                            statuses: Vec::new(),
+                            limit: q.limit,
+                            offset: q.offset,
+                            ..PostQuery::default()
+                        })
+                        .await?
                 };
                 r.feed_comments = Some(comments);
             }
@@ -695,14 +930,21 @@ impl Site {
         if posts.is_empty() {
             let term_found = matches!(queried, Queried::Term(_));
             let tolerated = !f.is_paged
-                && (f.is_author || ((f.is_category || f.is_tag || f.is_tax || f.is_post_type_archive) && (term_found || f.is_post_type_archive)) || f.is_home || f.is_search || f.is_feed);
+                && (f.is_author
+                    || ((f.is_category || f.is_tag || f.is_tax || f.is_post_type_archive)
+                        && (term_found || f.is_post_type_archive))
+                    || f.is_home
+                    || f.is_search
+                    || f.is_feed);
             if !tolerated {
                 return Ok(r.into_404());
             }
         }
 
         f.is_front_page = (f.is_home && !f.is_posts_page && s.show_on_front == ShowOnFront::Posts)
-            || (f.is_page && s.show_on_front == ShowOnFront::Page && s.page_on_front != 0
+            || (f.is_page
+                && s.show_on_front == ShowOnFront::Page
+                && s.page_on_front != 0
                 && matches!(&queried, Queried::Post(p) if p.id == s.page_on_front));
 
         r.flags = f;
@@ -715,7 +957,9 @@ impl Site {
     /// `WP_Rewrite::$use_verbose_page_rules`: the generic page rules come first unless the permalink
     /// structure starts with a wildcard such as `%post_id%`.
     pub fn use_verbose_page_rules(&self) -> bool {
-        static RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| regex::Regex::new(r"^[^%]*%(?:postname|category|tag|author)%").expect("valid regex"));
+        static RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+            regex::Regex::new(r"^[^%]*%(?:postname|category|tag|author)%").expect("valid regex")
+        });
         RE.is_match(&self.settings.permalink_structure)
     }
 
@@ -723,7 +967,9 @@ impl Site {
     /// and only publicly queryable types may be asked for.
     fn map_type_vars(&self, vars: &mut QueryVars) {
         for t in &self.types.post_types {
-            let Some(var) = t.query_var.as_deref() else { continue };
+            let Some(var) = t.query_var.as_deref() else {
+                continue;
+            };
             if let Some(value) = vars.get(var).map(str::to_owned) {
                 vars.set("post_type", t.name.clone());
                 vars.set("name", value);
@@ -738,15 +984,31 @@ impl Site {
 
     /// The query variables `register_post_type()` and `register_taxonomy()` add (`query_var`, the name by default).
     fn is_type_query_var(&self, key: &str) -> bool {
-        self.types.post_types.iter().any(|t| t.query_var.as_deref() == Some(key)) || self.types.taxonomy(key).is_some()
+        self.types
+            .post_types
+            .iter()
+            .any(|t| t.query_var.as_deref() == Some(key))
+            || self.types.taxonomy(key).is_some()
     }
 
     /// The post types of a taxonomy archive: every searchable type with objects in the taxonomy.
     fn tax_post_types(&self, vars: &QueryVars) -> Vec<String> {
-        let taxonomy = vars.get("taxonomy").or_else(|| self.types.taxonomies.iter().find(|t| vars.get(&t.name).is_some()).map(|t| t.name.as_str()));
-        let Some(info) = taxonomy.and_then(|name| self.types.taxonomy(name)) else { return vec!["post".into()] };
+        let taxonomy = vars.get("taxonomy").or_else(|| {
+            self.types
+                .taxonomies
+                .iter()
+                .find(|t| vars.get(&t.name).is_some())
+                .map(|t| t.name.as_str())
+        });
+        let Some(info) = taxonomy.and_then(|name| self.types.taxonomy(name)) else {
+            return vec!["post".into()];
+        };
         let searchable = self.types.searchable_post_types();
-        info.object_types.iter().filter(|t| searchable.contains(&t.as_str())).cloned().collect()
+        info.object_types
+            .iter()
+            .filter(|t| searchable.contains(&t.as_str()))
+            .cloned()
+            .collect()
     }
 
     /// `get_page_by_path()`: resolves `parent/child` through the page hierarchy.
@@ -760,24 +1022,50 @@ impl Site {
     }
 
     /// [`Site::post_by_path`] for a viewer who may see posts that are not published (their status is checked later).
-    async fn post_by_path_as(&self, path: &str, post_type: &str, viewer: Option<&Viewer>) -> Result<Option<Post>> {
-        let parts: Vec<String> =
-            path.trim_matches('/').split('/').map(sanitize_title).filter(|p| !p.is_empty()).collect();
-        let Some(last) = parts.last() else { return Ok(None) };
+    async fn post_by_path_as(
+        &self,
+        path: &str,
+        post_type: &str,
+        viewer: Option<&Viewer>,
+    ) -> Result<Option<Post>> {
+        let parts: Vec<String> = path
+            .trim_matches('/')
+            .split('/')
+            .map(sanitize_title)
+            .filter(|p| !p.is_empty())
+            .collect();
+        let Some(last) = parts.last() else {
+            return Ok(None);
+        };
         // `get_page_by_path()` also finds attachments (those that inherit their parent's status).
-        let mut query = PostQuery { post_types: vec![post_type.to_owned()], names: parts.clone(), ..PostQuery::default() };
+        let mut query = PostQuery {
+            post_types: vec![post_type.to_owned()],
+            names: parts.clone(),
+            ..PostQuery::default()
+        };
         if post_type == "page" {
             query.post_types.push("attachment".into());
             query.statuses = vec!["publish".into(), "inherit".into()];
         }
         if viewer.is_some() {
-            query.statuses = vec!["publish".into(), "inherit".into(), "draft".into(), "pending".into(), "future".into(), "private".into(), "auto-draft".into()];
+            query.statuses = vec![
+                "publish".into(),
+                "inherit".into(),
+                "draft".into(),
+                "pending".into(),
+                "future".into(),
+                "private".into(),
+                "auto-draft".into(),
+            ];
         }
         let candidates = self.db.posts(&query).await?;
         'candidate: for page in candidates.iter().filter(|p| &p.post_name == last) {
             let mut current = page;
             for wanted in parts[..parts.len() - 1].iter().rev() {
-                match candidates.iter().find(|p| p.id == current.post_parent && &p.post_name == wanted) {
+                match candidates
+                    .iter()
+                    .find(|p| p.id == current.post_parent && &p.post_name == wanted)
+                {
                     Some(parent) => current = parent,
                     None => continue 'candidate,
                 }
@@ -790,12 +1078,23 @@ impl Site {
     }
 
     async fn page_by_id(&self, id: u64, viewer: Option<&Viewer>) -> Result<Option<Post>> {
-        Ok(self.db.post(id).await?.filter(|p| p.post_type == "page" && (p.post_status == "publish" || viewer.is_some())))
+        Ok(self
+            .db
+            .post(id)
+            .await?
+            .filter(|p| p.post_type == "page" && (p.post_status == "publish" || viewer.is_some())))
     }
 
     /// `WP_Query::get_posts()` after the fetch: whether the viewer may see the single post, and whether it is
     /// shown as a preview. A draft shows the time of the visit as its date.
-    async fn visible(&self, mut post: Post, viewer: Option<&Viewer>, f: &mut Flags, preview: bool, raw_query: &str) -> Result<Option<Post>> {
+    async fn visible(
+        &self,
+        mut post: Post,
+        viewer: Option<&Viewer>,
+        f: &mut Flags,
+        preview: bool,
+        raw_query: &str,
+    ) -> Result<Option<Post>> {
         let status = if post.post_type == "attachment" && post.post_status == "inherit" {
             match self.db.post(post.post_parent).await? {
                 Some(parent) if post.post_parent != 0 && parent.id != post.id => parent.post_status,
@@ -809,14 +1108,18 @@ impl Site {
             if preview && let Some(viewer) = viewer {
                 let vars = QueryVars::parse(raw_query);
                 let id = vars.u64("preview_id").unwrap_or(0);
-                let valid = vars.get("preview_nonce").is_some_and(|nonce| viewer.check_nonce(nonce, &format!("post_preview_{id}")));
+                let valid = vars
+                    .get("preview_nonce")
+                    .is_some_and(|nonce| viewer.check_nonce(nonce, &format!("post_preview_{id}")));
                 if valid && viewer.can_edit_post(&post) {
                     post = self.with_autosave(post).await?;
                 }
             }
             return Ok(Some(post));
         }
-        let Some(viewer) = viewer else { return Ok(None) };
+        let Some(viewer) = viewer else {
+            return Ok(None);
+        };
         Ok(match status.as_str() {
             "draft" | "pending" | "future" | "auto-draft" => {
                 if !viewer.can_edit_post(&post) {
@@ -824,7 +1127,9 @@ impl Site {
                 }
                 f.is_preview = true;
                 if status != "future" {
-                    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs() as i64);
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map_or(0, |d| d.as_secs() as i64);
                     post.post_date = self.timezone.format("Y-m-d H:i:s", now);
                 }
                 Some(self.with_autosave(post).await?)
@@ -854,8 +1159,24 @@ impl Site {
 
     /// Looks up the post for `name=`, `p=` or `attachment=` requests and
     /// corrects the flags if it turns out to be a page or attachment.
-    async fn find_single(&self, v: &QueryVars, f: &mut Flags, viewer: Option<&Viewer>) -> Result<Option<Post>> {
-        let any_status: Vec<String> = ["publish", "inherit", "draft", "pending", "future", "private", "auto-draft"].iter().map(|s| (*s).to_owned()).collect();
+    async fn find_single(
+        &self,
+        v: &QueryVars,
+        f: &mut Flags,
+        viewer: Option<&Viewer>,
+    ) -> Result<Option<Post>> {
+        let any_status: Vec<String> = [
+            "publish",
+            "inherit",
+            "draft",
+            "pending",
+            "future",
+            "private",
+            "auto-draft",
+        ]
+        .iter()
+        .map(|s| (*s).to_owned())
+        .collect();
         let post = if let Some(slug) = v.get("attachment") {
             self.db
                 .posts(&PostQuery {
@@ -869,13 +1190,21 @@ impl Site {
                 .pop()
         } else if let Some(name) = v.get("name") {
             let post_type = v.get("post_type").unwrap_or("post").to_owned();
-            if self.types.post_type(&post_type).is_some_and(|t| t.hierarchical) {
+            if self
+                .types
+                .post_type(&post_type)
+                .is_some_and(|t| t.hierarchical)
+            {
                 return self.post_by_path_as(name, &post_type, viewer).await;
             }
             self.db
                 .posts(&PostQuery {
                     post_types: vec![post_type],
-                    statuses: if viewer.is_some() { any_status.clone() } else { vec!["publish".into()] },
+                    statuses: if viewer.is_some() {
+                        any_status.clone()
+                    } else {
+                        vec!["publish".into()]
+                    },
                     name: Some(sanitize_title(name)),
                     year: v.u64("year").map(|y| y as u32),
                     month: v.u64("monthnum").map(|y| y as u32),
@@ -894,7 +1223,8 @@ impl Site {
             self.db.post(id).await?.filter(|p| {
                 !is_internal_post_type(&p.post_type)
                     && if by_attachment_id {
-                        p.post_type == "attachment" && matches!(p.post_status.as_str(), "publish" | "inherit")
+                        p.post_type == "attachment"
+                            && matches!(p.post_status.as_str(), "publish" | "inherit")
                     } else {
                         p.post_type == wanted && (p.post_status == "publish" || viewer.is_some())
                     }
@@ -919,7 +1249,11 @@ impl Site {
     async fn terms_by_slugs(&self, taxonomy: &str, slugs: &[String]) -> Result<Vec<Term>> {
         let mut terms = Vec::new();
         for slug in slugs {
-            terms.extend(self.db.term_by_slug(taxonomy, &sanitize_title(slug)).await?);
+            terms.extend(
+                self.db
+                    .term_by_slug(taxonomy, &sanitize_title(slug))
+                    .await?,
+            );
         }
         Ok(terms)
     }
@@ -931,13 +1265,20 @@ impl Site {
         let mut i = 0;
         while i < wanted.len() {
             let parent = wanted[i];
-            let children: Vec<u64> =
-                all.iter().filter(|t| t.parent == parent && !wanted.contains(&t.term_id)).map(|t| t.term_id).collect();
+            let children: Vec<u64> = all
+                .iter()
+                .filter(|t| t.parent == parent && !wanted.contains(&t.term_id))
+                .map(|t| t.term_id)
+                .collect();
             wanted.extend(children);
             i += 1;
         }
         let mut ids: Vec<u64> = terms.iter().map(|t| t.term_taxonomy_id).collect();
-        ids.extend(all.iter().filter(|t| wanted.contains(&t.term_id)).map(|t| t.term_taxonomy_id));
+        ids.extend(
+            all.iter()
+                .filter(|t| wanted.contains(&t.term_id))
+                .map(|t| t.term_taxonomy_id),
+        );
         ids.sort_unstable();
         ids.dedup();
         Ok(ids)
@@ -947,10 +1288,22 @@ impl Site {
     /// sticky ones that would have been on other pages (newest first).
     async fn with_sticky_first(&self, page: Vec<Post>) -> Result<Vec<Post>> {
         let sticky = &self.settings.sticky_posts;
-        let (mut front, rest): (Vec<Post>, Vec<Post>) = page.into_iter().partition(|p| sticky.contains(&p.id));
-        let missing: Vec<u64> = sticky.iter().copied().filter(|id| !front.iter().any(|p| p.id == *id)).collect();
+        let (mut front, rest): (Vec<Post>, Vec<Post>) =
+            page.into_iter().partition(|p| sticky.contains(&p.id));
+        let missing: Vec<u64> = sticky
+            .iter()
+            .copied()
+            .filter(|id| !front.iter().any(|p| p.id == *id))
+            .collect();
         if !missing.is_empty() {
-            front.extend(self.db.posts(&PostQuery { ids: missing, ..PostQuery::default() }).await?);
+            front.extend(
+                self.db
+                    .posts(&PostQuery {
+                        ids: missing,
+                        ..PostQuery::default()
+                    })
+                    .await?,
+            );
         }
         front.extend(rest);
         Ok(front)
@@ -970,7 +1323,11 @@ fn valid_date(year: u32, month: u32, day: u32) -> bool {
 
 /// `tag=a,b` / `tag=a b`: slugs separated by commas or whitespace.
 fn split_slugs(input: &str) -> Vec<String> {
-    input.split(|c: char| c == ',' || c.is_whitespace()).filter(|s| !s.is_empty()).map(str::to_owned).collect()
+    input
+        .split(|c: char| c == ',' || c.is_whitespace())
+        .filter(|s| !s.is_empty())
+        .map(str::to_owned)
+        .collect()
 }
 
 /// `WP_Query::parse_search_terms` for the search string `s`: words and
@@ -982,7 +1339,11 @@ pub fn parse_search_terms(s: &str, sentence: bool) -> Vec<String> {
         return Vec::new();
     }
     let terms = split_search_terms(s, sentence);
-    if terms.is_empty() || terms.len() > 9 { vec![s.to_owned()] } else { terms }
+    if terms.is_empty() || terms.len() > 9 {
+        vec![s.to_owned()]
+    } else {
+        terms
+    }
 }
 
 fn split_search_terms(s: &str, sentence: bool) -> Vec<String> {
@@ -1013,8 +1374,15 @@ fn split_search_terms(s: &str, sentence: bool) -> Vec<String> {
     tokens
         .into_iter()
         .filter_map(|(token, quoted)| {
-            let term = if quoted { token.trim_matches(|c| c == '"' || c == '\'').to_owned() } else { token.trim_matches(|c| matches!(c, '"' | '\'' | ' ')).to_owned() };
-            let single_letter = term.chars().count() == 1 && term.chars().all(|c| c.is_ascii_alphabetic() || c == '-');
+            let term = if quoted {
+                token.trim_matches(|c| c == '"' || c == '\'').to_owned()
+            } else {
+                token
+                    .trim_matches(|c| matches!(c, '"' | '\'' | ' '))
+                    .to_owned()
+            };
+            let single_letter = term.chars().count() == 1
+                && term.chars().all(|c| c.is_ascii_alphabetic() || c == '-');
             let stopword = SEARCH_STOPWORDS.contains(&term.to_lowercase().as_str());
             (!term.is_empty() && !single_letter && !stopword).then_some(term)
         })
@@ -1027,8 +1395,14 @@ mod tests {
 
     #[test]
     fn search_terms_split_like_wordpress() {
-        assert_eq!(parse_search_terms("rust wordpress", false), ["rust", "wordpress"]);
-        assert_eq!(parse_search_terms("\"exact phrase\" more", false), ["exact phrase", "more"]);
+        assert_eq!(
+            parse_search_terms("rust wordpress", false),
+            ["rust", "wordpress"]
+        );
+        assert_eq!(
+            parse_search_terms("\"exact phrase\" more", false),
+            ["exact phrase", "more"]
+        );
         assert_eq!(parse_search_terms("the a rust", false), ["rust"]);
         assert_eq!(parse_search_terms("the rust", true), ["the rust"]);
         assert!(parse_search_terms("", false).is_empty());

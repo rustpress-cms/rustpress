@@ -93,7 +93,10 @@ pub fn number(value: &Value) -> f64 {
         Value::Int(n) => *n as f64,
         Value::Float(f) => *f,
         Value::Bool(b) => f64::from(u8::from(*b)),
-        Value::Str(b) => String::from_utf8_lossy(b).trim().parse().unwrap_or_else(|_| super::php::intval(&String::from_utf8_lossy(b)) as f64),
+        Value::Str(b) => String::from_utf8_lossy(b)
+            .trim()
+            .parse()
+            .unwrap_or_else(|_| super::php::intval(&String::from_utf8_lossy(b)) as f64),
         _ => 0.0,
     }
 }
@@ -104,7 +107,10 @@ impl Options {
         let stored = site.options.get("redirection_options");
         let fresh_install = stored.is_none();
         let mut values: Vec<(String, Value)> = match site.options.value("redirection_options") {
-            Some(Value::Array(items)) => items.iter().map(|(k, v)| (key_string(k), v.clone())).collect(),
+            Some(Value::Array(items)) => items
+                .iter()
+                .map(|(k, v)| (key_string(k), v.clone()))
+                .collect(),
             _ => Vec::new(),
         };
         let defaults = defaults();
@@ -116,15 +122,28 @@ impl Options {
                 None => values.push(((*key).to_owned(), value.clone())),
             }
         }
-        let mut options = Self { values, old_version: site.options.get("redirection_version").map(str::to_owned) };
+        let mut options = Self {
+            values,
+            old_version: site.options.get("redirection_version").map(str::to_owned),
+        };
         if fresh_install {
             options.set("flag_case", Value::Bool(true));
             options.set("flag_trailing", Value::Bool(true));
         }
-        if number(options.get("monitor_post")) > 0.0 && options.get("monitor_types").as_array().is_some_and(<[_]>::is_empty) {
-            options.set("monitor_types", Value::Array(vec![(Key::Int(0), s("post"))]));
+        if number(options.get("monitor_post")) > 0.0
+            && options
+                .get("monitor_types")
+                .as_array()
+                .is_some_and(<[_]>::is_empty)
+        {
+            options.set(
+                "monitor_types",
+                Value::Array(vec![(Key::Int(0), s("post"))]),
+            );
         }
-        options.values.retain(|(k, _)| defaults.iter().any(|(d, _)| d == k) || k == "database_stage");
+        options
+            .values
+            .retain(|(k, _)| defaults.iter().any(|(d, _)| d == k) || k == "database_stage");
         let rest_api = options.get("rest_api");
         if !matches!(rest_api, Value::Int(0 | 1 | 3)) {
             options.set("rest_api", Value::Int(0));
@@ -141,7 +160,10 @@ impl Options {
 
     pub fn get(&self, key: &str) -> &Value {
         static NULL: Value = Value::Null;
-        self.values.iter().find(|(k, _)| k == key).map_or(&NULL, |(_, v)| v)
+        self.values
+            .iter()
+            .find(|(k, _)| k == key)
+            .map_or(&NULL, |(_, v)| v)
     }
 
     pub fn string(&self, key: &str) -> String {
@@ -168,7 +190,12 @@ impl Options {
 
     /// The strings of an array option.
     pub fn strings(&self, key: &str) -> Vec<String> {
-        self.get(key).as_array().unwrap_or_default().iter().map(|(_, v)| php_string(v)).collect()
+        self.get(key)
+            .as_array()
+            .unwrap_or_default()
+            .iter()
+            .map(|(_, v)| php_string(v))
+            .collect()
     }
 
     /// `Status::needs_installing()`: without a database version the plugin does not start on the website.
@@ -188,16 +215,28 @@ impl Options {
 
     /// The custom headers (`Red_Http_Headers::normalize()`).
     pub fn headers(&self) -> Vec<Header> {
-        self.get("headers").as_array().unwrap_or_default().iter().filter_map(|(_, h)| Header::normalize(h)).collect()
+        self.get("headers")
+            .as_array()
+            .unwrap_or_default()
+            .iter()
+            .filter_map(|(_, h)| Header::normalize(h))
+            .collect()
     }
 }
 
 /// `version_compare( $a, $b, '>=' )` for dotted numbers.
 fn version_ge(a: &str, b: &str) -> bool {
-    let parts = |v: &str| v.split(['.', '-', '_', '+']).map(|p| p.parse::<u64>().unwrap_or(0)).collect::<Vec<_>>();
+    let parts = |v: &str| {
+        v.split(['.', '-', '_', '+'])
+            .map(|p| p.parse::<u64>().unwrap_or(0))
+            .collect::<Vec<_>>()
+    };
     let (a, b) = (parts(a), parts(b));
     for i in 0..a.len().max(b.len()) {
-        let (x, y) = (a.get(i).copied().unwrap_or(0), b.get(i).copied().unwrap_or(0));
+        let (x, y) = (
+            a.get(i).copied().unwrap_or(0),
+            b.get(i).copied().unwrap_or(0),
+        );
         if x != y {
             return x > y;
         }
@@ -217,20 +256,40 @@ pub struct Header {
 impl Header {
     fn normalize(value: &Value) -> Option<Self> {
         let field = |key: &str| value.get(key).filter(|v| !matches!(v, Value::Null));
-        let text = |key: &str| field(key).map(|v| sanitize(&rustpress_content::sanitize::text_field(&php_string(v)))).unwrap_or_default();
-        let location = if field("location").is_some_and(|v| matches!(v, Value::Str(b) if b == b"redirect")) { "redirect" } else { "site" };
+        let text = |key: &str| {
+            field(key)
+                .map(|v| sanitize(&rustpress_content::sanitize::text_field(&php_string(v))))
+                .unwrap_or_default()
+        };
+        let location =
+            if field("location").is_some_and(|v| matches!(v, Value::Str(b) if b == b"redirect")) {
+                "redirect"
+            } else {
+                "site"
+            };
         let (name, kind, header_value) = (text("headerName"), text("type"), text("headerValue"));
         if name.is_empty() || kind.is_empty() {
             return None;
         }
-        Some(Self { name: dash_case(&name), value: header_value, location: location.to_owned() })
+        Some(Self {
+            name: dash_case(&name),
+            value: header_value,
+            location: location.to_owned(),
+        })
     }
 }
 
 /// `Red_Http_Headers::dash_case()`.
 pub fn dash_case(name: &str) -> String {
-    let spaced: String = name.chars().map(|c| if c.is_ascii_alphanumeric() { c } else { ' ' }).collect();
-    let collapsed = spaced.split(' ').filter(|w| !w.is_empty()).collect::<Vec<_>>().join(" ");
+    let spaced: String = name
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { ' ' })
+        .collect();
+    let collapsed = spaced
+        .split(' ')
+        .filter(|w| !w.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ");
     super::php::ucwords(&collapsed).replace(' ', "-")
 }
 
@@ -259,7 +318,13 @@ fn is_other(c: char) -> bool {
 
 /// The site headers, the later of one name in the place of the first (`get_site_headers()`).
 pub fn site_headers(headers: &[Header]) -> Vec<Header> {
-    remove_dupes(headers.iter().filter(|h| h.location == "site").cloned().collect())
+    remove_dupes(
+        headers
+            .iter()
+            .filter(|h| h.location == "site")
+            .cloned()
+            .collect(),
+    )
 }
 
 /// `get_redirect_headers()`: the site headers, then the redirect headers over them.

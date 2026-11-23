@@ -60,7 +60,9 @@ pub(super) struct State<'a> {
 /// Prints a baked template with the addresses of the site, in its language.
 fn baked(ctx: &Ctx<'_>, template: &str) -> String {
     let site = ctx.site();
-    let text = template.replace("{{admin}}", &ctx.admin_url("")).replace("{{site}}", site.settings.siteurl.trim_end_matches('/'));
+    let text = template
+        .replace("{{admin}}", &ctx.admin_url(""))
+        .replace("{{site}}", site.settings.siteurl.trim_end_matches('/'));
     super::template_text::translate(site, &text)
 }
 
@@ -69,7 +71,13 @@ fn theme_name(ctx: &Ctx<'_>) -> String {
     let slug = &ctx.site().settings.stylesheet;
     let css = std::fs::read(ctx.env.theme.stylesheet_dir().join("style.css")).unwrap_or_default();
     let head = String::from_utf8_lossy(&css[..css.len().min(8192)]).into_owned();
-    head.lines().find_map(|line| line.trim_start_matches([' ', '*', '\t']).strip_prefix("Theme Name:").map(|name| name.trim().to_owned())).unwrap_or_else(|| slug.clone())
+    head.lines()
+        .find_map(|line| {
+            line.trim_start_matches([' ', '*', '\t'])
+                .strip_prefix("Theme Name:")
+                .map(|name| name.trim().to_owned())
+        })
+        .unwrap_or_else(|| slug.clone())
 }
 
 /// The markup of `customize.php` between `<body>` and the footer scripts.
@@ -77,10 +85,18 @@ fn body(ctx: &Ctx<'_>, return_url: &str) -> String {
     let tr = |text: &str| ctx.tr(text);
     let trx = |text: &str, context: &str| ctx.site().trx(text, context);
     let name = esc_html(&ctx.site().settings.blogname);
-    let devices = [("desktop", tr("Desktop"), true), ("tablet", tr("Tablet"), false), ("mobile", tr("Mobile"), false)];
+    let devices = [
+        ("desktop", tr("Desktop"), true),
+        ("tablet", tr("Tablet"), false),
+        ("mobile", tr("Mobile"), false),
+    ];
     let mut buttons = String::new();
     for (device, label, active) in devices {
-        let class = if active { format!("preview-{device} active") } else { format!("preview-{device}") };
+        let class = if active {
+            format!("preview-{device} active")
+        } else {
+            format!("preview-{device}")
+        };
         buttons.push_str(&format!(
             "\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<button type=\"button\" class=\"{}\" aria-pressed=\"{}\" data-device=\"{device}\">\n\t\t\t\t\t\t\t<span class=\"devices__preview-label\">{}</span>\n\t\t\t\t\t\t</button>\n",
             esc_attr(&class),
@@ -97,13 +113,31 @@ fn body(ctx: &Ctx<'_>, return_url: &str) -> String {
         close_url = esc_url(return_url),
         close = tr("Close the Customizer and go back to the previous page"),
         block_theme = i32::from(ctx.env.block_theme),
-        customizing = sprintf(&tr("You are customizing %s"), &[&format!("<strong class=\"panel-title site-title\">{name}</strong>")]),
+        customizing = sprintf(
+            &tr("You are customizing %s"),
+            &[&format!(
+                "<strong class=\"panel-title site-title\">{name}</strong>"
+            )]
+        ),
         help = tr("Help"),
-        about = tr("The Customizer allows you to preview changes to your site before publishing them. You can navigate to different pages on your site within the preview. Edit shortcuts are shown for some editable elements. The Customizer is intended for use with non-block themes."),
-        documentation = tr("<a href=\"https://wordpress.org/documentation/article/customizer/\">Documentation on Customizer</a>"),
-        hide_label = esc_attr(&trx("Hide Controls", "label for hide controls button without length constraints")),
-        hide = trx("Hide Controls", "short (~12 characters) label for hide controls button"),
-        responsive = esc_attr(&trx("Responsive Views", "label for responsive previews group")),
+        about = tr(
+            "The Customizer allows you to preview changes to your site before publishing them. You can navigate to different pages on your site within the preview. Edit shortcuts are shown for some editable elements. The Customizer is intended for use with non-block themes."
+        ),
+        documentation = tr(
+            "<a href=\"https://wordpress.org/documentation/article/customizer/\">Documentation on Customizer</a>"
+        ),
+        hide_label = esc_attr(&trx(
+            "Hide Controls",
+            "label for hide controls button without length constraints"
+        )),
+        hide = trx(
+            "Hide Controls",
+            "short (~12 characters) label for hide controls button"
+        ),
+        responsive = esc_attr(&trx(
+            "Responsive Views",
+            "label for responsive previews group"
+        )),
     )
 }
 
@@ -117,8 +151,15 @@ struct Urls {
 fn urls(ctx: &Ctx<'_>) -> Urls {
     let site = ctx.site();
     let home = site.home_url("/");
-    let argument = |name: &str| ctx.request.request(name).filter(|value| !value.is_empty()).map(esc_url_raw).filter(|value| !value.is_empty());
-    let preview = argument("url").map(|url| crate::login::validate_redirect(site, &esc_url_raw(&url), &home));
+    let argument = |name: &str| {
+        ctx.request
+            .request(name)
+            .filter(|value| !value.is_empty())
+            .map(esc_url_raw)
+            .filter(|value| !value.is_empty())
+    };
+    let preview =
+        argument("url").map(|url| crate::login::validate_redirect(site, &esc_url_raw(&url), &home));
     let returned = argument("return").map(|url| {
         let mut url = esc_url_raw(&url);
         for arg in crate::chrome::REMOVABLE_QUERY_ARGS {
@@ -130,18 +171,46 @@ fn urls(ctx: &Ctx<'_>) -> Urls {
         Some(url) => {
             // A page of the Appearance menu that the theme does not add sends back to the themes.
             let path = url.split(['?', '#']).next().unwrap_or_default();
-            let page = url.split_once('?').map(|(_, query)| query.split('#').next().unwrap_or_default()).and_then(|query| rustpress_core::canonical::parse_qs(query).into_iter().find(|(k, _)| k == "page").map(|(_, v)| v));
+            let page = url
+                .split_once('?')
+                .map(|(_, query)| query.split('#').next().unwrap_or_default())
+                .and_then(|query| {
+                    rustpress_core::canonical::parse_qs(query)
+                        .into_iter()
+                        .find(|(k, _)| k == "page")
+                        .map(|(_, v)| v)
+                });
             match page {
-                Some(page) if path.rsplit('/').next() == Some("themes.php") && !(page == "custom-header" && super::custom_header::available(ctx)) => ctx.admin_url("themes.php"),
+                Some(page)
+                    if path.rsplit('/').next() == Some("themes.php")
+                        && !(page == "custom-header" && super::custom_header::available(ctx)) =>
+                {
+                    ctx.admin_url("themes.php")
+                }
                 _ => url,
             }
         }
         None => match super::common::wp_get_referer(ctx) {
-            Some(referer) if !matches!(referer.split(['?', '#']).next().unwrap_or_default().rsplit('/').next(), Some("customize.php" | "wp-login.php")) => referer,
+            Some(referer)
+                if !matches!(
+                    referer
+                        .split(['?', '#'])
+                        .next()
+                        .unwrap_or_default()
+                        .rsplit('/')
+                        .next(),
+                    Some("customize.php" | "wp-login.php")
+                ) =>
+            {
+                referer
+            }
             _ => preview.clone().unwrap_or_else(|| home.clone()),
         },
     };
-    Urls { preview: preview.unwrap_or(home), close }
+    Urls {
+        preview: preview.unwrap_or(home),
+        close,
+    }
 }
 
 /// `set_autofocus()` of `autofocus[...]`: the panel, section and control to open.
@@ -152,7 +221,11 @@ fn autofocus(ctx: &Ctx<'_>) -> serde_json::Value {
             out.insert(kind.to_owned(), json!(crate::sanitize::text_field(value)));
         }
     }
-    if out.is_empty() { json!([]) } else { serde_json::Value::Object(out) }
+    if out.is_empty() {
+        json!([])
+    } else {
+        serde_json::Value::Object(out)
+    }
 }
 
 /// The data of `_wpCustomizeHeader` (`WP_Customize_Header_Image_Control::enqueue()`), for a theme with a custom header.
@@ -161,9 +234,22 @@ async fn header_data(state: &State<'_>) -> Option<serde_json::Value> {
     let support = state.support.as_ref()?;
     let site = ctx.site();
     let mut uploads = serde_json::Map::new();
-    for uploaded in header::uploaded_header_images(site, &state.stylesheet).await.unwrap_or_default() {
-        let meta = ctx.env.db.post_meta(uploaded.attachment_id).await.unwrap_or_default();
-        let value = |name: &str| meta.iter().find(|m| m.meta_key.as_deref() == Some(name)).and_then(|m| m.meta_value.clone()).unwrap_or_default();
+    for uploaded in header::uploaded_header_images(site, &state.stylesheet)
+        .await
+        .unwrap_or_default()
+    {
+        let meta = ctx
+            .env
+            .db
+            .post_meta(uploaded.attachment_id)
+            .await
+            .unwrap_or_default();
+        let value = |name: &str| {
+            meta.iter()
+                .find(|m| m.meta_key.as_deref() == Some(name))
+                .and_then(|m| m.meta_value.clone())
+                .unwrap_or_default()
+        };
         let php = |v: &Php| rustpress_core::options::php_to_json(v);
         let mut entry = serde_json::Map::new();
         entry.insert("attachment_id".into(), json!(uploaded.attachment_id));
@@ -177,8 +263,17 @@ async fn header_data(state: &State<'_>) -> Option<serde_json::Value> {
         if let Some(height) = &uploaded.height {
             entry.insert("height".into(), php(height));
         }
-        entry.insert("timestamp".into(), json!(value(&format!("_wp_attachment_custom_header_last_used_{}", state.stylesheet))));
-        uploads.insert(uploaded.attachment_id.to_string(), serde_json::Value::Object(entry));
+        entry.insert(
+            "timestamp".into(),
+            json!(value(&format!(
+                "_wp_attachment_custom_header_last_used_{}",
+                state.stylesheet
+            ))),
+        );
+        uploads.insert(
+            uploaded.attachment_id.to_string(),
+            serde_json::Value::Object(entry),
+        );
     }
     let mut defaults = serde_json::Map::new();
     for default in header::default_headers(site, &ctx.env.theme.template, &state.template_uri) {
@@ -193,7 +288,14 @@ async fn header_data(state: &State<'_>) -> Option<serde_json::Value> {
 }
 
 /// `customize_pane_settings()`.
-fn pane_settings(state: &State<'_>, m: &Manager, preview_url: &str, return_url: &str, now: &str, autofocus: serde_json::Value) -> String {
+fn pane_settings(
+    state: &State<'_>,
+    m: &Manager,
+    preview_url: &str,
+    return_url: &str,
+    now: &str,
+    autofocus: serde_json::Value,
+) -> String {
     let ctx = state.ctx;
     let tr = |text: &str| ctx.tr(text);
     let site = ctx.site();
@@ -268,16 +370,40 @@ fn pane_settings(state: &State<'_>, m: &Manager, preview_url: &str, return_url: 
 fn nonces(state: &State<'_>) -> serde_json::Map<String, serde_json::Value> {
     let ctx = state.ctx;
     let mut nonces = serde_json::Map::new();
-    nonces.insert("save".into(), json!(ctx.create_nonce(&format!("save-customize_{}", state.stylesheet))));
-    nonces.insert("preview".into(), json!(ctx.create_nonce(&format!("preview-customize_{}", state.stylesheet))));
-    nonces.insert("switch_themes".into(), json!(ctx.create_nonce("switch_themes")));
-    nonces.insert("dismiss_autosave_or_lock".into(), json!(ctx.create_nonce("customize_dismiss_autosave_or_lock")));
-    nonces.insert("override_lock".into(), json!(ctx.create_nonce("customize_override_changeset_lock")));
-    nonces.insert("trash".into(), json!(ctx.create_nonce("trash_customize_changeset")));
+    nonces.insert(
+        "save".into(),
+        json!(ctx.create_nonce(&format!("save-customize_{}", state.stylesheet))),
+    );
+    nonces.insert(
+        "preview".into(),
+        json!(ctx.create_nonce(&format!("preview-customize_{}", state.stylesheet))),
+    );
+    nonces.insert(
+        "switch_themes".into(),
+        json!(ctx.create_nonce("switch_themes")),
+    );
+    nonces.insert(
+        "dismiss_autosave_or_lock".into(),
+        json!(ctx.create_nonce("customize_dismiss_autosave_or_lock")),
+    );
+    nonces.insert(
+        "override_lock".into(),
+        json!(ctx.create_nonce("customize_override_changeset_lock")),
+    );
+    nonces.insert(
+        "trash".into(),
+        json!(ctx.create_nonce("trash_customize_changeset")),
+    );
     if !ctx.env.block_theme {
-        nonces.insert("update-widget".into(), json!(ctx.create_nonce("update-widget")));
+        nonces.insert(
+            "update-widget".into(),
+            json!(ctx.create_nonce("update-widget")),
+        );
     }
-    nonces.insert("customize-menus".into(), json!(ctx.create_nonce("customize-menus")));
+    nonces.insert(
+        "customize-menus".into(),
+        json!(ctx.create_nonce("customize-menus")),
+    );
     nonces
 }
 
@@ -288,10 +414,21 @@ fn esc_url_raw(url: &str) -> String {
 /// `wp_generate_uuid4()`.
 fn uuid4() -> String {
     let bytes: [u8; 16] = rand::random();
-    let hex = |range: std::ops::Range<usize>| bytes[range].iter().map(|b| format!("{b:02x}")).collect::<String>();
+    let hex = |range: std::ops::Range<usize>| {
+        bytes[range]
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect::<String>()
+    };
     let mut out = format!("{}-{}-", hex(0..4), hex(4..6));
-    out.push_str(&format!("{:04x}-", (u16::from_be_bytes([bytes[6], bytes[7]]) & 0x0fff) | 0x4000));
-    out.push_str(&format!("{:04x}-", (u16::from_be_bytes([bytes[8], bytes[9]]) & 0x3fff) | 0x8000));
+    out.push_str(&format!(
+        "{:04x}-",
+        (u16::from_be_bytes([bytes[6], bytes[7]]) & 0x0fff) | 0x4000
+    ));
+    out.push_str(&format!(
+        "{:04x}-",
+        (u16::from_be_bytes([bytes[8], bytes[9]]) & 0x3fff) | 0x8000
+    ));
     out.push_str(&hex(10..16));
     out
 }
@@ -304,13 +441,47 @@ async fn state<'a>(ctx: &'a Ctx<'a>) -> State<'a> {
     let mods = rustpress_theme::classic::menu::theme_mod(site, &stylesheet);
     let template_uri = rustpress_blocks::env::ThemeAccess::template_directory_uri(theme);
     let stylesheet_uri = rustpress_blocks::env::ThemeAccess::stylesheet_directory_uri(theme);
-    let support = if ctx.env.block_theme { None } else { header::support(&theme.template, &template_uri) };
+    let support = if ctx.env.block_theme {
+        None
+    } else {
+        header::support(&theme.template, &template_uri)
+    };
     let custom_logo = (theme.template == "twentyseventeen").then_some((250, 250, true, false));
-    let pages = rustpress_db::PostQuery { post_types: vec!["page".into()], statuses: vec!["publish".into()], limit: Some(1), ..Default::default() };
+    let pages = rustpress_db::PostQuery {
+        post_types: vec!["page".into()],
+        statuses: vec!["publish".into()],
+        limit: Some(1),
+        ..Default::default()
+    };
     let has_published_pages = ctx.env.db.count_posts(&pages).await.unwrap_or(0) > 0;
-    let syntax_highlighting = ctx.env.db.user_meta(ctx.user.id, "syntax_highlighting").await.ok().flatten().as_deref() != Some("false");
-    let custom_css = rustpress_theme::classic::wp_get_custom_css(site, &mods).await.unwrap_or_default();
-    State { ctx, mods, support, template_uri, stylesheet_uri, stylesheet, theme_name: theme_name(ctx), custom_logo, has_published_pages, syntax_highlighting, custom_css, preview: false, items_ctx: None, previewed: None }
+    let syntax_highlighting = ctx
+        .env
+        .db
+        .user_meta(ctx.user.id, "syntax_highlighting")
+        .await
+        .ok()
+        .flatten()
+        .as_deref()
+        != Some("false");
+    let custom_css = rustpress_theme::classic::wp_get_custom_css(site, &mods)
+        .await
+        .unwrap_or_default();
+    State {
+        ctx,
+        mods,
+        support,
+        template_uri,
+        stylesheet_uri,
+        stylesheet,
+        theme_name: theme_name(ctx),
+        custom_logo,
+        has_published_pages,
+        syntax_highlighting,
+        custom_css,
+        preview: false,
+        items_ctx: None,
+        previewed: None,
+    }
 }
 
 pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
@@ -319,10 +490,18 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     let state = state(ctx).await;
     let widgets_on = !ctx.env.block_theme;
     let menus = nav_menus::menus(&state).await;
-    let locations = if ctx.env.theme.template == "twentyseventeen" { super::nav_menus::registered_locations(ctx) } else { Vec::new() };
+    let locations = if ctx.env.theme.template == "twentyseventeen" {
+        super::nav_menus::registered_locations(ctx)
+    } else {
+        Vec::new()
+    };
     let mut m = Manager::default();
     // `customize_register`: the widgets at priority 1, the settings of WordPress and of the theme, then the menus.
-    let widget_state = if widgets_on { Some(widgets::load(&state).await) } else { None };
+    let widget_state = if widgets_on {
+        Some(widgets::load(&state).await)
+    } else {
+        None
+    };
     if let Some(w) = &widget_state {
         widgets::register(&state, &mut m, w);
     }
@@ -335,36 +514,93 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     register::render_contents(&state, &mut m).await;
     register::control_json(&state, &mut m).await;
 
-    let Urls { preview: preview_url, close: return_url } = urls(ctx);
+    let Urls {
+        preview: preview_url,
+        close: return_url,
+    } = urls(ctx);
     // `current_time( 'mysql' )`.
-    let now = rustpress_core::datetime::SiteTimezone::from_options(&site.options).format("Y-m-d H:i:s", ctx.env.now);
-    let menus_title = m.panel("nav_menus").map(|p| p.title.clone()).unwrap_or_default();
-    let widgets_title = m.panel("widgets").map(|p| p.title.clone()).unwrap_or_else(|| tr("Widgets"));
+    let now = rustpress_core::datetime::SiteTimezone::from_options(&site.options)
+        .format("Y-m-d H:i:s", ctx.env.now);
+    let menus_title = m
+        .panel("nav_menus")
+        .map(|p| p.title.clone())
+        .unwrap_or_default();
+    let widgets_title = m
+        .panel("widgets")
+        .map(|p| p.title.clone())
+        .unwrap_or_else(|| tr("Widgets"));
     let header_data = header_data(&state).await;
     let mut assets = assets::assets(
         &state,
         &m,
-        widget_state.as_ref().map(|w| widgets::settings_data(&state, w)),
+        widget_state
+            .as_ref()
+            .map(|w| widgets::settings_data(&state, w)),
         nav_menus::scripts_data(&state, &menus, &locations, &menus_title),
         header_data,
     )
     .await;
 
     // The control templates: `render_control_templates()` makes a control of each type, after the real ones.
-    let blogname = site.settings.blogname.replace('\\', "\\\\").replace('\'', "\\'");
-    let hidden_columns = super::common::user_option(ctx, "managenav-menuscolumnshidden").await.map(|value| rustpress_core::options::maybe_unserialize(&value)).and_then(|value| value.as_array().map(|items| items.iter().filter_map(|(_, v)| v.as_str().map(str::to_owned)).collect::<Vec<_>>())).unwrap_or_default();
+    let blogname = site
+        .settings
+        .blogname
+        .replace('\\', "\\\\")
+        .replace('\'', "\\'");
+    let hidden_columns = super::common::user_option(ctx, "managenav-menuscolumnshidden")
+        .await
+        .map(|value| rustpress_core::options::maybe_unserialize(&value))
+        .and_then(|value| {
+            value.as_array().map(|items| {
+                items
+                    .iter()
+                    .filter_map(|(_, v)| v.as_str().map(str::to_owned))
+                    .collect::<Vec<_>>()
+            })
+        })
+        .unwrap_or_default();
     let templates = baked(ctx, &TEMPLATES.replace("{{blogname_js}}", &blogname))
-        .replace("{{screen_options}}", &templates::screen_options(ctx, &hidden_columns))
-        .replace("{{date_time}}", &templates::date_time(ctx, m.control_count() + 11))
-        .replace("{{menu_locations}}", &templates::menu_locations(ctx, &locations));
+        .replace(
+            "{{screen_options}}",
+            &templates::screen_options(ctx, &hidden_columns),
+        )
+        .replace(
+            "{{date_time}}",
+            &templates::date_time(ctx, m.control_count() + 11),
+        )
+        .replace(
+            "{{menu_locations}}",
+            &templates::menu_locations(ctx, &locations),
+        );
     let mut footer = String::new();
     if let Some(w) = &widget_state {
         // `WP_Customize_Widgets::print_footer_scripts()`: the editor's settings and link dialog, the widget templates.
-        let rich_editing = ctx.env.db.user_meta(ctx.user.id, "rich_editing").await.ok().flatten();
-        footer.push_str(&super::editor::default_editor_scripts(ctx, super::editor::can_richedit(ctx, rich_editing.as_deref())));
-        let dismissed = ctx.env.db.user_meta(ctx.user.id, "dismissed_wp_pointers").await.ok().flatten().unwrap_or_default();
+        let rich_editing = ctx
+            .env
+            .db
+            .user_meta(ctx.user.id, "rich_editing")
+            .await
+            .ok()
+            .flatten();
+        footer.push_str(&super::editor::default_editor_scripts(
+            ctx,
+            super::editor::can_richedit(ctx, rich_editing.as_deref()),
+        ));
+        let dismissed = ctx
+            .env
+            .db
+            .user_meta(ctx.user.id, "dismissed_wp_pointers")
+            .await
+            .ok()
+            .flatten()
+            .unwrap_or_default();
         footer.push_str(&super::widgets::control_templates(ctx, &dismissed, true));
-        footer.push_str(&widgets::control_templates(&state, w, &menus, &widgets_title));
+        footer.push_str(&widgets::control_templates(
+            &state,
+            w,
+            &menus,
+            &widgets_title,
+        ));
     }
     footer.push_str(&baked(ctx, MENU_TEMPLATES));
     footer.push_str(&nav_menus::available_items(&state, &menus_title));
@@ -378,20 +614,38 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     if state.support.is_some() {
         footer.push_str(&baked(ctx, HEADER_TEMPLATES));
     }
-    footer.push_str(&pane_settings(&state, &m, &preview_url, &return_url, &now, autofocus(ctx)));
+    footer.push_str(&pane_settings(
+        &state,
+        &m,
+        &preview_url,
+        &return_url,
+        &now,
+        autofocus(ctx),
+    ));
 
     let locale = site.locale().replace('_', "-").to_lowercase();
-    let mut body_class = format!("wp-core-ui wp-customizer js locale-{} admin-color-modern", sanitize_html_class(&locale));
+    let mut body_class = format!(
+        "wp-core-ui wp-customizer js locale-{} admin-color-modern",
+        sanitize_html_class(&locale)
+    );
     // `wp_use_widgets_block_editor()`.
     body_class.push_str(" wp-embed-responsive");
     assets.customize = Some(Box::new(CustomizeParts {
-        title: esc_html(&sprintf(&rustpress_core::formatting::html_entity_decode(&tr("Customize: %s")), &[&tr("Loading&hellip;")])),
+        title: esc_html(&sprintf(
+            &rustpress_core::formatting::html_entity_decode(&tr("Customize: %s")),
+            &[&tr("Loading&hellip;")],
+        )),
         body_class,
         body: body(ctx, &return_url),
         templates,
         footer,
         admin_hooks: widget_state.is_some(),
     }));
-    let screen = Screen { file: "customize.php".into(), hook_suffix: Some("widgets.php".into()), title: String::new(), ..Default::default() };
+    let screen = Screen {
+        file: "customize.php".into(),
+        hook_suffix: Some("widgets.php".into()),
+        title: String::new(),
+        ..Default::default()
+    };
     render(ctx, &screen, "", &assets).await
 }

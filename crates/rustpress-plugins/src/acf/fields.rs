@@ -54,20 +54,80 @@ pub(super) fn type_defaults(kind: &str) -> Vec<(&'static str, Value)> {
     let i = Value::Int;
     match kind {
         "accordion" => vec![("open", i(0)), ("multi_expand", i(0)), ("endpoint", i(0))],
-        "button_group" => vec![("choices", empty()), ("default_value", s("")), ("allow_null", i(0)), ("return_format", s("value")), ("layout", s("horizontal"))],
-        "checkbox" => vec![("layout", s("vertical")), ("choices", empty()), ("default_value", s("")), ("allow_custom", i(0)), ("save_custom", i(0)), ("toggle", i(0)), ("return_format", s("value"))],
-        "color_picker" => vec![("default_value", s("")), ("enable_opacity", Value::Bool(false)), ("custom_palette_source", s("")), ("palette_colors", s("")), ("show_color_wheel", Value::Bool(true)), ("return_format", s("string"))],
-        "date_picker" => vec![("display_format", s("d/m/Y")), ("return_format", s("d/m/Y")), ("first_day", i(1)), ("default_to_current_date", i(0))],
-        "date_time_picker" => vec![("display_format", s("d/m/Y g:i a")), ("return_format", s("d/m/Y g:i a")), ("first_day", i(1)), ("default_to_current_date", i(0))],
-        "email" => vec![("default_value", s("")), ("placeholder", s("")), ("prepend", s("")), ("append", s(""))],
-        "file" => vec![("return_format", s("array")), ("library", s("all")), ("min_size", i(0)), ("max_size", i(0)), ("mime_types", s(""))],
-        "google_map" => vec![("height", s("")), ("center_lat", s("")), ("center_lng", s("")), ("zoom", s(""))],
+        "button_group" => vec![
+            ("choices", empty()),
+            ("default_value", s("")),
+            ("allow_null", i(0)),
+            ("return_format", s("value")),
+            ("layout", s("horizontal")),
+        ],
+        "checkbox" => vec![
+            ("layout", s("vertical")),
+            ("choices", empty()),
+            ("default_value", s("")),
+            ("allow_custom", i(0)),
+            ("save_custom", i(0)),
+            ("toggle", i(0)),
+            ("return_format", s("value")),
+        ],
+        "color_picker" => vec![
+            ("default_value", s("")),
+            ("enable_opacity", Value::Bool(false)),
+            ("custom_palette_source", s("")),
+            ("palette_colors", s("")),
+            ("show_color_wheel", Value::Bool(true)),
+            ("return_format", s("string")),
+        ],
+        "date_picker" => vec![
+            ("display_format", s("d/m/Y")),
+            ("return_format", s("d/m/Y")),
+            ("first_day", i(1)),
+            ("default_to_current_date", i(0)),
+        ],
+        "date_time_picker" => vec![
+            ("display_format", s("d/m/Y g:i a")),
+            ("return_format", s("d/m/Y g:i a")),
+            ("first_day", i(1)),
+            ("default_to_current_date", i(0)),
+        ],
+        "email" => vec![
+            ("default_value", s("")),
+            ("placeholder", s("")),
+            ("prepend", s("")),
+            ("append", s("")),
+        ],
+        "file" => vec![
+            ("return_format", s("array")),
+            ("library", s("all")),
+            ("min_size", i(0)),
+            ("max_size", i(0)),
+            ("mime_types", s("")),
+        ],
+        "google_map" => vec![
+            ("height", s("")),
+            ("center_lat", s("")),
+            ("center_lng", s("")),
+            ("zoom", s("")),
+        ],
         "group" => vec![("sub_fields", empty()), ("layout", s("block"))],
         "icon_picker" => vec![
             ("library", s("all")),
-            ("tabs", Value::Array(vec![(rustpress_phpser::Key::Int(0), s("dashicons")), (rustpress_phpser::Key::Int(1), s("url")), (rustpress_phpser::Key::Int(2), s("media_library"))])),
+            (
+                "tabs",
+                Value::Array(vec![
+                    (rustpress_phpser::Key::Int(0), s("dashicons")),
+                    (rustpress_phpser::Key::Int(1), s("url")),
+                    (rustpress_phpser::Key::Int(2), s("media_library")),
+                ]),
+            ),
             ("return_format", s("string")),
-            ("default_value", Value::Array(vec![(super::php::key("type"), Value::Null), (super::php::key("value"), Value::Null)])),
+            (
+                "default_value",
+                Value::Array(vec![
+                    (super::php::key("type"), Value::Null),
+                    (super::php::key("value"), Value::Null),
+                ]),
+            ),
         ],
         "image" => vec![
             ("return_format", s("array")),
@@ -82,20 +142,72 @@ pub(super) fn type_defaults(kind: &str) -> Vec<(&'static str, Value)> {
             ("mime_types", s("")),
         ],
         "link" => vec![("return_format", s("array"))],
-        "message" => vec![("message", s("")), ("esc_html", i(0)), ("new_lines", s("wpautop"))],
-        "number" => vec![("default_value", s("")), ("min", s("")), ("max", s("")), ("step", s("")), ("placeholder", s("")), ("prepend", s("")), ("append", s(""))],
+        "message" => vec![
+            ("message", s("")),
+            ("esc_html", i(0)),
+            ("new_lines", s("wpautop")),
+        ],
+        "number" => vec![
+            ("default_value", s("")),
+            ("min", s("")),
+            ("max", s("")),
+            ("step", s("")),
+            ("placeholder", s("")),
+            ("prepend", s("")),
+            ("append", s("")),
+        ],
         "oembed" => vec![("width", s("")), ("height", s(""))],
-        "page_link" => vec![("post_type", empty()), ("taxonomy", empty()), ("allow_null", i(0)), ("multiple", i(0)), ("allow_archives", i(1))],
-        "password" => vec![("placeholder", s("")), ("prepend", s("")), ("append", s(""))],
-        "post_object" => vec![("post_type", empty()), ("taxonomy", empty()), ("allow_null", i(0)), ("multiple", i(0)), ("return_format", s("object")), ("ui", i(1)), ("bidirectional_target", empty())],
-        "radio" => vec![("layout", s("vertical")), ("choices", empty()), ("default_value", s("")), ("other_choice", i(0)), ("save_other_choice", i(0)), ("allow_null", i(0)), ("return_format", s("value"))],
-        "range" => vec![("default_value", s("")), ("min", s("")), ("max", s("")), ("step", s("")), ("prepend", s("")), ("append", s(""))],
+        "page_link" => vec![
+            ("post_type", empty()),
+            ("taxonomy", empty()),
+            ("allow_null", i(0)),
+            ("multiple", i(0)),
+            ("allow_archives", i(1)),
+        ],
+        "password" => vec![
+            ("placeholder", s("")),
+            ("prepend", s("")),
+            ("append", s("")),
+        ],
+        "post_object" => vec![
+            ("post_type", empty()),
+            ("taxonomy", empty()),
+            ("allow_null", i(0)),
+            ("multiple", i(0)),
+            ("return_format", s("object")),
+            ("ui", i(1)),
+            ("bidirectional_target", empty()),
+        ],
+        "radio" => vec![
+            ("layout", s("vertical")),
+            ("choices", empty()),
+            ("default_value", s("")),
+            ("other_choice", i(0)),
+            ("save_other_choice", i(0)),
+            ("allow_null", i(0)),
+            ("return_format", s("value")),
+        ],
+        "range" => vec![
+            ("default_value", s("")),
+            ("min", s("")),
+            ("max", s("")),
+            ("step", s("")),
+            ("prepend", s("")),
+            ("append", s("")),
+        ],
         "relationship" => vec![
             ("post_type", empty()),
             ("taxonomy", empty()),
             ("min", i(0)),
             ("max", i(0)),
-            ("filters", Value::Array(vec![(rustpress_phpser::Key::Int(0), s("search")), (rustpress_phpser::Key::Int(1), s("post_type")), (rustpress_phpser::Key::Int(2), s("taxonomy"))])),
+            (
+                "filters",
+                Value::Array(vec![
+                    (rustpress_phpser::Key::Int(0), s("search")),
+                    (rustpress_phpser::Key::Int(1), s("post_type")),
+                    (rustpress_phpser::Key::Int(2), s("taxonomy")),
+                ]),
+            ),
             ("elements", empty()),
             ("return_format", s("object")),
             ("bidirectional_target", empty()),
@@ -112,7 +224,11 @@ pub(super) fn type_defaults(kind: &str) -> Vec<(&'static str, Value)> {
             ("create_options", i(0)),
             ("save_options", i(0)),
         ],
-        "tab" => vec![("placement", s("top")), ("endpoint", i(0)), ("selected", i(0))],
+        "tab" => vec![
+            ("placement", s("top")),
+            ("endpoint", i(0)),
+            ("selected", i(0)),
+        ],
         "taxonomy" => vec![
             ("taxonomy", s("category")),
             ("field_type", s("checkbox")),
@@ -124,13 +240,46 @@ pub(super) fn type_defaults(kind: &str) -> Vec<(&'static str, Value)> {
             ("save_terms", i(0)),
             ("bidirectional_target", empty()),
         ],
-        "text" => vec![("default_value", s("")), ("maxlength", s("")), ("placeholder", s("")), ("prepend", s("")), ("append", s(""))],
-        "textarea" => vec![("default_value", s("")), ("new_lines", s("")), ("maxlength", s("")), ("placeholder", s("")), ("rows", s(""))],
-        "time_picker" => vec![("display_format", s("g:i a")), ("return_format", s("g:i a"))],
-        "true_false" => vec![("default_value", i(0)), ("message", s("")), ("ui", i(0)), ("ui_on_text", s("")), ("ui_off_text", s(""))],
+        "text" => vec![
+            ("default_value", s("")),
+            ("maxlength", s("")),
+            ("placeholder", s("")),
+            ("prepend", s("")),
+            ("append", s("")),
+        ],
+        "textarea" => vec![
+            ("default_value", s("")),
+            ("new_lines", s("")),
+            ("maxlength", s("")),
+            ("placeholder", s("")),
+            ("rows", s("")),
+        ],
+        "time_picker" => vec![
+            ("display_format", s("g:i a")),
+            ("return_format", s("g:i a")),
+        ],
+        "true_false" => vec![
+            ("default_value", i(0)),
+            ("message", s("")),
+            ("ui", i(0)),
+            ("ui_on_text", s("")),
+            ("ui_off_text", s("")),
+        ],
         "url" => vec![("default_value", s("")), ("placeholder", s(""))],
-        "user" => vec![("role", s("")), ("multiple", i(0)), ("allow_null", i(0)), ("return_format", s("array")), ("bidirectional_target", empty())],
-        "wysiwyg" => vec![("tabs", s("all")), ("toolbar", s("full")), ("media_upload", i(1)), ("default_value", s("")), ("delay", i(0))],
+        "user" => vec![
+            ("role", s("")),
+            ("multiple", i(0)),
+            ("allow_null", i(0)),
+            ("return_format", s("array")),
+            ("bidirectional_target", empty()),
+        ],
+        "wysiwyg" => vec![
+            ("tabs", s("all")),
+            ("toolbar", s("full")),
+            ("media_upload", i(1)),
+            ("default_value", s("")),
+            ("delay", i(0)),
+        ],
         _ => Vec::new(),
     }
 }
@@ -144,8 +293,35 @@ pub fn supports_bindings(kind: &str) -> bool {
 pub fn show_in_rest(kind: &str) -> bool {
     matches!(
         kind,
-        "text" | "textarea" | "number" | "range" | "email" | "url" | "password" | "image" | "file" | "wysiwyg" | "oembed" | "select" | "checkbox" | "radio" | "button_group" | "true_false" | "link"
-            | "post_object" | "page_link" | "relationship" | "taxonomy" | "user" | "google_map" | "date_picker" | "date_time_picker" | "time_picker" | "color_picker" | "icon_picker" | "group"
+        "text"
+            | "textarea"
+            | "number"
+            | "range"
+            | "email"
+            | "url"
+            | "password"
+            | "image"
+            | "file"
+            | "wysiwyg"
+            | "oembed"
+            | "select"
+            | "checkbox"
+            | "radio"
+            | "button_group"
+            | "true_false"
+            | "link"
+            | "post_object"
+            | "page_link"
+            | "relationship"
+            | "taxonomy"
+            | "user"
+            | "google_map"
+            | "date_picker"
+            | "date_time_picker"
+            | "time_picker"
+            | "color_picker"
+            | "icon_picker"
+            | "group"
     )
 }
 
@@ -156,7 +332,10 @@ fn field_from(post: &AcfPost, all: &[AcfPost]) -> Field {
         Value::Array(items) => items,
         _ => Vec::new(),
     };
-    let kind = items.iter().find(|(k, _)| super::php::key_eq(k, &super::php::key("type"))).map_or_else(|| "text".to_owned(), |(_, v)| strval(Some(v)));
+    let kind = items
+        .iter()
+        .find(|(k, _)| super::php::key_eq(k, &super::php::key("type")))
+        .map_or_else(|| "text".to_owned(), |(_, v)| strval(Some(v)));
     super::php::set(&mut items, "ID", Value::Int(post.id as i64));
     super::php::set(&mut items, "key", string(&post.name));
     super::php::set(&mut items, "label", string(&post.title));
@@ -165,7 +344,11 @@ fn field_from(post: &AcfPost, all: &[AcfPost]) -> Field {
     super::php::set(&mut items, "parent", Value::Int(post.parent as i64));
     super::php::set(&mut items, "type", string(&kind));
     // `isset()`: a stored null takes the default as well.
-    let unset = |items: &Vec<(rustpress_phpser::Key, Value)>, name: &str| !items.iter().any(|(k, v)| super::php::key_eq(k, &super::php::key(name)) && !matches!(v, Value::Null));
+    let unset = |items: &Vec<(rustpress_phpser::Key, Value)>, name: &str| {
+        !items.iter().any(|(k, v)| {
+            super::php::key_eq(k, &super::php::key(name)) && !matches!(v, Value::Null)
+        })
+    };
     // `acf_field::validate_field()`: the defaults of the type for the keys that are not set.
     for (name, default) in type_defaults(&kind) {
         if unset(&items, name) {
@@ -173,8 +356,18 @@ fn field_from(post: &AcfPost, all: &[AcfPost]) -> Field {
         }
     }
     // `acf_field_group::load_field()`: the sub fields of a group.
-    let sub_fields = if kind == "group" { children(post.id, all) } else { Vec::new() };
-    Field { key: post.name.clone(), name: post.excerpt.clone(), kind, settings: Value::Array(items), sub_fields }
+    let sub_fields = if kind == "group" {
+        children(post.id, all)
+    } else {
+        Vec::new()
+    };
+    Field {
+        key: post.name.clone(),
+        name: post.excerpt.clone(),
+        kind,
+        settings: Value::Array(items),
+        sub_fields,
+    }
 }
 
 /// A field from its settings (a local field, the golden tests): the type's defaults for the keys it does not set.
@@ -184,14 +377,27 @@ pub fn from_settings(settings: Value, sub_fields: Vec<Field>) -> Field {
         Value::Array(items) => items,
         _ => Vec::new(),
     };
-    let get = |items: &Vec<(rustpress_phpser::Key, Value)>, name: &str| items.iter().find(|(k, _)| super::php::key_eq(k, &super::php::key(name))).map(|(_, v)| strval(Some(v)));
+    let get = |items: &Vec<(rustpress_phpser::Key, Value)>, name: &str| {
+        items
+            .iter()
+            .find(|(k, _)| super::php::key_eq(k, &super::php::key(name)))
+            .map(|(_, v)| strval(Some(v)))
+    };
     let kind = get(&items, "type").unwrap_or_else(|| "text".to_owned());
     for (name, default) in type_defaults(&kind) {
-        if !items.iter().any(|(k, v)| super::php::key_eq(k, &super::php::key(name)) && !matches!(v, Value::Null)) {
+        if !items.iter().any(|(k, v)| {
+            super::php::key_eq(k, &super::php::key(name)) && !matches!(v, Value::Null)
+        }) {
             super::php::set(&mut items, name, default);
         }
     }
-    Field { key: get(&items, "key").unwrap_or_default(), name: get(&items, "name").unwrap_or_default(), kind, settings: Value::Array(items), sub_fields }
+    Field {
+        key: get(&items, "key").unwrap_or_default(),
+        name: get(&items, "name").unwrap_or_default(),
+        kind,
+        settings: Value::Array(items),
+        sub_fields,
+    }
 }
 
 /// `acf_get_fields()` of a parent (a field group or a group field).
@@ -201,7 +407,10 @@ pub(super) fn children_of(parent: u64, all: &[AcfPost]) -> Vec<Field> {
 }
 
 fn children(parent: u64, all: &[AcfPost]) -> Vec<Field> {
-    all.iter().filter(|p| p.parent == parent).map(|p| field_from(p, all)).collect()
+    all.iter()
+        .filter(|p| p.parent == parent)
+        .map(|p| field_from(p, all))
+        .collect()
 }
 
 /// The field groups of the database with their fields (`acf_get_field_groups()` without a filter).
@@ -236,7 +445,14 @@ pub(super) fn parse_location(settings: &Value) -> Vec<Vec<Rule>> {
         Some(Value::Array(groups)) => groups
             .iter()
             .map(|(_, rules)| match rules {
-                Value::Array(rules) => rules.iter().map(|(_, rule)| Rule { param: strval(rule.get("param")), operator: strval(rule.get("operator")), value: rule.get("value").cloned().unwrap_or(Value::Null) }).collect(),
+                Value::Array(rules) => rules
+                    .iter()
+                    .map(|(_, rule)| Rule {
+                        param: strval(rule.get("param")),
+                        operator: strval(rule.get("operator")),
+                        value: rule.get("value").cloned().unwrap_or(Value::Null),
+                    })
+                    .collect(),
                 _ => Vec::new(),
             })
             .collect(),
@@ -247,12 +463,18 @@ pub(super) fn parse_location(settings: &Value) -> Vec<Vec<Rule>> {
 /// What `acf_get_field_groups( $args )` matches against (the "screen").
 pub enum Screen<'a> {
     /// `[ 'post_id' => $id ]`, with `post_type` for the revisions and autosaves of a post.
-    Post { post: &'a Post, post_type: Option<&'a str> },
+    Post {
+        post: &'a Post,
+        post_type: Option<&'a str>,
+    },
     /// `[ 'taxonomy' => $taxonomy ]`.
     Term { taxonomy: &'a str },
     /// `[ 'user_id' => $id, 'user_form' => $view ]` of the user screens (`None` is `'new'`), and
     /// `[ 'user_id' => $id, 'rest' => true ]` without a form.
-    User { user_id: Option<u64>, form: Option<&'a str> },
+    User {
+        user_id: Option<u64>,
+        form: Option<&'a str>,
+    },
     /// `[ 'comment' => $post_type ]`.
     Comment { post_type: String },
     /// `[ 'attachment_id' => $id, 'attachment' => $id ]`.
@@ -336,11 +558,19 @@ fn compare(value: &Value, rule: &Rule) -> bool {
     if rule.value == string("all") {
         result = true;
     }
-    if rule.operator == "!=" { !result } else { result }
+    if rule.operator == "!=" {
+        !result
+    } else {
+        result
+    }
 }
 
 fn reverse(result: bool, rule: &Rule) -> bool {
-    if rule.operator == "!=" { !result } else { result }
+    if rule.operator == "!=" {
+        !result
+    } else {
+        result
+    }
 }
 
 /// The post types the theme has templates for (`acf_get_post_templates()`): pages always; block themes list their
@@ -355,7 +585,11 @@ async fn match_rule(rule: &Rule, screen: &Screen<'_>, ctx: &MatchContext<'_>) ->
     let rule_value = strval(Some(&rule.value));
     Ok(match rule.param.as_str() {
         "post_type" => match screen {
-            Screen::Post { post_type: Some(post_type), .. } | Screen::PostType { post_type } => compare(&string(post_type), rule),
+            Screen::Post {
+                post_type: Some(post_type),
+                ..
+            }
+            | Screen::PostType { post_type } => compare(&string(post_type), rule),
             Screen::Post { post, .. } => compare(&string(&post.post_type), rule),
             _ => false,
         },
@@ -365,7 +599,11 @@ async fn match_rule(rule: &Rule, screen: &Screen<'_>, ctx: &MatchContext<'_>) ->
         },
         "post_status" => match screen {
             Screen::Post { post, .. } => {
-                let status = if post.post_status == "auto-draft" { "draft" } else { post.post_status.as_str() };
+                let status = if post.post_status == "auto-draft" {
+                    "draft"
+                } else {
+                    post.post_status.as_str()
+                };
                 compare(&string(status), rule)
             }
             _ => false,
@@ -373,10 +611,16 @@ async fn match_rule(rule: &Rule, screen: &Screen<'_>, ctx: &MatchContext<'_>) ->
         "post_format" => match screen {
             Screen::Post { post, .. } => {
                 // `get_post_format()`, `standard` where the type supports formats.
-                let format = db.terms_for_post(post.id, Some("post_format")).await?.first().and_then(|t| t.slug.strip_prefix("post-format-").map(str::to_owned));
+                let format = db
+                    .terms_for_post(post.id, Some("post_format"))
+                    .await?
+                    .first()
+                    .and_then(|t| t.slug.strip_prefix("post-format-").map(str::to_owned));
                 let value = match format {
                     Some(format) => string(&format),
-                    None if ctx.site.post_type_supports(&post.post_type, "post-formats") => string("standard"),
+                    None if ctx.site.post_type_supports(&post.post_type, "post-formats") => {
+                        string("standard")
+                    }
                     None => Value::Bool(false),
                 };
                 compare(&value, rule)
@@ -387,7 +631,10 @@ async fn match_rule(rule: &Rule, screen: &Screen<'_>, ctx: &MatchContext<'_>) ->
             Screen::Post { post, .. } => {
                 // `acf_get_term()`: `taxonomy:slug`, or a term ID.
                 let term = match rule_value.split_once(':') {
-                    Some((taxonomy, slug)) if !taxonomy.is_empty() => db.term_by_slug(taxonomy, slug.split(':').next().unwrap_or(slug)).await?,
+                    Some((taxonomy, slug)) if !taxonomy.is_empty() => {
+                        db.term_by_slug(taxonomy, slug.split(':').next().unwrap_or(slug))
+                            .await?
+                    }
                     _ => match rule_value.parse::<u64>() {
                         Ok(id) => db.term_by_id(None, id).await?,
                         Err(_) => None,
@@ -396,7 +643,12 @@ async fn match_rule(rule: &Rule, screen: &Screen<'_>, ctx: &MatchContext<'_>) ->
                 match term {
                     None => false,
                     Some(term) => {
-                        let mut ids: Vec<u64> = db.terms_for_post(post.id, Some(&term.taxonomy)).await?.iter().map(|t| t.term_id).collect();
+                        let mut ids: Vec<u64> = db
+                            .terms_for_post(post.id, Some(&term.taxonomy))
+                            .await?
+                            .iter()
+                            .map(|t| t.term_id)
+                            .collect();
                         if ids.is_empty() && term.taxonomy == "category" {
                             ids.push(1);
                         }
@@ -409,16 +661,32 @@ async fn match_rule(rule: &Rule, screen: &Screen<'_>, ctx: &MatchContext<'_>) ->
         "post_template" | "page_template" => match screen {
             Screen::Post { post, post_type } => {
                 let post_type = post_type.unwrap_or(&post.post_type);
-                if (rule.param == "page_template" && rule_value == "default" && post_type != "page") || !has_templates(post_type) {
+                if (rule.param == "page_template" && rule_value == "default" && post_type != "page")
+                    || !has_templates(post_type)
+                {
                     false
                 } else {
-                    let template = db.acf_meta(MetaKind::Post, post.id, "_wp_page_template").await?.unwrap_or_default();
-                    compare(&string(if template.is_empty() { "default" } else { &template }), rule)
+                    let template = db
+                        .acf_meta(MetaKind::Post, post.id, "_wp_page_template")
+                        .await?
+                        .unwrap_or_default();
+                    compare(
+                        &string(if template.is_empty() {
+                            "default"
+                        } else {
+                            &template
+                        }),
+                        rule,
+                    )
                 }
             }
             // No post: its template is "default".
             Screen::PostType { post_type } => {
-                if (rule.param == "page_template" && rule_value == "default" && *post_type != "page") || !has_templates(post_type) {
+                if (rule.param == "page_template"
+                    && rule_value == "default"
+                    && *post_type != "page")
+                    || !has_templates(post_type)
+                {
                     false
                 } else {
                     compare(&string("default"), rule)
@@ -455,18 +723,44 @@ async fn match_rule(rule: &Rule, screen: &Screen<'_>, ctx: &MatchContext<'_>) ->
             reverse(result, rule)
         }
         // `is_super_admin()` of a single site is `delete_users`; a visitor has no roles.
-        "current_user_role" => reverse(if rule_value == "super_admin" { ctx.user.can("delete_users") } else { !rule_value.is_empty() && ctx.user.can(&rule_value) }, rule),
+        "current_user_role" => reverse(
+            if rule_value == "super_admin" {
+                ctx.user.can("delete_users")
+            } else {
+                !rule_value.is_empty() && ctx.user.can(&rule_value)
+            },
+            rule,
+        ),
         // The REST API has no forms; the choice "Add / Edit" (valued `edit`) also matches the add form.
         "user_form" => match screen {
             Screen::User { form: None, .. } => true,
-            Screen::User { form: Some(form), .. } => compare(&string(if rule_value == "edit" && *form == "add" { "edit" } else { form }), rule),
+            Screen::User {
+                form: Some(form), ..
+            } => compare(
+                &string(if rule_value == "edit" && *form == "add" {
+                    "edit"
+                } else {
+                    form
+                }),
+                rule,
+            ),
             _ => false,
         },
         // A new user has the default role.
         "user_role" => match screen {
-            Screen::User { user_id: None, .. } => compare(&string(&ctx.site.options.string("default_role", "")), rule),
-            Screen::User { user_id: Some(user_id), .. } => {
-                let role = if !rule_value.is_empty() && user_has_role(db, *user_id, &rule_value).await? { rule_value.clone() } else { String::new() };
+            Screen::User { user_id: None, .. } => {
+                compare(&string(&ctx.site.options.string("default_role", "")), rule)
+            }
+            Screen::User {
+                user_id: Some(user_id),
+                ..
+            } => {
+                let role =
+                    if !rule_value.is_empty() && user_has_role(db, *user_id, &rule_value).await? {
+                        rule_value.clone()
+                    } else {
+                        String::new()
+                    };
                 compare(&string(&role), rule)
             }
             _ => false,
@@ -483,7 +777,9 @@ async fn match_rule(rule: &Rule, screen: &Screen<'_>, ctx: &MatchContext<'_>) ->
         "attachment" => match screen {
             Screen::Attachment { post } => {
                 let mime = &post.post_mime_type;
-                let general = !rule_value.is_empty() && !rule_value.char_indices().any(|(i, c)| c == '/' && i > 0) && mime.split('/').next() == Some(rule_value.as_str());
+                let general = !rule_value.is_empty()
+                    && !rule_value.char_indices().any(|(i, c)| c == '/' && i > 0)
+                    && mime.split('/').next() == Some(rule_value.as_str());
                 compare(&string(if general { &rule_value } else { mime }), rule)
             }
             _ => false,
@@ -495,6 +791,12 @@ async fn match_rule(rule: &Rule, screen: &Screen<'_>, ctx: &MatchContext<'_>) ->
 /// `user_can( $user_id, $role )`: the role is one of the user's capabilities.
 async fn user_has_role(db: &Db, user_id: u64, role: &str) -> Result<bool> {
     let key = format!("{}capabilities", db.table_prefix());
-    let caps = db.acf_meta(MetaKind::User, user_id, &key).await?.map(|raw| rustpress_core::options::maybe_unserialize(&raw));
-    Ok(caps.as_ref().and_then(|c| c.get(role)).is_some_and(|v| truthy(Some(v))))
+    let caps = db
+        .acf_meta(MetaKind::User, user_id, &key)
+        .await?
+        .map(|raw| rustpress_core::options::maybe_unserialize(&raw));
+    Ok(caps
+        .as_ref()
+        .and_then(|c| c.get(role))
+        .is_some_and(|v| truthy(Some(v))))
 }

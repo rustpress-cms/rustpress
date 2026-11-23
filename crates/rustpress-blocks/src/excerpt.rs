@@ -4,12 +4,26 @@ use std::sync::Arc;
 
 use rustpress_db::Post;
 
-use crate::content::{context_for_post, has_blocks, post_password_required, the_content_for_excerpt};
+use crate::Result;
+use crate::content::{
+    context_for_post, has_blocks, post_password_required, the_content_for_excerpt,
+};
 use crate::env::{Context, Env};
 use crate::parser::{Block, parse_blocks};
-use crate::Result;
 
-const INNER: &[&str] = &["core/freeform", "core/heading", "core/html", "core/list", "core/media-text", "core/paragraph", "core/preformatted", "core/pullquote", "core/quote", "core/table", "core/verse"];
+const INNER: &[&str] = &[
+    "core/freeform",
+    "core/heading",
+    "core/html",
+    "core/list",
+    "core/media-text",
+    "core/paragraph",
+    "core/preformatted",
+    "core/pullquote",
+    "core/quote",
+    "core/table",
+    "core/verse",
+];
 const WRAPPERS: &[&str] = &["core/columns", "core/column", "core/group"];
 
 /// `get_the_excerpt()`: the explicit excerpt, else the first 55 words of the content.
@@ -20,11 +34,18 @@ pub async fn get_the_excerpt(env: &Env<'_>, post: &Arc<Post>) -> Result<String> 
 
 /// [`get_the_excerpt`] with another `excerpt_length` (`block_core_post_excerpt_excerpt_length()` makes it 101 in the
 /// administration, so the preloads of the editors trim there).
-pub async fn get_the_excerpt_of_length(env: &Env<'_>, post: &Arc<Post>, length: usize) -> Result<String> {
+pub async fn get_the_excerpt_of_length(
+    env: &Env<'_>,
+    post: &Arc<Post>,
+    length: usize,
+) -> Result<String> {
     let more = match env.theme.excerpt_more() {
         Some(template) => {
             let permalink = rustpress_core::formatting::esc_url(&env.site.permalink(post).await?);
-            rustpress_core::i18n::sprintf(&template, &[&permalink, &crate::content::the_title_for(env.site, post)])
+            rustpress_core::i18n::sprintf(
+                &template,
+                &[&permalink, &crate::content::the_title_for(env.site, post)],
+            )
         }
         None => " [&hellip;]".to_owned(),
     };
@@ -32,9 +53,16 @@ pub async fn get_the_excerpt_of_length(env: &Env<'_>, post: &Arc<Post>, length: 
 }
 
 /// [`get_the_excerpt`] with the `excerpt_length` and `excerpt_more` filters applied.
-pub async fn get_the_excerpt_with(env: &Env<'_>, post: &Arc<Post>, length: usize, more: &str) -> Result<String> {
+pub async fn get_the_excerpt_with(
+    env: &Env<'_>,
+    post: &Arc<Post>,
+    length: usize,
+    more: &str,
+) -> Result<String> {
     if post_password_required(post) {
-        return Ok(env.site.tr("There is no excerpt because this is a protected post."));
+        return Ok(env
+            .site
+            .tr("There is no excerpt because this is a protected post."));
     }
     if !post.post_excerpt.trim().is_empty() {
         return Ok(post.post_excerpt.clone());
@@ -55,15 +83,25 @@ pub async fn get_the_excerpt_with(env: &Env<'_>, post: &Arc<Post>, length: usize
     } else {
         String::new()
     };
-    let html = the_content_for_excerpt(env, post, &content, &prefix).await?.replace("]]>", "]]&gt;");
-    Ok(rustpress_core::formatting::wp_trim_words_with(&html, length, more, env.site.locale_data().word_count_type))
+    let html = the_content_for_excerpt(env, post, &content, &prefix)
+        .await?
+        .replace("]]>", "]]&gt;");
+    Ok(rustpress_core::formatting::wp_trim_words_with(
+        &html,
+        length,
+        more,
+        env.site.locale_data().word_count_type,
+    ))
 }
 
 /// `excerpt_remove_footnotes()`: the numbered references vanish from generated excerpts.
 pub fn excerpt_remove_footnotes(content: &str) -> String {
     use std::sync::LazyLock;
     static REFERENCE: LazyLock<regex::Regex> = LazyLock::new(|| {
-        regex::Regex::new(r#"<sup data-fn="[^"]+" class="[^"]+">\s*<a href="[^"]+" id="[^"]+">\d+</a>\s*</sup>"#).expect("valid pattern")
+        regex::Regex::new(
+            r#"<sup data-fn="[^"]+" class="[^"]+">\s*<a href="[^"]+" id="[^"]+">\d+</a>\s*</sup>"#,
+        )
+        .expect("valid pattern")
     });
     if !content.contains("data-fn=") {
         return content.to_owned();
@@ -72,15 +110,24 @@ pub fn excerpt_remove_footnotes(content: &str) -> String {
 }
 
 fn allowed(name: &Option<String>) -> bool {
-    name.as_deref().is_none_or(|n| INNER.contains(&n) || WRAPPERS.contains(&n))
+    name.as_deref()
+        .is_none_or(|n| INNER.contains(&n) || WRAPPERS.contains(&n))
 }
 
 fn hidden(block: &Block) -> bool {
-    block.attrs.get("metadata").and_then(|m| m.get("blockVisibility")) == Some(&serde_json::Value::Bool(false))
+    block
+        .attrs
+        .get("metadata")
+        .and_then(|m| m.get("blockVisibility"))
+        == Some(&serde_json::Value::Bool(false))
 }
 
 /// `excerpt_remove_blocks()`: only text-like blocks survive.
-pub async fn excerpt_remove_blocks(env: &Env<'_>, post: &Arc<Post>, content: &str) -> Result<String> {
+pub async fn excerpt_remove_blocks(
+    env: &Env<'_>,
+    post: &Arc<Post>,
+    content: &str,
+) -> Result<String> {
     if !has_blocks(content) {
         return Ok(content.to_owned());
     }
@@ -96,7 +143,9 @@ pub async fn excerpt_remove_blocks(env: &Env<'_>, post: &Arc<Post>, content: &st
                 continue;
             }
             // Skip blocks with disallowed or nested inner blocks.
-            if block.inner_blocks.iter().any(|b| !b.name.as_deref().is_none_or(|n| INNER.contains(&n)) || !b.inner_blocks.is_empty()) {
+            if block.inner_blocks.iter().any(|b| {
+                !b.name.as_deref().is_none_or(|n| INNER.contains(&n)) || !b.inner_blocks.is_empty()
+            }) {
                 continue;
             }
         }

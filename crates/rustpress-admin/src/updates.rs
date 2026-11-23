@@ -40,7 +40,12 @@ fn entries(value: Option<&Value>) -> usize {
 }
 
 async fn transient(site: &Site, name: &str) -> Option<Value> {
-    let raw = site.options.fetch(&site.db, &format!("_site_transient_{name}")).await.ok().flatten()?;
+    let raw = site
+        .options
+        .fetch(&site.db, &format!("_site_transient_{name}"))
+        .await
+        .ok()
+        .flatten()?;
     rustpress_phpser::unserialize(raw.as_bytes()).ok()
 }
 
@@ -50,7 +55,9 @@ pub async fn counts(site: &Site) -> UpdateCounts {
     let mut translations = 0;
     if let Some(core) = transient(site, "update_core").await {
         if let Some(Value::Array(updates)) = field(&core, "updates")
-            && updates.iter().any(|(_, u)| field(u, "response").and_then(Value::as_str) == Some("upgrade"))
+            && updates
+                .iter()
+                .any(|(_, u)| field(u, "response").and_then(Value::as_str) == Some("upgrade"))
         {
             counts.wordpress = 1;
         }
@@ -72,13 +79,26 @@ pub async fn counts(site: &Site) -> UpdateCounts {
 pub fn update_data(site: &Site, counts: UpdateCounts) -> serde_json::Value {
     let mut titles = Vec::new();
     if counts.wordpress > 0 {
-        titles.push(rustpress_core::i18n::sprintf(&site.tr("%d WordPress Update"), &[&counts.wordpress.to_string()]));
+        titles.push(rustpress_core::i18n::sprintf(
+            &site.tr("%d WordPress Update"),
+            &[&counts.wordpress.to_string()],
+        ));
     }
     if counts.plugins > 0 {
-        titles.push(rustpress_core::i18n::sprintf(&site.trn("%d Plugin Update", "%d Plugin Updates", counts.plugins as i64), &[&counts.plugins.to_string()]));
+        titles.push(rustpress_core::i18n::sprintf(
+            &site.trn(
+                "%d Plugin Update",
+                "%d Plugin Updates",
+                counts.plugins as i64,
+            ),
+            &[&counts.plugins.to_string()],
+        ));
     }
     if counts.themes > 0 {
-        titles.push(rustpress_core::i18n::sprintf(&site.trn("%d Theme Update", "%d Theme Updates", counts.themes as i64), &[&counts.themes.to_string()]));
+        titles.push(rustpress_core::i18n::sprintf(
+            &site.trn("%d Theme Update", "%d Theme Updates", counts.themes as i64),
+            &[&counts.themes.to_string()],
+        ));
     }
     if counts.translations > 0 {
         titles.push(site.tr("Translation Updates"));
@@ -94,9 +114,13 @@ pub async fn next_scheduled(site: &Site, hook: &str) -> Option<i64> {
     // `md5( serialize( array() ) )`, the key of the arguments.
     const NO_ARGS: &str = "40cd750bba9870f18aada2478b24840a";
     let raw = site.options.fetch(&site.db, "cron").await.ok().flatten()?;
-    let Value::Array(events) = rustpress_phpser::unserialize(raw.as_bytes()).ok()? else { return None };
+    let Value::Array(events) = rustpress_phpser::unserialize(raw.as_bytes()).ok()? else {
+        return None;
+    };
     events.iter().find_map(|(key, hooks)| match key {
-        Key::Int(timestamp) if field(hooks, hook).and_then(|h| field(h, NO_ARGS)).is_some() => Some(*timestamp),
+        Key::Int(timestamp) if field(hooks, hook).and_then(|h| field(h, NO_ARGS)).is_some() => {
+            Some(*timestamp)
+        }
         _ => None,
     })
 }
@@ -108,18 +132,28 @@ pub async fn auto_update_message(ctx: &crate::screens::Ctx<'_>) -> String {
     };
     let now = ctx.env.now;
     let diff = crate::screens::media_lib::human_time_diff(ctx, next, now);
-    let message = if now - next > 0 { "Automatic update overdue by %s. There may be a problem with WP-Cron." } else { "Automatic update scheduled in %s." };
+    let message = if now - next > 0 {
+        "Automatic update overdue by %s. There may be a problem with WP-Cron."
+    } else {
+        "Automatic update scheduled in %s."
+    };
     rustpress_core::i18n::sprintf(&ctx.tr(message), &[&diff])
 }
 
 /// The WordPress.org slugs the transient `update_plugins` knows (`response` and `no_update`), by plugin file.
 pub async fn plugin_slugs(site: &Site) -> Vec<(String, String)> {
-    let Some(plugins) = transient(site, "update_plugins").await else { return Vec::new() };
+    let Some(plugins) = transient(site, "update_plugins").await else {
+        return Vec::new();
+    };
     let mut slugs = Vec::new();
     for list in ["response", "no_update"] {
-        if let Some(Value::Array(items) | Value::Object { props: items, .. }) = field(&plugins, list) {
+        if let Some(Value::Array(items) | Value::Object { props: items, .. }) =
+            field(&plugins, list)
+        {
             for (key, entry) in items {
-                if let (Key::Str(file), Some(slug)) = (key, field(entry, "slug").and_then(Value::as_str)) {
+                if let (Key::Str(file), Some(slug)) =
+                    (key, field(entry, "slug").and_then(Value::as_str))
+                {
                     slugs.push((String::from_utf8_lossy(file).into_owned(), slug.to_owned()));
                 }
             }
@@ -138,13 +172,31 @@ pub struct PluginUpdate {
 
 /// The updates of the transient `update_plugins`, by plugin file.
 pub async fn plugin_update_list(site: &Site) -> Vec<(String, PluginUpdate)> {
-    let Some(plugins) = transient(site, "update_plugins").await else { return Vec::new() };
-    let Some(Value::Array(items) | Value::Object { props: items, .. }) = field(&plugins, "response") else { return Vec::new() };
-    let text = |entry: &Value, name: &str| field(entry, name).and_then(Value::as_str).unwrap_or_default().to_owned();
+    let Some(plugins) = transient(site, "update_plugins").await else {
+        return Vec::new();
+    };
+    let Some(Value::Array(items) | Value::Object { props: items, .. }) =
+        field(&plugins, "response")
+    else {
+        return Vec::new();
+    };
+    let text = |entry: &Value, name: &str| {
+        field(entry, name)
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_owned()
+    };
     items
         .iter()
         .filter_map(|(key, entry)| match key {
-            Key::Str(file) => Some((String::from_utf8_lossy(file).into_owned(), PluginUpdate { slug: text(entry, "slug"), new_version: text(entry, "new_version"), package: text(entry, "package") })),
+            Key::Str(file) => Some((
+                String::from_utf8_lossy(file).into_owned(),
+                PluginUpdate {
+                    slug: text(entry, "slug"),
+                    new_version: text(entry, "new_version"),
+                    package: text(entry, "package"),
+                },
+            )),
             _ => None,
         })
         .collect()
@@ -152,9 +204,20 @@ pub async fn plugin_update_list(site: &Site) -> Vec<(String, PluginUpdate)> {
 
 /// The plugin files the transient `update_plugins` has an update for.
 pub async fn plugin_updates(site: &Site) -> Vec<String> {
-    let Some(plugins) = transient(site, "update_plugins").await else { return Vec::new() };
+    let Some(plugins) = transient(site, "update_plugins").await else {
+        return Vec::new();
+    };
     match field(&plugins, "response") {
-        Some(Value::Array(items)) | Some(Value::Object { props: items, .. }) => items.iter().filter_map(|(k, _)| if let Key::Str(s) = k { Some(String::from_utf8_lossy(s).into_owned()) } else { None }).collect(),
+        Some(Value::Array(items)) | Some(Value::Object { props: items, .. }) => items
+            .iter()
+            .filter_map(|(k, _)| {
+                if let Key::Str(s) = k {
+                    Some(String::from_utf8_lossy(s).into_owned())
+                } else {
+                    None
+                }
+            })
+            .collect(),
         _ => Vec::new(),
     }
 }
@@ -170,12 +233,28 @@ pub struct ThemeUpdate {
 /// The pending theme updates by stylesheet.
 pub async fn theme_updates(site: &Site) -> std::collections::HashMap<String, ThemeUpdate> {
     let mut out = std::collections::HashMap::new();
-    let Some(themes) = transient(site, "update_themes").await else { return out };
-    let Some(Value::Array(items)) = field(&themes, "response") else { return out };
+    let Some(themes) = transient(site, "update_themes").await else {
+        return out;
+    };
+    let Some(Value::Array(items)) = field(&themes, "response") else {
+        return out;
+    };
     for (key, item) in items {
         let Key::Str(name) = key else { continue };
-        let text = |n: &str| field(item, n).and_then(Value::as_str).unwrap_or_default().to_owned();
-        out.insert(String::from_utf8_lossy(name).into_owned(), ThemeUpdate { new_version: text("new_version"), url: text("url"), package: text("package") });
+        let text = |n: &str| {
+            field(item, n)
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_owned()
+        };
+        out.insert(
+            String::from_utf8_lossy(name).into_owned(),
+            ThemeUpdate {
+                new_version: text("new_version"),
+                url: text("url"),
+                package: text("package"),
+            },
+        );
     }
     out
 }

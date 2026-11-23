@@ -15,11 +15,23 @@ use crate::{Outcome, Resp, Rest, Result};
 
 /// `wp_is_theme_directory_ignored()`.
 fn ignored(relative: &str) -> bool {
-    [".DS_Store", ".svn", ".git", ".hg", ".bzr", "node_modules", "vendor"].iter().any(|d| relative.starts_with(d))
+    [
+        ".DS_Store",
+        ".svn",
+        ".git",
+        ".hg",
+        ".bzr",
+        "node_modules",
+        "vendor",
+    ]
+    .iter()
+    .any(|d| relative.starts_with(d))
 }
 
 fn collect(dir: &Path, base: &Path, out: &mut BTreeMap<String, Vec<u8>>) {
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {
@@ -95,7 +107,10 @@ impl Rest<'_> {
     /// The ZIP of the theme for the site editor's "Export" menu.
     pub(crate) async fn export_theme(&self) -> Result<Outcome> {
         if !self.can("export") {
-            return Ok(Err(self.forbidden("rest_cannot_export_templates", "Sorry, you are not allowed to export templates and template parts.")));
+            return Ok(Err(self.forbidden(
+                "rest_cannot_export_templates",
+                "Sorry, you are not allowed to export templates and template parts.",
+            )));
         }
         let stylesheet = self.theme.stylesheet.clone();
         let dir = self.theme.stylesheet_dir().to_path_buf();
@@ -105,15 +120,26 @@ impl Rest<'_> {
         let theme_attribute = |markup: &str| -> String {
             let mut blocks = parse_blocks(markup);
             serialize_with(&mut blocks, &|block: &mut Block| {
-                if block.name.as_deref() == Some("core/template-part") && block.attrs.get("theme").and_then(Value::as_str) == Some(stylesheet.as_str()) {
+                if block.name.as_deref() == Some("core/template-part")
+                    && block.attrs.get("theme").and_then(Value::as_str) == Some(stylesheet.as_str())
+                {
                     block.attrs.remove("theme");
                 }
             })
         };
-        for tpl in self.block_templates(TKind::Template, None, None, None, &[]).await? {
-            files.insert(format!("templates/{}.html", tpl.slug), theme_attribute(&tpl.content).into_bytes());
+        for tpl in self
+            .block_templates(TKind::Template, None, None, None, &[])
+            .await?
+        {
+            files.insert(
+                format!("templates/{}.html", tpl.slug),
+                theme_attribute(&tpl.content).into_bytes(),
+            );
         }
-        for tpl in self.block_templates(TKind::Part, None, None, None, &[]).await? {
+        for tpl in self
+            .block_templates(TKind::Part, None, None, None, &[])
+            .await?
+        {
             files.insert(format!("parts/{}.html", tpl.slug), tpl.content.into_bytes());
         }
         // theme.json with the styles of the user.
@@ -125,14 +151,32 @@ impl Rest<'_> {
         if let Some(styles) = data.get_mut("styles") {
             rustpress_theme::theme_json::resolve_custom_vars(styles);
         }
-        let query = rustpress_db::PostQuery { post_types: vec!["wp_global_styles".into()], statuses: vec!["publish".into(), "draft".into()], names: vec![format!("wp-global-styles-{}", rustpress_core::slug::sanitize_title(&stylesheet))], limit: Some(1), ..Default::default() };
-        if let Some(post) = self.site.db.posts(&query).await.ok().and_then(|posts| posts.into_iter().next())
+        let query = rustpress_db::PostQuery {
+            post_types: vec!["wp_global_styles".into()],
+            statuses: vec!["publish".into(), "draft".into()],
+            names: vec![format!(
+                "wp-global-styles-{}",
+                rustpress_core::slug::sanitize_title(&stylesheet)
+            )],
+            limit: Some(1),
+            ..Default::default()
+        };
+        if let Some(post) = self
+            .site
+            .db
+            .posts(&query)
+            .await
+            .ok()
+            .and_then(|posts| posts.into_iter().next())
             && let Ok(user) = serde_json::from_str::<Value>(&post.post_content)
             && let Value::Object(user) = user
         {
             for key in ["settings", "styles"] {
                 if let Some(value) = user.get(key) {
-                    let target = data.as_object_mut().map(|o| o.entry(key.to_owned()).or_insert_with(|| Value::Object(Map::new())));
+                    let target = data.as_object_mut().map(|o| {
+                        o.entry(key.to_owned())
+                            .or_insert_with(|| Value::Object(Map::new()))
+                    });
                     if let Some(target) = target {
                         merge(target, value);
                     }
@@ -140,18 +184,29 @@ impl Rest<'_> {
             }
         }
         if let Value::Object(map) = &mut data
-            && let Some(version) = map.get("version").and_then(Value::as_u64) {
-                let schema = if version >= 3 { format!("https://schemas.wp.org/wp/{}/theme.json", self.wp_major_minor()) } else { "https://schemas.wp.org/trunk/theme.json".to_owned() };
-                map.insert("$schema".into(), Value::String(schema));
-            }
+            && let Some(version) = map.get("version").and_then(Value::as_u64)
+        {
+            let schema = if version >= 3 {
+                format!(
+                    "https://schemas.wp.org/wp/{}/theme.json",
+                    self.wp_major_minor()
+                )
+            } else {
+                "https://schemas.wp.org/trunk/theme.json".to_owned()
+            };
+            map.insert("$schema".into(), Value::String(schema));
+        }
         sort_keys(&mut data);
         files.insert("theme.json".into(), pretty(&data).into_bytes());
 
         let mut buffer = std::io::Cursor::new(Vec::new());
         {
             let mut zip = zip::ZipWriter::new(&mut buffer);
-            let options = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
-            let failed = |_: zip::result::ZipError| RestError::new("rest_export_failed", "Zip Export not supported.", 500);
+            let options = zip::write::SimpleFileOptions::default()
+                .compression_method(zip::CompressionMethod::Deflated);
+            let failed = |_: zip::result::ZipError| {
+                RestError::new("rest_export_failed", "Zip Export not supported.", 500)
+            };
             for directory in ["templates/", "parts/"] {
                 if let Err(e) = zip.add_directory(directory, options) {
                     return Ok(Err(failed(e)));
@@ -162,7 +217,11 @@ impl Rest<'_> {
                     return Ok(Err(failed(e)));
                 }
                 if zip.write_all(bytes).is_err() {
-                    return Ok(Err(RestError::new("rest_export_failed", "Zip Export not supported.", 500)));
+                    return Ok(Err(RestError::new(
+                        "rest_export_failed",
+                        "Zip Export not supported.",
+                        500,
+                    )));
                 }
             }
             if let Err(e) = zip.finish() {

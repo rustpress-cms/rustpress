@@ -79,7 +79,11 @@ impl Screen {
             return hook.clone();
         }
         let base = self.file.trim_end_matches(".php");
-        let post_type = if self.post_type.is_empty() { "post" } else { self.post_type.as_str() };
+        let post_type = if self.post_type.is_empty() {
+            "post"
+        } else {
+            self.post_type.as_str()
+        };
         match base {
             "index" => "dashboard".to_owned(),
             "edit" => format!("edit-{post_type}"),
@@ -92,7 +96,11 @@ impl Screen {
 
     /// `$typenow`.
     pub fn typenow(&self) -> String {
-        if self.post_type.is_empty() && self.file == "upload.php" { "attachment".to_owned() } else { self.post_type.clone() }
+        if self.post_type.is_empty() && self.file == "upload.php" {
+            "attachment".to_owned()
+        } else {
+            self.post_type.clone()
+        }
     }
 }
 
@@ -137,18 +145,34 @@ pub struct ScreenOptions {
 }
 
 /// `WP_Screen::render_screen_meta()`: the help, the screen options and the buttons that open them.
-fn screen_meta_with(site: &rustpress_core::Site, help: Option<&Help>, options: Option<&ScreenOptions>, tr: &dyn Fn(&str) -> String, tr_x: &dyn Fn(&str, &str) -> String, nonce: &str) -> String {
+fn screen_meta_with(
+    site: &rustpress_core::Site,
+    help: Option<&Help>,
+    options: Option<&ScreenOptions>,
+    tr: &dyn Fn(&str) -> String,
+    tr_x: &dyn Fn(&str, &str) -> String,
+    nonce: &str,
+) -> String {
     let empty = Help::default();
     let help = help.unwrap_or(&empty);
     let full = screen_meta(help, &tr("Help"));
     // The help part ends with the wrapper of the help; what follows depends on the options and the buttons.
     let mut help_part = if help.tabs.is_empty() {
-        full.strip_suffix("\t\t\t\t</div>\n\t\t").unwrap_or(&full).to_owned()
+        full.strip_suffix("\t\t\t\t</div>\n\t\t")
+            .unwrap_or(&full)
+            .to_owned()
     } else {
-        full.split("\t\t\t\t</div>\n\t\t\t\t<div id=\"screen-meta-links\">").next().unwrap_or(&full).to_owned()
+        full.split("\t\t\t\t</div>\n\t\t\t\t<div id=\"screen-meta-links\">")
+            .next()
+            .unwrap_or(&full)
+            .to_owned()
     };
     if !help.tabs.is_empty() && help.sidebar.is_empty() {
-        help_part = help_part.replacen("id=\"contextual-help-wrap\" class=\"hidden\"", "id=\"contextual-help-wrap\" class=\"hidden no-sidebar\"", 1);
+        help_part = help_part.replacen(
+            "id=\"contextual-help-wrap\" class=\"hidden\"",
+            "id=\"contextual-help-wrap\" class=\"hidden no-sidebar\"",
+            1,
+        );
     }
     let mut out = help_part;
     out.push_str("\t\t");
@@ -179,7 +203,13 @@ fn screen_meta_with(site: &rustpress_core::Site, help: Option<&Help>, options: O
             out.push_str("\t\t</div>\n\t\t</fieldset>\n\t\t");
         }
         if !options.columns.is_empty() {
-            out.push_str(&format!("\t\t<fieldset class=\"metabox-prefs\">\n\t\t<legend>{}</legend>\n\t\t", options.columns_title.clone().unwrap_or_else(|| tr("Columns"))));
+            out.push_str(&format!(
+                "\t\t<fieldset class=\"metabox-prefs\">\n\t\t<legend>{}</legend>\n\t\t",
+                options
+                    .columns_title
+                    .clone()
+                    .unwrap_or_else(|| tr("Columns"))
+            ));
             for (column, title, hidden) in &options.columns {
                 let id = format!("{column}-hide");
                 out.push_str(&format!(
@@ -211,7 +241,13 @@ fn screen_meta_with(site: &rustpress_core::Site, help: Option<&Help>, options: O
             ));
         }
         if let Some(mode) = &options.view_mode {
-            let checked = |value: &str| if mode == value { " checked='checked'" } else { "" };
+            let checked = |value: &str| {
+                if mode == value {
+                    " checked='checked'"
+                } else {
+                    ""
+                }
+            };
             out.push_str(&format!(
                 "\t\t<fieldset class=\"metabox-prefs view-mode\">\n\t\t\t<legend>{}</legend>\n\t\t\t<label for=\"list-view-mode\">\n\t\t\t\t<input id=\"list-view-mode\" type=\"radio\" name=\"mode\" value=\"list\" {} />\n\t\t\t\t{}\t\t\t</label>\n\t\t\t<label for=\"excerpt-view-mode\">\n\t\t\t\t<input id=\"excerpt-view-mode\" type=\"radio\" name=\"mode\" value=\"excerpt\" {} />\n\t\t\t\t{}\t\t\t</label>\n\t\t</fieldset>\n\t\t",
                 tr("View mode"),
@@ -290,14 +326,25 @@ fn screen_meta(help: &Help, label: &str) -> String {
             id = esc_attr(&tab.id),
             title = esc_html(&tab.title)
         ));
-        panels.push_str(&format!("
+        panels.push_str(&format!(
+            "
 							<div id=\"tab-panel-{}\" class=\"help-tab-content{panel_active}\">
 								{}							</div>
-							", esc_attr(&tab.id), tab.content));
+							",
+            esc_attr(&tab.id),
+            tab.content
+        ));
     }
-    let sidebar = if help.sidebar.is_empty() { String::new() } else { format!("										<div class=\"contextual-help-sidebar\">
+    let sidebar = if help.sidebar.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "										<div class=\"contextual-help-sidebar\">
 						{}					</div>
-", help.sidebar) };
+",
+            help.sidebar
+        )
+    };
     format!(
         "		<div id=\"screen-meta\" class=\"metabox-prefs\">
 
@@ -348,8 +395,34 @@ pub struct ChromeEnv<'a> {
 
 /// `wp_removable_query_args()`.
 pub(crate) const REMOVABLE_QUERY_ARGS: &[&str] = &[
-    "activate", "activated", "admin_email_remind_later", "approved", "core-major-auto-updates-saved", "deactivate", "delete_count", "deleted", "disabled", "doing_wp_cron", "enabled", "error", "hotkeys_highlight_first",
-    "hotkeys_highlight_last", "ids", "locked", "message", "same", "saved", "settings-updated", "skipped", "spammed", "trashed", "unspammed", "untrashed", "update", "updated", "wp-post-new-reload",
+    "activate",
+    "activated",
+    "admin_email_remind_later",
+    "approved",
+    "core-major-auto-updates-saved",
+    "deactivate",
+    "delete_count",
+    "deleted",
+    "disabled",
+    "doing_wp_cron",
+    "enabled",
+    "error",
+    "hotkeys_highlight_first",
+    "hotkeys_highlight_last",
+    "ids",
+    "locked",
+    "message",
+    "same",
+    "saved",
+    "settings-updated",
+    "skipped",
+    "spammed",
+    "trashed",
+    "unspammed",
+    "untrashed",
+    "update",
+    "updated",
+    "wp-post-new-reload",
 ];
 
 /// Extra assets of a screen.
@@ -498,7 +571,14 @@ pub struct BootRoute {
 impl Boot {
     /// The module ids of a route: `(route module, content module)`.
     fn module_ids(route: &BootRoute) -> (Option<String>, Option<String>) {
-        (route.has_route.then(|| format!("wp/routes/{}/route", route.name)), route.has_content.then(|| format!("wp/routes/{}/content", route.name)))
+        (
+            route
+                .has_route
+                .then(|| format!("wp/routes/{}/route", route.name)),
+            route
+                .has_content
+                .then(|| format!("wp/routes/{}/content", route.name)),
+        )
     }
 
     fn mount_id(&self) -> String {
@@ -513,22 +593,39 @@ impl Boot {
 /// The strings of the first `array(...)` after `key` in an `*.asset.php` file.
 fn asset_list(includes: &std::path::Path, file: &str, key: &str) -> Vec<String> {
     let asset = rustpress_core::files::read_string(&includes.join(file));
-    let Some(rest) = asset.split(&format!("'{key}' => array(")).nth(1) else { return Vec::new() };
+    let Some(rest) = asset.split(&format!("'{key}' => array(")).nth(1) else {
+        return Vec::new();
+    };
     let body = rest.split(')').next().unwrap_or_default();
-    body.split('\'').skip(1).step_by(2).map(str::to_owned).collect()
+    body.split('\'')
+        .skip(1)
+        .step_by(2)
+        .map(str::to_owned)
+        .collect()
 }
 
 fn asset_version(includes: &std::path::Path, file: &str) -> String {
     let asset = rustpress_core::files::read_string(&includes.join(file));
-    asset.split("'version' => '").nth(1).and_then(|rest| rest.split('\'').next()).unwrap_or_default().to_owned()
+    asset
+        .split("'version' => '")
+        .nth(1)
+        .and_then(|rest| rest.split('\'').next())
+        .unwrap_or_default()
+        .to_owned()
 }
 
 /// The `module_dependencies` ids of an `*.asset.php` file.
 fn asset_module_dependencies(includes: &std::path::Path, file: &str) -> Vec<String> {
     let asset = rustpress_core::files::read_string(&includes.join(file));
-    let Some(rest) = asset.split("'module_dependencies' => array(").nth(1) else { return Vec::new() };
+    let Some(rest) = asset.split("'module_dependencies' => array(").nth(1) else {
+        return Vec::new();
+    };
     let body = rest.split("), 'version'").next().unwrap_or_default();
-    body.split("'id' => '").skip(1).filter_map(|part| part.split('\'').next()).map(str::to_owned).collect()
+    body.split("'id' => '")
+        .skip(1)
+        .filter_map(|part| part.split('\'').next())
+        .map(str::to_owned)
+        .collect()
 }
 
 /// `print_emoji_detection_script()`: the settings and the detection script, inline.
@@ -544,9 +641,23 @@ fn emoji_scripts(env: &ChromeEnv<'_>, editor: bool) -> String {
         "svgExt": ".svg",
         "source": {"concatemoji": format!("{root}/wp-includes/js/wp-emoji-release.min.js?ver={}", env.loader.version)}
     });
-    let loader = rustpress_core::files::read_string(&env.loader.includes.join("js").join("wp-emoji-loader.min.js"));
-    let json = rustpress_blocks::php_json::encode_with(&settings, rustpress_blocks::php_json::Flags { unescaped_slashes: true, unescaped_unicode: false });
-    format!("<script id=\"wp-emoji-settings\" type=\"application/json\">\n{json}\n</script>\n<script type=\"module\">\n{}\n//# sourceURL={root}/wp-includes/js/wp-emoji-loader.min.js\n</script>\n", loader.trim_end())
+    let loader = rustpress_core::files::read_string(
+        &env.loader
+            .includes
+            .join("js")
+            .join("wp-emoji-loader.min.js"),
+    );
+    let json = rustpress_blocks::php_json::encode_with(
+        &settings,
+        rustpress_blocks::php_json::Flags {
+            unescaped_slashes: true,
+            unescaped_unicode: false,
+        },
+    );
+    format!(
+        "<script id=\"wp-emoji-settings\" type=\"application/json\">\n{json}\n</script>\n<script type=\"module\">\n{}\n//# sourceURL={root}/wp-includes/js/wp-emoji-loader.min.js\n</script>\n",
+        loader.trim_end()
+    )
 }
 
 /// The root-level text of an HTML label (`$extract_root_text()` of `wp_enqueue_command_palette_assets()`).
@@ -560,7 +671,9 @@ fn root_text(label: &str) -> String {
                 if depth == 0 {
                     out.push_str(&rest[..at]);
                 }
-                let Some(end) = rest[at..].find('>') else { break };
+                let Some(end) = rest[at..].find('>') else {
+                    break;
+                };
                 let tag = &rest[at + 1..at + end];
                 if tag.starts_with('/') {
                     depth = depth.saturating_sub(1);
@@ -578,39 +691,80 @@ fn root_text(label: &str) -> String {
         }
     }
     // `get_modifiable_text()` decodes the character references.
-    rustpress_core::formatting::html_entity_decode(out.trim()).trim().to_owned()
+    rustpress_core::formatting::html_entity_decode(out.trim())
+        .trim()
+        .to_owned()
 }
 
 /// `wp.coreCommands.initializeCommandPalette( {...} )` with the entries of the menu.
 fn command_palette_call(env: &ChromeEnv<'_>) -> String {
     let site = env.site;
-    let url_of = |slug: &str| if slug.contains(".php") { slug.to_owned() } else { format!("admin.php?page={slug}") };
+    let url_of = |slug: &str| {
+        if slug.contains(".php") {
+            slug.to_owned()
+        } else {
+            format!("admin.php?page={slug}")
+        }
+    };
     let mut commands: Vec<serde_json::Value> = Vec::new();
     for item in &env.menu.items {
         let label = root_text(&item.title);
         if label.is_empty() {
             continue;
         }
-        commands.push(serde_json::json!({"label": label, "url": url_of(&item.slug), "name": item.slug}));
-        if let Some((_, list)) = env.menu.submenu.iter().find(|(parent, _)| *parent == item.slug) {
+        commands.push(
+            serde_json::json!({"label": label, "url": url_of(&item.slug), "name": item.slug}),
+        );
+        if let Some((_, list)) = env
+            .menu
+            .submenu
+            .iter()
+            .find(|(parent, _)| *parent == item.slug)
+        {
             for sub in list {
                 let sub_label = root_text(&sub.title);
                 if sub_label.is_empty() {
                     continue;
                 }
-                let url = if sub.slug.contains(".php") { sub.slug.clone() } else { sub.page_url.as_ref().or(sub.href.as_ref()).map_or_else(|| url_of(&sub.slug), |href| site.site_url(&format!("wp-admin/{href}"))) };
+                let url = if sub.slug.contains(".php") {
+                    sub.slug.clone()
+                } else {
+                    sub.page_url.as_ref().or(sub.href.as_ref()).map_or_else(
+                        || url_of(&sub.slug),
+                        |href| site.site_url(&format!("wp-admin/{href}")),
+                    )
+                };
                 commands.push(serde_json::json!({"label": rustpress_core::i18n::sprintf(&site.tr("%1$s > %2$s"), &[&label, &sub_label]), "url": url, "name": format!("{}-{}", item.slug, sub.slug)}));
             }
         }
     }
-    let json = rustpress_blocks::php_json::encode_with(&serde_json::json!({"is_network_admin": false, "menu_commands": commands}), rustpress_blocks::php_json::Flags { unescaped_slashes: true, unescaped_unicode: false });
-    format!("wp.coreCommands.initializeCommandPalette( {} );", json.replace('<', &format!("{}u003C", char::from(92u8))).replace('>', &format!("{}u003E", char::from(92u8))))
+    let json = rustpress_blocks::php_json::encode_with(
+        &serde_json::json!({"is_network_admin": false, "menu_commands": commands}),
+        rustpress_blocks::php_json::Flags {
+            unescaped_slashes: true,
+            unescaped_unicode: false,
+        },
+    );
+    format!(
+        "wp.coreCommands.initializeCommandPalette( {} );",
+        json.replace('<', &format!("{}u003C", char::from(92u8)))
+            .replace('>', &format!("{}u003E", char::from(92u8)))
+    )
 }
 
 /// The `version` of a script module (`wp-includes/js/dist/script-modules/<path>.min.asset.php`).
 fn module_version(includes: &std::path::Path, path: &str) -> String {
-    let asset = rustpress_core::files::read_string(&includes.join("js/dist/script-modules").join(format!("{path}.min.asset.php")));
-    asset.split("'version' => '").nth(1).and_then(|rest| rest.split('\'').next()).unwrap_or_default().to_owned()
+    let asset = rustpress_core::files::read_string(
+        &includes
+            .join("js/dist/script-modules")
+            .join(format!("{path}.min.asset.php")),
+    );
+    asset
+        .split("'version' => '")
+        .nth(1)
+        .and_then(|rest| rest.split('\'').next())
+        .unwrap_or_default()
+        .to_owned()
 }
 
 /// Where the router of the block editor comes in the import map: the module order follows the scripts that need them.
@@ -625,13 +779,32 @@ enum RoutePlace {
 }
 
 /// `WP_Script_Modules::print_import_map()` and `print_enqueued_script_modules()`.
-fn script_modules(env: &ChromeEnv<'_>, editor: bool, route: RoutePlace, boot: Option<&Boot>) -> String {
+fn script_modules(
+    env: &ChromeEnv<'_>,
+    editor: bool,
+    route: RoutePlace,
+    boot: Option<&Boot>,
+) -> String {
     let root = env.loader.site_url.trim_end_matches('/').to_owned();
     let includes = &env.loader.includes;
-    let url = |path: &str| format!("{root}/wp-includes/js/dist/script-modules/{path}.min.js?ver={}", module_version(includes, path));
-    let mut imports = vec![("@wordpress/video-conversion/worker".to_owned(), url("video-conversion/worker")), ("@wordpress/vips/worker".to_owned(), url("vips/worker"))];
+    let url = |path: &str| {
+        format!(
+            "{root}/wp-includes/js/dist/script-modules/{path}.min.js?ver={}",
+            module_version(includes, path)
+        )
+    };
+    let mut imports = vec![
+        (
+            "@wordpress/video-conversion/worker".to_owned(),
+            url("video-conversion/worker"),
+        ),
+        ("@wordpress/vips/worker".to_owned(), url("vips/worker")),
+    ];
     if editor {
-        imports.push(("@wordpress/latex-to-mathml".to_owned(), url("latex-to-mathml/index")));
+        imports.push((
+            "@wordpress/latex-to-mathml".to_owned(),
+            url("latex-to-mathml/index"),
+        ));
         let entry = ("@wordpress/route".to_owned(), url("route/index"));
         match route {
             RoutePlace::BeforeMath => imports.insert(imports.len() - 1, entry),
@@ -641,25 +814,51 @@ fn script_modules(env: &ChromeEnv<'_>, editor: bool, route: RoutePlace, boot: Op
     }
     // The modules of a boot page: the router first, the routes after the boot module, then what boot depends on.
     let route_url = |name: &str, kind: &str| {
-        let version = asset_version(includes, &format!("build/routes/{name}/{kind}.min.asset.php"));
+        let version = asset_version(
+            includes,
+            &format!("build/routes/{name}/{kind}.min.asset.php"),
+        );
         format!("{root}/wp-includes/build/routes/{name}/{kind}.min.js?ver={version}")
     };
     let mut preloads = String::new();
     if let Some(boot) = boot {
-        let preload = |id: &str, src: &str, low: bool| format!("<link rel=\"modulepreload\" href=\"{src}\" id=\"{id}-js-modulepreload\"{}>\n", if low { " data-wp-fetchpriority=\"low\"" } else { "" });
+        let preload = |id: &str, src: &str, low: bool| {
+            format!(
+                "<link rel=\"modulepreload\" href=\"{src}\" id=\"{id}-js-modulepreload\"{}>\n",
+                if low {
+                    " data-wp-fetchpriority=\"low\""
+                } else {
+                    ""
+                }
+            )
+        };
         imports.insert(0, ("@wordpress/route".to_owned(), url("route/index")));
         imports.push(("@wordpress/boot".to_owned(), url("boot/index")));
         for route in &boot.routes {
             if route.has_route {
-                imports.push((format!("wp/routes/{}/route", route.name), route_url(&route.name, "route")));
+                imports.push((
+                    format!("wp/routes/{}/route", route.name),
+                    route_url(&route.name, "route"),
+                ));
             }
             if route.has_content {
-                imports.push((format!("wp/routes/{}/content", route.name), route_url(&route.name, "content")));
+                imports.push((
+                    format!("wp/routes/{}/content", route.name),
+                    route_url(&route.name, "content"),
+                ));
             }
         }
-        for dependency in asset_module_dependencies(includes, "js/dist/script-modules/boot/index.min.asset.php") {
+        for dependency in
+            asset_module_dependencies(includes, "js/dist/script-modules/boot/index.min.asset.php")
+        {
             if dependency != "@wordpress/route" {
-                imports.push((dependency.clone(), url(&format!("{}/index", dependency.trim_start_matches("@wordpress/")))));
+                imports.push((
+                    dependency.clone(),
+                    url(&format!(
+                        "{}/index",
+                        dependency.trim_start_matches("@wordpress/")
+                    )),
+                ));
             }
         }
         for (id, path) in &boot.extra_modules {
@@ -670,15 +869,28 @@ fn script_modules(env: &ChromeEnv<'_>, editor: bool, route: RoutePlace, boot: Op
         preloads.push_str(&preload("@wordpress/boot", &url("boot/index"), false));
         for route in &boot.routes {
             if route.has_route {
-                preloads.push_str(&preload(&format!("wp/routes/{}/route", route.name), &route_url(&route.name, "route"), false));
+                preloads.push_str(&preload(
+                    &format!("wp/routes/{}/route", route.name),
+                    &route_url(&route.name, "route"),
+                    false,
+                ));
             }
         }
         if let Some(data) = &boot.module_data {
             preloads.push_str(&format!("<script id=\"wp-script-module-data-{}-wp-admin\" type=\"application/json\">\n{data}\n</script>\n", boot.page));
         }
     }
-    let map: serde_json::Map<String, serde_json::Value> = imports.into_iter().map(|(id, src)| (id, serde_json::Value::from(src))).collect();
-    let json = rustpress_blocks::php_json::encode_with(&serde_json::json!({"imports": map}), rustpress_blocks::php_json::Flags { unescaped_slashes: true, unescaped_unicode: true });
+    let map: serde_json::Map<String, serde_json::Value> = imports
+        .into_iter()
+        .map(|(id, src)| (id, serde_json::Value::from(src)))
+        .collect();
+    let json = rustpress_blocks::php_json::encode_with(
+        &serde_json::json!({"imports": map}),
+        rustpress_blocks::php_json::Flags {
+            unescaped_slashes: true,
+            unescaped_unicode: true,
+        },
+    );
     let mut out = format!("<script id=\"wp-importmap\" type=\"importmap\">\n{json}\n</script>\n");
     if editor {
         out.push_str(&format!("<script id=\"@wordpress/latex-to-mathml/loader-js-module\" src=\"{}\" type=\"module\"></script>\n", url("latex-to-mathml/loader")));
@@ -698,16 +910,40 @@ fn auth_check_html(env: &ChromeEnv<'_>, assets: &Assets) -> String {
     let tr = |s: &str| site.tr(s);
     // `wp_auth_check_html()`: the sign-in form is loaded in the dialog only from the domain of the request.
     let login_url = site.site_url("wp-login.php");
-    let same_domain = env.host.as_deref().filter(|h| !h.is_empty()).is_none_or(|host| login_url.starts_with(&format!("{}://{host}", if env.secure { "https" } else { "http" })));
-    let src = esc_url(&if assets.empty_locale { format!("{login_url}?interim-login=1&wp_lang") } else { format!("{login_url}?interim-login=1&wp_lang={}", site.locale()) });
-    let (wrap_class, form) = if same_domain { ("hidden", format!("\t\t<div id=\"wp-auth-check-form\" class=\"loading\" data-src=\"{src}\"></div>\n\t\t")) } else { ("hidden fallback", String::new()) };
+    let same_domain = env
+        .host
+        .as_deref()
+        .filter(|h| !h.is_empty())
+        .is_none_or(|host| {
+            login_url.starts_with(&format!(
+                "{}://{host}",
+                if env.secure { "https" } else { "http" }
+            ))
+        });
+    let src = esc_url(&if assets.empty_locale {
+        format!("{login_url}?interim-login=1&wp_lang")
+    } else {
+        format!("{login_url}?interim-login=1&wp_lang={}", site.locale())
+    });
+    let (wrap_class, form) = if same_domain {
+        (
+            "hidden",
+            format!(
+                "\t\t<div id=\"wp-auth-check-form\" class=\"loading\" data-src=\"{src}\"></div>\n\t\t"
+            ),
+        )
+    } else {
+        ("hidden fallback", String::new())
+    };
     format!(
         "\t<div id=\"wp-auth-check-wrap\" class=\"{wrap_class}\">\n\t<div id=\"wp-auth-check-bg\"></div>\n\t<div id=\"wp-auth-check\">\n\t<button type=\"button\" class=\"wp-auth-check-close button-link\"><span class=\"screen-reader-text\">\n\t\t{close}\t</span></button>\n\t{form}\t<div class=\"wp-auth-fallback\">\n\t\t<p><b class=\"wp-auth-fallback-expired\" tabindex=\"0\">{expired}</b></p>\n\t\t<p><a href=\"{login}\" target=\"_blank\">{again}</a>\n\t\t{note}</p>\n\t</div>\n\t</div>\n\t</div>\n\t",
         close = tr("Close dialog"),
         expired = tr("Session expired"),
         login = esc_url(&site.site_url("wp-login.php")),
         again = tr("Please log in again."),
-        note = tr("The login page will open in a new tab. After logging in you can close it and return to this page.")
+        note = tr(
+            "The login page will open in a new tab. After logging in you can close it and return to this page."
+        )
     )
 }
 
@@ -722,14 +958,31 @@ struct FramePage<'a> {
 }
 
 /// `wp_iframe()`.
-fn frame_page(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Assets, page: &FramePage<'_>) -> String {
+fn frame_page(
+    env: &ChromeEnv<'_>,
+    screen: &Screen,
+    content: &str,
+    assets: &Assets,
+    page: &FramePage<'_>,
+) -> String {
     let site = env.site;
     let rtl = site.is_rtl();
-    let toolbar = if screen.frame == Some(FrameKind::Inline) { "wp-toolbar" } else { "" };
-    let language = if rtl { format!("dir=\"rtl\" lang=\"{}\"", esc_attr(&site.language_tag())) } else { format!("lang=\"{}\"", esc_attr(&site.language_tag())) };
+    let toolbar = if screen.frame == Some(FrameKind::Inline) {
+        "wp-toolbar"
+    } else {
+        ""
+    };
+    let language = if rtl {
+        format!("dir=\"rtl\" lang=\"{}\"", esc_attr(&site.language_tag()))
+    } else {
+        format!("lang=\"{}\"", esc_attr(&site.language_tag()))
+    };
     let blog_name = esc_html(&site.options.string("blogname", "")).replace('\'', "&#039;");
     let ajax = esc_url(&site.site_url("wp-admin/admin-ajax.php"));
-    let ajax_path = ajax.strip_prefix(&env.loader.site_url).unwrap_or(&ajax).to_owned();
+    let ajax_path = ajax
+        .strip_prefix(&env.loader.site_url)
+        .unwrap_or(&ajax)
+        .to_owned();
     let mut out = format!(
         "<!DOCTYPE html>\n<html class=\"{toolbar}\"\n\t{language}>\n<head>\n<meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\" />\n\t\t<title>{blog_name} &rsaquo; {} &#8212; {}</title>\n\t\t<script>\n\taddLoadEvent = function(func){{if(typeof jQuery!=='undefined')jQuery(function(){{func();}});else if(typeof wpOnload!=='function'){{wpOnload=func;}}else{{var oldonload=wpOnload;wpOnload=function(){{oldonload();func();}}}}}};\n\tvar ajaxurl = '{ajax_path}', pagenow = 'media-upload-popup', adminpage = 'media-upload-popup',\n\tisRtl = {};\n\t</script>\n\t",
         esc_html(&screen.title),
@@ -749,11 +1002,22 @@ fn frame_page(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
     if !assets.no_auth_check {
         out.push_str(&auth_check_html(env, assets));
     }
-    out.push_str(&script_modules(env, assets.editor_modules, if assets.route_first { RoutePlace::BeforeMath } else { RoutePlace::End }, assets.boot.as_ref()));
+    out.push_str(&script_modules(
+        env,
+        assets.editor_modules,
+        if assets.route_first {
+            RoutePlace::BeforeMath
+        } else {
+            RoutePlace::End
+        },
+        assets.boot.as_ref(),
+    ));
     out.push_str(page.footer_styles);
     out.push_str(page.footer_scripts);
     out.push_str(&emoji_scripts(env, assets.no_emoji));
-    out.push_str("\t<script>if(typeof wpOnload==='function')wpOnload();</script>\n\t</body>\n\t</html>\n\t");
+    out.push_str(
+        "\t<script>if(typeof wpOnload==='function')wpOnload();</script>\n\t</body>\n\t</html>\n\t",
+    );
     out
 }
 
@@ -770,7 +1034,9 @@ fn customize_document(env: &ChromeEnv<'_>, assets: &Assets, parts: &CustomizePar
         styles.add_inline_style(handle, code);
     }
     if assets.classic_editor_styles {
-        styles.deps.add_dep("wp-edit-blocks", "wp-editor-classic-layout-styles");
+        styles
+            .deps
+            .add_dep("wp-edit-blocks", "wp-editor-classic-layout-styles");
     }
     for handle in assets.styles.iter().chain(&assets.plugin_core_styles) {
         styles.enqueue(handle);
@@ -778,18 +1044,33 @@ fn customize_document(env: &ChromeEnv<'_>, assets: &Assets, parts: &CustomizePar
     let mut admin_styles = styles.print_admin_styles(true);
     // `colors` follows the concatenated stylesheets; the inline styles of `admin_enqueue_scripts`, the plugins' and the
     // emoji styles come before those of the block editor, the theme's after the custom properties.
-    let colors = format!("<link rel='stylesheet' id='colors-css' href='{}/wp-admin/css/colors/modern/colors.min.css?ver={}' media='all' />\n", env.loader.site_url, env.loader.version);
-    let head_styles = match env.head_styles.split_once("<style id=\"wp-emoji-styles-inline-css\">") {
-        Some((before, after)) if !assets.plugin_styles.is_empty() => format!("{before}{}<style id=\"wp-emoji-styles-inline-css\">{after}", assets.plugin_styles),
+    let colors = format!(
+        "<link rel='stylesheet' id='colors-css' href='{}/wp-admin/css/colors/modern/colors.min.css?ver={}' media='all' />\n",
+        env.loader.site_url, env.loader.version
+    );
+    let head_styles = match env
+        .head_styles
+        .split_once("<style id=\"wp-emoji-styles-inline-css\">")
+    {
+        Some((before, after)) if !assets.plugin_styles.is_empty() => format!(
+            "{before}{}<style id=\"wp-emoji-styles-inline-css\">{after}",
+            assets.plugin_styles
+        ),
         _ => env.head_styles.clone(),
     };
     let first_line = admin_styles.find('\n').map_or(0, |at| at + 1);
     admin_styles.insert_str(first_line, &colors);
     let editor_marker = "<style id=\"global-styles-css-custom-properties-inline-css\">";
-    let head_styles = if parts.admin_hooks { head_styles } else { String::new() };
+    let head_styles = if parts.admin_hooks {
+        head_styles
+    } else {
+        String::new()
+    };
     match admin_styles.find(editor_marker) {
         Some(at) => {
-            let end = admin_styles[at..].find("</style>\n").map_or(admin_styles.len(), |end| at + end + "</style>\n".len());
+            let end = admin_styles[at..]
+                .find("</style>\n")
+                .map_or(admin_styles.len(), |end| at + end + "</style>\n".len());
             admin_styles.insert_str(end, &assets.theme_styles);
             admin_styles.insert_str(at, &head_styles);
         }
@@ -800,15 +1081,28 @@ fn customize_document(env: &ChromeEnv<'_>, assets: &Assets, parts: &CustomizePar
     }
 
     let mut scripts = default_scripts(&loader);
-    if let Some(crate::deps::Extra::Text(data)) = scripts.deps.get_data("wp-api-request", "data").cloned()
+    if let Some(crate::deps::Extra::Text(data)) =
+        scripts.deps.get_data("wp-api-request", "data").cloned()
         && !assets.rest_root.is_empty()
     {
         let root = serde_json::to_string(&assets.rest_root).unwrap_or_default();
-        let data = data.replace(&serde_json::to_string(&format!("{}/wp-json/", env.loader.site_url)).unwrap_or_default(), &root);
-        scripts.deps.set_data("wp-api-request", "data", crate::deps::Extra::Text(data));
+        let data = data.replace(
+            &serde_json::to_string(&format!("{}/wp-json/", env.loader.site_url))
+                .unwrap_or_default(),
+            &root,
+        );
+        scripts
+            .deps
+            .set_data("wp-api-request", "data", crate::deps::Extra::Text(data));
     }
     if assets.scripts.iter().any(|h| h == "wp-block-styles") {
-        scripts.add("wp-block-styles", None, &["wp-blocks"], crate::deps::Ver::Default, Some(crate::deps::Arg::Int(1)));
+        scripts.add(
+            "wp-block-styles",
+            None,
+            &["wp-blocks"],
+            crate::deps::Ver::Default,
+            Some(crate::deps::Arg::Int(1)),
+        );
     }
     scripts.relocalize(
         "utils",
@@ -818,17 +1112,40 @@ fn customize_document(env: &ChromeEnv<'_>, assets: &Assets, parts: &CustomizePar
     // `wp_heartbeat_settings()` with `WP_Customize_Manager::add_customize_screen_to_heartbeat_settings()`.
     let mut heartbeat = serde_json::Map::new();
     if let Some(nonce) = env.loader.nonce.as_ref() {
-        heartbeat.insert("nonce".into(), serde_json::Value::String(nonce("heartbeat-nonce")));
+        heartbeat.insert(
+            "nonce".into(),
+            serde_json::Value::String(nonce("heartbeat-nonce")),
+        );
     }
-    heartbeat.insert("screenId".into(), serde_json::Value::String("customize".into()));
-    scripts.relocalize("heartbeat", "heartbeatSettings", &serde_json::Value::Object(heartbeat));
-    for script in assets.plugin_page_scripts.iter().chain(&assets.plugin_scripts) {
+    heartbeat.insert(
+        "screenId".into(),
+        serde_json::Value::String("customize".into()),
+    );
+    scripts.relocalize(
+        "heartbeat",
+        "heartbeatSettings",
+        &serde_json::Value::Object(heartbeat),
+    );
+    for script in assets
+        .plugin_page_scripts
+        .iter()
+        .chain(&assets.plugin_scripts)
+    {
         if script.src.is_empty() {
             continue;
         }
         let deps: Vec<&str> = script.deps.iter().map(String::as_str).collect();
-        let ver = script.ver.clone().map_or(crate::deps::Ver::None, crate::deps::Ver::Value);
-        scripts.add(&script.handle, Some(&script.src), &deps, ver, script.in_footer.then_some(crate::deps::Arg::Int(1)));
+        let ver = script
+            .ver
+            .clone()
+            .map_or(crate::deps::Ver::None, crate::deps::Ver::Value);
+        scripts.add(
+            &script.handle,
+            Some(&script.src),
+            &deps,
+            ver,
+            script.in_footer.then_some(crate::deps::Arg::Int(1)),
+        );
         if let Some(extra) = &script.extra {
             scripts.append_data(&script.handle, extra);
         }
@@ -879,13 +1196,26 @@ fn customize_document(env: &ChromeEnv<'_>, assets: &Assets, parts: &CustomizePar
     let footer_scripts = scripts.print_footer_scripts(true);
 
     let rtl = site.is_rtl();
-    let language = if rtl { format!("dir=\"rtl\" lang=\"{}\"", esc_attr(&site.language_tag())) } else { format!("lang=\"{}\"", esc_attr(&site.language_tag())) };
+    let language = if rtl {
+        format!("dir=\"rtl\" lang=\"{}\"", esc_attr(&site.language_tag()))
+    } else {
+        format!("lang=\"{}\"", esc_attr(&site.language_tag()))
+    };
     let ajax = esc_url(&site.site_url("wp-admin/admin-ajax.php"));
-    let ajax_path = ajax.strip_prefix(&env.loader.site_url).unwrap_or(&ajax).to_owned();
+    let ajax_path = ajax
+        .strip_prefix(&env.loader.site_url)
+        .unwrap_or(&ajax)
+        .to_owned();
     let mut out = format!(
         "<!DOCTYPE html>\n<html class=\"\"\n\t{language}>\n<head>\n<meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\" />\n\t<title>{}</title>\n\n<script>\nvar ajaxurl = {},\n\tpagenow = 'customize';\n</script>\n\n",
         parts.title,
-        rustpress_blocks::php_json::encode_with(&serde_json::Value::from(ajax_path), rustpress_blocks::php_json::Flags { unescaped_slashes: true, unescaped_unicode: false })
+        rustpress_blocks::php_json::encode_with(
+            &serde_json::Value::from(ajax_path),
+            rustpress_blocks::php_json::Flags {
+                unescaped_slashes: true,
+                unescaped_unicode: false
+            }
+        )
     );
     // `admin_print_styles` of the plugins, which only the widgets fire; `customize.php` has no `admin_head`.
     if parts.admin_hooks {
@@ -900,18 +1230,37 @@ fn customize_document(env: &ChromeEnv<'_>, assets: &Assets, parts: &CustomizePar
         out.push_str(&assets.site_icon);
     }
     out.push_str(&head_scripts);
-    out.push_str("<meta name=\"viewport\" content=\"width=device-width,initial-scale=1.0\"></head>\n");
-    out.push_str(&format!("<body class=\"{}\">\n", esc_attr(&parts.body_class)));
+    out.push_str(
+        "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1.0\"></head>\n",
+    );
+    out.push_str(&format!(
+        "<body class=\"{}\">\n",
+        esc_attr(&parts.body_class)
+    ));
     out.push_str(&parts.body);
     out.push_str(&parts.templates);
     if parts.admin_hooks {
-        out.push_str(&script_modules(env, assets.editor_modules, if assets.route_at_start { RoutePlace::Start } else if assets.route_first { RoutePlace::BeforeMath } else { RoutePlace::End }, None));
+        out.push_str(&script_modules(
+            env,
+            assets.editor_modules,
+            if assets.route_at_start {
+                RoutePlace::Start
+            } else if assets.route_first {
+                RoutePlace::BeforeMath
+            } else {
+                RoutePlace::End
+            },
+            None,
+        ));
         out.push_str(&footer_styles);
         out.push_str(&footer_scripts);
         out.push_str(&emoji_scripts(env, assets.no_emoji));
         out.push_str(&parts.footer);
     } else {
-        out.push_str(&parts.footer.replace(CUSTOMIZE_FOOTER_SCRIPTS, &format!("{footer_styles}{footer_scripts}")));
+        out.push_str(&parts.footer.replace(
+            CUSTOMIZE_FOOTER_SCRIPTS,
+            &format!("{footer_styles}{footer_scripts}"),
+        ));
     }
     out.push_str("</div>\n</body>\n</html>\n");
     out
@@ -920,15 +1269,36 @@ fn customize_document(env: &ChromeEnv<'_>, assets: &Assets, parts: &CustomizePar
 /// `load_script_textdomain()` for the scripts of WordPress.
 fn script_translations(env: &ChromeEnv<'_>, scripts: &mut crate::scripts::Scripts) {
     if env.site.locale() != "en_US" {
-        let languages = env.loader.includes.parent().unwrap_or(&env.loader.includes).join("wp-content").join("languages");
+        let languages = env
+            .loader
+            .includes
+            .parent()
+            .unwrap_or(&env.loader.includes)
+            .join("wp-content")
+            .join("languages");
         let locale = env.site.locale();
-        let sources: std::collections::HashMap<String, String> = scripts.deps.registered().iter().filter_map(|dep| Some((dep.handle.clone(), dep.src.clone()?))).collect();
+        let sources: std::collections::HashMap<String, String> = scripts
+            .deps
+            .registered()
+            .iter()
+            .filter_map(|dep| Some((dep.handle.clone(), dep.src.clone()?)))
+            .collect();
         scripts.set_translation_loader(Box::new(move |handle, domain, _path| {
             let relative = sources.get(handle)?.strip_prefix('/')?;
             // The files are named after the script that is not minified.
-            let relative = relative.strip_suffix(".min.js").map_or_else(|| relative.to_owned(), |base| format!("{base}.js"));
-            let base = if domain == "default" { locale.clone() } else { format!("{domain}-{locale}") };
-            rustpress_core::files::read(&languages.join(format!("{base}-{:x}.json", md5::compute(relative.as_bytes())))).map(|text| text.to_string())
+            let relative = relative
+                .strip_suffix(".min.js")
+                .map_or_else(|| relative.to_owned(), |base| format!("{base}.js"));
+            let base = if domain == "default" {
+                locale.clone()
+            } else {
+                format!("{domain}-{locale}")
+            };
+            rustpress_core::files::read(&languages.join(format!(
+                "{base}-{:x}.json",
+                md5::compute(relative.as_bytes())
+            )))
+            .map(|text| text.to_string())
         }));
     }
 }
@@ -942,18 +1312,38 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
     let version = env.loader.version.clone();
     let rtl = site.is_rtl();
     let page = screen.file.trim_end_matches(".php");
-    let parent_file = if screen.parent_file.is_empty() { screen.file.clone() } else { screen.parent_file.clone() };
-    let submenu_file = screen.submenu_file.clone().or_else(|| Some(screen.file.clone()));
+    let parent_file = if screen.parent_file.is_empty() {
+        screen.file.clone()
+    } else {
+        screen.parent_file.clone()
+    };
+    let submenu_file = screen
+        .submenu_file
+        .clone()
+        .or_else(|| Some(screen.file.clone()));
     let blog_name = site.options.string("blogname", "");
-    let admin_title = if blog_name.is_empty() { rustpress_core::formatting::wptexturize(&site.options.string("siteurl", "")) } else { rustpress_core::formatting::wptexturize(&blog_name) };
-    let title = rustpress_core::i18n::sprintf(&tr("%1$s &lsaquo; %2$s &#8212; WordPress"), &[&esc_html(&screen.title), &esc_html(&admin_title).replace('\'', "&#039;")]);
+    let admin_title = if blog_name.is_empty() {
+        rustpress_core::formatting::wptexturize(&site.options.string("siteurl", ""))
+    } else {
+        rustpress_core::formatting::wptexturize(&blog_name)
+    };
+    let title = rustpress_core::i18n::sprintf(
+        &tr("%1$s &lsaquo; %2$s &#8212; WordPress"),
+        &[
+            &esc_html(&screen.title),
+            &esc_html(&admin_title).replace('\'', "&#039;"),
+        ],
+    );
     let request_frame = screen.frame == Some(FrameKind::Request);
 
     // Styles of the head.
     let loader = env.loader.in_language_of(env.site);
     let mut styles = default_styles(&loader);
     if !request_frame {
-        styles.add_inline_style("admin-bar", "@media print { #wpadminbar { display:none; } }");
+        styles.add_inline_style(
+            "admin-bar",
+            "@media print { #wpadminbar { display:none; } }",
+        );
     }
     for (handle, code) in &assets.inline_styles {
         if !styles.is_registered(handle) {
@@ -971,11 +1361,35 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
         }
     }
     if assets.classic_editor_styles {
-        styles.deps.add_dep("wp-edit-blocks", "wp-editor-classic-layout-styles");
+        styles
+            .deps
+            .add_dep("wp-edit-blocks", "wp-editor-classic-layout-styles");
     }
     for handle in [
-        "dashicons", "admin-bar", "common", "forms", "admin-menu", "dashboard", "list-tables", "edit", "revisions", "media", "themes", "about", "nav-menus", "wp-pointer", "widgets", "site-icon", "l10n", "wp-base-styles", "wp-tooltip", "buttons",
-        "wp-auth-check", "wp-theme", "wp-components", "wp-commands",
+        "dashicons",
+        "admin-bar",
+        "common",
+        "forms",
+        "admin-menu",
+        "dashboard",
+        "list-tables",
+        "edit",
+        "revisions",
+        "media",
+        "themes",
+        "about",
+        "nav-menus",
+        "wp-pointer",
+        "widgets",
+        "site-icon",
+        "l10n",
+        "wp-base-styles",
+        "wp-tooltip",
+        "buttons",
+        "wp-auth-check",
+        "wp-theme",
+        "wp-components",
+        "wp-commands",
     ] {
         // `wp_iframe()` runs before the sign-in check enqueues its styles.
         if handle == "wp-auth-check" && screen.frame_media_styles {
@@ -997,10 +1411,27 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
     }
     // `wp_register_style( '<page>-wp-admin-prerequisites', false, <the dependencies that have styles> )`.
     if let Some(boot) = &assets.boot {
-        let deps = asset_list(&env.loader.includes, "js/dist/script-modules/boot/index.min.asset.php", "dependencies");
-        let deps: Vec<&str> = deps.iter().map(String::as_str).filter(|handle| styles.is_registered(handle)).collect();
-        let version = asset_version(&env.loader.includes, "js/dist/script-modules/boot/index.min.asset.php");
-        styles.add(&boot.prerequisites(), None, &deps, crate::deps::Ver::Value(version), None);
+        let deps = asset_list(
+            &env.loader.includes,
+            "js/dist/script-modules/boot/index.min.asset.php",
+            "dependencies",
+        );
+        let deps: Vec<&str> = deps
+            .iter()
+            .map(String::as_str)
+            .filter(|handle| styles.is_registered(handle))
+            .collect();
+        let version = asset_version(
+            &env.loader.includes,
+            "js/dist/script-modules/boot/index.min.asset.php",
+        );
+        styles.add(
+            &boot.prerequisites(),
+            None,
+            &deps,
+            crate::deps::Ver::Value(version),
+            None,
+        );
         styles.enqueue(&boot.prerequisites());
     }
     for handle in &assets.styles {
@@ -1016,27 +1447,61 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
         }
     }
     let admin_styles = styles.print_admin_styles(true);
-    let colors = format!("<link rel='stylesheet' id='colors-css' href='{}/wp-admin/css/colors/modern/colors.min.css?ver={version}' media='all' />\n", env.loader.site_url);
+    let colors = format!(
+        "<link rel='stylesheet' id='colors-css' href='{}/wp-admin/css/colors/modern/colors.min.css?ver={version}' media='all' />\n",
+        env.loader.site_url
+    );
 
     // Scripts of the head (`utils` with `userSettings`).
     let mut scripts = default_scripts(&loader);
-    if let Some(crate::deps::Extra::Text(data)) = scripts.deps.get_data("wp-api-request", "data").cloned()
+    if let Some(crate::deps::Extra::Text(data)) =
+        scripts.deps.get_data("wp-api-request", "data").cloned()
         && !assets.rest_root.is_empty()
     {
         let root = serde_json::to_string(&assets.rest_root).unwrap_or_default();
-        let data = data.replace(&serde_json::to_string(&format!("{}/wp-json/", env.loader.site_url)).unwrap_or_default(), &root);
-        scripts.deps.set_data("wp-api-request", "data", crate::deps::Extra::Text(data));
+        let data = data.replace(
+            &serde_json::to_string(&format!("{}/wp-json/", env.loader.site_url))
+                .unwrap_or_default(),
+            &root,
+        );
+        scripts
+            .deps
+            .set_data("wp-api-request", "data", crate::deps::Extra::Text(data));
     }
     // `enqueue_editor_block_styles_assets()` registers a script without a file for the styles of the blocks.
-    if assets.scripts.iter().chain(&assets.early_scripts).any(|h| h == "wp-block-styles") {
-        scripts.add("wp-block-styles", None, &["wp-blocks"], crate::deps::Ver::Default, Some(crate::deps::Arg::Int(1)));
+    if assets
+        .scripts
+        .iter()
+        .chain(&assets.early_scripts)
+        .any(|h| h == "wp-block-styles")
+    {
+        scripts.add(
+            "wp-block-styles",
+            None,
+            &["wp-blocks"],
+            crate::deps::Ver::Default,
+            Some(crate::deps::Arg::Int(1)),
+        );
     }
     if let Some(boot) = &assets.boot {
         // `wp_register_script( '<page>-wp-admin-prerequisites', '', $asset['dependencies'], ... )` and its init call.
-        let deps = asset_list(&env.loader.includes, "js/dist/script-modules/boot/index.min.asset.php", "dependencies");
+        let deps = asset_list(
+            &env.loader.includes,
+            "js/dist/script-modules/boot/index.min.asset.php",
+            "dependencies",
+        );
         let deps: Vec<&str> = deps.iter().map(String::as_str).collect();
-        let version = asset_version(&env.loader.includes, "js/dist/script-modules/boot/index.min.asset.php");
-        scripts.add(&boot.prerequisites(), Some(""), &deps, crate::deps::Ver::Value(version), Some(crate::deps::Arg::Int(1)));
+        let version = asset_version(
+            &env.loader.includes,
+            "js/dist/script-modules/boot/index.min.asset.php",
+        );
+        scripts.add(
+            &boot.prerequisites(),
+            Some(""),
+            &deps,
+            crate::deps::Ver::Value(version),
+            Some(crate::deps::Arg::Int(1)),
+        );
         let routes: Vec<serde_json::Value> = boot
             .routes
             .iter()
@@ -1053,10 +1518,25 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
                 serde_json::Value::Object(entry)
             })
             .collect();
-        let flags = rustpress_blocks::php_json::Flags { unescaped_slashes: true, unescaped_unicode: false };
-        let hex = |value: &serde_json::Value| rustpress_blocks::php_json::encode_with(value, flags).replace('<', &format!("{}u003C", char::from(92u8))).replace('>', &format!("{}u003E", char::from(92u8)));
+        let flags = rustpress_blocks::php_json::Flags {
+            unescaped_slashes: true,
+            unescaped_unicode: false,
+        };
+        let hex = |value: &serde_json::Value| {
+            rustpress_blocks::php_json::encode_with(value, flags)
+                .replace('<', &format!("{}u003C", char::from(92u8)))
+                .replace('>', &format!("{}u003E", char::from(92u8)))
+        };
         let init = "( mountId, routes, initModules ) => {\n\tconst run = async () => {\n\t\tconst mod = await import( \"@wordpress/boot\" );\n\t\tmod.initSinglePage( { mountId, routes, initModules } );\n\t};\n\tif ( document.readyState === \"loading\" ) {\n\t\tdocument.addEventListener( \"DOMContentLoaded\", run );\n\t} else {\n\t\trun();\n\t}\n}";
-        scripts.add_inline_script(&boot.prerequisites(), &format!("( {init} )( {}, {}, [] );", hex(&serde_json::Value::from(boot.mount_id())), hex(&serde_json::Value::Array(routes))), "after");
+        scripts.add_inline_script(
+            &boot.prerequisites(),
+            &format!(
+                "( {init} )( {}, {}, [] );",
+                hex(&serde_json::Value::from(boot.mount_id())),
+                hex(&serde_json::Value::Array(routes))
+            ),
+            "after",
+        );
     }
     scripts.relocalize(
         "utils",
@@ -1066,20 +1546,45 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
     // `wp_heartbeat_settings()` and `wp_heartbeat_set_suspension()`.
     let mut heartbeat = serde_json::Map::new();
     if let Some(nonce) = env.loader.nonce.as_ref() {
-        heartbeat.insert("nonce".into(), serde_json::Value::String(nonce("heartbeat-nonce")));
+        heartbeat.insert(
+            "nonce".into(),
+            serde_json::Value::String(nonce("heartbeat-nonce")),
+        );
     }
     // A plugin that registers scripts on `init` builds the registry before the suspension filter is added.
-    if matches!(screen.file.as_str(), "post.php" | "post-new.php") && !env.site.plugins.registers_scripts_on_init() {
-        heartbeat.insert("suspension".into(), serde_json::Value::String("disable".into()));
+    if matches!(screen.file.as_str(), "post.php" | "post-new.php")
+        && !env.site.plugins.registers_scripts_on_init()
+    {
+        heartbeat.insert(
+            "suspension".into(),
+            serde_json::Value::String("disable".into()),
+        );
     }
-    scripts.relocalize("heartbeat", "heartbeatSettings", &serde_json::Value::Object(heartbeat));
-    for script in assets.plugin_page_scripts.iter().chain(&assets.plugin_scripts) {
+    scripts.relocalize(
+        "heartbeat",
+        "heartbeatSettings",
+        &serde_json::Value::Object(heartbeat),
+    );
+    for script in assets
+        .plugin_page_scripts
+        .iter()
+        .chain(&assets.plugin_scripts)
+    {
         if script.src.is_empty() {
             continue;
         }
         let deps: Vec<&str> = script.deps.iter().map(String::as_str).collect();
-        let ver = script.ver.clone().map_or(crate::deps::Ver::None, crate::deps::Ver::Value);
-        scripts.add(&script.handle, Some(&script.src), &deps, ver, script.in_footer.then_some(crate::deps::Arg::Int(1)));
+        let ver = script
+            .ver
+            .clone()
+            .map_or(crate::deps::Ver::None, crate::deps::Ver::Value);
+        scripts.add(
+            &script.handle,
+            Some(&script.src),
+            &deps,
+            ver,
+            script.in_footer.then_some(crate::deps::Arg::Int(1)),
+        );
         if let Some(extra) = &script.extra {
             scripts.append_data(&script.handle, extra);
         }
@@ -1091,8 +1596,17 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
         }
     }
     // A screen enqueues its scripts before `admin-header.php` adds the ones of every screen.
-    let screen_scripts: &[&str] = if request_frame { &["common"] } else { &["common", "admin-bar"] };
-    for handle in screen_scripts.iter().copied().chain(assets.early_scripts.iter().map(String::as_str)).chain(assets.scripts.iter().map(String::as_str)) {
+    let screen_scripts: &[&str] = if request_frame {
+        &["common"]
+    } else {
+        &["common", "admin-bar"]
+    };
+    for handle in screen_scripts
+        .iter()
+        .copied()
+        .chain(assets.early_scripts.iter().map(String::as_str))
+        .chain(assets.scripts.iter().map(String::as_str))
+    {
         scripts.enqueue(handle);
     }
     for (handle, object, data) in &assets.localize {
@@ -1106,8 +1620,17 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
     }
     // `wp_localize_jquery_ui_datepicker()` on `admin_enqueue_scripts` (priority 1000), once the date picker itself
     // is enqueued.
-    if assets.scripts.iter().any(|h| h == "jquery-ui-datepicker") || assets.plugin_scripts.iter().any(|s| s.handle == "jquery-ui-datepicker" && s.src.is_empty()) {
-        scripts.add_inline_script("jquery-ui-datepicker", &rustpress_theme::script_loader::localize::jquery_ui_datepicker(site), "after");
+    if assets.scripts.iter().any(|h| h == "jquery-ui-datepicker")
+        || assets
+            .plugin_scripts
+            .iter()
+            .any(|s| s.handle == "jquery-ui-datepicker" && s.src.is_empty())
+    {
+        scripts.add_inline_script(
+            "jquery-ui-datepicker",
+            &rustpress_theme::script_loader::localize::jquery_ui_datepicker(site),
+            "after",
+        );
     }
     // `admin-header.php` enqueues `svg-painter`; `wp_iframe()` does not load it.
     let always: &[&str] = match (screen.frame.is_some(), assets.no_auth_check) {
@@ -1144,21 +1667,41 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
     }
     let footer_scripts = scripts.print_footer_scripts(true);
 
-    let mut classes = vec!["wp-admin".to_owned(), "wp-core-ui".to_owned(), "no-js".to_owned()];
+    let mut classes = vec![
+        "wp-admin".to_owned(),
+        "wp-core-ui".to_owned(),
+        "no-js".to_owned(),
+    ];
     // The editors add their class on `admin_body_class` after the plugins did.
-    classes.extend(assets.plugin_body_classes.split_whitespace().map(str::to_owned));
+    classes.extend(
+        assets
+            .plugin_body_classes
+            .split_whitespace()
+            .map(str::to_owned),
+    );
     if screen.fullscreen {
         classes.push("is-fullscreen-mode".to_owned());
     }
     classes.extend(screen.early_classes.iter().cloned());
-    classes.push(screen.hook_suffix.clone().unwrap_or_else(|| format!("{}-php", page)));
+    classes.push(
+        screen
+            .hook_suffix
+            .clone()
+            .unwrap_or_else(|| format!("{}-php", page)),
+    );
     classes.push("auto-fold".to_owned());
     classes.push("admin-bar".to_owned());
     if !screen.typenow().is_empty() {
-        classes.push(format!("post-type-{}", rustpress_core::formatting::sanitize_html_class(&screen.typenow())));
+        classes.push(format!(
+            "post-type-{}",
+            rustpress_core::formatting::sanitize_html_class(&screen.typenow())
+        ));
     }
     if matches!(screen.file.as_str(), "edit-tags.php" | "term.php") && !screen.id.is_empty() {
-        classes.push(format!("taxonomy-{}", rustpress_core::formatting::sanitize_html_class(screen.id.trim_start_matches("edit-"))));
+        classes.push(format!(
+            "taxonomy-{}",
+            rustpress_core::formatting::sanitize_html_class(screen.id.trim_start_matches("edit-"))
+        ));
     }
     let mut parts = version.split('.');
     let (major, minor) = (parts.next().unwrap_or("0"), parts.next().unwrap_or("0"));
@@ -1168,32 +1711,65 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
     if rtl {
         classes.push("rtl".to_owned());
     }
-    classes.push(format!("locale-{}", rustpress_core::formatting::sanitize_html_class(&site.locale().replace('_', "-").to_lowercase())));
+    classes.push(format!(
+        "locale-{}",
+        rustpress_core::formatting::sanitize_html_class(
+            &site.locale().replace('_', "-").to_lowercase()
+        )
+    ));
     classes.push("no-customize-support".to_owned());
     classes.push("svg".to_owned());
     classes.extend(screen.body_classes.iter().cloned());
-    classes.push(format!("wp-theme-{}", rustpress_core::formatting::sanitize_html_class(&env.stylesheet)));
+    classes.push(format!(
+        "wp-theme-{}",
+        rustpress_core::formatting::sanitize_html_class(&env.stylesheet)
+    ));
 
     let locale_data = site.locale_data();
-    let thousands = (locale_data.thousands_sep.clone(), locale_data.decimal_point.clone());
+    let thousands = (
+        locale_data.thousands_sep.clone(),
+        locale_data.decimal_point.clone(),
+    );
     let ajax = esc_url(&site.site_url("wp-admin/admin-ajax.php"));
-    let ajax_path = ajax.strip_prefix(&env.loader.site_url).unwrap_or(&ajax).to_owned();
+    let ajax_path = ajax
+        .strip_prefix(&env.loader.site_url)
+        .unwrap_or(&ajax)
+        .to_owned();
     // `wp_admin_canonical_url()`: the address of the request without the arguments of a one-time notice.
     // `set_url_scheme( 'http://' . $_SERVER['HTTP_HOST'] . $_SERVER['REQUEST_URI'] )`.
     let origin = match env.host.as_deref().filter(|h| !h.is_empty()) {
         Some(host) => format!("{}://{host}", if env.secure { "https" } else { "http" }),
         None => match env.loader.site_url.split_once("://") {
-            Some((scheme, rest)) => format!("{scheme}://{}", rest.split('/').next().unwrap_or_default()),
+            Some((scheme, rest)) => {
+                format!("{scheme}://{}", rest.split('/').next().unwrap_or_default())
+            }
             None => env.loader.site_url.clone(),
         },
     };
-    let mut canonical = if env.request_uri.is_empty() { site.site_url(&format!("wp-admin/{}", screen.file)) } else { format!("{origin}{}", env.request_uri) };
+    let mut canonical = if env.request_uri.is_empty() {
+        site.site_url(&format!("wp-admin/{}", screen.file))
+    } else {
+        format!("{origin}{}", env.request_uri)
+    };
     for arg in REMOVABLE_QUERY_ARGS {
         canonical = rustpress_core::urls::remove_query_arg(&canonical, arg);
     }
 
     if screen.frame.is_some() {
-        return frame_page(env, screen, content, assets, &FramePage { admin_styles: &admin_styles, colors: &colors, head_scripts: &head_scripts, footer_styles: &footer_styles, footer_scripts: &footer_scripts, canonical: &canonical });
+        return frame_page(
+            env,
+            screen,
+            content,
+            assets,
+            &FramePage {
+                admin_styles: &admin_styles,
+                colors: &colors,
+                head_scripts: &head_scripts,
+                footer_styles: &footer_styles,
+                footer_scripts: &footer_scripts,
+                canonical: &canonical,
+            },
+        );
     }
     let pagenow = screen.screen_id();
     let mut out = String::new();
@@ -1213,14 +1789,31 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
     out.push_str(&admin_styles);
     out.push_str(&assets.theme_styles);
     out.push_str(&colors);
-    let head_styles = match env.head_styles.split_once("<style id=\"wp-emoji-styles-inline-css\">") {
-        Some((before, after)) if !assets.plugin_styles.is_empty() => format!("{before}{}<style id=\"wp-emoji-styles-inline-css\">{after}", assets.plugin_styles),
+    let head_styles = match env
+        .head_styles
+        .split_once("<style id=\"wp-emoji-styles-inline-css\">")
+    {
+        Some((before, after)) if !assets.plugin_styles.is_empty() => format!(
+            "{before}{}<style id=\"wp-emoji-styles-inline-css\">{after}",
+            assets.plugin_styles
+        ),
         _ => env.head_styles.clone(),
     };
     // The stylesheets of a later priority follow the emoji styles.
-    let emoji_end = head_styles.find("<style id=\"wp-emoji-styles-inline-css\">").and_then(|at| head_styles[at..].find("</style>\n").map(|end| at + end + "</style>\n".len()));
+    let emoji_end = head_styles
+        .find("<style id=\"wp-emoji-styles-inline-css\">")
+        .and_then(|at| {
+            head_styles[at..]
+                .find("</style>\n")
+                .map(|end| at + end + "</style>\n".len())
+        });
     match emoji_end {
-        Some(end) if !assets.plugin_late_styles.is_empty() => out.push_str(&format!("{}{}{}", &head_styles[..end], assets.plugin_late_styles, &head_styles[end..])),
+        Some(end) if !assets.plugin_late_styles.is_empty() => out.push_str(&format!(
+            "{}{}{}",
+            &head_styles[..end],
+            assets.plugin_late_styles,
+            &head_styles[end..]
+        )),
         _ => out.push_str(&head_styles),
     }
     out.push_str(&assets.head_early);
@@ -1234,8 +1827,15 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
     ));
     out.push_str(&assets.head);
     // The scripts of `admin_head` end with the indentation of their closing `<?php`.
-    out.push_str(if assets.head.is_empty() { "</head>\n" } else { "\t</head>\n" });
-    out.push_str(&format!("<body class=\"{}\">\n", esc_attr(&classes.join(" "))));
+    out.push_str(if assets.head.is_empty() {
+        "</head>\n"
+    } else {
+        "\t</head>\n"
+    });
+    out.push_str(&format!(
+        "<body class=\"{}\">\n",
+        esc_attr(&classes.join(" "))
+    ));
     out.push_str("<script>\n\tdocument.body.className = document.body.className.replace('no-js','js');\n</script>\n\n");
     // Only who may customize the site gets the script (`wp_admin_bar_customize_menu()`).
     if env.user.can("edit_theme_options") {
@@ -1249,7 +1849,13 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
         tr("Skip to main content"),
         tr("Skip to toolbar")
     ));
-    out.push_str(&env.menu.render(site, &screen.file, &parent_file, submenu_file.as_deref(), &screen.post_type));
+    out.push_str(&env.menu.render(
+        site,
+        &screen.file,
+        &parent_file,
+        submenu_file.as_deref(),
+        &screen.post_type,
+    ));
     out.push_str("</ul>\n</div>\n</div>\n");
     out.push_str("<div id=\"wpcontent\">\n");
     let mut bar = env.bar.clone();
@@ -1261,7 +1867,12 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
     out.push_str("\n<div id=\"wpbody\" role=\"main\">\n\n<div id=\"wpbody-content\">\n");
     let meta = match (&screen.help, &screen.options) {
         (help, Some(options)) => {
-            let nonce = env.loader.nonce.as_ref().map(|n| n("screen-options-nonce")).unwrap_or_default();
+            let nonce = env
+                .loader
+                .nonce
+                .as_ref()
+                .map(|n| n("screen-options-nonce"))
+                .unwrap_or_default();
             let tr_x = |text: &str, context: &str| env.site.trx(text, context);
             let mut meta = screen_meta_with(site, help.as_ref(), Some(options), &tr, &tr_x, &nonce);
             if screen.content_inline && meta.ends_with("\t\t\n") {
@@ -1272,14 +1883,22 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
         (Some(help), None) => {
             let mut meta = screen_meta(help, &tr("Help"));
             if !help.tabs.is_empty() && help.sidebar.is_empty() {
-                meta = meta.replacen("id=\"contextual-help-wrap\" class=\"hidden\"", "id=\"contextual-help-wrap\" class=\"hidden no-sidebar\"", 1);
+                meta = meta.replacen(
+                    "id=\"contextual-help-wrap\" class=\"hidden\"",
+                    "id=\"contextual-help-wrap\" class=\"hidden no-sidebar\"",
+                    1,
+                );
             }
             if screen.content_inline && meta.ends_with("\t\t\n") {
                 meta.pop();
             }
             // A page that starts at the left edge needs none of the indentation the frame leaves.
-            if screen.flush_content && meta.ends_with("</div>
-		") {
+            if screen.flush_content
+                && meta.ends_with(
+                    "</div>
+		",
+                )
+            {
                 meta.truncate(meta.len() - 2);
             }
             meta
@@ -1305,7 +1924,16 @@ pub fn render(env: &ChromeEnv<'_>, screen: &Screen, content: &str, assets: &Asse
     if !assets.no_auth_check {
         out.push_str(&auth_check_html(env, assets));
     }
-    let modules = script_modules(env, assets.editor_modules, if assets.route_first { RoutePlace::BeforeMath } else { RoutePlace::End }, assets.boot.as_ref());
+    let modules = script_modules(
+        env,
+        assets.editor_modules,
+        if assets.route_first {
+            RoutePlace::BeforeMath
+        } else {
+            RoutePlace::End
+        },
+        assets.boot.as_ref(),
+    );
     // `print_a11y_script_module_html()`: the live regions, when `@wordpress/a11y` is in the import map.
     let a11y = modules.contains("\"@wordpress/a11y\":");
     out.push_str(&modules);

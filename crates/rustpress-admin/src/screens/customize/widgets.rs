@@ -36,8 +36,16 @@ pub(super) struct Widgets {
 /// The name, description and class name of a core widget, translated.
 fn type_info(state: &State<'_>, id_base: &str) -> (String, String, &'static str) {
     let site = state.ctx.site();
-    let (_, name, description, classname) = rustpress_rest::edit::WIDGET_TYPES.iter().find(|(base, ..)| *base == id_base).copied().unwrap_or(("", "", "", ""));
-    let name = if id_base == "search" { site.trx(name, "Search widget") } else { site.tr(name) };
+    let (_, name, description, classname) = rustpress_rest::edit::WIDGET_TYPES
+        .iter()
+        .find(|(base, ..)| *base == id_base)
+        .copied()
+        .unwrap_or(("", "", "", ""));
+    let name = if id_base == "search" {
+        site.trx(name, "Search widget")
+    } else {
+        site.tr(name)
+    };
     (name, site.tr(description), classname)
 }
 
@@ -63,24 +71,58 @@ fn mime_type(id_base: &str) -> Option<&'static str> {
 pub(super) async fn load(state: &State<'_>) -> Widgets {
     let ctx = state.ctx;
     let site = ctx.site();
-    let mut names: Vec<String> = rustpress_rest::edit::WIDGET_TYPES.iter().map(|(base, ..)| format!("widget_{base}")).collect();
+    let mut names: Vec<String> = rustpress_rest::edit::WIDGET_TYPES
+        .iter()
+        .map(|(base, ..)| format!("widget_{base}"))
+        .collect();
     names.push("sidebars_widgets".into());
-    let rows = ctx.env.db.options_named(&names.iter().map(String::as_str).collect::<Vec<_>>()).await.unwrap_or_default();
+    let rows = ctx
+        .env
+        .db
+        .options_named(&names.iter().map(String::as_str).collect::<Vec<_>>())
+        .await
+        .unwrap_or_default();
     // The autoloaded options as the site has them (the preview changes them), the others from the database.
-    let option = |name: &str| site.options.get(name).map(rustpress_core::options::maybe_unserialize).or_else(|| rows.iter().find(|(n, _)| n == name).map(|(_, value)| rustpress_core::options::maybe_unserialize(value)));
+    let option = |name: &str| {
+        site.options
+            .get(name)
+            .map(rustpress_core::options::maybe_unserialize)
+            .or_else(|| {
+                rows.iter()
+                    .find(|(n, _)| n == name)
+                    .map(|(_, value)| rustpress_core::options::maybe_unserialize(value))
+            })
+    };
     let mut registered = Vec::new();
     let mut instances = Vec::new();
     for (id_base, ..) in rustpress_rest::edit::WIDGET_TYPES {
         let value = option(&format!("widget_{id_base}")).unwrap_or(Php::Bool(false));
         let numbers: Vec<i64> = match &value {
-            Php::Array(items) => items.iter().filter_map(|(key, _)| if let Key::Int(n) = key { Some(*n) } else { None }).collect(),
+            Php::Array(items) => items
+                .iter()
+                .filter_map(|(key, _)| {
+                    if let Key::Int(n) = key {
+                        Some(*n)
+                    } else {
+                        None
+                    }
+                })
+                .collect(),
             _ => Vec::new(),
         };
         if numbers.is_empty() {
-            registered.push(Registered { id: format!("{id_base}-1"), id_base, number: -1 });
+            registered.push(Registered {
+                id: format!("{id_base}-1"),
+                id_base,
+                number: -1,
+            });
         }
         for n in numbers {
-            registered.push(Registered { id: format!("{id_base}-{n}"), id_base, number: n });
+            registered.push(Registered {
+                id: format!("{id_base}-{n}"),
+                id_base,
+                number: n,
+            });
         }
         instances.push((id_base, value));
     }
@@ -93,26 +135,53 @@ pub(super) async fn load(state: &State<'_>) -> Widgets {
                 continue;
             }
             let ids = match value {
-                Php::Array(ids) => ids.iter().map(|(_, id)| super::register::php_text(id)).collect(),
+                Php::Array(ids) => ids
+                    .iter()
+                    .map(|(_, id)| super::register::php_text(id))
+                    .collect(),
                 _ => Vec::new(),
             };
             sidebars_widgets.push((key, ids));
         }
     }
     let sidebars = rustpress_theme::classic::widgets::registered_sidebars(ctx.env.theme, site);
-    Widgets { sidebars, registered, sidebars_widgets, instances }
+    Widgets {
+        sidebars,
+        registered,
+        sidebars_widgets,
+        instances,
+    }
 }
 
 impl Widgets {
     /// The instance of a widget (`$option[ $number ]`), an empty array if there is none.
     fn instance(&self, id_base: &str, number: i64) -> Php {
-        self.instances.iter().find(|(base, _)| *base == id_base).and_then(|(_, value)| value.as_array()).and_then(|items| items.iter().find(|(key, _)| *key == Key::Int(number))).map_or(Php::Array(Vec::new()), |(_, value)| value.clone())
+        self.instances
+            .iter()
+            .find(|(base, _)| *base == id_base)
+            .and_then(|(_, value)| value.as_array())
+            .and_then(|items| items.iter().find(|(key, _)| *key == Key::Int(number)))
+            .map_or(Php::Array(Vec::new()), |(_, value)| value.clone())
     }
 
     /// `next_widget_id_number()`: the pattern has no start, so it matches the end of any widget id.
     fn next_number(&self, id_base: &str) -> i64 {
         let suffix = format!("{id_base}-");
-        let highest = self.registered.iter().filter_map(|w| w.id.rsplit_once('-').filter(|(base, n)| format!("{base}-").ends_with(&suffix) && !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))?.1.parse::<i64>().ok()).max();
+        let highest = self
+            .registered
+            .iter()
+            .filter_map(|w| {
+                w.id.rsplit_once('-')
+                    .filter(|(base, n)| {
+                        format!("{base}-").ends_with(&suffix)
+                            && !n.is_empty()
+                            && n.bytes().all(|b| b.is_ascii_digit())
+                    })?
+                    .1
+                    .parse::<i64>()
+                    .ok()
+            })
+            .max();
         highest.unwrap_or(1).max(1) + 1
     }
 }
@@ -121,11 +190,17 @@ impl Widgets {
 fn js_instance(state: &State<'_>, instance: &Php) -> Value {
     let serialized = rustpress_phpser::serialize(instance);
     let title = match instance.get("title") {
-        Some(Php::Str(text)) if !text.is_empty() && text != b"0" => String::from_utf8_lossy(text).into_owned(),
+        Some(Php::Str(text)) if !text.is_empty() && text != b"0" => {
+            String::from_utf8_lossy(text).into_owned()
+        }
         _ => String::new(),
     };
     let empty = matches!(instance, Php::Array(items) if items.is_empty());
-    let raw = if empty { rustpress_blocks::php_json::empty_object() } else { rustpress_core::options::php_to_json(instance) };
+    let raw = if empty {
+        rustpress_blocks::php_json::empty_object()
+    } else {
+        rustpress_core::options::php_to_json(instance)
+    };
     use base64::Engine;
     json!({
         "encoded_serialized_instance": base64::engine::general_purpose::STANDARD.encode(&serialized),
@@ -138,10 +213,18 @@ fn js_instance(state: &State<'_>, instance: &Php) -> Value {
 
 /// `get_setting_type()`: the setting of a widget's instance or of a widget area.
 pub(super) fn is_widget_setting(id: &str) -> bool {
-    if let Some(area) = id.strip_prefix("sidebars_widgets[").and_then(|rest| rest.strip_suffix(']')) {
+    if let Some(area) = id
+        .strip_prefix("sidebars_widgets[")
+        .and_then(|rest| rest.strip_suffix(']'))
+    {
         return !area.is_empty();
     }
-    id.strip_prefix("widget_").and_then(|rest| rest.strip_suffix(']')).and_then(|rest| rest.split_once('[')).is_some_and(|(base, number)| !base.is_empty() && !number.is_empty() && number.bytes().all(|b| b.is_ascii_digit()))
+    id.strip_prefix("widget_")
+        .and_then(|rest| rest.strip_suffix(']'))
+        .and_then(|rest| rest.split_once('['))
+        .is_some_and(|(base, number)| {
+            !base.is_empty() && !number.is_empty() && number.bytes().all(|b| b.is_ascii_digit())
+        })
 }
 
 /// `WP_Customize_Widgets::customize_register()` with the block editor.
@@ -149,7 +232,11 @@ pub(super) fn register(state: &State<'_>, m: &mut Manager, w: &Widgets) {
     let ctx = state.ctx;
     let tr = |text: &str| ctx.tr(text);
     for widget in &w.registered {
-        let id = format!("widget_{}[{}]", widget.id_base, widget.id.rsplit_once('-').map_or("", |(_, n)| n));
+        let id = format!(
+            "widget_{}[{}]",
+            widget.id_base,
+            widget.id.rsplit_once('-').map_or("", |(_, n)| n)
+        );
         let value = js_instance(state, &w.instance(widget.id_base, widget.number));
         m.add_setting(Setting::new(&id, "option", "postMessage", value));
     }
@@ -178,9 +265,19 @@ pub(super) fn register(state: &State<'_>, m: &mut Manager, w: &Widgets) {
         if registered.is_none() && area != "wp_inactive_widgets" {
             continue;
         }
-        let ids = w.sidebars_widgets.iter().find(|(id, _)| *id == area).map(|(_, ids)| ids.clone()).unwrap_or_default();
+        let ids = w
+            .sidebars_widgets
+            .iter()
+            .find(|(id, _)| *id == area)
+            .map(|(_, ids)| ids.clone())
+            .unwrap_or_default();
         let setting_id = format!("sidebars_widgets[{area}]");
-        m.add_setting(Setting::new(&setting_id, "option", "postMessage", json!(ids)));
+        m.add_setting(Setting::new(
+            &setting_id,
+            "option",
+            "postMessage",
+            json!(ids),
+        ));
         let Some(priority) = registered else { continue };
         let sidebar = &w.sidebars[priority];
         let section_id = format!("sidebar-widgets-{area}");
@@ -199,7 +296,12 @@ pub(super) fn register(state: &State<'_>, m: &mut Manager, w: &Widgets) {
             instance,
             extra: vec![("sidebarId", json!(area))],
         });
-        let mut control = Control::new(&setting_id, "sidebar_block_editor", &section_id, m.next_control());
+        let mut control = Control::new(
+            &setting_id,
+            "sidebar_block_editor",
+            &section_id,
+            m.next_control(),
+        );
         control.label = sidebar.name.clone();
         m.add_control(control);
     }
@@ -224,7 +326,11 @@ fn registered_json(state: &State<'_>, widget: &Registered) -> Map<String, Value>
 
 /// `get_available_widgets()`: one widget of each type, by name (`strnatcasecmp()`).
 fn available(state: &State<'_>, w: &Widgets) -> Vec<(Registered, Map<String, Value>)> {
-    let mut sorted: Vec<(String, &Registered)> = w.registered.iter().map(|widget| (type_info(state, widget.id_base).0, widget)).collect();
+    let mut sorted: Vec<(String, &Registered)> = w
+        .registered
+        .iter()
+        .map(|widget| (type_info(state, widget.id_base).0, widget))
+        .collect();
     sorted.sort_by(|a, b| rustpress_blocks::general::strnatcasecmp(&a.0, &b.0));
     let mut done: Vec<&str> = Vec::new();
     let mut out = Vec::new();
@@ -269,7 +375,10 @@ pub(super) fn sidebars_json(w: &Widgets) -> Value {
 pub(super) fn registered_widgets_json(state: &State<'_>, w: &Widgets) -> Value {
     let mut registered = Map::new();
     for widget in &w.registered {
-        registered.insert(widget.id.clone(), Value::Object(registered_json(state, widget)));
+        registered.insert(
+            widget.id.clone(),
+            Value::Object(registered_json(state, widget)),
+        );
     }
     Value::Object(registered)
 }
@@ -290,17 +399,34 @@ pub(super) fn settings_data(state: &State<'_>, w: &Widgets) -> String {
     let decode = rustpress_core::formatting::html_entity_decode;
     let sidebars = sidebars_json(w);
     let registered = registered_widgets_json(state, w);
-    let available: Vec<Value> = available(state, w).into_iter().map(|(_, item)| Value::Object(item)).collect();
+    let available: Vec<Value> = available(state, w)
+        .into_iter()
+        .map(|(_, item)| Value::Object(item))
+        .collect();
     let count = w.sidebars.len() as i64;
     let mut some_shown = Map::new();
-    some_shown.insert("1".into(), json!(decode(&tr("Your theme has 1 other widget area, but this particular page does not display it."))));
+    some_shown.insert(
+        "1".into(),
+        json!(decode(&tr(
+            "Your theme has 1 other widget area, but this particular page does not display it."
+        ))),
+    );
     for n in 2..count {
         some_shown.insert(n.to_string(), json!(decode(&sprintf(&site.trn("Your theme has %s other widget area, but this particular page does not display it.", "Your theme has %s other widget areas, but this particular page does not display them.", n), &[&n.to_string()]))));
     }
     let none_shown = if count == 1 {
-        decode(&tr("Your theme has 1 widget area, but this particular page does not display it."))
+        decode(&tr(
+            "Your theme has 1 widget area, but this particular page does not display it.",
+        ))
     } else {
-        decode(&sprintf(&site.trn("Your theme has %s widget area, but this particular page does not display it.", "Your theme has %s widget areas, but this particular page does not display them.", count), &[&count.to_string()]))
+        decode(&sprintf(
+            &site.trn(
+                "Your theme has %s widget area, but this particular page does not display it.",
+                "Your theme has %s widget areas, but this particular page does not display them.",
+                count,
+            ),
+            &[&count.to_string()],
+        ))
     };
     let reorder_nav = format!(
         "<div class=\"widget-reorder-nav\"><span class=\"move-widget\" tabindex=\"0\">{}</span><span class=\"move-widget-down\" tabindex=\"0\">{}</span><span class=\"move-widget-up\" tabindex=\"0\">{}</span></div>",
@@ -338,7 +464,10 @@ pub(super) fn settings_data(state: &State<'_>, w: &Widgets) -> String {
         "tpl": {"widgetReorderNav": reorder_nav, "moveWidgetArea": move_area},
         "selectiveRefreshableWidgets": refreshable,
     });
-    format!("var _wpCustomizeWidgetsSettings = {};", inline_json(&settings))
+    format!(
+        "var _wpCustomizeWidgetsSettings = {};",
+        inline_json(&settings)
+    )
 }
 
 /// The form of a widget type as `form_callback( -1 )` prints it.
@@ -348,7 +477,9 @@ fn form(state: &State<'_>, id_base: &str, menus: &[rustpress_db::Term]) -> Strin
         return nav_menu_form(state, menus);
     }
     let start = format!("⟨{id_base}⟩");
-    let Some(at) = FORMS.find(&start) else { return String::new() };
+    let Some(at) = FORMS.find(&start) else {
+        return String::new();
+    };
     let rest = &FORMS[at + start.len()..];
     let end = rest.find('⟨').unwrap_or(rest.len());
     let form = super::super::template_text::translate(ctx.site(), &rest[..end]);
@@ -358,12 +489,26 @@ fn form(state: &State<'_>, id_base: &str, menus: &[rustpress_db::Term]) -> Strin
     // The taxonomies with `show_tagcloud`, the tags selected.
     let site = ctx.site();
     let mut taxonomies = vec![
-        ("category".to_owned(), site.trx("Categories", "taxonomy general name")),
-        ("post_tag".to_owned(), site.trx("Tags", "taxonomy general name")),
+        (
+            "category".to_owned(),
+            site.trx("Categories", "taxonomy general name"),
+        ),
+        (
+            "post_tag".to_owned(),
+            site.trx("Tags", "taxonomy general name"),
+        ),
         ("link_category".to_owned(), site.tr("Link Categories")),
     ];
-    for registered in site.types.registered_types(true).into_iter().filter(|t| t.public) {
-        let label = registered.label.clone().unwrap_or_else(|| site.trx("Tags", "taxonomy general name"));
+    for registered in site
+        .types
+        .registered_types(true)
+        .into_iter()
+        .filter(|t| t.public)
+    {
+        let label = registered
+            .label
+            .clone()
+            .unwrap_or_else(|| site.trx("Tags", "taxonomy general name"));
         taxonomies.push((registered.name, label));
     }
     let options: String = taxonomies
@@ -377,14 +522,27 @@ fn form(state: &State<'_>, id_base: &str, menus: &[rustpress_db::Term]) -> Strin
 fn nav_menu_form(state: &State<'_>, menus: &[rustpress_db::Term]) -> String {
     let ctx = state.ctx;
     let tr = |text: &str| ctx.tr(text);
-    let (empty_style, not_empty_style) = if menus.is_empty() { (" style=\"display:none\" ", "") } else { ("", " style=\"display:none\" ") };
+    let (empty_style, not_empty_style) = if menus.is_empty() {
+        (" style=\"display:none\" ", "")
+    } else {
+        ("", " style=\"display:none\" ")
+    };
     let mut options = String::new();
     for menu in menus {
-        options.push_str(&format!("\t\t\t\t\t\t<option value=\"{}\" >\n\t\t\t\t\t\t\t{}\t\t\t\t\t\t</option>\n\t\t\t\t\t", menu.term_id, esc_html(&menu.name)));
+        options.push_str(&format!(
+            "\t\t\t\t\t\t<option value=\"{}\" >\n\t\t\t\t\t\t\t{}\t\t\t\t\t\t</option>\n\t\t\t\t\t",
+            menu.term_id,
+            esc_html(&menu.name)
+        ));
     }
     format!(
         "\t\t<p class=\"nav-menu-widget-no-menus-message\" {not_empty_style}>\n\t\t\t{}\t\t</p>\n\t\t<div class=\"nav-menu-widget-form-controls\" {empty_style}>\n\t\t\t<p>\n\t\t\t\t<label for=\"widget-nav_menu-__i__-title\">{}</label>\n\t\t\t\t<input type=\"text\" class=\"widefat\" id=\"widget-nav_menu-__i__-title\" name=\"widget-nav_menu[__i__][title]\" value=\"\" />\n\t\t\t</p>\n\t\t\t<p>\n\t\t\t\t<label for=\"widget-nav_menu-__i__-nav_menu\">{}</label>\n\t\t\t\t<select id=\"widget-nav_menu-__i__-nav_menu\" name=\"widget-nav_menu[__i__][nav_menu]\">\n\t\t\t\t\t<option value=\"0\">{}</option>\n\t\t\t\t\t{options}\t\t\t\t</select>\n\t\t\t</p>\n\t\t\t\t\t\t\t<p class=\"edit-selected-nav-menu\" style=\"display: none;\">\n\t\t\t\t\t<button type=\"button\" class=\"button\">{}</button>\n\t\t\t\t</p>\n\t\t\t\t\t</div>\n\t\t",
-        sprintf(&tr("No menus have been created yet. <a href=\"%s\">Create some</a>."), &[&esc_attr("javascript: wp.customize.panel( \"nav_menus\" ).focus();")]),
+        sprintf(
+            &tr("No menus have been created yet. <a href=\"%s\">Create some</a>."),
+            &[&esc_attr(
+                "javascript: wp.customize.panel( \"nav_menus\" ).focus();"
+            )]
+        ),
         tr("Title:"),
         tr("Select Menu:"),
         tr("&mdash; Select &mdash;"),
@@ -393,7 +551,13 @@ fn nav_menu_form(state: &State<'_>, menus: &[rustpress_db::Term]) -> String {
 }
 
 /// `wp_widget_control()` of an available widget: `index` is the counter of `wp_list_widget_controls_dynamic_sidebar()`.
-fn widget_control(state: &State<'_>, widget: &Registered, index: usize, multi_number: i64, menus: &[rustpress_db::Term]) -> String {
+fn widget_control(
+    state: &State<'_>,
+    widget: &Registered,
+    index: usize,
+    multi_number: i64,
+    menus: &[rustpress_db::Term],
+) -> String {
     let ctx = state.ctx;
     let tr = |text: &str| ctx.tr(text);
     let trx = |text: &str, context: &str| ctx.site().trx(text, context);
@@ -402,7 +566,12 @@ fn widget_control(state: &State<'_>, widget: &Registered, index: usize, multi_nu
     let id_format = format!("{}-__i__", widget.id_base);
     let (width, height) = control_size(widget.id_base);
     let mut href = ctx.request.request_uri.clone();
-    for (key, value) in [("editwidget", widget.id.clone()), ("addnew", "1".to_owned()), ("num", multi_number.to_string()), ("base", widget.id_base.to_owned())] {
+    for (key, value) in [
+        ("editwidget", widget.id.clone()),
+        ("addnew", "1".to_owned()),
+        ("num", multi_number.to_string()),
+        ("base", widget.id_base.to_owned()),
+    ] {
         href = rustpress_core::urls::add_query_arg(&href, key, &value);
     }
     let description = esc_html(&description);
@@ -423,7 +592,12 @@ fn widget_control(state: &State<'_>, widget: &Registered, index: usize, multi_nu
 }
 
 /// `output_widget_control_templates()`.
-pub(super) fn control_templates(state: &State<'_>, w: &Widgets, menus: &[rustpress_db::Term], panel_title: &str) -> String {
+pub(super) fn control_templates(
+    state: &State<'_>,
+    w: &Widgets,
+    menus: &[rustpress_db::Term],
+    panel_title: &str,
+) -> String {
     let ctx = state.ctx;
     let tr = |text: &str| ctx.tr(text);
     let mut out = format!(
@@ -436,7 +610,10 @@ pub(super) fn control_templates(state: &State<'_>, w: &Widgets, menus: &[rustpre
         tr("The search results will be updated as you type.")
     );
     for (index, (widget, item)) in available(state, w).into_iter().enumerate() {
-        let multi = item.get("multi_number").and_then(Value::as_i64).unwrap_or(0);
+        let multi = item
+            .get("multi_number")
+            .and_then(Value::as_i64)
+            .unwrap_or(0);
         let id = esc_attr(&widget.id);
         out.push_str(&format!("\t\t\t\t<div id=\"widget-tpl-{id}\" data-widget-id=\"{id}\" class=\"widget-tpl {id}\" tabindex=\"0\">\n\t\t\t\t\t{}\t\t\t\t</div>\n\t\t\t", widget_control(state, &widget, index + 1, multi, menus)));
     }
