@@ -28,8 +28,8 @@ The existing modules are the best examples, from small to large:
 Check the [port requests](https://github.com/rustpress-cms/rustpress/issues?q=is%3Aissue+label%3A%22port+request%22)
 first; one with many 👍 is worth more. Then decide on **one release** of the plugin (the newest stable one, as a
 rule) and on a **stage**: what visitors see on the website comes first, the administration later. Large plugins are
-ported in stages, each one merged on its own (see the ACF and Yoast sections of [PLAN.md](../PLAN.md)). Write the
-plan as a new section in PLAN.md before you start.
+ported in stages, each one merged on its own (see the ACF and Yoast sections of [HISTORY.md](../HISTORY.md)). Write the
+plan as a new section at the end of HISTORY.md before you start.
 
 Plugins that need outgoing HTTP to a service (Akismet, reCAPTCHA, payment providers) or that execute user-supplied
 PHP cannot be ported faithfully. Say so in the port request instead of writing a partial module.
@@ -49,7 +49,7 @@ are not comparing, because an active plugin changes what the core goldens expect
 
 Find every place the plugin hooks into WordPress: `add_action`, `add_filter`, `add_shortcode`,
 `register_rest_route`, `register_post_type`, `register_block_type`, `add_menu_page`, `wp_enqueue_*`. List them in
-the PLAN.md section with the WordPress hook each one uses. Port from this code, not from the plugin's documentation:
+the HISTORY.md section with the WordPress hook each one uses. Port from this code, not from the plugin's documentation:
 the behaviour the code has, quirks included, is what has to come out.
 
 ## 3. Write a golden generator
@@ -105,14 +105,14 @@ tests run without the reference stack, so CI checks them too.
 - The whole site: `cargo run --release -p rustpress-compat -- --report /tmp/with-plugin.md` with the plugin active.
   No unexpected difference may come from the module.
 - A difference that cannot be avoided (randomness, outgoing HTTP, a deliberately unsupported part) is written down
-  with its reason: in `compat/known.toml` for compat runs, in the PLAN.md section otherwise.
+  with its reason: in `compat/known.toml` for compat runs, in the HISTORY.md section otherwise.
 
 ## 6. Clean up and finish
 
 - Deactivate the plugin in the reference again and remove every test post, option, user and upload you created;
   then `cargo test --workspace` must be green with the reference stack running.
 - Run `cargo clippy --workspace --all-targets -- -D warnings`.
-- Update PLAN.md (the state of the stage, what is open), the plugin list in README.md and README.de.md, the website
+- Update HISTORY.md (the state of the stage) and PLAN.md (what is open), the plugin list in README.md and README.de.md, the website
   (`site/index.html`, `site/de/index.html`) and CHANGELOG.md.
 - In `crates/rustpress-server/src/check.rs` nothing changes: `rustpress check` lists every registered module by
   itself.

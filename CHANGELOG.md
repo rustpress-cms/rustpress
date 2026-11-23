@@ -16,6 +16,10 @@ All notable changes to RustPress. Each release names the WordPress release it fo
   and the menus, block patterns and block directory are refused for those who may not use them; the global styles of
   the theme are readable for everybody who edits posts; signed-in users get 403 instead of 401 on read-only routes;
   several messages and status codes of the administration and of `admin-ajax.php`.
+- **Quick start with Compose**, played through from an empty folder: a site without keys in a `wp-config.php` (the
+  database comes from `RUSTPRESS_DATABASE_URL`) stores its keys and salts in the options like `wp_salt()`, so signing
+  in works there; the installer turns on the permalinks `/%year%/%monthnum%/%day%/%postname%/` like WordPress does
+  when its test request succeeds. The README names the commands for importing an existing site.
 - Dependencies: lettre 0.11.24 (six advisories about SMTP), url 2.5.9 and rustix 1.1.6.
 - CI fails on clippy warnings and audits the dependencies (`cargo audit`); a test runs random and deeply nested
   input through the text functions.

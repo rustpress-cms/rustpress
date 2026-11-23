@@ -278,7 +278,7 @@ allow_writes = true   <span class="c"># sign-in, comments, wp-admin</span></code
         <h3>Docker Compose</h3>
 <pre><code>cp .env.example .env   <span class="c"># set the password and address</span>
 docker compose up -d   <span class="c"># RustPress and MariaDB</span></code></pre>
-        <p>Then open the site and follow the installer, or point <code>WORDPRESS_DIR</code> at an existing WordPress folder and import its database dump.</p>
+        <p>Then open the site and follow the installer. For an existing site, point <code>WORDPRESS_DIR</code> at its WordPress folder and import its database dump before the first start (the README has the commands).</p>
       </div>
       <div>
         <h3>Shared hosting (CGI)</h3>

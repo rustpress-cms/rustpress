@@ -109,6 +109,32 @@ impl Salts {
         self.options.get(name).map(String::as_str).filter(|v| !v.is_empty())
     }
 
+    /// The options `wp_salt()` would have to make up and store for the four cookie and nonce schemes:
+    /// those without a usable constant and without a stored value.
+    pub fn missing(&self) -> Vec<String> {
+        let mut names = Vec::new();
+        for scheme in ["auth", "secure_auth", "logged_in", "nonce"] {
+            for kind in ["key", "salt"] {
+                let constant = format!("{}_{}", scheme.to_ascii_uppercase(), kind.to_ascii_uppercase());
+                let shared = match kind {
+                    "key" => self.constant("SECRET_KEY"),
+                    _ if scheme == "auth" => self.constant("SECRET_SALT"),
+                    _ => None,
+                };
+                let option = format!("{scheme}_{kind}");
+                if self.constant(&constant).is_none() && shared.is_none() && self.option(&option).is_none() {
+                    names.push(option);
+                }
+            }
+        }
+        names
+    }
+
+    /// Takes a value that was just stored for one of the options.
+    pub fn set_option(&mut self, name: &str, value: String) {
+        self.options.insert(name.to_owned(), value);
+    }
+
     /// `wp_salt( $scheme )`: key and salt of the scheme joined; `None` when WordPress would have to make
     /// one up (and store it).
     pub fn salt(&self, scheme: &str) -> Option<String> {
@@ -137,6 +163,14 @@ impl Salts {
     pub fn hash(&self, data: &str, scheme: &str) -> Option<String> {
         Some(hmac_md5_hex(&self.salt(scheme)?, data))
     }
+}
+
+/// `wp_generate_password( 64, true, true )`: what `wp_salt()` stores for a missing key or salt.
+pub fn generate_salt() -> String {
+    use rand::Rng;
+    let alphabet: Vec<char> = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()-_ []{}<>~`+=,.;:/?|".chars().collect();
+    let mut rng = rand::rng();
+    (0..64).map(|_| alphabet[rng.random_range(0..alphabet.len())]).collect()
 }
 
 /// `md5( $data )` in lower-case hex.
@@ -186,5 +220,21 @@ mod tests {
     #[test]
     fn hmac_md5_matches_rfc_2202() {
         assert_eq!(hmac_md5_hex("Jefe", "what do ya want for nothing?"), "750c783e6ab0b503eaa86e310a5db738");
+    }
+
+    #[test]
+    fn missing_keys_and_salts() {
+        let salts = Salts::new(HashMap::new(), HashMap::new());
+        assert_eq!(salts.missing().len(), 8);
+        assert_eq!(salts.salt("auth"), None);
+        let mut salts = salts;
+        for name in salts.missing() {
+            salts.set_option(&name, generate_salt());
+        }
+        assert!(salts.missing().is_empty());
+        assert_eq!(salts.salt("logged_in").map(|s| s.len()), Some(128));
+        // Constants count, the sample text does not; SECRET_KEY stands in for every key.
+        let constants: HashMap<String, String> = [("SECRET_KEY", "k"), ("NONCE_SALT", "n"), ("AUTH_SALT", PLACEHOLDER)].iter().map(|(a, b)| ((*a).to_owned(), (*b).to_owned())).collect();
+        assert_eq!(Salts::new(constants, HashMap::new()).missing(), ["auth_salt", "secure_auth_salt", "logged_in_salt"]);
     }
 }

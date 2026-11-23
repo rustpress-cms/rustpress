@@ -278,7 +278,7 @@ allow_writes = true   <span class="c"># Anmeldung, Kommentare, wp-admin</span></
         <h3>Docker Compose</h3>
 <pre><code>cp .env.example .env   <span class="c"># Passwort und Adresse setzen</span>
 docker compose up -d   <span class="c"># RustPress und MariaDB</span></code></pre>
-        <p>Danach die Seite im Browser öffnen und dem Installer folgen, oder <code>WORDPRESS_DIR</code> auf einen bestehenden WordPress-Ordner zeigen lassen und dessen Datenbank-Dump einspielen.</p>
+        <p>Danach die Seite im Browser öffnen und dem Installer folgen. Für eine bestehende Seite zeigt <code>WORDPRESS_DIR</code> auf ihren WordPress-Ordner, und ihr Datenbank-Dump wird vor dem ersten Start eingespielt (die Befehle stehen im README).</p>
       </div>
       <div>
         <h3>Shared Hosting (CGI)</h3>

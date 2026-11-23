@@ -1,11 +1,17 @@
 # RustPress with MariaDB.
 #
-# An existing WordPress site: point WORDPRESS_DIR in .env at the WordPress folder (with wp-config.php), import the
-# database dump and run `docker compose up -d`.
-#
 # A new site:
 #   cp .env.example .env            # set the password and address
 #   docker compose up -d            # creates ./wordpress with the WordPress files and starts everything
+# Then open the site in the browser and follow the installer.
+#
+# An existing WordPress site: point WORDPRESS_DIR in .env at the WordPress folder (with wp-config.php) and import
+# the database dump before the first start:
+#   docker compose up -d db
+#   docker compose exec -T db sh -c 'mariadb -uwordpress -p"$MARIADB_PASSWORD" wordpress' < dump.sql
+#   docker compose up -d
+#
+# A new site with WP-CLI instead of the installer, after `docker compose up -d`:
 #   docker compose run --rm wp config create --dbname=wordpress --dbuser=wordpress --dbpass="$DB_PASSWORD" --dbhost=db
 #   docker compose run --rm wp core install --url="$SITE_URL" --title="My Site" \
 #     --admin_user=admin --admin_email=me@example.com --prompt=admin_password

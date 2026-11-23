@@ -8,24 +8,8 @@
 
 [![CI](https://github.com/rustpress-cms/rustpress/actions/workflows/ci.yml/badge.svg)](https://github.com/rustpress-cms/rustpress/actions/workflows/ci.yml)
 [![License: GPL v2+](https://img.shields.io/badge/license-GPL--2.0--or--later-blue.svg)](LICENSE)
-[![Rust](https://img.shields.io/badge/rust-stable-orange.svg?logo=rust)](https://www.rust-lang.org)
-[![Edition 2024](https://img.shields.io/badge/edition-2024-orange.svg?logo=rust)](https://doc.rust-lang.org/edition-guide/rust-2024/)
 [![WordPress](https://img.shields.io/badge/WordPress-7.1.5_compatible-21759b.svg?logo=wordpress)](compat/reports)
-[![PHP](https://img.shields.io/badge/PHP-not_required-777bb4.svg?logo=php&logoColor=white)](#how-it-works)
-[![Database](https://img.shields.io/badge/MySQL%20%7C%20MariaDB-supported-4479a1.svg?logo=mariadb&logoColor=white)](#getting-started)
-[![Docker](https://img.shields.io/badge/docker-ready-2496ed.svg?logo=docker&logoColor=white)](#docker)
-[![Shared hosting](https://img.shields.io/badge/shared_hosting-CGI-success.svg)](#shared-hosting-cgi)
 [![Status](https://img.shields.io/badge/status-experimental-yellow.svg)](#status)
-
-[![Last commit](https://img.shields.io/github/last-commit/rustpress-cms/rustpress.svg)](https://github.com/rustpress-cms/rustpress/commits/main)
-[![Commit activity](https://img.shields.io/github/commit-activity/m/rustpress-cms/rustpress.svg)](https://github.com/rustpress-cms/rustpress/graphs/commit-activity)
-[![Code size](https://img.shields.io/github/languages/code-size/rustpress-cms/rustpress.svg)](https://github.com/rustpress-cms/rustpress)
-[![Top language](https://img.shields.io/github/languages/top/rustpress-cms/rustpress.svg)](https://github.com/rustpress-cms/rustpress)
-[![Issues](https://img.shields.io/github/issues/rustpress-cms/rustpress.svg)](https://github.com/rustpress-cms/rustpress/issues)
-[![Pull requests](https://img.shields.io/github/issues-pr/rustpress-cms/rustpress.svg)](https://github.com/rustpress-cms/rustpress/pulls)
-[![Stars](https://img.shields.io/github/stars/rustpress-cms/rustpress.svg?style=social)](https://github.com/rustpress-cms/rustpress/stargazers)
-[![Dependabot](https://img.shields.io/badge/dependabot-enabled-025e8c.svg?logo=dependabot)](.github/dependabot.yml)
-[![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](#contributing)
 
 </div>
 
@@ -105,7 +89,7 @@ In short: if you need every PHP plugin, WpDotNet runs WordPress itself. If you w
 
 ## Getting started
 
-Every [release](https://github.com/rustpress-cms/rustpress/releases) carries ready-made builds: static Linux binaries (x86_64, aarch64, armv7, armv6, i686) also as `.deb`, `.rpm` and `.apk` packages, plus macOS (Intel and Apple Silicon), Windows (x64, x86, ARM64) and FreeBSD. The container image is `ghcr.io/rustpress-cms/rustpress` for amd64, arm64, arm/v7, arm/v6 and 386. From source:
+Every [release](https://github.com/rustpress-cms/rustpress/releases) carries ready-made builds: static Linux binaries (x86_64, aarch64, armv7, armv6, i686) also as `.deb`, `.rpm` and `.apk` packages, plus macOS (Intel and Apple Silicon), Windows (x64, x86, ARM64) and FreeBSD. The container image is `ghcr.io/rustpress-cms/rustpress` for amd64, arm64, arm/v7, arm/v6 and 386. CI tests on x86_64 Linux and builds for Windows; the other targets are cross-compiled and not tested, so please report what does not work there. From source:
 
 ```sh
 cargo run --release -p rustpress-server
@@ -143,13 +127,22 @@ The `Dockerfile` builds a small Alpine image with a statically linked binary; `c
 docker run -p 3000:3000 -v /path/to/wordpress:/var/www/html   -e RUSTPRESS_DATABASE_URL=mysql://user:pass@db:3306/wordpress ghcr.io/rustpress-cms/rustpress
 ```
 
+With Compose, from an empty folder:
 
 ```sh
 cp .env.example .env     # set the password and address
 docker compose up -d     # creates ./wordpress with the WordPress files
 ```
 
-Then open the site in the browser and follow the installer, or point `WORDPRESS_DIR` in `.env` at an existing WordPress folder and import its database dump.
+Then open the site in the browser and follow the installer. For an existing site, point `WORDPRESS_DIR` in `.env` at its WordPress folder and import its database dump before the first start:
+
+```sh
+docker compose up -d db
+docker compose exec -T db sh -c 'mariadb -uwordpress -p"$MARIADB_PASSWORD" wordpress' < dump.sql
+docker compose up -d
+```
+
+The site keeps the address stored in the dump (`siteurl` and `home`).
 
 ## Shared hosting (CGI)
 
@@ -169,7 +162,7 @@ dev/seed.sh     # create test content
 cargo test --workspace
 ```
 
-Without the stack the golden tests skip themselves, which is what CI does.
+Without the stack the golden tests skip themselves. CI starts and seeds the stack in its job `golden` and runs them all, followed by a compat run.
 
 ```sh
 cargo run -p rustpress-compat -- --report compat/reports/twentytwentyfive.md

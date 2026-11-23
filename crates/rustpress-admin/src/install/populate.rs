@@ -323,6 +323,23 @@ pub async fn wp_install(writer: &Writer, site: &Site, wp_root: &std::path::Path,
     writer.update_option_with_autoload("user_count", "1", "off").await?;
 
     install_defaults(writer, site, data.url, user_id, &local, &gmt).await?;
+    // `wp_install_maybe_enable_pretty_permalinks()`: WordPress tries its structures by fetching the first
+    // post; RustPress resolves every structure by itself, so the first one stays. The rules are the ones
+    // the next request of WordPress would store after `flush_rules()`.
+    let structure = "/%year%/%monthnum%/%day%/%postname%/";
+    let input = rustpress_core::rewrite_gen::RewriteInput {
+        permalink_structure: structure,
+        old_front: "/",
+        category_base: "",
+        tag_base: "",
+        page_on_front: 0,
+        home_at_root: data.url.trim_end_matches('/').split_once("://").is_none_or(|(_, rest)| !rest.contains('/')),
+        blog_public: data.public != 0,
+        types: &site.types,
+    };
+    let rules = rustpress_core::rewrite_gen::rewrite_rules(&input);
+    writer.update_option("permalink_structure", structure).await?;
+    writer.update_option("rewrite_rules", &rustpress_core::rewrite_gen::serialize_rules(&rules)).await?;
     Ok(Installed { user_id, password, password_message: message })
 }
 
