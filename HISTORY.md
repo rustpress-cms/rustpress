@@ -1503,3 +1503,10 @@ before RustPress notices the site.
 
 Not tried: the build of the image itself (the test ran with a binary built outside the container, because the
 sandbox blocks crates.io inside container builds; CI builds the image) and the WP-CLI path in `compose.yaml`.
+
+### The one-time format (2026-11-23)
+
+The workspace was written with lines of up to 200 characters and never run through rustfmt. One commit formats it
+with the default style (415 files, the Rust code grows from about 167,000 to 260,000 lines, nothing else changes);
+`.git-blame-ignore-revs` names it so that `git blame` looks through it, and the CI job `Clippy` runs
+`cargo fmt --all --check`.
