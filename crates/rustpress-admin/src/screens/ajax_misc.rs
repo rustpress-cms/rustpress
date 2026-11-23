@@ -865,7 +865,23 @@ pub async fn handle(
             }
             json(200, &json!({"success": true}))
         }
-        // Everything that needs WordPress.org: RustPress does not connect to it.
+        "check_plugin_dependencies" => {
+            if !nonce_ok(
+                request
+                    .request("_ajax_nonce")
+                    .or(request.request("_wpnonce"))
+                    .unwrap_or_default(),
+                "updates",
+            ) {
+                return text(403, "-1");
+            }
+            json(
+                200,
+                &super::directory::check_dependencies(&ctx, &sanitize_key(&param("slug"))),
+            )
+        }
+        // Everything that needs WordPress.org: RustPress does not connect to it (the plugin directory of RustPress
+        // aside).
         "query-themes"
         | "install-theme"
         | "install-plugin"
@@ -887,6 +903,15 @@ pub async fn handle(
                 )
             {
                 return text(403, "-1");
+            }
+            // The plugin directory of RustPress.
+            if action == "install-plugin"
+                && let Some(result) = super::directory::ajax_install(&ctx, &param("slug")).await
+            {
+                return json(200, &result);
+            }
+            if action == "search-install-plugins" {
+                return json(200, &super::directory::ajax_search(&ctx, &param("s")));
             }
             let message = rustpress_core::i18n::sprintf(
                 &tr(

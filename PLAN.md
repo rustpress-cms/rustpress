@@ -18,8 +18,11 @@ compared and what deliberately differs.
   over while the plugin is in `active_plugins`; the plugin's files stay for assets, headers and language packs.
 - **Writing is an explicit switch** (`RUSTPRESS_ALLOW_WRITES=1` / `allow_writes`): without it RustPress is a read-only
   replacement; with it the administration, sign-in, comments and the REST write API work.
-- **Not planned:** a PHP interpreter, Multisite, outgoing HTTP to WordPress.org or other services (updates, directories,
-  remote oEmbed), caching and security plugins (architecture), WooCommerce, Elementor.
+- **Plugin directory:** Add Plugins lists the plugins with a native module (built into the binary) instead of
+  WordPress.org's directory, and installs the archive of the release a module follows, checked against its SHA-256
+  (decision of 2026-11-23).
+- **Not planned:** a PHP interpreter, Multisite, outgoing HTTP to WordPress.org or other services (updates, the theme
+  directory and the other plugins of the plugin directory, remote oEmbed), caching and security plugins (architecture), WooCommerce, Elementor.
 
 ## Architecture
 
@@ -129,7 +132,7 @@ The reference stack, the tools and the working rules are in [AGENTS.md](AGENTS.m
   `de_DE_formal`, a command `rustpress i18n install <locale>`.
 - Screens of a translated site: `dev/nav-menus-compare.py` still compares from the `body` on.
 - Not equal on the copy of the real site: `credits.php` (what `wp_credits()` gets from api.wordpress.org depends on the
-  language, the bake is the English answer), `plugin-install.php` (RustPress asks api.wordpress.org nothing), the tests of
+  language, the bake is the English answer), `plugin-install.php` (the plugin directory of RustPress in place of api.wordpress.org), the tests of
   `site-health.php` that are about PHP (RustPress has none) and the `Info` tab, which reports its own environment.
 
 **Sign-in, administration, REST**
@@ -200,7 +203,11 @@ The reference stack, the tools and the working rules are in [AGENTS.md](AGENTS.m
 
 Differences of the compat runs are in [`compat/known.toml`](compat/known.toml). Everything else:
 
-- **Environment:** RustPress makes no outgoing requests: the directories and updates of WordPress.org,
+- **Plugin directory:** the browse tabs of `plugin-install.php` list the plugins with a native module
+  (`rustpress_plugins::catalog`) in the cards of WordPress, without ratings, installation counts and the details
+  modal; "Install Now" (`install-plugin` in `admin-ajax.php` and `update.php`) downloads only the archive of a listing
+  and only installs it if its SHA-256 matches. The only outgoing request of the administration.
+- **Environment:** RustPress makes no other outgoing requests: the directories and updates of WordPress.org,
   `credits.php`, font collections, remote oEmbed, loopback and the Site Health tests that need them, Akismet and the
   services of Contact Form 7 (reCAPTCHA, Turnstile, Stripe), the e-mail opt-in of ACF. Without `RUSTPRESS_SMTP_URL`
   mail goes to the host's `sendmail` as PHP's `mail()` sends it, and fails as `wp_mail()` does on a host without

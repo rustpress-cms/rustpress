@@ -32,6 +32,7 @@ pub mod common;
 mod custom_header;
 mod customize;
 pub mod dashboard;
+mod directory;
 pub mod editor;
 pub mod export;
 mod file_editor;

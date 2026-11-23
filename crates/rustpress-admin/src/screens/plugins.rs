@@ -24,7 +24,7 @@ fn urlenc(text: &str) -> String {
         .collect()
 }
 
-fn active_plugins(ctx: &Ctx<'_>) -> Vec<String> {
+pub(super) fn active_plugins(ctx: &Ctx<'_>) -> Vec<String> {
     match ctx.site().options.value("active_plugins") {
         Some(rustpress_phpser::Value::Array(items)) => items
             .iter()

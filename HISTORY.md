@@ -1510,3 +1510,30 @@ The workspace was written with lines of up to 200 characters and never run throu
 with the default style (415 files, the Rust code grows from about 167,000 to 260,000 lines, nothing else changes);
 `.git-blame-ignore-revs` names it so that `git blame` looks through it, and the CI job `Clippy` runs
 `cargo fmt --all --check`.
+
+### The plugin directory of RustPress (2026-11-23)
+
+Add Plugins showed WordPress' error for an unreachable WordPress.org, since RustPress asks it nothing and its plugins
+need PHP anyway. Its browse tabs now list the plugins RustPress has a native module for: `rustpress_plugins::catalog`
+holds one `Listing` per module (name, author and short description of the plugin's page on WordPress.org, German
+descriptions from de.wordpress.org or translated where the plugin has none, the URL, SHA-256 and size of the archive of
+the release the module follows) and registers it with `rustpress_core::native::register_catalog()`. The listings are
+built in, so the list works without a connection; a test checks that every module has a listing of exactly its
+release. `dev/plugin-catalog.sh SLUG VERSION` prints the package lines for a new release.
+
+- **The page** (`screens/directory.rs`): the cards of `WP_Plugin_Install_List_Table::display_rows()` with the buttons of
+  `wp_get_plugin_action_button()` (Install Now, Activate, Active, Installed), a letter icon in place of the icon from
+  WordPress.org, "More Details" to the plugin's page on WordPress.org, at the bottom the version and whether the
+  installed version is the one the module follows. One tab, "RustPress Plugins"; the search filters name, slug and
+  description, as a page (`tab=search`) and live through `search-install-plugins` like `updates.js` asks it.
+- **Installing:** `install-plugin` in `admin-ajax.php` (`wp_ajax_install_plugin()`, for a slug of the directory) and
+  `update.php?action=install-plugin` (the page of `Plugin_Installer_Skin`, without JavaScript) download the archive,
+  refuse it unless its SHA-256 matches, and unpack it like an upload. A failed download says where to get the archive
+  to upload it by hand (for hosts that cannot reach WordPress.org). `check_plugin_dependencies`, which `updates.js`
+  asks before it turns the button into "Activate", answers like `WP_Plugin_Dependencies` for a plugin without
+  required plugins (dependencies are not checked).
+- **Own texts:** the introduction, the tab, the notes and the errors are RustPress' own, in English and German.
+- Checked in the browser against the reference database: the list, the search, install and activate through
+  `updates.js` (SVG Support), install without JavaScript (Classic Editor), an expired nonce.
+- Not done: updating an installed plugin to the release of its module (the card says when the versions differ), a
+  directory for themes.

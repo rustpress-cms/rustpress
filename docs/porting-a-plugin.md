@@ -86,7 +86,9 @@ tests run without the reference stack, so CI checks them too.
 4. **A hook is missing?** Add it to `ActivePlugin` with a default that does nothing and a doc comment that names
    the WordPress action or filter, and call it from the place where WordPress fires that hook. Keep it as narrow as
    the plugin needs.
-5. Register the module in `rustpress_plugins::register()` (`crates/rustpress-plugins/src/lib.rs`).
+5. Register the module in `rustpress_plugins::register()` (`crates/rustpress-plugins/src/lib.rs`) and give it a listing
+   in the plugin directory (`crates/rustpress-plugins/src/catalog.rs`; `dev/plugin-catalog.sh SLUG VERSION` prints
+   the package lines). A new release of the module needs a new listing.
 6. Every function that ports a PHP function names it in its doc comment (`` `wpcf7_autop()` ``), so that
    `dev/wp-diff.sh` can find it when the plugin or WordPress changes.
 7. Port PHP semantics exactly: loose comparisons (`==`), `(int)` casts of strings, array order, `trim()` character

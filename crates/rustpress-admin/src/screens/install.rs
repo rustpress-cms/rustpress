@@ -1,14 +1,14 @@
 //! `plugin-install.php`, `theme-install.php` and `update.php`: adding plugins and themes from a zip file.
 //!
-//! RustPress does not talk to wordpress.org, so the directory tabs show the error WordPress shows when it cannot
-//! reach it; uploading an archive works like in WordPress.
+//! The browse tabs show the plugin directory of RustPress (see [`super::directory`]) in place of WordPress.org's;
+//! uploading an archive works like in WordPress.
 
 use std::io::{Cursor, Read};
 use std::path::{Path, PathBuf};
 
 use rustpress_core::formatting::{esc_attr, esc_html, esc_url};
 
-use super::notices::notice;
+use super::directory;
 use super::{AdminResponse, Ctx, die, render};
 use crate::chrome::{Assets, Screen};
 use crate::plugins::{self, PluginInfo};
@@ -59,57 +59,56 @@ pub async fn plugin_install(ctx: &Ctx<'_>) -> AdminResponse {
             .find("\t\n\t<span class=\"spinner\"></span>")
             .unwrap_or(content.len());
         let upload = content[a..b].trim_end().to_owned();
-        let tabs = [
-            ("featured", ctx.site().trx("Featured", "Plugin Installer")),
-            ("popular", ctx.site().trx("Popular", "Plugin Installer")),
-            (
-                "recommended",
-                ctx.site().trx("Recommended", "Plugin Installer"),
-            ),
-            ("favorites", ctx.site().trx("Favorites", "Plugin Installer")),
-        ];
-        let links: String = tabs
-            .iter()
-            .map(|(name, label)| {
-                format!(
-                    "\t<li class='plugin-install-{name}'><a href=\"{}\"{}>{label}</a>{}</li>\n",
-                    ctx.admin_url(&format!("plugin-install.php?tab={name}")),
-                    if *name == tab {
-                        " class=\"current\" aria-current=\"page\""
-                    } else {
-                        ""
-                    },
-                    if *name == "favorites" { "" } else { " " }
-                )
-            })
-            .collect();
-        let error = notice(
-            &format!(
-                "<p>{}</p><p class=\"hide-if-no-js\"><button class=\"button try-again\">{}</button></p>",
-                tr(
-                    "An unexpected error occurred. Something may be wrong with WordPress.org or this server&#8217;s configuration. If you continue to have problems, please try the <a href=\"https://wordpress.org/support/forums/\">support forums</a>."
-                ),
-                tr("Try Again")
-            ),
-            "",
-            false,
-            "",
-            &["inline", "error"],
-            false,
-        );
+        let locale = ctx.site().i18n().locale.clone();
+        let term = if tab == "search" {
+            ctx.request.get("s").unwrap_or_default().to_owned()
+        } else {
+            String::new()
+        };
+        let mut links = String::new();
+        if tab == "search" {
+            links.push_str(&format!(
+                "\t<li class='plugin-install-search'><a href=\"{}\" class=\"current\" aria-current=\"page\">{}</a> </li>\n",
+                esc_url(&format!(
+                    "{}?tab=search&s={}",
+                    ctx.admin_url("plugin-install.php"),
+                    urlencode(&term)
+                )),
+                tr("Search Results")
+            ));
+        }
+        links.push_str(&format!(
+            "\t<li class='plugin-install-featured'><a href=\"{}\"{}>{}</a></li>\n",
+            ctx.admin_url("plugin-install.php?tab=featured"),
+            if tab == "search" {
+                ""
+            } else {
+                " class=\"current\" aria-current=\"page\""
+            },
+            directory::own(&locale, "RustPress Plugins")
+        ));
+        let list = directory::list_table(ctx, &directory::search(&locale, &term));
         let browse = format!(
-            "<div class=\"wrap plugin-install-tab-{tab}\">\n<h1 class=\"wp-heading-inline\">\n{}</h1>\n\n <a href=\"{}\" class=\"upload-view-toggle page-title-action\"><span class=\"upload\">{}</span><span class=\"browse\">{}</span></a>\n<hr class=\"wp-header-end\">\n\t<div class=\"upload-plugin-wrap\">\n\t\t{upload}\n\t\t</div>\n\t<h2 class='screen-reader-text'>{}</h2><p>{}</p><div class=\"wp-filter\">\n\t<ul class=\"filter-links\">\n{links}\t</ul>\n\t\t\t<form class=\"search-form search-plugins\" method=\"get\">\n\t\t<input type=\"hidden\" name=\"tab\" value=\"search\" />\n\t\t<label for=\"search-plugins\">{}</label>\n\t\t<input type=\"search\" name=\"s\" id=\"search-plugins\" value=\"\" class=\"wp-filter-search\" />\n\t\t<input type=\"submit\" id=\"search-submit\" class=\"button hide-if-js\" value=\"{}\"  />\t</form>\n\t</div>\n\t\t<br>\t<form id=\"plugin-filter\" method=\"post\">\n\t\t<div class=\"wp-list-table widefat plugin-install\">\n\t\t<h2 class='screen-reader-text'>{}</h2>\t<div id=\"the-list\">\n\t\t{error}\t</div>\n\t</div>\n\t</form>\n",
+            "<div class=\"wrap plugin-install-tab-{tab}\">\n<h1 class=\"wp-heading-inline\">\n{}</h1>\n\n <a href=\"{}\" class=\"upload-view-toggle page-title-action\"><span class=\"upload\">{}</span><span class=\"browse\">{}</span></a>\n<hr class=\"wp-header-end\">\n\t<div class=\"upload-plugin-wrap\">\n\t\t{upload}\n\t\t</div>\n\t<h2 class='screen-reader-text'>{}</h2><p>{} {}</p><div class=\"wp-filter\">\n\t<ul class=\"filter-links\">\n{links}\t</ul>\n\t\t\t<form class=\"search-form search-plugins\" method=\"get\">\n\t\t<input type=\"hidden\" name=\"tab\" value=\"search\" />\n\t\t<label for=\"search-plugins\">{}</label>\n\t\t<input type=\"search\" name=\"s\" id=\"search-plugins\" value=\"{}\" class=\"wp-filter-search\" />\n\t\t<input type=\"submit\" id=\"search-submit\" class=\"button hide-if-js\" value=\"{}\"  />\t</form>\n\t</div>\n\t\t<br>\t<form id=\"plugin-filter\" method=\"post\">\n\t\t{list}\t</form>\n",
             tr("Add Plugins"),
             ctx.admin_url("plugin-install.php?tab=upload"),
             tr("Upload Plugin"),
             tr("Browse Plugins"),
             tr("Filter plugins list"),
-            tr(
-                "Plugins extend and expand the functionality of WordPress. You may install plugins from the <a href=\"https://wordpress.org/plugins/\">WordPress Plugin Directory</a> right on this page, or upload a plugin in .zip format by clicking the button above."
+            directory::own(
+                &locale,
+                "These plugins have a native module in RustPress. Installing one downloads the release the module follows from WordPress.org and checks its checksum. Other plugins do not run with RustPress, since it does not run PHP; you can still upload a plugin in .zip format by clicking the button above."
+            ),
+            rustpress_core::i18n::sprintf(
+                &directory::own(
+                    &locale,
+                    "Missing a plugin? <a href=\"%s\">Ask for a port</a>."
+                ),
+                &[directory::PORT_REQUEST_URL]
             ),
             tr("Search Plugins"),
+            esc_attr(&term),
             tr("Search Plugins"),
-            tr("Plugins list"),
         );
         let tail = content[content
             .find("\t<span class=\"spinner\"></span>")
@@ -215,7 +214,7 @@ pub async fn theme_install(ctx: &Ctx<'_>) -> AdminResponse {
 }
 
 /// One finished screen of `update.php`: a heading and the lines the installer prints.
-async fn feedback(
+pub(super) async fn feedback(
     ctx: &Ctx<'_>,
     parent: &str,
     submenu: &str,
@@ -239,7 +238,7 @@ async fn feedback(
 }
 
 /// The directory entries of an archive that are safe to unpack, with their contents.
-fn read_zip(bytes: &[u8]) -> Result<Vec<(String, Option<Vec<u8>>)>, String> {
+pub(super) fn read_zip(bytes: &[u8]) -> Result<Vec<(String, Option<Vec<u8>>)>, String> {
     let mut archive =
         zip::ZipArchive::new(Cursor::new(bytes)).map_err(|_| "Incompatible Archive.".to_owned())?;
     let mut entries = Vec::new();
@@ -268,7 +267,7 @@ fn read_zip(bytes: &[u8]) -> Result<Vec<(String, Option<Vec<u8>>)>, String> {
 
 /// The folder an archive installs into and the entries below it: a single top-level folder is unwrapped, otherwise
 /// the name of the file stands for it.
-fn layout(
+pub(super) fn layout(
     entries: &[(String, Option<Vec<u8>>)],
     zip_name: &str,
 ) -> (String, Vec<(String, Option<Vec<u8>>)>) {
@@ -316,7 +315,10 @@ fn header(text: &str, name: &str) -> String {
     String::new()
 }
 
-fn write_tree(dest: &Path, entries: &[(String, Option<Vec<u8>>)]) -> std::io::Result<()> {
+pub(super) fn write_tree(
+    dest: &Path,
+    entries: &[(String, Option<Vec<u8>>)],
+) -> std::io::Result<()> {
     std::fs::create_dir_all(dest)?;
     for (name, data) in entries {
         let target = dest.join(name);
@@ -338,6 +340,7 @@ pub async fn update_php(ctx: &Ctx<'_>) -> AdminResponse {
     let action = ctx.request.get("action").unwrap_or_default().to_owned();
     match action.as_str() {
         "upload-plugin" => upload(ctx, true).await,
+        "install-plugin" => directory::install_page(ctx).await,
         "upload-theme" => upload(ctx, false).await,
         _ => die(
             ctx.env,
@@ -628,7 +631,7 @@ async fn upload(ctx: &Ctx<'_>, plugin: bool) -> AdminResponse {
 }
 
 /// `urlencode()`.
-fn urlencode(text: &str) -> String {
+pub(super) fn urlencode(text: &str) -> String {
     text.bytes()
         .map(|b| {
             if b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.') {
