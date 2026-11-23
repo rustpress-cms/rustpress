@@ -18,6 +18,10 @@ compared and what deliberately differs.
   over while the plugin is in `active_plugins`; the plugin's files stay for assets, headers and language packs.
 - **Writing is an explicit switch** (`RUSTPRESS_ALLOW_WRITES=1` / `allow_writes`): without it RustPress is a read-only
   replacement; with it the administration, sign-in, comments and the REST write API work.
+- **Branding (2026-11-23):** the administration, the sign-in and the toolbar name RustPress and show its logo, so
+  that nobody takes a RustPress site for WordPress and no WordPress trademark is used for RustPress
+  (`rustpress_core::brand`, the switch `branding`). Everything else stays byte-identical; the comparisons of the
+  administration run with `branding = false` (`RUSTPRESS_BRANDING=0`).
 - **Not planned:** a PHP interpreter, Multisite, outgoing HTTP to WordPress.org or other services (updates, directories,
   remote oEmbed), caching and security plugins (architecture), WooCommerce, Elementor.
 
@@ -208,5 +212,13 @@ Differences of the compat runs are in [`compat/known.toml`](compat/known.toml). 
 - **The container and the database:** the order of templates and of `readdir()` in the file editors, rows with the same
   sort value (`orderby=comment_count`, posts with the same date), random values (nonces, `antispambot()`, passwords,
   the quiz question of Contact Form 7).
+- **Branding:** with `branding` on (the default) the texts of WordPress' own text domain in the administration, the
+  sign-in and the toolbar say RustPress where they name the software (English and every translation), the links to
+  wordpress.org's home, support forums, feedback forum and documentation lead to RustPress, the logo menu leads to
+  RustPress' site and repository, and the logo is RustPress'. WordPress.org, its directories, the community, events
+  and news, versions of WordPress (the release whose files RustPress uses), the documentation articles of the
+  individual screens (decision of 2026-11-23), plugins, themes and the content stay as they are. E-mails sent from a
+  request of the administration follow the same rule. Pages baked from WordPress (`about.php`, `credits.php`,
+  `freedoms.php`, `contribute.php`) and the texts of scripts (the block editor) still say WordPress.
 - **Per module:** the "Not rebuilt" and "Differs" notes in the entries of each plugin in [HISTORY.md](HISTORY.md) ("Plugins as
   native modules").

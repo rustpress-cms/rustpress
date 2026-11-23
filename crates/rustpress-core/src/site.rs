@@ -309,33 +309,33 @@ impl Site {
 
     /// `__( $text )`.
     pub fn tr(&self, text: &str) -> String {
-        match self.i18n.get() {
+        crate::brand::text(match self.i18n.get() {
             Some(i18n) => i18n.gettext("default", text),
             None => text.to_owned(),
-        }
+        })
     }
 
     /// `_x( $text, $context )`.
     pub fn trx(&self, text: &str, context: &str) -> String {
-        match self.i18n.get() {
+        crate::brand::text(match self.i18n.get() {
             Some(i18n) => i18n.pgettext("default", context, text),
             None => text.to_owned(),
-        }
+        })
     }
 
     /// `_n( $single, $plural, $n )`.
     pub fn trn(&self, singular: &str, plural: &str, n: i64) -> String {
-        match self.i18n.get() {
+        crate::brand::text(match self.i18n.get() {
             Some(i18n) => i18n.ngettext("default", singular, plural, n),
             None => (if n == 1 { singular } else { plural }).to_owned(),
-        }
+        })
     }
     /// `_nx( $single, $plural, $n, $context )`.
     pub fn trnx(&self, singular: &str, plural: &str, n: i64, context: &str) -> String {
-        match self.i18n.get() {
+        crate::brand::text(match self.i18n.get() {
             Some(i18n) => i18n.npgettext("default", context, singular, plural, n),
             None => (if n == 1 { singular } else { plural }).to_owned(),
-        }
+        })
     }
 
     /// The names and conventions of the site's language (`$wp_locale`).

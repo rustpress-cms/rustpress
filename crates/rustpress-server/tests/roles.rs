@@ -748,6 +748,8 @@ async fn app() -> Option<std::sync::Arc<App>> {
             .unwrap_or_else(|_| "mysql://wordpress:wordpress@127.0.0.1:3306/wordpress".into()),
         wp_root: root,
         allow_writes: true,
+        // WordPress' own texts, as the reference shows them.
+        branding: false,
         ..Config::default()
     };
     App::new(config).await.ok()
